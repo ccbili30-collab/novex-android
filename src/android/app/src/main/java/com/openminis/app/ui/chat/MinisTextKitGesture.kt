@@ -640,6 +640,8 @@ data class SelectionToolbarActions(
     val resolveSelectionMarkdown: () -> String?,
     /** Append the currently-selected plain text to the chat composer. Null hides the button. */
     val onAddToInput: ((String) -> Unit)? = null,
+    /** Share selected text into another Novex conversation. */
+    val onShare: ((String) -> Unit)? = null,
     /**
      * [T-android-selection-readaloud] Speak the currently-selected plain text
      * through Minis TTS. Null hides the button. Mirrors iOS's "Read Aloud /
@@ -851,6 +853,13 @@ fun MinisSelectionToolbarHost(
                             controller.clearSelection()
                         })
                     }
+                    if (actions?.onShare != null) {
+                        add(SelectionAction("分享到其他文游") {
+                            val text = controller.selectedPlainText()
+                            if (text.isNotEmpty()) actions.onShare.invoke(text)
+                            controller.clearSelection()
+                        })
+                    }
                     // [T-android-selection-readaloud] Speak ONLY the selected
                     // substring (not the message's markdown source) through
                     // Minis TTS.
@@ -1028,7 +1037,6 @@ private class FloatingSelectionToolbarPositionProvider(
         return IntOffset(x, y.coerceIn(viewTop, maxY))
     }
 }
-
 
 
 

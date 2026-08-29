@@ -620,6 +620,13 @@ class ChatViewModel(
         _inputText.value = value
     }
 
+    private val _novexControls = MutableStateFlow<List<NovexControl>>(emptyList())
+    val novexControls: StateFlow<List<NovexControl>> = _novexControls.asStateFlow()
+
+    fun runNovexControl(control: NovexControl) {
+        sendMessage("\u2063NOVEX_CONTROL:${control.label}\n${control.instruction}")
+    }
+
     /**
      * [T-selection-add-to-input] Append [snippet] to the chat composer
      * with a single trailing space:
@@ -8046,6 +8053,7 @@ class ChatViewModel(
             "present_choices" -> executePresentChoicesTool(argsJson)
             "present_system_panel" -> executePresentSystemPanelTool(argsJson)
             "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
+            "register_controls" -> executeRegisterControlsTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -8120,6 +8128,32 @@ class ChatViewModel(
                 output = "存档失败：${error.message ?: "请稍后重试"}",
                 success = false,
                 toolTitle = "保存文游进度",
+            )
+        }
+    }
+
+    private fun executeRegisterControlsTool(argsJson: String): ToolExecutionResult {
+        return runCatching {
+            val values = org.json.JSONArray(JSONObject(argsJson).getString("controls"))
+            val controls = (0 until values.length()).mapNotNull { index ->
+                val item = values.optJSONObject(index) ?: return@mapNotNull null
+                val label = item.optString("label").trim()
+                val instruction = item.optString("instruction").trim()
+                if (label.isEmpty() || instruction.isEmpty()) null
+                else NovexControl(label.take(12), instruction)
+            }.distinctBy { it.label }.take(6)
+            require(controls.isNotEmpty()) { "至少需要一个有效功能" }
+            _novexControls.value = controls
+            ToolExecutionResult(
+                output = "已在输入框旁注册 ${controls.size} 个世界功能。",
+                success = true,
+                toolTitle = "更新世界功能",
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(
+                output = "世界功能注册失败：${error.message ?: "格式无效"}",
+                success = false,
+                toolTitle = "更新世界功能",
             )
         }
     }
@@ -11102,6 +11136,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "present_choices" -> "提供行动选项"
         "present_system_panel" -> "整理系统资料"
         "save_checkpoint" -> "保存文游进度"
+        "register_controls" -> "更新世界功能"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

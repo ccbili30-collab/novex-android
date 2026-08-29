@@ -2322,6 +2322,7 @@ private fun SessionRow(
     val style = remember(session.category) { categoryStyle(session.category) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val timeText = remember(session.updatedAt, ctx) { relativeDate(ctx, session.updatedAt) }
+    val titleText = session.title?.takeIf { it.isNotBlank() } ?: "新文游"
     val rowHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     // [T-android-sessionrow-press-indication] The long-press path uses raw
@@ -2430,11 +2431,11 @@ private fun SessionRow(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = style.icon,
-                    contentDescription = null,
-                    tint = style.color,
-                    modifier = Modifier.size(20.dp),
+                Text(
+                    text = titleText.trim().take(1),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = style.color,
                 )
             }
             if (isActive) {
@@ -2463,7 +2464,6 @@ private fun SessionRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            val titleText = session.title ?: "New Chat"
             if (searchQuery.isNotBlank()) {
                 Text(
                     text = highlightedAnnotatedString(titleText, searchQuery),

@@ -508,6 +508,7 @@ fun ChatScreen(
     // pop back) doesn't wipe what the user has typed. Mirrors iOS
     // `AIChatView` which binds the composer against `vm.inputText`.
     val inputText by viewModel.inputText.collectAsState()
+    val novexControls by viewModel.novexControls.collectAsState()
 
     // ─── T51: Share Injection + Move-to capsule ───────────────────────
     // Drain any pending share buffered by ShareCoordinator (cold start =
@@ -716,6 +717,8 @@ fun ChatScreen(
     // sheet body (rendered later in the layout tree) share the same
     // backing state without needing fragile scope wiring.
     var showMoveSheet by remember { mutableStateOf(false) }
+    var pendingShareText by remember { mutableStateOf<String?>(null) }
+    var showNovexControls by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
     // [T-new-chat-menu-entry] Confirmation gate for "New Chat" while the
     // current session is still streaming — stopping the running task needs
@@ -3352,6 +3355,10 @@ fun ChatScreen(
                             }
                             keyboardController?.show()
                         },
+                        onShare = { snippet ->
+                            pendingShareText = snippet
+                            showMoveSheet = true
+                        },
                         onReadAloud = { snippet -> selectionReader.speak(snippet) },
                         selectionController = selectionController,
                     )
@@ -3651,6 +3658,10 @@ fun ChatScreen(
                                 onCopy = {
                                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", item.message.content))
+                                },
+                                onShare = {
+                                    pendingShareText = item.message.content
+                                    showMoveSheet = true
                                 },
                                 // T119: pass null while a turn is in flight so
                                 // the long-press menu hides Retry; once the
@@ -3969,6 +3980,10 @@ fun ChatScreen(
                         // [T-android-selection-readaloud] Speak the selection
                         // through the same screen-scoped lazy player the
                         // Compose-SelectionContainer toolbar uses.
+                        onShare = { snippet ->
+                            pendingShareText = snippet
+                            showMoveSheet = true
+                        },
                         onReadAloud = { snippet -> selectionReader.speak(snippet) },
                     ),
                 )
@@ -5176,10 +5191,26 @@ fun ChatScreen(
                                         }
                                     }
                                 }
-                                inputFieldValue = tfv
-                                if (inputText != tfv.text) {
-                                    viewModel.setInputText(tfv.text)
-                                    viewModel.updateSlashMenuState(tfv.text)
+                                // System-level corrections live on their own
+                                // first line. When the user closes a leading
+                                // 【…】 or […] instruction, insert the line break
+                                // automatically so following prose never gets
+                                // accidentally swallowed into the instruction.
+                                val systemSeparated = run {
+                                    val insertedOne = tfv.text.length == inputFieldValue.text.length + 1
+                                    val closesInstruction = tfv.text.startsWith("【") && tfv.text.endsWith("】") ||
+                                        tfv.text.startsWith("[") && tfv.text.endsWith("]")
+                                    if (insertedOne && closesInstruction) {
+                                        tfv.copy(
+                                            text = tfv.text + "\n",
+                                            selection = androidx.compose.ui.text.TextRange(tfv.text.length + 1),
+                                        )
+                                    } else tfv
+                                }
+                                inputFieldValue = systemSeparated
+                                if (inputText != systemSeparated.text) {
+                                    viewModel.setInputText(systemSeparated.text)
+                                    viewModel.updateSlashMenuState(systemSeparated.text)
                                 }
                                 // Drive the @ mention picker on every keystroke
                                 // and selection change — caret position alone
@@ -5188,8 +5219,8 @@ fun ChatScreen(
                                 // the slash-menu-priority case and any
                                 // non-mention caret state.
                                 viewModel.updateMentionMenuState(
-                                    text = tfv.text,
-                                    caret = tfv.selection.end,
+                                    text = systemSeparated.text,
+                                    caret = systemSeparated.selection.end,
                                 )
                             },
                             modifier = Modifier
@@ -5423,6 +5454,34 @@ fun ChatScreen(
                                 fontStyle = FontStyle.Italic,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+
+                        if (novexControls.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box {
+                                InputCircleButton(onClick = { showNovexControls = true }) {
+                                    Text(
+                                        "^",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                MinisMenu(
+                                    expanded = showNovexControls,
+                                    onDismissRequest = { showNovexControls = false },
+                                ) {
+                                    novexControls.forEach { control ->
+                                        DropdownMenuItem(
+                                            text = { Text(control.label) },
+                                            onClick = {
+                                                showNovexControls = false
+                                                viewModel.runNovexControl(control)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         // T187: Exit Edit Mode pill, only while editingMessageId
@@ -5962,7 +6021,7 @@ fun ChatScreen(
                     onSelect = { targetId ->
                         ChatViewModelStore.stashPendingTransfer(
                             ChatViewModelStore.PendingTransfer(
-                                inputText = inputText,
+                                inputText = pendingShareText ?: inputText,
                                 attachments = viewModel.attachments.value,
                                 // [T-android-moveto-stash-binding] Bind the stash to
                                 // the chosen target so no other session can drain it.
@@ -5972,6 +6031,7 @@ fun ChatScreen(
                         viewModel.setInputText("")
                         viewModel.clearAttachments()
                         viewModel.clearShareInjectedFlag()
+                        pendingShareText = null
                         showMoveSheet = false
                         onMoveToSession(targetId)
                     },

@@ -66,6 +66,7 @@ internal class MinisMarkdownTextToolbar(
      * chat composer's input state. Null disables the action.
      */
     private val onAddToInput: ((String) -> Unit)? = null,
+    private val onShare: ((String) -> Unit)? = null,
     /**
      * [T-android-selection-readaloud] Invoked when the user taps **Read Aloud**.
      * Receives the currently-selected substring (same clipboard round-trip as
@@ -89,6 +90,7 @@ internal class MinisMarkdownTextToolbar(
         private set
 
     internal val canAddToInput: Boolean get() = onAddToInput != null
+    internal val canShare: Boolean get() = onShare != null
 
     override val status: TextToolbarStatus
         get() = if (state.visible) TextToolbarStatus.Shown else TextToolbarStatus.Hidden
@@ -120,6 +122,11 @@ internal class MinisMarkdownTextToolbar(
      */
     internal fun addSelectionToInput() {
         val sink = onAddToInput ?: return
+        withSelection(sink)
+    }
+
+    internal fun shareSelection() {
+        val sink = onShare ?: return
         withSelection(sink)
     }
 
@@ -268,6 +275,13 @@ internal fun MinisMarkdownTextToolbarHost(toolbar: MinisMarkdownTextToolbar) {
                         label = stringResource(R.string.selection_add_to_chat_input),
                     ) {
                         toolbar.addSelectionToInput()
+                        toolbar.hide()
+                    }
+                }
+                if (toolbar.canShare) {
+                    ToolbarDivider()
+                    ToolbarButton(label = "分享到其他文游") {
+                        toolbar.shareSelection()
                         toolbar.hide()
                     }
                 }

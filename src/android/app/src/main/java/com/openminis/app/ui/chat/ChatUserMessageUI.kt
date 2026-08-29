@@ -133,6 +133,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.openminis.app.BuildConfig
@@ -287,6 +288,7 @@ internal fun UserMessageBubble(
     // user→assistant→user cadence.
     precededByUser: Boolean = false,
     onCopy: () -> Unit = {},
+    onShare: (() -> Unit)? = null,
     onRetry: (() -> Unit)? = {},
     onEdit: (() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
@@ -485,6 +487,13 @@ internal fun UserMessageBubble(
                     onClick = { showMenu = false; onCopy() },
                     leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
+                if (onShare != null) {
+                    DropdownMenuItem(
+                        text = { Text("分享到其他文游") },
+                        onClick = { showMenu = false; onShare() },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    )
+                }
                 // T119: while the model is generating, hide every action that
                 // would mutate the in-flight turn. Retry truncates history and
                 // restarts the stream, which corrupts state if it races a live
@@ -713,4 +722,3 @@ private fun ImageGalleryDialog(
 // LazyListState anchors on a stable per-item key, so only the trailing streaming item
 // changes height while earlier items remain frozen and their scroll positions
 // untouched.
-

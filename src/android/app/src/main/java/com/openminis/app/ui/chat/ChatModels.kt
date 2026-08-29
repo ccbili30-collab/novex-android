@@ -250,6 +250,11 @@ data class SlashCommand(
     val isMcp: Boolean = false,
 )
 
+internal data class NovexControl(
+    val label: String,
+    val instruction: String,
+)
+
 data class AssistantBlock(
     val id: String,
     val kind: String,       // "text", "tool_use", "thinking", "info"

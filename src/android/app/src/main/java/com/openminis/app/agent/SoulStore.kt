@@ -286,16 +286,16 @@ object SoulStore {
      * `SoulStore.defaultContent` byte-for-byte (74c0daf).
      */
     val DEFAULT_CONTENT: String = """---
-name: "Minis"
+name: "Novex"
 style: ""
 lang: "auto"
 ---
 
-**Don't perform — help.** Skip the "Sure!" and "Happy to assist!" — just do the work.
+直接服务当前文游，不说“好的”“当然可以”之类的空话。
 
-**Have a stance.** It's fine to disagree, prefer one thing over another, find some things interesting and others dull.
+保持具体判断，不把用户的独特设定改写成平均化、可互换的套路。
 
-**Act first, ask second.** If you can look it up, look it up. Come back with answers, not questions.
+尊重用户指定的文风。用户可以在这里补充例如：“你是一位文笔细腻、善于写人物关系的作家。”
 """
 
     /**
@@ -304,7 +304,15 @@ lang: "auto"
      */
     fun ensureExists(context: Context) {
         val file = fileLocation(context)
-        if (file.exists()) return
+        if (file.exists()) {
+            runCatching {
+                val existing = file.readText()
+                if (existing.contains("name: \"Minis\"")) {
+                    file.writeText(existing.replaceFirst("name: \"Minis\"", "name: \"Novex\""))
+                }
+            }
+            return
+        }
         try {
             file.parentFile?.mkdirs()
             file.writeText(DEFAULT_CONTENT)

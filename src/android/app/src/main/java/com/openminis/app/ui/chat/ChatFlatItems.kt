@@ -578,6 +578,7 @@ internal fun buildFlatChatItems(
             )
         }
         if (message.role == "user") {
+            if (message.content.startsWith("\u2063NOVEX_CONTROL:")) continue
             // [T-android-candidate-bubble-gap] Flag when the previous message
             // is also a user message so the bubble can add a separating top
             // gap — back-to-back candidate / queued sends otherwise have no

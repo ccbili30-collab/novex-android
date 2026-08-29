@@ -35,6 +35,7 @@ object AgentTools {
         add(presentChoicesDefinition())
         add(presentSystemPanelDefinition())
         add(saveCheckpointDefinition())
+        add(registerControlsDefinition())
         if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
         }
@@ -87,6 +88,22 @@ object AgentTools {
         ),
         required = listOf("name", "state"),
         propertyOrdering = listOf("name", "state"),
+    )
+
+    private fun registerControlsDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "register_controls",
+        description = "Register stable world-specific system actions in the composer's ^ menu. " +
+            "Only register actions that the current world's own rules support, such as save, load, character sheet, " +
+            "world state or inventory. Do not register ordinary narrative choices here.",
+        parameters = mapOf(
+            "controls" to AgentToolParam(
+                "string",
+                "A JSON array of 1 to 6 objects. Each object has a short label and an instruction. " +
+                    "Example: [{\"label\":\"存档\",\"instruction\":\"保存当前完整世界状态\"}].",
+            ),
+        ),
+        required = listOf("controls"),
+        propertyOrdering = listOf("controls"),
     )
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993
