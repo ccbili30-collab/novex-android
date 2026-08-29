@@ -50,6 +50,7 @@ import com.openminis.app.ui.settings.getAppearancePrefs
 import com.openminis.app.ui.settings.fontScaleForLevel
 import com.openminis.app.ui.settings.keepScreenAwakeEnabled
 import com.openminis.app.ui.theme.MinisTheme
+import com.openminis.app.noven.ui.NovenApp
 
 private const val KEY_CURRENT_CHAT_SESSION_ID = "minis.current_chat_session_id"
 
@@ -538,46 +539,10 @@ class MainActivity : ComponentActivity() {
             }
 
             MinisTheme(darkTheme = darkTheme, fontScale = fontScale) {
-                val navController = rememberNavController().also { this.navController = it }
-
-                // T166: drive `SessionActivityTracker.setPresent` /
-                // `setAbsent` from the nav back-stack so the foreground
-                // service runs the entire time the user is inside a
-                // chat, not only while a stream is in flight. Without
-                // this hook the process drops from adj=200 to adj=700
-                // the moment Home is pressed and a Pixel 4a will
-                // reclaim within a couple of minutes (see
-                // docs/parity/android-keep-alive-audit.md).
-                DisposableEffect(navController) {
-                    val job = lifecycleScope.launch {
-                        navController.currentBackStackEntryFlow.collect { entry ->
-                            val isChatRoute = entry.destination.route == Routes.CHAT
-                            val sid = entry.arguments?.getString("sessionId").takeIf { isChatRoute }
-                            val previous = currentChatSessionId
-                            if (sid != previous) {
-                                if (previous != null) {
-                                    SessionActivityTracker.setAbsent(previous)
-                                }
-                                if (sid != null) {
-                                    SessionActivityTracker.setPresent(sid)
-                                }
-                                currentChatSessionId = sid
-                            }
-                        }
-                    }
-                    onDispose { job.cancel() }
-                }
-
-                AppNavigation(
-                    chatRepository = app.chatRepository,
-                    providerRepository = app.providerRepository,
-                    envVarRepository = app.envVarRepository,
-                    skillRepository = app.skillRepository,
-                    mcpRepository = app.mcpRepository,
-                    memoryRepository = app.memoryRepository,
-                    navController = navController,
-                    initialDeepLink = launchDeepLink,
-                )
+                // Noven is mounted behind its own runtime interface. MinisApp still
+                // initializes the existing repositories and agent engine, but the
+                // product UI does not reach into the monolithic ChatViewModel.
+                NovenApp()
 
                 // T-config: root-level minis-config confirm dialog.
                 // Bound to ConfigConfirmationGate.pending — the gate

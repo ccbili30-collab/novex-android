@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis</string>
+    <string name="app_name">诺文</string>
     <string name="new_chat">新对话</string>
     <string name="settings">设置</string>
     <string name="providers">AI 服务商</string>
