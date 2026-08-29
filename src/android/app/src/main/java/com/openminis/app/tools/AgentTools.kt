@@ -33,7 +33,7 @@ object AgentTools {
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
         add(presentChoicesDefinition())
-        add(presentSystemPanelDefinition())
+        add(panelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
         if (supportsImageInput || visionGroupConfigured) {
@@ -63,18 +63,21 @@ object AgentTools {
         propertyOrdering = listOf("title", "choices"),
     )
 
-    private fun presentSystemPanelDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "present_system_panel",
-        description = "Show non-narrative world information in a quiet collapsible native panel. " +
-            "Use for character sheets, world state, rules, save summaries, maps rendered as text, " +
-            "and confirmations of system-level corrections. Never use it for ordinary story prose.",
+    private fun panelDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "panel",
+        description = "Show structured non-narrative material inside the current continuous conversation " +
+            "as one quiet collapsible panel. The same tool is used for characters, world state, saves, maps, " +
+            "rules and other material; never invent a specialized panel tool.",
         parameters = mapOf(
-            "title" to AgentToolParam("string", "Short Chinese panel title, such as 当前角色 or 存档完成."),
-            "content" to AgentToolParam("string", "Readable Markdown content for the panel."),
+            "title" to AgentToolParam("string", "Optional short panel title."),
+            "content" to AgentToolParam("string", "Optional readable text or Markdown content."),
+            "images" to AgentToolParam("string", "Optional JSON array of image URLs or minis:// resource URLs."),
+            "items" to AgentToolParam("string", "Optional JSON array of concise list items."),
+            "buttons" to AgentToolParam("string", "Optional JSON array of objects with label and value. Tapping fills the composer and never sends automatically."),
             "expanded" to AgentToolParam("boolean", "Whether the panel starts expanded. Default false."),
         ),
-        required = listOf("title", "content"),
-        propertyOrdering = listOf("title", "content", "expanded"),
+        required = emptyList(),
+        propertyOrdering = listOf("title", "content", "images", "items", "buttons", "expanded"),
     )
 
     private fun saveCheckpointDefinition(): AgentToolDefinition = AgentToolDefinition(

@@ -8051,7 +8051,9 @@ class ChatViewModel(
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
             "present_choices" -> executePresentChoicesTool(argsJson)
-            "present_system_panel" -> executePresentSystemPanelTool(argsJson)
+            "panel" -> executePanelTool(argsJson)
+            // Compatibility for tool calls already stored by earlier Novex builds.
+            "present_system_panel" -> executePanelTool(argsJson)
             "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
             "register_controls" -> executeRegisterControlsTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
@@ -8080,21 +8082,25 @@ class ChatViewModel(
         }
     }
 
-    private fun executePresentSystemPanelTool(argsJson: String): ToolExecutionResult {
+    private fun executePanelTool(argsJson: String): ToolExecutionResult {
         return runCatching {
             val args = JSONObject(argsJson)
-            require(args.optString("title").isNotBlank()) { "缺少标题" }
-            require(args.optString("content").isNotBlank()) { "缺少内容" }
+            val hasContent = listOf("title", "content", "images", "items", "buttons")
+                .any { args.optString(it).isNotBlank() }
+            require(hasContent) { "面板内容为空" }
+            listOf("images", "items", "buttons").forEach { key ->
+                args.optString(key).takeIf(String::isNotBlank)?.let(::org.json.JSONArray)
+            }
             ToolExecutionResult(
-                output = "系统资料已整理到可折叠面板。",
+                output = "内容已显示在当前会话的可折叠面板中。",
                 success = true,
-                toolTitle = args.optString("title", "系统资料"),
+                toolTitle = args.optString("title", "资料面板"),
             )
         }.getOrElse { error ->
             ToolExecutionResult(
-                output = "系统面板内容无效：${error.message ?: "请检查内容"}",
+                output = "面板内容无效：${error.message ?: "请检查内容"}",
                 success = false,
-                toolTitle = "整理系统资料",
+                toolTitle = "显示资料面板",
             )
         }
     }
@@ -11134,7 +11140,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "read_image" -> "Read Image"
         "memory_write" -> "Write Memory"
         "present_choices" -> "提供行动选项"
-        "present_system_panel" -> "整理系统资料"
+        "panel", "present_system_panel" -> "显示资料面板"
         "save_checkpoint" -> "保存文游进度"
         "register_controls" -> "更新世界功能"
         "memory_get" -> "Read Memory"

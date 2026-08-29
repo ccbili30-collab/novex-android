@@ -85,7 +85,7 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "read_image" -> "查看图片"
     "memory_write", "memory_get" -> "读取记忆"
     "present_choices" -> "提供选项"
-    "present_system_panel" -> "整理世界资料"
+    "panel", "present_system_panel" -> "显示资料面板"
     "save_checkpoint" -> "保存进度"
     "register_controls" -> "更新世界功能"
     else -> "处理内容"

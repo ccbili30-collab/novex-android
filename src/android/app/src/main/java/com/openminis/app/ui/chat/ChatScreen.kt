@@ -3799,8 +3799,11 @@ fun ChatScreen(
                                         viewModel.setInputText(choice)
                                         inputFocusRequester.requestFocus()
                                     }
-                                } else if (item.block.toolName == "present_system_panel") {
-                                    NovexSystemPanel(item.block.toolArgs)
+                                } else if (item.block.toolName == "panel" || item.block.toolName == "present_system_panel") {
+                                    NovexPanel(item.block.toolArgs) { value ->
+                                        viewModel.setInputText(value)
+                                        inputFocusRequester.requestFocus()
+                                    }
                                 } else {
                                     ToolCallPill(
                                 block = item.block,
