@@ -195,7 +195,9 @@ dependencies {
     // both platforms share one model and one set of thresholds. Carries
     // native .so payloads for ONNX Runtime and the APM — see the abiFilters
     // note in `ndk`; we ship arm64-v8a only.
-    implementation("com.github.helloooideeeeea:RealTimeCutVADLibraryForAndroid:1.0.5@aar")
+    // JitPack is intermittently unreachable from the Windows build host.
+    // Vendor the pinned MIT-licensed AAR so clean builds remain reproducible.
+    implementation(files("libs/RealTimeCutVADLibraryForAndroid-1.0.5.aar"))
 
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
