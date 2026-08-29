@@ -10,6 +10,4 @@
             android:drawable="@mipmap/ic_launcher_foreground_dark"
             android:inset="15%" />
     </foreground>
-    <!-- T-android-themed-icons: monochrome layer (see day variant). -->
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

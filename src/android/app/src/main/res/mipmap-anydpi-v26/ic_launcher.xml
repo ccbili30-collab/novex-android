@@ -6,9 +6,4 @@
             android:drawable="@mipmap/ic_launcher_foreground"
             android:inset="15%" />
     </foreground>
-    <!-- T-android-themed-icons: monochrome layer for Android 13+ Themed
-         Icons. Same silhouette shared by all 3 activity-alias adaptive
-         icons (auto / classic_light / classic_dark) — Themed Icons
-         re-tints from one shape regardless of which alias is active. -->
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>
