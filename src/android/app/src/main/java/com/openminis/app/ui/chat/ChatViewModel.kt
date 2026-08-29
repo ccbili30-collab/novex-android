@@ -8089,7 +8089,7 @@ class ChatViewModel(
                 .any { args.optString(it).isNotBlank() }
             require(hasContent) { "面板内容为空" }
             listOf("images", "items", "buttons").forEach { key ->
-                args.optString(key).takeIf(String::isNotBlank)?.let(::org.json.JSONArray)
+                args.optString(key).takeIf(String::isNotBlank)?.let { org.json.JSONArray(it) }
             }
             ToolExecutionResult(
                 output = "内容已显示在当前会话的可折叠面板中。",
