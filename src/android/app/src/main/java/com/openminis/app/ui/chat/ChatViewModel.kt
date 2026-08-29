@@ -5388,6 +5388,19 @@ class ChatViewModel(
         // an empty text + non-empty attachments still produces a valid user
         // message. Without this an image-only "look at this" send dropped.
         if (trimmed.isBlank() && _attachments.value.isEmpty()) return
+        // A substantial first prompt is usually a shared world template. Keep
+        // an immutable local copy before the model sees it so long sessions do
+        // not gradually dilute the world's original rules.
+        if (trimmed.length >= 300) {
+            runCatching {
+                val path = "/var/minis/workspace/novex/$activeSessionId/original.md"
+                val file = com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(activeSessionId, path, context)
+                if (file != null && !file.exists()) {
+                    file.parentFile?.mkdirs()
+                    file.writeText("# 世界原始模板\n\n$trimmed\n")
+                }
+            }
+        }
         if (_isCompacting.value) {
             appendSystemInfo(
                 text = "Wait for the current compact to finish before sending.",
@@ -8031,6 +8044,8 @@ class ChatViewModel(
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
             "present_choices" -> executePresentChoicesTool(argsJson)
+            "present_system_panel" -> executePresentSystemPanelTool(argsJson)
+            "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -8053,6 +8068,58 @@ class ChatViewModel(
                 output = "选项格式无效：${error.message ?: "请提供 JSON 字符串数组"}",
                 success = false,
                 toolTitle = "提供行动选项",
+            )
+        }
+    }
+
+    private fun executePresentSystemPanelTool(argsJson: String): ToolExecutionResult {
+        return runCatching {
+            val args = JSONObject(argsJson)
+            require(args.optString("title").isNotBlank()) { "缺少标题" }
+            require(args.optString("content").isNotBlank()) { "缺少内容" }
+            ToolExecutionResult(
+                output = "系统资料已整理到可折叠面板。",
+                success = true,
+                toolTitle = args.optString("title", "系统资料"),
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(
+                output = "系统面板内容无效：${error.message ?: "请检查内容"}",
+                success = false,
+                toolTitle = "整理系统资料",
+            )
+        }
+    }
+
+    private fun executeSaveCheckpointTool(argsJson: String): ToolExecutionResult {
+        return runCatching {
+            val args = JSONObject(argsJson)
+            val name = args.optString("name").trim().ifEmpty { "自动存档" }
+            val state = args.optString("state").trim()
+            require(state.isNotEmpty()) { "存档内容为空" }
+            val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]+"), "-").trim('-').take(48)
+                .ifEmpty { "checkpoint" }
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT)
+                .format(java.util.Date())
+            val path = "/var/minis/workspace/novex/$activeSessionId/checkpoints/$timestamp-$safeName.md"
+            val writeArgs = JSONObject()
+                .put("tool_title", "保存文游进度")
+                .put("path", path)
+                .put("content", "# $name\n\n$state\n")
+                .put("create_dirs", true)
+                .toString()
+            val result = FileWriteTool.execute(writeArgs, activeSessionId, context)
+            if (!result.success) return result
+            ToolExecutionResult(
+                output = "存档“$name”已保存。\n$path",
+                success = true,
+                toolTitle = "存档完成",
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(
+                output = "存档失败：${error.message ?: "请稍后重试"}",
+                success = false,
+                toolTitle = "保存文游进度",
             )
         }
     }
@@ -9091,6 +9158,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
         val base = com.openminis.app.agent.NovexSystemPrompt.build(
             sessionId = activeSessionId,
+            context = context,
             personalitySection = identitySection,
             memoryEnabled = memoryOn,
         )
@@ -11032,6 +11100,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "read_image" -> "Read Image"
         "memory_write" -> "Write Memory"
         "present_choices" -> "提供行动选项"
+        "present_system_panel" -> "整理系统资料"
+        "save_checkpoint" -> "保存文游进度"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

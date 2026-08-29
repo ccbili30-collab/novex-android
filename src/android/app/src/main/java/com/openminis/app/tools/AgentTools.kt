@@ -33,6 +33,8 @@ object AgentTools {
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
         add(presentChoicesDefinition())
+        add(presentSystemPanelDefinition())
+        add(saveCheckpointDefinition())
         if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
         }
@@ -58,6 +60,33 @@ object AgentTools {
         ),
         required = listOf("choices"),
         propertyOrdering = listOf("title", "choices"),
+    )
+
+    private fun presentSystemPanelDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "present_system_panel",
+        description = "Show non-narrative world information in a quiet collapsible native panel. " +
+            "Use for character sheets, world state, rules, save summaries, maps rendered as text, " +
+            "and confirmations of system-level corrections. Never use it for ordinary story prose.",
+        parameters = mapOf(
+            "title" to AgentToolParam("string", "Short Chinese panel title, such as 当前角色 or 存档完成."),
+            "content" to AgentToolParam("string", "Readable Markdown content for the panel."),
+            "expanded" to AgentToolParam("boolean", "Whether the panel starts expanded. Default false."),
+        ),
+        required = listOf("title", "content"),
+        propertyOrdering = listOf("title", "content", "expanded"),
+    )
+
+    private fun saveCheckpointDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "save_checkpoint",
+        description = "Persist a complete Novex checkpoint for the current story. Use when the user asks to save, " +
+            "before a rollback, or at a major turning point explicitly allowed by the world's rules. Include all " +
+            "facts needed to continue without relying on old chat context.",
+        parameters = mapOf(
+            "name" to AgentToolParam("string", "Short checkpoint name."),
+            "state" to AgentToolParam("string", "Complete Markdown snapshot: time, place, characters, relationships, inventory, world events, unresolved threads and applicable rules."),
+        ),
+        required = listOf("name", "state"),
+        propertyOrdering = listOf("name", "state"),
     )
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993

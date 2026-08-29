@@ -140,21 +140,6 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_manage_providers_subtitle),
                     onClick = onProvidersClick,
                 )
-                SettingsItem(
-                    icon = Icons.Outlined.Settings,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_model_groups),
-                    subtitle = stringResource(R.string.settings_model_groups_subtitle),
-                    onClick = onModelGroupsClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.BarChart,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_token_usage),
-                    subtitle = stringResource(R.string.settings_token_usage_subtitle),
-                    onClick = onUsageClick,
-                    showDivider = false,
-                )
             }
 
             // -- Appearance --
@@ -192,90 +177,6 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_memory),
                     subtitle = stringResource(R.string.settings_memory_subtitle),
                     onClick = onMemoryClick,
-                )
-                // [T-mcp-integration-android] MCP Integrations — directly below Memory.
-                // [T-android-mcp-icon-distinct] Dashboard (2x2 block grid) instead of
-                // Extension so MCP no longer shares the Skills row's puzzle-piece icon —
-                // the grid reads as "multiple composed blocks/servers". teal unchanged.
-                SettingsItem(
-                    icon = Icons.Outlined.Dashboard,
-                    iconColor = Color(0xFF30B0C7),
-                    title = stringResource(R.string.settings_mcp),
-                    subtitle = stringResource(R.string.settings_mcp_subtitle),
-                    onClick = onMcpClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Terminal,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.settings_env_vars),
-                    subtitle = stringResource(R.string.settings_env_vars_subtitle),
-                    onClick = onEnvVarsClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Storage --
-            SettingsSection(title = stringResource(R.string.settings_section_storage)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Inventory2,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_section_storage),
-                    subtitle = stringResource(R.string.settings_storage_subtitle),
-                    onClick = onRootfsClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Folder,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.settings_shared_folders),
-                    subtitle = stringResource(R.string.settings_shared_folders_subtitle),
-                    onClick = onSharedFoldersClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.FolderShared,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.settings_mount_external_folders),
-                    subtitle = stringResource(R.string.settings_mount_external_folders_subtitle),
-                    onClick = onMountedFoldersClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Permissions --
-            SettingsSection(title = stringResource(R.string.settings_section_permissions)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Shield,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_section_permissions),
-                    subtitle = stringResource(R.string.settings_permissions_subtitle),
-                    onClick = onPermissionsClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Background & Notifications (T50) --
-            SettingsSection(
-                title = stringResource(R.string.bg_section_header),
-                footer = stringResource(R.string.bg_section_footer),
-            ) {
-                SettingsItem(
-                    icon = Icons.Outlined.BatteryFull,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.bg_section_header),
-                    subtitle = stringResource(R.string.bg_section_subtitle),
-                    onClick = onBackgroundClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Logs --
-            SettingsSection(title = stringResource(R.string.settings_section_logs)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Description,
-                    iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_section_logs),
-                    subtitle = stringResource(R.string.settings_logs_subtitle),
-                    onClick = onLogsClick,
-                    showDivider = false,
                 )
             }
 
@@ -597,4 +498,3 @@ private fun SettingsItem(
         }
     }
 }
-

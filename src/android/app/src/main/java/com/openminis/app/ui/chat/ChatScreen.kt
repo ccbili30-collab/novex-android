@@ -3788,6 +3788,8 @@ fun ChatScreen(
                                         viewModel.setInputText(choice)
                                         inputFocusRequester.requestFocus()
                                     }
+                                } else if (item.block.toolName == "present_system_panel") {
+                                    NovexSystemPanel(item.block.toolArgs)
                                 } else {
                                     ToolCallPill(
                                 block = item.block,
