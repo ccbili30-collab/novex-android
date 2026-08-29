@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -161,6 +162,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntOffset
@@ -2677,81 +2680,107 @@ private fun OnboardingLanding(
     onSelectModels: () -> Unit,
     onStartConversation: () -> Unit,
 ) {
-    Column(
+    val uriHandler = LocalUriHandler.current
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            // Bottom padding ≈ top-bar height so the content visually centers
-            // relative to the whole screen, not just the Scaffold inner area.
-            .padding(horizontal = 32.dp)
-            .padding(bottom = 64.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .padding(horizontal = 32.dp),
     ) {
-        Icon(
-            imageVector = Icons.Default.AutoAwesome,
-            contentDescription = null,
-            modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.height(16.dp))
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.novex_logo),
+                contentDescription = stringResource(R.string.novex_logo_description),
+                modifier = Modifier.size(88.dp),
+            )
+            Spacer(Modifier.height(16.dp))
 
-        Text(
-            text = stringResource(R.string.sessionlist_welcome_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.sessionlist_welcome_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+            Text(
+                text = stringResource(R.string.sessionlist_welcome_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.sessionlist_welcome_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                SetupStepCard(
+                    number = 1,
+                    title = stringResource(R.string.sessionlist_welcome_step1_title),
+                    subtitle = if (hasProviders) {
+                        stringResource(R.string.sessionlist_welcome_step_done)
+                    } else {
+                        stringResource(R.string.sessionlist_welcome_step1_subtitle)
+                    },
+                    isDone = hasProviders,
+                    isLocked = false,
+                    onClick = { if (!hasProviders) onAddProvider() },
+                )
+
+                SetupStepCard(
+                    number = 2,
+                    title = stringResource(R.string.sessionlist_welcome_step2_title),
+                    subtitle = when {
+                        hasGroups -> stringResource(R.string.sessionlist_welcome_step_done)
+                        hasProviders -> stringResource(R.string.sessionlist_welcome_step2_subtitle)
+                        else -> stringResource(R.string.sessionlist_welcome_step2_locked)
+                    },
+                    isDone = hasGroups,
+                    isLocked = !hasProviders,
+                    onClick = { if (hasProviders && !hasGroups) onSelectModels() },
+                )
+
+                SetupStepCard(
+                    number = 3,
+                    title = stringResource(R.string.sessionlist_welcome_step3_title),
+                    subtitle = if (hasGroups) {
+                        stringResource(R.string.sessionlist_welcome_step3_subtitle)
+                    } else {
+                        stringResource(R.string.sessionlist_welcome_step3_locked)
+                    },
+                    isDone = false,
+                    isLocked = !hasGroups,
+                    onClick = { if (hasGroups) onStartConversation() },
+                )
+            }
+        }
 
         Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            SetupStepCard(
-                number = 1,
-                title = stringResource(R.string.sessionlist_welcome_step1_title),
-                subtitle = if (hasProviders) {
-                    stringResource(R.string.sessionlist_welcome_step_done)
-                } else {
-                    stringResource(R.string.sessionlist_welcome_step1_subtitle)
-                },
-                isDone = hasProviders,
-                isLocked = false,
-                onClick = { if (!hasProviders) onAddProvider() },
+            Text(
+                text = stringResource(R.string.novex_openminis_thanks),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
-
-            SetupStepCard(
-                number = 2,
-                title = stringResource(R.string.sessionlist_welcome_step2_title),
-                subtitle = when {
-                    hasGroups -> stringResource(R.string.sessionlist_welcome_step_done)
-                    hasProviders -> stringResource(R.string.sessionlist_welcome_step2_subtitle)
-                    else -> stringResource(R.string.sessionlist_welcome_step2_locked)
-                },
-                isDone = hasGroups,
-                isLocked = !hasProviders,
-                onClick = { if (hasProviders && !hasGroups) onSelectModels() },
-            )
-
-            SetupStepCard(
-                number = 3,
-                title = stringResource(R.string.sessionlist_welcome_step3_title),
-                subtitle = if (hasGroups) {
-                    stringResource(R.string.sessionlist_welcome_step3_subtitle)
-                } else {
-                    stringResource(R.string.sessionlist_welcome_step3_locked)
-                },
-                isDone = false,
-                isLocked = !hasGroups,
-                onClick = { if (hasGroups) onStartConversation() },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                MinisTextButton(
+                    onClick = { uriHandler.openUri("https://github.com/OpenMinis/OpenMinis") },
+                ) {
+                    Text(stringResource(R.string.novex_star_openminis))
+                }
+                MinisTextButton(
+                    onClick = { uriHandler.openUri("https://github.com/ccbili30-collab/novex-android") },
+                ) {
+                    Text(stringResource(R.string.novex_star_novex))
+                }
+            }
         }
     }
 }
@@ -3045,4 +3074,3 @@ private fun exportSession(
         }
     }
 }
-

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis</string>
+    <string name="app_name">Novex</string>
     <string name="new_chat">새 채팅</string>
     <string name="settings">설정</string>
     <string name="providers">AI 공급자</string>
@@ -73,7 +73,7 @@
     <string name="search_no_results">\"%1$s\"에 대한 결과가 없습니다</string>
     <string name="stop_tool">도구 중지</string>
     <string name="mic_permission_title">마이크 권한이 필요합니다</string>
-    <string name="mic_permission_message">음성 입력은 마이크 권한이 필요합니다. 설정 열기를 눌러 Minis에 권한을 부여하세요.</string>
+    <string name="mic_permission_message">음성 입력은 마이크 권한이 필요합니다. 설정 열기를 눌러 Novex에 권한을 부여하세요.</string>
     <string name="mic_permission_open_settings">설정 열기</string>
     <string name="mic_permission_cancel">취소</string>
     <string name="bg_section_header">백그라운드 및 알림</string>
@@ -82,8 +82,8 @@
     <string name="bg_service_channel_name">에이전트 상태</string>
     <string name="bg_service_channel_description">실행 중인 에이전트 세션의 상태를 표시합니다.</string>
     <string name="a11y_repair_dialog_title">접근성이 해제되었습니다</string>
-    <string name="a11y_repair_dialog_message_shizuku">Minis의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. Shizuku를 사용할 수 있으므로 설정을 열지 않고 바로 복구할 수 있습니다.</string>
-    <string name="a11y_repair_dialog_message_manual">Minis의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. 계속하려면 설정 → 접근성에서 Minis를 다시 켜세요.</string>
+    <string name="a11y_repair_dialog_message_shizuku">Novex의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. Shizuku를 사용할 수 있으므로 설정을 열지 않고 바로 복구할 수 있습니다.</string>
+    <string name="a11y_repair_dialog_message_manual">Novex의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. 계속하려면 설정 → 접근성에서 Novex를 다시 켜세요.</string>
     <string name="a11y_repair_action_repair">지금 복구</string>
     <string name="a11y_repair_action_open_settings">설정 열기</string>
     <string name="a11y_repair_cancel">나중에</string>
@@ -95,7 +95,7 @@
     <string name="a11y_repair_failed">복구 실패 — 설정에서 켜 주세요</string>
     <string name="a11y_repair_footer_shizuku">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku는 이를 직접 다시 기록할 수 있습니다.</string>
     <string name="a11y_repair_footer_manual">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku를 설치·승인하면 앞으로 한 번에 복구할 수 있습니다.</string>
-    <string name="bg_service_notification_title">Minis 에이전트 실행 중</string>
+    <string name="bg_service_notification_title">Novex 에이전트 실행 중</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">작업 완료</string>
     <string name="bg_service_notification_text_completed">%1$s | %2$s 만에 완료</string>
@@ -108,11 +108,11 @@
     <string name="battery_opt_section_footer">제외하면 Android가 작업 중에 앱을 절전 모드로 전환하지 않습니다. 이 화면으로 돌아올 때마다 다시 확인됩니다.</string>
     <string name="battery_opt_row_title">백그라운드 작업 허용</string>
     <string name="battery_opt_already_exempt">이미 허용됨</string>
-    <string name="battery_opt_request_subtitle">Minis가 중단 없이 실행되도록 허용하려면 누르세요</string>
+    <string name="battery_opt_request_subtitle">Novex가 중단 없이 실행되도록 허용하려면 누르세요</string>
     <string name="rom_autostart_section_title">자동 시작 권한</string>
-    <string name="rom_autostart_section_footer">일부 Android 스킨(%1$s)은 표준 시스템 설정 외에 자동 시작 권한이 추가로 필요합니다. 이것이 없으면 Minis는 백그라운드 진입 후 몇 분 안에 종료될 수 있습니다.</string>
+    <string name="rom_autostart_section_footer">일부 Android 스킨(%1$s)은 표준 시스템 설정 외에 자동 시작 권한이 추가로 필요합니다. 이것이 없으면 Novex는 백그라운드 진입 후 몇 분 안에 종료될 수 있습니다.</string>
     <string name="rom_autostart_row_title">자동 시작 설정 열기</string>
-    <string name="rom_autostart_row_subtitle">%1$s에서 Minis 사용</string>
+    <string name="rom_autostart_row_subtitle">%1$s에서 Novex 사용</string>
     <string name="browser_settings_ua_not_set">설정되지 않음</string>
     <!-- T135 — Settings + About i18n keys -->
     <string name="settings_back">뒤로</string>
@@ -141,7 +141,7 @@
     <string name="settings_section_logs">로그</string>
     <string name="settings_logs_subtitle">앱 로그 보기 및 내보내기</string>
     <string name="settings_section_about">정보</string>
-    <string name="settings_about_minis">Minis 정보</string>
+    <string name="settings_about_minis">Novex 정보</string>
     <string name="settings_about_subtitle">버전 및 프로젝트 정보</string>
     <string name="settings_privacy_policy">개인정보 처리방침</string>
     <string name="settings_feedback">피드백</string>
@@ -149,7 +149,7 @@
     <string name="settings_feedback_telegram">피드백 (Telegram)</string>
     <string name="settings_feedback_email">피드백 (이메일)</string>
     <string name="about_title">정보</string>
-    <string name="about_minis_tagline">Minis는 완전히 로컬에서 동작하며 완전히 프라이빗한 온디바이스 에이전트입니다.</string>
+    <string name="about_minis_tagline">Novex는 완전히 로컬에서 동작하며 완전히 프라이빗한 온디바이스 에이전트입니다.</string>
     <string name="about_links">링크</string>
     <string name="about_github_repository">GitHub 저장소</string>
     <string name="about_version_format">버전 %1$s (%2$s)</string>
@@ -205,7 +205,7 @@
     <string name="memory_file_empty">비어 있음</string>
 
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
-         Memory, Permissions, Skills, MinisSkillsBrowser, Storage, Usage,
+         Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
          T127 battery_opt_* / rom_autostart_* keys. -->
     <string name="common_cancel">취소</string>
@@ -333,9 +333,9 @@
     <string name="skill_section_installed">설치됨</string>
     <string name="skill_section_footer">Skill 은 전용 지침과 워크플로로 AI 에이전트를 확장합니다. 활성화 시 시스템 프롬프트에 로드됩니다.</string>
     <string name="skill_empty_title">설치된 Skill 없음</string>
-    <string name="skill_empty_action">+ 를 눌러 SKILL.md 를 가져오거나 Minis Skills 를 탐색하세요.</string>
+    <string name="skill_empty_action">+ 를 눌러 SKILL.md 를 가져오거나 Novex Skills 를 탐색하세요.</string>
     <string name="skill_import_modal_title">스킬 가져오기</string>
-    <string name="skill_minis_skills_modal">Minis Skills</string>
+    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">%1$s 을(를) 삭제하시겠습니까?</string>
     <string name="skill_delete_confirm_text">이 skill 과 파일이 영구적으로 제거됩니다.</string>
     <string name="skill_import_sheet_title">스킬 가져오기</string>
@@ -383,7 +383,7 @@
     <string name="skill_detail_source_file">파일 가져오기</string>
     <string name="skill_detail_source_bundled">내장</string>
     <string name="skill_detail_source_session">세션 생성</string>
-    <string name="skills_browser_title">Minis Skills</string>
+    <string name="skills_browser_title">Novex Skills</string>
     <string name="skills_browser_import_button">이것을 가져오기</string>
     <string name="skills_browser_hud_importing">가져오는 중…</string>
     <string name="skills_browser_error_not_folder">먼저 skill 폴더를 선택하세요</string>
@@ -399,8 +399,8 @@
     <string name="storage_overview_sessions">세션 파일</string>
     <string name="storage_section_sessions">세션</string>
     <string name="storage_no_sessions">세션 없음</string>
-    <string name="storage_section_minis_files">Minis 파일</string>
-    <string name="storage_no_minis_files">Minis 파일 없음</string>
+    <string name="storage_section_minis_files">Novex 파일</string>
+    <string name="storage_no_minis_files">Novex 파일 없음</string>
     <string name="storage_section_media">미디어 파일</string>
     <string name="storage_no_media_files">미디어 파일 없음</string>
     <string name="storage_clear_session_footer">이 세션에서 생성된 모든 파일을 삭제합니다. 대화 자체는 보존됩니다.</string>
@@ -471,7 +471,7 @@
     <string name="common_close">닫기</string>
     <string name="common_skip">건너뛰기</string>
     <string name="common_next">다음</string>
-    <string name="onboarding_welcome_title">Minis에 오신 것을 환영합니다</string>
+    <string name="onboarding_welcome_title">Novex에 오신 것을 환영합니다</string>
     <string name="onboarding_welcome_subtitle">터미널, 브라우저, 네이티브 장치 액세스를 갖춘 AI 에이전트입니다.</string>
     <string name="onboarding_get_started">시작하기</string>
     <string name="onboarding_provider_title">제공자 추가</string>
@@ -568,13 +568,13 @@
     <string name="browser_nav_forward">앞으로</string>
     <string name="browser_stop">정지</string>
     <string name="browser_reload">새로 고침</string>
-    <string name="browser_minis_browsing">Minis가 브라우징 중</string>
+    <string name="browser_minis_browsing">Novex가 브라우징 중</string>
     <string name="chat_typing_indicator">%1$s가 생각하는 중</string>
     <string name="read_aloud_unavailable">읽어주기 실패: 사용 가능한 음성 엔진이 없습니다. 음성 출력 설정을 확인하거나 시스템 음성 엔진을 설치하세요.</string>
     <string name="voice_panel_no_engine_title">사용 가능한 음성 인식이 없습니다</string>
-    <string name="voice_panel_no_engine_body">음성 입력에는 인식 엔진이 필요합니다. 기기의 음성 서비스를 켜거나 Minis에서 전사 제공자를 설정하세요.</string>
+    <string name="voice_panel_no_engine_body">음성 입력에는 인식 엔진이 필요합니다. 기기의 음성 서비스를 켜거나 Novex에서 전사 제공자를 설정하세요.</string>
     <string name="voice_panel_no_engine_open_system">기기 설정</string>
-    <string name="voice_panel_no_engine_open_providers">Minis 제공자</string>
+    <string name="voice_panel_no_engine_open_providers">Novex 제공자</string>
     <string name="chat_error_stream_dropped_partial">연결이 끊겼습니다. 이 답변은 불완전할 수 있습니다. 다시 시도해 주세요.</string>
     <string name="chat_input_placeholder">%1$s에게 메시지 (@로 파일 참조)</string>
     <string name="browser_takeover">제어 인계</string>
@@ -607,7 +607,7 @@
     <string name="browser_history_results">결과</string>
     <string name="browser_history_clear_dialog_title">브라우징 기록을 지우시겠습니까?</string>
     <string name="browser_history_clear_dialog_message">모든 브라우징 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</string>
-    <string name="terminal_title">Minis 셸</string>
+    <string name="terminal_title">Novex 셸</string>
     <string name="terminal_clear">지우기</string>
     <string name="terminal_show_keyboard">표시</string>
     <string name="terminal_hide_keyboard">숨기기</string>
@@ -625,7 +625,7 @@
     <string name="share_provider_json_attach">채팅 첨부 파일로 추가</string>
     <string name="share_provider_json_imported">제공자 \"%1$s\"을(를) 가져왔습니다</string>
     <string name="share_provider_json_import_failed">잘못된 제공자 구성 파일입니다</string>
-    <string name="share_open_app_failed">콘텐츠가 저장되었습니다. Minis를 자동으로 열지 못했습니다. 앱을 열어 계속하세요.</string>
+    <string name="share_open_app_failed">콘텐츠가 저장되었습니다. Novex를 자동으로 열지 못했습니다. 앱을 열어 계속하세요.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">비활성화됨</string>
     <string name="provider_detail_export">내보내기</string>
@@ -776,8 +776,8 @@
     <string name="notif_config_confirm_channel_name">구성 승인</string>
     <string name="notif_config_confirm_channel_description">앱이 백그라운드에 있는 동안 구성 변경이 승인을 기다릴 때 알립니다.</string>
     <string name="notif_config_confirm_title">⚙️ 구성 변경이 승인을 기다리는 중</string>
-    <string name="notif_config_confirm_body_single">검토가 필요한 변경이 있습니다 —— Minis를 열어 승인 또는 거부하세요.</string>
-    <string name="notif_config_confirm_body_multi">검토가 필요한 변경이 %d건 있습니다 —— Minis를 열어 승인 또는 거부하세요.</string>
+    <string name="notif_config_confirm_body_single">검토가 필요한 변경이 있습니다 —— Novex를 열어 승인 또는 거부하세요.</string>
+    <string name="notif_config_confirm_body_multi">검토가 필요한 변경이 %d건 있습니다 —— Novex를 열어 승인 또는 거부하세요.</string>
     <string name="notif_task_failed_body">작업이 오류로 종료되었습니다. 탭하여 채팅을 엽니다.</string>
 
     <!-- T182 agent loop section i18n -->
@@ -929,7 +929,7 @@
 
     <!-- Welcome / onboarding (T332) -->
     <!-- TODO translate -->
-    <string name="sessionlist_welcome_title">Minis에 오신 것을 환영합니다</string>
+    <string name="sessionlist_welcome_title">Novex에 오신 것을 환영합니다</string>
     <string name="sessionlist_welcome_subtitle">첫 온디바이스 Agent가 곧 준비됩니다.</string>
     <string name="sessionlist_welcome_step1_title">공급자 추가</string>
     <string name="sessionlist_welcome_step1_subtitle">API 키를 설정하거나 OAuth로 로그인하세요</string>
@@ -958,11 +958,11 @@
     <string name="update_error_open_releases">GitHub Releases 열기</string>
     <!-- T-android-crash-freq-share -->
     <string name="crash_freq_dialog_title">여러 번의 충돌 감지</string>
-    <string name="crash_freq_dialog_message">Minis가 지난 1시간 동안 여러 번 충돌했습니다. 문제 해결을 위해 충돌 로그를 공유하시겠습니까?</string>
+    <string name="crash_freq_dialog_message">Novex가 지난 1시간 동안 여러 번 충돌했습니다. 문제 해결을 위해 충돌 로그를 공유하시겠습니까?</string>
     <string name="crash_freq_dialog_share">로그 공유</string>
     <string name="crash_freq_dialog_dismiss">나중에</string>
-    <string name="crash_safe_mode_restart_needed">복구를 완료하려면 Minis를 다시 시작해야 합니다. 앱 아이콘을 다시 탭해 주세요.</string>
-    <string name="crash_freq_email_subject">Minis 충돌 보고서 %1$s</string>
+    <string name="crash_safe_mode_restart_needed">복구를 완료하려면 Novex를 다시 시작해야 합니다. 앱 아이콘을 다시 탭해 주세요.</string>
+    <string name="crash_freq_email_subject">Novex 충돌 보고서 %1$s</string>
     <string name="crash_freq_share_chooser">충돌 로그 보내기</string>
     <string name="overlay_completion_completed">완료됨</string>
     <string name="overlay_completion_failed">실패</string>
@@ -1061,7 +1061,7 @@
     <string name="voice_bare_link">링크</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">음성 교정을 개선할까요?</string>
-    <string name="voice_correction_consent_body">Minis는 사용자의 전사 수정(원문 → 교정)과 적용된 AI 교정을 기기 내 데이터베이스에 저장해 이후 음성 교정을 더 정확하게 만듭니다. 업로드되는 항목은 없습니다. 설정에서 언제든 변경하거나 삭제할 수 있습니다.</string>
+    <string name="voice_correction_consent_body">Novex는 사용자의 전사 수정(원문 → 교정)과 적용된 AI 교정을 기기 내 데이터베이스에 저장해 이후 음성 교정을 더 정확하게 만듭니다. 업로드되는 항목은 없습니다. 설정에서 언제든 변경하거나 삭제할 수 있습니다.</string>
     <string name="voice_correction_consent_enable">사용</string>
     <string name="voice_correction_consent_not_now">나중에</string>
     <string name="voice_correction_button_a11y">AI로 전사 교정</string>
@@ -1076,7 +1076,7 @@
     <string name="voice_provider_system">시스템</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — Kimi 계정으로 로그인</string>
     <string name="kimi_login_title">Kimi Code로 로그인</string>
-    <string name="kimi_login_instructions">인증 페이지를 열고 이 코드를 입력하여 Minis를 승인하세요:</string>
+    <string name="kimi_login_instructions">인증 페이지를 열고 이 코드를 입력하여 Novex를 승인하세요:</string>
     <string name="kimi_login_copy_code">코드 복사</string>
     <string name="kimi_login_open_verification">인증 페이지 열기</string>
     <string name="kimi_login_waiting">승인 대기 중…</string>
@@ -1089,7 +1089,7 @@
     <string name="shizuku_install_btn_sui">Sui 설치</string>
     <string name="shizuku_install_btn_sui_subtitle">RikkaApps · 루팅된 기기 (Magisk/KernelSU) 용 · 앱 불필요, 재부팅 후에도 유지</string>
     <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui가 실행 중입니다. "Minis 승인"을 눌러 접근을 허용하세요 — 확인 대화상자는 Sui가 직접 표시합니다. 따로 열어야 할 관리자 앱은 없습니다.</string>
+    <string name="shizuku_grant_footer_sui">Sui가 실행 중입니다. "Novex 승인"을 눌러 접근을 허용하세요 — 확인 대화상자는 Sui가 직접 표시합니다. 따로 열어야 할 관리자 앱은 없습니다.</string>
     <string name="shizuku_install_footer">Shizuku (RikkaApps), AXManager (Axeron), Sui (RikkaApps) 중 하나를 설치하세요 — 세 가지 모두 동일한 프로토콜을 사용하며 서로 교체 가능합니다. Shizuku와 AXManager는 무선 ADB로 활성화하는 일반 앱입니다. Sui는 이미 루팅된 기기용으로, Magisk/KernelSU 모듈로 설치되며 앱이 필요 없고 재부팅 후에도 활성 상태를 유지합니다. KernelSU 또는 APatch에서는 Sui에 추가로 Zygisk 구현(Zygisk Next / ReZygisk / NeoZygisk)이 필요합니다 — 없으면 Sui가 로드되지 않습니다. 하나를 설치한 뒤 여기로 돌아오세요.</string>
     <string name="shizuku_state_not_installed_subtitle">Shizuku, AXManager 또는 Sui 중 하나를 설치하세요.</string>
 </resources>

@@ -56,7 +56,7 @@
     <string name="common_close">關閉</string>
     <string name="common_skip">跳過</string>
     <string name="common_next">下一步</string>
-    <string name="onboarding_welcome_title">歡迎使用 Minis</string>
+    <string name="onboarding_welcome_title">歡迎使用 Novex</string>
     <string name="onboarding_welcome_subtitle">集終端、瀏覽器與裝置本機存取於一身的 AI 助手。</string>
     <string name="onboarding_get_started">開始使用</string>
     <string name="onboarding_provider_title">新增提供方</string>
@@ -176,7 +176,7 @@
     <string name="browser_nav_forward">前進</string>
     <string name="browser_stop">停止</string>
     <string name="browser_reload">重新載入</string>
-    <string name="browser_minis_browsing">Minis 正在瀏覽</string>
+    <string name="browser_minis_browsing">Novex 正在瀏覽</string>
     <string name="chat_typing_indicator">%1$s 正在思考</string>
     <string name="read_aloud_unavailable">朗讀失敗：沒有可用的語音引擎。請檢查語音輸出設定，或安裝系統語音引擎。</string>
     <string name="voice_panel_collapse">收合語音面板</string>
@@ -207,9 +207,9 @@
     <string name="voice_input_picker_group_models">%1$d 個模型</string>
     <string name="voice_input_picker_group_footer">選擇一個分組，其中具備語音能力的模型將驅動該方向。</string>
     <string name="voice_panel_no_engine_title">目前沒有可用的語音辨識</string>
-    <string name="voice_panel_no_engine_body">語音輸入需要辨識引擎。請開啟裝置的語音服務，或在 Minis 中設定轉錄服務商。</string>
+    <string name="voice_panel_no_engine_body">語音輸入需要辨識引擎。請開啟裝置的語音服務，或在 Novex 中設定轉錄服務商。</string>
     <string name="voice_panel_no_engine_open_system">裝置設定</string>
-    <string name="voice_panel_no_engine_open_providers">Minis 服務商</string>
+    <string name="voice_panel_no_engine_open_providers">Novex 服務商</string>
     <string name="chat_error_stream_dropped_partial">連線中斷，此回覆可能不完整。點擊重試以繼續。</string>
     <string name="chat_input_placeholder">傳訊息給 %1$s（@ 提及檔案）</string>
     <string name="browser_takeover">接管</string>
@@ -242,7 +242,7 @@
     <string name="browser_history_results">結果</string>
     <string name="browser_history_clear_dialog_title">清除瀏覽紀錄？</string>
     <string name="browser_history_clear_dialog_message">這將刪除所有瀏覽紀錄。此操作無法復原。</string>
-    <string name="terminal_title">Minis Shell</string>
+    <string name="terminal_title">Novex Shell</string>
     <string name="terminal_clear">清屏</string>
     <string name="terminal_show_keyboard">顯示</string>
     <string name="terminal_hide_keyboard">隱藏</string>
@@ -260,7 +260,7 @@
     <string name="share_provider_json_attach">作為聊天附件加入</string>
     <string name="share_provider_json_imported">已匯入服務商「%1$s」</string>
     <string name="share_provider_json_import_failed">無效的服務商設定檔</string>
-    <string name="share_open_app_failed">內容已儲存。無法自動開啟 Minis，請手動開啟應用程式繼續。</string>
+    <string name="share_open_app_failed">內容已儲存。無法自動開啟 Novex，請手動開啟應用程式繼續。</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">已停用</string>
     <string name="provider_detail_export">導出</string>
@@ -586,7 +586,7 @@
     <string name="logs_config_time_yesterday">昨天</string>
 
     <!-- Welcome / onboarding (T332) -->
-    <string name="sessionlist_welcome_title">歡迎使用 Minis</string>
+    <string name="sessionlist_welcome_title">歡迎使用 Novex</string>
     <string name="sessionlist_welcome_subtitle">你的第一個端側 Agent 即將就緒。</string>
     <string name="overlay_completion_completed">執行完成</string>
     <string name="overlay_completion_failed">執行失敗</string>
@@ -650,11 +650,11 @@
     <string name="update_error_open_releases">開啟 GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
     <string name="crash_freq_dialog_title">偵測到多次崩潰</string>
-    <string name="crash_freq_dialog_message">Minis 在過去 1 小時內多次崩潰。是否分享崩潰日誌以協助修復？</string>
+    <string name="crash_freq_dialog_message">Novex 在過去 1 小時內多次崩潰。是否分享崩潰日誌以協助修復？</string>
     <string name="crash_freq_dialog_share">分享日誌</string>
     <string name="crash_freq_dialog_dismiss">暫不分享</string>
-    <string name="crash_safe_mode_restart_needed">Minis 需要重新啟動以完成復原，請重新點擊應用程式圖示。</string>
-    <string name="crash_freq_email_subject">Minis 崩潰報告 %1$s</string>
+    <string name="crash_safe_mode_restart_needed">Novex 需要重新啟動以完成復原，請重新點擊應用程式圖示。</string>
+    <string name="crash_freq_email_subject">Novex 崩潰報告 %1$s</string>
     <string name="crash_freq_share_chooser">傳送崩潰日誌</string>
     <string name="image_action_copy">複製</string>
     <string name="image_action_share">分享</string>
@@ -742,7 +742,7 @@
     <string name="system_permissions_a11y_oem_header">服務總是被終止？</string>
     <string name="system_permissions_a11y_oem_footer">%1$s 可能會提示「此服務出現故障」並在背景停止無障礙服務。請將本應用加入自啟動白名單，並取消省電限制，使其保持連線。</string>
     <string name="system_permissions_a11y_oem_autostart">加入自啟動白名單</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">開啟自啟動管理並啟用 Minis</string>
+    <string name="system_permissions_a11y_oem_autostart_sub">開啟自啟動管理並啟用 Novex</string>
     <string name="system_permissions_a11y_oem_battery">取消背景 / 省電限制</string>
     <string name="system_permissions_a11y_oem_battery_sub">將耗電管理設為「無限制」</string>
     <string name="error_empty_response_generic">模型回傳了空回應。請重試或切換模型。</string>
@@ -758,7 +758,7 @@
     <string name="voice_bare_link">連結</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">改進語音校正？</string>
-    <string name="voice_correction_consent_body">Minis 可以把你對轉錄文字的修改（原文 → 修正）以及已採用的 AI 校正儲存到本機資料庫，讓之後的語音校正更準確。不會上傳任何內容。你可以隨時在設定中變更或清除這些資料。</string>
+    <string name="voice_correction_consent_body">Novex 可以把你對轉錄文字的修改（原文 → 修正）以及已採用的 AI 校正儲存到本機資料庫，讓之後的語音校正更準確。不會上傳任何內容。你可以隨時在設定中變更或清除這些資料。</string>
     <string name="voice_correction_consent_enable">啟用</string>
     <string name="voice_correction_consent_not_now">暫不</string>
     <string name="voice_correction_button_a11y">用 AI 修正轉錄文字</string>
@@ -773,7 +773,7 @@
     <string name="voice_provider_system">系統</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — 使用 Kimi 帳號登入</string>
     <string name="kimi_login_title">使用 Kimi Code 登入</string>
-    <string name="kimi_login_instructions">開啟驗證頁面並輸入以下代碼以授權 Minis:</string>
+    <string name="kimi_login_instructions">開啟驗證頁面並輸入以下代碼以授權 Novex:</string>
     <string name="kimi_login_copy_code">複製代碼</string>
     <string name="kimi_login_open_verification">開啟驗證頁面</string>
     <string name="kimi_login_waiting">等待授權中…</string>
@@ -786,7 +786,7 @@
     <string name="shizuku_install_btn_sui">安裝 Sui</string>
     <string name="shizuku_install_btn_sui_subtitle">RikkaApps · 適用於已 root 裝置(Magisk/KernelSU)· 無需 App,重啟後依然生效</string>
     <string name="shizuku_ready_subtitle_sui">Sui(root)· 版本=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui 正在執行。點擊「授權 Minis」以授予存取權限 —— 確認對話框由 Sui 自己彈出,沒有單獨的管理器 App 需要開啟。</string>
+    <string name="shizuku_grant_footer_sui">Sui 正在執行。點擊「授權 Novex」以授予存取權限 —— 確認對話框由 Sui 自己彈出,沒有單獨的管理器 App 需要開啟。</string>
     <string name="shizuku_install_footer">安裝 Shizuku(RikkaApps)、AXManager(Axeron)或 Sui(RikkaApps)其中任一個 —— 三者實作同一套協定,可以互換。Shizuku 與 AXManager 是一般 App,透過無線 ADB 啟用。Sui 針對已經 root 的裝置:它以 Magisk/KernelSU 模組的形式安裝,無需 App,且重啟後依然保持生效。在 KernelSU 或 APatch 上,Sui 還需要額外的 Zygisk 實作(Zygisk Next / ReZygisk / NeoZygisk)—— 沒有它 Sui 不會載入。安裝其中一個後返回此頁。</string>
     <string name="shizuku_state_not_installed_subtitle">安裝 Shizuku、AXManager 或 Sui —— 任意一個即可。</string>
     <string name="group_move_to">移入分組</string>

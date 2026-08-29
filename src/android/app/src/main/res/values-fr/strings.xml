@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis</string>
+    <string name="app_name">Novex</string>
     <string name="new_chat">Nouvelle conversation</string>
     <string name="settings">Réglages</string>
     <string name="providers">Fournisseurs AI</string>
@@ -73,7 +73,7 @@
     <string name="search_no_results">Aucun résultat pour « %1$s »</string>
     <string name="stop_tool">Arrêter l\'outil</string>
     <string name="mic_permission_title">Autorisation du microphone requise</string>
-    <string name="mic_permission_message">L\'entrée vocale nécessite l\'autorisation du microphone. Appuyez sur Ouvrir les paramètres pour l\'accorder à Minis.</string>
+    <string name="mic_permission_message">L\'entrée vocale nécessite l\'autorisation du microphone. Appuyez sur Ouvrir les paramètres pour l\'accorder à Novex.</string>
     <string name="mic_permission_open_settings">Ouvrir les paramètres</string>
     <string name="mic_permission_cancel">Annuler</string>
     <string name="bg_section_header">Arrière-plan et notifications</string>
@@ -82,8 +82,8 @@
     <string name="bg_service_channel_name">État de l\'agent</string>
     <string name="bg_service_channel_description">Affiche l\'état des sessions d\'agent en cours.</string>
     <string name="a11y_repair_dialog_title">Accessibilité désactivée</string>
-    <string name="a11y_repair_dialog_message_shizuku">Minis a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Shizuku est disponible et peut la restaurer immédiatement, sans ouvrir les Réglages.</string>
-    <string name="a11y_repair_dialog_message_manual">Minis a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Réactivez Minis dans Réglages → Accessibilité pour continuer.</string>
+    <string name="a11y_repair_dialog_message_shizuku">Novex a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Shizuku est disponible et peut la restaurer immédiatement, sans ouvrir les Réglages.</string>
+    <string name="a11y_repair_dialog_message_manual">Novex a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Réactivez Novex dans Réglages → Accessibilité pour continuer.</string>
     <string name="a11y_repair_action_repair">Réparer maintenant</string>
     <string name="a11y_repair_action_open_settings">Ouvrir les Réglages</string>
     <string name="a11y_repair_cancel">Plus tard</string>
@@ -95,7 +95,7 @@
     <string name="a11y_repair_failed">Échec de la réparation — activez-la dans les Réglages</string>
     <string name="a11y_repair_footer_shizuku">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Shizuku peut la réécrire directement.</string>
     <string name="a11y_repair_footer_manual">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Installez et autorisez Shizuku pour réparer en un geste à l’avenir.</string>
-    <string name="bg_service_notification_title">Minis Agent actif</string>
+    <string name="bg_service_notification_title">Novex Agent actif</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">Tâche terminée</string>
     <string name="bg_service_notification_text_completed">%1$s | Terminé en %2$s</string>
@@ -108,11 +108,11 @@
     <string name="battery_opt_section_footer">Une fois exemptée, Android ne mettra pas l\'application en veille pendant une tâche. Revérifié à chaque retour sur cet écran.</string>
     <string name="battery_opt_row_title">Autoriser le travail en arrière-plan</string>
     <string name="battery_opt_already_exempt">Déjà autorisé</string>
-    <string name="battery_opt_request_subtitle">Appuyez pour permettre à Minis de fonctionner sans interruption</string>
+    <string name="battery_opt_request_subtitle">Appuyez pour permettre à Novex de fonctionner sans interruption</string>
     <string name="rom_autostart_section_title">Autorisation de démarrage automatique</string>
-    <string name="rom_autostart_section_footer">Certaines surcouches Android (%1$s) requièrent une autorisation de démarrage automatique en plus des réglages système standards. Sans elle, Minis peut être arrêtée quelques minutes après être passée en arrière-plan.</string>
+    <string name="rom_autostart_section_footer">Certaines surcouches Android (%1$s) requièrent une autorisation de démarrage automatique en plus des réglages système standards. Sans elle, Novex peut être arrêtée quelques minutes après être passée en arrière-plan.</string>
     <string name="rom_autostart_row_title">Ouvrir les réglages de démarrage auto</string>
-    <string name="rom_autostart_row_subtitle">Activer Minis sur %1$s</string>
+    <string name="rom_autostart_row_subtitle">Activer Novex sur %1$s</string>
     <string name="browser_settings_ua_not_set">Non défini</string>
     <!-- T135 — Settings + About i18n keys -->
     <string name="settings_back">Retour</string>
@@ -141,7 +141,7 @@
     <string name="settings_section_logs">Journaux</string>
     <string name="settings_logs_subtitle">Voir et exporter les journaux de l\'application</string>
     <string name="settings_section_about">À propos</string>
-    <string name="settings_about_minis">À propos de Minis</string>
+    <string name="settings_about_minis">À propos de Novex</string>
     <string name="settings_about_subtitle">Version et informations sur le projet</string>
     <string name="settings_privacy_policy">Politique de confidentialité</string>
     <string name="settings_feedback">Commentaires</string>
@@ -149,7 +149,7 @@
     <string name="settings_feedback_telegram">Retour (Telegram)</string>
     <string name="settings_feedback_email">Retour (e-mail)</string>
     <string name="about_title">À propos</string>
-    <string name="about_minis_tagline">Minis est votre agent on-device entièrement local et entièrement privé.</string>
+    <string name="about_minis_tagline">Novex est votre agent on-device entièrement local et entièrement privé.</string>
     <string name="about_links">Liens</string>
     <string name="about_github_repository">Dépôt GitHub</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
@@ -205,7 +205,7 @@
     <string name="memory_file_empty">Vide</string>
 
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
-         Memory, Permissions, Skills, MinisSkillsBrowser, Storage, Usage,
+         Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
          T127 battery_opt_* / rom_autostart_* keys. -->
     <string name="common_cancel">Annuler</string>
@@ -333,9 +333,9 @@
     <string name="skill_section_installed">Installé</string>
     <string name="skill_section_footer">Les Skills étendent l\'agent IA avec des instructions et des workflows spécialisés. Ils sont chargés dans le prompt système lorsqu\'ils sont activés.</string>
     <string name="skill_empty_title">Aucun Skill installé</string>
-    <string name="skill_empty_action">Appuyez sur + pour importer un SKILL.md ou parcourir Minis Skills.</string>
+    <string name="skill_empty_action">Appuyez sur + pour importer un SKILL.md ou parcourir Novex Skills.</string>
     <string name="skill_import_modal_title">Importer un skill</string>
-    <string name="skill_minis_skills_modal">Minis Skills</string>
+    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">Supprimer %1$s ?</string>
     <string name="skill_delete_confirm_text">Cela supprimera définitivement le skill et ses fichiers.</string>
     <string name="skill_import_sheet_title">Importer un skill</string>
@@ -383,7 +383,7 @@
     <string name="skill_detail_source_file">Import de fichier</string>
     <string name="skill_detail_source_bundled">Intégré</string>
     <string name="skill_detail_source_session">Créé en session</string>
-    <string name="skills_browser_title">Minis Skills</string>
+    <string name="skills_browser_title">Novex Skills</string>
     <string name="skills_browser_import_button">Importer ceci</string>
     <string name="skills_browser_hud_importing">Importation…</string>
     <string name="skills_browser_error_not_folder">Sélectionnez d\'abord un dossier skill</string>
@@ -399,8 +399,8 @@
     <string name="storage_overview_sessions">Fichiers de session</string>
     <string name="storage_section_sessions">Sessions</string>
     <string name="storage_no_sessions">Aucune session</string>
-    <string name="storage_section_minis_files">Fichiers Minis</string>
-    <string name="storage_no_minis_files">Aucun fichier Minis</string>
+    <string name="storage_section_minis_files">Fichiers Novex</string>
+    <string name="storage_no_minis_files">Aucun fichier Novex</string>
     <string name="storage_section_media">Fichiers multimédias</string>
     <string name="storage_no_media_files">Aucun fichier multimédia</string>
     <string name="storage_clear_session_footer">Supprime tous les fichiers générés par cette session. La conversation elle-même sera conservée.</string>
@@ -471,7 +471,7 @@
     <string name="common_close">Fermer</string>
     <string name="common_skip">Passer</string>
     <string name="common_next">Suivant</string>
-    <string name="onboarding_welcome_title">Bienvenue dans Minis</string>
+    <string name="onboarding_welcome_title">Bienvenue dans Novex</string>
     <string name="onboarding_welcome_subtitle">Votre agent IA avec terminal, navigateur et accès natif à l\'appareil.</string>
     <string name="onboarding_get_started">Commencer</string>
     <string name="onboarding_provider_title">Ajouter un fournisseur</string>
@@ -506,7 +506,7 @@
     <string name="share_provider_json_attach">Ajouter en pièce jointe</string>
     <string name="share_provider_json_imported">Fournisseur \"%1$s\" importé</string>
     <string name="share_provider_json_import_failed">Fichier de configuration de fournisseur invalide</string>
-    <string name="share_open_app_failed">Contenu enregistré. Impossible d\'ouvrir Minis automatiquement — ouvrez l\'application pour continuer.</string>
+    <string name="share_open_app_failed">Contenu enregistré. Impossible d\'ouvrir Novex automatiquement — ouvrez l\'application pour continuer.</string>
     <string name="provider_list_api_key">Clé API</string>
     <string name="provider_list_disabled">Désactivé</string>
     <string name="provider_detail_export">Exporter</string>
@@ -657,8 +657,8 @@
     <string name="notif_config_confirm_channel_name">Approbations de configuration</string>
     <string name="notif_config_confirm_channel_description">Avertit lorsqu\'une modification de configuration attend votre approbation pendant que l\'application est en arrière-plan.</string>
     <string name="notif_config_confirm_title">⚙️ Modification de configuration en attente d\'approbation</string>
-    <string name="notif_config_confirm_body_single">Une modification nécessite votre examen — ouvrez Minis pour approuver ou refuser.</string>
-    <string name="notif_config_confirm_body_multi">%d modifications nécessitent votre examen — ouvrez Minis pour approuver ou refuser.</string>
+    <string name="notif_config_confirm_body_single">Une modification nécessite votre examen — ouvrez Novex pour approuver ou refuser.</string>
+    <string name="notif_config_confirm_body_multi">%d modifications nécessitent votre examen — ouvrez Novex pour approuver ou refuser.</string>
     <string name="notif_task_failed_body">La tâche s\'est terminée par une erreur. Appuyez pour ouvrir le chat.</string>
 
     <!-- T182 agent loop section i18n -->
@@ -815,7 +815,7 @@
 
     <!-- Welcome / onboarding (T332) -->
     <!-- TODO translate -->
-    <string name="sessionlist_welcome_title">Bienvenue sur Minis</string>
+    <string name="sessionlist_welcome_title">Bienvenue sur Novex</string>
     <string name="sessionlist_welcome_subtitle">Votre premier agent On-Device est presque prêt.</string>
     <string name="sessionlist_welcome_step1_title">Ajouter un fournisseur</string>
     <string name="sessionlist_welcome_step1_subtitle">Configurez une clé API ou connectez-vous via OAuth</string>
@@ -841,9 +841,9 @@
     <string name="chat_typing_indicator">%1$s réfléchit</string>
     <string name="read_aloud_unavailable">Lecture à voix haute impossible : aucun moteur vocal disponible. Vérifiez les réglages de sortie vocale ou installez un moteur de synthèse système.</string>
     <string name="voice_panel_no_engine_title">Aucune reconnaissance vocale disponible</string>
-    <string name="voice_panel_no_engine_body">La saisie vocale nécessite un moteur de reconnaissance. Activez le service vocal de votre appareil ou configurez un fournisseur de transcription dans Minis.</string>
+    <string name="voice_panel_no_engine_body">La saisie vocale nécessite un moteur de reconnaissance. Activez le service vocal de votre appareil ou configurez un fournisseur de transcription dans Novex.</string>
     <string name="voice_panel_no_engine_open_system">Réglages de l\'appareil</string>
-    <string name="voice_panel_no_engine_open_providers">Fournisseurs Minis</string>
+    <string name="voice_panel_no_engine_open_providers">Fournisseurs Novex</string>
     <string name="chat_error_stream_dropped_partial">La connexion a été interrompue — cette réponse est peut-être incomplète. Appuyez sur Réessayer pour continuer.</string>
     <string name="chat_input_placeholder">Message à %1$s (@ pour mentionner des fichiers)</string>
     <!-- T-android-update-check-403-hint — friendly update-check failure hints -->
@@ -852,11 +852,11 @@
     <string name="update_error_open_releases">Ouvrir GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
     <string name="crash_freq_dialog_title">Plusieurs plantages détectés</string>
-    <string name="crash_freq_dialog_message">Minis a planté plusieurs fois durant la dernière heure. Partager les journaux de plantage pour aider à résoudre le problème ?</string>
+    <string name="crash_freq_dialog_message">Novex a planté plusieurs fois durant la dernière heure. Partager les journaux de plantage pour aider à résoudre le problème ?</string>
     <string name="crash_freq_dialog_share">Partager les journaux</string>
     <string name="crash_freq_dialog_dismiss">Pas maintenant</string>
-    <string name="crash_safe_mode_restart_needed">Minis doit redémarrer pour terminer la récupération. Veuillez appuyer à nouveau sur l\'icône de l\'application.</string>
-    <string name="crash_freq_email_subject">Rapport de plantage Minis %1$s</string>
+    <string name="crash_safe_mode_restart_needed">Novex doit redémarrer pour terminer la récupération. Veuillez appuyer à nouveau sur l\'icône de l\'application.</string>
+    <string name="crash_freq_email_subject">Rapport de plantage Novex %1$s</string>
     <string name="crash_freq_share_chooser">Envoyer les journaux de plantage</string>
     <string name="image_action_copy">Copier</string>
     <string name="image_action_share">Partager</string>
@@ -952,7 +952,7 @@
     <string name="voice_bare_link">lien</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">Améliorer les corrections vocales ?</string>
-    <string name="voice_correction_consent_body">Minis peut enregistrer vos corrections de transcription (original → corrigé) et les corrections IA acceptées dans une base de données locale sur l\'appareil afin d\'améliorer les futures corrections vocales. Rien n\'est envoyé en ligne. Vous pouvez modifier ce choix ou effacer les données à tout moment dans les Réglages.</string>
+    <string name="voice_correction_consent_body">Novex peut enregistrer vos corrections de transcription (original → corrigé) et les corrections IA acceptées dans une base de données locale sur l\'appareil afin d\'améliorer les futures corrections vocales. Rien n\'est envoyé en ligne. Vous pouvez modifier ce choix ou effacer les données à tout moment dans les Réglages.</string>
     <string name="voice_correction_consent_enable">Activer</string>
     <string name="voice_correction_consent_not_now">Plus tard</string>
     <string name="voice_correction_button_a11y">Corriger la transcription avec l\'IA</string>
@@ -967,7 +967,7 @@
     <string name="voice_provider_system">Système</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — connectez-vous avec votre compte Kimi</string>
     <string name="kimi_login_title">Se connecter avec Kimi Code</string>
-    <string name="kimi_login_instructions">Ouvrez la page de vérification et saisissez ce code pour autoriser Minis :</string>
+    <string name="kimi_login_instructions">Ouvrez la page de vérification et saisissez ce code pour autoriser Novex :</string>
     <string name="kimi_login_copy_code">Copier le code</string>
     <string name="kimi_login_open_verification">Ouvrir la page de vérification</string>
     <string name="kimi_login_waiting">En attente d\'autorisation…</string>
@@ -980,7 +980,7 @@
     <string name="shizuku_install_btn_sui">Installer Sui</string>
     <string name="shizuku_install_btn_sui_subtitle">RikkaApps · pour appareils rootés (Magisk/KernelSU) · sans app, survit aux redémarrages</string>
     <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui est actif. Touchez « Autoriser Minis » pour accorder l\'accès — Sui affichera lui-même la boîte de dialogue. Il n\'y a pas d\'app de gestion distincte à ouvrir.</string>
+    <string name="shizuku_grant_footer_sui">Sui est actif. Touchez « Autoriser Novex » pour accorder l\'accès — Sui affichera lui-même la boîte de dialogue. Il n\'y a pas d\'app de gestion distincte à ouvrir.</string>
     <string name="shizuku_install_footer">Installez au choix Shizuku (RikkaApps), AXManager (Axeron) ou Sui (RikkaApps) — les trois utilisent le même protocole et sont interchangeables. Shizuku et AXManager sont des applications activées via ADB sans fil. Sui s\'adresse aux appareils déjà rootés : il s\'installe comme module Magisk/KernelSU, ne nécessite aucune app et reste actif après redémarrage. Sur KernelSU ou APatch, Sui exige en plus une implémentation Zygisk (Zygisk Next / ReZygisk / NeoZygisk) — sans elle, Sui ne se charge pas. Installez-en un, puis revenez ici.</string>
     <string name="shizuku_state_not_installed_subtitle">Installez Shizuku, AXManager ou Sui — l\'un des trois suffit.</string>
 </resources>

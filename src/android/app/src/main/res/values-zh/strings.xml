@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">诺文</string>
+    <string name="app_name">Novex</string>
     <string name="new_chat">新对话</string>
     <string name="settings">设置</string>
     <string name="providers">AI 服务商</string>
@@ -73,7 +73,7 @@
     <string name="search_no_results">未找到 \"%1$s\" 的结果</string>
     <string name="stop_tool">停止工具</string>
     <string name="mic_permission_title">需要麦克风权限</string>
-    <string name="mic_permission_message">语音输入需要麦克风权限。点击「打开设置」以为 Minis 授权。</string>
+    <string name="mic_permission_message">语音输入需要麦克风权限。点击「打开设置」以为 Novex 授权。</string>
     <string name="mic_permission_open_settings">打开设置</string>
     <string name="mic_permission_cancel">取消</string>
     <string name="bg_section_header">后台与通知</string>
@@ -85,15 +85,15 @@
     <string name="bg_overlay_nudge_channel_name">后台浮窗权限</string>
     <string name="bg_overlay_nudge_channel_description">提醒你授予系统悬浮窗权限，让后台任务浮窗可以正常显示。</string>
     <string name="bg_overlay_nudge_title">启用后台浮窗</string>
-    <string name="bg_overlay_nudge_body">需要授予"显示在其他应用上层"权限，切换到其他应用时 Minis 才能显示当前工具。点击进入授权页面。</string>
+    <string name="bg_overlay_nudge_body">需要授予"显示在其他应用上层"权限，切换到其他应用时 Novex 才能显示当前工具。点击进入授权页面。</string>
     <string name="overlay_dismiss">关闭</string>
     <string name="overlay_completion_completed">执行完成</string>
     <string name="overlay_completion_failed">执行失败</string>
     <string name="overlay_completion_cancelled">已取消</string>
     <string name="overlay_completion_timeout">已超时</string>
     <string name="a11y_repair_dialog_title">无障碍服务已关闭</string>
-    <string name="a11y_repair_dialog_message_shizuku">Minis 的无障碍权限已丢失——强行停止应用后会出现这种情况。检测到 Shizuku 可用，可以立即恢复，无需前往系统设置。</string>
-    <string name="a11y_repair_dialog_message_manual">Minis 的无障碍权限已丢失——强行停止应用后会出现这种情况。请在「设置 → 无障碍」中重新开启 Minis。</string>
+    <string name="a11y_repair_dialog_message_shizuku">Novex 的无障碍权限已丢失——强行停止应用后会出现这种情况。检测到 Shizuku 可用，可以立即恢复，无需前往系统设置。</string>
+    <string name="a11y_repair_dialog_message_manual">Novex 的无障碍权限已丢失——强行停止应用后会出现这种情况。请在「设置 → 无障碍」中重新开启 Novex。</string>
     <string name="a11y_repair_action_repair">立即恢复</string>
     <string name="a11y_repair_action_open_settings">打开设置</string>
     <string name="a11y_repair_cancel">暂不</string>
@@ -105,7 +105,7 @@
     <string name="a11y_repair_failed">恢复失败——请到系统设置中开启</string>
     <string name="a11y_repair_footer_shizuku">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。Shizuku 可以直接写回该授权。</string>
     <string name="a11y_repair_footer_manual">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。安装并授权 Shizuku 后，今后可一键恢复。</string>
-    <string name="bg_service_notification_title">Minis Agent 运行中</string>
+    <string name="bg_service_notification_title">Novex Agent 运行中</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">任务已完成</string>
     <string name="bg_service_notification_text_completed">%1$s | 用时 %2$s</string>
@@ -118,11 +118,11 @@
     <string name="battery_opt_section_footer">豁免后，Android 不会在任务执行中让应用进入休眠。每次返回此页面会重新检查。</string>
     <string name="battery_opt_row_title">允许后台运行</string>
     <string name="battery_opt_already_exempt">已允许</string>
-    <string name="battery_opt_request_subtitle">点击允许 Minis 不被中断地运行</string>
+    <string name="battery_opt_request_subtitle">点击允许 Novex 不被中断地运行</string>
     <string name="rom_autostart_section_title">自启动权限</string>
-    <string name="rom_autostart_section_footer">某些 Android 系统（%1$s）在标准系统设置之外还需要额外的自启动权限。否则 Minis 可能在进入后台几分钟内被杀掉。</string>
+    <string name="rom_autostart_section_footer">某些 Android 系统（%1$s）在标准系统设置之外还需要额外的自启动权限。否则 Novex 可能在进入后台几分钟内被杀掉。</string>
     <string name="rom_autostart_row_title">打开自启动设置</string>
-    <string name="rom_autostart_row_subtitle">在 %1$s 上启用 Minis</string>
+    <string name="rom_autostart_row_subtitle">在 %1$s 上启用 Novex</string>
     <string name="browser_settings_ua_not_set">未设置</string>
     <!-- T135 — Settings + About i18n keys -->
     <string name="settings_back">返回</string>
@@ -174,7 +174,7 @@
     <string name="settings_section_logs">日志</string>
     <string name="settings_logs_subtitle">查看与导出应用日志</string>
     <string name="settings_section_about">关于</string>
-    <string name="settings_about_minis">关于 Minis</string>
+    <string name="settings_about_minis">关于 Novex</string>
     <string name="settings_about_subtitle">版本与项目信息</string>
     <string name="settings_privacy_policy">隐私政策</string>
     <string name="settings_feedback">反馈问题</string>
@@ -182,7 +182,7 @@
     <string name="settings_feedback_telegram">反馈 (Telegram)</string>
     <string name="settings_feedback_email">反馈 (邮件)</string>
     <string name="about_title">关于</string>
-    <string name="about_minis_tagline">Minis 是完全本地、完全私密的设备端 Agent。</string>
+    <string name="about_minis_tagline">Novex 是完全本地、完全私密的设备端 Agent。</string>
     <string name="about_links">链接</string>
     <string name="about_github_repository">GitHub 仓库</string>
     <string name="about_version_format">版本 %1$s (%2$s)</string>
@@ -238,7 +238,7 @@
     <string name="memory_file_empty">空</string>
 
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
-         Memory, Permissions, Skills, MinisSkillsBrowser, Storage, Usage,
+         Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
          T127 battery_opt_* / rom_autostart_* keys. -->
     <string name="common_cancel">取消</string>
@@ -248,7 +248,7 @@
     <!-- [T-android-thinking-rules-phase2] 思考规则 -->
     <string name="thinking_rules_section">思考规则</string>
     <string name="thinking_rules_footer">规则自上而下依次匹配，第一条匹配当前模型的规则决定发送哪些思考参数。默认规则为内置规则，不可删除——在其上方添加一条规则即可覆盖。</string>
-    <string name="thinking_rules_official_protocol_notice">该服务商使用官方协议，其思考参数由 Minis 内置维护。自定义规则仅适用于走 Chat Completions API 的 OpenAI 兼容服务商。</string>
+    <string name="thinking_rules_official_protocol_notice">该服务商使用官方协议，其思考参数由 Novex 内置维护。自定义规则仅适用于走 Chat Completions API 的 OpenAI 兼容服务商。</string>
     <string name="thinking_rules_default_rules_count">默认规则（%1$d）</string>
     <string name="thinking_rules_add_rule">添加规则</string>
     <string name="thinking_rules_move_up">上移</string>
@@ -428,7 +428,7 @@
     <string name="shizuku_title">Shizuku</string>
     <string name="shizuku_settings_subtitle">通过 Shizuku 或 AXManager 调用 Android 高权限 API</string>
     <string name="shizuku_status_header">状态</string>
-    <string name="shizuku_status_footer">Shizuku 通过无线 ADB 或 root 启动一个本地服务，让用户应用无需 root 即可调用 Android 系统隐藏 API。支持两款兼容的管理器：Shizuku（RikkaApps）和 AXManager（Axeron），任意安装一个即可。授权后，Minis 可使用 android-shizuku-cli 命令管理包、权限、设置、输入、Activity 等。</string>
+    <string name="shizuku_status_footer">Shizuku 通过无线 ADB 或 root 启动一个本地服务，让用户应用无需 root 即可调用 Android 系统隐藏 API。支持两款兼容的管理器：Shizuku（RikkaApps）和 AXManager（Axeron），任意安装一个即可。授权后，Novex 可使用 android-shizuku-cli 命令管理包、权限、设置、输入、Activity 等。</string>
     <string name="shizuku_actions_header">下一步</string>
     <string name="shizuku_capabilities_header">可用能力</string>
     <string name="shizuku_capabilities_footer">在终端执行 `android-shizuku-cli --help` 查看完整用法。无论 binder 来自 Shizuku、AXManager 还是 Sui，命令集完全一致。</string>
@@ -457,15 +457,15 @@
     <string name="shizuku_cap_service">service</string>
     <string name="shizuku_cap_service_desc">调用和查看系统服务</string>
     <string name="shizuku_install_footer">安装 Shizuku(RikkaApps)、AXManager(Axeron)或 Sui(RikkaApps)其中任意一个 —— 三者实现同一套协议,可以互换。Shizuku 和 AXManager 是普通 App,通过无线 ADB 激活。Sui 面向已经 root 的设备:它以 Magisk/KernelSU 模块的形式安装,无需 App,且重启后依然保持生效。在 KernelSU 或 APatch 上,Sui 还需要额外的 Zygisk 实现(Zygisk Next / ReZygisk / NeoZygisk)—— 没有它 Sui 不会加载。安装其中一个后返回此页。</string>
-    <string name="shizuku_start_footer">打开管理器应用，通过无线 ADB（无需电脑）或 root 启动服务，状态变为运行后返回此页面。\n\n使用 AXManager 时，还需在 AXManager 的"设置 → AX-Permission Intercept"中打开开关，AXManager 才会向 Minis 推送 Shizuku 兼容 binder。</string>
-    <string name="shizuku_grant_footer">服务已运行。点击「授权 Minis」会弹出管理器的系统授权对话框。</string>
+    <string name="shizuku_start_footer">打开管理器应用，通过无线 ADB（无需电脑）或 root 启动服务，状态变为运行后返回此页面。\n\n使用 AXManager 时，还需在 AXManager 的"设置 → AX-Permission Intercept"中打开开关，AXManager 才会向 Novex 推送 Shizuku 兼容 binder。</string>
+    <string name="shizuku_grant_footer">服务已运行。点击「授权 Novex」会弹出管理器的系统授权对话框。</string>
 
     <string name="shizuku_state_not_installed">未安装管理器</string>
     <string name="shizuku_state_not_installed_subtitle">安装 Shizuku、AXManager 或 Sui —— 任意一个即可。</string>
     <string name="shizuku_state_not_running">服务未运行</string>
     <string name="shizuku_state_not_running_subtitle">请打开管理器应用并启动服务。</string>
     <string name="shizuku_state_need_permission">需要授权</string>
-    <string name="shizuku_state_need_permission_subtitle">服务已运行，但 Minis 尚未获得授权。</string>
+    <string name="shizuku_state_need_permission_subtitle">服务已运行，但 Novex 尚未获得授权。</string>
     <string name="shizuku_state_ready">已就绪</string>
     <string name="shizuku_ready_subtitle">版本=%1$d，uid=%2$d</string>
 
@@ -482,7 +482,7 @@
     <string name="shizuku_open_btn_subtitle">启动已安装的管理器以启动或管理服务</string>
     <string name="shizuku_recheck_btn">重新检测</string>
     <string name="shizuku_recheck_subtitle">启动服务后重新检查状态</string>
-    <string name="shizuku_grant_btn">授权 Minis</string>
+    <string name="shizuku_grant_btn">授权 Novex</string>
     <string name="shizuku_grant_subtitle">弹出授权对话框</string>
 
     <!-- [T-android-privileged-backend] 特权后端（Shizuku / AXManager） -->
@@ -494,9 +494,9 @@
     <string name="skill_section_installed">已安装</string>
     <string name="skill_section_footer">Skill 通过专门的指令和工作流扩展 AI agent。启用后会被载入 system prompt。</string>
     <string name="skill_empty_title">未安装 Skill</string>
-    <string name="skill_empty_action">点击 + 导入 SKILL.md 或浏览 Minis Skills。</string>
+    <string name="skill_empty_action">点击 + 导入 SKILL.md 或浏览 Novex Skills。</string>
     <string name="skill_import_modal_title">导入技能</string>
-    <string name="skill_minis_skills_modal">Minis Skills</string>
+    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">删除 %1$s？</string>
     <string name="skill_delete_confirm_text">这将永久删除该 skill 及其文件。</string>
     <string name="skill_import_sheet_title">导入技能</string>
@@ -544,7 +544,7 @@
     <string name="skill_detail_source_file">文件导入</string>
     <string name="skill_detail_source_bundled">内置</string>
     <string name="skill_detail_source_session">会话创建</string>
-    <string name="skills_browser_title">Minis Skills</string>
+    <string name="skills_browser_title">Novex Skills</string>
     <string name="skills_browser_import_button">导入此项</string>
     <string name="skills_browser_hud_importing">导入中…</string>
     <string name="skills_browser_error_not_folder">请先选择一个 skill 文件夹</string>
@@ -560,8 +560,8 @@
     <string name="storage_overview_sessions">会话文件</string>
     <string name="storage_section_sessions">会话</string>
     <string name="storage_no_sessions">无会话</string>
-    <string name="storage_section_minis_files">Minis 文件</string>
-    <string name="storage_no_minis_files">无 Minis 文件</string>
+    <string name="storage_section_minis_files">Novex 文件</string>
+    <string name="storage_no_minis_files">无 Novex 文件</string>
     <string name="storage_section_media">媒体文件</string>
     <string name="storage_no_media_files">无媒体文件</string>
     <string name="storage_clear_session_footer">删除此会话生成的所有文件。对话内容本身将保留。</string>
@@ -632,7 +632,7 @@
     <string name="common_close">关闭</string>
     <string name="common_skip">跳过</string>
     <string name="common_next">下一步</string>
-    <string name="onboarding_welcome_title">欢迎使用 Minis</string>
+    <string name="onboarding_welcome_title">欢迎使用 Novex</string>
     <string name="onboarding_welcome_subtitle">集终端、浏览器和设备本地访问于一身的 AI 助手。</string>
     <string name="onboarding_get_started">开始使用</string>
     <string name="onboarding_provider_title">添加提供方</string>
@@ -752,7 +752,7 @@
     <string name="browser_nav_forward">前进</string>
     <string name="browser_stop">停止</string>
     <string name="browser_reload">重新加载</string>
-    <string name="browser_minis_browsing">Minis 正在浏览</string>
+    <string name="browser_minis_browsing">Novex 正在浏览</string>
     <string name="chat_typing_indicator">%1$s 正在思考</string>
     <string name="read_aloud_unavailable">朗读失败：没有可用的语音引擎。请检查语音输出设置，或安装系统语音引擎。</string>
     <string name="voice_panel_collapse">收起语音面板</string>
@@ -783,9 +783,9 @@
     <string name="voice_input_picker_group_models">%1$d 个模型</string>
     <string name="voice_input_picker_group_footer">选择一个分组，其中具备语音能力的模型将驱动该方向。</string>
     <string name="voice_panel_no_engine_title">当前没有可用的语音识别</string>
-    <string name="voice_panel_no_engine_body">语音输入需要一个识别引擎。请开启设备的语音服务，或在 Minis 中配置一个转录服务商。</string>
+    <string name="voice_panel_no_engine_body">语音输入需要一个识别引擎。请开启设备的语音服务，或在 Novex 中配置一个转录服务商。</string>
     <string name="voice_panel_no_engine_open_system">设备设置</string>
-    <string name="voice_panel_no_engine_open_providers">Minis 服务商</string>
+    <string name="voice_panel_no_engine_open_providers">Novex 服务商</string>
     <string name="chat_error_stream_dropped_partial">连接中断，此回复可能不完整。点击重试以继续。</string>
     <string name="chat_input_placeholder">发消息给 %1$s（@ 提及文件）</string>
     <string name="browser_takeover">接管</string>
@@ -818,7 +818,7 @@
     <string name="browser_history_results">结果</string>
     <string name="browser_history_clear_dialog_title">清除浏览历史？</string>
     <string name="browser_history_clear_dialog_message">这将删除所有浏览历史。此操作无法撤销。</string>
-    <string name="terminal_title">Minis Shell</string>
+    <string name="terminal_title">Novex Shell</string>
     <string name="terminal_clear">清屏</string>
     <string name="terminal_show_keyboard">显示</string>
     <string name="terminal_hide_keyboard">隐藏</string>
@@ -836,7 +836,7 @@
     <string name="share_provider_json_attach">作为聊天附件添加</string>
     <string name="share_provider_json_imported">已导入服务商“%1$s”</string>
     <string name="share_provider_json_import_failed">无效的服务商配置文件</string>
-    <string name="share_open_app_failed">内容已保存。无法自动打开 Minis，请手动打开应用继续。</string>
+    <string name="share_open_app_failed">内容已保存。无法自动打开 Novex，请手动打开应用继续。</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">已停用</string>
     <string name="provider_detail_export">导出</string>
@@ -1030,8 +1030,8 @@
     <string name="notif_config_confirm_channel_name">配置审批</string>
     <string name="notif_config_confirm_channel_description">当有配置变更在应用后台运行时等待你确认，会发出通知。</string>
     <string name="notif_config_confirm_title">⚙️ 配置变更等待确认</string>
-    <string name="notif_config_confirm_body_single">有一项变更需要你确认 —— 打开 Minis 批准或拒绝。</string>
-    <string name="notif_config_confirm_body_multi">有 %d 项变更需要你确认 —— 打开 Minis 批准或拒绝。</string>
+    <string name="notif_config_confirm_body_single">有一项变更需要你确认 —— 打开 Novex 批准或拒绝。</string>
+    <string name="notif_config_confirm_body_multi">有 %d 项变更需要你确认 —— 打开 Novex 批准或拒绝。</string>
     <string name="notif_task_failed_body">任务执行失败。点击打开聊天。</string>
     <!-- T-selection-add-to-input — 长按选择菜单"添加到输入框"动作 -->
     <string name="selection_add_to_chat_input">添加到输入框</string>
@@ -1050,7 +1050,7 @@
     <string name="markdown_table_image_copied_toast">已复制表格图片</string>
     <string name="markdown_table_image_copy_failed_toast">复制表格图片失败</string>
     <string name="settings_bg_overlay">后台任务悬浮窗</string>
-    <string name="settings_bg_overlay_footer">Minis 处于后台时，显示一个小型悬浮胶囊展示当前工具。需要"显示在其他应用上层"权限。点击悬浮窗回到 Minis；拖拽可移动位置。</string>
+    <string name="settings_bg_overlay_footer">Novex 处于后台时，显示一个小型悬浮胶囊展示当前工具。需要"显示在其他应用上层"权限。点击悬浮窗回到 Novex；拖拽可移动位置。</string>
     <string name="settings_bg_overlay_permission_needed">需先授予"显示在其他应用上层"权限</string>
     <string name="settings_dynamic_island">灵动岛（实时更新）</string>
     <string name="settings_dynamic_island_footer">在 Android 16 状态胶囊上显示实时的助手状态。开启后将取代悬浮窗，避免同时出现两个状态指示。</string>
@@ -1225,20 +1225,24 @@
     <string name="model_picker_non_text_warning_choose_other">更换其他模型</string>
 
     <!-- Welcome / onboarding (T332) -->
-    <string name="sessionlist_welcome_title">欢迎使用 Minis</string>
-    <string name="sessionlist_welcome_subtitle">你的第一个端侧 Agent 即将就绪。</string>
-    <string name="sessionlist_welcome_step1_title">添加供应商</string>
-    <string name="sessionlist_welcome_step1_subtitle">配置 API Key 或使用 OAuth 登录</string>
+    <string name="sessionlist_welcome_title">欢迎使用 Novex</string>
+    <string name="sessionlist_welcome_subtitle">你的第一个文游伙伴</string>
+    <string name="sessionlist_welcome_step1_title">连接人工智能模型</string>
+    <string name="sessionlist_welcome_step1_subtitle">填写 OpenAI 兼容接口地址和 API 密钥</string>
     <string name="sessionlist_welcome_step2_title">选择模型</string>
     <string name="sessionlist_welcome_step2_subtitle">选择你想使用的模型</string>
     <string name="sessionlist_welcome_step2_locked">请先完成第 1 步</string>
-    <string name="sessionlist_welcome_step3_title">开始对话</string>
+    <string name="sessionlist_welcome_step3_title">开始第一个故事</string>
     <string name="sessionlist_welcome_step3_subtitle">点击开始</string>
     <string name="sessionlist_welcome_step3_locked">请先完成第 2 步</string>
     <string name="sessionlist_welcome_step_done">已完成</string>
+    <string name="novex_logo_description">Novex 飞鸟标志</string>
+    <string name="novex_openminis_thanks">感谢 Minis，是他们创造了这个美丽的底座。Novex 只是它的文游特化版本。</string>
+    <string name="novex_star_openminis">给 Novex 点 Star</string>
+    <string name="novex_star_novex">给 Novex 点 Star</string>
 
     <!-- T-pwa-1: WebApp 快捷方式基础（原 PWA 已重命名） -->
-    <string name="webapp_activity_label">Minis 应用</string>
+    <string name="webapp_activity_label">Novex 应用</string>
     <string name="webapp_source_missing">源文件不存在。</string>
     <string name="webapp_external_nav_blocked">已阻止外部跳转。</string>
     <string name="webapp_pin_unsupported">当前桌面不支持创建快捷方式。</string>
@@ -1253,7 +1257,7 @@
     <string name="webapp_pin_success">已添加到桌面</string>
     <string name="webapp_source_missing_title">源文件已不存在</string>
     <string name="webapp_source_missing_body">该快捷方式所指向的文件已被移动或删除。</string>
-    <string name="webapp_open_in_minis">在 Minis 中打开</string>
+    <string name="webapp_open_in_minis">在 Novex 中打开</string>
     <string name="webapp_action_close">关闭</string>
     <string name="webapp_action_fullscreen">进入全屏</string>
     <string name="webapp_action_exit_fullscreen">退出全屏</string>
@@ -1287,12 +1291,12 @@
     <string name="update_error_open_releases">打开 GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
     <string name="crash_freq_dialog_title">检测到多次崩溃</string>
-    <string name="crash_freq_dialog_message">Minis 在过去 1 小时内多次崩溃。是否分享崩溃日志以帮助修复？</string>
+    <string name="crash_freq_dialog_message">Novex 在过去 1 小时内多次崩溃。是否分享崩溃日志以帮助修复？</string>
     <string name="crash_freq_dialog_share">分享日志</string>
     <string name="crash_freq_dialog_dismiss">暂不分享</string>
-    <string name="crash_safe_mode_restart_needed">Minis 需要重启以完成恢复，请重新点击应用图标。</string>
-    <string name="crash_freq_email_subject">Minis 崩溃报告 %1$s</string>
-    <string name="crash_freq_email_body">附件为崩溃日志压缩包，已包含设备型号、Minis 版本和时间戳。</string>
+    <string name="crash_safe_mode_restart_needed">Novex 需要重启以完成恢复，请重新点击应用图标。</string>
+    <string name="crash_freq_email_subject">Novex 崩溃报告 %1$s</string>
+    <string name="crash_freq_email_body">附件为崩溃日志压缩包，已包含设备型号、Novex 版本和时间戳。</string>
     <string name="crash_freq_share_chooser">发送崩溃日志</string>
     <string name="crash_freq_pick_files_title">检测到最近多次闪退，是否分享以下日志给开发者</string>
     <string name="crash_freq_pick_continue">继续</string>
@@ -1399,7 +1403,7 @@
     <string name="system_permissions_a11y_oem_header">服务总是被杀死？</string>
     <string name="system_permissions_a11y_oem_footer">%1$s 可能会提示「此服务出现故障」并在后台停止无障碍服务。请将本应用加入自启动白名单，并取消省电限制，使其保持连接。</string>
     <string name="system_permissions_a11y_oem_autostart">加入自启动白名单</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">打开自启动管理并启用 Minis</string>
+    <string name="system_permissions_a11y_oem_autostart_sub">打开自启动管理并启用 Novex</string>
     <string name="system_permissions_a11y_oem_battery">取消后台 / 省电限制</string>
     <string name="system_permissions_a11y_oem_battery_sub">将耗电管理设为「无限制」</string>
 
@@ -1468,7 +1472,7 @@
     <string name="voice_bare_link">链接</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">改进语音纠错？</string>
-    <string name="voice_correction_consent_body">Minis 可以把你对转录文本的修改（原文 → 修正）以及已采纳的 AI 纠错保存到本机数据库，让之后的语音纠错更准确。不会上传任何内容。你可以随时在设置中更改或清除这些数据。</string>
+    <string name="voice_correction_consent_body">Novex 可以把你对转录文本的修改（原文 → 修正）以及已采纳的 AI 纠错保存到本机数据库，让之后的语音纠错更准确。不会上传任何内容。你可以随时在设置中更改或清除这些数据。</string>
     <string name="voice_correction_consent_enable">启用</string>
     <string name="voice_correction_consent_not_now">暂不</string>
     <string name="voice_correction_button_a11y">用 AI 修正转录文本</string>
@@ -1483,7 +1487,7 @@
     <string name="voice_provider_system">系统</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — 使用 Kimi 账号登录</string>
     <string name="kimi_login_title">使用 Kimi Code 登录</string>
-    <string name="kimi_login_instructions">打开验证页面并输入以下代码以授权 Minis:</string>
+    <string name="kimi_login_instructions">打开验证页面并输入以下代码以授权 Novex:</string>
     <string name="kimi_login_copy_code">复制代码</string>
     <string name="kimi_login_open_verification">打开验证页面</string>
     <string name="kimi_login_waiting">等待授权中…</string>
@@ -1496,7 +1500,7 @@
     <string name="shizuku_install_btn_sui">安装 Sui</string>
     <string name="shizuku_install_btn_sui_subtitle">RikkaApps · 适用于已 root 设备(Magisk/KernelSU)· 无需 App,重启后依然生效</string>
     <string name="shizuku_ready_subtitle_sui">Sui(root)· 版本=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui 正在运行。点击「授权 Minis」以授予访问权限 —— 确认对话框由 Sui 自己弹出,没有单独的管理器 App 需要打开。</string>
+    <string name="shizuku_grant_footer_sui">Sui 正在运行。点击「授权 Novex」以授予访问权限 —— 确认对话框由 Sui 自己弹出,没有单独的管理器 App 需要打开。</string>
     <string name="group_move_to">移入分组</string>
     <string name="group_change">更换分组</string>
     <string name="group_picker_title_move">移入分组</string>

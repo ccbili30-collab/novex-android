@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis</string>
+    <string name="app_name">Novex</string>
     <string name="new_chat">Новый чат</string>
     <string name="settings">Настройки</string>
     <string name="providers">Провайдеры</string>
@@ -74,7 +74,7 @@
     <string name="search_no_results">Нет результатов по запросу \"%1$s\"</string>
     <string name="stop_tool">Остановить инструмент</string>
     <string name="mic_permission_title">Требуется разрешение на микрофон</string>
-    <string name="mic_permission_message">Для голосового ввода нужно разрешение на микрофон. Нажмите «Открыть настройки», чтобы разрешить его для Minis.</string>
+    <string name="mic_permission_message">Для голосового ввода нужно разрешение на микрофон. Нажмите «Открыть настройки», чтобы разрешить его для Novex.</string>
     <string name="mic_permission_open_settings">Открыть настройки</string>
     <string name="mic_permission_cancel">Отмена</string>
     <string name="bg_section_header">Фон и уведомления</string>
@@ -85,15 +85,15 @@
     <string name="bg_overlay_nudge_channel_name">Разрешение фонового наложения</string>
     <string name="bg_overlay_nudge_channel_description">Напоминает предоставить системное разрешение на наложение, чтобы наложение фоновой задачи могло отображаться.</string>
     <string name="bg_overlay_nudge_title">Включить фоновое наложение</string>
-    <string name="bg_overlay_nudge_body">Предоставьте «Поверх других приложений», чтобы Minis показывал текущий инструмент при переключении на другое приложение. Нажмите, чтобы открыть экран разрешения.</string>
+    <string name="bg_overlay_nudge_body">Предоставьте «Поверх других приложений», чтобы Novex показывал текущий инструмент при переключении на другое приложение. Нажмите, чтобы открыть экран разрешения.</string>
     <string name="overlay_dismiss">Закрыть</string>
     <string name="overlay_completion_completed">Завершено</string>
     <string name="overlay_completion_failed">Не удалось</string>
     <string name="overlay_completion_cancelled">Отменено</string>
     <string name="overlay_completion_timeout">Время истекло</string>
     <string name="a11y_repair_dialog_title">Специальные возможности отключены</string>
-    <string name="a11y_repair_dialog_message_shizuku">Minis потерял разрешение специальных возможностей — это происходит после принудительной остановки приложения. Shizuku доступен и может восстановить его сразу, не открывая настройки.</string>
-    <string name="a11y_repair_dialog_message_manual">Minis потерял разрешение специальных возможностей — это происходит после принудительной остановки приложения. Включите Minis снова в «Настройки → Специальные возможности».</string>
+    <string name="a11y_repair_dialog_message_shizuku">Novex потерял разрешение специальных возможностей — это происходит после принудительной остановки приложения. Shizuku доступен и может восстановить его сразу, не открывая настройки.</string>
+    <string name="a11y_repair_dialog_message_manual">Novex потерял разрешение специальных возможностей — это происходит после принудительной остановки приложения. Включите Novex снова в «Настройки → Специальные возможности».</string>
     <string name="a11y_repair_action_repair">Восстановить</string>
     <string name="a11y_repair_action_open_settings">Открыть настройки</string>
     <string name="a11y_repair_cancel">Не сейчас</string>
@@ -105,7 +105,7 @@
     <string name="a11y_repair_failed">Не удалось восстановить — включите в настройках</string>
     <string name="a11y_repair_footer_shizuku">Android удаляет разрешение специальных возможностей при каждой принудительной остановке приложения и не восстанавливает его автоматически. Shizuku может записать его напрямую.</string>
     <string name="a11y_repair_footer_manual">Android удаляет разрешение специальных возможностей при каждой принудительной остановке приложения и не восстанавливает его автоматически. Установите и авторизуйте Shizuku, чтобы восстанавливать одним касанием.</string>
-    <string name="bg_service_notification_title">Агент Minis активен</string>
+    <string name="bg_service_notification_title">Агент Novex активен</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">Задача выполнена</string>
     <string name="bg_service_notification_text_completed">%1$s | Выполнено за %2$s</string>
@@ -120,11 +120,11 @@
     <string name="battery_opt_section_footer">При исключении Android не будет усыплять приложение во время выполнения задачи. Проверяется заново при каждом возврате на этот экран.</string>
     <string name="battery_opt_row_title">Разрешить работу в фоне</string>
     <string name="battery_opt_already_exempt">Уже разрешено</string>
-    <string name="battery_opt_request_subtitle">Нажмите, чтобы разрешить Minis работать без прерываний</string>
+    <string name="battery_opt_request_subtitle">Нажмите, чтобы разрешить Novex работать без прерываний</string>
     <string name="rom_autostart_section_title">Разрешение на автозапуск</string>
-    <string name="rom_autostart_section_footer">Некоторые оболочки Android (%1$s) требуют дополнительного разрешения на автозапуск помимо стандартных системных настроек. Без него Minis может быть закрыт через несколько минут после ухода в фон.</string>
+    <string name="rom_autostart_section_footer">Некоторые оболочки Android (%1$s) требуют дополнительного разрешения на автозапуск помимо стандартных системных настроек. Без него Novex может быть закрыт через несколько минут после ухода в фон.</string>
     <string name="rom_autostart_row_title">Открыть настройки автозапуска</string>
-    <string name="rom_autostart_row_subtitle">Включите Minis на %1$s</string>
+    <string name="rom_autostart_row_subtitle">Включите Novex на %1$s</string>
     <string name="browser_settings_ua_not_set">Не задано</string>
     <string name="settings_back">Назад</string>
     <string name="settings_title">Настройки</string>
@@ -179,7 +179,7 @@
     <string name="settings_section_logs">Журналы</string>
     <string name="settings_logs_subtitle">Просмотр и экспорт журналов приложения</string>
     <string name="settings_section_about">О приложении</string>
-    <string name="settings_about_minis">О Minis</string>
+    <string name="settings_about_minis">О Novex</string>
     <string name="settings_about_subtitle">Версия и информация о проекте</string>
     <string name="settings_privacy_policy">Политика конфиденциальности</string>
     <string name="settings_feedback">Обратная связь</string>
@@ -187,7 +187,7 @@
     <string name="settings_feedback_telegram">Обратная связь (Telegram)</string>
     <string name="settings_feedback_email">Обратная связь (Email)</string>
     <string name="about_title">О приложении</string>
-    <string name="about_minis_tagline">Minis — ваш полностью локальный и приватный Агент прямо на устройстве.</string>
+    <string name="about_minis_tagline">Novex — ваш полностью локальный и приватный Агент прямо на устройстве.</string>
     <string name="about_links">Ссылки</string>
     <string name="about_github_repository">Репозиторий GitHub</string>
     <string name="about_version_format">Версия %1$s (%2$s)</string>
@@ -243,7 +243,7 @@
     <string name="common_close">Закрыть</string>
     <string name="common_skip">Пропустить</string>
     <string name="common_next">Далее</string>
-    <string name="onboarding_welcome_title">Добро пожаловать в Minis</string>
+    <string name="onboarding_welcome_title">Добро пожаловать в Novex</string>
     <string name="onboarding_welcome_subtitle">Ваш ИИ-агент с Терминалом, браузером и доступом к функциям устройства.</string>
     <string name="onboarding_get_started">Начать</string>
     <string name="onboarding_provider_title">Добавить Провайдера</string>
@@ -367,13 +367,13 @@
     <string name="browser_nav_forward">Вперёд</string>
     <string name="browser_stop">Остановить</string>
     <string name="browser_reload">Обновить</string>
-    <string name="browser_minis_browsing">Minis просматривает страницы</string>
+    <string name="browser_minis_browsing">Novex просматривает страницы</string>
     <string name="chat_typing_indicator">%1$s думает</string>
     <string name="read_aloud_unavailable">Не удалось озвучить: нет доступного голосового движка. Проверьте настройки голосового вывода или установите системный синтезатор речи.</string>
     <string name="voice_panel_no_engine_title">Распознавание речи недоступно</string>
-    <string name="voice_panel_no_engine_body">Для голосового ввода нужен движок распознавания. Включите речевую службу устройства или настройте провайдера транскрипции в Minis.</string>
+    <string name="voice_panel_no_engine_body">Для голосового ввода нужен движок распознавания. Включите речевую службу устройства или настройте провайдера транскрипции в Novex.</string>
     <string name="voice_panel_no_engine_open_system">Настройки устройства</string>
-    <string name="voice_panel_no_engine_open_providers">Провайдеры Minis</string>
+    <string name="voice_panel_no_engine_open_providers">Провайдеры Novex</string>
     <string name="chat_error_stream_dropped_partial">Соединение прервано — этот ответ может быть неполным. Нажмите «Повторить», чтобы продолжить.</string>
     <string name="chat_input_placeholder">Сообщение для %1$s (@ для упоминания файлов)</string>
     <string name="browser_takeover">Перехватить управление</string>
@@ -406,7 +406,7 @@
     <string name="browser_history_results">Результаты</string>
     <string name="browser_history_clear_dialog_title">Очистить историю просмотров?</string>
     <string name="browser_history_clear_dialog_message">Это удалит всю историю просмотров. Это действие нельзя отменить.</string>
-    <string name="terminal_title">Оболочка Minis</string>
+    <string name="terminal_title">Оболочка Novex</string>
     <string name="terminal_clear">Очистить</string>
     <string name="terminal_show_keyboard">Показать</string>
     <string name="terminal_hide_keyboard">Скрыть</string>
@@ -551,7 +551,7 @@
     <string name="shizuku_title">Shizuku</string>
     <string name="shizuku_settings_subtitle">Привилегированное управление Android через Shizuku или AXManager</string>
     <string name="shizuku_status_header">Статус</string>
-    <string name="shizuku_status_footer">Shizuku предоставляет приложениям пользователя привилегированные системные API без root, запуская небольшую службу через беспроводной ADB или root. Поддерживаются два совместимых менеджера — Shizuku (RikkaApps) и AXManager (Axeron); установите любой из них. После авторизации Minis может использовать CLI android-shizuku-cli для управления пакетами, разрешениями, настройками, вводом и активностями.</string>
+    <string name="shizuku_status_footer">Shizuku предоставляет приложениям пользователя привилегированные системные API без root, запуская небольшую службу через беспроводной ADB или root. Поддерживаются два совместимых менеджера — Shizuku (RikkaApps) и AXManager (Axeron); установите любой из них. После авторизации Novex может использовать CLI android-shizuku-cli для управления пакетами, разрешениями, настройками, вводом и активностями.</string>
     <string name="shizuku_actions_header">Следующий шаг</string>
     <string name="shizuku_capabilities_header">Возможности</string>
     <string name="shizuku_capabilities_footer">Выполните `android-shizuku-cli --help` в оболочке для полной справки. Набор команд одинаков независимо от того, откуда binder — Shizuku, AXManager или Sui.</string>
@@ -580,14 +580,14 @@
     <string name="shizuku_cap_service">service</string>
     <string name="shizuku_cap_service_desc">Вызов и просмотр системных служб</string>
     <string name="shizuku_install_footer">Установите одно из: Shizuku (RikkaApps), AXManager (Axeron) или Sui (RikkaApps) — все три используют один протокол и взаимозаменяемы. Shizuku и AXManager — обычные приложения, активируемые через беспроводной ADB. Sui предназначен для устройств с root: устанавливается как модуль Magisk/KernelSU, не требует приложения и остаётся активным после перезагрузки. На KernelSU или APatch для Sui дополнительно нужна реализация Zygisk (Zygisk Next / ReZygisk / NeoZygisk) — без неё Sui не загрузится. Установите одно и вернитесь сюда.</string>
-    <string name="shizuku_start_footer">Откройте приложение-менеджер и запустите службу через беспроводной ADB (без ПК) или root. После того как отобразится «работает», вернитесь сюда.\n\nИспользуете AXManager? Также включите «Настройки → AX-Permission Intercept» внутри AXManager — только этот переключатель заставляет AXManager отправлять Shizuku-совместимый binder в Minis.</string>
-    <string name="shizuku_grant_footer">Служба работает. Нажмите «Авторизовать Minis», чтобы предоставить доступ. Системный диалог приложения-менеджера попросит вас подтвердить.</string>
+    <string name="shizuku_start_footer">Откройте приложение-менеджер и запустите службу через беспроводной ADB (без ПК) или root. После того как отобразится «работает», вернитесь сюда.\n\nИспользуете AXManager? Также включите «Настройки → AX-Permission Intercept» внутри AXManager — только этот переключатель заставляет AXManager отправлять Shizuku-совместимый binder в Novex.</string>
+    <string name="shizuku_grant_footer">Служба работает. Нажмите «Авторизовать Novex», чтобы предоставить доступ. Системный диалог приложения-менеджера попросит вас подтвердить.</string>
     <string name="shizuku_state_not_installed">Менеджер не установлен</string>
     <string name="shizuku_state_not_installed_subtitle">Установите Shizuku, AXManager или Sui — подойдёт любой.</string>
     <string name="shizuku_state_not_running">Служба не запущена</string>
     <string name="shizuku_state_not_running_subtitle">Откройте приложение-менеджер и нажмите «Старт».</string>
     <string name="shizuku_state_need_permission">Требуется авторизация</string>
-    <string name="shizuku_state_need_permission_subtitle">Служба работает, но Minis не авторизован.</string>
+    <string name="shizuku_state_need_permission_subtitle">Служба работает, но Novex не авторизован.</string>
     <string name="shizuku_state_ready">Готов</string>
     <string name="shizuku_ready_subtitle">версия=%1$d, uid=%2$d</string>
     <string name="shizuku_badge_not_installed">Не установлен</string>
@@ -602,16 +602,16 @@
     <string name="shizuku_open_btn_subtitle">Запустить установленный менеджер для старта или управления службой</string>
     <string name="shizuku_recheck_btn">Перепроверить</string>
     <string name="shizuku_recheck_subtitle">Повторно опросить состояние после запуска службы</string>
-    <string name="shizuku_grant_btn">Авторизовать Minis</string>
+    <string name="shizuku_grant_btn">Авторизовать Novex</string>
     <string name="shizuku_grant_subtitle">Показать диалог разрешений</string>
     <string name="skill_title">Навыки</string>
     <string name="skill_add">Добавить навык</string>
     <string name="skill_section_installed">Установлено</string>
     <string name="skill_section_footer">Навыки расширяют ИИ-агента специализированными инструкциями и рабочими процессами. Они загружаются в системный промпт при включении.</string>
     <string name="skill_empty_title">Нет установленных навыков</string>
-    <string name="skill_empty_action">Нажмите +, чтобы импортировать SKILL.md или просмотреть Навыки Minis.</string>
+    <string name="skill_empty_action">Нажмите +, чтобы импортировать SKILL.md или просмотреть Навыки Novex.</string>
     <string name="skill_import_modal_title">Импорт навыка</string>
-    <string name="skill_minis_skills_modal">Навыки Minis</string>
+    <string name="skill_minis_skills_modal">Навыки Novex</string>
     <string name="skill_delete_confirm_title">Удалить %1$s?</string>
     <string name="skill_delete_confirm_text">Это безвозвратно удалит навык и его файлы.</string>
     <string name="skill_import_sheet_title">Импорт навыка</string>
@@ -659,7 +659,7 @@
     <string name="skill_detail_source_file">Импорт из файла</string>
     <string name="skill_detail_source_bundled">Встроенный</string>
     <string name="skill_detail_source_session">Создан в сессии</string>
-    <string name="skills_browser_title">Навыки Minis</string>
+    <string name="skills_browser_title">Навыки Novex</string>
     <string name="skills_browser_import_button">Импортировать это</string>
     <string name="skills_browser_hud_importing">Импорт…</string>
     <string name="skills_browser_error_not_folder">Сначала выберите папку навыка</string>
@@ -675,8 +675,8 @@
     <string name="storage_overview_sessions">Файлы сессий</string>
     <string name="storage_section_sessions">Сессии</string>
     <string name="storage_no_sessions">Нет сессий</string>
-    <string name="storage_section_minis_files">Файлы Minis</string>
-    <string name="storage_no_minis_files">Нет файлов Minis</string>
+    <string name="storage_section_minis_files">Файлы Novex</string>
+    <string name="storage_no_minis_files">Нет файлов Novex</string>
     <string name="storage_section_media">Медиафайлы</string>
     <string name="storage_no_media_files">Нет медиафайлов</string>
     <string name="storage_clear_session_footer">Удаляет все файлы, созданные этой сессией. Сам разговор будет сохранён.</string>
@@ -753,7 +753,7 @@
     <string name="share_provider_json_attach">Добавить как вложение к чату</string>
     <string name="share_provider_json_imported">Провайдер \"%1$s\" импортирован</string>
     <string name="share_provider_json_import_failed">Недействительный файл конфигурации провайдера</string>
-    <string name="share_open_app_failed">Содержимое сохранено. Не удалось открыть Minis автоматически — откройте приложение, чтобы продолжить.</string>
+    <string name="share_open_app_failed">Содержимое сохранено. Не удалось открыть Novex автоматически — откройте приложение, чтобы продолжить.</string>
     <string name="provider_list_api_key">Ключ API</string>
     <string name="provider_list_disabled">Отключено</string>
     <string name="provider_detail_export">Экспортировать</string>
@@ -915,8 +915,8 @@
     <string name="notif_config_confirm_channel_name">Подтверждение настроек</string>
     <string name="notif_config_confirm_channel_description">Уведомляет, когда изменение конфигурации ожидает вашего подтверждения, пока приложение в фоне.</string>
     <string name="notif_config_confirm_title">⚙️ Изменение конфигурации ждёт подтверждения</string>
-    <string name="notif_config_confirm_body_single">Изменение требует вашего рассмотрения — откройте Minis, чтобы принять или отклонить.</string>
-    <string name="notif_config_confirm_body_multi">%d изменений требуют вашего рассмотрения — откройте Minis, чтобы принять или отклонить.</string>
+    <string name="notif_config_confirm_body_single">Изменение требует вашего рассмотрения — откройте Novex, чтобы принять или отклонить.</string>
+    <string name="notif_config_confirm_body_multi">%d изменений требуют вашего рассмотрения — откройте Novex, чтобы принять или отклонить.</string>
     <string name="notif_task_failed_body">Задача завершилась с ошибкой. Нажмите, чтобы открыть чат.</string>
     <string name="selection_add_to_chat_input">Добавить в поле ввода чата</string>
     <string name="selection_read_aloud">Озвучить</string>
@@ -927,7 +927,7 @@
     <string name="selection_copied_as_markdown_toast">Скопировано как Markdown</string>
     <string name="selection_copied_as_rich_text_toast">Скопировано как форматированный текст</string>
     <string name="settings_bg_overlay">Оверлей фоновых задач</string>
-    <string name="settings_bg_overlay_footer">Показывать небольшую плавающую капсулу с текущим инструментом, пока Minis в фоне. Требуется разрешение на отображение поверх других приложений. Нажмите капсулу, чтобы вывести Minis на передний план; перетащите, чтобы переместить её.</string>
+    <string name="settings_bg_overlay_footer">Показывать небольшую плавающую капсулу с текущим инструментом, пока Novex в фоне. Требуется разрешение на отображение поверх других приложений. Нажмите капсулу, чтобы вывести Novex на передний план; перетащите, чтобы переместить её.</string>
     <string name="settings_bg_overlay_permission_needed">Разрешите отображение поверх других приложений для включения</string>
     <string name="settings_dynamic_island">Динамический остров (Live Updates)</string>
     <string name="settings_dynamic_island_footer">Показывать статус агента на чипе состояния Android 16. Когда включено, заменяет плавающий оверлей, чтобы не было двух индикаторов сразу.</string>
@@ -1078,15 +1078,15 @@
     <string name="system_permissions_title">Системные разрешения</string>
     <string name="system_permissions_subtitle">Разрешения уровня ОС, предоставленные в системных Настройках</string>
     <string name="system_permissions_section_a11y">Спец. возможности</string>
-    <string name="system_permissions_a11y_row">Служба спец. возможностей Minis</string>
+    <string name="system_permissions_a11y_row">Служба спец. возможностей Novex</string>
     <string name="system_permissions_a11y_enabled">Включено — android-a11y-cli готов к работе</string>
     <string name="system_permissions_a11y_disabled">Отключено — нажмите, чтобы включить в системных Настройках</string>
-    <string name="system_permissions_a11y_footer">Требуется для android-a11y-cli для чтения дерева UI, внедрения жестов и мониторинга событий. Без этого ИИ-агенты не смогут управлять другими приложениями. Включите переключатель под Minis на следующем экране.</string>
-    <string name="a11y_service_label">Спец. возможности Minis</string>
-    <string name="a11y_service_description">Позволяет Minis читать структуру экранного UI, выполнять нажатия и жесты и получать системные события от имени ИИ-агентов, вызывающих android-a11y-cli.</string>
-    <string name="a11y_service_summary">Бэкенд автоматизации UI-слоя для Minis</string>
+    <string name="system_permissions_a11y_footer">Требуется для android-a11y-cli для чтения дерева UI, внедрения жестов и мониторинга событий. Без этого ИИ-агенты не смогут управлять другими приложениями. Включите переключатель под Novex на следующем экране.</string>
+    <string name="a11y_service_label">Спец. возможности Novex</string>
+    <string name="a11y_service_description">Позволяет Novex читать структуру экранного UI, выполнять нажатия и жесты и получать системные события от имени ИИ-агентов, вызывающих android-a11y-cli.</string>
+    <string name="a11y_service_summary">Бэкенд автоматизации UI-слоя для Novex</string>
     <string name="back">Назад</string>
-    <string name="sessionlist_welcome_title">Добро пожаловать в Minis</string>
+    <string name="sessionlist_welcome_title">Добро пожаловать в Novex</string>
     <string name="sessionlist_welcome_subtitle">Ваш первый агент на устройстве почти готов.</string>
     <string name="sessionlist_welcome_step1_title">Добавить Провайдера</string>
     <string name="sessionlist_welcome_step1_subtitle">Настройте ключ API или войдите через OAuth</string>
@@ -1097,7 +1097,7 @@
     <string name="sessionlist_welcome_step3_subtitle">Нажмите, чтобы начать</string>
     <string name="sessionlist_welcome_step3_locked">Сначала завершите шаг 2</string>
     <string name="sessionlist_welcome_step_done">Готово</string>
-    <string name="webapp_activity_label">Веб-приложение Minis</string>
+    <string name="webapp_activity_label">Веб-приложение Novex</string>
     <string name="webapp_source_missing">Исходный файл больше не существует.</string>
     <string name="webapp_external_nav_blocked">Внешний переход заблокирован.</string>
     <string name="webapp_pin_unsupported">Этот лаунчер не поддерживает закрепление ярлыков.</string>
@@ -1112,7 +1112,7 @@
     <string name="webapp_pin_success">Добавлено на главный экран</string>
     <string name="webapp_source_missing_title">Исходный файл больше не существует</string>
     <string name="webapp_source_missing_body">Файл, на котором основан этот ярлык, был перемещён или удалён.</string>
-    <string name="webapp_open_in_minis">Открыть в Minis</string>
+    <string name="webapp_open_in_minis">Открыть в Novex</string>
     <string name="webapp_action_close">Закрыть</string>
     <string name="webapp_action_fullscreen">Полноэкранный режим</string>
     <string name="webapp_action_exit_fullscreen">Выйти из полноэкранного режима</string>
@@ -1139,12 +1139,12 @@
     <string name="update_error_forbidden_with_link">Не удалось получить доступ к серверу обновлений — возможно, он заблокирован вашей сетью. Откройте GitHub Releases для ручной загрузки.</string>
     <string name="update_error_open_releases">Открыть GitHub Releases</string>
     <string name="crash_freq_dialog_title">Обнаружено несколько сбоев</string>
-    <string name="crash_freq_dialog_message">За последний час Minis несколько раз аварийно завершался. Отправить журналы сбоев, чтобы помочь устранить проблему?</string>
+    <string name="crash_freq_dialog_message">За последний час Novex несколько раз аварийно завершался. Отправить журналы сбоев, чтобы помочь устранить проблему?</string>
     <string name="crash_freq_dialog_share">Отправить журналы</string>
     <string name="crash_freq_dialog_dismiss">Не сейчас</string>
-    <string name="crash_safe_mode_restart_needed">Для завершения восстановления необходимо перезапустить Minis. Пожалуйста, нажмите на значок приложения ещё раз.</string>
-    <string name="crash_freq_email_subject">Отчёт о сбое Minis %1$s</string>
-    <string name="crash_freq_email_body">ZIP-архив с журналами сбоев прикреплён. Модель устройства, версия Minis и временная метка указаны внутри.</string>
+    <string name="crash_safe_mode_restart_needed">Для завершения восстановления необходимо перезапустить Novex. Пожалуйста, нажмите на значок приложения ещё раз.</string>
+    <string name="crash_freq_email_subject">Отчёт о сбое Novex %1$s</string>
+    <string name="crash_freq_email_body">ZIP-архив с журналами сбоев прикреплён. Модель устройства, версия Novex и временная метка указаны внутри.</string>
     <string name="crash_freq_share_chooser">Отправить журналы сбоев</string>
     <string name="crash_freq_pick_files_title">Обнаружено несколько недавних сбоев — отправить указанные ниже журналы разработчику?</string>
     <string name="crash_freq_pick_continue">Продолжить</string>
@@ -1310,7 +1310,7 @@
     <string name="voice_bare_link">ссылка</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">Улучшить исправление распознавания речи?</string>
-    <string name="voice_correction_consent_body">Minis может сохранять ваши правки расшифровок (оригинал → исправление) и принятые исправления ИИ в локальной базе данных на устройстве, чтобы в дальнейшем исправлять распознавание точнее. Ничего не загружается в сеть. Вы можете изменить это или удалить данные в настройках в любой момент.</string>
+    <string name="voice_correction_consent_body">Novex может сохранять ваши правки расшифровок (оригинал → исправление) и принятые исправления ИИ в локальной базе данных на устройстве, чтобы в дальнейшем исправлять распознавание точнее. Ничего не загружается в сеть. Вы можете изменить это или удалить данные в настройках в любой момент.</string>
     <string name="voice_correction_consent_enable">Включить</string>
     <string name="voice_correction_consent_not_now">Не сейчас</string>
     <string name="voice_correction_button_a11y">Исправить расшифровку с помощью ИИ</string>
@@ -1325,7 +1325,7 @@
     <string name="voice_provider_system">Система</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — войдите с аккаунтом Kimi</string>
     <string name="kimi_login_title">Войти через Kimi Code</string>
-    <string name="kimi_login_instructions">Откройте страницу подтверждения и введите этот код, чтобы авторизовать Minis:</string>
+    <string name="kimi_login_instructions">Откройте страницу подтверждения и введите этот код, чтобы авторизовать Novex:</string>
     <string name="kimi_login_copy_code">Скопировать код</string>
     <string name="kimi_login_open_verification">Открыть страницу подтверждения</string>
     <string name="kimi_login_waiting">Ожидание авторизации…</string>
@@ -1338,5 +1338,5 @@
     <string name="shizuku_install_btn_sui">Установить Sui</string>
     <string name="shizuku_install_btn_sui_subtitle">RikkaApps · для устройств с root (Magisk/KernelSU) · без приложения, работает после перезагрузки</string>
     <string name="shizuku_ready_subtitle_sui">Sui (root) · версия=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui запущен. Нажмите «Авторизовать Minis», чтобы предоставить доступ — Sui сам покажет диалог подтверждения. Отдельного приложения-менеджера открывать не нужно.</string>
+    <string name="shizuku_grant_footer_sui">Sui запущен. Нажмите «Авторизовать Novex», чтобы предоставить доступ — Sui сам покажет диалог подтверждения. Отдельного приложения-менеджера открывать не нужно.</string>
 </resources>
