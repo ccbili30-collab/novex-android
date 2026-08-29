@@ -4013,6 +4013,7 @@ fun ChatScreen(
                 // never opens (and its sentinel LaunchedEffect immediately
                 // closes the detail state because the id "doesn't exist").
                 var lastToolBlocks by remember { mutableStateOf<List<AssistantBlock>>(emptyList()) }
+                var showFloatingToolBar by remember { mutableStateOf(false) }
                 LaunchedEffect(messages) {
                     kotlinx.coroutines.flow.combine(
                         kotlinx.coroutines.flow.flowOf(messages),
@@ -4024,8 +4025,27 @@ fun ChatScreen(
                             .filter { it.toolStatus != null && it.kind != "thinking" && it.kind != "info" }
                     }.collect { lastToolBlocks = it }
                 }
+                val floatingToolState = remember(lastToolBlocks) {
+                    lastToolBlocks.joinToString("|") { "${it.id}:${it.toolStatus}:${it.durationMs}" }
+                }
+                LaunchedEffect(floatingToolState) {
+                    if (lastToolBlocks.isEmpty()) {
+                        showFloatingToolBar = false
+                    } else {
+                        val hasActiveTool = lastToolBlocks.any {
+                            it.toolStatus == ToolBlockStatus.RUNNING ||
+                                it.toolStatus == ToolBlockStatus.STREAMING ||
+                                it.toolStatus == ToolBlockStatus.PENDING
+                        }
+                        showFloatingToolBar = true
+                        if (!hasActiveTool) {
+                            kotlinx.coroutines.delay(2_000L)
+                            showFloatingToolBar = false
+                        }
+                    }
+                }
                 val allToolBlocks = lastToolBlocks
-                if (lastToolBlocks.isNotEmpty()) {
+                if (lastToolBlocks.isNotEmpty() && showFloatingToolBar) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -4039,6 +4059,7 @@ fun ChatScreen(
                             // T14: per-card stop on the floating bar — same
                             // global cancel as the message-list pill button.
                             onStop = { viewModel.cancelStream() },
+                            onDismiss = { showFloatingToolBar = false },
                             onOpenTerminalWithCommand = onOpenTerminalWithCommand,
                             // T261: route detail open through the same VM
                             // state as in-list pills so both surfaces share

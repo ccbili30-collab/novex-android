@@ -1489,12 +1489,14 @@
         <item>Use 【】 to correct how the AI handles the world.</item>
         <item>Choices fill the composer. You can edit them before sending.</item>
         <item>Panels show reference material. Tap the title to expand or collapse.</item>
-        <item>Creation mode organizes characters, worlds, and launch templates.</item>
-        <item>Play mode enters the world and advances the story with AI.</item>
+        <item>Creation mode turns loose files and notes into a playable rules template.</item>
+        <item>Play mode starts immediately; choices fill the composer for editing before send.</item>
     </string-array>
     <string name="novex_create_menu">Create interactive fiction</string>
     <string name="novex_new_story">New story</string>
     <string name="novex_create_story">Create a story world</string>
+    <string name="move_to_new_play_session">New play conversation</string>
+    <string name="move_to_new_play_session_hint">Carry this content into a new story</string>
 
     <!-- T-pwa-1: WebApp shortcut foundation (renamed from PWA) -->
     <string name="webapp_activity_label">Novex WebApp</string>

@@ -781,6 +781,7 @@ private fun ToolPreviewThumbnail(
 internal fun FloatingToolStatusBar(
     toolBlocks: List<AssistantBlock>,
     onStop: (() -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onOpenTerminalWithCommand: (String) -> Unit = {},
     // T261: detail open routes through ChatViewModel state so this bar
@@ -922,6 +923,20 @@ internal fun FloatingToolStatusBar(
                             ) { if (currentIndex < toolBlocks.lastIndex) currentIndex++ },
                     )
                 }
+            }
+            if (!isRunning && onDismiss != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "关闭",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() },
+                        ) { onDismiss() },
+                )
             }
             // T170: stop button removed from the floating bar — only the
             // in-list ToolCallPill keeps the red square. Two stop affordances

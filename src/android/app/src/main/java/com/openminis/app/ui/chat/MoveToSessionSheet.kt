@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Date
@@ -83,12 +85,17 @@ fun MoveToSessionSheet(
     onSelect: (String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var sessions by remember { mutableStateOf<List<ChatSessionEntity>>(emptyList()) }
+    var currentSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
 
     LaunchedEffect(Unit) {
-        sessions = withContext(Dispatchers.IO) {
-            chatRepository.dao.listSessions().filter { it.id != currentSessionId }
+        val loaded = withContext(Dispatchers.IO) {
+            chatRepository.getSession(currentSessionId) to
+                chatRepository.dao.listSessions().filter { it.id != currentSessionId }
         }
+        currentSession = loaded.first
+        sessions = loaded.second
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -98,12 +105,65 @@ fun MoveToSessionSheet(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .background(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(16.dp),
+                    )
+                    .clickable(enabled = currentSession != null) {
+                        val source = currentSession ?: return@clickable
+                        scope.launch {
+                            val target = withContext(Dispatchers.IO) {
+                                chatRepository.createSession(
+                                    modelId = source.modelId,
+                                    title = null,
+                                    memoryEnabled = false,
+                                )
+                            }
+                            onSelect(target.id)
+                        }
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Outlined.Forum,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Column {
+                    Text(
+                        stringResource(R.string.move_to_new_play_session),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        stringResource(R.string.move_to_new_play_session_hint),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (sessions.isEmpty()) {
                 Text(
                     stringResource(R.string.move_to_sheet_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             } else {
                 LazyColumn(
