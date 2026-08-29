@@ -1240,6 +1240,9 @@
     <string name="novex_openminis_thanks">感谢 Minis，是他们创造了这个美丽的底座。Novex 只是它的文游特化版本。</string>
     <string name="novex_star_openminis">给 Novex 点 Star</string>
     <string name="novex_star_novex">给 Novex 点 Star</string>
+    <string name="novex_create_menu">创建文游</string>
+    <string name="novex_new_story">新建文游</string>
+    <string name="novex_create_story">创作文游</string>
 
     <!-- T-pwa-1: WebApp 快捷方式基础（原 PWA 已重命名） -->
     <string name="webapp_activity_label">Novex 应用</string>

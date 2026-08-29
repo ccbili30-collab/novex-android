@@ -653,30 +653,13 @@ fun SessionListScreen(
                             )
                         }
                     } else {
-                        // [T-android-scheduled-tasks-design] Scheduled-tasks entry,
-                        // sits to the left of the Shell button on the home toolbar.
-                        // [T-android-scheduled-tasks-full] Badge shows the count of
-                        // scheduled tasks so the user can see at a glance how many
-                        // are configured without opening the list.
-                        IconButton(onClick = onScheduledTasksClick) {
-                            if (scheduledTaskCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$scheduledTaskCount") } }) {
-                                    Icon(
-                                        Icons.Outlined.Schedule,
-                                        contentDescription = stringResource(R.string.sessionlist_scheduled_tasks),
-                                    )
-                                }
-                            } else {
-                                Icon(
-                                    Icons.Outlined.Schedule,
-                                    contentDescription = stringResource(R.string.sessionlist_scheduled_tasks),
-                                )
-                            }
-                        }
-                        // Shell menu (matching iOS trailing shell button: Terminal, Rootfs, Browser)
+                        com.openminis.app.ui.settings.NovexUpdateAction()
                         Box {
                             IconButton(onClick = { showOverflowMenu = true }) {
-                                Icon(Icons.Outlined.Terminal, contentDescription = stringResource(R.string.sessionlist_shell))
+                                Icon(
+                                    Icons.Outlined.AddComment,
+                                    contentDescription = stringResource(R.string.novex_create_menu),
+                                )
                             }
                             MinisMenu(
                                 expanded = showOverflowMenu,
@@ -697,45 +680,29 @@ fun SessionListScreen(
                                     MinisMenuDivider()
                                 }
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessionlist_shell_terminal)) },
+                                    text = { Text(stringResource(R.string.novex_new_story)) },
                                     onClick = {
                                         showOverflowMenu = false
-                                        onTerminalClick()
+                                        scope.launch {
+                                            val sessionId = viewModel.createNewSession()
+                                            if (sessionId != null) onNewChatGuarded(sessionId)
+                                        }
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Terminal, contentDescription = null)
+                                        Icon(Icons.Outlined.Forum, contentDescription = null)
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessionlist_rootfs_management)) },
+                                    text = { Text(stringResource(R.string.novex_create_story)) },
                                     onClick = {
                                         showOverflowMenu = false
-                                        onRootfsClick()
+                                        scope.launch {
+                                            val sessionId = viewModel.createNewSession()
+                                            if (sessionId != null) onNewChatGuarded(sessionId)
+                                        }
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Settings, contentDescription = null)
-                                    },
-                                )
-                                MinisMenuDivider()
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessionlist_open_browser)) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        browserTabPool.ensureTabForUI()
-                                        showBrowserSheet = true
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Language, contentDescription = null)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.sessionlist_browser_settings)) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        showBrowserSettings = true
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Settings, contentDescription = null)
+                                        Icon(Icons.Outlined.Brush, contentDescription = null)
                                     },
                                 )
                             }

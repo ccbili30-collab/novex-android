@@ -609,9 +609,9 @@ internal fun buildFlatChatItems(
             .map { messages[it] }
             .firstOrNull { it.role != "system" }
         val isResumeContinuation = prevNonSystem?.role == "assistant"
-        if (!isSystem && !isResumeContinuation) {
-            out.add(dedupe(FlatChatItem.AssistantHeader(message.id)))
-        }
+        // Novex keeps the narrative as the primary surface. Repeating an
+        // assistant avatar/name before every turn wastes phone width and makes
+        // the story read like a messenger transcript, so no header row is added.
 
         val blocks = message.toolBlocks
         val toolPillBlocks = blocks.filter { it.kind == "tool_use" }

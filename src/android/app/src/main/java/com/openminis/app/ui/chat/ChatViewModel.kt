@@ -8030,7 +8030,30 @@ class ChatViewModel(
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
+            "present_choices" -> executePresentChoicesTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
+        }
+    }
+
+    private fun executePresentChoicesTool(argsJson: String): ToolExecutionResult {
+        return runCatching {
+            val args = JSONObject(argsJson)
+            val choices = org.json.JSONArray(args.getString("choices"))
+            val normalized = (0 until choices.length())
+                .mapNotNull { choices.optString(it).trim().takeIf(String::isNotEmpty) }
+                .take(6)
+            require(normalized.size >= 2) { "At least two choices are required" }
+            ToolExecutionResult(
+                output = "已显示 ${normalized.size} 个可点击选项；用户也可以自由输入。",
+                success = true,
+                toolTitle = "提供行动选项",
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(
+                output = "选项格式无效：${error.message ?: "请提供 JSON 字符串数组"}",
+                success = false,
+                toolTitle = "提供行动选项",
+            )
         }
     }
 
@@ -8973,7 +8996,8 @@ Memory system (currently DISABLED):
 - If the user asks why earlier memories aren't visible, or asks you to save something, tell them memory is currently disabled and point them at the /memory slash command or [Settings → Memory](minis://settings/memory) to re-enable it.
 - SOUL.md (personality / identity) is unaffected by this toggle; the persona section above still applies."""
         }
-        val base = identitySection + """You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.
+        @Suppress("UNUSED_VARIABLE")
+        val legacyMinisBase = identitySection + """You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.
 
 Available tools:
 - shell_execute: Run any shell command. Each invocation is an isolated process with stdout/stderr captured. Prefer this for most tasks — it is a real Linux environment with persistent filesystem. Common tools (python3, pip, curl, wget, git, ssh, etc.) can be installed via apk add; Python packages via pip install. Use `which <cmd>` to check if a tool is already installed before running apk add — many packages persist across sessions. When you need to wait before checking results (e.g. polling, waiting for a process), use the `delay` parameter instead of `sleep` in the command — delay blocks the agent flow without occupying the shell, so other concurrent tasks can use it during the wait. This avoids resource contention. Execution discipline for long-running or dispatched work: make tool calls immediately instead of describing intentions, and keep working until the task is complete. Without a scheduler or timed-callback tool, `delay` is your ONLY wait mechanism within a turn — to follow up on something still running, chain delay-then-check calls at a task-appropriate interval until you have the result or hit a sensible retry cap. NEVER end a turn with a promise of future action: 'I'll keep monitoring', 'will sync the result later', and ending right after a single still-running status check with 'let's keep waiting' are all the same violation — once your turn ends, NOTHING runs until the user's next message. If polling to completion is genuinely not worth blocking the turn, close honestly instead: state that the task keeps running in the background, that you will only learn its outcome when the user next messages (or they ask you to check), and — if something must fire on a schedule beyond this conversation — point them to the options under 'Scheduled tasks' later in this prompt (native alarm reminder or a system-level schedule; those notify the USER, they do not wake you).
@@ -9064,6 +9088,12 @@ Environment variables:
 - To check if a variable is set, use `[ -n "${'$'}VAR" ] && echo 'set' || echo 'not set'`. NEVER use echo ${'$'}VAR, printenv VAR, or any command that would output the actual value into the conversation context.${memorySystemSection}
 
 Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. For recurring tasks that must fire while the app is backgrounded, use the native alarm tool (AlarmManager) or tell the user to set up a system-level schedule (Google Calendar event, Tasker automation, etc.). (Waiting or polling WITHIN the current turn is different — that is what shell_execute `delay` chains are for, per the shell_execute notes above.)"""
+
+        val base = com.openminis.app.agent.NovexSystemPrompt.build(
+            sessionId = activeSessionId,
+            personalitySection = identitySection,
+            memoryEnabled = memoryOn,
+        )
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
@@ -11001,6 +11031,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "browser_use" -> "Browse Web"
         "read_image" -> "Read Image"
         "memory_write" -> "Write Memory"
+        "present_choices" -> "提供行动选项"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

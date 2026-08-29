@@ -9,7 +9,8 @@ import android.content.SharedPreferences
  * Two-layer model (mirrors iOS):
  *   - **Global** (this file): default for newly-created sessions.
  *     Toggled from Settings → Memory. Pref key
- *     `memory.global.enabled`, default `true`.
+ *     `memory.global.enabled`, default `false` in Novex so unrelated worlds
+ *     cannot leak into one another.
  *   - **Per-session** (`ChatSessionEntity.memory_enabled`): override
  *     for a specific chat, toggled via `/memory` or
  *     `SessionMemorySheet`. Once a session has a row, that row's
@@ -30,7 +31,7 @@ object MemoryGlobalPrefs {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun isGlobalEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_GLOBAL_ENABLED, true)
+        prefs(context).getBoolean(KEY_GLOBAL_ENABLED, false)
 
     fun setGlobalEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_GLOBAL_ENABLED, enabled).apply()

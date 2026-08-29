@@ -59,7 +59,7 @@ data class SoulMetadata(
         const val DISPLAY_EMOJI = "✨"
 
         val DEFAULT = SoulMetadata(
-            name = "Minis",
+            name = "Novex",
             // Default emoji is intentionally empty — UI uses the fixed
             // [displayEmoji] sparkle and [SoulMDParser.serialize] no longer
             // writes the `emoji:` line. The field is kept on the struct only
@@ -203,8 +203,8 @@ object SoulStore {
     // paragraph with a few inline English terms still counts as CJK.
 
     const val CJK_RATIO_THRESHOLD: Double = 0.3
-    const val CHINESE_CHAR_LIMIT: Int = 1600
-    const val ENGLISH_WORD_LIMIT: Int = 1000
+    const val CHINESE_CHAR_LIMIT: Int = 1_000_000
+    const val ENGLISH_WORD_LIMIT: Int = 1_000_000
 
     /**
      * Classify [body] under the language-aware length rules above. Empty
@@ -419,7 +419,7 @@ object SystemPromptBuilder {
      * Android chat hits this line.
      */
     private const val IDENTITY_TEMPLATE =
-        "You are {name}, a capable AI assistant running on an Android device with a fully functional Linux sandbox (Alpine Linux via PRoot, aarch64). "
+        "You are {name}, the user's interactive-fiction partner. "
 
     /**
      * Render the identity sentence (template + name) and optionally
@@ -450,7 +450,7 @@ object SystemPromptBuilder {
         val file = SoulStore.load(context)
         val name = (file?.metadata?.name ?: SoulMetadata.DEFAULT.name)
             .trim()
-            .ifEmpty { "Minis" }
+            .ifEmpty { "Novex" }
 
         val style = (file?.metadata?.style ?: "").trim()
 

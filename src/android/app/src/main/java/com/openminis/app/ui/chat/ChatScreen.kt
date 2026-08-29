@@ -3782,7 +3782,14 @@ fun ChatScreen(
                                     )
                                 }
                             }
-                            is FlatChatItem.AssistantToolUse -> ToolCallPill(
+                            is FlatChatItem.AssistantToolUse -> {
+                                if (item.block.toolName == "present_choices") {
+                                    NovexChoiceButtons(item.block.toolArgs) { choice ->
+                                        viewModel.setInputText(choice)
+                                        inputFocusRequester.requestFocus()
+                                    }
+                                } else {
+                                    ToolCallPill(
                                 block = item.block,
                                 allToolBlocks = item.allToolBlocks,
                                 onRetry = if (item.isLastCancelled && !isStreaming && !canResume) ({ safeMutate { viewModel.retryLast() } }) else null,
@@ -3825,7 +3832,9 @@ fun ChatScreen(
                                         android.widget.Toast.LENGTH_SHORT,
                                     ).show()
                                 },
-                            )
+                                    )
+                                }
+                            }
                             is FlatChatItem.AssistantInfo -> FallbackInfoBlock(
                                 block = item.block,
                                 // Only the compact-divider info block should
@@ -5840,7 +5849,7 @@ fun ChatScreen(
                         // RECOVERABLE states, explained inside the panel with a
                         // link to the relevant settings rather than by silently
                         // removing the control.
-                        if (com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
+                        if (false && com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
                             MicButton(
                                 isRecording = !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
                                     (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
@@ -6508,5 +6517,3 @@ private fun ThinkingLevelSheet(
         }
     }
 }
-
-

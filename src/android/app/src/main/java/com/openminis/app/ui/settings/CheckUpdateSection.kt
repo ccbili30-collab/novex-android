@@ -12,11 +12,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -234,6 +237,106 @@ fun CheckUpdateSection() {
                     update = null
                     downloadError = null
                     awaitingInstallPerm = false
+                }
+            },
+        )
+    }
+}
+
+/** Compact home-toolbar variant used by Novex. */
+@Composable
+fun NovexUpdateAction() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var update by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
+    var downloadProgress by remember { mutableStateOf<Float?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var awaitingInstallPermission by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME || !UpdateChecker.canInstall(context)) {
+                return@LifecycleEventObserver
+            }
+            awaitingInstallPermission = false
+            UpdateChecker.resumablePendingFile(context)?.let { file ->
+                if (UpdateChecker.installApk(context, file)) update = null
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+    }
+
+    IconButton(
+        enabled = !checking,
+        onClick = {
+            val available = update
+            if (available != null) return@IconButton
+            checking = true
+            scope.launch {
+                when (val result = UpdateChecker.check()) {
+                    is UpdateChecker.CheckResult.UpdateAvailable -> update = result
+                    UpdateChecker.CheckResult.UpToDate ->
+                        android.widget.Toast.makeText(context, "Novex 已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                    UpdateChecker.CheckResult.NoReleaseAvailable ->
+                        android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
+                    is UpdateChecker.CheckResult.NoApkAsset ->
+                        android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
+                    UpdateChecker.CheckResult.Forbidden,
+                    UpdateChecker.CheckResult.NetworkUnreachable ->
+                        android.widget.Toast.makeText(context, "无法连接 GitHub，请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
+                    is UpdateChecker.CheckResult.Error ->
+                        android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+                checking = false
+            }
+        },
+    ) {
+        when {
+            checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            update != null -> Icon(Icons.Outlined.FileDownload, contentDescription = "下载 Novex 更新")
+            else -> Icon(Icons.Outlined.SystemUpdate, contentDescription = "检查 Novex 更新")
+        }
+    }
+
+    update?.let { available ->
+        UpdateDialog(
+            update = available,
+            downloadProgress = downloadProgress,
+            downloadError = downloadError,
+            needsInstallPerm = awaitingInstallPermission,
+            onDownload = {
+                downloadError = null
+                downloadProgress = 0f
+                scope.launch {
+                    when (val result = UpdateChecker.download(
+                        context = context,
+                        url = available.apkUrl,
+                        versionName = available.versionName,
+                    ) { downloadProgress = it }) {
+                        is UpdateChecker.DownloadResult.Success -> {
+                            downloadProgress = null
+                            if (UpdateChecker.canInstall(context)) {
+                                if (UpdateChecker.installApk(context, result.file)) update = null
+                                else downloadError = "无法打开安装界面"
+                            } else {
+                                awaitingInstallPermission = true
+                            }
+                        }
+                        is UpdateChecker.DownloadResult.Error -> {
+                            downloadProgress = null
+                            downloadError = result.message
+                        }
+                    }
+                }
+            },
+            onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
+            onDismiss = {
+                if (downloadProgress == null) {
+                    update = null
+                    downloadError = null
+                    awaitingInstallPermission = false
                 }
             },
         )
