@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -32,13 +34,12 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -54,8 +55,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -96,31 +95,31 @@ private val Moss = Color(0xFF3C5A49)
 private val Gold = Color(0xFFB88645)
 private val Hairline = Color(0xFFE2DDD3)
 
-private enum class RootTab { DISCOVER, SESSIONS, MINE }
 private sealed interface Page {
     data object Root : Page
     data class World(val id: String) : Page
     data object Chat : Page
+    data object Settings : Page
 }
 
 @Composable
 fun NovenApp(runtime: NovenRuntime = remember { PreviewNovenRuntime() }) {
-    var rootTab by remember { mutableStateOf(RootTab.DISCOVER) }
     var page: Page by remember { mutableStateOf(Page.Root) }
+    var homePage by remember { mutableStateOf(1) }
 
     BackHandler(enabled = page !is Page.Root) {
         page = Page.Root
-        rootTab = RootTab.SESSIONS
     }
 
     when (val current = page) {
         Page.Root -> RootScaffold(
             runtime = runtime,
-            tab = rootTab,
-            onTabChange = { rootTab = it },
             onWorld = { page = Page.World(it) },
             onSession = { runtime.openSession(it); page = Page.Chat },
             onNewSession = { runtime.createBlankSession(); page = Page.Chat },
+            onSettings = { page = Page.Settings },
+            initialPage = homePage,
+            onPageChange = { homePage = it },
         )
         is Page.World -> WorldDetail(
             world = runtime.worlds.collectAsState().value.first { it.id == current.id },
@@ -129,71 +128,87 @@ fun NovenApp(runtime: NovenRuntime = remember { PreviewNovenRuntime() }) {
         )
         Page.Chat -> PlayerChat(runtime = runtime, onBack = {
             page = Page.Root
-            rootTab = RootTab.SESSIONS
         })
+        Page.Settings -> SettingsScreen(onBack = { page = Page.Root })
     }
 }
 
 @Composable
 private fun RootScaffold(
     runtime: NovenRuntime,
-    tab: RootTab,
-    onTabChange: (RootTab) -> Unit,
     onWorld: (String) -> Unit,
     onSession: (String) -> Unit,
     onNewSession: () -> Unit,
+    onSettings: () -> Unit,
+    initialPage: Int,
+    onPageChange: (Int) -> Unit,
 ) {
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { 2 })
+    val scope = rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
+        onPageChange(pagerState.currentPage)
+    }
     Scaffold(
         containerColor = Paper,
-        bottomBar = {
-            NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                NavigationBarItem(
-                    selected = tab == RootTab.DISCOVER,
-                    onClick = { onTabChange(RootTab.DISCOVER) },
-                    icon = { Icon(Icons.Rounded.Explore, null) },
-                    label = { Text("发现") },
-                )
-                NavigationBarItem(
-                    selected = tab == RootTab.SESSIONS,
-                    onClick = { onTabChange(RootTab.SESSIONS) },
-                    icon = { Icon(Icons.Rounded.ChatBubbleOutline, null) },
-                    label = { Text("会话") },
-                )
-                NavigationBarItem(
-                    selected = tab == RootTab.MINE,
-                    onClick = { onTabChange(RootTab.MINE) },
-                    icon = { Icon(Icons.Rounded.Person, null) },
-                    label = { Text("我的") },
-                )
-            }
+        topBar = {
+            HomeHeader(
+                selectedPage = pagerState.currentPage,
+                onSelectPage = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
+                onSettings = onSettings,
+            )
         },
         floatingActionButton = {
-            if (tab == RootTab.SESSIONS) {
+            if (pagerState.currentPage == 1) {
                 FloatingActionButton(onClick = onNewSession, containerColor = Ink, contentColor = Color.White) {
                     Icon(Icons.Rounded.Add, contentDescription = "新建故事")
                 }
             }
         },
     ) { padding ->
-        when (tab) {
-            RootTab.DISCOVER -> DiscoverScreen(runtime, Modifier.padding(padding), onWorld, onSession)
-            RootTab.SESSIONS -> SessionsScreen(runtime, Modifier.padding(padding), onSession)
-            RootTab.MINE -> MineScreen(Modifier.padding(padding))
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize().padding(padding),
+            beyondViewportPageCount = 1,
+        ) { pageIndex ->
+            when (pageIndex) {
+                0 -> DiscoverScreen(runtime, Modifier.fillMaxSize(), onWorld, onSession)
+                else -> SessionsScreen(runtime, Modifier.fillMaxSize(), onSession)
+            }
         }
     }
 }
 
 @Composable
-private fun ScreenHeader(title: String, subtitle: String? = null, trailing: (@Composable () -> Unit)? = null) {
-    Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Ink, fontSize = 29.sp, fontWeight = FontWeight.SemiBold)
-            if (subtitle != null) Text(subtitle, color = Ink.copy(alpha = .55f), fontSize = 13.sp)
+private fun HomeHeader(selectedPage: Int, onSelectPage: (Int) -> Unit, onSettings: () -> Unit) {
+    Surface(color = Paper, shadowElevation = 0.dp) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("诺文", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "设置") }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                HomeTab("世界", selectedPage == 0, Modifier.weight(1f)) { onSelectPage(0) }
+                HomeTab("对话记录", selectedPage == 1, Modifier.weight(1f)) { onSelectPage(1) }
+            }
+            Divider(color = Hairline)
         }
-        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun HomeTab(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(
+        modifier = modifier.clickable(onClick = onClick).padding(top = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text, color = if (selected) Ink else Ink.copy(.42f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        Box(
+            Modifier.padding(top = 10.dp).width(30.dp).height(3.dp).clip(CircleShape)
+                .background(if (selected) Moss else Color.Transparent)
+        )
     }
 }
 
@@ -203,9 +218,12 @@ private fun DiscoverScreen(runtime: NovenRuntime, modifier: Modifier, onWorld: (
     val sessions by runtime.sessions.collectAsState()
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 28.dp)) {
         item {
-            ScreenHeader("诺文", "进入一个世界，让故事从你开始") {
-                IconButton(onClick = {}) { Icon(Icons.Rounded.Search, contentDescription = "搜索世界") }
-            }
+            Text(
+                "选一个世界，故事会从你进入的那一刻开始。",
+                color = Ink.copy(.56f),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            )
         }
         sessions.firstOrNull()?.let { session ->
             item {
@@ -285,8 +303,13 @@ private fun Tag(text: String) {
 private fun SessionsScreen(runtime: NovenRuntime, modifier: Modifier, onSession: (String) -> Unit) {
     val sessions by runtime.sessions.collectAsState()
     Column(modifier.fillMaxSize()) {
-        ScreenHeader("会话", "每段故事都保留在这里")
-        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+        Text(
+            "继续上次的故事，或从一个新念头开始。",
+            color = Ink.copy(.56f),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+        )
+        LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), modifier = Modifier.fillMaxSize()) {
             items(sessions, key = { it.id }) { session ->
                 SessionRow(session, onClick = { onSession(session.id) })
             }
@@ -326,21 +349,48 @@ private fun StoryAvatar(res: Int?, size: androidx.compose.ui.unit.Dp) {
 }
 
 @Composable
-private fun MineScreen(modifier: Modifier) {
-    Column(modifier.fillMaxSize()) {
-        ScreenHeader("我的", "模型、联网与显示设置")
-        SettingsGroup("人工智能服务", listOf("模型提供方", "联网与浏览", "用量记录"))
-        SettingsGroup("应用", listOf("外观与字体", "本地存储", "关于诺文"))
+private fun SettingsScreen(onBack: () -> Unit) {
+    Scaffold(
+        containerColor = Paper,
+        topBar = {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回") }
+                Text("设置", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Text(
+                "人工智能如何陪你进入故事",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                color = Ink.copy(.48f),
+                fontSize = 13.sp,
+            )
+            SettingsGroup(
+                "诺文",
+                listOf(
+                    "人格" to "定义它的身份、语气与写作倾向",
+                    "记忆" to "管理跨会话保留的世界与偏好",
+                    "技能" to "选择创作、检索与整理能力",
+                ),
+            )
+        }
     }
 }
 
 @Composable
-private fun SettingsGroup(title: String, rows: List<String>) {
+private fun SettingsGroup(title: String, rows: List<Pair<String, String>>) {
     Text(title, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp), color = Ink.copy(.48f), fontSize = 13.sp)
     Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(20.dp)) {
         rows.forEachIndexed { index, row ->
             Row(Modifier.fillMaxWidth().clickable { }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(row, color = Ink, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(row.first, color = Ink, fontWeight = FontWeight.Medium)
+                    Text(row.second, color = Ink.copy(.48f), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                }
                 Text("›", color = Ink.copy(.35f), fontSize = 24.sp)
             }
             if (index != rows.lastIndex) Divider(Modifier.padding(start = 18.dp), color = Hairline)
@@ -512,6 +562,7 @@ private fun BlankConversation(modifier: Modifier, onPrompt: (String) -> Unit) {
 @Composable
 private fun StoryNodeView(node: StoryNode, onAction: (String) -> Unit) {
     when (node) {
+        is StoryNode.UserMessage -> UserMessageNode(node)
         is StoryNode.Narrative -> NarrativeNode(node)
         is StoryNode.Character -> CharacterNode(node)
         is StoryNode.Actions -> ActionsNode(node, onAction)
@@ -519,36 +570,106 @@ private fun StoryNodeView(node: StoryNode, onAction: (String) -> Unit) {
 }
 
 @Composable
+private fun UserMessageNode(node: StoryNode.UserMessage) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Surface(
+            color = Moss,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 6.dp, bottomEnd = 20.dp, bottomStart = 20.dp),
+            modifier = Modifier.fillMaxWidth(.82f),
+        ) {
+            Text(
+                node.text,
+                color = Color.White,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun NarrativeNode(node: StoryNode.Narrative) {
-    Column(Modifier.fillMaxWidth()) {
-        node.eyebrow?.let { Text(it.uppercase(), color = Gold, fontSize = 11.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold) }
-        node.title?.let { Text(it, color = Ink, fontSize = 23.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 5.dp, bottom = 8.dp)) }
-        node.paragraphs.forEach { paragraph ->
-            Text(paragraph, color = Ink.copy(.88f), fontSize = 17.sp, lineHeight = 29.sp, modifier = Modifier.padding(top = 9.dp))
+    Row(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.padding(top = 5.dp).size(28.dp).clip(CircleShape).background(PaperMuted),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("诺", color = Moss, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f)) {
+            if (node.eyebrow != null || node.title != null) {
+                Column(
+                    Modifier.fillMaxWidth().background(PaperMuted, RoundedCornerShape(16.dp)).padding(15.dp)
+                ) {
+                    node.eyebrow?.let {
+                        Text(it, color = Gold, fontSize = 11.sp, letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold)
+                    }
+                    node.title?.let {
+                        Text(
+                            it,
+                            color = Ink,
+                            fontSize = 20.sp,
+                            lineHeight = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = if (node.eyebrow == null) 0.dp else 5.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(9.dp))
+            }
+            node.paragraphs.forEach { paragraph ->
+                Text(paragraph, color = Ink.copy(.88f), fontSize = 16.sp, lineHeight = 27.sp, modifier = Modifier.padding(top = 7.dp))
+            }
         }
     }
 }
 
 @Composable
 private fun CharacterNode(node: StoryNode.Character) {
-    Card(colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(22.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Hairline)) {
-        Column(Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(58.dp).clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Color(0xFFB49A77), Color(0xFF3E5048)))), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Person, null, tint = Color.White, modifier = Modifier.size(30.dp))
+    var expanded by remember(node.id) { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(Ink),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column {
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.width(88.dp).height(112.dp).clip(RoundedCornerShape(20.dp))
+                        .background(Brush.verticalGradient(listOf(Color(0xFFD0B58C), Color(0xFF53675B)))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Person, null, tint = Color.White.copy(.92f), modifier = Modifier.size(45.dp))
                 }
-                Spacer(Modifier.width(13.dp))
+                Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("角色卡", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(node.name, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                    Text(node.identity, color = Ink.copy(.52f), fontSize = 13.sp)
+                    Text("人物进入故事", color = Color(0xFFD7B47B), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text(node.name, color = Color.White, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                    Text(node.identity, color = Color.White.copy(.58f), fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 3.dp))
+                    Text(
+                        if (expanded) "收起角色卡 ↑" else "查看角色卡 ›",
+                        color = Color.White.copy(.78f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 13.dp),
+                    )
                 }
-                Text("查看 ›", color = Moss, fontSize = 13.sp)
             }
-            Divider(Modifier.padding(vertical = 14.dp), color = Hairline)
-            Text(node.publicFace, color = Ink.copy(.72f), lineHeight = 22.sp)
-            Text("秘密 · ${node.secret}", color = Ink, lineHeight = 22.sp, modifier = Modifier.padding(top = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 13.dp)) { node.traits.forEach { Tag(it) } }
+            Surface(color = Color.White, shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)) {
+                Column(Modifier.fillMaxWidth().padding(17.dp)) {
+                    Text("此刻的她", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(node.publicFace, color = Ink.copy(.76f), lineHeight = 22.sp, modifier = Modifier.padding(top = 5.dp))
+                    if (expanded) {
+                        Divider(Modifier.padding(vertical = 13.dp), color = Hairline)
+                        Text("你已经知道", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(node.secret, color = Ink, lineHeight = 22.sp, modifier = Modifier.padding(top = 5.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 13.dp)) {
+                            items(node.traits) { Tag(it) }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -556,18 +677,20 @@ private fun CharacterNode(node: StoryNode.Character) {
 @Composable
 private fun ActionsNode(node: StoryNode.Actions, onAction: (String) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Text(node.prompt, color = Ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
-        node.actions.forEach { action ->
-            Surface(
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onAction(action) },
-            ) {
-                Text(action, color = Ink, modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp))
+        Text(node.prompt, color = Ink.copy(.62f), fontSize = 13.sp, modifier = Modifier.padding(bottom = 9.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(node.actions) { action ->
+                Surface(
+                    color = Color.White,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
+                    shape = RoundedCornerShape(100.dp),
+                    modifier = Modifier.clickable { onAction(action) },
+                ) {
+                    Text(action, color = Ink, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp))
+                }
             }
         }
-        Text("点击只会填入输入框，不会直接发送", color = Ink.copy(.4f), fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
+        Text("点击填入输入框", color = Ink.copy(.38f), fontSize = 11.sp, modifier = Modifier.padding(top = 7.dp))
     }
 }
 

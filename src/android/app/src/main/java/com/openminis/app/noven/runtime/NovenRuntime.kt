@@ -34,6 +34,12 @@ sealed interface StoryNode {
     val id: String
 
     @Immutable
+    data class UserMessage(
+        override val id: String,
+        val text: String,
+    ) : StoryNode
+
+    @Immutable
     data class Narrative(
         override val id: String,
         val eyebrow: String? = null,

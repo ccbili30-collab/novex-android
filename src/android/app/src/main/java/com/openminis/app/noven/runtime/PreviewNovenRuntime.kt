@@ -104,9 +104,19 @@ class PreviewNovenRuntime : NovenRuntime {
 
     override fun send(text: String) {
         if (text.isBlank()) return
-        _storyNodes.value = _storyNodes.value + StoryNode.Narrative(
-            id = UUID.randomUUID().toString(),
-            paragraphs = listOf("你的想法已经进入故事：$text", "真实模型循环将在下一阶段通过同一运行接口接管这里。"),
+        val turnId = UUID.randomUUID().toString()
+        _storyNodes.value = _storyNodes.value + listOf(
+            StoryNode.UserMessage(
+                id = "user-$turnId",
+                text = text,
+            ),
+            StoryNode.Narrative(
+                id = "assistant-$turnId",
+                paragraphs = listOf(
+                    "你的动作让故事继续向前。$text",
+                    "真实模型循环将在下一阶段通过同一运行接口接管这里。",
+                ),
+            ),
         )
     }
 
