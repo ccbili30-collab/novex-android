@@ -167,6 +167,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -208,6 +209,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalFocusManager
@@ -3799,7 +3801,7 @@ fun ChatScreen(
                                         viewModel.setInputText(choice)
                                         inputFocusRequester.requestFocus()
                                     }
-                                } else if (item.block.toolName == "panel" || item.block.toolName == "present_system_panel") {
+                                } else if (item.block.toolName in setOf("render_panel", "panel", "present_system_panel")) {
                                     NovexPanel(item.block.toolArgs) { value ->
                                         viewModel.setInputText(value)
                                         inputFocusRequester.requestFocus()
@@ -5075,6 +5077,14 @@ fun ChatScreen(
                             fontSize = 16.5.sp * chatInputFontScale,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+                        val teachingHints = stringArrayResource(R.array.novex_composer_hints)
+                        var teachingHintIndex by rememberSaveable { mutableIntStateOf(0) }
+                        LaunchedEffect(teachingHints.size) {
+                            while (teachingHints.isNotEmpty()) {
+                                kotlinx.coroutines.delay(120_000L)
+                                teachingHintIndex = (teachingHintIndex + 1) % teachingHints.size
+                            }
+                        }
                         // [T-android-enter-to-send-broken] Live read of the
                         // "Return key sends" preference. Bound here (not
                         // captured at BasicTextField construction) so a
@@ -5330,13 +5340,8 @@ fun ChatScreen(
                                         // source for the Soul-customized name
                                         // so renames in Soul Settings reflect
                                         // here live.
-                                        val soulName by com.openminis.app.agent.SoulStore
-                                            .cachedMetadata.collectAsState()
                                         Text(
-                                            stringResource(
-                                                R.string.chat_input_placeholder,
-                                                soulName.name,
-                                            ),
+                                            teachingHints.getOrElse(teachingHintIndex) { "" },
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                             fontSize = 16.5.sp * chatInputFontScale,
                                             maxLines = 1,

@@ -684,7 +684,7 @@ fun SessionListScreen(
                                     onClick = {
                                         showOverflowMenu = false
                                         scope.launch {
-                                            val sessionId = viewModel.createNewSession()
+                                            val sessionId = viewModel.createNewSession(novexMode = "play")
                                             if (sessionId != null) onNewChatGuarded(sessionId)
                                         }
                                     },
@@ -697,7 +697,7 @@ fun SessionListScreen(
                                     onClick = {
                                         showOverflowMenu = false
                                         scope.launch {
-                                            val sessionId = viewModel.createNewSession()
+                                            val sessionId = viewModel.createNewSession(novexMode = "creation")
                                             if (sessionId != null) onNewChatGuarded(sessionId)
                                         }
                                     },
@@ -2658,7 +2658,7 @@ private fun OnboardingLanding(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(
-                painter = painterResource(R.drawable.novex_logo),
+                painter = painterResource(R.drawable.novex_logo_transparent),
                 contentDescription = stringResource(R.string.novex_logo_description),
                 modifier = Modifier.size(88.dp),
             )

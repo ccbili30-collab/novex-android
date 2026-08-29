@@ -1484,6 +1484,14 @@
     <string name="novex_openminis_thanks">Thanks to Minis for creating this beautiful foundation. Novex is its interactive-fiction edition.</string>
     <string name="novex_star_openminis">Star Minis</string>
     <string name="novex_star_novex">Star Novex</string>
+    <string-array name="novex_composer_hints">
+        <item>Find a skilled interactive-fiction designer to create your own launcher.</item>
+        <item>Use 【】 to correct how the AI handles the world.</item>
+        <item>Choices fill the composer. You can edit them before sending.</item>
+        <item>Panels show reference material. Tap the title to expand or collapse.</item>
+        <item>Creation mode organizes characters, worlds, and launch templates.</item>
+        <item>Play mode enters the world and advances the story with AI.</item>
+    </string-array>
     <string name="novex_create_menu">Create interactive fiction</string>
     <string name="novex_new_story">New story</string>
     <string name="novex_create_story">Create a story world</string>

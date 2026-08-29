@@ -33,7 +33,7 @@ object AgentTools {
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
         add(presentChoicesDefinition())
-        add(panelDefinition())
+        add(renderPanelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
         if (supportsImageInput || visionGroupConfigured) {
@@ -63,21 +63,21 @@ object AgentTools {
         propertyOrdering = listOf("title", "choices"),
     )
 
-    private fun panelDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "panel",
-        description = "Show structured non-narrative material inside the current continuous conversation " +
-            "as one quiet collapsible panel. The same tool is used for characters, world state, saves, maps, " +
-            "rules and other material; never invent a specialized panel tool.",
+    private fun renderPanelDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "render_panel",
+        description = "Render one general-purpose collapsible panel inside the current continuous conversation. " +
+            "Use it for independent reference material such as characters, saves, world state, maps, documents, " +
+            "timelines and system information. Ordinary narrative stays in normal prose.",
         parameters = mapOf(
-            "title" to AgentToolParam("string", "Optional short panel title."),
-            "content" to AgentToolParam("string", "Optional readable text or Markdown content."),
-            "images" to AgentToolParam("string", "Optional JSON array of image URLs or minis:// resource URLs."),
-            "items" to AgentToolParam("string", "Optional JSON array of concise list items."),
-            "buttons" to AgentToolParam("string", "Optional JSON array of objects with label and value. Tapping fills the composer and never sends automatically."),
-            "expanded" to AgentToolParam("boolean", "Whether the panel starts expanded. Default false."),
+            "title" to AgentToolParam("string", "Short, clear panel title."),
+            "summary" to AgentToolParam("string", "One-line summary visible while collapsed."),
+            "icon" to AgentToolParam("string", "Semantic icon: character, save, world, document, timeline, map, system, or none."),
+            "collapsed" to AgentToolParam("boolean", "Whether the panel starts collapsed."),
+            "blocks" to AgentToolParam("string", "JSON array of ordered content blocks. Supported types: markdown, image, gallery, table, stats, timeline, details, divider, html."),
+            "actions" to AgentToolParam("string", "Optional JSON array of {label,prompt}. Tapping fills the composer and never sends automatically."),
         ),
-        required = emptyList(),
-        propertyOrdering = listOf("title", "content", "images", "items", "buttons", "expanded"),
+        required = listOf("title", "summary", "blocks"),
+        propertyOrdering = listOf("title", "summary", "icon", "collapsed", "blocks", "actions"),
     )
 
     private fun saveCheckpointDefinition(): AgentToolDefinition = AgentToolDefinition(

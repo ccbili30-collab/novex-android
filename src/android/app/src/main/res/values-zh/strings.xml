@@ -1243,6 +1243,14 @@
     <string name="novex_create_menu">创建文游</string>
     <string name="novex_new_story">新建文游</string>
     <string name="novex_create_story">创作文游</string>
+    <string-array name="novex_composer_hints">
+        <item>欢迎找优质的文游设计师，设计自己独立的文游启动器。</item>
+        <item>使用【】可以调整人工智能的处理方式。</item>
+        <item>点击选项会将内容填入输入框，你可以修改后再发送。</item>
+        <item>面板用于单独展示资料，点击标题可以展开或折叠。</item>
+        <item>创作模式用于整理和修改角色、世界设定与启动模板。</item>
+        <item>游玩模式用于进入世界，与人工智能共同推进故事。</item>
+    </string-array>
 
     <!-- T-pwa-1: WebApp 快捷方式基础（原 PWA 已重命名） -->
     <string name="webapp_activity_label">Novex 应用</string>

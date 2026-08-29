@@ -3087,10 +3087,14 @@ class ChatViewModel(
     /** Whether this is a draft session (not yet persisted to DB). */
     private val isDraft: Boolean = sessionId.startsWith("__new__")
 
+    /** Novex modes share one system prompt. Creation only adds hidden leading context. */
+    private val initialNovexMode: String =
+        if (sessionId.contains("__novex__creation")) "creation" else "play"
+
     /** Model group ID from long-press FAB, encoded in the draft session ID.
      *  substringBefore strips the folder marker in case both are present. */
     private val initialGroupId: String? =
-        sessionId.substringAfter("__grp__", "").substringBefore("__fld__")
+        sessionId.substringAfter("__grp__", "").substringBefore("__fld__").substringBefore("__novex__")
             .takeIf { it.isNotEmpty() }
 
     /** Session-group (folder) id from the folder card's "New Chat in Group"
@@ -3098,7 +3102,7 @@ class ChatViewModel(
      *  folder_id row can only exist once the session does (iOS defers the
      *  same way via pendingFolderDraft). */
     private val initialFolderId: String? =
-        sessionId.substringAfter("__fld__", "").substringBefore("__grp__")
+        sessionId.substringAfter("__fld__", "").substringBefore("__grp__").substringBefore("__novex__")
             .takeIf { it.isNotEmpty() }
 
     /** The real session ID (same as sessionId for existing sessions, generated on first message for drafts). */
@@ -3327,6 +3331,13 @@ class ChatViewModel(
             // re-enters the session and everything is resolved via the real
             // id. See debug report 2026-04-21 (TikTok Chinese filename).
             migrateDraftResources(fromDraft = sessionId, toReal = session.id)
+            runCatching {
+                val path = "/var/minis/workspace/novex/${session.id}/mode.txt"
+                com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(session.id, path, context)?.let { file ->
+                    file.parentFile?.mkdirs()
+                    file.writeText(initialNovexMode)
+                }
+            }
             // [T-android-session-skill-override-init-timing] Re-point any
             // session_skill_overrides / mcp_session_overrides rows written
             // pre-first-message (against `__new__<uuid>`) onto the real
@@ -8051,7 +8062,7 @@ class ChatViewModel(
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
             "present_choices" -> executePresentChoicesTool(argsJson)
-            "panel" -> executePanelTool(argsJson)
+            "render_panel", "panel" -> executePanelTool(argsJson)
             // Compatibility for tool calls already stored by earlier Novex builds.
             "present_system_panel" -> executePanelTool(argsJson)
             "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
@@ -8085,10 +8096,10 @@ class ChatViewModel(
     private fun executePanelTool(argsJson: String): ToolExecutionResult {
         return runCatching {
             val args = JSONObject(argsJson)
-            val hasContent = listOf("title", "content", "images", "items", "buttons")
+            val hasContent = listOf("title", "summary", "blocks", "content", "images", "items", "buttons")
                 .any { args.optString(it).isNotBlank() }
             require(hasContent) { "面板内容为空" }
-            listOf("images", "items", "buttons").forEach { key ->
+            listOf("blocks", "actions", "images", "items", "buttons").forEach { key ->
                 args.optString(key).takeIf(String::isNotBlank)?.let { org.json.JSONArray(it) }
             }
             ToolExecutionResult(
@@ -11140,7 +11151,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "read_image" -> "Read Image"
         "memory_write" -> "Write Memory"
         "present_choices" -> "提供行动选项"
-        "panel", "present_system_panel" -> "显示资料面板"
+        "render_panel", "panel", "present_system_panel" -> "显示资料面板"
         "save_checkpoint" -> "保存文游进度"
         "register_controls" -> "更新世界功能"
         "memory_get" -> "Read Memory"
