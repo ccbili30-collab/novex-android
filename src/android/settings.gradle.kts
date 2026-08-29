@@ -1,5 +1,11 @@
 pluginManagement {
     repositories {
+        // Windows builders in mainland China may fail the TLS handshake to
+        // Google's repositories even when ordinary HTTPS works. Keep the
+        // canonical repositories below, but put reproducible mirrors first.
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -9,6 +15,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
         google()
         mavenCentral()
         // [T-android-vad] RealTimeCutVADLibraryForAndroid ships via JitPack
