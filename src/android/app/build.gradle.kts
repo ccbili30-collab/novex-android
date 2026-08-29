@@ -33,11 +33,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.openminis.app"
+        applicationId = "com.noven.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.12"
+        versionCode = 1
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -69,6 +69,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep arm64 for real devices and x86_64 for the Windows screenshot
+            // emulator. Release remains arm64-only until the sandbox supports x86.
+            ndk {
+                abiFilters.clear()
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(

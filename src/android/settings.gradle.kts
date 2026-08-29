@@ -29,5 +29,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Minis"
+rootProject.name = "Noven"
 include(":app")
