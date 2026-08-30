@@ -89,6 +89,18 @@ fun ProviderDetailScreen(
     onAddCustomModel: () -> Unit = {},
     onVoiceServiceClick: (String) -> Unit = {},
 ) {
+    // Novex exposes only the compact connection surface. The richer Minis
+    // provider implementation remains underneath for compatibility, but its
+    // protocol, Azure, image, voice and debug controls are intentionally not
+    // part of the Novex product interface.
+    NovexProviderSetupScreen(
+        providerRepository = providerRepository,
+        onBack = onBack,
+        onSaved = onBack,
+        instanceId = instanceId,
+    )
+    return
+
     val config by providerRepository.config.collectAsState()
     val instance = config.instances.find { it.id == instanceId }
     var showDeleteDialog by remember { mutableStateOf(false) }

@@ -149,7 +149,7 @@
     <string name="soul_section_preview">预览</string>
     <string name="soul_section_identity">身份</string>
     <string name="soul_section_personality">人格提示词</string>
-    <string name="soul_personality_footer">编辑 SOUL.md 的 Markdown 正文。长度上限按语言判定：中文 ≤ 1600 字符 或 英文 ≤ 1000 词（按正文主导语言选规则）。超长正文保存时会被拒绝，构建系统提示词时会被忽略。</string>
+    <string name="soul_personality_footer">人格正文会完整写入 SOUL.md，不会静默截断。它作为高优先级人格与文风注入每次对话；当前上限为中文 100 万字符或英文 100 万词，超限时会明确阻止保存。</string>
     <string name="soul_field_name">名称</string>
     <string name="soul_field_style">风格</string>
     <string name="soul_field_lang">语言</string>

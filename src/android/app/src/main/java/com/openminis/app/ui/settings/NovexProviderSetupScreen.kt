@@ -2,177 +2,185 @@ package com.openminis.app.ui.settings
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import com.openminis.app.data.model.*
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.provider.ProviderFactory
+import com.openminis.app.provider.openai.OpenAIModelsApi
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
-/**
- * Novex only needs one OpenAI-compatible connection for its first usable run.
- * The complete upstream provider manager remains available internally, but it
- * is not used as the onboarding surface.
- */
+private enum class CheckState { WAITING, RUNNING, PASSED, FAILED }
+private data class ConnectionCheck(val label: String, var state: CheckState, var detail: String = "")
+
+/** Novex 的单一 OpenAI（开放人工智能）兼容接口设置页。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NovexProviderSetupScreen(
     providerRepository: ProviderRepository,
     onBack: () -> Unit,
     onSaved: () -> Unit,
+    instanceId: String? = null,
 ) {
     val context = LocalContext.current
-    var apiBase by remember { mutableStateOf("https://api.deepseek.com") }
-    var apiKey by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf("deepseek-chat") }
+    val scope = rememberCoroutineScope()
+    val existing = remember(instanceId) { instanceId?.let(providerRepository::instance) }
+    var label by remember { mutableStateOf(existing?.label ?: "DeepSeek") }
+    var apiBase by remember { mutableStateOf(existing?.customBaseURL ?: "https://api.deepseek.com") }
+    var apiKey by remember { mutableStateOf(existing?.id?.let(providerRepository::loadApiKey) ?: "") }
+    var modelId by remember { mutableStateOf(providerRepository.entriesFor(instanceId ?: "").firstOrNull()?.model?.id ?: "deepseek-chat") }
     var error by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    val fetchedModels = remember { mutableStateListOf<String>() }
+    val checks = remember { mutableStateListOf(
+        ConnectionCheck("接口可连接", CheckState.WAITING), ConnectionCheck("密钥可验证", CheckState.WAITING),
+        ConnectionCheck("普通对话可用", CheckState.WAITING), ConnectionCheck("工具调用可用", CheckState.WAITING),
+    ) }
+    fun resetChecks() { checks.indices.forEach { checks[it] = checks[it].copy(state = CheckState.WAITING, detail = "") } }
+    fun validate(): Triple<String, String, String>? {
+        val base = apiBase.trim().trimEnd('/'); val key = apiKey.trim(); val model = modelId.trim()
+        error = when {
+            base.isEmpty() -> "请填写接口地址"
+            !base.startsWith("http://") && !base.startsWith("https://") -> "接口地址需要以 https:// 或 http:// 开头"
+            key.isEmpty() -> "请填写 API 密钥"
+            model.isEmpty() -> "请填写或选择模型名称"
+            else -> null
+        }
+        return if (error == null) Triple(base, key, model) else null
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("连接模型") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(
+        title = { Text(if (existing == null) "连接模型" else "模型连接") },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
+    ) }) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Spacer(Modifier.height(4.dp))
-            Text("填写三项即可开始", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Novex 使用 OpenAI 兼容接口，可连接 DeepSeek 和常见中转站。密钥只保存在这台设备上。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            OutlinedTextField(
-                value = apiBase,
-                onValueChange = { apiBase = it; error = null },
-                label = { Text("接口地址") },
-                supportingText = { Text("DeepSeek 官方地址已替你填好；使用中转站时改成对方提供的地址。") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            )
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it; error = null },
-                label = { Text("API 密钥") },
-                leadingIcon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                supportingText = { Text("通常以 sk- 开头；请勿把密钥发送给其他人。") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            )
-            OutlinedTextField(
-                value = modelId,
-                onValueChange = { modelId = it; error = null },
-                label = { Text("模型名称") },
-                supportingText = { Text("例如 deepseek-chat；中转站用户请填写站点给出的模型名。") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-
-            Button(
-                onClick = {
-                    val cleanBase = apiBase.trim().trimEnd('/')
-                    val cleanKey = apiKey.trim()
-                    val cleanModel = modelId.trim()
-                    when {
-                        cleanBase.isEmpty() -> error = "请填写接口地址"
-                        cleanKey.isEmpty() -> error = "请填写 API 密钥"
-                        cleanModel.isEmpty() -> error = "请填写模型名称"
-                        !cleanBase.startsWith("http://") && !cleanBase.startsWith("https://") ->
-                            error = "接口地址需要以 https:// 或 http:// 开头"
-                        else -> {
-                            val instance = ProviderInstance(
-                                id = UUID.randomUUID().toString(),
-                                label = if (cleanBase.contains("deepseek.com")) "DeepSeek" else "OpenAI 兼容接口",
-                                providerType = ProviderType.openAI,
-                                credentialType = ProviderCredential.apiKey,
-                                customBaseURL = cleanBase,
-                                appendV1Suffix = !cleanBase.endsWith("/v1"),
-                            )
-                            providerRepository.addInstance(instance)
-                            providerRepository.saveApiKey(instance.id, cleanKey)
-
-                            val entry = ModelEntry(
-                                providerInstanceId = instance.id,
-                                baseModel = LLMModel(
-                                    id = cleanModel,
-                                    displayName = LLMModel.modelDisplayName(cleanModel),
-                                    provider = instance.label,
-                                ),
-                                isCustom = true,
-                            )
-                            providerRepository.addEntry(entry)
-                            val group = ModelGroup(
-                                name = "默认模型",
-                                memberEntryIds = mutableListOf(entry.id),
-                            )
-                            providerRepository.addGroup(group)
-                            providerRepository.defaultPrimaryGroupId = group.id
-                            onSaved()
-                        }
+            Text("连接 OpenAI（开放人工智能）兼容接口", style = MaterialTheme.typography.headlineSmall)
+            Text("支持 DeepSeek 与常见中转站。可自动拉取模型，也可以手动填写。通过四项检测后才会启用。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; error = null; resetChecks() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; error = null; resetChecks() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(label = { Text("模型名称") }, value = modelId, onValueChange = { modelId = it; error = null; resetChecks() }, modifier = Modifier.weight(1f), singleLine = true)
+                OutlinedButton(enabled = !testing, onClick = {
+                    val values = validate() ?: return@OutlinedButton
+                    testing = true
+                    scope.launch {
+                        val models = fetchModels(values.first, values.second)
+                        fetchedModels.clear(); fetchedModels.addAll(models)
+                        if (models.isEmpty()) error = "没有拉取到模型，请检查地址和密钥，或继续手动填写模型名称。"
+                        else if (modelId !in models) modelId = models.first()
+                        testing = false
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("保存并开始")
+                }) { Text(if (testing) "拉取中" else "拉取模型") }
             }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys")))
-                }) {
-                    Text("前往 DeepSeek 获取密钥")
+            if (fetchedModels.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                fetchedModels.take(30).forEach { id -> FilterChip(selected = modelId == id, onClick = { modelId = id; resetChecks() }, label = { Text(id) }) }
+            }
+            Text("连通检测", style = MaterialTheme.typography.titleMedium)
+            checks.forEach { CheckRow(it) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(enabled = !testing, onClick = {
+                val values = validate() ?: return@Button
+                testing = true; error = null; resetChecks()
+                scope.launch {
+                    val ok = verifyConnection(values.first, values.second, values.third) { index, state, detail -> checks[index] = checks[index].copy(state = state, detail = detail) }
+                    if (ok) { saveConnection(providerRepository, existing, label, values.first, values.second, values.third); onSaved() }
+                    else error = "检测未全部通过，当前模型不会启用。请根据红色项目修改配置后重试。"
+                    testing = false
                 }
-            }
+            }, modifier = Modifier.fillMaxWidth()) { Text(if (testing) "正在检测…" else "检测并启用") }
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys"))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("前往 DeepSeek 获取密钥") }
+            Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+@Composable private fun CheckRow(check: ConnectionCheck) {
+    val color = when (check.state) { CheckState.PASSED -> Color(0xFF168A45); CheckState.FAILED -> MaterialTheme.colorScheme.error; CheckState.RUNNING -> Color(0xFFB77900); CheckState.WAITING -> MaterialTheme.colorScheme.onSurfaceVariant }
+    val icon = when (check.state) { CheckState.PASSED -> Icons.Default.CheckCircle; CheckState.FAILED -> Icons.Default.Error; else -> Icons.Default.HourglassTop }
+    val stateText = when (check.state) { CheckState.PASSED -> "通过"; CheckState.FAILED -> "失败"; CheckState.RUNNING -> "检测中"; CheckState.WAITING -> "待检测" }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, null, tint = color)
+        Column(Modifier.weight(1f)) { Text(check.label); if (check.detail.isNotBlank()) Text(check.detail, style = MaterialTheme.typography.bodySmall, color = color) }
+        Text(stateText, color = color)
+    }
+}
+
+private suspend fun fetchModels(base: String, key: String): List<String> = runCatching {
+    OpenAIModelsApi.fetchModels(key, canonicalBase(base), forceRefresh = true).map { it.id }.distinct()
+}.getOrDefault(emptyList())
+
+private fun canonicalBase(base: String): String = base.trimEnd('/').let { if (it.endsWith("/v1")) it else "$it/v1" }
+
+private suspend fun verifyConnection(base: String, key: String, modelId: String, update: (Int, CheckState, String) -> Unit): Boolean = withContext(Dispatchers.IO) {
+    val canonical = canonicalBase(base); val client = OkHttpClient()
+    fun fail(index: Int, message: String): Boolean { update(index, CheckState.FAILED, message); return false }
+    update(0, CheckState.RUNNING, "")
+    val reachable = runCatching { client.newCall(Request.Builder().url("$canonical/models").build()).execute().use { it.code in 200..499 } }.getOrDefault(false)
+    if (!reachable) return@withContext fail(0, "无法连接接口地址")
+    update(0, CheckState.PASSED, "服务器已响应")
+    update(1, CheckState.RUNNING, "")
+    val authCode = runCatching { client.newCall(Request.Builder().url("$canonical/models").header("Authorization", "Bearer $key").build()).execute().use { it.code } }.getOrDefault(0)
+    if (authCode == 401 || authCode == 403) return@withContext fail(1, "密钥无效或访问被拒绝")
+    if (authCode in 200..299) update(1, CheckState.PASSED, "身份验证成功")
+    else update(1, CheckState.RUNNING, "站点未开放模型列表，将通过实际对话验证")
+
+    val instance = ProviderInstance(id = "novex-check", label = "连接检测", providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"))
+    val model = LLMModel(modelId, LLMModel.modelDisplayName(modelId), "OpenAI 兼容接口")
+    val provider = runCatching { ProviderFactory.create(instance, key, model) }.getOrElse { return@withContext fail(2, "无法创建模型连接") }
+    update(2, CheckState.RUNNING, "")
+    val chatOk = runCatching { withTimeout(45_000) { provider.sendMessage(listOf(LLMMessage(LLMMessage.Role.USER, "只回复：连接成功")), null, 64).text.isNotBlank() } }.getOrDefault(false)
+    if (!chatOk) {
+        if (authCode !in 200..299) update(1, CheckState.FAILED, "密钥或模型无法通过实际请求验证")
+        return@withContext fail(2, "模型没有返回有效文字")
+    }
+    if (authCode !in 200..299) update(1, CheckState.PASSED, "已通过实际对话验证密钥")
+    update(2, CheckState.PASSED, "普通回复正常")
+    update(3, CheckState.RUNNING, "")
+    val probe = AgentToolDefinition("novex_probe", "必须调用此工具完成连接检测", emptyMap())
+    val toolOk = runCatching {
+        var called = false
+        withTimeout(45_000) { provider.streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "请立即调用 novex_probe，不要输出文字。")), null, 128, tools = listOf(probe)).collect { if (it is LLMStreamChunk.ToolCallComplete && it.name == "novex_probe") called = true } }
+        called
+    }.getOrDefault(false)
+    if (!toolOk) return@withContext fail(3, "模型未返回工具调用；该模型不能用于 Novex")
+    update(3, CheckState.PASSED, "工具调用正常")
+    true
+}
+
+private fun saveConnection(repository: ProviderRepository, existing: ProviderInstance?, label: String, base: String, key: String, modelId: String) {
+    val instance = (existing ?: ProviderInstance(id = UUID.randomUUID().toString(), label = label.ifBlank { "OpenAI 兼容接口" }, providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey)).copy(label = label.ifBlank { "OpenAI 兼容接口" }, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"), isEnabled = true)
+    if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
+    repository.saveApiKey(instance.id, key)
+    val entry = repository.entriesFor(instance.id).firstOrNull { it.model.id == modelId } ?: ModelEntry(providerInstanceId = instance.id, baseModel = LLMModel(modelId, LLMModel.modelDisplayName(modelId), instance.label), isCustom = true).also(repository::addEntry)
+    val group = repository.config.value.modelGroups.firstOrNull { entry.id in it.memberEntryIds } ?: ModelGroup(name = "默认模型", memberEntryIds = mutableListOf(entry.id)).also(repository::addGroup)
+    repository.defaultPrimaryGroupId = group.id
 }

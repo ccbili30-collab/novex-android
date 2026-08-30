@@ -2654,15 +2654,17 @@ private fun OnboardingLanding(
             .padding(horizontal = 32.dp),
     ) {
         Column(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(
                 painter = painterResource(R.drawable.novex_logo_transparent),
                 contentDescription = stringResource(R.string.novex_logo_description),
-                modifier = Modifier.size(88.dp),
+                modifier = Modifier.size(68.dp),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
             Text(
                 text = stringResource(R.string.sessionlist_welcome_title),
@@ -2677,10 +2679,10 @@ private fun OnboardingLanding(
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(20.dp))
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 SetupStepCard(

@@ -276,7 +276,7 @@
     <string name="soul_section_preview">Preview</string>
     <string name="soul_section_identity">Identity</string>
     <string name="soul_section_personality">Personality Prompt</string>
-    <string name="soul_personality_footer">Edited as the Markdown body of SOUL.md. Length cap is language-aware: Chinese ≤ 1600 characters OR English ≤ 1000 words (the rule is picked by the majority language). Over-limit bodies are rejected on save and ignored at prompt-build time.</string>
+    <string name="soul_personality_footer">The full personality body is saved to SOUL.md without silent truncation. It is injected as high-priority identity and writing style on every turn. The current limit is 1,000,000 Chinese characters or 1,000,000 English words; saving is explicitly blocked if exceeded.</string>
     <string name="soul_field_name">Name</string>
     <string name="soul_field_style">Style</string>
     <string name="soul_field_lang">Language</string>
