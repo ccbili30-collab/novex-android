@@ -16,20 +16,20 @@ object TerminalSanitizer {
 
     /**
      * Sanitize terminal output in two passes:
-     * 1. CR folding — simulate carriage return overwriting
-     * 2. Strip remaining ANSI/VT escape sequences
+     * 1. Strip ANSI/VT escape sequences (they occupy no terminal columns)
+     * 2. CR folding — simulate carriage return overwriting
      */
     fun sanitize(raw: String): String {
         if (raw.isEmpty()) return raw
 
-        // Pass 1: CR folding
-        val crFolded = foldCarriageReturns(raw)
-
-        // Pass 2: Strip ANSI sequences
-        val stripped = ANSI_REGEX.replace(crFolded, "")
+        // ANSI bytes are control instructions, not visible columns. Remove
+        // them before simulating cursor movement so they cannot corrupt the
+        // overwrite offsets.
+        val stripped = ANSI_REGEX.replace(raw, "")
+        val crFolded = foldCarriageReturns(stripped)
 
         // Pass 3: Remove null bytes and non-printable control chars (except \n \t)
-        val cleaned = stripped.filter { it == '\n' || it == '\t' || it.code >= 0x20 }
+        val cleaned = crFolded.filter { it == '\n' || it == '\t' || it.code >= 0x20 }
 
         // Pass 4: Remove "null" artifacts from PRoot/pipe issues
         // - Lines that are entirely "null"
@@ -41,7 +41,7 @@ object TerminalSanitizer {
             .replace(Regex("(?:null){2,}"), "") // Remove runs of 2+ consecutive "null"
 
         // Pass 5: Collapse excessive blank lines (3+ consecutive → 2)
-        return noNullLines.replace(Regex("\n{3,}"), "\n\n").trim()
+        return noNullLines.replace(Regex("\n{3,}"), "\n\n")
     }
 
     /**
@@ -75,13 +75,21 @@ object TerminalSanitizer {
                 continue
             }
 
-            // Split on CR and simulate overwriting.
-            // Each CR resets cursor to column 0. The last non-empty segment wins.
+            // Split on CR and simulate a terminal cursor returning to column
+            // zero. Shorter updates overwrite only their own width and leave
+            // the untouched suffix visible; longer updates extend the line.
             val segments = line.split('\r')
-            val lastNonEmpty = segments.lastOrNull { it.isNotEmpty() }
-            if (lastNonEmpty != null) {
-                result.append(lastNonEmpty)
+            val visible = StringBuilder(segments.first())
+            for (segment in segments.drop(1)) {
+                for ((column, character) in segment.withIndex()) {
+                    if (column < visible.length) {
+                        visible.setCharAt(column, character)
+                    } else {
+                        visible.append(character)
+                    }
+                }
             }
+            result.append(visible)
         }
 
         return result.toString()

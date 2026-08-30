@@ -73,6 +73,18 @@ object VoiceModality {
 private val LLMModel.normalizedInputs: List<String>? get() = inputModalities.normalizeModalities()
 private val LLMModel.normalizedOutputs: List<String>? get() = outputModalities.normalizeModalities()
 
+/**
+ * Conservative fallback for OpenAI-compatible model lists that expose only an
+ * id/name and no modality metadata. It intentionally recognizes explicit
+ * vision labels only; image-generation names and ordinary chat models do not
+ * gain image input by accident.
+ */
+fun looksLikeVisionInputModel(id: String, displayName: String = ""): Boolean {
+    val identifier = "$id $displayName".trim().lowercase()
+    return Regex("(^|[-_./\\s])(vision|visual|vl)([-_./\\s]|$)")
+        .containsMatchIn(identifier)
+}
+
 /** True when this model consumes audio (ASR or audio-capable chat model). */
 val LLMModel.hasAudioInput: Boolean
     get() = normalizedInputs?.contains("audio") == true
@@ -88,7 +100,8 @@ val LLMModel.hasAudioOutput: Boolean
  * and bare "image" (models.dev) both match.
  */
 val LLMModel.hasImageInput: Boolean
-    get() = normalizedInputs?.contains("image") == true
+    get() = normalizedInputs?.contains("image") == true ||
+        looksLikeVisionInputModel(id, displayName)
 
 /** True when this model has ANY audio modality — the "voice model" predicate
  *  behind Voice Services shadow visibility (iOS hasVoiceModels). */

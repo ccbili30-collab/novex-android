@@ -78,6 +78,14 @@ class StreamDropNoFinishTest {
     }
 
     @Test
+    fun `empty stream without finish reason remains an interruption signal`() {
+        val chunks = streamChunks("")
+
+        assertTrue(chunks.none { it is LLMStreamChunk.Text })
+        assertNull(chunks.filterIsInstance<LLMStreamChunk.Finished>().firstOrNull()?.stopReason)
+    }
+
+    @Test
     fun `a normally terminated stream does report a finish reason`() {
         // Control: the same content, properly terminated.
         val body = """

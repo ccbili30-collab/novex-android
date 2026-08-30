@@ -42,4 +42,19 @@ class NovexModelReadinessTest {
         )
         assertTrue(config.hasUsableNovexModel())
     }
+
+    @Test fun explicitVisionVariantRepairsLegacyTextOnlyCapability() {
+        val legacy = LLMModel(
+            id = "deepseek-v4-flash-vision",
+            displayName = "DeepSeek V4 Flash Vision",
+            provider = "DeepSeek",
+            inputModalities = listOf("text"),
+        )
+
+        assertTrue(legacy.hasImageInput)
+        assertFalse(
+            legacy.capabilityPromptFragment().orEmpty()
+                .contains("cannot natively process images"),
+        )
+    }
 }

@@ -285,7 +285,7 @@ data class LLMModel(
      */
     fun capabilityPromptFragment(): String? {
         val inputs = inputModalities?.map { it.lowercase() } ?: emptyList()
-        val hasImage = "image" in inputs
+        val hasImage = hasImageInput
         val hasPdf = "pdf" in inputs
         val hasAudio = "audio" in inputs
         val hasVideo = "video" in inputs

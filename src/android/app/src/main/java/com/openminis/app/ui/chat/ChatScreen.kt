@@ -629,6 +629,7 @@ fun ChatScreen(
     var inputFieldValue by remember {
         mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(""))
     }
+    val composerInputSynchronizer = remember { ComposerInputSynchronizer() }
     // T217-2: suppress IME commits arriving briefly after send. clearFocus
     // triggers finishComposingText, which makes voice/Pinyin IMEs commit
     // their pending candidate back through onValueChange even after we
@@ -663,6 +664,9 @@ fun ChatScreen(
     // markdown reflow that lands just after _isStreaming clears.
     var lastStreamEndMs by remember { mutableStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(inputText) {
+        if (!composerInputSynchronizer.shouldApplyExternal(inputText)) {
+            return@LaunchedEffect
+        }
         if (inputFieldValue.text != inputText) {
             // [T-android-slash-menu-align-ios-prepend] Honor a one-shot caret
             // override from the slash flow (prepend "/ " → caret 1; insert
@@ -1017,12 +1021,12 @@ fun ChatScreen(
     //   - reverseLayout=true on the LazyColumn — handles "stick to
     //     bottom while user is at bottom" natively.
 
-    // T128: tightened from 90 dp (google-ai-edge/gallery) to 32 dp.
-    // 90 dp made the JumpToBottom FAB appear well before the user had
-    // really left the bottom — users reported the "Quick to bottom" button
-    // appearing too often. 32 dp is roughly half the floating tool-bar height, so the
-    // visual definition of "at bottom" lines up with what the user sees.
-    val nearBottomThresholdPx = with(LocalDensity.current) { 32.dp.toPx() }
+    // The old 32 dp zone was still large enough that a short upward peek ended
+    // inside it. Drag-stop then re-enabled streaming follow and the next token
+    // pulled the viewport back to the bottom. Four dp keeps a small rounding
+    // tolerance while treating any deliberate upward movement as reading intent.
+    val scrollDensity = LocalDensity.current.density
+    val nearBottomThresholdPx = STREAMING_FOLLOW_BOTTOM_THRESHOLD_DP * scrollDensity
     // T138 phase 2 v3: ground-truth bottom test via layoutInfo. If
     // LazyList currently renders the visual-bottom item (data-index 0
     // under reverseLayout) and its bottom edge sits within `threshold`
@@ -1066,7 +1070,11 @@ fun ChatScreen(
             //   - trailing-row pin gated on isNearBottom failing
             // See /tmp/fix_scroll_diagnosis.md. Anchor on firstIdx/firstOff
             // alone — they survive the measure window.
-            val result = firstIdx == 0 && firstOff <= nearBottomThresholdPx.toInt()
+            val result = isInsideStreamingFollowBottomZone(
+                firstVisibleItemIndex = firstIdx,
+                firstVisibleItemScrollOffsetPx = firstOff,
+                pixelsPerDp = scrollDensity,
+            )
             // T-android-jank-profile: was logging on every scroll frame (this
             // is a derivedStateOf body — it re-runs when any of
             // listState.layoutInfo / firstVisibleItemIndex /
@@ -5147,6 +5155,7 @@ fun ChatScreen(
                                 }
                                 inputFieldValue = systemSeparated
                                 if (inputText != systemSeparated.text) {
+                                    composerInputSynchronizer.recordLocalEdit(systemSeparated.text)
                                     viewModel.setInputText(systemSeparated.text)
                                     viewModel.updateSlashMenuState(systemSeparated.text)
                                 }

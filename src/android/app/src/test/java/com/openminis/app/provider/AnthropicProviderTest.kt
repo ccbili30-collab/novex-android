@@ -1,5 +1,6 @@
 package com.openminis.app.provider
 
+import com.openminis.app.BuildConfig
 import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.LLMError
 import com.openminis.app.data.model.LLMMessage
@@ -17,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -598,6 +600,10 @@ class AnthropicProviderTest {
 
     @Test
     fun `OAuth request omits redact-thinking beta so thinking text is not blanked`() = runBlocking {
+        // The public mirror intentionally ships without the private Claude
+        // OAuth identifier prompt. Exercise this integration only when the
+        // build environment has supplied that credential-dependent value.
+        assumeTrue(BuildConfig.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT.isNotEmpty())
         // Mirrors iOS 958ee16c (T-anthropic-redact-thinking). The Claude-Code
         // mimicry beta set must NOT carry `redact-thinking-2026-02-12`; with it,
         // the server blanks thinking text (signature only) even though the model

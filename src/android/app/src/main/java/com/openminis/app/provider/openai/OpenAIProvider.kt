@@ -11,6 +11,7 @@ import com.openminis.app.data.model.LLMResponse
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.provider.thinking.ThinkingResolveContext
 import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import com.openminis.app.provider.LLMProvider
@@ -48,7 +49,6 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
-import com.openminis.app.provider.failOnSilentEmptyCompletion
 
 class OpenAIProvider private constructor(
     private val apiKey: String?,
@@ -589,7 +589,7 @@ class OpenAIProvider private constructor(
         thinkingLevel: ThinkingLevel,
     ): Flow<LLMStreamChunk> = rawStreamMessage(
         messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
-    ).failOnSilentEmptyCompletion(name)
+    )
 
     private fun rawStreamMessage(
         messages: List<LLMMessage>,
@@ -774,7 +774,7 @@ class OpenAIProvider private constructor(
             val openAiHdrs = rh.names().filter { it.lowercase().startsWith("openai-") }
             com.openminis.app.logging.AppLogger.info(
                 "OpenAIProvider",
-                "[T321] ← RSP status=${response.code} content-type=$ct x-request-id=$rid " +
+                "[T321] ← RSP model=${model.id} status=${response.code} content-type=$ct x-request-id=$rid " +
                     "headerKeys=${rh.names()} openAiHeaders=${openAiHdrs.associateWith { rh[it] ?: "" }}"
             )
         }
@@ -784,7 +784,7 @@ class OpenAIProvider private constructor(
             // since non-2xx is rare and the body is critical for diagnosis.
             com.openminis.app.logging.AppLogger.error(
                 "OpenAIProvider",
-                "[T321] ← HTTP ${response.code} error body: $errorBody"
+                "[T321] ← HTTP ${response.code} model=${model.id} error body: $errorBody"
             )
             response.close()
             // T302: skip the LLMRequestLog write entirely on release builds —
@@ -1247,7 +1247,7 @@ class OpenAIProvider private constructor(
                                     sawFinishReason = true
                                     com.openminis.app.logging.AppLogger.info(
                                         "OpenAIProvider",
-                                        "[T321] finish_reason=$it contentLen=$contentLen reasoningLen=$reasoningLen toolCallEvents=$toolCallEventCount accumulators=${toolCallAccumulators.size}"
+                                        "[T321] model=${model.id} finish_reason=$it contentLen=$contentLen reasoningLen=$reasoningLen toolCallEvents=$toolCallEventCount accumulators=${toolCallAccumulators.size}"
                                     )
                                 }
                             }
@@ -1346,7 +1346,7 @@ class OpenAIProvider private constructor(
                 sentFinished = true
                 com.openminis.app.logging.AppLogger.info(
                     "OpenAIProvider",
-                    "[T321] stream ended without [DONE] — emitted Finished(finishReason=$finishReason) from tail"
+                    "[T321] model=${model.id} stream ended without [DONE] — emitted Finished(finishReason=$finishReason) from tail"
                 )
             }
 
@@ -1360,8 +1360,9 @@ class OpenAIProvider private constructor(
             } else {
                 com.openminis.app.logging.AppLogger.info(
                     "OpenAIProvider",
-                    "[T321] stream complete: events=$sseEventCount contentLen=$contentLen " +
-                        "reasoningLen=$reasoningLen toolCallEvents=$toolCallEventCount sawUsage=$sawUsageBlock"
+                    "[T321] stream complete: model=${model.id} finishReason=$finishReason " +
+                        "events=$sseEventCount contentLen=$contentLen reasoningLen=$reasoningLen " +
+                        "toolCallEvents=$toolCallEventCount sawUsage=$sawUsageBlock"
                 )
             }
         } catch (e: Exception) {
@@ -1369,7 +1370,8 @@ class OpenAIProvider private constructor(
             val frames = e.stackTrace.take(3).joinToString(" | ") { "${it.className}.${it.methodName}:${it.lineNumber}" }
             com.openminis.app.logging.AppLogger.error(
                 "OpenAIProvider",
-                "[T321] stream parse exception: ${e.javaClass.simpleName}: ${e.message} @ $frames " +
+                "[T321] stream parse exception: model=${model.id} finishReason=$finishReason " +
+                    "${e.javaClass.simpleName}: ${e.message} @ $frames " +
                     "(events=$sseEventCount contentLen=$contentLen reasoningLen=$reasoningLen)"
             )
             cancel("Stream error", mapError(e))
@@ -1802,7 +1804,7 @@ class OpenAIProvider private constructor(
         // server returns "400 unknown variant `image_url`". Decided once
         // here so the structured-contentParts loop and the legacy
         // imageParts loop below stay consistent.
-        val supportsImages = "image" in (model.inputModalities ?: emptyList())
+        val supportsImages = model.hasImageInput
         val body = JSONObject()
         body.put("model", model.id)
         if (isOpenRouter) {
@@ -2692,7 +2694,7 @@ class OpenAIProvider private constructor(
         // keeping the two paths symmetric prevents future regressions when
         // a non-vision model gets routed through Responses (e.g. via
         // forceResponsesAPI on a custom provider).
-        val supportsImages = "image" in (model.inputModalities ?: emptyList())
+        val supportsImages = model.hasImageInput
         val body = JSONObject()
         body.put("model", model.id)
         body.put("stream", stream)

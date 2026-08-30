@@ -14,4 +14,25 @@ class NovexProviderSetupTest {
             novexModelDisplayName(NOVEX_DEFAULT_DEEPSEEK_MODEL),
         )
     }
+
+    @Test fun visionNamedChatModelKeepsImageInputCapability() {
+        assertEquals(
+            listOf("text", "image"),
+            novexChatInputModalities("deepseek-v4-flash-vision"),
+        )
+    }
+
+    @Test fun existingImageInputOverrideIsNotErasedWhenConnectionIsSavedAgain() {
+        assertEquals(
+            listOf("text", "image"),
+            novexChatInputModalities(
+                modelId = "relay-custom-model",
+                existingInputModalities = listOf("text", "image"),
+            ),
+        )
+    }
+
+    @Test fun ordinaryChatModelDoesNotGainVisionByDefault() {
+        assertEquals(listOf("text"), novexChatInputModalities("deepseek-v4-flash"))
+    }
 }

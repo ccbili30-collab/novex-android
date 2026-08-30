@@ -36,8 +36,8 @@ android {
         applicationId = "com.noven.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 7
+        versionName = "0.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -137,6 +137,38 @@ val copyBashismRules by tasks.registering(Copy::class) {
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(copyBashismRules) }
 tasks.named("preBuild") { dependsOn(copyBashismRules) }
+
+// A release without these files installs normally but cannot start the Linux
+// sandbox. Keep the checks in Gradle so an ignored/generated asset can never
+// silently disappear from a successful APK again.
+val verifySandboxRuntimeAssets by tasks.registering {
+    val required = mapOf(
+        "src/main/assets/alpine-minirootfs.tar.gz" to 1_000_000L,
+        "src/main/assets/proot-aarch64" to 100_000L,
+        "src/main/jniLibs/arm64-v8a/libproot.so" to 100_000L,
+        "src/main/jniLibs/arm64-v8a/libproot-loader.so" to 4_000L,
+        "src/main/jniLibs/arm64-v8a/libproot-loader32.so" to 2_000L,
+        "src/main/jniLibs/arm64-v8a/libtalloc.so" to 10_000L,
+        "src/main/jniLibs/arm64-v8a/libandroid-shmem.so" to 2_000L,
+    )
+    inputs.files(required.keys.map { layout.projectDirectory.file(it) })
+    doLast {
+        val invalid = required.mapNotNull { (relative, minimumBytes) ->
+            val file = layout.projectDirectory.file(relative).asFile
+            when {
+                !file.isFile -> "$relative (missing)"
+                file.length() < minimumBytes -> "$relative (${file.length()} bytes; expected >= $minimumBytes)"
+                else -> null
+            }
+        }
+        check(invalid.isEmpty()) {
+            "Android sandbox runtime is incomplete:\n" + invalid.joinToString("\n") +
+                "\nRun scripts/prepare_android_sandbox.sh before building."
+        }
+    }
+}
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+    .configureEach { dependsOn(verifySandboxRuntimeAssets) }
 
 // [T-android-debugserver-skill] Stage the debug-server skill + an Android
 // reference client into the DEBUG-ONLY asset source set, so the debug server

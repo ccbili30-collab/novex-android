@@ -37,6 +37,7 @@ import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ModelGroup
 import com.openminis.app.data.model.ThinkingLevel
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.R
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
@@ -840,9 +841,7 @@ class ChatViewModel(
             // threading the real flag lets a text-only model without a Vision
             // Group correctly LOSE the tool (iOS parity), while a configured
             // Vision Group keeps it.
-            supportsImageInput = currentModel?.let {
-                it.inputModalities?.map { m -> m.lowercase() }?.contains("image") == true
-            } == true,
+            supportsImageInput = currentModel?.hasImageInput == true,
             visionGroupConfigured = com.openminis.app.tools.VisionGroupResolver.isConfigured(
                 providerRepository, context,
             ),
@@ -6570,13 +6569,15 @@ class ChatViewModel(
         // cap is hit, a still-over-threshold history stops the turn rather than
         // compacting forever. Mirrors iOS maxInLoopCompactions.
         var inLoopCompactions = 0
-        // [T-android-empty-after-toolresult-reminder] One-shot guard for the
-        // "<system-reminder> + retry one round" recovery when the server returns
-        // an empty response right after a tool result. Fires at most once per
-        // runAgentLoop so it can never loop; if the reminder round is also empty
-        // we surface a real error instead of a silent blank bubble. Mirrors iOS
-        // AIChatViewModel.didInjectEmptyToolReminderThisRun.
-        var didInjectEmptyToolReminder = false
+        // Explicit `stop` + no content is a distinct upstream failure. Keep
+        // independent one-shot budgets for the initial response and the
+        // response after a tool result; neither path can loop indefinitely.
+        val emptyResponseRetryState = EmptyResponseRetryState()
+        // Keep the request context explicit. The retry reminder mutates the
+        // last history message by adding a Text part, so re-inferring this from
+        // contentParts would incorrectly turn the second post-tool attempt
+        // back into an INITIAL request and grant it another retry budget.
+        var emptyResponseContext = EmptyResponseContext.INITIAL
         for (turn in 0 until MAX_AGENT_TURNS) {
             // Sanitize history before each API call (mirrors iOS pre-API validation)
             sanitizeAgentHistory()
@@ -7395,138 +7396,144 @@ class ChatViewModel(
             val turnReasoningContent: String? = turnReasoningBlob
                 ?: turnThinking.toString().takeIf { it.isNotEmpty() }
 
-            agentHistory.add(LLMMessage(
-                role = LLMMessage.Role.ASSISTANT,
-                content = turnText,
-                contentParts = assistantParts,
-                reasoningContent = turnReasoningContent,
-            ))
+            val emptyContext = emptyResponseContext
+            val completionAction = emptyResponseRetryState.decide(
+                hasVisibleContent = turnText.isNotBlank(),
+                hasToolCalls = toolCalls.isNotEmpty(),
+                finishReason = turnFinishReason,
+                context = emptyContext,
+            )
 
-            // T321: empty-turn diagnostic — fires when GPT-5.5 (or any other
-            // provider) returns a turn with no visible text AND no tool calls.
-            // Log only; UI behavior unchanged. Pair with OpenAIProvider SSE
-            // logs to triage server-empty vs parser-drop vs swallowed-exception.
-            if (turnText.isEmpty() && toolCalls.isEmpty()) {
+            if (completionAction == AgentTurnCompletionAction.INTERRUPTED) {
                 AppLogger.warning(
                     TAG_STREAM,
-                    "empty turn detected: turn=$turn finishReason=$turnFinishReason " +
-                        "reasoningLen=${turnThinking.length} reasoningBlobLen=${turnReasoningBlob?.length ?: -1} " +
-                        "model=${provider.model.id} provider=${provider.name}"
+                    "stream interrupted: model=${currentProvider.model.id} turn=$turn " +
+                        "finishReason=null textLen=${turnText.length} toolCalls=${toolCalls.size}",
                 )
+                // Never execute or replay a possibly truncated tool call. Keep
+                // received text, and mark live cards failed for this UI session.
+                for (index in turnStartBlockIndex until allToolBlocks.size) {
+                    val block = allToolBlocks[index]
+                    if (block.kind == "tool_use") {
+                        allToolBlocks[index] = block.copy(
+                            toolStatus = ToolBlockStatus.FAILED,
+                            content = "连接中断，工具未执行",
+                        )
+                    }
+                }
+                val safeParts = assistantParts.filterIsInstance<AgentContentPart.Text>()
+                if (safeParts.isNotEmpty()) {
+                    val dbId = persistAssistantTurn(
+                        safeParts,
+                        lastUsage,
+                        turnReasoningContent,
+                    )
+                    agentHistory.add(
+                        LLMMessage(
+                            role = LLMMessage.Role.ASSISTANT,
+                            content = turnText,
+                            contentParts = safeParts,
+                            dbMessageId = dbId,
+                            reasoningContent = turnReasoningContent,
+                        ),
+                    )
+                }
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, false, allToolBlocks,
+                        isAwaitingModelResponse = false,
+                    )
+                    setInlineError(context.getString(R.string.chat_error_stream_dropped_partial))
+                }
+                _canResume.value = true
+                if (turn == 0) generateSessionTitleIfNeeded()
+                loopExitedNormally = true
+                break
             }
 
-            // If no tool calls, we're done
-            if (toolCalls.isEmpty()) {
-                AppLogger.info(TAG_STREAM, "runAgentLoop turn=$turn no tool calls → break (finishReason=$turnFinishReason)")
+            if (completionAction == AgentTurnCompletionAction.RETRY_EMPTY) {
+                val reminder = when (emptyContext) {
+                    EmptyResponseContext.INITIAL ->
+                        "<system-reminder>The previous model response was empty despite a normal stop. Retry this user request once. Return visible text or a structured tool call; do not return another empty response.</system-reminder>"
+                    EmptyResponseContext.AFTER_TOOL_RESULT ->
+                        "<system-reminder>The previous model response after a tool result was empty despite a normal stop. Continue once with the next tool call(s) or a final visible answer; do not return another empty response.</system-reminder>"
+                }
+                val historyIndex = agentHistory.lastIndex
+                if (historyIndex >= 0) {
+                    val message = agentHistory[historyIndex]
+                    val updatedParts = message.contentParts.toMutableList()
+                    if (emptyContext == EmptyResponseContext.AFTER_TOOL_RESULT) {
+                        val resultIndex = updatedParts.indexOfLast { it is AgentContentPart.ToolResult }
+                        if (resultIndex >= 0) {
+                            val result = updatedParts[resultIndex] as AgentContentPart.ToolResult
+                            updatedParts[resultIndex] = result.copy(
+                                content = result.content + "\n\n$reminder",
+                            )
+                        } else {
+                            updatedParts.add(AgentContentPart.Text(reminder))
+                        }
+                    } else {
+                        updatedParts.add(AgentContentPart.Text(reminder))
+                    }
+                    agentHistory[historyIndex] = message.copy(contentParts = updatedParts)
+                }
+                AppLogger.warning(
+                    TAG_STREAM,
+                    "empty response retry 1/1: model=${currentProvider.model.id} " +
+                        "context=$emptyContext finishReason=$turnFinishReason",
+                )
+                continue
+            }
+
+            if (completionAction == AgentTurnCompletionAction.FAIL_EMPTY) {
+                AppLogger.error(
+                    TAG_STREAM,
+                    "empty response failed after retry: model=${currentProvider.model.id} " +
+                        "context=$emptyContext finishReason=$turnFinishReason textLen=${turnText.length}",
+                )
+                val window = effectiveContextWindowTokens()
+                val usedCtx = lastUsage?.latestContextTokens ?: 0
+                val contextNearFull = window != null && window > 0 && usedCtx > 0 &&
+                    usedCtx.toDouble() / window.toDouble() > 0.70
+                val hint = when {
+                    emptyContext == EmptyResponseContext.AFTER_TOOL_RESULT ->
+                        context.getString(R.string.error_empty_response_after_tool)
+                    contextNearFull -> context.getString(R.string.error_empty_response_context_large)
+                    else -> context.getString(R.string.error_empty_response_generic)
+                }
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, false, allToolBlocks,
+                        isAwaitingModelResponse = false,
+                    )
+                    setInlineError(hint)
+                }
+                _canResume.value = true
+                loopExitedNormally = true
+                break
+            }
+
+            agentHistory.add(
+                LLMMessage(
+                    role = LLMMessage.Role.ASSISTANT,
+                    content = turnText,
+                    contentParts = assistantParts,
+                    reasoningContent = turnReasoningContent,
+                ),
+            )
+
+            if (completionAction == AgentTurnCompletionAction.COMPLETE) {
+                AppLogger.info(
+                    TAG_STREAM,
+                    "runAgentLoop complete: model=${currentProvider.model.id} turn=$turn " +
+                        "finishReason=$turnFinishReason textLen=${turnText.length}",
+                )
                 withContext(Dispatchers.Main) {
                     updateAssistantMessage(assistantId, accumulatedText, false, allToolBlocks)
                 }
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
                 val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
                 persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta)
-                // [T-error-persist-android] Empty-response hint: the model ended a
-                // turn (finish=stop/end_turn) with no visible text anywhere in the
-                // reply and no tool blocks — the user just sees a blank bubble.
-                // Surface a hint instead. When the context is near full, point at
-                // compaction; otherwise suggest retry/switch. setInlineError
-                // attaches + persists onto the (empty) assistant row so the hint
-                // survives a reload too.
-                val hasVisibleContent = accumulatedText.isNotBlank() ||
-                    allToolBlocks.any { it.kind == "tool_use" || (it.kind == "text" && it.content.isNotBlank()) }
-
-                // [T-android-silent-stream-drop] A turn's stopReason comes ONLY
-                // from the SSE terminal event, which always carries a concrete
-                // reason. A null therefore means the stream closed WITHOUT one —
-                // the connection dropped mid-flight (a mid-flight throw would
-                // have gone down the fallback/retry path instead, not here).
-                //
-                // Previously null was folded into `finishedCleanly`, so a
-                // PARTIAL reply — bytes arrived, then the socket died — was
-                // persisted silently as if complete. The reply just stopped with
-                // no error and no way to retry: the "断流" reports. Mirrors iOS
-                // d6604021.
-                // Only the PARTIAL case is handled here. An EMPTY turn with a null
-                // stopReason keeps falling through to the empty-turn handling
-                // below (system-reminder retry, then the empty-response hint),
-                // which already covers it well — re-routing it here would lose
-                // that recovery.
-                if (turnFinishReason == null && hasVisibleContent) {
-                    AppLogger.warning(
-                        TAG_STREAM,
-                        "stream closed without a finish reason after ${accumulatedText.length} chars — " +
-                            "surfacing as an interrupted reply (turn=$turn)",
-                    )
-                    withContext(Dispatchers.Main) {
-                        setInlineError(
-                            context.getString(R.string.chat_error_stream_dropped_partial),
-                        )
-                    }
-                    _canResume.value = true
-                    // Deliberate stop, not the runaway ceiling — keep the
-                    // post-loop tail from adding a fake turn-limit error.
-                    loopExitedNormally = true
-                    break
-                }
-
-                // A null stopReason reaching here means an EMPTY turn, which the
-                // empty-turn path below is designed to recover; treat it as
-                // "clean" for that purpose exactly as before.
-                val finishedCleanly = turnFinishReason == null ||
-                    turnFinishReason == "stop" || turnFinishReason == "end_turn"
-                if (!hasVisibleContent && finishedCleanly) {
-                    // [T-android-empty-after-toolresult-reminder] Special case: the
-                    // server returned an empty turn right after a tool result. The
-                    // model owes a follow-up (next tool call or a final answer) but
-                    // stalled — the user sees a blank bubble with no explanation.
-                    // Inject a one-shot <system-reminder> into that tool result and
-                    // retry ONE round. The guard fires at most once per run, so it
-                    // can never loop; the SECOND empty falls through to the error
-                    // hint below. Mirrors iOS AIChatViewModel.swift empty-after-
-                    // tool-result path.
-                    //
-                    // The empty assistant turn was just appended (above) — drop it
-                    // so the tool result is the last message and the model gets a
-                    // clean "continue from here" prompt on the retry.
-                    val priorIsToolResult = agentHistory.size >= 2 &&
-                        agentHistory[agentHistory.size - 2].contentParts.isNotEmpty() &&
-                        agentHistory[agentHistory.size - 2].contentParts.all { it is AgentContentPart.ToolResult }
-                    if (!didInjectEmptyToolReminder && priorIsToolResult) {
-                        didInjectEmptyToolReminder = true
-                        AppLogger.warning(TAG_STREAM, "empty turn after tool result — injecting <system-reminder> and retrying one round (turn=$turn)")
-                        // Remove the empty assistant turn we just added.
-                        agentHistory.removeAt(agentHistory.size - 1)
-                        // Inject the reminder into the last tool result's content.
-                        val trIdx = agentHistory.size - 1
-                        val trMsg = agentHistory[trIdx]
-                        val reminder = "\n\n<system-reminder>The previous response was empty. A tool result was just provided and you MUST continue: respond with the next tool call(s) if more work is needed, or a final text answer for the user. Do not return an empty response.</system-reminder>"
-                        val newParts = trMsg.contentParts.toMutableList()
-                        val lastTrPartIdx = newParts.indexOfLast { it is AgentContentPart.ToolResult }
-                        if (lastTrPartIdx >= 0) {
-                            val part = newParts[lastTrPartIdx] as AgentContentPart.ToolResult
-                            newParts[lastTrPartIdx] = part.copy(content = part.content + reminder)
-                            agentHistory[trIdx] = trMsg.copy(contentParts = newParts)
-                        }
-                        // Retry a fresh model round with the nudged history.
-                        continue
-                    }
-                    val window = effectiveContextWindowTokens()
-                    val usedCtx = lastUsage?.latestContextTokens ?: 0
-                    val contextNearFull = window != null && window > 0 && usedCtx > 0 &&
-                        usedCtx.toDouble() / window.toDouble() > 0.70
-                    val hint = when {
-                        // Reminder already fired and the retry was ALSO empty — this
-                        // is a genuine stall, not a transient blank. Point the user
-                        // at retry/switch explicitly.
-                        didInjectEmptyToolReminder ->
-                            context.getString(R.string.error_empty_response_after_tool)
-                        contextNearFull ->
-                            context.getString(R.string.error_empty_response_context_large)
-                        else ->
-                            context.getString(R.string.error_empty_response_generic)
-                    }
-                    withContext(Dispatchers.Main) { setInlineError(hint) }
-                }
-                // Auto-title after first exchange
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
                 break
@@ -7556,6 +7563,7 @@ class ChatViewModel(
 
             // Execute all tool calls
             val resultParts = mutableListOf<AgentContentPart>()
+            val terminalUiToolIds = linkedSetOf<String>()
             for ((id, name, args) in toolCalls) {
                 // [T-android-overlay-tool-title] Pull tool_title uniformly
                 // from args for ALL tools — without this browser_use's
@@ -7830,15 +7838,86 @@ class ChatViewModel(
                     outputForLLM
                 }
 
-                resultParts.add(AgentContentPart.ToolResult(
-                    id = id,
-                    name = name,
-                    content = outputForLLMWithNote,
-                    isError = !result.success,
-                    imageData = result.imageData,
-                    imageMimeType = result.imageMimeType,
-                    imageLinuxPath = result.imageLinuxPath,
-                ))
+                if (isSuccessfulTerminalUiTool(name, result.success)) {
+                    // UI-only success: the visible card is the entire result.
+                    // Do not create a provider-facing ToolResult at all.
+                    terminalUiToolIds += id
+                } else {
+                    resultParts.add(AgentContentPart.ToolResult(
+                        id = id,
+                        name = name,
+                        content = outputForLLMWithNote,
+                        isError = !result.success,
+                        imageData = result.imageData,
+                        imageMimeType = result.imageMimeType,
+                        imageLinuxPath = result.imageLinuxPath,
+                    ))
+                }
+            }
+
+            // `present_choices` is a terminal UI tool: once its arguments are
+            // validated and the buttons are rendered, the user — not the model
+            // — owns the next move. Do not manufacture a tool result or make an
+            // unnecessary follow-up request. Persist the visible tool card as a
+            // uiToolUse below, while removing it from provider-facing history.
+            if (terminalUiToolIds.isNotEmpty()) {
+                val lastHistoryIndex = agentHistory.lastIndex
+                if (lastHistoryIndex >= 0) {
+                    val lastMessage = agentHistory[lastHistoryIndex]
+                    val providerParts = withoutTerminalUiToolUses(
+                        lastMessage.contentParts,
+                        terminalUiToolIds,
+                    )
+                    if (lastMessage.content.isEmpty() && providerParts.isEmpty()) {
+                        agentHistory.removeAt(lastHistoryIndex)
+                    } else {
+                        agentHistory[lastHistoryIndex] = lastMessage.copy(contentParts = providerParts)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, false, allToolBlocks,
+                        isAwaitingModelResponse = false,
+                    )
+                }
+
+                val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
+                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                val assistantDbId = persistAssistantTurn(
+                    turnParts,
+                    lastUsage,
+                    turnReasoningContent,
+                    blockMeta,
+                )
+                if (assistantDbId != null) {
+                    val historyIndex = agentHistory.indexOfLast {
+                        it.role == LLMMessage.Role.ASSISTANT && it.dbMessageId == null
+                    }
+                    if (historyIndex >= 0) {
+                        agentHistory[historyIndex] = agentHistory[historyIndex].copy(dbMessageId = assistantDbId)
+                    }
+                }
+
+                // A provider may return another tool call beside the terminal
+                // UI tool. Preserve those real tool results as balanced history,
+                // but never include the present_choices result itself.
+                val providerResultParts = resultParts
+                if (providerResultParts.isNotEmpty()) {
+                    val toolResultDbId = persistToolResultMessage(providerResultParts)
+                    agentHistory.add(
+                        LLMMessage(
+                            role = LLMMessage.Role.USER,
+                            content = "",
+                            contentParts = providerResultParts,
+                            dbMessageId = toolResultDbId,
+                        ),
+                    )
+                }
+
+                if (turn == 0) generateSessionTitleIfNeeded()
+                loopExitedNormally = true
+                break
             }
 
             // Update UI with tool statuses. Mark as awaiting the next model
@@ -7875,6 +7954,7 @@ class ChatViewModel(
                 contentParts = resultParts,
                 dbMessageId = toolResultDbId,
             ))
+            emptyResponseContext = EmptyResponseContext.AFTER_TOOL_RESULT
 
             // Auto-title after first exchange (mirrors iOS generateSessionTitleIfNeeded)
             if (turn == 0) {
@@ -8186,9 +8266,7 @@ class ChatViewModel(
      * model to call read_image — closing the loop with executeReadImageTool.
      */
     private fun visionPlaceholderFor(path: String?): String? {
-        val nativeVision = currentModel?.let {
-            it.inputModalities?.map { m -> m.lowercase() }?.contains("image") == true
-        } == true
+        val nativeVision = currentModel?.hasImageInput == true
         if (nativeVision) return null
         if (!com.openminis.app.tools.VisionGroupResolver.isConfigured(providerRepository, context)) return null
         return com.openminis.app.tools.VisionGroupResolver.noVisionImagePlaceholder(path)
@@ -8219,9 +8297,7 @@ class ChatViewModel(
         } catch (_: Exception) { null }
         // Failed decode / missing file → unchanged.
         if (!base.success || base.imageData == null) return base
-        val nativeVision = currentModel?.let {
-            it.inputModalities?.map { m -> m.lowercase() }?.contains("image") == true
-        } == true
+        val nativeVision = currentModel?.hasImageInput == true
         if (nativeVision) {
             // The model sees the pixels itself; a prompt adds no routing here, but
             // echo it as context so the tool block reflects the model's intent.
@@ -8959,7 +9035,8 @@ class ChatViewModel(
                     // signature (null-literal when absent) so it survives a session
                     // reload and can be replayed on the historical functionCall.
                     val sigJson = part.thoughtSignature?.let { escapeJson(it) } ?: "null"
-                    append("""{"type":"toolUse","value":{"toolUseId":${escapeJson(part.id)},"name":${escapeJson(name)},"input":${escapeJson(inputStr)},"description":${escapeJson(desc)},"pageURL":${escapeJson(pageURL)},"imageFilePath":${escapeJson(imgPath)},"thoughtSignature":$sigJson}}""")
+                    val persistedType = if (name == PRESENT_CHOICES_TOOL) "uiToolUse" else "toolUse"
+                    append("""{"type":"$persistedType","value":{"toolUseId":${escapeJson(part.id)},"name":${escapeJson(name)},"input":${escapeJson(inputStr)},"description":${escapeJson(desc)},"pageURL":${escapeJson(pageURL)},"imageFilePath":${escapeJson(imgPath)},"thoughtSignature":$sigJson}}""")
                 }
                 else -> { /* tool_result is persisted via persistToolResultMessage */ }
             }
@@ -9441,14 +9518,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             "minis-sessions/$sessionId/attachments/uploads",
         ).apply { mkdirs() }
         // Metadata captured per attachment for the <user-attached-files> XML.
-        data class UploadMeta(
-            val linuxPath: String,
-            val size: Long,
-            val modifiedIso: String,
-            val extractedTextPath: String? = null,
-            val extractedFormat: String? = null,
-        )
-        val metas = mutableListOf<UploadMeta>()
+        val metas = mutableListOf<UserAttachedFilePromptMeta>()
         val nowMs = System.currentTimeMillis()
         val isoFormatter = java.text.SimpleDateFormat(
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
@@ -9509,7 +9579,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 val linuxPath = if (uploadOk) "/var/minis/attachments/uploads/$safeName" else null
                 if (linuxPath != null) {
                     imageUploadPaths.add(linuxPath)
-                    metas.add(UploadMeta(linuxPath = linuxPath, size = rawBytes.size.toLong(), modifiedIso = nowStr))
+                    metas.add(UserAttachedFilePromptMeta(linuxPath = linuxPath, size = rawBytes.size.toLong(), modifiedIso = nowStr))
                 }
 
                 imageParts.add(LLMMessage.ImagePart(inferenceBytes, attachment.mimeType, linuxPath = linuxPath))
@@ -9590,12 +9660,13 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 }.getOrNull()
             }
             metas.add(
-                UploadMeta(
+                UserAttachedFilePromptMeta(
                     linuxPath = linuxPath,
                     size = dest.length(),
                     modifiedIso = nowStr,
                     extractedTextPath = extractedPath,
                     extractedFormat = extracted?.formatLabel,
+                    extractedText = extracted?.text,
                 ),
             )
         }
@@ -9640,28 +9711,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // per attachment (image and non-image) that successfully landed in
         // the iSH uploads dir — gives the model a metadata-only inventory
         // it can resolve via shell tools when content is needed.
-        val xml = if (metas.isEmpty()) null else buildString {
-            append("<user-attached-files>\n")
-            for (m in metas) {
-                val urlPath = m.linuxPath.removePrefix("/var/minis/")
-                append("  <file path=\"")
-                append(m.linuxPath)
-                append("\" url=\"minis://")
-                append(urlPath)
-                append("\" size=\"")
-                append(m.size)
-                append("\" modified=\"")
-                append(m.modifiedIso)
-                m.extractedTextPath?.let { extractedPath ->
-                    append("\" extracted_text_path=\"")
-                    append(extractedPath)
-                    append("\" extracted_format=\"")
-                    append(m.extractedFormat.orEmpty())
-                }
-                append("\" />\n")
-            }
-            append("</user-attached-files>")
-        }
+        val xml = buildUserAttachedFilesPrompt(metas)
 
         // Order matches UserAttachmentList convention: images first, then files.
         PreparedAttachments(
@@ -10886,7 +10936,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                                 ))
                             }
                         }
-                        "toolUse" -> {
+                        "toolUse", "uiToolUse" -> {
                             val value = obj.getJSONObject("value")
                             val toolId = value.optString("toolUseId", "")
                             if (toolId.startsWith("thinking_")) continue

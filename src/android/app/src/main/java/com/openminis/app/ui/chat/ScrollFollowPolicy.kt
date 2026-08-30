@@ -7,6 +7,17 @@ internal enum class StreamingFollowEvent {
     ExplicitBottomRequested,
 }
 
+internal const val STREAMING_FOLLOW_BOTTOM_THRESHOLD_DP = 4
+
+/** True only inside the zone where a completed drag may resume live follow. */
+internal fun isInsideStreamingFollowBottomZone(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    pixelsPerDp: Float,
+): Boolean = firstVisibleItemIndex == 0 &&
+    firstVisibleItemScrollOffsetPx <=
+    (STREAMING_FOLLOW_BOTTOM_THRESHOLD_DP * pixelsPerDp).toInt()
+
 /**
  * Streaming follow is an explicit user-intent state, not a side effect of
  * transient LazyColumn geometry. A real finger drag suspends follow

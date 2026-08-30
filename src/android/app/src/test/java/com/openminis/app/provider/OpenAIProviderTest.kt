@@ -6,6 +6,7 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.tools.AgentTools
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -43,16 +44,17 @@ class OpenAIProviderTest {
     @Test
     fun `sendMessage parses ChatCompletions response`() = runBlocking {
         val responseBody = """
-        {
-            "choices": [{
-                "message": {"role": "assistant", "content": "Hello from GPT!"},
-                "finish_reason": "stop"
-            }],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5}
-        }
+            data: {"choices":[{"delta":{"content":"Hello from GPT!"}}]}
+
+            data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}]}
+
+            data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}
+
+            data: [DONE]
+
         """.trimIndent()
 
-        server.enqueue(MockResponse().setBody(responseBody))
+        server.enqueue(MockResponse().setBody(responseBody).setHeader("Content-Type", "text/event-stream"))
 
         val response = provider.sendMessage(
             listOf(LLMMessage(LLMMessage.Role.USER, "Hi")),
@@ -68,20 +70,23 @@ class OpenAIProviderTest {
     @Test
     fun `sendMessage parses cached tokens from prompt_tokens_details`() = runBlocking {
         val responseBody = """
-        {
-            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 10,
-                "prompt_tokens_details": {"cached_tokens": 50}
-            }
-        }
+            data: {"choices":[{"delta":{"content":"ok"}}]}
+
+            data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}]}
+
+            data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":100,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":50}}}
+
+            data: [DONE]
+
         """.trimIndent()
 
-        server.enqueue(MockResponse().setBody(responseBody))
+        server.enqueue(MockResponse().setBody(responseBody).setHeader("Content-Type", "text/event-stream"))
         val response = provider.sendMessage(listOf(LLMMessage(LLMMessage.Role.USER, "Hi")), null, 1024)
 
-        assertEquals(100, response.usage?.inputTokens)
+        // inputTokens is the uncached portion; latestContextTokens keeps the
+        // full prompt size so cache hits are not double-counted.
+        assertEquals(50, response.usage?.inputTokens)
+        assertEquals(100, response.usage?.latestContextTokens)
         assertEquals(10, response.usage?.outputTokens)
         assertEquals(50, response.usage?.cacheReadInputTokens)
         assertNull(response.usage?.cacheCreationInputTokens)
@@ -194,15 +199,57 @@ class OpenAIProviderTest {
     }
 
     @Test
-    fun `sendMessage sets stream false for non-streaming`() = runBlocking {
+    fun `sendMessage uses streaming transport internally`() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":0,"completion_tokens":0}}"""))
 
         provider.sendMessage(listOf(LLMMessage(LLMMessage.Role.USER, "test")), null, 100)
 
         val request = server.takeRequest()
         val body = JSONObject(request.body.readUtf8())
-        assertEquals(false, body.getBoolean("stream"))
-        assertTrue(!body.has("stream_options"))
+        assertEquals(true, body.getBoolean("stream"))
+        assertTrue(body.getJSONObject("stream_options").getBoolean("include_usage"))
+    }
+
+    @Test
+    fun `vision chat model sends attached pixels as image_url content`() = runBlocking {
+        provider.model = LLMModel(
+            id = "deepseek-v4-flash-vision",
+            displayName = "DeepSeek V4 Flash Vision",
+            provider = "OpenAI compatible",
+            // Existing installs created by the simplified setup carry this
+            // stale text-only flag even though the model id is explicitly a
+            // vision variant. The runtime must repair that legacy metadata.
+            inputModalities = listOf("text"),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}""",
+            ),
+        )
+
+        provider.sendMessage(
+            messages = listOf(LLMMessage(LLMMessage.Role.USER, "图片里有什么？")),
+            systemPrompt = null,
+            maxTokens = 100,
+            imageParts = listOf(
+                LLMMessage.ImagePart(
+                    data = byteArrayOf(1, 2, 3, 4),
+                    mimeType = "image/jpeg",
+                ),
+            ),
+        )
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        val content = body.getJSONArray("messages")
+            .getJSONObject(0)
+            .getJSONArray("content")
+        val imageBlock = (0 until content.length())
+            .map(content::getJSONObject)
+            .single { it.getString("type") == "image_url" }
+        assertTrue(
+            imageBlock.getJSONObject("image_url").getString("url")
+                .startsWith("data:image/jpeg;base64,"),
+        )
     }
 
     // -- Streaming --
@@ -242,6 +289,43 @@ class OpenAIProviderTest {
         assertEquals(2, usageChunks[0].usage.outputTokens)
 
         assertTrue(chunks.any { it is LLMStreamChunk.Finished })
+    }
+
+    @Test
+    fun `full Novex tool set produces a structured tool call`() = runBlocking {
+        val sseBody = buildString {
+            appendLine("""data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"choice-1","function":{"name":"present_choices","arguments":"{\"choices\":\"[\\\"继续\\\",\\\"返回\\\"]\"}"}}]}}]}""")
+            appendLine()
+            appendLine("""data: {"choices":[{"delta":{},"finish_reason":"tool_calls","index":0}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+        server.enqueue(MockResponse().setBody(sseBody).setHeader("Content-Type", "text/event-stream"))
+        val tools = AgentTools.makeAgentTools(
+            supportsImageInput = false,
+            visionGroupConfigured = false,
+            memoryEnabled = true,
+        )
+
+        val chunks = provider.streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "提供继续和返回两个选项")),
+            null,
+            256,
+            tools = tools,
+        ).toList()
+
+        val call = chunks.filterIsInstance<LLMStreamChunk.ToolCallComplete>().single()
+        assertEquals("present_choices", call.name)
+        val requestBody = JSONObject(server.takeRequest().body.readUtf8())
+        val sentTools = requestBody.getJSONArray("tools")
+        assertEquals(tools.size, sentTools.length())
+        assertEquals(
+            tools.map { it.name }.toSet(),
+            (0 until sentTools.length()).map {
+                sentTools.getJSONObject(it).getJSONObject("function").getString("name")
+            }.toSet(),
+        )
     }
 
     @Test

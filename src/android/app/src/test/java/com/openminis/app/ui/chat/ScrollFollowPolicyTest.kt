@@ -73,4 +73,26 @@ class ScrollFollowPolicyTest {
             shouldSettleAfterInteraction(false, true, true, false, true),
         )
     }
+
+    @Test
+    fun smallUpwardPeekLeavesTheStreamingFollowZone() {
+        assertFalse(
+            isInsideStreamingFollowBottomZone(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffsetPx = 8,
+                pixelsPerDp = 1f,
+            ),
+        )
+    }
+
+    @Test
+    fun tinyRoundingOffsetStillCountsAsBottom() {
+        assertTrue(
+            isInsideStreamingFollowBottomZone(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffsetPx = 2,
+                pixelsPerDp = 1f,
+            ),
+        )
+    }
 }

@@ -170,10 +170,9 @@ class RootfsManager private constructor(private val context: Context) {
             )
         }
 
-        // No libtalloc staging: deps/build_proot.sh links talloc statically
-        // (the binary carries no DT_NEEDED for libtalloc.so), so there is no
-        // shared object to version-rename. Older builds shipped libtalloc.so
-        // in jniLibs and copied it here as libtalloc.so.2.
+        // The prepared Termux build keeps libtalloc and libandroid-shmem beside
+        // this executable in nativeLibraryDir. The preparation script rewrites
+        // libtalloc.so.2 to the APK-compatible libtalloc.so filename.
 
         Log.d(TAG, "PRoot binary available at $prootBinary")
     }

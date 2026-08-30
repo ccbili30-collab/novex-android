@@ -4,7 +4,7 @@ package com.openminis.app.ui.chat
 internal fun novexErrorMessage(raw: String): String {
     val text = raw.trim()
     val lower = text.lowercase()
-    return when {
+    val summary = when {
         "tool call was interrupted" in lower ||
             ("interrupted" in lower && "tool" in lower) ->
             "工具调用被中断，系统没有收到执行结果。为避免重复操作，请先确认它是否已经生效。"
@@ -34,4 +34,23 @@ internal fun novexErrorMessage(raw: String): String {
         text.isEmpty() -> "请求失败，请稍后重试。"
         else -> "请求没有成功。请重试；如果仍然失败，请检查接口地址、模型名称和网络连接。"
     }
+    return appendOriginalHttpDetail(summary, text)
+}
+
+private fun appendOriginalHttpDetail(summary: String, raw: String): String {
+    if (raw.isBlank()) return summary
+    val isHttpFailure = Regex("(?i)\\bHTTP\\s*[45]\\d{2}\\b|\\b[45]\\d{2}\\b")
+        .containsMatchIn(raw)
+    if (!isHttpFailure) return summary
+    val safeDetail = raw
+        .replace(
+            Regex("(?i)(authorization\\s*[:=]\\s*bearer\\s+)[^\\s,;]+"),
+            "\$1<已隐藏>",
+        )
+        .replace(
+            Regex("(?i)(api[-_ ]?key\\s*[:=]\\s*)[^\\s,;]+"),
+            "\$1<已隐藏>",
+        )
+        .take(1_500)
+    return "$summary\n\n原始 HTTP 错误：$safeDetail"
 }
