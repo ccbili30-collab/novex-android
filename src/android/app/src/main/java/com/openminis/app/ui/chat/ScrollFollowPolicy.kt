@@ -1,5 +1,28 @@
 package com.openminis.app.ui.chat
 
+internal enum class StreamingFollowEvent {
+    UserDragStarted,
+    UserDragStoppedAtBottom,
+    UserDragStoppedAway,
+    ExplicitBottomRequested,
+}
+
+/**
+ * Streaming follow is an explicit user-intent state, not a side effect of
+ * transient LazyColumn geometry. A real finger drag suspends follow
+ * immediately; only an actual return to the bottom (or an explicit send / jump
+ * request) enables it again.
+ */
+internal fun reduceStreamingFollow(
+    current: Boolean,
+    event: StreamingFollowEvent,
+): Boolean = when (event) {
+    StreamingFollowEvent.UserDragStarted,
+    StreamingFollowEvent.UserDragStoppedAway -> false
+    StreamingFollowEvent.UserDragStoppedAtBottom,
+    StreamingFollowEvent.ExplicitBottomRequested -> true
+}
+
 /**
  * A post-scroll settle belongs only to a completed finger drag. Compose also
  * reports programmatic scrolls through LazyListState.isScrollInProgress, so

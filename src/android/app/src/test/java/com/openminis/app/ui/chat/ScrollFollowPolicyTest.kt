@@ -6,6 +6,39 @@ import org.junit.Test
 
 class ScrollFollowPolicyTest {
     @Test
+    fun fingerDragImmediatelySuspendsStreamingFollow() {
+        assertFalse(
+            reduceStreamingFollow(
+                current = true,
+                event = StreamingFollowEvent.UserDragStarted,
+            ),
+        )
+    }
+
+    @Test
+    fun followResumesOnlyAfterUserActuallyReturnsToBottom() {
+        assertFalse(
+            reduceStreamingFollow(
+                current = false,
+                event = StreamingFollowEvent.UserDragStoppedAway,
+            ),
+        )
+        assertTrue(
+            reduceStreamingFollow(
+                current = false,
+                event = StreamingFollowEvent.UserDragStoppedAtBottom,
+            ),
+        )
+    }
+
+    @Test
+    fun explicitSendOrBottomRequestEnablesFollow() {
+        assertTrue(
+            reduceStreamingFollow(false, StreamingFollowEvent.ExplicitBottomRequested),
+        )
+    }
+
+    @Test
     fun programmaticScrollCompletionCannotTriggerInteractionSettle() {
         assertFalse(
             shouldSettleAfterInteraction(
