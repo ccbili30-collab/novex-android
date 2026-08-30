@@ -1,7 +1,7 @@
 package com.openminis.app.ui.settings
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import org.junit.Assert.assertEquals
+import org.junit.Test
 
 class NovexProviderSetupTest {
     @Test fun officialDefaultUsesV4FlashIdentifier() {

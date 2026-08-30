@@ -140,6 +140,14 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_manage_providers_subtitle),
                     onClick = onProvidersClick,
                 )
+                SettingsItem(
+                    icon = Icons.Outlined.BarChart,
+                    iconColor = Color(0xFF007AFF),
+                    title = stringResource(R.string.settings_token_usage),
+                    subtitle = stringResource(R.string.settings_token_usage_subtitle),
+                    onClick = onUsageClick,
+                    showDivider = false,
+                )
             }
 
             // -- Appearance --

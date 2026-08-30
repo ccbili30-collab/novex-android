@@ -133,7 +133,7 @@
     <string name="settings_manage_providers_subtitle">API key 与 OAuth 登录</string>
     <string name="settings_model_groups">模型组</string>
     <string name="settings_model_groups_subtitle">回退与负载均衡</string>
-    <string name="settings_token_usage">Token 用量</string>
+    <string name="settings_token_usage">Token（令牌）用量</string>
     <string name="settings_token_usage_subtitle">跨提供商追踪 API 使用情况</string>
     <string name="settings_section_appearance">外观</string>
     <string name="settings_appearance_subtitle">主题、字号与显示</string>
