@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 private enum class CheckState { WAITING, RUNNING, PASSED, FAILED }
+private enum class VerificationSummaryState { PASSED, PARTIAL, FAILED }
 private data class ConnectionCheck(val label: String, var state: CheckState, var detail: String = "")
 private data class SetupValues(
     val base: String,
@@ -127,19 +129,26 @@ fun NovexProviderSetupScreen(
     var imageModelMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var verificationReport by remember { mutableStateOf<String?>(null) }
-    var testing by remember { mutableStateOf(false) }
+    var verificationSummaryState by remember { mutableStateOf<VerificationSummaryState?>(null) }
+    var fetchingModels by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
+    var verificationMenuExpanded by remember { mutableStateOf(false) }
     val fetchedModels = remember { mutableStateListOf<String>() }
     val checks = remember { mutableStateListOf(
         ConnectionCheck("接口可连接", CheckState.WAITING), ConnectionCheck("密钥可验证", CheckState.WAITING),
         ConnectionCheck("普通对话可用", CheckState.WAITING), ConnectionCheck("工具调用可用", CheckState.WAITING),
     ) }
     fun resetChecks() { checks.indices.forEach { checks[it] = checks[it].copy(state = CheckState.WAITING, detail = "") } }
+    fun invalidateVerification() {
+        error = null
+        verificationReport = null
+        verificationSummaryState = null
+        resetChecks()
+    }
     fun setSelectedModels(models: List<String>) {
         selectedModels.clear()
         selectedModels.addAll(models.map(String::trim).filter(String::isNotEmpty).distinct())
-        error = null
-        verificationReport = null
-        resetChecks()
+        invalidateVerification()
     }
     fun validate(requireModels: Boolean = true): SetupValues? {
         val base = apiBase.trim().trimEnd('/')
@@ -155,6 +164,47 @@ fun NovexProviderSetupScreen(
         }
         return if (error == null) SetupValues(base, key, models, imageModel) else null
     }
+    fun startVerification(values: SetupValues, modelIds: List<String>) {
+        checking = true
+        error = null
+        verificationReport = null
+        verificationSummaryState = null
+        resetChecks()
+        scope.launch {
+            try {
+                val verification = verifyConnection(
+                    values.base,
+                    values.key,
+                    modelIds,
+                ) { index, state, detail ->
+                    checks[index] = checks[index].copy(state = state, detail = detail)
+                }
+                if (verification.fatalError != null) {
+                    verificationSummaryState = VerificationSummaryState.FAILED
+                    error = "检测失败：${verification.fatalError}"
+                } else {
+                    val result = verification.models
+                    verificationSummaryState = when {
+                        result.availableModels.isEmpty() -> VerificationSummaryState.FAILED
+                        result.failures.isNotEmpty() -> VerificationSummaryState.PARTIAL
+                        else -> VerificationSummaryState.PASSED
+                    }
+                    val headline = when (verificationSummaryState) {
+                        VerificationSummaryState.PASSED -> "检测成功"
+                        VerificationSummaryState.PARTIAL -> "检测完成：部分模型不可用"
+                        VerificationSummaryState.FAILED -> "检测失败"
+                        null -> "检测完成"
+                    }
+                    verificationReport = "$headline\n${formatNovexVerificationReport(result)}"
+                }
+            } catch (failure: Throwable) {
+                verificationSummaryState = VerificationSummaryState.FAILED
+                error = "检测失败：${failure.message ?: failure.javaClass.simpleName}"
+            } finally {
+                checking = false
+            }
+        }
+    }
 
     Scaffold(topBar = { TopAppBar(
         title = { Text(if (existing == null) "连接模型" else "模型连接") },
@@ -165,10 +215,10 @@ fun NovexProviderSetupScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("连接 OpenAI（开放人工智能）兼容接口", style = MaterialTheme.typography.headlineSmall)
-            Text("支持 DeepSeek 与常见中转站。可自动拉取模型，也可以手动填写。通过四项检测后才会启用。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("支持 DeepSeek（深度求索）与常见中转站。可直接保存启用，也可以按需检测当前模型或全部模型。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; error = null; resetChecks() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; error = null; resetChecks() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; invalidateVerification() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             Text(
                 "滑到最下方获取密钥",
                 style = MaterialTheme.typography.bodySmall,
@@ -227,9 +277,9 @@ fun NovexProviderSetupScreen(
                         }
                     }
                 }
-                OutlinedButton(enabled = !testing, onClick = {
+                OutlinedButton(enabled = !fetchingModels && !checking, onClick = {
                     val values = validate(requireModels = false) ?: return@OutlinedButton
-                    testing = true
+                    fetchingModels = true
                     scope.launch {
                         val models = fetchModels(values.base, values.key)
                         fetchedModels.clear(); fetchedModels.addAll(models)
@@ -238,9 +288,9 @@ fun NovexProviderSetupScreen(
                             if (selectedModels.none { it in models }) setSelectedModels(listOf(models.first()))
                             modelMenuExpanded = true
                         }
-                        testing = false
+                        fetchingModels = false
                     }
-                }) { Text(if (testing) "拉取中" else "拉取模型") }
+                }) { Text(if (fetchingModels) "拉取中" else "拉取模型") }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -283,7 +333,7 @@ fun NovexProviderSetupScreen(
                     onValueChange = { value ->
                         imageModelId = value
                         if (value.isNotBlank()) selectedModels.remove(value.trim())
-                        error = null
+                        invalidateVerification()
                     },
                     placeholder = { Text("例如 gpt-image") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(imageModelMenuExpanded) },
@@ -296,7 +346,11 @@ fun NovexProviderSetupScreen(
                 ) {
                     DropdownMenuItem(
                         text = { Text("不使用生图模型") },
-                        onClick = { imageModelId = ""; imageModelMenuExpanded = false },
+                        onClick = {
+                            imageModelId = ""
+                            imageModelMenuExpanded = false
+                            invalidateVerification()
+                        },
                     )
                     val candidates = fetchedModels.distinct().sortedWith(
                         compareByDescending<String>(::looksLikeImageGenerationModel).thenBy(String::lowercase),
@@ -308,7 +362,7 @@ fun NovexProviderSetupScreen(
                                 imageModelId = id
                                 selectedModels.remove(id)
                                 imageModelMenuExpanded = false
-                                resetChecks()
+                                invalidateVerification()
                             },
                         )
                     }
@@ -319,42 +373,83 @@ fun NovexProviderSetupScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("连通检测", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("连通检测（可选）", style = MaterialTheme.typography.titleMedium)
+                    selectedModels.firstOrNull()?.let { modelId ->
+                        Text(
+                            "当前模型：${novexModelDisplayName(modelId)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Box {
+                    IconButton(
+                        enabled = !fetchingModels && !checking && selectedModels.isNotEmpty(),
+                        onClick = { verificationMenuExpanded = true },
+                    ) {
+                        Icon(Icons.Default.MoreVert, "更多检测选项")
+                    }
+                    DropdownMenu(
+                        expanded = verificationMenuExpanded,
+                        onDismissRequest = { verificationMenuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("检测全部已选模型") },
+                            onClick = {
+                                verificationMenuExpanded = false
+                                val values = validate() ?: return@DropdownMenuItem
+                                startVerification(values, values.models)
+                            },
+                        )
+                    }
+                }
+            }
             checks.forEach { CheckRow(it) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             verificationReport?.let {
-                Text(it, color = Color(0xFFB77900), style = MaterialTheme.typography.bodySmall)
-            }
-            Button(enabled = !testing, onClick = {
-                val values = validate() ?: return@Button
-                testing = true; error = null; verificationReport = null; resetChecks()
-                scope.launch {
-                    val verification = verifyConnection(values.base, values.key, values.models) { index, state, detail -> checks[index] = checks[index].copy(state = state, detail = detail) }
-                    when {
-                        verification.fatalError != null -> error = verification.fatalError
-                        verification.models.availableModels.isEmpty() ->
-                            error = formatNovexVerificationReport(verification.models)
-                        else -> {
-                            saveConnections(
-                                repository = providerRepository,
-                                existing = existing,
-                                label = label,
-                                base = values.base,
-                                key = values.key,
-                                modelIds = verification.models.availableModels,
-                                imageModelId = values.imageModel,
-                            )
-                            if (verification.models.failures.isEmpty()) {
-                                onSaved()
-                            } else {
-                                verificationReport = "已跳过不可用模型并启用其余模型。\n" +
-                                    formatNovexVerificationReport(verification.models)
-                            }
-                        }
-                    }
-                    testing = false
+                val reportColor = when (verificationSummaryState) {
+                    VerificationSummaryState.PASSED -> Color(0xFF168A45)
+                    VerificationSummaryState.PARTIAL -> Color(0xFFB77900)
+                    VerificationSummaryState.FAILED -> MaterialTheme.colorScheme.error
+                    null -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
-            }, modifier = Modifier.fillMaxWidth()) { Text(if (testing) "正在检测…" else "检测并启用（${selectedModels.size}）") }
+                Text(it, color = reportColor, style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedButton(
+                enabled = !fetchingModels && !checking && selectedModels.isNotEmpty(),
+                onClick = {
+                    val values = validate() ?: return@OutlinedButton
+                    val currentModel = values.models.firstOrNull() ?: return@OutlinedButton
+                    startVerification(values, listOf(currentModel))
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (checking) "正在检测…" else "检测当前模型")
+            }
+            Button(enabled = !fetchingModels && !checking, onClick = {
+                val values = validate() ?: return@Button
+                error = null
+                runCatching {
+                    saveConnections(
+                        repository = providerRepository,
+                        existing = existing,
+                        label = label,
+                        base = values.base,
+                        key = values.key,
+                        modelIds = values.models,
+                        imageModelId = values.imageModel,
+                    )
+                }.onSuccess {
+                    onSaved()
+                }.onFailure { failure ->
+                    error = "保存模型连接失败：${failure.message ?: failure.javaClass.simpleName}"
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("保存并启用（${selectedModels.size}）") }
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys"))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("前往 DeepSeek（深度求索）获取密钥") }
             Spacer(Modifier.height(24.dp))
         }

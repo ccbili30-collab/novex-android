@@ -32,12 +32,7 @@ internal suspend fun verifyNovexModels(
     for ((modelIndex, modelId) in models.withIndex()) {
         val errors = mutableListOf<String>()
         repeat(repetitions) { attempt ->
-            onProgress(
-                NovexProbeStage.CHAT,
-                modelIndex * repetitions + attempt,
-                models.size * repetitions,
-                modelId,
-            )
+            onProgress(NovexProbeStage.CHAT, modelIndex, models.size, modelId)
             val error = runCatching { chatProbe(modelId) }
                 .getOrElse { it.message ?: it.javaClass.simpleName }
             if (error != null) errors += "第 ${attempt + 1}/$repetitions 轮：$error"
@@ -54,12 +49,7 @@ internal suspend fun verifyNovexModels(
     for ((modelIndex, modelId) in chatPassed.withIndex()) {
         val errors = mutableListOf<String>()
         repeat(repetitions) { attempt ->
-            onProgress(
-                NovexProbeStage.TOOL,
-                modelIndex * repetitions + attempt,
-                chatPassed.size * repetitions,
-                modelId,
-            )
+            onProgress(NovexProbeStage.TOOL, modelIndex, chatPassed.size, modelId)
             val error = runCatching { toolProbe(modelId) }
                 .getOrElse { it.message ?: it.javaClass.simpleName }
             if (error != null) errors += "第 ${attempt + 1}/$repetitions 轮：$error"
@@ -80,7 +70,7 @@ internal fun formatNovexVerificationReport(result: NovexModelVerification): Stri
         append("可用模型（${result.availableModels.size}）：")
         append(result.availableModels.joinToString("、"))
     } else {
-        append("没有可启用的模型。")
+        append("没有检测通过的模型。")
     }
     if (result.failures.isNotEmpty()) {
         append("\n不可用模型（${result.failures.size}）：")
