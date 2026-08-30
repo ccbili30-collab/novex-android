@@ -146,7 +146,6 @@
     <string name="settings_privacy_policy">プライバシーポリシー</string>
     <string name="settings_feedback">フィードバック</string>
     <string name="settings_submit_github_issues">GitHub に Issue を提出</string>
-    <string name="settings_feedback_telegram">フィードバック (Telegram)</string>
     <string name="settings_feedback_email">フィードバック (メール)</string>
     <string name="about_title">情報</string>
     <string name="about_minis_tagline">Novex は完全にローカルで完全にプライベートなオンデバイスエージェントです。</string>

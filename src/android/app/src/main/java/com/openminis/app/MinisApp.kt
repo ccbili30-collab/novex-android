@@ -20,6 +20,7 @@ import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
 import com.openminis.app.data.MountedFoldersStore
+import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.repository.WebAppShortcutRepository
@@ -408,6 +409,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         // late, non-UI subsystem from permanently locking the user out
         // of an app whose UI dependencies are in fact ready.
         subsystemsInitialized = true
+        // Fire-and-forget once per process. Network failure is intentionally
+        // silent here; the toolbar still offers an explicit retry.
+        NovexUpdateMonitor.checkOnceOnColdStart()
         } catch (t: Throwable) {
             // subsystemsInitialized stays false — MainActivity will show the
             // crash-share dialog rather than composing against unassigned

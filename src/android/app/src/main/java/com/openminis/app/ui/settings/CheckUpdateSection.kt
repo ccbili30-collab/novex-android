@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.UpdateChecker
+import com.openminis.app.data.NovexUpdateMonitor
 import kotlinx.coroutines.launch
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
@@ -249,7 +251,8 @@ fun NovexUpdateAction() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
-    var update by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
+    val detectedUpdate by NovexUpdateMonitor.available.collectAsState()
+    var dialogUpdate by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
@@ -262,45 +265,59 @@ fun NovexUpdateAction() {
             }
             awaitingInstallPermission = false
             UpdateChecker.resumablePendingFile(context)?.let { file ->
-                if (UpdateChecker.installApk(context, file)) update = null
+                if (UpdateChecker.installApk(context, file)) {
+                    dialogUpdate = null
+                    NovexUpdateMonitor.clearAvailable()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
     }
 
-    IconButton(
-        enabled = !checking,
-        onClick = {
-            val available = update
-            if (available != null) return@IconButton
-            checking = true
-            scope.launch {
-                when (val result = UpdateChecker.check()) {
-                    is UpdateChecker.CheckResult.UpdateAvailable -> update = result
-                    UpdateChecker.CheckResult.UpToDate ->
-                        android.widget.Toast.makeText(context, "Novex 已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
-                    UpdateChecker.CheckResult.NoReleaseAvailable ->
-                        android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
-                    is UpdateChecker.CheckResult.NoApkAsset ->
-                        android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
-                    UpdateChecker.CheckResult.Forbidden,
-                    UpdateChecker.CheckResult.NetworkUnreachable ->
-                        android.widget.Toast.makeText(context, "无法连接 GitHub，请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
-                    is UpdateChecker.CheckResult.Error ->
-                        android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (detectedUpdate != null) {
+            Text(
+                "检测到新版本",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        IconButton(
+            enabled = !checking,
+            onClick = {
+                detectedUpdate?.let {
+                    dialogUpdate = it
+                    return@IconButton
                 }
-                checking = false
+                checking = true
+                scope.launch {
+                    when (val result = NovexUpdateMonitor.refresh()) {
+                        is UpdateChecker.CheckResult.UpdateAvailable -> dialogUpdate = result
+                        UpdateChecker.CheckResult.UpToDate ->
+                            android.widget.Toast.makeText(context, "Novex（诺文）已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                        UpdateChecker.CheckResult.NoReleaseAvailable ->
+                            android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
+                        is UpdateChecker.CheckResult.NoApkAsset ->
+                            android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
+                        UpdateChecker.CheckResult.Forbidden,
+                        UpdateChecker.CheckResult.NetworkUnreachable ->
+                            android.widget.Toast.makeText(context, "无法连接 GitHub（代码托管平台），请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
+                        is UpdateChecker.CheckResult.Error ->
+                            android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    checking = false
+                }
+            },
+        ) {
+            when {
+                checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                detectedUpdate != null -> Icon(Icons.Outlined.FileDownload, contentDescription = "下载 Novex（诺文）更新")
+                else -> Icon(Icons.Outlined.SystemUpdate, contentDescription = "检查 Novex（诺文）更新")
             }
-        },
-    ) {
-        when {
-            checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            update != null -> Icon(Icons.Outlined.FileDownload, contentDescription = "下载 Novex 更新")
-            else -> Icon(Icons.Outlined.SystemUpdate, contentDescription = "检查 Novex 更新")
         }
     }
 
-    update?.let { available ->
+    dialogUpdate?.let { available ->
         UpdateDialog(
             update = available,
             downloadProgress = downloadProgress,
@@ -318,7 +335,10 @@ fun NovexUpdateAction() {
                         is UpdateChecker.DownloadResult.Success -> {
                             downloadProgress = null
                             if (UpdateChecker.canInstall(context)) {
-                                if (UpdateChecker.installApk(context, result.file)) update = null
+                                if (UpdateChecker.installApk(context, result.file)) {
+                                    dialogUpdate = null
+                                    NovexUpdateMonitor.clearAvailable()
+                                }
                                 else downloadError = "无法打开安装界面"
                             } else {
                                 awaitingInstallPermission = true
@@ -334,7 +354,7 @@ fun NovexUpdateAction() {
             onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
             onDismiss = {
                 if (downloadProgress == null) {
-                    update = null
+                    dialogUpdate = null
                     downloadError = null
                     awaitingInstallPermission = false
                 }

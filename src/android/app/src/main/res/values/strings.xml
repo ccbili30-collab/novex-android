@@ -311,7 +311,6 @@
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_feedback">Feedback</string>
     <string name="settings_submit_github_issues">Submit GitHub Issues</string>
-    <string name="settings_feedback_telegram">Feedback (Telegram)</string>
     <string name="settings_feedback_email">Feedback (Email)</string>
     <string name="about_title">About</string>
     <string name="about_minis_tagline">Novex is Your Fully Local, Fully Private On-Device Agent.</string>

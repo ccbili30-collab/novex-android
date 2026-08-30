@@ -56,8 +56,8 @@ internal fun NovexChoiceButtons(
             parsed.second.forEach { choice ->
                 OutlinedButton(
                     onClick = { onChoice(choice) },
-                    modifier = Modifier.heightIn(min = 36.dp),
-                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                    modifier = Modifier.heightIn(min = 32.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                 ) {
                     Text(
                         text = choice,
@@ -66,6 +66,38 @@ internal fun NovexChoiceButtons(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun NovexChoiceButtons(
+    choices: List<String>,
+    onChoice: (String) -> Unit,
+) {
+    val normalized = remember(choices) {
+        choices.map(String::trim).filter(String::isNotEmpty).distinct().take(12)
+    }
+    if (normalized.size < 2) return
+    FlowRow(
+        modifier = Modifier.padding(top = 3.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        normalized.forEach { choice ->
+            OutlinedButton(
+                onClick = { onChoice(choice) },
+                modifier = Modifier.heightIn(min = 32.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = choice,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

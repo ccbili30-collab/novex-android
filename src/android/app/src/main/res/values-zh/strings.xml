@@ -179,7 +179,6 @@
     <string name="settings_privacy_policy">隐私政策</string>
     <string name="settings_feedback">反馈问题</string>
     <string name="settings_submit_github_issues">提交 GitHub Issue</string>
-    <string name="settings_feedback_telegram">反馈 (Telegram)</string>
     <string name="settings_feedback_email">反馈 (邮件)</string>
     <string name="about_title">关于</string>
     <string name="about_minis_tagline">Novex 是完全本地、完全私密的设备端 Agent。</string>

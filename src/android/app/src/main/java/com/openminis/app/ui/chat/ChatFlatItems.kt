@@ -435,6 +435,14 @@ internal sealed class FlatChatItem {
         override val contentType = "tool"
     }
 
+    data class AssistantFallbackChoices(
+        val messageId: String,
+        val choices: List<String>,
+    ) : FlatChatItem() {
+        override val key = "fallback-choices:$messageId"
+        override val contentType = "fallback_choices"
+    }
+
     data class AssistantInfo(
         val messageId: String,
         val block: AssistantBlock,
@@ -553,6 +561,7 @@ internal fun buildFlatChatItems(
             )
             is FlatChatItem.AssistantThinking -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantToolUse -> item.copy(messageId = "${item.messageId}#$n")
+            is FlatChatItem.AssistantFallbackChoices -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantInfo -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantTyping -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantError -> item.copy(messageId = "${item.messageId}#$n")
@@ -772,6 +781,19 @@ internal fun buildFlatChatItems(
                 content = message.content,
                 isStreaming = message.isStreaming,
             )))
+        }
+
+        // A model may occasionally print a real choice menu but omit the
+        // present_choices (呈现选项) call. Add one conservative client-side
+        // fallback row only after the turn is frozen, and never duplicate a
+        // genuine tool-rendered choice row.
+        if (!isSystem && !message.isStreaming &&
+            blocks.none { it.kind == "tool_use" && it.toolName == "present_choices" }
+        ) {
+            val fallbackChoices = NovexChoiceFallback.extract(joinedMarkdown)
+            if (fallbackChoices.size >= 2) {
+                out.add(dedupe(FlatChatItem.AssistantFallbackChoices(message.id, fallbackChoices)))
+            }
         }
 
         // Inline error banner

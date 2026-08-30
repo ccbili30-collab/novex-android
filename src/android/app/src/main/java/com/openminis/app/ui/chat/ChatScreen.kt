@@ -130,6 +130,7 @@ import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -401,6 +402,7 @@ fun ChatScreen(
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
     onNewChat: () -> Unit = {},
+    onSettings: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     /** Open the in-app terminal with [command] pre-filled at the prompt
      *  (no trailing newline — the user reviews and presses Enter manually).
@@ -2555,6 +2557,16 @@ fun ChatScreen(
                             expanded = showChatMenu,
                             onDismissRequest = { showChatMenu = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("设置") },
+                                onClick = {
+                                    showChatMenu = false
+                                    onSettings()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Settings, contentDescription = null)
+                                },
+                            )
                             // [T-new-chat-menu-entry] New Chat — first item
                             // (iOS parity: square.and.pencil at the top of the
                             // "..." menu). Streaming sessions confirm first.
@@ -3643,6 +3655,12 @@ fun ChatScreen(
                                     )
                                 }
                             }
+                            is FlatChatItem.AssistantFallbackChoices -> {
+                                NovexChoiceButtons(item.choices) { choice ->
+                                    viewModel.setInputText(choice)
+                                    inputFocusRequester.requestFocus()
+                                }
+                            }
                             is FlatChatItem.AssistantInfo -> FallbackInfoBlock(
                                 block = item.block,
                                 // Only the compact-divider info block should
@@ -3719,6 +3737,17 @@ fun ChatScreen(
                     }
                 }
                 } // AlwaysStretchOverscrollBox
+                if (messages.isEmpty() && !isStreaming) {
+                    Text(
+                        text = "导入你的模拟器启动词，开始游戏吧",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 36.dp),
+                    )
+                }
                 // SelectionDragTracker bridges gesture-published dragIntent
                 // with listState scroll observation — that's what keeps the
                 // selection extending across newly-scrolled-in shards when

@@ -146,7 +146,6 @@
     <string name="settings_privacy_policy">개인정보 처리방침</string>
     <string name="settings_feedback">피드백</string>
     <string name="settings_submit_github_issues">GitHub Issue 제출</string>
-    <string name="settings_feedback_telegram">피드백 (Telegram)</string>
     <string name="settings_feedback_email">피드백 (이메일)</string>
     <string name="about_title">정보</string>
     <string name="about_minis_tagline">Novex는 완전히 로컬에서 동작하며 완전히 프라이빗한 온디바이스 에이전트입니다.</string>

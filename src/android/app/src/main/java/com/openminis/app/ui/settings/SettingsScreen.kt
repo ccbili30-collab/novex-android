@@ -104,9 +104,9 @@ fun SettingsScreen(
     // About row below still has a TODO onClick in HEAD; future settings-bucket
     // work will wire this through.
     onAboutClick: () -> Unit = {},
+    onFeedbackClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    var showFeedbackSheet by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -200,9 +200,9 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = Icons.Outlined.Feedback,
                     iconColor = Color(0xFF007AFF),
-                    title = stringResource(R.string.settings_feedback),
+                    title = "QQ 反馈与交流",
                     subtitle = null,
-                    onClick = { showFeedbackSheet = true },
+                    onClick = onFeedbackClick,
                     showDivider = false,
                 )
             }
@@ -211,36 +211,6 @@ fun SettingsScreen(
         }
     }
 
-    if (showFeedbackSheet) {
-        ModalBottomSheet(onDismissRequest = { showFeedbackSheet = false }) {
-            Column(modifier = Modifier.padding(bottom = 24.dp)) {
-                FeedbackSheetItem(
-                    icon = Icons.Outlined.BugReport,
-                    title = stringResource(R.string.settings_submit_github_issues),
-                    onClick = {
-                        showFeedbackSheet = false
-                        openExternalUrl(context, buildBugReportUrl())
-                    },
-                )
-                FeedbackSheetItem(
-                    icon = Icons.AutoMirrored.Outlined.Send,
-                    title = stringResource(R.string.settings_feedback_telegram),
-                    onClick = {
-                        showFeedbackSheet = false
-                        openExternalUrl(context, "https://t.me/+2NzhOJuzRyI1YmM1")
-                    },
-                )
-                FeedbackSheetItem(
-                    icon = Icons.Outlined.Email,
-                    title = stringResource(R.string.settings_feedback_email),
-                    onClick = {
-                        showFeedbackSheet = false
-                        openExternalUrl(context, buildFeedbackMailto())
-                    },
-                )
-            }
-        }
-    }
 }
 
 @Composable

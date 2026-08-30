@@ -184,7 +184,6 @@
     <string name="settings_privacy_policy">Политика конфиденциальности</string>
     <string name="settings_feedback">Обратная связь</string>
     <string name="settings_submit_github_issues">Создать issue на GitHub</string>
-    <string name="settings_feedback_telegram">Обратная связь (Telegram)</string>
     <string name="settings_feedback_email">Обратная связь (Email)</string>
     <string name="about_title">О приложении</string>
     <string name="about_minis_tagline">Novex — ваш полностью локальный и приватный Агент прямо на устройстве.</string>

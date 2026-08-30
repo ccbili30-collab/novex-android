@@ -39,6 +39,15 @@ private enum class CheckState { WAITING, RUNNING, PASSED, FAILED }
 private data class ConnectionCheck(val label: String, var state: CheckState, var detail: String = "")
 private data class SetupValues(val base: String, val key: String, val models: List<String>)
 
+internal const val NOVEX_DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
+
+internal fun novexModelDisplayName(modelId: String): String =
+    if (modelId == NOVEX_DEFAULT_DEEPSEEK_MODEL) {
+        "DeepSeek V4 Flash（深度求索 V4 快速版）"
+    } else {
+        LLMModel.modelDisplayName(modelId)
+    }
+
 internal fun toggleModelSelection(current: List<String>, clicked: String): List<String> {
     val clean = clicked.trim()
     if (clean.isEmpty()) return current.distinct()
@@ -63,7 +72,7 @@ fun NovexProviderSetupScreen(
     var apiKey by remember { mutableStateOf(existing?.id?.let(providerRepository::loadApiKey) ?: "") }
     val initialModels = remember(instanceId) {
         providerRepository.entriesFor(instanceId ?: "").map { it.model.id }.distinct()
-            .ifEmpty { if (existing == null) listOf("deepseek-chat") else emptyList() }
+            .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
     }
     val selectedModels = remember(instanceId) { mutableStateListOf<String>().apply { addAll(initialModels) } }
     var manualModelId by remember { mutableStateOf("") }
@@ -109,6 +118,11 @@ fun NovexProviderSetupScreen(
             OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; error = null; resetChecks() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; error = null; resetChecks() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            Text(
+                "滑到最下方获取密钥",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -121,7 +135,7 @@ fun NovexProviderSetupScreen(
                     OutlinedTextField(
                         value = when (selectedModels.size) {
                             0 -> "请选择模型"
-                            1 -> selectedModels.first()
+                            1 -> novexModelDisplayName(selectedModels.first())
                             else -> "已选择 ${selectedModels.size} 个模型"
                         },
                         onValueChange = {},
@@ -150,7 +164,7 @@ fun NovexProviderSetupScreen(
                         }
                         menuModels.forEach { id ->
                             DropdownMenuItem(
-                                text = { Text(id) },
+                                text = { Text(novexModelDisplayName(id)) },
                                 leadingIcon = {
                                     Checkbox(
                                         checked = id in selectedModels,
@@ -203,7 +217,7 @@ fun NovexProviderSetupScreen(
             }
             if (selectedModels.isNotEmpty()) {
                 Text(
-                    "已勾选：${selectedModels.joinToString("、")}",
+                    "已勾选：${selectedModels.joinToString("、") { novexModelDisplayName(it) }}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -221,7 +235,7 @@ fun NovexProviderSetupScreen(
                     testing = false
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text(if (testing) "正在检测…" else "检测并启用（${selectedModels.size}）") }
-            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys"))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("前往 DeepSeek 获取密钥") }
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys"))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("前往 DeepSeek（深度求索）获取密钥") }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -261,7 +275,7 @@ private suspend fun verifyConnection(base: String, key: String, modelIds: List<S
     update(2, CheckState.RUNNING, "")
     for ((index, modelId) in modelIds.withIndex()) {
         update(2, CheckState.RUNNING, "正在检测 ${index + 1}/${modelIds.size}：$modelId")
-        val model = LLMModel(modelId, LLMModel.modelDisplayName(modelId), "OpenAI 兼容接口")
+        val model = LLMModel(modelId, novexModelDisplayName(modelId), "OpenAI（开放人工智能）兼容接口")
         val provider = runCatching { ProviderFactory.create(instance, key, model) }
             .getOrElse { return@withContext fail(2, "$modelId：无法创建模型连接") }
         val chatOk = runCatching { withTimeout(45_000) { provider.sendMessage(listOf(LLMMessage(LLMMessage.Role.USER, "只回复：连接成功")), null, 64).text.isNotBlank() } }.getOrDefault(false)
@@ -276,7 +290,7 @@ private suspend fun verifyConnection(base: String, key: String, modelIds: List<S
     val probe = AgentToolDefinition("novex_probe", "必须调用此工具完成连接检测", emptyMap())
     for ((index, modelId) in modelIds.withIndex()) {
         update(3, CheckState.RUNNING, "正在检测 ${index + 1}/${modelIds.size}：$modelId")
-        val model = LLMModel(modelId, LLMModel.modelDisplayName(modelId), "OpenAI 兼容接口")
+        val model = LLMModel(modelId, novexModelDisplayName(modelId), "OpenAI（开放人工智能）兼容接口")
         val provider = runCatching { ProviderFactory.create(instance, key, model) }
             .getOrElse { return@withContext fail(3, "$modelId：无法创建模型连接") }
         val toolOk = runCatching {
@@ -305,7 +319,7 @@ private fun saveConnections(repository: ProviderRepository, existing: ProviderIn
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
-                    baseModel = LLMModel(modelId, LLMModel.modelDisplayName(modelId), instance.label),
+                    baseModel = LLMModel(modelId, novexModelDisplayName(modelId), instance.label),
                     isCustom = true,
                 ),
             )

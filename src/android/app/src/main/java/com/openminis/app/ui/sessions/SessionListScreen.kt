@@ -177,6 +177,7 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.FolderEntity
+import com.openminis.app.data.model.hasUsableNovexModel
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.minisFabColor
 import com.openminis.app.data.repository.ChatRepository
@@ -432,8 +433,8 @@ fun SessionListScreen(
     val selectedIds by viewModel.selectedIds.collectAsState()
     val regeneratingIds by viewModel.regeneratingIds.collectAsState()
     val providerConfig by providerRepository.config.collectAsState()
-    val hasProviders = providerConfig.instances.isNotEmpty()
-    val hasGroups = providerConfig.modelGroups.isNotEmpty()
+    val hasProviders = providerConfig.instances.any { it.isEnabled }
+    val hasGroups = providerConfig.hasUsableNovexModel()
     // [T-android-startup-config-stall] Provider config now loads off-thread, so
     // for a brief startup window `providerConfig` is the empty placeholder.
     // Gate the onboarding/list render on this too (alongside the sessions
@@ -725,7 +726,17 @@ fun SessionListScreen(
             // iOS `didInitialLoad` on ContentView. The transition is usually
             // sub-200ms, so no spinner.
             if (isInitialLoadComplete) Column(modifier = Modifier.fillMaxSize()) {
-                if (sessions.isEmpty()) {
+                if (!hasGroups) {
+                    if (configLoaded) {
+                        OnboardingLanding(
+                            hasProviders = hasProviders,
+                            hasGroups = false,
+                            onAddProvider = onAddProviderClick,
+                            onSelectModels = onSelectModelsClick,
+                            onStartConversation = {},
+                        )
+                    }
+                } else if (sessions.isEmpty()) {
                     if (isSearchActive && searchQuery.isNotBlank()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),

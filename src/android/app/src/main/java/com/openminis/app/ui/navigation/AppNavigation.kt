@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.openminis.app.data.model.hasUsableNovexModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.openminis.app.deeplink.DeepLinkAction
@@ -72,6 +73,7 @@ import com.openminis.app.ui.settings.LogDetailScreen
 import com.openminis.app.ui.settings.LogManagementScreen
 import com.openminis.app.ui.settings.MemoryFileEditScreen
 import com.openminis.app.ui.settings.MemoryManagementScreen
+import com.openminis.app.ui.settings.NovexFeedbackScreen
 import com.openminis.app.ui.settings.OffloadPermissionScreen
 import com.openminis.app.ui.settings.ShizukuPermissionScreen
 import com.openminis.app.sandbox.RootfsManager
@@ -90,6 +92,7 @@ object Routes {
     const val SESSION_LIST = "sessions"
     const val CHAT = "chat/{sessionId}"
     const val SETTINGS = "settings"
+    const val NOVEX_FEEDBACK = "novex_feedback"
     const val PROVIDER_LIST = "providers"
     const val ADD_PROVIDER = "add_provider"
     const val PROVIDER_DETAIL = "provider/{instanceId}"
@@ -525,6 +528,18 @@ fun AppNavigation(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+            val providerConfig by providerRepository.config.collectAsState()
+            val configLoaded by providerRepository.configLoaded.collectAsState()
+            if (!configLoaded) return@composable
+            if (!providerConfig.hasUsableNovexModel()) {
+                LaunchedEffect(Unit) {
+                    navController.navigate(Routes.SESSION_LIST) {
+                        popUpTo(Routes.SESSION_LIST) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+                return@composable
+            }
             ChatScreen(
                 sessionId = sessionId,
                 chatRepository = chatRepository,
@@ -546,6 +561,7 @@ fun AppNavigation(
                         launchSingleTop = true
                     }
                 },
+                onSettings = { navController.safeNavigate(Routes.SETTINGS) },
                 onOpenTerminal = {
                     navController.safeNavigate(Routes.terminal(sessionId = sessionId))
                 },
@@ -590,7 +606,12 @@ fun AppNavigation(
                 onAboutClick = { navController.safeNavigate(Routes.ABOUT) },
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
+                onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
             )
+        }
+
+        composable(Routes.NOVEX_FEEDBACK) {
+            NovexFeedbackScreen(onBack = { navController.safePopBackStack() })
         }
 
         composable(Routes.SHARED_FOLDERS) {
