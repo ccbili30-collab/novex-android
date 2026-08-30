@@ -51,7 +51,7 @@ class ExecutionCoordinatorInstrumentedTest {
         val sessionId = "session-mount-test"
         ExecutionCoordinator.execute(sessionId, "echo hello")
 
-        assertEquals(sessionId, ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession(sessionId))
     }
 
     @Test
@@ -59,10 +59,10 @@ class ExecutionCoordinatorInstrumentedTest {
         skipIfNoBoot()
 
         ExecutionCoordinator.execute("session-A", "echo a")
-        assertEquals("session-A", ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession("session-A"))
 
         ExecutionCoordinator.execute("session-B", "echo b")
-        assertEquals("session-B", ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession("session-B"))
     }
 
     @Test
@@ -78,7 +78,7 @@ class ExecutionCoordinatorInstrumentedTest {
 
         // Mounts should remain the same (not cleared and re-added)
         assertEquals(mountCount, PRootKernel.bindMounts.size)
-        assertEquals("session-X", ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession("session-X"))
     }
 
     @Test
@@ -234,12 +234,12 @@ class ExecutionCoordinatorInstrumentedTest {
         skipIfNoBoot()
 
         ExecutionCoordinator.execute("session-terminate", "echo test")
-        assertEquals("session-terminate", ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession("session-terminate"))
         assertTrue(PRootKernel.bindMounts.isNotEmpty())
 
         ExecutionCoordinator.sessionDidTerminate("session-terminate")
 
-        assertNull(ExecutionCoordinator.mountedSessionId)
+        assertFalse(ExecutionCoordinator.hasActiveSession("session-terminate"))
         assertTrue(PRootKernel.bindMounts.isEmpty())
     }
 
@@ -252,14 +252,14 @@ class ExecutionCoordinatorInstrumentedTest {
 
         ExecutionCoordinator.sessionDidTerminate("session-other")
 
-        assertEquals("session-keep", ExecutionCoordinator.mountedSessionId)
+        assertTrue(ExecutionCoordinator.hasActiveSession("session-keep"))
         assertEquals(mountsBefore, PRootKernel.bindMounts.size)
     }
 
     @Test
     fun sessionDidTerminateIsNoOpWhenNoSession() {
         ExecutionCoordinator.sessionDidTerminate("any-session")
-        assertNull(ExecutionCoordinator.mountedSessionId)
+        assertFalse(ExecutionCoordinator.hasActiveSession("any-session"))
     }
 
     // ==================== stopCurrentCommand ====================
@@ -349,12 +349,7 @@ class ExecutionCoordinatorInstrumentedTest {
         PRootKernel.clearBindMounts()
         PRootKernel.customEnvironment.clear()
 
-        // Reset ExecutionCoordinator mountedSessionId
-        try {
-            val field = ExecutionCoordinator::class.java.getDeclaredField("mountedSessionId")
-            field.isAccessible = true
-            field.set(ExecutionCoordinator, null)
-        } catch (_: Exception) { }
+        ExecutionCoordinator.stopCurrentCommand()
     }
 
     private fun cleanupSessionDirs() {

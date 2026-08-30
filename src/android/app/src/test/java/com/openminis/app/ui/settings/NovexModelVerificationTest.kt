@@ -60,10 +60,35 @@ class NovexModelVerificationTest {
 
         assertEquals(mapOf("flaky" to 3, "good" to 3), chatAttempts)
         assertEquals(mapOf("flaky" to 3, "good" to 3), toolAttempts)
-        assertEquals(listOf("good"), result.availableModels)
-        assertTrue(result.failures.single().detail.contains("第 2/3 轮"))
+        assertEquals(listOf("flaky", "good"), result.availableModels)
+        assertTrue(result.failures.isEmpty())
+        assertTrue(result.warnings.single().detail.contains("第 2/3 轮"))
+        assertTrue(result.warnings.single().detail.contains("通过 2/3"))
+        assertTrue(formatNovexVerificationReport(result).contains("不稳定但可用"))
         assertTrue(progress.isNotEmpty())
         assertTrue(progress.all { (_, modelCount, _) -> modelCount <= 2 })
         assertTrue(progress.none { (_, modelCount, _) -> modelCount == 6 })
+    }
+
+    @Test
+    fun `model that fails the majority is unavailable and later models still run`() = runBlocking {
+        val visited = mutableListOf<String>()
+        val attempts = mutableMapOf<String, Int>()
+
+        val result = verifyNovexModels(
+            modelIds = listOf("mostly-broken", "good"),
+            repetitions = 3,
+            chatProbe = { null },
+            toolProbe = { model ->
+                visited += model
+                val attempt = (attempts[model] ?: 0) + 1
+                attempts[model] = attempt
+                if (model == "mostly-broken" && attempt <= 2) "无结构化调用" else null
+            },
+        )
+
+        assertEquals(listOf("good"), result.availableModels)
+        assertEquals(listOf("mostly-broken", "mostly-broken", "mostly-broken", "good", "good", "good"), visited)
+        assertTrue(result.failures.single().detail.contains("仅通过 1/3"))
     }
 }

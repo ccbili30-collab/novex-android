@@ -15,17 +15,33 @@ import org.w3c.dom.Node
  * Converts common authoring formats into a plain Markdown sidecar that the
  * agent can read with file_read. The original upload remains untouched.
  *
- * This intentionally uses small format-specific readers instead of a large
- * office suite dependency. OOXML and EPUB are ZIP containers; PDF is handled
- * by the Android PDFBox port. Legacy binary Office files remain unsupported.
+ * DOCX uses the Android-shaded Apache POI reader first and retains the small
+ * OOXML ZIP/XML reader only as a recovery path. Other OOXML and EPUB formats
+ * use format-specific readers; PDF is handled by the Android PDFBox port.
+ * Legacy binary Office files remain unsupported.
  */
 object DocumentTextExtractor {
     const val MAX_EXTRACTED_CHARS = 2_000_000
+
+    class ExtractionException(
+        val stage: String,
+        cause: Throwable,
+    ) : RuntimeException("Document extraction failed during $stage", cause)
 
     data class Result(
         val text: String,
         val formatLabel: String,
         val truncated: Boolean,
+        val extractionEngine: String = "built-in",
+        val primaryFailureType: String? = null,
+    )
+
+    private data class RawResult(
+        val text: String,
+        val formatLabel: String,
+        val extractionEngine: String,
+        val primaryFailureType: String? = null,
+        val hasPictures: Boolean = false,
     )
 
     fun supports(fileName: String, mimeType: String?): Boolean {
@@ -43,31 +59,67 @@ object DocumentTextExtractor {
         if (!supports(originalName, mimeType)) return null
         val ext = originalName.substringAfterLast('.', "").lowercase()
         val raw = when (ext) {
-            "docx" -> extractDocx(file) to "Word 文档"
-            "xlsx" -> extractXlsx(file) to "Excel 工作簿"
-            "pptx" -> extractPptx(file) to "PowerPoint 演示文稿"
-            "pdf" -> extractPdf(context, file) to "PDF 文档"
-            "epub" -> extractEpub(file) to "EPUB 电子书"
-            "rtf" -> extractRtf(file.readText()) to "RTF 文档"
-            else -> file.readText() to "文本文件"
+            "docx" -> extractDocx(file)
+            "xlsx" -> RawResult(extractXlsx(file), "Excel 工作簿", "built-in")
+            "pptx" -> RawResult(extractPptx(file), "PowerPoint 演示文稿", "built-in")
+            "pdf" -> RawResult(extractPdf(context, file), "PDF 文档", "PDFBox")
+            "epub" -> RawResult(extractEpub(file), "EPUB 电子书", "built-in")
+            "rtf" -> RawResult(extractRtf(file.readText()), "RTF 文档", "built-in")
+            else -> RawResult(file.readText(), "文本文件", "built-in")
         }
-        val normalized = raw.first.replace("\u0000", "").trim()
-        if (normalized.isBlank()) return null
+        val normalized = raw.text.replace("\u0000", "").trim().ifBlank {
+            when {
+                ext == "docx" && raw.hasPictures ->
+                    "该文档没有可提取的文字，内容可能仅由图片或扫描页组成。需要 OCR（光学字符识别）或视觉模型才能读取。"
+                ext == "docx" ->
+                    "该文档没有可提取的可见正文。若内容是图片或扫描页，需要 OCR（光学字符识别）或视觉模型。"
+                else -> return null
+            }
+        }
         val truncated = normalized.length > MAX_EXTRACTED_CHARS
         val body = if (truncated) normalized.take(MAX_EXTRACTED_CHARS) else normalized
         return Result(
             text = buildString {
                 append("# 从 ").append(originalName).append(" 提取的内容\n\n")
-                append("> 格式：").append(raw.second).append("。此文件由 Novex 在本地生成，原文件未被修改。\n\n")
+                append("> 格式：").append(raw.formatLabel).append("。此文件由 Novex 在本地解析，原文件未被修改。\n\n")
                 append(body)
                 if (truncated) append("\n\n> 内容过长，已截断至 ${MAX_EXTRACTED_CHARS} 个字符。")
             },
-            formatLabel = raw.second,
+            formatLabel = raw.formatLabel,
             truncated = truncated,
+            extractionEngine = raw.extractionEngine,
+            primaryFailureType = raw.primaryFailureType,
         )
     }
 
-    private fun extractDocx(file: File): String = ZipFile(file).use { zip ->
+    private fun extractDocx(file: File): RawResult {
+        val primary = runCatching { DocxPoiTextExtractor.extract(file) }
+        primary.getOrNull()?.let { extraction ->
+            val supplemental = extractDocxSupplementalText(file)
+            return RawResult(
+                text = mergeUniqueText(extraction.text, supplemental),
+                formatLabel = "Word 文档",
+                extractionEngine = "poi-on-android",
+                hasPictures = extraction.hasPictures || docxHasPictures(file),
+            )
+        }
+
+        val primaryFailure = requireNotNull(primary.exceptionOrNull())
+        return try {
+            RawResult(
+                text = extractDocxLegacy(file),
+                formatLabel = "Word 文档",
+                extractionEngine = "legacy-zip-xml-fallback",
+                primaryFailureType = primaryFailure.javaClass.name,
+                hasPictures = docxHasPictures(file),
+            )
+        } catch (fallbackFailure: Throwable) {
+            fallbackFailure.addSuppressed(primaryFailure)
+            throw ExtractionException("DOCX 降级 ZIP/XML 解析", fallbackFailure)
+        }
+    }
+
+    private fun extractDocxLegacy(file: File): String = ZipFile(file).use { zip ->
         val names = buildList {
             add("word/document.xml")
             zip.entries().asSequence().map { it.name }
@@ -76,6 +128,71 @@ object DocumentTextExtractor {
         }
         names.mapNotNull { name -> zip.getEntry(name)?.let { parseWordXml(zip.readText(it)) } }
             .filter(String::isNotBlank).joinToString("\n\n")
+    }
+
+    /**
+     * POI is the primary parser. Raw OOXML is consulted only to supplement
+     * two constructs that XWPFWordExtractor can omit on some producer files:
+     * drawing text boxes and visible inserted revision text. Deleted revision
+     * text uses w:delText and is intentionally excluded.
+     */
+    private fun extractDocxSupplementalText(file: File): String = runCatching {
+        ZipFile(file).use { zip ->
+            val entry = zip.getEntry("word/document.xml") ?: return@use ""
+            val doc = parseXml(zip.readText(entry)) ?: return@use ""
+            buildList {
+                val textBoxes = doc.getElementsByTagNameNS("*", "txbxContent")
+                for (i in 0 until textBoxes.length) {
+                    add(collectText(textBoxes.item(i), setOf("t"), preserveTabsAndBreaks = true).trim())
+                }
+                val paragraphs = doc.getElementsByTagNameNS("*", "p")
+                for (i in 0 until paragraphs.length) {
+                    val paragraph = paragraphs.item(i) as? Element ?: continue
+                    val hasVisibleRevision = paragraph.getElementsByTagNameNS("*", "ins").length > 0 ||
+                        paragraph.getElementsByTagNameNS("*", "moveTo").length > 0
+                    if (hasVisibleRevision) add(collectAcceptedRevisionText(paragraph).trim())
+                }
+            }
+                .filter(String::isNotBlank)
+                .distinct()
+                .joinToString("\n")
+        }
+    }.getOrDefault("")
+
+    private fun docxHasPictures(file: File): Boolean = runCatching {
+        ZipFile(file).use { zip ->
+            zip.entries().asSequence().any { !it.isDirectory && it.name.startsWith("word/media/") }
+        }
+    }.getOrDefault(false)
+
+    private fun mergeUniqueText(primary: String, supplemental: String): String {
+        val extra = supplemental.trim()
+        if (extra.isEmpty() || primary.contains(extra)) return primary
+        val missingLines = extra.lineSequence().map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot(primary::contains)
+            .distinct()
+            .toList()
+        if (missingLines.isEmpty()) return primary
+        return primary.trimEnd() + "\n" + missingLines.joinToString("\n")
+    }
+
+    private fun collectAcceptedRevisionText(root: Node): String {
+        val out = StringBuilder()
+        fun walk(node: Node) {
+            val local = node.localName ?: node.nodeName.substringAfter(':')
+            if (local == "del" || local == "moveFrom") return
+            if (local == "t") {
+                out.append(node.textContent)
+                return
+            }
+            if (local == "tab") out.append('\t')
+            if (local == "br" || local == "cr") out.append('\n')
+            val children = node.childNodes
+            for (i in 0 until children.length) walk(children.item(i))
+        }
+        walk(root)
+        return out.toString()
     }
 
     private fun parseWordXml(xml: String): String {

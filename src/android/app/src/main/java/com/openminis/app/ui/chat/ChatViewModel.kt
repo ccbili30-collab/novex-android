@@ -25,6 +25,7 @@ import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
 import com.openminis.app.data.attachments.DocumentTextExtractor
+import com.openminis.app.data.attachments.documentExtractionDiagnostic
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
 import com.openminis.app.data.db.CompactMarkerEntity
@@ -9647,8 +9648,23 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                     originalName = attachment.fileName,
                 )
             }.onFailure { failure ->
-                Log.w(TAG, "document extraction failed for ${attachment.fileName}: ${failure.message}")
+                val diagnostic = documentExtractionDiagnostic(
+                    fileName = attachment.fileName,
+                    fileSize = dest.length(),
+                    failure = failure,
+                )
+                AppLogger.error(TAG, diagnostic.logMessage)
+                Log.e(TAG, "document extraction failed for ${attachment.fileName}", failure)
+                _error.value = diagnostic.userMessage
             }.getOrNull()
+            extracted?.primaryFailureType?.let { primaryFailureType ->
+                AppLogger.warning(
+                    TAG,
+                    "document_extraction_fallback file=${attachment.fileName} " +
+                        "size=${dest.length()} exception=$primaryFailureType " +
+                        "stage=DOCX poi-on-android 主解析 engine=${extracted.extractionEngine}",
+                )
+            }
             val extractedPath = extracted?.let { result ->
                 val extractedName = uniqueUploadFileName(uploadsHostDir, "$safeName.extracted.md")
                 val extractedFile = java.io.File(uploadsHostDir, extractedName)

@@ -8,9 +8,16 @@ internal data class NovexModelFailure(
     val detail: String,
 )
 
+internal data class NovexModelWarning(
+    val modelId: String,
+    val stage: NovexProbeStage,
+    val detail: String,
+)
+
 internal data class NovexModelVerification(
     val availableModels: List<String>,
     val failures: List<NovexModelFailure>,
+    val warnings: List<NovexModelWarning> = emptyList(),
 )
 
 /**
@@ -27,7 +34,9 @@ internal suspend fun verifyNovexModels(
     val models = modelIds.map(String::trim).filter(String::isNotEmpty).distinct()
     require(repetitions >= 1) { "repetitions must be positive" }
     val failures = mutableListOf<NovexModelFailure>()
+    val warnings = mutableListOf<NovexModelWarning>()
     val chatPassed = mutableListOf<String>()
+    val requiredPasses = repetitions / 2 + 1
 
     for ((modelIndex, modelId) in models.withIndex()) {
         val errors = mutableListOf<String>()
@@ -37,12 +46,21 @@ internal suspend fun verifyNovexModels(
                 .getOrElse { it.message ?: it.javaClass.simpleName }
             if (error != null) errors += "第 ${attempt + 1}/$repetitions 轮：$error"
         }
-        if (errors.isEmpty()) chatPassed += modelId
-        else failures += NovexModelFailure(
-            modelId,
-            NovexProbeStage.CHAT,
-            errors.joinToString("；"),
-        )
+        val passedCount = repetitions - errors.size
+        if (passedCount >= requiredPasses) {
+            chatPassed += modelId
+            if (errors.isNotEmpty()) warnings += NovexModelWarning(
+                modelId,
+                NovexProbeStage.CHAT,
+                "通过 $passedCount/$repetitions；${errors.joinToString("；")}",
+            )
+        } else {
+            failures += NovexModelFailure(
+                modelId,
+                NovexProbeStage.CHAT,
+                "仅通过 $passedCount/$repetitions；${errors.joinToString("；")}",
+            )
+        }
     }
 
     val available = mutableListOf<String>()
@@ -54,15 +72,24 @@ internal suspend fun verifyNovexModels(
                 .getOrElse { it.message ?: it.javaClass.simpleName }
             if (error != null) errors += "第 ${attempt + 1}/$repetitions 轮：$error"
         }
-        if (errors.isEmpty()) available += modelId
-        else failures += NovexModelFailure(
-            modelId,
-            NovexProbeStage.TOOL,
-            errors.joinToString("；"),
-        )
+        val passedCount = repetitions - errors.size
+        if (passedCount >= requiredPasses) {
+            available += modelId
+            if (errors.isNotEmpty()) warnings += NovexModelWarning(
+                modelId,
+                NovexProbeStage.TOOL,
+                "通过 $passedCount/$repetitions；${errors.joinToString("；")}",
+            )
+        } else {
+            failures += NovexModelFailure(
+                modelId,
+                NovexProbeStage.TOOL,
+                "仅通过 $passedCount/$repetitions；${errors.joinToString("；")}",
+            )
+        }
     }
 
-    return NovexModelVerification(available, failures)
+    return NovexModelVerification(available, failures, warnings)
 }
 
 internal fun formatNovexVerificationReport(result: NovexModelVerification): String = buildString {
@@ -77,6 +104,13 @@ internal fun formatNovexVerificationReport(result: NovexModelVerification): Stri
         result.failures.forEach { failure ->
             val stage = if (failure.stage == NovexProbeStage.CHAT) "普通对话" else "工具调用"
             append("\n- ${failure.modelId}（$stage）：${failure.detail}")
+        }
+    }
+    if (result.warnings.isNotEmpty()) {
+        append("\n不稳定但可用（${result.warnings.map { it.modelId }.distinct().size}）：")
+        result.warnings.forEach { warning ->
+            val stage = if (warning.stage == NovexProbeStage.CHAT) "普通对话" else "工具调用"
+            append("\n- ${warning.modelId}（$stage）：${warning.detail}")
         }
     }
 }

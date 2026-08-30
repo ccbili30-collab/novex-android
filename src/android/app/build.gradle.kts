@@ -250,6 +250,12 @@ dependencies {
     // Scanned PDFs still require OCR and intentionally remain outside v1.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
+    // Android-shaded Apache POI 5.2.5, pinned to the upstream 5.2.5-4
+    // release. It is the primary DOCX reader; the small ZIP/XML reader stays
+    // available only as a recovery path for malformed or unusual packages.
+    // SHA-256: 95fa47df696b43c68775d4623afccd618c375c045b6a96b9ca593d0aefcab9a3
+    implementation(files("libs/poishadow-all-5.2.5-4.jar"))
+
     // Coil (image loading)
     implementation("io.coil-kt:coil-compose:2.7.0")
 

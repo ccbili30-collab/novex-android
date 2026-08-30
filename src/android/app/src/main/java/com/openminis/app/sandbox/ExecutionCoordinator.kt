@@ -260,6 +260,10 @@ object ExecutionCoordinator {
     /** Legacy overload for callers without sessionId. */
     fun stopCurrentCommand() = stopCurrentCommand(sessionId = null)
 
+    /** Test seam for the per-session registry; does not expose shell objects. */
+    internal fun hasActiveSession(sessionId: String): Boolean =
+        shells[sessionId]?.isAlive == true
+
     /**
      * Propagate a system-timezone change to every live shell.
      *
