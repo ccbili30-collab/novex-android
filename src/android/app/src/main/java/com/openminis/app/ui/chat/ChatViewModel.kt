@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Extension
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
+import com.openminis.app.data.attachments.DocumentTextExtractor
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
 import com.openminis.app.data.db.CompactMarkerEntity
@@ -9412,10 +9413,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
      * NOT inlined into the LLM payload (parity with iOS processAttachments,
      * AIChatViewModel.swift L1552-1645).
      */
-    private fun prepareUserAttachments(
+    private suspend fun prepareUserAttachments(
         attachments: List<InputAttachment>,
         sessionId: String,
-    ): PreparedAttachments {
+    ): PreparedAttachments = withContext(Dispatchers.IO) {
         val imageParts = mutableListOf<LLMMessage.ImagePart>()
         val imageUris = mutableListOf<Uri>()
         val imageNames = mutableListOf<String>()
@@ -9440,7 +9441,13 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             "minis-sessions/$sessionId/attachments/uploads",
         ).apply { mkdirs() }
         // Metadata captured per attachment for the <user-attached-files> XML.
-        data class UploadMeta(val linuxPath: String, val size: Long, val modifiedIso: String)
+        data class UploadMeta(
+            val linuxPath: String,
+            val size: Long,
+            val modifiedIso: String,
+            val extractedTextPath: String? = null,
+            val extractedFormat: String? = null,
+        )
         val metas = mutableListOf<UploadMeta>()
         val nowMs = System.currentTimeMillis()
         val isoFormatter = java.text.SimpleDateFormat(
@@ -9562,7 +9569,35 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
 
             val linuxPath = "/var/minis/attachments/uploads/$safeName"
-            metas.add(UploadMeta(linuxPath = linuxPath, size = dest.length(), modifiedIso = nowStr))
+            val extracted = runCatching {
+                DocumentTextExtractor.extract(
+                    context = context,
+                    file = dest,
+                    mimeType = attachment.mimeType,
+                    originalName = attachment.fileName,
+                )
+            }.onFailure { failure ->
+                Log.w(TAG, "document extraction failed for ${attachment.fileName}: ${failure.message}")
+            }.getOrNull()
+            val extractedPath = extracted?.let { result ->
+                val extractedName = uniqueUploadFileName(uploadsHostDir, "$safeName.extracted.md")
+                val extractedFile = java.io.File(uploadsHostDir, extractedName)
+                runCatching {
+                    extractedFile.writeText(result.text)
+                    "/var/minis/attachments/uploads/$extractedName"
+                }.onFailure { failure ->
+                    Log.w(TAG, "extracted text write failed for ${attachment.fileName}: ${failure.message}")
+                }.getOrNull()
+            }
+            metas.add(
+                UploadMeta(
+                    linuxPath = linuxPath,
+                    size = dest.length(),
+                    modifiedIso = nowStr,
+                    extractedTextPath = extractedPath,
+                    extractedFormat = extracted?.formatLabel,
+                ),
+            )
         }
 
         // T-imgsize: byte-level budget enforcement. The resizeImageBytes pass
@@ -9617,13 +9652,19 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 append(m.size)
                 append("\" modified=\"")
                 append(m.modifiedIso)
+                m.extractedTextPath?.let { extractedPath ->
+                    append("\" extracted_text_path=\"")
+                    append(extractedPath)
+                    append("\" extracted_format=\"")
+                    append(m.extractedFormat.orEmpty())
+                }
                 append("\" />\n")
             }
             append("</user-attached-files>")
         }
 
         // Order matches UserAttachmentList convention: images first, then files.
-        return PreparedAttachments(
+        PreparedAttachments(
             imageParts = imageParts,
             imageUris = imageUris,
             attachmentNames = imageNames + nonImageNames,

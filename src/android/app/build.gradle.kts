@@ -36,8 +36,8 @@ android {
         applicationId = "com.noven.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -213,6 +213,10 @@ dependencies {
 
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Local text extraction for ordinary, text-based PDF attachments.
+    // Scanned PDFs still require OCR and intentionally remain outside v1.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // Coil (image loading)
     implementation("io.coil-kt:coil-compose:2.7.0")

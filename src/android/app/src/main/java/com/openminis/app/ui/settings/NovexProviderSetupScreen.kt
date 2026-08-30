@@ -37,7 +37,12 @@ import okhttp3.Request
 
 private enum class CheckState { WAITING, RUNNING, PASSED, FAILED }
 private data class ConnectionCheck(val label: String, var state: CheckState, var detail: String = "")
-private data class SetupValues(val base: String, val key: String, val models: List<String>)
+private data class SetupValues(
+    val base: String,
+    val key: String,
+    val models: List<String>,
+    val imageModel: String?,
+)
 
 internal const val NOVEX_DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 
@@ -55,6 +60,12 @@ internal fun toggleModelSelection(current: List<String>, clicked: String): List<
     return if (clean in normalized) normalized - clean else normalized + clean
 }
 
+internal fun looksLikeImageGenerationModel(modelId: String): Boolean {
+    val id = modelId.lowercase()
+    return listOf("gpt-image", "dall-e", "imagen", "image-gen", "image_generation", "flux", "seedream", "nano-banana")
+        .any(id::contains)
+}
+
 /** Novex 的单一 OpenAI（开放人工智能）兼容接口设置页。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,13 +81,19 @@ fun NovexProviderSetupScreen(
     var label by remember { mutableStateOf(existing?.label ?: "DeepSeek") }
     var apiBase by remember { mutableStateOf(existing?.customBaseURL ?: "https://api.deepseek.com") }
     var apiKey by remember { mutableStateOf(existing?.id?.let(providerRepository::loadApiKey) ?: "") }
+    val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
     val initialModels = remember(instanceId) {
-        providerRepository.entriesFor(instanceId ?: "").map { it.model.id }.distinct()
+        existingEntries.filterNot { it.model.outputModalities.orEmpty().contains("image") }
+            .map { it.model.id }.distinct()
             .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
     }
     val selectedModels = remember(instanceId) { mutableStateListOf<String>().apply { addAll(initialModels) } }
+    var imageModelId by remember(instanceId) {
+        mutableStateOf(existingEntries.firstOrNull { it.model.outputModalities.orEmpty().contains("image") }?.model?.id.orEmpty())
+    }
     var manualModelId by remember { mutableStateOf("") }
     var modelMenuExpanded by remember { mutableStateOf(false) }
+    var imageModelMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
     val fetchedModels = remember { mutableStateListOf<String>() }
@@ -94,7 +111,8 @@ fun NovexProviderSetupScreen(
     fun validate(requireModels: Boolean = true): SetupValues? {
         val base = apiBase.trim().trimEnd('/')
         val key = apiKey.trim()
-        val models = selectedModels.map(String::trim).filter(String::isNotEmpty).distinct()
+        val imageModel = imageModelId.trim().takeIf(String::isNotEmpty)
+        val models = selectedModels.map(String::trim).filter(String::isNotEmpty).distinct().filterNot { it == imageModel }
         error = when {
             base.isEmpty() -> "请填写接口地址"
             !base.startsWith("http://") && !base.startsWith("https://") -> "接口地址需要以 https:// 或 http:// 开头"
@@ -102,7 +120,7 @@ fun NovexProviderSetupScreen(
             requireModels && models.isEmpty() -> "请至少勾选一个模型"
             else -> null
         }
-        return if (error == null) SetupValues(base, key, models) else null
+        return if (error == null) SetupValues(base, key, models, imageModel) else null
     }
 
     Scaffold(topBar = { TopAppBar(
@@ -222,6 +240,52 @@ fun NovexProviderSetupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            ExposedDropdownMenuBox(
+                expanded = imageModelMenuExpanded,
+                onExpandedChange = { imageModelMenuExpanded = it },
+            ) {
+                OutlinedTextField(
+                    label = { Text("生图模型（可选）") },
+                    value = imageModelId,
+                    onValueChange = { value ->
+                        imageModelId = value
+                        if (value.isNotBlank()) selectedModels.remove(value.trim())
+                        error = null
+                    },
+                    placeholder = { Text("例如 gpt-image") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(imageModelMenuExpanded) },
+                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryEditable).fillMaxWidth(),
+                    singleLine = true,
+                )
+                ExposedDropdownMenu(
+                    expanded = imageModelMenuExpanded,
+                    onDismissRequest = { imageModelMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("不使用生图模型") },
+                        onClick = { imageModelId = ""; imageModelMenuExpanded = false },
+                    )
+                    val candidates = fetchedModels.distinct().sortedWith(
+                        compareByDescending<String>(::looksLikeImageGenerationModel).thenBy(String::lowercase),
+                    )
+                    candidates.forEach { id ->
+                        DropdownMenuItem(
+                            text = { Text(novexModelDisplayName(id)) },
+                            onClick = {
+                                imageModelId = id
+                                selectedModels.remove(id)
+                                imageModelMenuExpanded = false
+                                resetChecks()
+                            },
+                        )
+                    }
+                }
+            }
+            Text(
+                "配置后，人工智能需要图片时会自动调用。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text("连通检测", style = MaterialTheme.typography.titleMedium)
             checks.forEach { CheckRow(it) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -230,7 +294,18 @@ fun NovexProviderSetupScreen(
                 testing = true; error = null; resetChecks()
                 scope.launch {
                     val ok = verifyConnection(values.base, values.key, values.models) { index, state, detail -> checks[index] = checks[index].copy(state = state, detail = detail) }
-                    if (ok) { saveConnections(providerRepository, existing, label, values.base, values.key, values.models); onSaved() }
+                    if (ok) {
+                        saveConnections(
+                            repository = providerRepository,
+                            existing = existing,
+                            label = label,
+                            base = values.base,
+                            key = values.key,
+                            modelIds = values.models,
+                            imageModelId = values.imageModel,
+                        )
+                        onSaved()
+                    }
                     else error = "检测未全部通过，勾选的模型都不会启用。请取消失败模型或修改配置后重试。"
                     testing = false
                 }
@@ -304,7 +379,15 @@ private suspend fun verifyConnection(base: String, key: String, modelIds: List<S
     true
 }
 
-private fun saveConnections(repository: ProviderRepository, existing: ProviderInstance?, label: String, base: String, key: String, modelIds: List<String>) {
+private fun saveConnections(
+    repository: ProviderRepository,
+    existing: ProviderInstance?,
+    label: String,
+    base: String,
+    key: String,
+    modelIds: List<String>,
+    imageModelId: String?,
+) {
     val instance = (existing ?: ProviderInstance(id = UUID.randomUUID().toString(), label = label.ifBlank { "OpenAI 兼容接口" }, providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey)).copy(label = label.ifBlank { "OpenAI 兼容接口" }, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"), isEnabled = true)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
@@ -313,14 +396,37 @@ private fun saveConnections(repository: ProviderRepository, existing: ProviderIn
     val group = repository.config.value.modelGroups.firstOrNull { candidate ->
         candidate.memberEntryIds.any { it in previousIds }
     }
-    previousEntries.filter { it.model.id !in modelIds }.forEach { repository.removeEntry(it.id) }
-    modelIds.forEach { modelId ->
+    val allModelIds = (modelIds + listOfNotNull(imageModelId)).distinct()
+    previousEntries.filter { it.model.id !in allModelIds }.forEach { repository.removeEntry(it.id) }
+    allModelIds.forEach { modelId ->
         if (repository.entriesFor(instance.id).none { it.model.id == modelId }) {
+            val isImageModel = modelId == imageModelId
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
-                    baseModel = LLMModel(modelId, novexModelDisplayName(modelId), instance.label),
+                    baseModel = LLMModel(
+                        id = modelId,
+                        displayName = novexModelDisplayName(modelId),
+                        provider = instance.label,
+                        inputModalities = if (isImageModel) listOf("text", "image") else listOf("text"),
+                        outputModalities = if (isImageModel) listOf("image") else listOf("text"),
+                    ),
                     isCustom = true,
+                ),
+            )
+        }
+    }
+    repository.entriesFor(instance.id).forEach { entry ->
+        val shouldBeImage = entry.model.id == imageModelId
+        val desiredInput = if (shouldBeImage) listOf("text", "image") else listOf("text")
+        val desiredOutput = if (shouldBeImage) listOf("image") else listOf("text")
+        if (entry.model.inputModalities != desiredInput || entry.model.outputModalities != desiredOutput) {
+            repository.updateEntry(
+                entry.copy(
+                    overrides = entry.overrides.copy(
+                        inputModalities = desiredInput,
+                        outputModalities = desiredOutput,
+                    ),
                 ),
             )
         }
@@ -336,5 +442,10 @@ private fun saveConnections(repository: ProviderRepository, existing: ProviderIn
         val retained = group.memberEntryIds.filterNot { it in previousIds }
         repository.updateGroup(group.copy(memberEntryIds = (retained + selectedIds).distinct().toMutableList()))
         repository.defaultPrimaryGroupId = group.id
+    }
+    imageModelId?.let { selectedImageId ->
+        repository.entriesFor(instance.id).firstOrNull { it.model.id == selectedImageId }?.let { imageEntry ->
+            repository.addAgentLoopEntry(imageEntry.id)
+        }
     }
 }

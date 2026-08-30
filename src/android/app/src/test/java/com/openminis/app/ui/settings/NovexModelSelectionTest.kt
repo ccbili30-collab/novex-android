@@ -19,4 +19,11 @@ class NovexModelSelectionTest {
             toggleModelSelection(listOf("model-a", "model-b"), "model-a"),
         )
     }
+
+    @Test
+    fun `common image model ids are recognized for ordering`() {
+        assertEquals(true, looksLikeImageGenerationModel("gpt-image-2"))
+        assertEquals(true, looksLikeImageGenerationModel("flux-1.1-pro"))
+        assertEquals(false, looksLikeImageGenerationModel("deepseek-v4-flash"))
+    }
 }
