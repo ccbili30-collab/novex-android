@@ -349,13 +349,11 @@ internal sealed class FlatChatItem {
     }
 
     /**
-     * One rendered markdown sub-block (paragraph, code block, list, …) of an
-     * AssistantText. Pattern A from the streaming-markdown research: each
-     * block is its own LazyColumn item so completed blocks are frozen by
-     * LazyList's per-item anchor and only the trailing "live" block
-     * re-parses on every chunk. Replaces the previous "whole AssistantText
-     * is a single LazyColumn item containing an internal Column of blocks"
-     * design which caused the user's scroll position to drift mid-stream.
+     * One frozen markdown sub-block (paragraph, code block, list, …) of a
+     * completed assistant reply. Live text deliberately stays in one stable
+     * [AssistantText] row; only after streaming ends may it fan out into these
+     * rows. Inserting a LazyColumn row for every new live paragraph breaks the
+     * reverse-layout anchor and makes the viewport jump to the previous reply.
      */
     /**
      * See [AssistantText] for the rationale behind the hand-rolled equals.
@@ -642,6 +640,21 @@ internal fun buildFlatChatItems(
                 "text" -> {
                     if (block.content.isNotEmpty()) {
                         val isLastText = index == lastTextIdx
+                        // Keep the live body in one stable LazyColumn row. The
+                        // key depends only on message + source block, so adding
+                        // a paragraph changes row content but never inserts a
+                        // sibling row or moves the list anchor. Once the turn
+                        // freezes, the existing markdown-fragment path below
+                        // may split it for cold-history rendering.
+                        if (message.isStreaming) {
+                            out.add(dedupe(FlatChatItem.AssistantText(
+                                messageId = message.id,
+                                block = block,
+                                isStreaming = true,
+                                messageMarkdown = joinedMarkdown,
+                            )))
+                            return@forEachIndexed
+                        }
                         // Pattern A: split this text block's content into
                         // independent markdown fragments so each becomes its
                         // own LazyColumn item. Frozen prefix fragments are
@@ -649,38 +662,20 @@ internal fun buildFlatChatItems(
                         // live fragment can change height during streaming.
                         //
                         // [T-android-defensive-fragment-merge] For a FROZEN
-                        // (non-streaming) message, coalesce adjacent
+                        // historical message, coalesce adjacent
                         // plain-text fragments so a long reply produces a
                         // handful of rows instead of dozens — cuts cold-open
                         // full-build row count ~8x and eases GC pressure on
-                        // low-memory devices. The live streaming tail message
-                        // keeps fine-grained fragments so only the trailing
-                        // paragraph re-parses per token (Pattern A jank
-                        // optimization preserved). Code fences stay standalone
-                        // either way.
+                        // low-memory devices. A just-finished trailing message
+                        // keeps fine-grained frozen fragments until a newer
+                        // turn exists. Code fences stay standalone either way.
                         val rawFragments = splitMarkdownIntoBlockTexts(block.content)
-                        // [T-android-stream-end-reflow-flicker-v18] Preserve
-                        // per-fragment FlatChatItem keys across the
-                        // streaming→idle boundary. Previously the trailing
-                        // text block kept rawFragments only while
-                        // `message.isStreaming==true`; the moment it flipped
-                        // false the fragments coalesced into fewer rows, all
-                        // mdblock:msgId:parentBlockId:N keys for N >= K
-                        // suddenly vanished from the flatItems list. That
-                        // wipe-and-rebuild was the "整个页面像被重刷" the
-                        // user reported — LazyColumn lost every key it was
-                        // using to anchor the viewport, fell back to numeric
-                        // firstVisibleItemIndex, and parked the viewport on
-                        // whatever row happened to take that numeric slot
-                        // (often the previous assistant message).
-                        //
-                        // Fix: keep the live (== last in the list) text block
-                        // on rawFragments regardless of isStreaming. The
-                        // boundary that actually warrants coalesce is "a
-                        // NEWER message exists below this one" — i.e. a
-                        // subsequent user turn pushed this assistant turn
-                        // into history. Until then, the same key set the
-                        // user was scrolled into stays valid.
+                        // The stream itself bypasses this branch and stays in
+                        // one AssistantText row. This branch runs only after
+                        // the reply freezes; the latest completed turn keeps
+                        // its paragraph rows until a newer assistant turn
+                        // pushes it into history, when coalescing reduces the
+                        // cold-list row count.
                         // [T-android-flatitems-sublist-cme] Index-based scan
                         // instead of messages.subList(idx+1, size).all{} — a
                         // subList is a live view sharing the parent's modCount,

@@ -1517,6 +1517,7 @@ fun ChatScreen(
     // dropped the in-flight keystroke (the reported "can't type while
     // streaming" bug).
     var isUserDragging by remember { mutableStateOf(false) }
+    var userDragSettlePending by remember { mutableStateOf(false) }
     LaunchedEffect(listState) {
         listState.interactionSource.interactions.collect { interaction ->
             // T-android-jank-profile: drag interactions fire on every drag
@@ -1525,6 +1526,7 @@ fun ChatScreen(
             when (interaction) {
                 is androidx.compose.foundation.interaction.DragInteraction.Start -> {
                     isUserDragging = true
+                    userDragSettlePending = true
                     // [T-android-scrollbtn-turn-walk] A manual drag breaks the
                     // up-button's turn-walk chain: the next tap should re-anchor
                     // to wherever the user landed, not continue the old sequence.
@@ -1539,8 +1541,10 @@ fun ChatScreen(
                         userScrolledAway = newScrolledAway
                     }
                 }
-                is androidx.compose.foundation.interaction.DragInteraction.Cancel ->
+                is androidx.compose.foundation.interaction.DragInteraction.Cancel -> {
                     isUserDragging = false
+                    userDragSettlePending = false
+                }
                 else -> Unit
             }
         }
@@ -1790,15 +1794,12 @@ fun ChatScreen(
         // userScrolledAway (and turn this very LE into a no-op) fires inside
         // that window, so the grace has to already be open when it lands.
         lastStreamEndMs = System.currentTimeMillis()
-        // [T-android-stream-end-reflow-flicker-v18] The user-was-reading
-        // branch is a HARD NO-OP. After the v18 ChatFlatItems fix (keep
-        // rawFragments on the last assistant turn regardless of
-        // isStreaming), the mdblock key set no longer changes across
-        // stream-end, so LazyColumn's key reconciliation preserves the
-        // user's visual position natively. Versions v6..v17 of this LE
-        // tried every cross-key restore strategy (exact, fuzzy, neighbor,
-        // numeric, totalItems-delta) and every one made the symptom
-        // worse — see commits cd08a334 and 9873a3ed for the analysis.
+        // A live reply freezes from one AssistantText row into markdown
+        // paragraph rows exactly once at stream end. If the user is reading
+        // history this branch remains a hard no-op; if they are following the
+        // bottom, the single settle below absorbs that one final reflow.
+        // Cross-key history restoration proved less stable than allowing
+        // LazyColumn to preserve the reader's existing viewport.
         kotlinx.coroutines.delay(220)
         if (userScrolledAway || listState.isScrollInProgress) return@LaunchedEffect
         val sinceInterrupt = System.currentTimeMillis() - lastInterruptMs
@@ -1839,6 +1840,10 @@ fun ChatScreen(
         }.distinctUntilChanged().collectLatest { _ ->
             if (userScrolledAway) return@collectLatest
             if (listState.isScrollInProgress) return@collectLatest
+            // Live body growth is followed by the sampled, frame-driven
+            // scroll pipeline above. Snapping to item 0 on each height change
+            // recreates the visible "jump away, then jump back" loop.
+            if (viewModel.isStreaming.value) return@collectLatest
             if (!isNearBottom.value) return@collectLatest
             // Pin only if the current offset has actually drifted from
             // the bottom (avoid no-op scroll spam).
@@ -1869,6 +1874,13 @@ fun ChatScreen(
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
             .collect { inProgress ->
+                if (inProgress) return@collect
+                val endedUserDrag = userDragSettlePending
+                userDragSettlePending = false
+                // Programmatic scrolls also toggle isScrollInProgress. They
+                // emit no DragInteraction and therefore must not enter either
+                // post-interaction branch below.
+                if (!endedUserDrag) return@collect
                 // [T-android-small-drag-snaps-back] Re-pin to bottom after a
                 // drag-end ONLY while actively STREAMING. T170's purpose is to
                 // catch content that grew during a drag we suppressed the
@@ -1883,8 +1895,13 @@ fun ChatScreen(
                 // isStreaming is the real discriminator. The streaming-content LE
                 // (gated by lastInterruptMs + isScrollInProgress) handles the
                 // follow itself; this is just the post-drag settle for it.
-                if (!inProgress && !userScrolledAway && isNearBottom.value &&
-                    viewModel.isStreaming.value
+                if (shouldSettleAfterInteraction(
+                        scrollInProgress = false,
+                        userDragPending = endedUserDrag,
+                        userScrolledAway = userScrolledAway,
+                        isNearBottom = isNearBottom.value,
+                        isStreaming = viewModel.isStreaming.value,
+                    )
                 ) {
                     tracedScrollToItem("settle-after-interaction", 0, 0)
                 }
@@ -1896,7 +1913,7 @@ fun ChatScreen(
                 // viewport off-bottom. Use the isScrollInProgress→false
                 // edge (past drag AND fling settle) as the authoritative
                 // checkpoint and re-arm userScrolledAway.
-                if (!inProgress && !isNearBottom.value && !userScrolledAway) {
+                if (!isNearBottom.value && !userScrolledAway) {
                     userScrolledAway = true
                 }
             }
