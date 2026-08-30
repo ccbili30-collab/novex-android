@@ -4708,6 +4708,9 @@ extension RawMessage {
                 case "memory_write", "memory_get":
                     kind = .memoryTool(action: tu.name)
                     content = tu.name == "memory_write" ? "Writing memory..." : "Reading memory..."
+                case terminalChoiceToolName:
+                    kind = .info
+                    content = extractStringParam("title", from: tu.input)
                 default:
                     kind = .shellTool(command: tu.name)
                     content = tu.name
@@ -4719,6 +4722,7 @@ extension RawMessage {
                 // orphaned tool_uses (app killed / run cancelled before the result
                 // was persisted) and are marked .cancelled.
                 let block = AssistantBlock(kind: kind, content: content, toolStatus: .running, toolUseId: tu.toolUseId)
+                block.toolName = tu.name
                 block.toolSummary = tu.description
                 block.toolInputArgs = tu.input
                 // Restore browserURL: use arg URL or inherit from last browser block

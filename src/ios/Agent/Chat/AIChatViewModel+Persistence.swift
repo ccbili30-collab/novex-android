@@ -256,13 +256,35 @@ extension AIChatViewModel {
         // Determine whether thinking blocks should be shown based on session config
         let showThinking = ProviderConfigStore.shared.inferenceConfig(for: sessionId)?.thinkingLevel.isEnabled ?? false
 
+        let persistedToolResultIds = Set(rawMessages.flatMap { raw in
+            raw.parts.compactMap { part -> String? in
+                guard case .toolResult(let result) = part else { return nil }
+                return result.toolUseId
+            }
+        })
+        let restoredTerminalChoiceIds = Set(rawMessages.flatMap { raw in
+            raw.parts.compactMap { part -> String? in
+                guard case .toolUse(let use) = part,
+                      use.name == terminalChoiceToolName,
+                      !persistedToolResultIds.contains(use.toolUseId),
+                      case .success = parseChoicePresentation(json: use.input) else { return nil }
+                return use.toolUseId
+            }
+        })
+
         for raw in rawMessages {
             // Always rebuild agent history (every message matters for API context).
             // Phase B: stamp the DB row id into dbMessageId so compact can resolve
             // boundaries by id after restore.
             var agentMsg = raw.toAgentMessage(mediaResolver: resolver)
             agentMsg.dbMessageId = raw.id
-            loadedHistory.append(agentMsg)
+            agentMsg.parts = removingTerminalUIToolUses(
+                agentMsg.parts,
+                terminalIds: restoredTerminalChoiceIds
+            )
+            if !agentMsg.parts.isEmpty {
+                loadedHistory.append(agentMsg)
+            }
 
             // [T-bridge-message-ui-leak] The #579 role-alternation bridge is
             // LLM-context-only: it stays in loadedHistory (appended above, so
@@ -368,7 +390,13 @@ extension AIChatViewModel {
                 guard let status = block.toolStatus else { continue }
                 switch status {
                 case .running, .streaming:
-                    block.toolStatus = .cancelled
+                    if block.toolName == terminalChoiceToolName,
+                       let args = block.toolInputArgs,
+                       case .success = parseChoicePresentation(json: args) {
+                        block.toolStatus = .success
+                    } else {
+                        block.toolStatus = .cancelled
+                    }
                 default:
                     break
                 }
@@ -864,19 +892,13 @@ extension AIChatViewModel {
             return nil
         }
 
-        // Find unapplied tool blocks (those still showing placeholder content)
-        var resultIdx = 0
-        for block in assistant.blocks {
-            guard resultIdx < toolResults.count else { break }
-
-            let isToolBlock: Bool
-            switch block.kind {
-            case .shellTool, .fileReadTool, .fileWriteTool, .fileEditTool, .browserTool, .readImageTool, .memoryTool:
-                isToolBlock = true
-            default:
-                isToolBlock = false
+        // Match by provider tool-use ID rather than positional order. Terminal
+        // UI tools intentionally have no result and may be interleaved with real
+        // tools in one batch; positional matching would shift every later result.
+        for tr in toolResults {
+            guard let block = assistant.blocks.last(where: { $0.toolUseId == tr.toolUseId }) else {
+                continue
             }
-            guard isToolBlock else { continue }
 
             // A tool block "needs update" when its status is still a non-terminal
             // seed (running / streaming) set by toChatMessage for a tool_use whose
@@ -891,9 +913,6 @@ extension AIChatViewModel {
                 }
             }()
             guard needsUpdate else { continue }
-
-            let tr = toolResults[resultIdx]
-            resultIdx += 1
 
             switch block.kind {
             case .shellTool(let cmd):

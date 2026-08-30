@@ -28,13 +28,32 @@ extension AIChatViewModel {
     // MARK: - Tool Definitions (Canonical)
 
     func makeAgentTools() -> [AgentToolDefinition] {
+        // Resolve both capability branches once on the main actor, then hand
+        // the pure values to the shared builder. Connection verification uses
+        // the same builder so its probe cannot quietly drift to a toy schema.
+        let nativeVision = activeModelHasNativeVision
+        let visionGroupConfigured = VisionGroupResolver.isConfigured
+        return Self.makeAgentTools(
+            includeMemoryTools: memoryEnabled,
+            nativeVision: nativeVision,
+            visionGroupConfigured: visionGroupConfigured
+        )
+    }
+
+    /// Pure canonical builder shared by real agent turns and connection
+    /// verification. A verifier may disable environment-dependent vision while
+    /// retaining the exact normal tool set and schemas used by conversations.
+    static func makeAgentTools(
+        includeMemoryTools: Bool,
+        nativeVision: Bool,
+        visionGroupConfigured: Bool
+    ) -> [AgentToolDefinition] {
         // [T-memory-toggle-gates-injection-and-tools-ios] memory_get and
         // memory_write are conditionally registered. When the per-session
         // toggle is off, drop both tool definitions so the LLM never sees
         // them. The system prompt also switches to a "memory disabled"
         // wording (see baseSystemPrompt below) so the model can correctly
         // tell the user to re-enable memory via /memory or Settings.
-        let includeMemoryTools = memoryEnabled
         var tools: [AgentToolDefinition] = [
             AgentToolDefinition(
                 name: "shell_execute",
@@ -119,6 +138,16 @@ extension AIChatViewModel {
                 required: ["tool_title", "action"],
                 propertyOrdering: ["tool_title", "action", "tab_id", "url", "selector", "text", "coordinate_x", "coordinate_y", "direction", "amount", "scroll_count", "item_selector", "script", "user_agent", "max_depth", "keywords", "fuzzy", "cookies", "timeout", "viewport_width", "viewport_height", "reset", "full_page"]
             ),
+            AgentToolDefinition(
+                name: terminalChoiceToolName,
+                description: "Render compact native choice buttons when offering two or more explicit alternatives. The user may still type a custom answer. Tapping a choice fills the composer and never sends automatically. This is a terminal UI tool: after presenting it, end the current turn and wait for the user.",
+                parameters: [
+                    "title": AgentToolParam(type: .string, description: "Optional short heading displayed above the choices. Use the same language as the user."),
+                    "choices": AgentToolParam(type: .string, description: "A JSON array containing 2 to 12 concise choice labels. The phone UI displays at most six unique non-empty choices."),
+                ],
+                required: ["choices"],
+                propertyOrdering: ["title", "choices"]
+            ),
         ]
 
         if includeMemoryTools {
@@ -155,12 +184,6 @@ extension AIChatViewModel {
         // `isConfigured` is strict (group must resolve AND hold a usable
         // image-capable member), so we never advertise a tool whose non-native
         // path has nothing behind it.
-        let nativeVision = activeModelHasNativeVision
-        // Evaluate FIRST, not inside the `||` below: short-circuiting on
-        // `nativeVision` would skip the call, and this read is also what keeps
-        // `isConfiguredCached` — which the off-main T264 placeholder builder
-        // relies on — up to date.
-        let visionGroupConfigured = VisionGroupResolver.isConfigured
         if nativeVision || visionGroupConfigured {
             // Describe what this model will ACTUALLY receive. Promising "the
             // image is returned directly" to a text-only model would set up a

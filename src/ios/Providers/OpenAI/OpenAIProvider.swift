@@ -1758,6 +1758,13 @@ final class OpenAIProvider: LLMProvider {
     }
 
     func mapHTTPError(statusCode: Int, body: String) -> LLMError {
+        // Keep the wire-level evidence in logs before translating the error for
+        // presentation. Never collapse 500/502/503/504/529 into one generic
+        // label here: status, model and response body are what distinguish an
+        // upstream outage from a protocol/conversion failure. Response bodies
+        // are bounded to avoid an untrusted server flooding the log.
+        let rawBody = body.isEmpty ? "<empty>" : String(body.prefix(4_000))
+        logger.error("[HTTPError] model=\(model.id) status=\(statusCode) body=\(rawBody)")
         if statusCode == 401 || statusCode == 403 { return .invalidAPIKey(detail: "HTTP \(statusCode): \(String(body.prefix(200)))") }
         if statusCode == 429 { return .rateLimited }
 

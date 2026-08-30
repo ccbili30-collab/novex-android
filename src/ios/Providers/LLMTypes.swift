@@ -490,6 +490,19 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         (["image-output", "img-gen", "img-output"], .imageOutput),
     ]
 
+    /// Conservative markers used only when the provider's model-list response
+    /// omits input modalities. These names explicitly designate a vision or
+    /// vision-language variant; generic family names (for example DeepSeek)
+    /// intentionally do not match.
+    private static let imageInputInferencePatterns: [String] = [
+        "vision", "-vl", "_vl", "vl-", "vl_", "visual-language", "visual_language",
+    ]
+
+    static func inferImageInputFromName(id: String, displayName: String) -> Bool {
+        let haystack = (id + " " + displayName).lowercased()
+        return imageInputInferencePatterns.contains { haystack.contains($0) }
+    }
+
     /// [T-mimo-shadow-voice] Substrings that mark a DEDICATED speech-to-text
     /// (ASR) model — audio-in, text-out. Kept separate from the output-modality
     /// table because an ASR model's modality must be the EXACT audio-only-input

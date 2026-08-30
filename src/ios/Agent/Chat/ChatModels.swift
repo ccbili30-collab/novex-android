@@ -309,6 +309,10 @@ final class AssistantBlock: Identifiable, ObservableObject {
     @Published var cachedAttributedString: NSAttributedString?
     /// The tool_use ID from the provider, used to match with snapshots.
     var toolUseId: String?
+    /// Canonical provider-facing tool name. Kept separately from `kind` because
+    /// UI-only tools deliberately reuse the lightweight `.info` renderer while
+    /// still needing durable identity after persistence restore.
+    var toolName: String?
     /// Serialized JSON of the tool input arguments (for introspection in SessionMemoryView, etc.).
     var toolInputArgs: String?
     /// Streaming file content for file_write tool (live content as it arrives).
@@ -443,4 +447,3 @@ struct InputAttachment: Identifiable {
         )
     }
 }
-

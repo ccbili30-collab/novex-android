@@ -410,9 +410,13 @@ extension AIChatViewModel {
             // excluded since it has its own surfaced error path. `.toolUse` is
             // implicitly excluded because toolEntries would be non-empty.
             let hasReasoning = !(result.reasoningContent ?? "").isEmpty
-            let isEmpty = result.assistantText.isEmpty && result.toolEntries.isEmpty
-                && !hasReasoning && !result.isStreamInterrupted
-                && result.stopReason != .maxTokens
+            let isEmpty = decideAgentTurnCompletion(
+                hasVisibleContent: !result.assistantText.isEmpty || hasReasoning,
+                hasToolCalls: !result.toolEntries.isEmpty,
+                stopReason: result.stopReason,
+                context: .initial,
+                retryAlreadyUsed: false
+            ) == .retryEmpty && !result.isStreamInterrupted
 
             guard isEmpty else { return result }
 

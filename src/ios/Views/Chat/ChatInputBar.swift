@@ -1380,6 +1380,23 @@ struct PastableTextView: UIViewRepresentable {
     /// growth cap has to move with the frame.
     var maxHeightOverride: CGFloat?
 
+    static func shouldApplyProgrammaticText(
+        current: String,
+        incoming: String,
+        isFirstResponder: Bool,
+        isPublishingUIKitEdit: Bool,
+        hasMarkedText: Bool
+    ) -> Bool {
+        guard current != incoming else { return false }
+        if hasMarkedText && !incoming.isEmpty { return false }
+        // A SwiftUI refresh in the same run-loop turn as a native edit can carry
+        // an older binding snapshot. Reassigning it resets selectedRange, which
+        // makes a long backspace from the middle jump to the end. The text view
+        // already owns the freshest edit, so leave it untouched for that turn.
+        if isFirstResponder && isPublishingUIKitEdit { return false }
+        return true
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -1493,6 +1510,13 @@ struct PastableTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ tv: PastableUITextView, context: Context) {
+        // Keep the native-edit guard armed until SwiftUI has actually consumed
+        // the exact UITextView value. Clearing it merely on the next run-loop
+        // turn is too early on a busy long-press delete: several stale binding
+        // renders can arrive later and move selectedRange to the end.
+        if context.coordinator.isPublishingUIKitEdit, tv.text == text {
+            context.coordinator.isPublishingUIKitEdit = false
+        }
         // [T-ipad-composer-resize] Track the growth cap as the user drags. The
         // invalidate is required: `maxHeight` feeds `intrinsicContentSize` and
         // `isScrollEnabled`, neither of which UIKit re-derives on its own, so
@@ -1507,7 +1531,13 @@ struct PastableTextView: UIViewRepresentable {
             // frame, so it must be recomputed for the new height.
             tv.setNeedsLayout()
         }
-        if tv.text != text, tv.markedTextRange == nil || text.isEmpty {
+        if Self.shouldApplyProgrammaticText(
+            current: tv.text,
+            incoming: text,
+            isFirstResponder: tv.isFirstResponder,
+            isPublishingUIKitEdit: context.coordinator.isPublishingUIKitEdit,
+            hasMarkedText: tv.markedTextRange != nil
+        ) {
             // [T-ios-composer-residual-text-33549] Clearing the composer
             // post-send is the race-prone path: an in-flight IME
             // composition or a deferred UIKit input callback can write
@@ -1708,6 +1738,7 @@ struct PastableTextView: UIViewRepresentable {
         var parent: PastableTextView
         /// Guard flag to prevent focus feedback loop between UIKit delegate → SwiftUI → updateUIView
         var isSyncingFocus = false
+        var isPublishingUIKitEdit = false
         /// [T-ios-composer-residual-text-33549] When `updateUIView` clears
 
         init(_ parent: PastableTextView) {
@@ -1761,6 +1792,7 @@ struct PastableTextView: UIViewRepresentable {
             // `tv.text = ""` leaves the UITextView with a known-empty
             // buffer, so any late IME callback that fires later just
             // writes "" back into the binding, not stale text.
+            isPublishingUIKitEdit = true
             parent.text = textView.text
             textView.invalidateIntrinsicContentSize()
             // [T-ios-composer-paste-truncation] Republish the scroll-state

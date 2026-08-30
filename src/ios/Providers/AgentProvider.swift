@@ -153,7 +153,7 @@ enum AgentBlockStart: Sendable {
     case toolUse(id: String, name: String)
 }
 
-enum AgentStopReason: Sendable {
+enum AgentStopReason: Equatable, Sendable {
     case endTurn
     case toolUse
     case maxTokens
@@ -164,6 +164,169 @@ enum AgentStopReason: Sendable {
     /// Fires as a false-positive on Fable 5 for benign turns carrying the large Claude Code
     /// agentic system prompt + tool set. See [T-ios-fable5-empty-response].
     case refusal
+}
+
+// MARK: - Agent turn completion policy
+
+/// Empty responses before any tool and immediately after a tool result have
+/// independent one-shot retry budgets. Keeping the policy outside the view
+/// model makes the provider/agent seam deterministic and regression-testable.
+enum EmptyResponseContext: Equatable, Sendable {
+    case initial
+    case afterToolResult
+}
+
+enum AgentTurnCompletionAction: Equatable, Sendable {
+    case complete
+    case executeTools
+    case interrupted
+    case retryEmpty
+    case failEmpty
+}
+
+func decideAgentTurnCompletion(
+    hasVisibleContent: Bool,
+    hasToolCalls: Bool,
+    stopReason: AgentStopReason?,
+    context: EmptyResponseContext,
+    retryAlreadyUsed: Bool
+) -> AgentTurnCompletionAction {
+    // A stream without a terminal reason is a real interruption even when it
+    // delivered partial text. The caller preserves that text and offers Resume.
+    guard let stopReason else { return .interrupted }
+    if hasToolCalls { return .executeTools }
+    if hasVisibleContent { return .complete }
+
+    // Only a server-declared normal stop with no output is retryable. Token
+    // exhaustion and refusal have their own user-facing recovery paths.
+    guard stopReason == .endTurn else { return .failEmpty }
+    return retryAlreadyUsed ? .failEmpty : .retryEmpty
+}
+
+struct EmptyResponseRetryState: Sendable {
+    private var initialRetryUsed = false
+    private var afterToolRetryUsed = false
+
+    mutating func decide(
+        hasVisibleContent: Bool,
+        hasToolCalls: Bool,
+        stopReason: AgentStopReason?,
+        context: EmptyResponseContext
+    ) -> AgentTurnCompletionAction {
+        let retryUsed: Bool
+        switch context {
+        case .initial: retryUsed = initialRetryUsed
+        case .afterToolResult: retryUsed = afterToolRetryUsed
+        }
+
+        let action = decideAgentTurnCompletion(
+            hasVisibleContent: hasVisibleContent,
+            hasToolCalls: hasToolCalls,
+            stopReason: stopReason,
+            context: context,
+            retryAlreadyUsed: retryUsed
+        )
+        if action == .retryEmpty {
+            switch context {
+            case .initial: initialRetryUsed = true
+            case .afterToolResult: afterToolRetryUsed = true
+            }
+        }
+        return action
+    }
+}
+
+// MARK: - Terminal UI tool policy
+
+let terminalChoiceToolName = "present_choices"
+
+struct ChoicePresentation: Equatable, Sendable {
+    let title: String?
+    let choices: [String]
+}
+
+enum ChoicePresentationError: Error, Equatable, Sendable {
+    case invalidArguments
+    case invalidChoicesJSON
+    case requiresAtLeastTwoChoices
+}
+
+/// Parse the UI-tool payload once and share the exact same normalization between
+/// execution, persistence restore, and rendering. Providers differ on whether a
+/// schema-described JSON array arrives as a native array or a JSON-encoded string,
+/// so both representations are intentionally accepted.
+func parseChoicePresentation(from arguments: [String: Any]) -> Result<ChoicePresentation, ChoicePresentationError> {
+    let rawChoices: [Any]
+    if let values = arguments["choices"] as? [Any] {
+        rawChoices = values
+    } else if let encoded = arguments["choices"] as? String,
+              let data = encoded.data(using: .utf8) {
+        if let values = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+            rawChoices = values
+        } else {
+            // Gemini-compatible relays occasionally preserve the structured
+            // function call but flatten this single string field to
+            // "continue, back". Accept only an unambiguous 2+ item delimiter
+            // form; arbitrary malformed JSON still fails and is returned to the
+            // model for correction.
+            let values = encoded
+                .components(separatedBy: CharacterSet(charactersIn: ",，\n"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard values.count >= 2 else { return .failure(.invalidChoicesJSON) }
+            rawChoices = values
+        }
+    } else {
+        return .failure(.invalidArguments)
+    }
+
+    var seen = Set<String>()
+    let normalized = rawChoices.compactMap { value -> String? in
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { return nil }
+        return trimmed
+    }
+    // Match the Android 0.1.7 presentation surface: the schema permits a broad
+    // model response, while the phone UI renders at most six compact actions.
+    let visibleChoices = Array(normalized.prefix(6))
+    guard visibleChoices.count >= 2 else {
+        return .failure(.requiresAtLeastTwoChoices)
+    }
+
+    let title = (arguments["title"] as? String)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return .success(ChoicePresentation(
+        title: title.flatMap { $0.isEmpty ? nil : $0 },
+        choices: visibleChoices
+    ))
+}
+
+func parseChoicePresentation(json: String) -> Result<ChoicePresentation, ChoicePresentationError> {
+    guard let data = json.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data),
+          let arguments = object as? [String: Any] else {
+        return .failure(.invalidArguments)
+    }
+    return parseChoicePresentation(from: arguments)
+}
+
+/// A successful UI-only tool renders a durable decision surface and finishes
+/// the current agent turn. It never receives a synthetic tool result and never
+/// causes another provider request. A failed parse remains non-terminal so the
+/// model can correct the call.
+func isSuccessfulTerminalUITool(name: String, success: Bool) -> Bool {
+    name == terminalChoiceToolName && success
+}
+
+func removingTerminalUIToolUses(
+    _ parts: [AgentContentPart],
+    terminalIds: Set<String>
+) -> [AgentContentPart] {
+    parts.filter { part in
+        guard case .toolUse(let id, let name, _) = part else { return true }
+        return !(terminalIds.contains(id) && name == terminalChoiceToolName)
+    }
 }
 
 /// Provider-specific metadata attached to a tool call (e.g. Gemini thought signatures).
@@ -217,4 +380,3 @@ extension AgentProvider {
         try await streamAgentMessage(messages: messages, systemPrompt: systemPrompt, tools: tools, maxTokens: maxTokens, thinkingLevel: .off)
     }
 }
-

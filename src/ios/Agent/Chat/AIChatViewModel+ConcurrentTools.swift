@@ -69,10 +69,29 @@ extension AIChatViewModel {
     struct ToolExecOutcome {
         let toolId: String
         let toolName: String
-        let resultPart: AgentContentPart            // .toolResult(...)
+        let resultPart: AgentContentPart?           // nil for a terminal UI tool
         let snapshotEntry: (toolName: String, snapshot: ToolSnapshot)?
         let snapshotItem: ToolSnapshotItem?
         let cancelled: Bool
+        let isTerminalUI: Bool
+
+        init(
+            toolId: String,
+            toolName: String,
+            resultPart: AgentContentPart?,
+            snapshotEntry: (toolName: String, snapshot: ToolSnapshot)?,
+            snapshotItem: ToolSnapshotItem?,
+            cancelled: Bool,
+            isTerminalUI: Bool = false
+        ) {
+            self.toolId = toolId
+            self.toolName = toolName
+            self.resultPart = resultPart
+            self.snapshotEntry = snapshotEntry
+            self.snapshotItem = snapshotItem
+            self.cancelled = cancelled
+            self.isTerminalUI = isTerminalUI
+        }
     }
 
     /// Execute a single tool use, returning a self-contained outcome.
@@ -799,6 +818,23 @@ extension AIChatViewModel {
             toolOutput = memResult.output
             toolSuccess = memResult.success
 
+        case terminalChoiceToolName:
+            switch parseChoicePresentation(from: toolArgs) {
+            case .success(let presentation):
+                toolOutput = presentation.title ?? String(localized: "Choose an option")
+                toolSuccess = true
+            case .failure(let error):
+                toolOutput = switch error {
+                case .invalidArguments:
+                    "Error: choices must be a JSON array or a JSON-encoded array of strings."
+                case .invalidChoicesJSON:
+                    "Error: choices contains invalid JSON."
+                case .requiresAtLeastTwoChoices:
+                    "Error: present_choices requires at least two unique non-empty choices."
+                }
+                toolSuccess = false
+            }
+
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false
@@ -836,6 +872,27 @@ extension AIChatViewModel {
             }
             return nil
         }()
+
+        // A successfully-rendered choice surface is the result. Do not create a
+        // provider-facing tool_result, snapshot, or follow-up request.
+        if isSuccessfulTerminalUITool(name: tu.name, success: toolSuccess) {
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                let block = messages[msgIdx].blocks[blockIdx]
+                block.content = toolOutput
+                block.toolDuration = toolDuration
+                block.toolStatus = .success
+                scrollToBottomSignal.send()
+            }
+            return ToolExecOutcome(
+                toolId: tu.id,
+                toolName: tu.name,
+                resultPart: nil,
+                snapshotEntry: nil,
+                snapshotItem: nil,
+                cancelled: false,
+                isTerminalUI: true
+            )
+        }
 
         // Create snapshot from tool output.
         let snapshot: ToolSnapshot

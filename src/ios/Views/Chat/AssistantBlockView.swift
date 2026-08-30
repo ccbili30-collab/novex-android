@@ -4,6 +4,7 @@ import Combine
 // MARK: - Assistant Block View (individual block — isolated invalidation)
 
 struct AssistantBlockView: View {
+    @EnvironmentObject private var vm: AIChatViewModel
     @ObservedObject var block: AssistantBlock
     @ObservedObject var message: ChatMessage
     let isActiveMessage: Bool
@@ -67,46 +68,108 @@ struct AssistantBlockView: View {
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
         case .info:
-            let allLines = block.content.components(separatedBy: "\n").filter { !$0.isEmpty }
-            // Separate reason lines (⚠️) from the final switched line (✅)
-            let reasonLines = allLines.filter { $0.hasPrefix("⚠️") }
-            let switchedLine = allLines.first { !$0.hasPrefix("⚠️") && !$0.isEmpty }
-            // Truncate middle if more than 9 reason lines
-            let displayReasons: [String] = {
-                if reasonLines.count <= 9 { return reasonLines }
-                return Array(reasonLines.prefix(4)) + [String(localized: "⋯ \(reasonLines.count - 8) more")] + Array(reasonLines.suffix(4))
-            }()
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(displayReasons.enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(.system(size: 10))
-                        .foregroundStyle(ChatColors.primaryText.opacity(0.45))
+            if block.toolName == terminalChoiceToolName,
+               let presentation = choicePresentation {
+                choicePresentationView(presentation)
+            } else {
+                infoBlockView
+            }
+        }
+    }
+
+    private var choicePresentation: ChoicePresentation? {
+        guard let args = block.toolInputArgs,
+              case .success(let presentation) = parseChoicePresentation(json: args) else {
+            return nil
+        }
+        return presentation
+    }
+
+    @ViewBuilder
+    private func choicePresentationView(_ presentation: ChoicePresentation) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title = presentation.title {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(ChatColors.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(presentation.choices, id: \.self) { choice in
+                Button {
+                    // UI-only choice: replace the draft and place the caret at
+                    // its end. Deliberately do not call send().
+                    vm.inputText = choice
+                    let caret = (choice as NSString).length
+                    vm.inputCaret = caret
+                    vm.pendingCaret = caret
+                } label: {
+                    Text(choice)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(ChatColors.primaryText)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+                .background(ChatColors.primaryText.opacity(0.055))
+                .clipShape(RoundedRectangle(cornerRadius: 11))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11)
+                        .stroke(ChatColors.primaryText.opacity(0.10), lineWidth: 0.5)
+                )
+                .accessibilityLabel(choice)
+                .accessibilityHint(String(localized: "Fill the message field without sending"))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(ChatColors.primaryText.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(ChatColors.primaryText.opacity(0.08), lineWidth: 0.5)
+        )
+    }
+
+    @ViewBuilder
+    private var infoBlockView: some View {
+        let allLines = block.content.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let reasonLines = allLines.filter { $0.hasPrefix("⚠️") }
+        let switchedLine = allLines.first { !$0.hasPrefix("⚠️") && !$0.isEmpty }
+        let displayReasons: [String] = {
+            if reasonLines.count <= 9 { return reasonLines }
+            return Array(reasonLines.prefix(4)) + [String(localized: "⋯ \(reasonLines.count - 8) more")] + Array(reasonLines.suffix(4))
+        }()
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(displayReasons.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.system(size: 10))
+                    .foregroundStyle(ChatColors.primaryText.opacity(0.45))
+                    .lineLimit(2)
+            }
+            if let switchedLine {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.orange.opacity(0.8))
+                    Text(switchedLine)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ChatColors.primaryText.opacity(0.75))
                         .lineLimit(2)
                 }
-                if let switchedLine {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.orange.opacity(0.8))
-                        Text(switchedLine)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(ChatColors.primaryText.opacity(0.75))
-                            .lineLimit(2)
-                    }
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.orange.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.14), lineWidth: 0.5))
-            .contextMenu {
-                Button {
-                    UIPasteboard.general.string = block.content
-                } label: {
-                    Label(String(localized: "Copy Error"), systemImage: "doc.on.doc")
-                }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.14), lineWidth: 0.5))
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = block.content
+            } label: {
+                Label(String(localized: "Copy Error"), systemImage: "doc.on.doc")
             }
         }
     }

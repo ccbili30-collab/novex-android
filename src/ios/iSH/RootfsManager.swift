@@ -517,7 +517,9 @@ class RootfsManager {
 }
 
 // Minimal ZIP archive reader with safe unaligned memory access
-private class ZIPArchive {
+/// Minimal read-only ZIP archive reader shared by rootfs installation and
+/// Office Open XML document extraction. It performs no filesystem writes.
+final class ZIPArchive {
     struct Entry {
         let path: String
         let isDirectory: Bool
@@ -589,6 +591,7 @@ private class ZIPArchive {
     }
 
     private func findEOCD(in data: Data) -> Int? {
+        guard data.count >= 22 else { return nil }
         let signature: [UInt8] = [0x50, 0x4B, 0x05, 0x06]
         for i in stride(from: data.count - 22, through: 0, by: -1) {
             if data[i] == signature[0] && data[i+1] == signature[1] &&

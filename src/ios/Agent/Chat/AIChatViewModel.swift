@@ -743,13 +743,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     @Published var transientNotice: String?
     @Published var autoRetryAttempt: Int = 0
     @Published var autoRetryCountdown: Int = 0
-    /// [T-ios-empty-after-toolresult-reminder] Guards the one-shot
-    /// `<system-reminder>` retry when the server returns an empty response
-    /// right after a tool result. Set the first time we inject the reminder in
-    /// a given agent loop; if the reminder round is ALSO empty we report an
-    /// error instead of injecting again — so it can never loop. Reset at the
-    /// start of each agent loop (a fresh user turn).
-    var didInjectEmptyToolReminderThisRun = false
     /// Incremented when a model fallback occurs so the UI can animate the model name change.
     @Published var fallbackTrigger: Int = 0
     /// Signal to trigger scroll-to-bottom in views (not @Published to avoid full view diff).
@@ -4400,8 +4393,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
         let loopSetupStart = CFAbsoluteTimeGetCurrent()
 
-        // [T-ios-empty-after-toolresult-reminder] Fresh turn → allow one reminder retry.
-        didInjectEmptyToolReminderThisRun = false
+        // Initial-response and after-tool-result empty stops have independent
+        // one-shot budgets for this user turn.
+        var emptyResponseRetryState = EmptyResponseRetryState()
 
         // Resolve provider from ProviderConfigStore
         guard let entry = resolveCurrentEntry() else {
@@ -4927,21 +4921,20 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             await applyFallbackSwitch()
             scrollToBottomSignal.send()
 
-            // Helper: check if a StreamResult is empty (no content produced).
-            // Catches both the nil-stopReason path (Anthropic SSE error inside
-            // HTTP 200) and the endTurn-with-zero-output path (OpenAI gpt-5.5
-            // on long contexts: `finish_reason=stop` with no text/tool/reasoning).
-            func isEmptyResponse(_ r: StreamResult) -> Bool {
+            // A retryable empty response is narrower than "no output": the
+            // provider must have explicitly ended the response normally. A
+            // missing stop reason is a real stream interruption, even when no
+            // bytes arrived, and must preserve partial output + offer Resume.
+            func isRetryableEmptyResponse(_ r: StreamResult) -> Bool {
                 let hasReasoning = !(r.reasoningContent ?? "").isEmpty
-                return r.assistantText.isEmpty && r.toolEntries.isEmpty
-                    && !hasReasoning && !r.isStreamInterrupted
-                    && r.stopReason != .maxTokens
-                    // A refusal (Anthropic safety classifier decline) is deterministic:
-                    // the content is empty but retrying the identical request just gets
-                    // declined again and burns tokens. Don't route it through the
-                    // transient-retry / group-fallback path; let the .refusal branch in
-                    // the stop-reason handler surface it directly. [T-ios-fable5-empty-response]
-                    && r.stopReason != .refusal
+                let action = decideAgentTurnCompletion(
+                    hasVisibleContent: !r.assistantText.isEmpty || hasReasoning,
+                    hasToolCalls: !r.toolEntries.isEmpty,
+                    stopReason: r.stopReason,
+                    context: lastEffectiveMessageIsToolResult() ? .afterToolResult : .initial,
+                    retryAlreadyUsed: false
+                )
+                return action == .retryEmpty && !r.isStreamInterrupted
             }
 
             // Process SSE stream events on a background thread to keep
@@ -4957,30 +4950,31 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     msgIdx: msgIdx,
                     provider: provider
                 )
-                // Detect empty responses — the stream completed without producing any
-                // content blocks or a stop reason.  This happens when the Anthropic API
-                // returns an SSE `event: error` (e.g. overloaded_error) inside an HTTP 200
-                // response: the SDK silently terminates the stream instead of throwing.
-                // Treat as a transient error so it enters the auto-retry path below.
-                if isEmptyResponse(result) {
-                    // [T-ios-empty-after-toolresult-reminder] Special case: the
-                    // server returned nothing right after we handed it a tool
-                    // result. The model owes a follow-up (next tool call or a
-                    // final answer) but stalled — from the user's side the chat
-                    // "stops" with no explanation. Inject a one-shot
-                    // <system-reminder> into the last tool result and retry a
-                    // SINGLE round. The per-run flag ensures this fires at most
-                    // once, so it can never loop; if the reminder round is also
-                    // empty we report an error (below) instead of a silent stall.
-                    guard !didInjectEmptyToolReminderThisRun, lastEffectiveMessageIsToolResult() else {
-                        logger.error("🔁STREAM empty response (no content, no stop reason) — treating as transient error")
-                        throw LLMError.transientError(message: "Server returned an empty response (overloaded or upstream error)")
+                // A server-declared normal stop with no content is retried once.
+                // A stream that simply closes without a terminal reason is handled
+                // later as an interruption and is never mistaken for an empty stop.
+                let emptyContext: EmptyResponseContext = lastEffectiveMessageIsToolResult()
+                    ? .afterToolResult
+                    : .initial
+                let firstAction = emptyResponseRetryState.decide(
+                    hasVisibleContent: !result.assistantText.isEmpty || !(result.reasoningContent ?? "").isEmpty,
+                    hasToolCalls: !result.toolEntries.isEmpty,
+                    stopReason: result.stopReason,
+                    context: emptyContext
+                )
+                if firstAction == .retryEmpty && !result.isStreamInterrupted {
+                    let retryHistory: [AgentMessage]
+                    switch emptyContext {
+                    case .initial:
+                        retryHistory = effectiveAgentHistory()
+                        logger.error("🔁STREAM initial response ended empty — retrying exactly once")
+                    case .afterToolResult:
+                        retryHistory = historyWithEmptyToolResultReminder()
+                        logger.error("🔁STREAM empty after tool result — injecting <system-reminder> and retrying exactly once")
                     }
-                    didInjectEmptyToolReminderThisRun = true
-                    logger.error("🔁STREAM empty after tool result — injecting <system-reminder> and retrying one round")
                     let reminderStream = try await streamWithAutoRetry(
                         provider: provider,
-                        messages: applyRequestImageBudget(historyWithEmptyToolResultReminder()),
+                        messages: applyRequestImageBudget(retryHistory),
                         systemPrompt: userSystemPrompt,
                         tools: tools,
                         maxTokens: dynamicMaxTokens(provider: provider, model: activeModel, lastContextTokens: turnUsage.latestContextTokens),
@@ -4991,14 +4985,19 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         msgIdx: msgIdx,
                         provider: provider
                     )
-                    if isEmptyResponse(reminderResult) {
-                        // Still empty after the nudge — a genuine failure, not a
-                        // transient blip. Surface it clearly instead of silently
-                        // looping so the user knows why the chat stopped.
-                        logger.error("🔁STREAM still empty after <system-reminder> retry — reporting error")
-                        throw LLMError.providerError(message: "The model returned no response after a tool result, even after a reminder. It may be overloaded — please retry or switch models.")
+                    let secondAction = emptyResponseRetryState.decide(
+                        hasVisibleContent: !reminderResult.assistantText.isEmpty || !(reminderResult.reasoningContent ?? "").isEmpty,
+                        hasToolCalls: !reminderResult.toolEntries.isEmpty,
+                        stopReason: reminderResult.stopReason,
+                        context: emptyContext
+                    )
+                    if secondAction == .failEmpty && !reminderResult.isStreamInterrupted {
+                        logger.error("🔁STREAM second explicit empty stop — reporting error without another retry")
+                        let message = emptyContext == .afterToolResult
+                            ? "The model returned no response after a tool result, even after one retry. Please retry or switch models."
+                            : "The model returned no response, even after one retry. Please retry or switch models."
+                        throw LLMError.providerError(message: message)
                     }
-                    // Recovered — proceed with the reminder round's content.
                     streamResult = reminderResult
                 } else {
                     streamResult = result
@@ -5087,7 +5086,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         )
                         // If the retried stream is also empty, the provider is persistently
                         // failing (e.g. Anthropic overloaded).  Trigger group fallback.
-                        if isEmptyResponse(retryResult) {
+                        if isRetryableEmptyResponse(retryResult) {
                             logger.error("🔁STREAM autoRetry also returned empty — triggering group fallback")
                             throw LLMError.providerError(message: "Server is overloaded")
                         }
@@ -5442,6 +5441,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             var toolResultParts: [AgentContentPart] = []
             var pendingSnapshots: [String: (toolName: String, snapshot: ToolSnapshot)] = [:]
             var cancelledDuringToolExecution = false
+            var terminalUIToolIds = Set<String>()
 
             // Image budget for this batch of tool results.
             //
@@ -5539,7 +5539,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // message's tool_use blocks for the next API call.
             for idx in 0..<toolEntries.count {
                 guard let outcome = outcomesByIndex[idx] else { continue }
-                toolResultParts.append(outcome.resultPart)
+                if let resultPart = outcome.resultPart {
+                    toolResultParts.append(resultPart)
+                }
+                if outcome.isTerminalUI {
+                    terminalUIToolIds.insert(outcome.toolId)
+                }
                 if let se = outcome.snapshotEntry {
                     pendingSnapshots[outcome.toolId] = se
                 }
@@ -5562,11 +5567,30 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 ))
             }
 
-            // Add tool results as a user message
+            // Terminal UI tool calls remain visible in persisted transcript but
+            // are removed from provider-facing memory. Their rendered UI is the
+            // result, so pairing them with a synthetic tool_result would cause an
+            // unwanted extra model request.
+            if !terminalUIToolIds.isEmpty, assistantAgentIdx < agentHistory.count {
+                let filtered = removingTerminalUIToolUses(
+                    agentHistory[assistantAgentIdx].parts,
+                    terminalIds: terminalUIToolIds
+                )
+                if filtered.isEmpty {
+                    agentHistory.remove(at: assistantAgentIdx)
+                } else {
+                    agentHistory[assistantAgentIdx].parts = filtered
+                }
+            }
+
+            // Add real tool results as a user message. A terminal-only batch has
+            // no user tool-result row at all.
             let toolResultMessage = AgentMessage(role: .user, parts: toolResultParts)
-            logger.info("Appending tool result message with \(toolResultParts.count) part(s) to agentHistory (now \(self.agentHistory.count + 1) messages)")
-            let toolResultAgentIdx = agentHistory.count
-            agentHistory.append(toolResultMessage)
+            let toolResultAgentIdx: Int? = toolResultParts.isEmpty ? nil : agentHistory.count
+            if !toolResultParts.isEmpty {
+                logger.info("Appending tool result message with \(toolResultParts.count) part(s) to agentHistory (now \(self.agentHistory.count + 1) messages)")
+                agentHistory.append(toolResultMessage)
+            }
 
             // Collect terminal tool statuses from the assistant blocks so persistence can
             // distinguish failed vs cancelled (both have success == false).
@@ -5586,14 +5610,15 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // Batch-persist the deferred assistant message + tool results in one transaction
             let uiBlockCountMid = await MainActor.run { msgIdx < messages.count ? messages[msgIdx].blocks.count : -1 }
             logger.info("[BlocksLost] PERSIST mid-loop (tool) sid=\(sessionId?.prefix(8) ?? "nil") agentParts=\(assistantMessage.parts.count) uiBlocks=\(uiBlockCountMid)")
-            if let toolResultRaw = await buildRawMessage(toolResultMessage, snapshots: pendingSnapshots, toolStatuses: toolStatusStrings) {
+            if !toolResultParts.isEmpty,
+               let toolResultRaw = await buildRawMessage(toolResultMessage, snapshots: pendingSnapshots, toolStatuses: toolStatusStrings) {
                 var batch: [RawMessage] = []
                 if let assistantRaw = deferredAssistantRaw { batch.append(assistantRaw) }
                 batch.append(toolResultRaw)
                 await ChatStore.shared.appendMessages(batch)
                 // Phase B: write the DB id back into agentHistory entries so compact
                 // can resolve boundaries by id.
-                if toolResultAgentIdx < agentHistory.count {
+                if let toolResultAgentIdx, toolResultAgentIdx < agentHistory.count {
                     agentHistory[toolResultAgentIdx].dbMessageId = toolResultRaw.id
                 }
             } else if let assistantRaw = deferredAssistantRaw {
@@ -5603,7 +5628,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             // Signal that tools are done and we're waiting for the model's next response.
             guard msgIdx < messages.count else { break }
-            messages[msgIdx].isAwaitingModelResponse = true
+            messages[msgIdx].isAwaitingModelResponse = terminalUIToolIds.isEmpty
+
+            if !terminalUIToolIds.isEmpty {
+                logger.info("[TerminalUITool] presented \(terminalUIToolIds.count) choice surface(s); ending current turn without provider follow-up")
+                self.prevCommittedBlockCount = self.committedBlockCount
+                committedBlockCount = messages[msgIdx].blocks.count
+                self.committedBlockCount = committedBlockCount
+                messages[msgIdx].usage = turnUsage
+                hitTurnLimit = false
+                break
+            }
 
             // If user cancelled during tool execution, commit everything and stop.
             // History is now properly paired: assistant(tool_use) + user(tool_result).
@@ -6071,4 +6106,3 @@ enum LLMProviderError: LocalizedError {
         }
     }
 }
-

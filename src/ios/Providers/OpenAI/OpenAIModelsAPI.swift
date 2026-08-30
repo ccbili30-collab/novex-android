@@ -125,6 +125,16 @@ enum OpenAIModelsAPI {
                 if bare.contains("video")         { modality.insert(.videoOutput) }
             }
 
+            // Several OpenAI-compatible relays return only `{id}` from /models.
+            // Keep their safe text default, but recover image input for model
+            // variants whose own name explicitly says Vision/VL. This is the
+            // DeepSeek-Vision path reported on Android 0.1.7: image bytes were
+            // already attached, then stripped solely because metadata said text.
+            if inputArr == nil,
+               LLMModel.inferImageInputFromName(id: id, displayName: displayName) {
+                modality.insert(.imageInput)
+            }
+
             // Always record the modality we computed, even when it's plain
             // text. Leaving this nil falls through to the provider-level
             // default (`knownCapabilities["OpenAI"] = .vision`), which then

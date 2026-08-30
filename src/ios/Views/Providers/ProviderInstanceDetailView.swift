@@ -28,6 +28,7 @@ struct ProviderInstanceDetailView: View {
     @State private var editingModelEntry: ModelEntry?
     @State private var pendingDeleteModelEntry: ModelEntry?
     @State private var showKeyRevealed = false
+    @State private var showProviderModelVerification = false
 
     private var instance: ProviderInstance? {
         store.instance(for: instanceId)
@@ -74,6 +75,15 @@ struct ProviderInstanceDetailView: View {
         }
         .sheet(item: $editingModelEntry) { entry in
             ModelEntryDetailSheet(entry: entry)
+        }
+        .sheet(isPresented: $showProviderModelVerification) {
+            ProviderModelVerificationSheet(
+                entries: store.entries(for: instanceId).filter {
+                    $0.model.capabilities.supportedModalities.contains(.textOutput)
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showKimiLogin) {
             if let instance = instance {
@@ -362,6 +372,23 @@ struct ProviderInstanceDetailView: View {
                 } footer: {
                     Text("Manage ASR/TTS models and Voice Services visibility.",
                          comment: "Voice service section footer")
+                }
+            }
+
+            if !store.entries(for: instance.id).filter({
+                $0.model.capabilities.supportedModalities.contains(.textOutput)
+            }).isEmpty {
+                Section {
+                    Button {
+                        showProviderModelVerification = true
+                    } label: {
+                        Label("检测全部模型", systemImage: "bolt.badge.checkmark")
+                    }
+                    .buttonStyle(.borderless)
+                } header: {
+                    Text("连接检测（可选）")
+                } footer: {
+                    Text("检测与启用状态互不绑定。修改地址、密钥或模型后可以直接启用，也可以按需重新检测。检测失败不会自动停用模型。")
                 }
             }
 
@@ -1712,4 +1739,3 @@ private struct ProviderShareSheet: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
-

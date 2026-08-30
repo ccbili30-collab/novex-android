@@ -1,0 +1,117 @@
+name: Novex iOS 0.1.7 remote gate
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: novex-ios-017-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-archive:
+    name: Build tests and archive on remote macOS
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select installed Xcode
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' | sort | tail -n 1)"
+          test -n "$XCODE_APP"
+          sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install native build tools
+        run: |
+          set -euo pipefail
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          brew list libarchive >/dev/null 2>&1 || brew install libarchive
+          brew list pkg-config >/dev/null 2>&1 || brew install pkg-config
+          python3 -m pip install --user meson
+          echo "$HOME/Library/Python/3.9/bin" >> "$GITHUB_PATH"
+          echo "$HOME/Library/Python/3.10/bin" >> "$GITHUB_PATH"
+          echo "$HOME/Library/Python/3.11/bin" >> "$GITHUB_PATH"
+          echo "$HOME/Library/Python/3.12/bin" >> "$GITHUB_PATH"
+          echo "$HOME/Library/Python/3.13/bin" >> "$GITHUB_PATH"
+
+      - name: Restore iOS native dependencies
+        id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps/lame-build
+            deps/ffmpeg-6.1.2
+            deps/frameworks
+            deps/ish/build-ios
+            deps/libs
+            deps/include
+            deps/resources
+          key: ios-device-native-${{ runner.arch }}-${{ hashFiles('deps/build_lame.sh', 'deps/build_ffmpeg.sh', 'deps/build_ish.sh', 'deps/prepare_alpine_rootfs.sh', '.gitmodules') }}
+
+      - name: Build missing iOS native dependencies
+        run: |
+          set -euo pipefail
+          test -f deps/lame-build/lib/libmp3lame.a || ./deps/build_lame.sh
+          test -d deps/frameworks/FFmpeg.framework || ./deps/build_ffmpeg.sh
+          test -f deps/libs/libish.a || ./deps/build_ish.sh
+          test -f deps/resources/alpine-rootfs.zip || ./deps/prepare_alpine_rootfs.sh
+
+      - name: Prepare optional build customization
+        run: |
+          set -euo pipefail
+          cp src/ios/Configs/ProviderCustomization.xcconfig.example \
+             src/ios/Configs/ProviderCustomization.xcconfig
+
+      - name: Compile app and test bundles for iOS device
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project src/ios/Minis.xcodeproj \
+            -scheme Minis \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/NovexDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing | tee "$RUNNER_TEMP/novex-build-for-testing.log"
+
+      - name: Create unsigned release archive
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project src/ios/Minis.xcodeproj \
+            -scheme Minis \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Novex-0.1.7.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/NovexDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            archive | tee "$RUNNER_TEMP/novex-archive.log"
+
+      - name: Package remote build evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/novex-evidence"
+          test ! -f "$RUNNER_TEMP/novex-build-for-testing.log" || cp "$RUNNER_TEMP/novex-build-for-testing.log" "$RUNNER_TEMP/novex-evidence/"
+          test ! -f "$RUNNER_TEMP/novex-archive.log" || cp "$RUNNER_TEMP/novex-archive.log" "$RUNNER_TEMP/novex-evidence/"
+          if test -d "$RUNNER_TEMP/Novex-0.1.7.xcarchive"; then
+            ditto -c -k --sequesterRsrc --keepParent \
+              "$RUNNER_TEMP/Novex-0.1.7.xcarchive" \
+              "$RUNNER_TEMP/novex-evidence/Novex-0.1.7-unsigned-xcarchive.zip"
+          fi
+
+      - name: Upload build evidence and archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Novex-iOS-0.1.7-remote-build
+          path: ${{ runner.temp }}/novex-evidence
+          if-no-files-found: error
+          retention-days: 14

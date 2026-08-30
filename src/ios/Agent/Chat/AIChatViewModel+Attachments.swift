@@ -4,6 +4,298 @@ import UniformTypeIdentifiers
 
 private let logger = AppLogger(category: "AIChatVM")
 
+enum LocalDocumentExtractionError: LocalizedError {
+    case unsupported(String)
+    case nativeParserFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported(let ext):
+            return "Unsupported document type: \(ext)"
+        case .nativeParserFailed(let detail):
+            return "Office Open XML parsing failed: \(detail)"
+        }
+    }
+}
+
+struct LocalDocumentExtraction: Equatable {
+    let text: String
+    let wasTruncated: Bool
+    let needsOCR: Bool
+    let engine: String
+
+    init(text: String, wasTruncated: Bool, needsOCR: Bool, engine: String = "native-office-openxml") {
+        self.text = text
+        self.wasTruncated = wasTruncated
+        self.needsOCR = needsOCR
+        self.engine = engine
+    }
+}
+
+/// iOS-native DOCX extraction. TextKit's Office Open XML reader is the primary
+/// parser, so document understanding does not depend on the Linux sandbox. A
+/// read-only ZIP/XML supplement covers document parts TextKit may omit: headers,
+/// footers, footnotes, endnotes, comments, links, text boxes, and accepted
+/// revision text. The supplement is also the fallback when TextKit rejects a
+/// producer-specific package.
+enum LocalDocumentExtractor {
+    static let inlineCharacterLimit = 48_000
+
+    static func extract(url: URL) throws -> LocalDocumentExtraction {
+        guard url.pathExtension.lowercased() == "docx" else {
+            throw LocalDocumentExtractionError.unsupported(url.pathExtension.lowercased())
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        } catch {
+            throw LocalDocumentExtractionError.nativeParserFailed(
+                "file-read: \(type(of: error)): \(error.localizedDescription)"
+            )
+        }
+
+        var nativeText: String?
+        var nativeFailure: Error?
+        do {
+            nativeText = try NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.officeOpenXML],
+                documentAttributes: nil
+            ).string
+        } catch {
+            nativeFailure = error
+        }
+
+        var supplemental: OOXMLWordExtraction?
+        var supplementalFailure: Error?
+        do {
+            supplemental = try OOXMLWordTextExtractor.extract(url: url)
+        } catch {
+            supplementalFailure = error
+        }
+
+        if let nativeText {
+            let merged = mergeUniqueText(nativeText, supplemental?.text ?? "")
+            let engine = supplemental == nil
+                ? "native-office-openxml"
+                : "native-office-openxml+zip-xml-supplement"
+            return normalize(
+                merged,
+                engine: engine,
+                hasPictures: supplemental?.hasPictures ?? false
+            )
+        }
+        if let supplemental {
+            return normalize(
+                supplemental.text,
+                engine: "zip-xml-fallback",
+                hasPictures: supplemental.hasPictures
+            )
+        }
+
+        let nativeDetail = nativeFailure.map { "native=\(type(of: $0)): \($0.localizedDescription)" }
+            ?? "native=unknown"
+        let fallbackDetail = supplementalFailure.map { "fallback=\(type(of: $0)): \($0.localizedDescription)" }
+            ?? "fallback=unknown"
+        throw LocalDocumentExtractionError.nativeParserFailed("\(nativeDetail); \(fallbackDetail)")
+    }
+
+    static func normalize(
+        _ source: String,
+        engine: String = "native-office-openxml",
+        hasPictures: Bool = false
+    ) -> LocalDocumentExtraction {
+        let normalized = source
+            .replacingOccurrences(of: "\0", with: "")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            return LocalDocumentExtraction(
+                text: "",
+                wasTruncated: false,
+                needsOCR: true,
+                engine: hasPictures ? "\(engine)+image-only" : engine
+            )
+        }
+        let truncated = normalized.count > inlineCharacterLimit
+        let text = truncated ? String(normalized.prefix(inlineCharacterLimit)) : normalized
+        return LocalDocumentExtraction(
+            text: text,
+            wasTruncated: truncated,
+            needsOCR: false,
+            engine: engine
+        )
+    }
+
+    static func inlineContent(_ extraction: LocalDocumentExtraction, fileName: String) -> String {
+        if extraction.needsOCR {
+            return "[DOCX document \(fileName) contains no extractable text. "
+                + "It may be image-based or scanned and requires OCR or a vision model.]"
+        }
+        let truncation = extraction.wasTruncated
+            ? "\n[Content truncated to the first \(inlineCharacterLimit) characters.]"
+            : ""
+        return "<document-content file=\"\(fileName)\" format=\"docx\">\n"
+            + extraction.text
+            + truncation
+            + "\n</document-content>"
+    }
+
+    private static func mergeUniqueText(_ primary: String, _ supplemental: String) -> String {
+        var result = primary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existing = Set(result.components(separatedBy: .newlines).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+        let missing = supplemental.components(separatedBy: .newlines).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty && !existing.contains($0) }
+        if !missing.isEmpty {
+            if !result.isEmpty { result += "\n\n" }
+            result += missing.joined(separator: "\n")
+        }
+        return result
+    }
+}
+
+private struct OOXMLWordExtraction {
+    let text: String
+    let hasPictures: Bool
+}
+
+private enum OOXMLWordTextExtractor {
+    static func extract(url: URL) throws -> OOXMLWordExtraction {
+        guard let archive = ZIPArchive(url: url) else {
+            throw LocalDocumentExtractionError.nativeParserFailed("ZIP central directory is invalid")
+        }
+        let paths = archive.entries.map(\.path)
+        let documentPaths = paths.filter { path in
+            path == "word/document.xml"
+                || path == "word/footnotes.xml"
+                || path == "word/endnotes.xml"
+                || path == "word/comments.xml"
+                || path.range(of: #"^word/(header|footer)[0-9]+\.xml$"#, options: .regularExpression) != nil
+        }.sorted { lhs, rhs in
+            if lhs == "word/document.xml" { return true }
+            if rhs == "word/document.xml" { return false }
+            return lhs < rhs
+        }
+
+        guard !documentPaths.isEmpty else {
+            throw LocalDocumentExtractionError.nativeParserFailed("word/document.xml is missing")
+        }
+
+        var sections: [String] = []
+        for path in documentPaths {
+            guard let entry = archive.entries.first(where: { $0.path == path }),
+                  let data = try archive.extractData(for: entry) else { continue }
+            let collector = WordXMLTextCollector()
+            let parser = XMLParser(data: data)
+            parser.delegate = collector
+            guard parser.parse() else {
+                throw parser.parserError ?? LocalDocumentExtractionError.nativeParserFailed(
+                    "XML parsing failed for \(path)"
+                )
+            }
+            let text = collector.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { sections.append(text) }
+        }
+
+        if let relationships = archive.entries.first(where: {
+            $0.path == "word/_rels/document.xml.rels"
+        }), let data = try archive.extractData(for: relationships) {
+            let collector = OOXMLRelationshipCollector()
+            let parser = XMLParser(data: data)
+            parser.delegate = collector
+            if parser.parse(), !collector.externalTargets.isEmpty {
+                sections.append(collector.externalTargets.joined(separator: "\n"))
+            }
+        }
+
+        return OOXMLWordExtraction(
+            text: sections.joined(separator: "\n\n"),
+            hasPictures: paths.contains { $0.hasPrefix("word/media/") && !$0.hasSuffix("/") }
+        )
+    }
+}
+
+private final class WordXMLTextCollector: NSObject, XMLParserDelegate {
+    private var paragraphs: [String] = []
+    private var current = ""
+    private var textDepth = 0
+    private var hiddenRevisionDepth = 0
+
+    var text: String {
+        var values = paragraphs
+        let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { values.append(tail) }
+        return values.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+        if local == "del" || local == "moveFrom" { hiddenRevisionDepth += 1 }
+        guard hiddenRevisionDepth == 0 else { return }
+        switch local {
+        case "t": textDepth += 1
+        case "tab": current += "\t"
+        case "br", "cr": current += "\n"
+        default: break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard hiddenRevisionDepth == 0, textDepth > 0 else { return }
+        current += string
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+        if local == "del" || local == "moveFrom" {
+            hiddenRevisionDepth = max(hiddenRevisionDepth - 1, 0)
+            return
+        }
+        guard hiddenRevisionDepth == 0 else { return }
+        if local == "t" { textDepth = max(textDepth - 1, 0) }
+        if local == "p" {
+            let paragraph = current.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !paragraph.isEmpty { paragraphs.append(paragraph) }
+            current = ""
+        }
+    }
+}
+
+private final class OOXMLRelationshipCollector: NSObject, XMLParserDelegate {
+    private(set) var externalTargets: [String] = []
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        let local = elementName.split(separator: ":").last.map(String.init) ?? elementName
+        guard local == "Relationship",
+              let target = attributeDict["Target"],
+              target.hasPrefix("https://") || target.hasPrefix("http://") || target.hasPrefix("mailto:")
+        else { return }
+        if !externalTargets.contains(target) { externalTargets.append(target) }
+    }
+}
+
 // MARK: - Attachment Management
 
 extension AIChatViewModel {
@@ -392,6 +684,25 @@ extension AIChatViewModel {
             let meta = AttachmentMeta(path: linuxPath, size: fileSize, modified: fileDate)
             metas.append(meta)
             logger.info("📎[QUEUE-DRAIN]   saved \(safeName): \(fileSize) bytes → \(linuxPath)")
+
+            if attachment.kind == .document,
+               attachment.cacheURL.pathExtension.lowercased() == "docx" {
+                do {
+                    let extraction = try LocalDocumentExtractor.extract(url: attachment.cacheURL)
+                    parts.append(.text(LocalDocumentExtractor.inlineContent(
+                        extraction,
+                        fileName: attachment.fileName
+                    )))
+                    logger.info("[DOCX] parsed file=\(attachment.fileName) size=\(fileSize) stage=\(extraction.engine) chars=\(extraction.text.count) truncated=\(extraction.wasTruncated) needsOCR=\(extraction.needsOCR)")
+                } catch {
+                    let typeName = String(describing: type(of: error))
+                    let detail = error.localizedDescription
+                    parts.append(.text(
+                        "[DOCX extraction failed for \(attachment.fileName): \(typeName): \(detail)]"
+                    ))
+                    logger.error("[DOCX] failed file=\(attachment.fileName) size=\(fileSize) stage=native-office-openxml+zip-xml-fallback errorType=\(typeName) detail=\(detail)")
+                }
+            }
 
             // [T-ios-attachment-oom-bg-kill] Only IMAGES need bytes in memory
             // (resize/inline). Non-image attachments are already persisted above.

@@ -156,7 +156,7 @@ final class OpenAIAgentProvider: AgentProvider {
             Self.injectThinkingParams(into: &body, model: model, level: thinkingLevel, isOpenRouter: provider.useOpenRouterCompat, maxTokens: maxTokens, offEffort: offEffort, unifiedReasoningEffort: provider.usesUnifiedReasoningEffort, isMistral: provider.isMistral, isXAI: provider.isXAI, providerInstanceId: provider.providerInstanceId)
         }
 
-        let (lineStream, _) = try await provider.streamRaw(body: body, isResponsesAPI: false)
+        let (lineStream, httpStatus) = try await provider.streamRaw(body: body, isResponsesAPI: false)
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -236,7 +236,7 @@ final class OpenAIAgentProvider: AgentProvider {
                         if let error = event["error"] as? [String: Any] {
                             let message = error["message"] as? String ?? "Unknown streaming error"
                             let code = error["code"] as? Int
-                            logger.error("SSE stream error: \(message)")
+                            logger.error("[OpenAIStream] model=\(self.model.id) httpStatus=\(httpStatus) sseErrorCode=\(code ?? -1) message=\(message) raw=\(String(payload.prefix(4_000)))")
                             throw LLMError.providerError(message: "[\(code ?? -1)] \(message)")
                         }
 
@@ -355,7 +355,7 @@ final class OpenAIAgentProvider: AgentProvider {
                             // Flush the think parser's tail (idempotent — the
                             // [DONE] handler may flush again harmlessly).
                             emitParsed(thinkParser.finishTurn())
-                            logger.info("SSE finish_reason=\(fr) hasToolCalls=\(hasToolCalls) emittedTextStart=\(emittedTextStart) reasoningLen=\(reasoningContent.count)")
+                            logger.info("SSE model=\(self.model.id) httpStatus=\(httpStatus) finish_reason=\(fr) hasToolCalls=\(hasToolCalls) emittedTextStart=\(emittedTextStart) reasoningLen=\(reasoningContent.count)")
                             // Emit completed tool calls
                             for (_, entry) in toolCallAccum.sorted(by: { $0.key < $1.key }) {
                                 let args = Self.parseJsonToDict(entry.json)
@@ -396,7 +396,7 @@ final class OpenAIAgentProvider: AgentProvider {
                     // from logs without re-running the request.
                     if !diagYieldedAnyContent && !sawReasoningFieldEver {
                         let preview = diagFirstLines.joined(separator: " | ")
-                        logger.warning("[OpenAIStream] empty stream diagnostic — totalLines=\(diagLineCount) dataLines=\(diagDataLineCount) firstLines=\(preview)")
+                        logger.warning("[OpenAIStream] empty stream diagnostic — model=\(self.model.id) httpStatus=\(httpStatus) finishReason=<missing> totalLines=\(diagLineCount) dataLines=\(diagDataLineCount) firstLines=\(preview)")
                     }
                     continuation.finish()
                 } catch {
@@ -523,7 +523,7 @@ final class OpenAIAgentProvider: AgentProvider {
             body["service_tier"] = "priority"
         }
 
-        let (lineStream, _) = try await provider.streamRaw(body: body, isResponsesAPI: true)
+        let (lineStream, httpStatus) = try await provider.streamRaw(body: body, isResponsesAPI: true)
 
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -669,7 +669,7 @@ final class OpenAIAgentProvider: AgentProvider {
                             let err = response?["error"] as? [String: Any]
                             let code = (err?["code"] as? String) ?? "unknown"
                             let message = (err?["message"] as? String) ?? "response.failed with no error detail"
-                            logger.error("response.failed — code: \(code), message: \(message)")
+                            logger.error("response.failed — model=\(self.model.id) httpStatus=\(httpStatus) code=\(code) message=\(message) raw=\(String(payload.prefix(4_000)))")
                             if code == "server_error" || code == "rate_limit_exceeded" {
                                 // Transient family: retry on the same model
                                 // rather than falling back through the group.
@@ -685,7 +685,7 @@ final class OpenAIAgentProvider: AgentProvider {
                             // stopped instead of silently ending the stream.
                             let response = event["response"] as? [String: Any]
                             let reason = ((response?["incomplete_details"] as? [String: Any])?["reason"] as? String) ?? "unknown"
-                            logger.error("response.incomplete — reason: \(reason)")
+                            logger.error("response.incomplete — model=\(self.model.id) httpStatus=\(httpStatus) reason=\(reason) raw=\(String(payload.prefix(4_000)))")
                             throw LLMError.providerError(
                                 message: "Response ended incomplete (reason: \(reason))"
                                     + (reason == "max_output_tokens"
@@ -711,7 +711,7 @@ final class OpenAIAgentProvider: AgentProvider {
                             // server silently downgrades to default when the
                             // account/model isn't eligible.
                             let effectiveTier = response?["service_tier"] as? String
-                            logger.info("response.completed — status: \(apiStatus ?? "nil"), stop_reason: \(apiStopReason ?? "nil"), service_tier: \(effectiveTier ?? "nil"), hasToolCalls: \(hasToolCalls), reasoningItems: \(reasoningItems.count), reasoningTokens: \(reasoningTokens)")
+                            logger.info("response.completed — model=\(self.model.id) httpStatus=\(httpStatus) status=\(apiStatus ?? "nil") stop_reason=\(apiStopReason ?? "nil") service_tier=\(effectiveTier ?? "nil") hasToolCalls=\(hasToolCalls) reasoningItems=\(reasoningItems.count) reasoningTokens=\(reasoningTokens)")
 
                             // Aggregate per-item streamed summary text into a
                             // single `reasoningContent` field on the assistant
@@ -1110,7 +1110,8 @@ final class OpenAIAgentProvider: AgentProvider {
 
     // MARK: - Chat Completions Message Conversion
 
-    private func convertMessagesChatCompletions(_ messages: [AgentMessage]) -> [[String: Any]] {
+    /// Internal request seam used by end-to-end payload regression tests.
+    func convertMessagesChatCompletions(_ messages: [AgentMessage]) -> [[String: Any]] {
         messages.map { msg in
             let role = msg.role == .user ? "user" : "assistant"
             var result: [String: Any] = ["role": role]

@@ -3538,6 +3538,12 @@ extension CollectionViewMessageListV3 {
                 // collapsed THINKING blocks (handled above with headerH = 40).
                 case .readImageTool: return 36
                 case .info:
+                    if block.toolName == terminalChoiceToolName,
+                       let args = block.toolInputArgs,
+                       case .success(let presentation) = parseChoicePresentation(json: args) {
+                        let titleHeight: CGFloat = presentation.title == nil ? 0 : 24
+                        return 20 + titleHeight + CGFloat(presentation.choices.count) * 52
+                    }
                     let lineCount = max(1, block.content.components(separatedBy: "\n").count)
                     return CGFloat(20 + lineCount * 16)
                 default: return 36  // Tool capsules (execute, browser, etc.): no wrapper pad
@@ -3663,21 +3669,24 @@ extension CollectionViewMessageListV3 {
 
         // MARK: - Scroll
 
-        private let nearBottomThreshold: CGFloat = 20
+        // Maintain streaming follow only when the viewport is genuinely pinned.
+        // The former 20pt band pulled a user back down while they were reading
+        // just above the tail as new tokens changed content height.
+        private let nearBottomThreshold: CGFloat = 6
 
         /// Tighter threshold for *re-acquiring* `.autoScrolling` after a
-        /// deliberate user interaction settles. `nearBottomThreshold` (20pt)
+        /// deliberate user interaction settles. `nearBottomThreshold` (6pt)
         /// is right for *maintaining* the bottom-pin during streaming, but
         /// reusing it to re-arm auto-scroll caused trackpad jitter on iPad:
-        /// a tiny two-finger scroll up leaves the offset well within 20pt of
+        /// a tiny two-finger scroll up leaves the offset within the follow band
         /// the bottom, so settle flipped straight back to `.autoScrolling`,
         /// the contentSize KVO re-pinned to the bottom, and that fought the
         /// next small scroll — the scrollbar darted up and down. Requiring the
-        /// content to be essentially flush with the bottom (≤4pt) means a
+        /// content to be essentially flush with the bottom (≤1pt) means a
         /// deliberate small scroll stays in `.userBrowsing`, while a scroll
         /// that genuinely lands at the bottom still resumes follow-along.
         /// [T-ios-trackpad-scroll-jitter]
-        private let reacquireAutoScrollThreshold: CGFloat = 4
+        private let reacquireAutoScrollThreshold: CGFloat = 1
 
         /// Whether a list item is part of the given assistant message's span
         /// (block or footer — the header is the span's start, matched

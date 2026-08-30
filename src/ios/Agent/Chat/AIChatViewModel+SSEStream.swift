@@ -446,6 +446,7 @@ extension AIChatViewModel {
                     case "browser_use": .browserTool(action: "")
                     case "read_image": .readImageTool(path: "")
                     case "memory_write", "memory_get": .memoryTool(action: name)
+                    case terminalChoiceToolName: .info
                     default: .shellTool(command: name)
                     }
                     if name == "file_write" || name == "file_edit" {
@@ -501,6 +502,7 @@ extension AIChatViewModel {
                         logger.info("[ToolUseId] APPEND tuId=\(tuId) name=\(name) rawIdWasDedupedFrom=\(rawTuId == tuId ? "n/a" : rawTuId) totalBlocksAfter=\(messages[msgIdx].blocks.count + 1)")
                         #endif
                         let toolBlock = AssistantBlock(kind: blockKind, content: "", toolStatus: .streaming(bytes: 0), toolUseId: tuId)
+                        toolBlock.toolName = name
                         toolBlock.toolStartTime = Date()
                         messages[msgIdx].blocks.append(toolBlock)
                         #if DEBUG
@@ -779,6 +781,7 @@ extension AIChatViewModel {
                     guard blockIdx >= 0, blockIdx < messages[msgIdx].blocks.count else { return -1 }
 
                     messages[msgIdx].blocks[blockIdx].content = content
+                    messages[msgIdx].blocks[blockIdx].toolName = name
                     messages[msgIdx].blocks[blockIdx].toolStatus = .running
                     messages[msgIdx].blocks[blockIdx].streamingFileContent = nil
                     switch name {
@@ -1083,6 +1086,8 @@ extension AIChatViewModel {
             return "Browser: \((args["action"] as? String) ?? "?")..."
         case "read_image":
             return "Reading image \((args["path"] as? String) ?? "?")..."
+        case terminalChoiceToolName:
+            return (args["title"] as? String) ?? String(localized: "Choose an option")
         default:
             return "Tool: \(name)"
         }
