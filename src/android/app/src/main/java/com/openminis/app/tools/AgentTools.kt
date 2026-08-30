@@ -48,14 +48,15 @@ object AgentTools {
 
     private fun presentChoicesDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = "present_choices",
-        description = "Present 2 to 6 concise story choices as native buttons beneath the current narrative. " +
-            "Use only when concrete choices help; the user always remains free to type something else. " +
-            "Tapping a button fills the composer and never sends automatically.",
+        description = "Present 2 to 12 concise choices as compact native buttons at this exact position in the conversation. " +
+            "You MUST call this tool whenever you offer two or more explicit alternatives and ask the user to choose. " +
+            "Do not duplicate the same alternatives as a numbered or bulleted text menu. The user remains free to type " +
+            "something else. Tapping a button fills the composer and never sends automatically.",
         parameters = mapOf(
             "title" to AgentToolParam("string", "Optional short heading shown above the buttons."),
             "choices" to AgentToolParam(
                 "string",
-                "A JSON array containing 2 to 6 complete button labels, for example " +
+                "A JSON array containing 2 to 12 complete, concise button labels, for example " +
                     "[\"查看信封\",\"找乳母谈话\",\"提前进城\"].",
             ),
         ),

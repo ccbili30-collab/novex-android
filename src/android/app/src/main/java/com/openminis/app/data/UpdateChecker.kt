@@ -41,6 +41,8 @@ object UpdateChecker {
     // published". The 0.1-preview release is published as a prerelease on
     // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
     private const val REPO = "novex-android"
+    private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
+    private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
     private const val DOWNLOAD_FILENAME = "novex.apk"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
@@ -103,7 +105,8 @@ object UpdateChecker {
      * coroutine scope.
      */
     suspend fun check(): CheckResult = withContext(Dispatchers.IO) {
-        val url = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
+        val url = RELEASES_API_URL
+        val localVer = normalizeTag(BuildConfig.VERSION_NAME)
         AppLogger.info(TAG, "GET $url (local=${BuildConfig.VERSION_NAME})")
         try {
             val req = Request.Builder()
@@ -114,23 +117,28 @@ object UpdateChecker {
             client.newCall(req).execute().use { resp ->
                 AppLogger.info(TAG, "HTTP ${resp.code}")
                 if (resp.code == 404) {
-                    return@withContext CheckResult.NoReleaseAvailable
+                    return@withContext checkAtomFallback(localVer, CheckResult.NoReleaseAvailable)
                 }
                 // 403 = rate-limit or geo-blocked. 451 = legal block. Both
                 // map to the same "open Releases in browser" hint — there's
                 // nothing the app can do client-side.
                 if (resp.code == 403 || resp.code == 451) {
                     AppLogger.warning(TAG, "GitHub API ${resp.code} — geo-block or rate-limit")
-                    return@withContext CheckResult.Forbidden
+                    return@withContext checkAtomFallback(localVer, CheckResult.Forbidden)
                 }
                 if (!resp.isSuccessful) {
                     val msg = "GitHub API ${resp.code}"
                     AppLogger.warning(TAG, msg)
-                    return@withContext CheckResult.Error(msg)
+                    return@withContext checkAtomFallback(localVer, CheckResult.Error(msg))
                 }
-                val body = resp.body?.string() ?: return@withContext CheckResult.Error("empty body")
+                val body = resp.body?.string()
+                    ?: return@withContext checkAtomFallback(localVer, CheckResult.Error("empty body"))
                 val arr = runCatching { JSONArray(body) }.getOrNull()
-                if (arr == null || arr.length() == 0) {
+                if (arr == null) {
+                    AppLogger.warning(TAG, "GitHub API returned malformed release data")
+                    return@withContext checkAtomFallback(localVer, CheckResult.Error("invalid release data"))
+                }
+                if (arr.length() == 0) {
                     AppLogger.info(TAG, "releases list empty")
                     return@withContext CheckResult.NoReleaseAvailable
                 }
@@ -182,7 +190,6 @@ object UpdateChecker {
                 // user is told they're up to date when they're actually on the
                 // matching version (and a real newer "0.12-preview" → "0.12"
                 // still compares greater, so updates still surface).
-                val localVer = normalizeTag(BuildConfig.VERSION_NAME)
                 // Highest version we've seen at all (used for the "release
                 // exists but is older or equal" → UpToDate decision and for
                 // logging).
@@ -238,23 +245,85 @@ object UpdateChecker {
             }
         } catch (e: UnknownHostException) {
             AppLogger.error(TAG, "check failed: UnknownHostException: ${e.message}")
-            CheckResult.NetworkUnreachable
+            checkAtomFallback(localVer, CheckResult.NetworkUnreachable)
         } catch (e: ConnectException) {
             AppLogger.error(TAG, "check failed: ConnectException: ${e.message}")
-            CheckResult.NetworkUnreachable
+            checkAtomFallback(localVer, CheckResult.NetworkUnreachable)
         } catch (e: SocketTimeoutException) {
             AppLogger.error(TAG, "check failed: SocketTimeoutException: ${e.message}")
-            CheckResult.NetworkUnreachable
+            checkAtomFallback(localVer, CheckResult.NetworkUnreachable)
         } catch (e: IOException) {
             // Catch-all for okhttp connection plumbing (e.g.
             // "failed to connect", SSL handshake errors). Most of these in
             // the CN-no-VPN scenario are effectively "can't reach github".
             AppLogger.error(TAG, "check failed: ${e.javaClass.simpleName}: ${e.message}")
-            CheckResult.NetworkUnreachable
+            checkAtomFallback(localVer, CheckResult.NetworkUnreachable)
         } catch (e: Exception) {
             AppLogger.error(TAG, "check failed: ${e.javaClass.simpleName}: ${e.message}")
             CheckResult.Error(e.message ?: e.javaClass.simpleName)
         }
+    }
+
+    /**
+     * GitHub's API subdomain is frequently routed differently from github.com
+     * by mobile VPN/proxy rules. If the API path fails, use the public Atom
+     * feed on the main host before telling the user that GitHub is unreachable.
+     */
+    private fun checkAtomFallback(localVersion: String, originalFailure: CheckResult): CheckResult {
+        AppLogger.info(TAG, "API path unavailable; trying $RELEASES_ATOM_URL")
+        return try {
+            val request = Request.Builder().url(RELEASES_ATOM_URL).build()
+            client.newCall(request).execute().use { response ->
+                AppLogger.info(TAG, "Atom HTTP ${response.code}")
+                if (!response.isSuccessful) return@use originalFailure
+                val body = response.body?.string() ?: return@use originalFailure
+                parseAtomReleaseFeed(body, localVersion)
+            }
+        } catch (e: Exception) {
+            AppLogger.warning(TAG, "Atom fallback failed: ${e.javaClass.simpleName}: ${e.message}")
+            originalFailure
+        }
+    }
+
+    /**
+     * Parse GitHub's releases Atom feed without depending on Android XML APIs,
+     * so the fallback remains unit-testable on the JVM. The feed does not list
+     * assets; Novex releases use the stable `novex.apk` asset name, allowing a
+     * deterministic browser-download URL.
+     */
+    internal fun parseAtomReleaseFeed(body: String, localVersion: String): CheckResult {
+        val entries = Regex("<entry>(.*?)</entry>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            .findAll(body)
+            .mapNotNull { match ->
+                val entry = match.groupValues[1]
+                val href = Regex(
+                    "<link[^>]+rel=[\\\"']alternate[\\\"'][^>]+href=[\\\"']([^\\\"']+/releases/tag/([^\\\"']+))[\\\"']",
+                    RegexOption.IGNORE_CASE,
+                ).find(entry) ?: Regex(
+                    "<link[^>]+href=[\\\"']([^\\\"']+/releases/tag/([^\\\"']+))[\\\"'][^>]+rel=[\\\"']alternate[\\\"']",
+                    RegexOption.IGNORE_CASE,
+                ).find(entry) ?: return@mapNotNull null
+                val tag = href.groupValues[2]
+                val title = Regex("<title>(.*?)</title>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+                    .find(entry)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "")?.trim().orEmpty()
+                Triple(tag, normalizeTag(tag), title.ifEmpty { tag })
+            }
+            .toList()
+
+        if (entries.isEmpty()) return CheckResult.NoReleaseAvailable
+        val highest = entries.maxWithOrNull { left, right -> compareVersions(left.second, right.second) }
+            ?: return CheckResult.NoReleaseAvailable
+        if (compareVersions(highest.second, localVersion) <= 0) return CheckResult.UpToDate
+
+        val tag = highest.first
+        return CheckResult.UpdateAvailable(
+            tagName = tag,
+            versionName = highest.second,
+            releaseName = highest.third,
+            changelog = "",
+            apkUrl = "https://github.com/$OWNER/$REPO/releases/download/$tag/$DOWNLOAD_FILENAME",
+            apkSizeBytes = 0,
+        )
     }
 
     /** Public so UI can deep-link users to manual download when GitHub is blocked. */
