@@ -1,7 +1,6 @@
-val preferCanonicalRepositories =
-    System.getenv("NOVEX_PREFER_CANONICAL_REPOSITORIES").equals("true", ignoreCase = true)
-
 pluginManagement {
+    val preferCanonicalRepositories =
+        System.getenv("NOVEX_PREFER_CANONICAL_REPOSITORIES").equals("true", ignoreCase = true)
     repositories {
         if (preferCanonicalRepositories) {
             google()
@@ -23,6 +22,8 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
+    val preferCanonicalRepositories =
+        System.getenv("NOVEX_PREFER_CANONICAL_REPOSITORIES").equals("true", ignoreCase = true)
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         if (preferCanonicalRepositories) {
