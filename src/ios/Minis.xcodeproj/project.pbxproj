@@ -1102,6 +1102,7 @@
 		E5EXC0001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Standalone/SkillDescriptionStaleTests.swift,
 				ThinkingLevelTests.swift,
 			);
 			target = BB1000070F700000000000AA /* MinisTests */;
