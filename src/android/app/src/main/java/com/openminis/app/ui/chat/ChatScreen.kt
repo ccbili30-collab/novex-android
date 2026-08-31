@@ -2405,7 +2405,7 @@ fun ChatScreen(
         LocalImmersiveChatProfile provides immersiveProfile,
     ) {
     val immersiveBackground = immersiveProfile.backgroundPath
-        ?.let(::java.io.File)
+        ?.let { java.io.File(it) }
         ?.takeIf { it.exists() }
     val immersiveBackgroundPainter = rememberAsyncImagePainter(immersiveBackground)
     Scaffold(
@@ -3879,7 +3879,7 @@ fun ChatScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.align(Alignment.Center).padding(horizontal = 36.dp),
                         ) {
-                            character.avatarPath?.let(::java.io.File)?.takeIf { it.exists() }?.let { avatar ->
+                            character.avatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }?.let { avatar ->
                                 AsyncImage(
                                     model = avatar,
                                     contentDescription = "${character.name} 头像",

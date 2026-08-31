@@ -297,7 +297,7 @@ internal fun AssistantHeader() {
             .padding(top = 10.dp, bottom = 2.dp),
     ) {
         val avatar = immersiveProfile.character?.avatarPath
-            ?.let(::java.io.File)
+            ?.let { java.io.File(it) }
             ?.takeIf { it.exists() }
         if (avatar != null) {
             AsyncImage(

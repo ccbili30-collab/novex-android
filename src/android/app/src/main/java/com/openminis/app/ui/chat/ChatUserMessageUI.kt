@@ -298,7 +298,7 @@ internal fun UserMessageBubble(
     val isQueued = message.isQueued
     val haptics = LocalHapticFeedback.current
     val persona = LocalImmersiveChatProfile.current.persona
-    val personaAvatar = persona?.avatarPath?.let(::java.io.File)?.takeIf { it.exists() }
+    val personaAvatar = persona?.avatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }
 
     BoxWithConstraints(
         modifier = Modifier
