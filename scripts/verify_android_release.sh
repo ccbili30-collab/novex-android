@@ -44,8 +44,9 @@ printf '%s\n' "$SIGNATURE_DETAILS"
 if [ -n "${EXPECTED_CERT_SHA256:-}" ]; then
     ACTUAL_CERT_SHA256="$(
         printf '%s\n' "$SIGNATURE_DETAILS" |
-            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
+            sed -n 's/^.*certificate SHA-256 digest: //p' |
             head -1 |
+            tr -d ':[:space:]' |
             tr '[:upper:]' '[:lower:]'
     )"
     NORMALIZED_EXPECTED_CERT_SHA256="$(
