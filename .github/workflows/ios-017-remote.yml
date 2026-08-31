@@ -25,6 +25,7 @@ jobs:
       - name: Select installed Xcode
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/novex-evidence"
           XCODE_APP="$(find /Applications -maxdepth 1 -type d -name 'Xcode*.app' | sort | tail -n 1)"
           test -n "$XCODE_APP"
           sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
@@ -37,12 +38,7 @@ jobs:
           brew list llvm >/dev/null 2>&1 || brew install llvm
           brew list libarchive >/dev/null 2>&1 || brew install libarchive
           brew list pkg-config >/dev/null 2>&1 || brew install pkg-config
-          python3 -m pip install --user meson
-          echo "$HOME/Library/Python/3.9/bin" >> "$GITHUB_PATH"
-          echo "$HOME/Library/Python/3.10/bin" >> "$GITHUB_PATH"
-          echo "$HOME/Library/Python/3.11/bin" >> "$GITHUB_PATH"
-          echo "$HOME/Library/Python/3.12/bin" >> "$GITHUB_PATH"
-          echo "$HOME/Library/Python/3.13/bin" >> "$GITHUB_PATH"
+          brew list meson >/dev/null 2>&1 || brew install meson
 
       - name: Restore iOS native dependencies
         id: native-cache
