@@ -6,6 +6,76 @@ import org.junit.Test
 
 class ScrollFollowPolicyTest {
     @Test
+    fun freshConversationStaysDetachedUntilBottomIsExplicitlyConfirmed() {
+        var following = initialStreamingFollowEnabled(isFreshConversation = true)
+
+        following = reduceStreamingFollow(
+            following,
+            StreamingFollowEvent.UserTurnStarted,
+        )
+
+        assertFalse(following)
+        assertFalse(
+            shouldFollowStreamingGrowth(
+                isStreaming = true,
+                streamingFollowEnabled = following,
+                userScrolledAway = false,
+                scrollInProgress = false,
+                millisSinceUserInterrupt = 5_000L,
+            ),
+        )
+        assertFalse(shouldAlignShortConversationToBottom(following))
+
+        following = reduceStreamingFollow(
+            following,
+            StreamingFollowEvent.UserDragStoppedAtBottom,
+        )
+
+        assertTrue(following)
+        assertTrue(shouldAlignShortConversationToBottom(following))
+    }
+
+    @Test
+    fun sendingAnotherMessageDoesNotReattachAHistoryReader() {
+        val following = reduceStreamingFollow(
+            current = false,
+            event = StreamingFollowEvent.UserTurnStarted,
+        )
+
+        assertFalse(following)
+    }
+
+    @Test
+    fun existingConversationMayRestoreBottomFollow() {
+        assertTrue(initialStreamingFollowEnabled(isFreshConversation = false))
+    }
+
+    @Test
+    fun confirmedBottomFollowsOnlyActiveUninterruptedGrowth() {
+        assertTrue(
+            shouldFollowStreamingGrowth(
+                isStreaming = true,
+                streamingFollowEnabled = true,
+                userScrolledAway = false,
+                scrollInProgress = false,
+                millisSinceUserInterrupt = 1_000L,
+            ),
+        )
+        assertFalse(
+            shouldFollowStreamingGrowth(true, true, true, false, 5_000L),
+        )
+        assertFalse(
+            shouldFollowStreamingGrowth(true, true, false, true, 5_000L),
+        )
+        assertFalse(
+            shouldFollowStreamingGrowth(true, true, false, false, 999L),
+        )
+        assertFalse(
+            shouldFollowStreamingGrowth(false, true, false, false, 5_000L),
+        )
+    }
+
+    @Test
     fun fingerDragImmediatelySuspendsStreamingFollow() {
         assertFalse(
             reduceStreamingFollow(

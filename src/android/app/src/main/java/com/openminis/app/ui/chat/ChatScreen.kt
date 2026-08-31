@@ -1206,7 +1206,13 @@ fun ChatScreen(
     // Unlike isNearBottom, this is an intent latch: transient row growth can
     // change list geometry, but it cannot grant permission to drag the reader
     // back to the live tail. Only explicit bottom actions below re-enable it.
-    var streamingFollowEnabled by remember(sessionId) { mutableStateOf(true) }
+    var streamingFollowEnabled by remember(sessionId) {
+        mutableStateOf(
+            initialStreamingFollowEnabled(
+                isFreshConversation = sessionId.startsWith("__new__"),
+            ),
+        )
+    }
 
     // [T-android-scrollbtn-turn-walk] Up-button turn-walk state, mirroring iOS
     // `lastJumpedUserId` (dcdec3c5). Holds the id of the user message the
@@ -1518,17 +1524,20 @@ fun ChatScreen(
         viewModel.setInputText("")
         keyboardController?.hide()
         focusManager.clearFocus()
-        userScrolledAway = false
         streamingFollowEnabled = reduceStreamingFollow(
             streamingFollowEnabled,
-            StreamingFollowEvent.ExplicitBottomRequested,
+            StreamingFollowEvent.UserTurnStarted,
         )
+        val followThisTurn = streamingFollowEnabled &&
+            !userScrolledAway && isNearBottom.value
         viewModel.sendMessage(rawText)
         noteSendForInputModePref()
-        coroutineScope.launch {
-            tracedScrollToItem("SEND-PATH/initial", 0, 0)
-            kotlinx.coroutines.delay(100)
-            tracedScrollToItem("SEND-PATH/settle", 0, 0)
+        if (followThisTurn) {
+            coroutineScope.launch {
+                tracedScrollToItem("SEND-PATH/initial", 0, 0)
+                kotlinx.coroutines.delay(100)
+                tracedScrollToItem("SEND-PATH/settle", 0, 0)
+            }
         }
     }
     // T196: timestamp of the last drag-stop. The streaming auto-follow LE
@@ -1655,7 +1664,9 @@ fun ChatScreen(
     // they were reading.
     val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottomPx) {
-        if (userScrolledAway && isNearBottom.value) userScrolledAway = false
+        if (streamingFollowEnabled && userScrolledAway && isNearBottom.value) {
+            userScrolledAway = false
+        }
     }
     // [T-android-tool-autoscroll] Start-of-turn edge from ViewModel: resume() /
     // retryLast() / retryFromMessage() / rerunFromToolBlock() emit Unit on
@@ -1665,32 +1676,33 @@ fun ChatScreen(
     // streamed token finally bumps the auto-follow tuple.
     LaunchedEffect(listState, viewModel) {
         viewModel.forceScrollToBottom.collect {
-            // Match the user-send path: clear any prior "scrolled away" flag
-            // so the streaming auto-follow stays active for the new turn.
-            userScrolledAway = false
             streamingFollowEnabled = reduceStreamingFollow(
                 streamingFollowEnabled,
-                StreamingFollowEvent.ExplicitBottomRequested,
+                StreamingFollowEvent.UserTurnStarted,
             )
-            tracedScrollToItem("FORCE-SCROLL-TO-BOTTOM(resume/retry/rerun)", 0, 0)
+            if (streamingFollowEnabled && !userScrolledAway && isNearBottom.value) {
+                tracedScrollToItem("FOLLOW-NEW-TURN(resume/retry/rerun)", 0, 0)
+            }
         }
     }
-    // Auto-scroll on user-send: explicit "show me the next response"
-    // gesture, fires regardless of current scroll position.
+    // A new turn preserves the current follow latch. Sending text is not the
+    // same as explicitly returning to the live tail: a reader who moved into
+    // history stays anchored, and a fresh short conversation remains stable
+    // until the user actually reaches the bottom or taps the bottom button.
     LaunchedEffect(messages.size) {
         val lastMsg = messages.lastOrNull() ?: return@LaunchedEffect
         if (lastMsg.role != "user") return@LaunchedEffect
-        // T255: catch-all reset so any user-message append path
-        // (send button / Enter / enqueue-while-streaming / future
-        // entry points) restores auto-follow even if a call-site reset
-        // was missed.
+        // Catch every user-message append path (send button, Enter,
+        // enqueue-while-streaming, and future entry points) without turning
+        // the append itself into permission to move the reader's viewport.
         lastUserAppendMs = System.currentTimeMillis()
-        userScrolledAway = false
         streamingFollowEnabled = reduceStreamingFollow(
             streamingFollowEnabled,
-            StreamingFollowEvent.ExplicitBottomRequested,
+            StreamingFollowEvent.UserTurnStarted,
         )
-        tracedScrollToItem("LE(messages.size)USER-SEND-SNAP", 0, 0)
+        if (streamingFollowEnabled && !userScrolledAway && isNearBottom.value) {
+            tracedScrollToItem("LE(messages.size)USER-SEND-SNAP", 0, 0)
+        }
     }
     // T128: streaming auto-follow when the user is at the bottom.
     //
@@ -1782,12 +1794,15 @@ fun ChatScreen(
             // just keep up smoothly.)
             .sample(120L)
             .collect {
-                if (!viewModel.isStreaming.value) return@collect
-                if (!streamingFollowEnabled) return@collect
-                if (userScrolledAway) return@collect
-                if (listState.isScrollInProgress) return@collect
                 val sinceInterrupt = System.currentTimeMillis() - lastInterruptMs
-                if (sinceInterrupt < 1000L) return@collect
+                if (!shouldFollowStreamingGrowth(
+                        isStreaming = viewModel.isStreaming.value,
+                        streamingFollowEnabled = streamingFollowEnabled,
+                        userScrolledAway = userScrolledAway,
+                        scrollInProgress = listState.isScrollInProgress,
+                        millisSinceUserInterrupt = sinceInterrupt,
+                    )
+                ) return@collect
                 // [T-android-stream-grow-anim] Frame-driven glide to the bottom.
                 // animateScrollToItem(0) was the problem: when the viewport had
                 // fallen >= 1 item behind (diagnostics showed fIdx=1..5 during
@@ -1914,6 +1929,7 @@ fun ChatScreen(
                 info.viewportEndOffset,
             )
         }.distinctUntilChanged().collectLatest { _ ->
+            if (!streamingFollowEnabled) return@collectLatest
             if (userScrolledAway) return@collectLatest
             if (listState.isScrollInProgress) return@collectLatest
             // Live body growth is followed by the sampled, frame-driven
@@ -3203,9 +3219,10 @@ fun ChatScreen(
                     // History readers fail (b) on userScrolledAway.
                     val sinceSendForPin = System.currentTimeMillis() - lastUserAppendMs
                     val sendGrace = lastUserAppendMs > 0L && sinceSendForPin <= SEND_FOLLOW_GRACE_MS
-                    val streamingActive = viewModel.isStreaming.value &&
-                        streamingFollowEnabled && !userScrolledAway
-                    if (!sendGrace && !streamingActive) return@LaunchedEffect
+                    val streamingActive = viewModel.isStreaming.value
+                    if (!streamingFollowEnabled || userScrolledAway ||
+                        (!sendGrace && !streamingActive)
+                    ) return@LaunchedEffect
                     lastTrailingPinKey = newest.key
                     tracedScrollToItem("trailing-row/${newest.contentType}", 0, 0)
                 }
@@ -3418,7 +3435,8 @@ fun ChatScreen(
                                 }
                             }
                         },
-                    // T303: anchor items to the visual bottom so a newly
+                    // T303: confirmed followers keep short content at the
+                    // visual bottom so a newly
                     // streamed tool card / typing indicator that arrives
                     // before older items have shifted up still lands inside
                     // the visible area. Without this, reverseLayout's
@@ -3429,7 +3447,17 @@ fun ChatScreen(
                     // hits ~1300 px while listState still reports
                     // firstVisible=0, firstOffset=0 (logged as the "tool on
                     // screen but not pushed into view" repro on Pixel 4a).
-                    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.Bottom),
+                    // A fresh detached conversation instead grows from the
+                    // visual top; bottom-aligning it was what made the entire
+                    // first turn creep upward on every streamed height change.
+                    verticalArrangement = Arrangement.spacedBy(
+                        2.dp,
+                        if (shouldAlignShortConversationToBottom(streamingFollowEnabled)) {
+                            Alignment.Bottom
+                        } else {
+                            Alignment.Top
+                        },
+                    ),
                     overscrollEffect = sharedEffect,
                 ) {
                     // T13 Resume banner — placed BEFORE items() so reverseLayout
@@ -3450,10 +3478,11 @@ fun ChatScreen(
                     if (canResume && !isStreaming && error == null && !lastAssistantHasError) {
                         item(key = "__resume_banner__", contentType = "resume_banner") {
                             ResumeBanner(onResume = {
-                                userScrolledAway = false
+                                val followThisTurn = streamingFollowEnabled &&
+                                    !userScrolledAway && isNearBottom.value
                                 streamingFollowEnabled = reduceStreamingFollow(
                                     streamingFollowEnabled,
-                                    StreamingFollowEvent.ExplicitBottomRequested,
+                                    StreamingFollowEvent.UserTurnStarted,
                                 )
                                 viewModel.resume()
                                 // T282: same dual-scroll trick as the regular
@@ -3462,10 +3491,12 @@ fun ChatScreen(
                                 // mounts a frame or two later — pin once now,
                                 // then again after 100ms so the indicator
                                 // doesn't land below the fold.
-                                coroutineScope.launch {
-                                    tracedScrollToItem("RESUME-BANNER/initial", 0, 0)
-                                    kotlinx.coroutines.delay(100)
-                                    tracedScrollToItem("RESUME-BANNER/settle", 0, 0)
+                                if (followThisTurn) {
+                                    coroutineScope.launch {
+                                        tracedScrollToItem("RESUME-BANNER/initial", 0, 0)
+                                        kotlinx.coroutines.delay(100)
+                                        tracedScrollToItem("RESUME-BANNER/settle", 0, 0)
+                                    }
                                 }
                             })
                         }
@@ -3609,8 +3640,12 @@ fun ChatScreen(
                                 // wasn't enough — users still saw a tappable
                                 // Retry that silently no-op'd.
                                 onRetry = if (isStreaming) null else ({
-                                    coroutineScope.launch {
-                                        tracedScrollToItem("RETRY-FROM-MSG", 0, 0)
+                                    if (streamingFollowEnabled &&
+                                        !userScrolledAway && isNearBottom.value
+                                    ) {
+                                        coroutineScope.launch {
+                                            tracedScrollToItem("RETRY-FROM-MSG", 0, 0)
+                                        }
                                     }
                                     safeMutate { viewModel.retryFromMessage(item.message.id) }
                                 }),
@@ -3623,9 +3658,6 @@ fun ChatScreen(
                                     val prefill = viewModel.editMessage(item.message.id)
                                     if (prefill != null) {
                                         viewModel.setInputText(prefill)
-                                        coroutineScope.launch {
-                                            tracedScrollToItem("EDIT-MSG", 0, 0)
-                                        }
                                         inputFocusRequester.requestFocus()
                                     }
                                 }),
@@ -3772,8 +3804,12 @@ fun ChatScreen(
                                 // safeMutate tears down the selection toolbar
                                 // before the truncation reshuffles the list.
                                 onRerunFromHere = if (!isStreaming) ({
-                                    coroutineScope.launch {
-                                        tracedScrollToItem("RERUN-FROM-TOOL", 0, 0)
+                                    if (streamingFollowEnabled &&
+                                        !userScrolledAway && isNearBottom.value
+                                    ) {
+                                        coroutineScope.launch {
+                                            tracedScrollToItem("RERUN-FROM-TOOL", 0, 0)
+                                        }
                                     }
                                     safeMutate { viewModel.rerunFromToolBlock(item.messageId, item.block.id) }
                                 }) else null,
@@ -3811,7 +3847,13 @@ fun ChatScreen(
                             is FlatChatItem.AssistantError -> InlineErrorBanner(
                                 error = item.error,
                                 onRetry = {
-                                    coroutineScope.launch { tracedScrollToItem("INLINE-RETRY-LAST", 0, 0) }
+                                    if (streamingFollowEnabled &&
+                                        !userScrolledAway && isNearBottom.value
+                                    ) {
+                                        coroutineScope.launch {
+                                            tracedScrollToItem("INLINE-RETRY-LAST", 0, 0)
+                                        }
+                                    }
                                     safeMutate { viewModel.retryLast() }
                                 },
                             )
@@ -4073,7 +4115,8 @@ fun ChatScreen(
                 // instead of measured rects, which keeps it deterministic.
                 val upFabVisible = messages.isNotEmpty() && !isNearBottom.value
                 val downFabVisible =
-                    userScrolledAway && contentOverflows.value && messages.isNotEmpty()
+                    (userScrolledAway || !streamingFollowEnabled) &&
+                        contentOverflows.value && messages.isNotEmpty()
                 val fabBaseDp = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
                 val fabStackTopDp = when {
                     upFabVisible -> fabBaseDp + 46.dp + 36.dp
@@ -4182,7 +4225,9 @@ fun ChatScreen(
                     }
                 }
 
-                if (userScrolledAway && contentOverflows.value && messages.isNotEmpty()) {
+                if ((userScrolledAway || !streamingFollowEnabled) &&
+                    contentOverflows.value && messages.isNotEmpty()
+                ) {
                     val fabBottomPadding = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
                     androidx.compose.material3.FilledIconButton(
                         onClick = {
@@ -5136,17 +5181,20 @@ fun ChatScreen(
                             viewModel.setInputText("")
                             keyboardController?.hide()
                             focusManager.clearFocus()
-                            userScrolledAway = false
                             streamingFollowEnabled = reduceStreamingFollow(
                                 streamingFollowEnabled,
-                                StreamingFollowEvent.ExplicitBottomRequested,
+                                StreamingFollowEvent.UserTurnStarted,
                             )
+                            val followThisTurn = streamingFollowEnabled &&
+                                !userScrolledAway && isNearBottom.value
                             viewModel.sendMessage(toSend)
                             noteSendForInputModePref()
-                            coroutineScope.launch {
-                                tracedScrollToItem("SEND-PATH(keyboard-imeAction)/initial", 0, 0)
-                                kotlinx.coroutines.delay(100)
-                                tracedScrollToItem("SEND-PATH(keyboard-imeAction)/settle", 0, 0)
+                            if (followThisTurn) {
+                                coroutineScope.launch {
+                                    tracedScrollToItem("SEND-PATH(keyboard-imeAction)/initial", 0, 0)
+                                    kotlinx.coroutines.delay(100)
+                                    tracedScrollToItem("SEND-PATH(keyboard-imeAction)/settle", 0, 0)
+                                }
                             }
                             true
                         }
