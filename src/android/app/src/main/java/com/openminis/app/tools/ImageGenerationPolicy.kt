@@ -4,6 +4,7 @@ import com.openminis.app.data.model.ModelEntry
 import com.openminis.app.data.model.ModelGroup
 import com.openminis.app.data.model.ProviderConfig
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 
 internal fun isImageGenerationEntry(entry: ModelEntry): Boolean =
     entry.model.outputModalities.orEmpty().any { it.equals("image", ignoreCase = true) }
@@ -129,13 +130,22 @@ internal suspend fun <T> runImageGenerationFallback(
     invoke: suspend (ModelEntry) -> Result<T>,
 ): Result<ImageGenerationFallbackSuccess<T>> {
     val failures = mutableListOf<String>()
+    val skippedSources = mutableSetOf<String>()
     for (entry in entries) {
+        if (entry.providerInstanceId in skippedSources) continue
         val result = runCatching { invoke(entry) }.getOrElse { Result.failure(it) }
         result.getOrNull()?.let { value ->
             return Result.success(ImageGenerationFallbackSuccess(entry, value, failures.toList()))
         }
         val failure = result.exceptionOrNull()
         failures += "${entry.model.id}：${failure?.message ?: failure?.javaClass?.simpleName ?: "未知错误"}"
+        when (imageFailureDecision(failure)) {
+            ImageFailureDecision.CONTINUE -> Unit
+            ImageFailureDecision.SKIP_SOURCE -> skippedSources += entry.providerInstanceId
+            ImageFailureDecision.STOP -> return Result.failure(
+                failure ?: IllegalStateException(failures.last()),
+            )
+        }
     }
     return Result.failure(
         IllegalStateException(
@@ -143,4 +153,23 @@ internal suspend fun <T> runImageGenerationFallback(
             else "所有生图模型均失败：${failures.joinToString("；")}",
         ),
     )
+}
+
+private enum class ImageFailureDecision { CONTINUE, SKIP_SOURCE, STOP }
+
+/** Prevents duplicate billing/privacy exposure on failures that should not fan out. */
+private fun imageFailureDecision(failure: Throwable?): ImageFailureDecision {
+    if (failure is CancellationException) return ImageFailureDecision.STOP
+    val message = failure?.message.orEmpty().lowercase()
+    if (listOf(
+            "content policy", "content_policy", "safety", "moderation", "blocked prompt",
+            "responsible ai", "policy violation", "内容政策", "安全策略", "审核拒绝",
+        ).any(message::contains)
+    ) return ImageFailureDecision.STOP
+    if (listOf(
+            "http 401", "http 403", "unauthorized", "forbidden", "invalid api key",
+            "authentication", "permission denied", "密钥无效", "未授权",
+        ).any(message::contains)
+    ) return ImageFailureDecision.SKIP_SOURCE
+    return ImageFailureDecision.CONTINUE
 }

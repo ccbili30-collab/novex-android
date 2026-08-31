@@ -38,6 +38,7 @@ import com.openminis.app.provider.anthropic.AnthropicModelsApi
 import com.openminis.app.provider.gemini.GeminiModelsApi
 import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.provider.openrouter.OpenRouterModelsApi
+import com.openminis.app.provider.opencode.OpenCodeFreeModelsApi
 import com.openminis.app.tools.migrateLegacyImageGenerationConfig
 import com.openminis.app.tools.resolveImageGenerationEntries
 import com.openminis.app.tools.resolveOrdinaryAgentLoopEntries
@@ -109,6 +110,7 @@ class ProviderRepository(private val context: Context) {
 
         /** [T-newchat-default-model-fallback-android] Global last-used model entry id. */
         private const val KEY_LAST_USED_ENTRY = "lastUsedModelEntryId"
+        private const val KEY_OPENCODE_FREE_DISCLOSURE = "opencodeFreeDisclosureAccepted"
 
         /**
          * [T-android-provider-voice] Normalize a base URL for shadow-voice
@@ -1452,6 +1454,112 @@ class ProviderRepository(private val context: Context) {
         }
     }
 
+    fun isOpenCodeFreeInstance(instanceId: String): Boolean =
+        instanceId == OpenCodeFreeModelsApi.CHAT_INSTANCE_ID ||
+            instanceId == OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID
+
+    fun openCodeFreeEntries(): List<ModelEntry> = _config.value.modelEntries.filter {
+        isOpenCodeFreeInstance(it.providerInstanceId)
+    }
+
+    fun hasAcceptedOpenCodeFreeDisclosure(): Boolean =
+        prefs.getBoolean(KEY_OPENCODE_FREE_DISCLOSURE, false)
+
+    fun acceptOpenCodeFreeDisclosure() {
+        prefs.edit().putBoolean(KEY_OPENCODE_FREE_DISCLOSURE, true).apply()
+    }
+
+    /**
+     * Refresh the public OpenCode catalog and merge it without changing the
+     * user's checkboxes. New models always start hidden; removed models are
+     * dropped only after both the pricing catalog and the live gateway agree
+     * that they are no longer active.
+     */
+    suspend fun refreshOpenCodeFreeModels(forceCatalogRefresh: Boolean = false): Int {
+        val result = OpenCodeFreeModelsApi.fetch(forceCatalogRefresh)
+        applyOpenCodeFreeCatalog(result.models)
+        return result.models.size
+    }
+
+    fun setOpenCodeFreeModelEnabled(entryId: String, enabled: Boolean): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val index = config.modelEntries.indexOfFirst {
+            it.id == entryId && isOpenCodeFreeInstance(it.providerInstanceId)
+        }
+        if (index < 0) return@synchronized
+        val current = config.modelEntries[index]
+        if (current.isHidden == !enabled) return@synchronized
+        config.modelEntries[index] = current.copy(
+            isHidden = !enabled,
+            userModifiedAt = System.currentTimeMillis(),
+        )
+        saveConfig(config)
+    }
+
+    private fun applyOpenCodeFreeCatalog(models: List<OpenCodeFreeModelsApi.FreeModel>): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val instanceIds = setOf(
+                OpenCodeFreeModelsApi.CHAT_INSTANCE_ID,
+                OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID,
+            )
+            val existingByKey = config.modelEntries
+                .filter { it.providerInstanceId in instanceIds }
+                .associateBy { it.providerInstanceId to it.baseModel.id }
+
+            fun ensureInstance(id: String, responses: Boolean) {
+                val index = config.instances.indexOfFirst { it.id == id }
+                val desired = ProviderInstance(
+                    id = id,
+                    label = "OpenCode Zen",
+                    providerType = ProviderType.openAI,
+                    credentialType = ProviderCredential.apiKey,
+                    isEnabled = true,
+                    createdAt = config.instances.getOrNull(index)?.createdAt ?: System.currentTimeMillis(),
+                    customBaseURL = OpenCodeFreeModelsApi.BASE_URL,
+                    appendV1Suffix = false,
+                    useResponsesAPI = responses,
+                )
+                if (index < 0) config.instances += desired else config.instances[index] = desired
+            }
+
+            ensureInstance(OpenCodeFreeModelsApi.CHAT_INSTANCE_ID, responses = false)
+            ensureInstance(OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID, responses = true)
+
+            val refreshed = models.map { item ->
+                val instanceId = if (item.usesResponses) {
+                    OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID
+                } else {
+                    OpenCodeFreeModelsApi.CHAT_INSTANCE_ID
+                }
+                val prior = existingByKey[instanceId to item.model.id]
+                ModelEntry(
+                    providerInstanceId = instanceId,
+                    baseModel = item.model,
+                    overrides = prior?.overrides ?: ModelOverrides(),
+                    isCustom = false,
+                    isHidden = prior?.isHidden ?: true,
+                    uuid = prior?.id ?: java.util.UUID.randomUUID().toString(),
+                    userModifiedAt = prior?.userModifiedAt,
+                )
+            }
+            val removedIds = config.modelEntries
+                .filter { it.providerInstanceId in instanceIds }
+                .map { it.id }
+                .toSet() - refreshed.map { it.id }.toSet()
+            config.modelEntries.removeAll { it.providerInstanceId in instanceIds }
+            config.modelEntries.addAll(refreshed)
+            if (removedIds.isNotEmpty()) {
+                config.modelGroups.forEach { it.memberEntryIds.removeAll(removedIds) }
+                config.agentLoopModelEntryIds.removeAll(removedIds)
+            }
+            saveConfig(config)
+            saveApiKey(OpenCodeFreeModelsApi.CHAT_INSTANCE_ID, OpenCodeFreeModelsApi.PUBLIC_KEY)
+            saveApiKey(OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID, OpenCodeFreeModelsApi.PUBLIC_KEY)
+        }
+
     fun ensureImageGenerationMigration(): Unit = synchronized(configLock) {
         ensureConfigLoaded()
         val current = _config.value
@@ -1493,6 +1601,191 @@ class ProviderRepository(private val context: Context) {
         }
         saveConfig(config)
     }
+
+    fun reorderImageGenerationProviders(instanceIds: List<String>): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val valid = instanceIds.filter { id -> config.instances.any { it.id == id } }.distinct()
+        val previouslyEnabledGroups = config.imageGenerationGroupIds.toList()
+        config.imageGenerationProviderInstanceIds.clear()
+        config.imageGenerationProviderInstanceIds.addAll(valid)
+        val enabledGroups = valid.mapNotNull { instanceId ->
+            config.modelGroups.getOrNull(imageSourceGroupIndex(config, instanceId))
+                ?.takeIf { it.id in config.imageGenerationGroupIds }
+                ?.id
+        }
+        config.imageGenerationGroupIds.clear()
+        config.imageGenerationGroupIds.addAll(
+            enabledGroups + previouslyEnabledGroups.filterNot { it in enabledGroups },
+        )
+        saveConfig(config)
+    }
+
+    private fun imageSourceGroupId(instanceId: String) = "image-source-$instanceId"
+
+    private fun imageSourceGroupIndex(config: ProviderConfig, instanceId: String): Int {
+        val deterministic = config.modelGroups.indexOfFirst { it.id == imageSourceGroupId(instanceId) }
+        if (deterministic >= 0) return deterministic
+        val entryIds = config.modelEntries
+            .filter { it.providerInstanceId == instanceId }
+            .mapTo(mutableSetOf()) { it.id }
+        return config.modelGroups.indexOfFirst { group ->
+            group.id in config.imageGenerationGroupIds && group.memberEntryIds.any { it in entryIds }
+        }
+    }
+
+    fun imageGenerationGroupForProvider(instanceId: String): ModelGroup? {
+        val config = _config.value
+        return config.modelGroups.getOrNull(imageSourceGroupIndex(config, instanceId))
+    }
+
+    fun ensureImageGenerationGroupForProvider(instanceId: String, name: String): ModelGroup =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val deterministicId = imageSourceGroupId(instanceId)
+            val existingIndex = imageSourceGroupIndex(config, instanceId)
+            if (existingIndex >= 0) {
+                val existing = config.modelGroups[existingIndex]
+                if (existing.name != name) {
+                    config.modelGroups[existingIndex] = existing.copy(name = name)
+                    saveConfig(config)
+                    return@synchronized config.modelGroups[existingIndex]
+                }
+                return@synchronized existing
+            }
+            val created = ModelGroup(id = deterministicId, name = name)
+            config.modelGroups.add(created)
+            saveConfig(config)
+            created
+        }
+
+    /** Merge a fresh source catalog without changing existing checkboxes. */
+    fun replaceImageGenerationModels(instanceId: String, models: List<LLMModel>): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            var groupIndex = imageSourceGroupIndex(config, instanceId)
+            if (groupIndex < 0) {
+                val groupId = imageSourceGroupId(instanceId)
+                val name = config.instances.firstOrNull { it.id == instanceId }?.label ?: "生图来源"
+                config.modelGroups.add(ModelGroup(id = groupId, name = name))
+                groupIndex = config.modelGroups.lastIndex
+            }
+            val selectedIds = config.modelGroups[groupIndex].memberEntryIds.toSet()
+            val existing = config.modelEntries.filter { it.providerInstanceId == instanceId }
+            val existingByModel = existing.associateBy { it.baseModel.id }
+            val incomingIds = models.mapTo(mutableSetOf()) { it.id }
+            val refreshed = models.map { model ->
+                val prior = existingByModel[model.id]
+                ModelEntry(
+                    providerInstanceId = instanceId,
+                    baseModel = model,
+                    overrides = prior?.overrides ?: ModelOverrides(),
+                    isCustom = false,
+                    isHidden = prior?.let { it.id !in selectedIds } ?: true,
+                    uuid = prior?.id ?: java.util.UUID.randomUUID().toString(),
+                    userModifiedAt = prior?.userModifiedAt,
+                )
+            }
+            // Keep manual entries and any currently selected model even when a
+            // transiently incomplete /models response omits it. Unselected
+            // stale catalog rows can be removed safely.
+            val preserved = existing.filter {
+                it.baseModel.id !in incomingIds && (it.isCustom || it.id in selectedIds)
+            }
+            config.modelEntries.removeAll { it.providerInstanceId == instanceId }
+            config.modelEntries.addAll(refreshed + preserved)
+            val survivingById = config.modelEntries.associateBy { it.id }
+            val orderedSelected = config.modelGroups[groupIndex].memberEntryIds.filter { id ->
+                survivingById[id]?.providerInstanceId == instanceId
+            }
+            config.modelGroups[groupIndex] = config.modelGroups[groupIndex].copy(
+                memberEntryIds = orderedSelected.toMutableList(),
+            )
+            saveConfig(config)
+        }
+
+    fun setImageGenerationModelEnabled(instanceId: String, entryId: String, enabled: Boolean): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val entryIndex = config.modelEntries.indexOfFirst {
+                it.id == entryId && it.providerInstanceId == instanceId
+            }
+            if (entryIndex < 0) return@synchronized
+            var groupIndex = imageSourceGroupIndex(config, instanceId)
+            if (groupIndex < 0) {
+                val groupId = imageSourceGroupId(instanceId)
+                val name = config.instances.firstOrNull { it.id == instanceId }?.label ?: "生图来源"
+                config.modelGroups.add(ModelGroup(id = groupId, name = name))
+                groupIndex = config.modelGroups.lastIndex
+            }
+            val current = config.modelEntries[entryIndex]
+            val output = current.overrides.outputModalities ?: current.baseModel.outputModalities
+            config.modelEntries[entryIndex] = current.copy(
+                isHidden = !enabled,
+                overrides = current.overrides.copy(
+                    outputModalities = if (enabled && output.orEmpty().none { it.equals("image", true) }) {
+                        listOf("image")
+                    } else current.overrides.outputModalities,
+                ),
+                userModifiedAt = System.currentTimeMillis(),
+            )
+            val members = config.modelGroups[groupIndex].memberEntryIds.toMutableList()
+            if (enabled && entryId !in members) members.add(entryId)
+            if (!enabled) members.removeAll { it == entryId }
+            config.modelGroups[groupIndex] = config.modelGroups[groupIndex].copy(memberEntryIds = members)
+            val actualGroupId = config.modelGroups[groupIndex].id
+            if (enabled && actualGroupId !in config.imageGenerationGroupIds) config.imageGenerationGroupIds.add(actualGroupId)
+            saveConfig(config)
+        }
+
+    fun reorderImageGenerationModels(instanceId: String, entryIds: List<String>): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val groupIndex = imageSourceGroupIndex(config, instanceId)
+            if (groupIndex < 0) return@synchronized
+            val valid = entryIds.filter { id ->
+                config.modelEntries.any { it.id == id && it.providerInstanceId == instanceId }
+            }.distinct()
+            config.modelGroups[groupIndex] = config.modelGroups[groupIndex].copy(
+                memberEntryIds = valid.toMutableList(),
+            )
+            saveConfig(config)
+        }
+
+    fun setImageModelEndpointMode(entryId: String, mode: ImageEndpointMode?): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val index = config.modelEntries.indexOfFirst { it.id == entryId }
+            if (index < 0) return@synchronized
+            val entry = config.modelEntries[index]
+            config.modelEntries[index] = entry.copy(
+                overrides = entry.overrides.copy(
+                    imageEndpointMode = mode,
+                    imageEndpointResolved = null,
+                ),
+                userModifiedAt = System.currentTimeMillis(),
+            )
+            saveConfig(config)
+        }
+
+    fun setImageModelEndpointResolved(entryId: String, endpoint: ImageEndpointMode): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val index = config.modelEntries.indexOfFirst { it.id == entryId }
+            if (index < 0) return@synchronized
+            val entry = config.modelEntries[index]
+            if (entry.overrides.imageEndpointResolved == endpoint) return@synchronized
+            config.modelEntries[index] = entry.copy(
+                overrides = entry.overrides.copy(imageEndpointResolved = endpoint),
+            )
+            saveConfig(config)
+        }
 
     fun group(id: String): ModelGroup? =
         _config.value.modelGroups.find { it.id == id }
@@ -2127,6 +2420,14 @@ class ProviderRepository(private val context: Context) {
 
 
     suspend fun refreshModels(instance: ProviderInstance) {
+        // Built-in OpenCode Free entries are curated from the zero-cost
+        // models.dev catalog and intersected with the live gateway list. A
+        // generic OpenAI /models refresh would also import paid models and
+        // silently turn this section into an ordinary provider.
+        if (isOpenCodeFreeInstance(instance.id)) {
+            refreshOpenCodeFreeModels(forceCatalogRefresh = false)
+            return
+        }
         var apiKey = loadApiKey(instance.id)
 
         // For OAuth providers, try to refresh the token before using it (mirrors iOS validAccessToken)
@@ -2228,6 +2529,7 @@ class ProviderRepository(private val context: Context) {
      * so we never overwrite hand-edited entries. Mirrors iOS `autoRefreshModels(for:)`.
      */
     private suspend fun autoRefreshModels(instance: ProviderInstance) {
+        if (isOpenCodeFreeInstance(instance.id)) return
         val hasCustom = _config.value.modelEntries.any {
             it.providerInstanceId == instance.id && it.isCustom
         }

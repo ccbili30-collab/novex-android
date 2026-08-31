@@ -270,6 +270,12 @@ data class ModelOverrides(
     // Per-entry tool capability. null = inherit the model/default-enabled
     // behaviour; false = pure chat with no tool definitions or tool history.
     val supportsTools: Boolean? = null,
+    // Image sources provide a default endpoint, while an individual model may
+    // require a different route. null = inherit the source setting.
+    val imageEndpointMode: ImageEndpointMode? = null,
+    // Per-model auto-probe cache. Kept in overrides_json so adding it is
+    // backward-compatible and needs no Room schema change.
+    val imageEndpointResolved: ImageEndpointMode? = null,
 ) {
     val isEmpty: Boolean
         get() = displayName == null
@@ -280,6 +286,8 @@ data class ModelOverrides(
             && outputModalities == null
             && maxThinkingLevel == null
             && supportsTools == null
+            && imageEndpointMode == null
+            && imageEndpointResolved == null
 }
 
 @Serializable

@@ -125,9 +125,13 @@ object GenerateImageTool {
             ?: error("密钥不可用")
         val provider = ProviderFactory.create(instance, credential, entry.model, context)
         val openAI = provider as? OpenAIProvider
-        val effectiveEndpointMode = if (instance.imageEndpointMode == ImageEndpointMode.auto) {
-            instance.imageEndpointResolved ?: ImageEndpointMode.auto
-        } else instance.imageEndpointMode
+        val configuredEndpointMode = entry.overrides.imageEndpointMode ?: instance.imageEndpointMode
+        val cachedEndpointMode = entry.overrides.imageEndpointResolved
+            ?: entry.overrides.imageEndpointMode?.let { null }
+            ?: instance.imageEndpointResolved
+        val effectiveEndpointMode = if (configuredEndpointMode == ImageEndpointMode.auto) {
+            cachedEndpointMode ?: ImageEndpointMode.auto
+        } else configuredEndpointMode
         if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
             try {
                 val response = if (reference == null) {
@@ -135,16 +139,16 @@ object GenerateImageTool {
                 } else {
                     openAI.editImage(prompt, listOf(reference), count, size, quality)
                 }
-                if (instance.imageEndpointMode == ImageEndpointMode.auto) {
-                    repository.setImageEndpointResolved(instance.id, ImageEndpointMode.imagesGenerations)
+                if (configuredEndpointMode == ImageEndpointMode.auto) {
+                    repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.imagesGenerations)
                 }
                 return response
             } catch (failure: Throwable) {
-                if (instance.imageEndpointMode != ImageEndpointMode.auto || !looksLikeMissingImageEndpoint(failure.message)) {
+                if (configuredEndpointMode != ImageEndpointMode.auto || !looksLikeMissingImageEndpoint(failure.message)) {
                     throw failure
                 }
                 Log.i("GenerateImageTool", "${entry.model.id} images endpoint unavailable; using chat route")
-                repository.setImageEndpointResolved(instance.id, ImageEndpointMode.chatCompletions)
+                repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.chatCompletions)
             }
         }
         return provider.sendMessage(

@@ -1,17 +1,30 @@
 package com.openminis.app.ui.settings
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,29 +44,30 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.openminis.app.data.model.ImageEndpointMode
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.tools.isImageGenerationEntry
+import com.openminis.app.provider.image.ImageModelCatalog
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class ImageProtocol(val title: String) {
-    OPENAI("OpenAI（开放人工智能）兼容图片接口"),
-    GEMINI("Gemini（双子星）原生接口"),
+internal enum class ImageProtocol(val title: String) {
+    OPENAI("OpenAI 兼容"),
+    GEMINI("Gemini 原生"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,67 +75,28 @@ private enum class ImageProtocol(val title: String) {
 fun ImageGenerationSettingsScreen(
     providerRepository: ProviderRepository,
     onBack: () -> Unit,
+    onAddSource: () -> Unit,
+    onSourceClick: (String) -> Unit,
 ) {
     val config by providerRepository.config.collectAsState()
-    var editingGroupId by remember { mutableStateOf<String?>(null) }
-    var label by remember { mutableStateOf("") }
-    var apiBase by remember { mutableStateOf("https://api.openai.com/v1") }
-    var apiKey by remember { mutableStateOf("") }
-    var modelsText by remember { mutableStateOf("gpt-image-1") }
-    var protocol by remember { mutableStateOf(ImageProtocol.OPENAI) }
-    var endpointMode by remember { mutableStateOf(ImageEndpointMode.auto) }
-    var protocolExpanded by remember { mutableStateOf(false) }
-    var endpointExpanded by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { providerRepository.ensureImageGenerationMigration() }
     }
-
-    val entryById = config.modelEntries.associateBy { it.id }
-    val imageGroups = config.modelGroups.filter { group ->
-        group.id in config.imageGenerationGroupIds ||
-            group.memberEntryIds.any { id -> entryById[id]?.let(::isImageGenerationEntry) == true }
-    }
-    val enabledIds = config.imageGenerationGroupIds
-
-    fun resetForm() {
-        editingGroupId = null
-        label = ""
-        apiBase = "https://api.openai.com/v1"
-        apiKey = ""
-        modelsText = "gpt-image-1"
-        protocol = ImageProtocol.OPENAI
-        endpointMode = ImageEndpointMode.auto
-        error = null
-    }
-
-    fun editGroup(group: ModelGroup) {
-        val entries = group.memberEntryIds.mapNotNull(entryById::get)
-        val providerIds = entries.map { it.providerInstanceId }.distinct()
-        if (providerIds.size != 1) {
-            error = "该迁移分组包含多个提供商，请保留为自动降级组，或新建独立生图服务。"
-            return
-        }
-        val instance = config.instances.firstOrNull { it.id == providerIds.single() } ?: return
-        editingGroupId = group.id
-        label = group.name
-        apiBase = instance.customBaseURL.orEmpty()
-        apiKey = providerRepository.loadApiKey(instance.id).orEmpty()
-        modelsText = entries.joinToString("，") { it.model.id }
-        protocol = if (instance.providerType == ProviderType.gemini) ImageProtocol.GEMINI else ImageProtocol.OPENAI
-        endpointMode = instance.imageEndpointMode
-        error = null
+    val sources = config.imageGenerationProviderInstanceIds.mapNotNull { id ->
+        config.instances.firstOrNull { it.id == id }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("生图服务") },
+                title = { Text("生图来源") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                     }
+                },
+                actions = {
+                    IconButton(onClick = onAddSource) { Icon(Icons.Default.Add, "新增来源") }
                 },
             )
         },
@@ -131,76 +106,226 @@ fun ImageGenerationSettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("生图分组", style = MaterialTheme.typography.titleMedium)
             Text(
-                "勾选即启用；排序决定自动尝试顺序。一个分组内的多个模型也会依次降级。",
+                "每个来源独立保存地址与密钥；进入来源后拉取、勾选并排序模型。这里的顺序决定跨来源自动降级顺序。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (imageGroups.isEmpty()) {
-                Text("尚未配置生图服务。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (sources.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 42.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("还没有生图来源", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = onAddSource) {
+                        Icon(Icons.Default.Add, null)
+                        Text("新增来源", modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
             }
-            imageGroups.forEach { group ->
-                val enabled = group.id in enabledIds
-                val enabledIndex = enabledIds.indexOf(group.id)
-                val models = group.memberEntryIds.mapNotNull(entryById::get)
+            sources.forEachIndexed { index, source ->
+                val group = providerRepository.imageGenerationGroupForProvider(source.id)
+                val enabled = group?.id in config.imageGenerationGroupIds
+                val selectedCount = group?.memberEntryIds?.size ?: 0
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSourceClick(source.id) }
+                        .padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(
                         checked = enabled,
-                        onCheckedChange = { providerRepository.setImageGenerationGroupEnabled(group.id, it) },
+                        enabled = selectedCount > 0,
+                        onCheckedChange = { checked ->
+                            group?.let { providerRepository.setImageGenerationGroupEnabled(it.id, checked) }
+                        },
                     )
-                    Column(Modifier.weight(1f)) {
-                        Text(group.name, style = MaterialTheme.typography.bodyLarge)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(source.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                         Text(
-                            models.joinToString("、") { it.model.id }.ifBlank { "没有有效的图片模型" },
+                            "${if (source.providerType == ProviderType.gemini) "Gemini 原生" else "OpenAI 兼容"} · 已选 $selectedCount 个模型",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Text(
+                            source.effectiveBaseURL.orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
                     }
                     IconButton(
-                        enabled = enabled && enabledIndex > 0,
+                        enabled = index > 0,
                         onClick = {
-                            val reordered = enabledIds.toMutableList()
-                            val item = reordered.removeAt(enabledIndex)
-                            reordered.add(enabledIndex - 1, item)
-                            providerRepository.reorderImageGenerationGroups(reordered)
+                            val order = sources.map { it.id }.toMutableList()
+                            order.add(index - 1, order.removeAt(index))
+                            providerRepository.reorderImageGenerationProviders(order)
                         },
                     ) { Icon(Icons.Default.ArrowUpward, "上移") }
                     IconButton(
-                        enabled = enabled && enabledIndex >= 0 && enabledIndex < enabledIds.lastIndex,
+                        enabled = index < sources.lastIndex,
                         onClick = {
-                            val reordered = enabledIds.toMutableList()
-                            val item = reordered.removeAt(enabledIndex)
-                            reordered.add(enabledIndex + 1, item)
-                            providerRepository.reorderImageGenerationGroups(reordered)
+                            val order = sources.map { it.id }.toMutableList()
+                            order.add(index + 1, order.removeAt(index))
+                            providerRepository.reorderImageGenerationProviders(order)
                         },
                     ) { Icon(Icons.Default.ArrowDownward, "下移") }
-                    IconButton(onClick = { editGroup(group) }) {
-                        Icon(Icons.Default.Edit, "编辑")
-                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                 }
-                HorizontalDivider()
+                if (index < sources.lastIndex) HorizontalDivider()
             }
+            Spacer(Modifier.height(40.dp))
+        }
+    }
+}
 
-            Spacer(Modifier.height(4.dp))
-            Text(if (editingGroupId == null) "新增生图服务" else "编辑生图服务", style = MaterialTheme.typography.titleMedium)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ImageGenerationSourceScreen(
+    sourceId: String?,
+    providerRepository: ProviderRepository,
+    onBack: () -> Unit,
+) {
+    providerRepository.config.collectAsState().value
+    val scope = rememberCoroutineScope()
+    val initial = remember(sourceId) { sourceId?.let(providerRepository::instance) }
+    var savedId by remember(sourceId) { mutableStateOf(initial?.id) }
+    var label by remember(sourceId) { mutableStateOf(initial?.label.orEmpty()) }
+    var apiBase by remember(sourceId) { mutableStateOf(initial?.customBaseURL ?: "https://api.openai.com/v1") }
+    var apiKey by remember(sourceId) {
+        mutableStateOf(initial?.let { providerRepository.loadApiKey(it.id) }.orEmpty())
+    }
+    var protocol by remember(sourceId) {
+        mutableStateOf(if (initial?.providerType == ProviderType.gemini) ImageProtocol.GEMINI else ImageProtocol.OPENAI)
+    }
+    var sourceEndpoint by remember(sourceId) {
+        mutableStateOf(initial?.imageEndpointMode ?: ImageEndpointMode.auto)
+    }
+    var protocolExpanded by remember { mutableStateOf(false) }
+    var endpointExpanded by remember { mutableStateOf(false) }
+    var pulling by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var manualModel by remember { mutableStateOf("") }
+    var deleteConfirm by remember { mutableStateOf(false) }
+
+    fun validate(): String? {
+        val base = apiBase.trim()
+        if (label.isBlank()) return "请填写来源名称"
+        if (!base.startsWith("https://") && !base.startsWith("http://")) return "接口地址必须以 https:// 或 http:// 开头"
+        val official = base.contains("api.openai.com", true) || base.contains("generativelanguage.googleapis.com", true)
+        if (official && apiKey.isBlank()) return "官方接口需要 API Key"
+        return null
+    }
+
+    fun saveSource(): String? {
+        validate()?.let { status = it; return null }
+        val id = savedId ?: UUID.randomUUID().toString()
+        val previous = providerRepository.instance(id)
+        val providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI
+        if (previous != null && previous.providerType != providerType) {
+            status = "已有来源不能直接切换协议，请新建来源"
+            return null
+        }
+        val instance = (previous ?: ProviderInstance(
+            id = id,
+            label = label.trim(),
+            providerType = providerType,
+            credentialType = ProviderCredential.apiKey,
+        )).copy(
+            label = label.trim(),
+            customBaseURL = apiBase.trim().trimEnd('/'),
+            appendV1Suffix = false,
+            imageEndpointMode = if (providerType == ProviderType.openAI) sourceEndpoint else ImageEndpointMode.chatCompletions,
+            imageEndpointResolved = null,
+            isEnabled = true,
+        )
+        if (previous == null) {
+            providerRepository.addInstance(instance)
+            providerRepository.entriesFor(id).forEach { providerRepository.removeEntry(it.id) }
+        } else {
+            providerRepository.updateInstance(instance)
+        }
+        providerRepository.saveApiKey(id, apiKey.trim())
+        providerRepository.setImageGenerationProvider(id, true)
+        providerRepository.ensureImageGenerationGroupForProvider(id, label.trim())
+        savedId = id
+        status = "已保存"
+        return id
+    }
+
+    fun pullModels() {
+        val id = saveSource() ?: return
+        if (pulling) return
+        scope.launch {
+            pulling = true
+            status = "正在拉取模型…"
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    ImageModelCatalog.fetch(
+                        providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI,
+                        baseURL = apiBase.trim().trimEnd('/'),
+                        apiKey = apiKey.trim(),
+                    )
+                }
+            }
+            result.onSuccess { models ->
+                if (models.isEmpty()) {
+                    status = "接口返回成功，但没有可用模型；已保留现有列表"
+                } else {
+                    providerRepository.replaceImageGenerationModels(id, models)
+                    status = "已拉取 ${models.size} 个模型"
+                }
+            }.onFailure { error -> status = "拉取失败：${error.message ?: error::class.java.simpleName}" }
+            pulling = false
+        }
+    }
+
+    val currentId = savedId
+    val entries = currentId?.let(providerRepository::entriesFor).orEmpty()
+    val group = currentId?.let(providerRepository::imageGenerationGroupForProvider)
+    val selectedIds = group?.memberEntryIds.orEmpty()
+    val byId = entries.associateBy { it.id }
+    val orderedEntries = selectedIds.mapNotNull(byId::get) + entries.filter { it.id !in selectedIds }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (initial == null) "新增生图来源" else "编辑生图来源") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                },
+                actions = {
+                    if (initial != null) {
+                        IconButton(onClick = { deleteConfirm = true }) { Icon(Icons.Default.Delete, "删除来源") }
+                    }
+                    TextButton(onClick = { saveSource() }) { Text("保存") }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             OutlinedTextField(
                 value = label,
-                onValueChange = { label = it; error = null },
-                label = { Text("分组名称") },
-                placeholder = { Text("例如：主生图线路") },
+                onValueChange = { label = it; status = null },
+                label = { Text("来源名称") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            Column {
+            Box {
                 OutlinedButton(onClick = { protocolExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(protocol.title, modifier = Modifier.weight(1f))
+                    Text("协议：${protocol.title}", modifier = Modifier.weight(1f))
                 }
                 DropdownMenu(expanded = protocolExpanded, onDismissRequest = { protocolExpanded = false }) {
                     ImageProtocol.entries.forEach { option ->
@@ -219,172 +344,182 @@ fun ImageGenerationSettingsScreen(
             }
             OutlinedTextField(
                 value = apiBase,
-                onValueChange = { apiBase = it; error = null },
-                label = { Text("接口地址") },
+                onValueChange = { apiBase = it; status = null },
+                label = { Text("API 地址") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             )
             OutlinedTextField(
                 value = apiKey,
-                onValueChange = { apiKey = it; error = null },
-                label = { Text("API（应用程序接口）密钥") },
+                onValueChange = { apiKey = it; status = null },
+                label = { Text("API Key（自建或免密接口可留空）") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
-            OutlinedTextField(
-                value = modelsText,
-                onValueChange = { modelsText = it; error = null },
-                label = { Text("模型（多个用逗号分隔）") },
-                placeholder = { Text("gpt-image-1，gpt-image-2") },
-                modifier = Modifier.fillMaxWidth(),
-            )
             if (protocol == ImageProtocol.OPENAI) {
-                Column {
+                Box {
                     OutlinedButton(onClick = { endpointExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            when (endpointMode) {
-                                ImageEndpointMode.auto -> "图片端点：自动检测"
-                                ImageEndpointMode.imagesGenerations -> "图片端点：/images/generations"
-                                ImageEndpointMode.chatCompletions -> "图片端点：对话接口"
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
+                        Text("默认端点：${sourceEndpoint.title()}", modifier = Modifier.weight(1f))
                     }
                     DropdownMenu(expanded = endpointExpanded, onDismissRequest = { endpointExpanded = false }) {
                         ImageEndpointMode.entries.forEach { mode ->
                             DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        when (mode) {
-                                            ImageEndpointMode.auto -> "自动检测"
-                                            ImageEndpointMode.imagesGenerations -> "/images/generations"
-                                            ImageEndpointMode.chatCompletions -> "对话接口"
-                                        },
-                                    )
-                                },
-                                onClick = { endpointMode = mode; endpointExpanded = false },
+                                text = { Text(mode.title()) },
+                                onClick = { sourceEndpoint = mode; endpointExpanded = false },
                             )
                         }
                     }
                 }
             }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                if (editingGroupId != null) {
-                    TextButton(onClick = ::resetForm) { Text("取消编辑") }
-                }
-                Button(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        val models = modelsText.split(',', '，', '\n')
-                            .map(String::trim)
-                            .filter(String::isNotEmpty)
-                            .distinct()
-                        val base = apiBase.trim().trimEnd('/')
-                        error = when {
-                            label.isBlank() -> "请填写分组名称"
-                            !base.startsWith("https://") && !base.startsWith("http://") -> "接口地址必须以 https:// 或 http:// 开头"
-                            apiKey.isBlank() -> "请填写 API（应用程序接口）密钥"
-                            models.isEmpty() -> "请至少填写一个生图模型"
-                            else -> null
-                        }
-                        if (error == null) {
-                            runCatching {
-                                saveImageGenerationService(
-                                    repository = providerRepository,
-                                    editingGroupId = editingGroupId,
-                                    label = label.trim(),
-                                    base = base,
-                                    key = apiKey.trim(),
-                                    models = models,
-                                    protocol = protocol,
-                                    endpointMode = endpointMode,
-                                )
-                            }.onSuccess { resetForm() }
-                                .onFailure { error = it.message ?: it.javaClass.simpleName }
-                        }
-                    },
-                ) {
-                    Icon(if (editingGroupId == null) Icons.Default.Image else Icons.Default.Save, null)
-                    Text(if (editingGroupId == null) "添加并启用" else "保存修改", modifier = Modifier.padding(start = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { saveSource() }, modifier = Modifier.weight(1f)) { Text("保存来源") }
+                OutlinedButton(onClick = ::pullModels, enabled = !pulling, modifier = Modifier.weight(1f)) {
+                    if (pulling) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, null)
+                    Text("拉取模型", modifier = Modifier.padding(start = 6.dp))
                 }
             }
-            Spacer(Modifier.height(24.dp))
+            status?.let {
+                Text(
+                    it,
+                    color = if (it.contains("失败") || it.startsWith("请") || it.contains("不能")) {
+                        MaterialTheme.colorScheme.error
+                    } else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            if (currentId != null) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text("模型", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "勾选决定是否参与生图；已选模型排在前面，其顺序决定此来源内的降级顺序。能力未声明的模型仍可手动启用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = manualModel,
+                        onValueChange = { manualModel = it },
+                        label = { Text("手动添加模型 ID") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    Button(
+                        enabled = manualModel.isNotBlank(),
+                        onClick = {
+                            val modelId = manualModel.trim()
+                            val existingEntry = providerRepository.entriesFor(currentId).firstOrNull { it.model.id == modelId }
+                            val entry = existingEntry ?: ModelEntry(
+                                providerInstanceId = currentId,
+                                baseModel = LLMModel(
+                                    id = modelId,
+                                    displayName = LLMModel.modelDisplayName(modelId),
+                                    provider = label.ifBlank { "Custom" },
+                                    inputModalities = listOf("text", "image"),
+                                    outputModalities = listOf("image"),
+                                ),
+                                isCustom = true,
+                            ).also(providerRepository::addEntry)
+                            providerRepository.setImageGenerationModelEnabled(currentId, entry.id, true)
+                            manualModel = ""
+                        },
+                    ) { Icon(Icons.Default.Add, "添加") }
+                }
+                orderedEntries.forEach { entry ->
+                    val selected = entry.id in selectedIds
+                    val selectedIndex = selectedIds.indexOf(entry.id)
+                    ImageModelRow(
+                        entry = entry,
+                        selected = selected,
+                        showEndpoint = protocol == ImageProtocol.OPENAI,
+                        onSelected = { providerRepository.setImageGenerationModelEnabled(currentId, entry.id, it) },
+                        onEndpoint = { providerRepository.setImageModelEndpointMode(entry.id, it) },
+                        onMoveUp = if (selected && selectedIndex > 0) {
+                            {
+                            val order = selectedIds.toMutableList()
+                            order.add(selectedIndex - 1, order.removeAt(selectedIndex))
+                            providerRepository.reorderImageGenerationModels(currentId, order)
+                            }
+                        } else null,
+                        onMoveDown = if (selected && selectedIndex in 0 until selectedIds.lastIndex) {
+                            {
+                            val order = selectedIds.toMutableList()
+                            order.add(selectedIndex + 1, order.removeAt(selectedIndex))
+                            providerRepository.reorderImageGenerationModels(currentId, order)
+                            }
+                        } else null,
+                    )
+                    HorizontalDivider()
+                }
+            }
+            Spacer(Modifier.height(40.dp))
+        }
+    }
+
+    if (deleteConfirm && currentId != null) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirm = false },
+            title = { Text("删除这个生图来源？") },
+            text = { Text("来源、密钥和它的模型会被移除，其他来源不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    providerRepository.removeInstance(currentId)
+                    deleteConfirm = false
+                    onBack()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteConfirm = false }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun ImageModelRow(
+    entry: ModelEntry,
+    selected: Boolean,
+    showEndpoint: Boolean,
+    onSelected: (Boolean) -> Unit,
+    onEndpoint: (ImageEndpointMode?) -> Unit,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?,
+) {
+    var endpointMenu by remember(entry.id) { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onSelected(!selected) }.padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = selected, onCheckedChange = onSelected)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(entry.model.displayName, style = MaterialTheme.typography.bodyMedium)
+            Text(entry.model.id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (showEndpoint && selected) {
+                Box {
+                    TextButton(onClick = { endpointMenu = true }) {
+                        Text("端点：${entry.overrides.imageEndpointMode?.title() ?: "跟随来源"}")
+                    }
+                    DropdownMenu(expanded = endpointMenu, onDismissRequest = { endpointMenu = false }) {
+                        DropdownMenuItem(text = { Text("跟随来源") }, onClick = { onEndpoint(null); endpointMenu = false })
+                        ImageEndpointMode.entries.forEach { mode ->
+                            DropdownMenuItem(text = { Text(mode.title()) }, onClick = { onEndpoint(mode); endpointMenu = false })
+                        }
+                    }
+                }
+            }
+        }
+        IconButton(enabled = onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
+            Icon(Icons.Default.ArrowUpward, "上移")
+        }
+        IconButton(enabled = onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
+            Icon(Icons.Default.ArrowDownward, "下移")
         }
     }
 }
 
-private fun saveImageGenerationService(
-    repository: ProviderRepository,
-    editingGroupId: String?,
-    label: String,
-    base: String,
-    key: String,
-    models: List<String>,
-    protocol: ImageProtocol,
-    endpointMode: ImageEndpointMode,
-) {
-    val existingGroup = editingGroupId?.let(repository::group)
-    val existingEntries = existingGroup?.memberEntryIds.orEmpty()
-        .mapNotNull { id -> repository.config.value.modelEntries.firstOrNull { it.id == id } }
-    val existingProviderId = existingEntries.map { it.providerInstanceId }.distinct().singleOrNull()
-    val existingProvider = existingProviderId?.let(repository::instance)
-    val providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI
-    val instance = (existingProvider ?: ProviderInstance(
-        id = UUID.randomUUID().toString(),
-        label = label,
-        providerType = providerType,
-        credentialType = ProviderCredential.apiKey,
-    )).copy(
-        label = label,
-        customBaseURL = base,
-        appendV1Suffix = protocol == ImageProtocol.OPENAI && !base.endsWith("/v1"),
-        imageEndpointMode = if (protocol == ImageProtocol.OPENAI) endpointMode else ImageEndpointMode.chatCompletions,
-        imageEndpointResolved = null,
-        isEnabled = true,
-    )
-    if (existingProvider == null) {
-        repository.addInstance(instance)
-        // Dedicated image providers must not retain text-model seeds added for
-        // an official endpoint.
-        repository.entriesFor(instance.id).forEach { repository.removeEntry(it.id) }
-    } else {
-        require(existingProvider.providerType == providerType) {
-            "编辑时不能直接切换协议，请新建另一个生图服务"
-        }
-        repository.updateInstance(instance)
-    }
-    repository.saveApiKey(instance.id, key)
-    repository.setImageGenerationProvider(instance.id, true)
-
-    val currentImageEntries = repository.entriesFor(instance.id).filter(::isImageGenerationEntry)
-    currentImageEntries.filter { it.model.id !in models }.forEach { repository.removeEntry(it.id) }
-    for (modelId in models) {
-        if (repository.entriesFor(instance.id).none { it.model.id == modelId }) {
-            repository.addEntry(
-                ModelEntry(
-                    providerInstanceId = instance.id,
-                    baseModel = LLMModel(
-                        id = modelId,
-                        displayName = LLMModel.modelDisplayName(modelId),
-                        provider = label,
-                        inputModalities = listOf("text", "image"),
-                        outputModalities = listOf("image"),
-                    ),
-                    isCustom = true,
-                ),
-            )
-        }
-    }
-    val memberIds = repository.entriesFor(instance.id)
-        .filter { it.model.id in models && isImageGenerationEntry(it) }
-        .map { it.id }
-        .toMutableList()
-    val group = existingGroup?.copy(name = label, memberEntryIds = memberIds)
-        ?: ModelGroup(name = label, memberEntryIds = memberIds)
-    if (existingGroup == null) repository.addGroup(group) else repository.updateGroup(group)
-    repository.setImageGenerationGroupEnabled(group.id, true)
-    repository.ensureImageGenerationMigration()
+private fun ImageEndpointMode.title(): String = when (this) {
+    ImageEndpointMode.auto -> "自动检测"
+    ImageEndpointMode.imagesGenerations -> "/images/generations"
+    ImageEndpointMode.chatCompletions -> "/chat/completions"
 }

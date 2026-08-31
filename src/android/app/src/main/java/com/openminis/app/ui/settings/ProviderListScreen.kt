@@ -22,8 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.VpnKey
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -38,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +60,9 @@ import sh.calvin.reorderable.ReorderableColumn
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,12 +74,38 @@ fun ProviderListScreen(
     onVoiceServiceClick: (String) -> Unit = {},
 ) {
     val config by providerRepository.config.collectAsState()
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            providerRepository.ensureImageGenerationMigration()
+    val scope = rememberCoroutineScope()
+    var openCodeRefreshing by remember { mutableStateOf(false) }
+    var openCodeStatus by remember { mutableStateOf<String?>(null) }
+    var openCodePendingEntryId by remember { mutableStateOf<String?>(null) }
+
+    fun refreshOpenCode(force: Boolean) {
+        if (openCodeRefreshing) return
+        scope.launch {
+            openCodeRefreshing = true
+            openCodeStatus = null
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    providerRepository.refreshOpenCodeFreeModels(forceCatalogRefresh = force)
+                }
+            }
+            openCodeStatus = result.fold(
+                onSuccess = { count -> "已同步 $count 个当前可用的免费模型" },
+                onFailure = { error -> "同步失败：${error.message ?: error::class.java.simpleName}" },
+            )
+            openCodeRefreshing = false
         }
     }
-    val instances = config.instances.filterNot { it.id in config.imageGenerationProviderInstanceIds }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            providerRepository.ensureImageGenerationMigration()
+        }
+        refreshOpenCode(force = false)
+    }
+    val instances = config.instances.filterNot {
+        it.id in config.imageGenerationProviderInstanceIds || providerRepository.isOpenCodeFreeInstance(it.id)
+    }
     val groupedInstances = instances.groupBy { it.providerType }
     val context = LocalContext.current
 
@@ -125,6 +160,20 @@ fun ProviderListScreen(
             }
         },
     ) {
+        OpenCodeFreeSection(
+            entries = providerRepository.openCodeFreeEntries(),
+            refreshing = openCodeRefreshing,
+            status = openCodeStatus,
+            onRefresh = { refreshOpenCode(force = true) },
+            onCheckedChange = { entryId, checked ->
+                if (checked && !providerRepository.hasAcceptedOpenCodeFreeDisclosure()) {
+                    openCodePendingEntryId = entryId
+                } else {
+                    providerRepository.setOpenCodeFreeModelEnabled(entryId, checked)
+                }
+            },
+        )
+
         if (instances.isEmpty()) {
             Column(
                 modifier = Modifier
@@ -320,6 +369,103 @@ fun ProviderListScreen(
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_import_provider), style = MaterialTheme.typography.bodyLarge)
                 }
+            }
+        }
+    }
+
+    if (openCodePendingEntryId != null) {
+        AlertDialog(
+            onDismissRequest = { openCodePendingEntryId = null },
+            title = { Text("启用 OpenCode 免费模型？") },
+            text = {
+                Text(
+                    "这是实验性服务。请求由本机直接发送到 OpenCode，受其公共 IP 每日限额、可用性和数据政策约束；不同免费模型的数据使用规则可能不同，请勿发送隐私或机密内容。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        providerRepository.acceptOpenCodeFreeDisclosure()
+                        openCodePendingEntryId?.let {
+                            providerRepository.setOpenCodeFreeModelEnabled(it, true)
+                        }
+                        openCodePendingEntryId = null
+                    },
+                ) { Text("了解并启用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { openCodePendingEntryId = null }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun OpenCodeFreeSection(
+    entries: List<com.openminis.app.data.model.ModelEntry>,
+    refreshing: Boolean,
+    status: String?,
+    onRefresh: () -> Unit,
+    onCheckedChange: (String, Boolean) -> Unit,
+) {
+    SettingsSection(
+        header = "OpenCode 免费模型 · 实验性",
+        footer = "无需填写 API Key。每个用户由本机直接请求 OpenCode；免费额度与模型可能随时变化。",
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("免费模型", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(
+                    when {
+                        refreshing -> "正在同步当前模型…"
+                        status != null -> status
+                        else -> "勾选后即可出现在模型选择器中"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (status?.startsWith("同步失败") == true) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            if (refreshing) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "刷新 OpenCode 模型")
+                }
+            }
+        }
+        if (entries.isNotEmpty()) HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
+        entries.forEachIndexed { index, entry ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onCheckedChange(entry.id, entry.isHidden) }
+                    .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(entry.model.displayName, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        entry.model.id,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Checkbox(
+                    checked = !entry.isHidden,
+                    onCheckedChange = { onCheckedChange(entry.id, it) },
+                )
+            }
+            if (index < entries.lastIndex) {
+                HorizontalDivider(modifier = Modifier.padding(start = 14.dp, end = 14.dp))
             }
         }
     }

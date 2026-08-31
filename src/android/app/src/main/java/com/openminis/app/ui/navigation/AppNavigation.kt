@@ -42,6 +42,7 @@ import com.openminis.app.ui.settings.ShadowVoiceDetailScreen
 import com.openminis.app.ui.settings.AddProviderScreen
 import com.openminis.app.ui.settings.NovexProviderSetupScreen
 import com.openminis.app.ui.settings.ImageGenerationSettingsScreen
+import com.openminis.app.ui.settings.ImageGenerationSourceScreen
 import com.openminis.app.ui.settings.ModelEntryDetailScreen
 import com.openminis.app.ui.settings.ModelGroupDetailScreen
 import com.openminis.app.ui.settings.ModelGroupsScreen
@@ -97,6 +98,8 @@ object Routes {
     const val PROVIDER_LIST = "providers"
     const val ADD_PROVIDER = "add_provider"
     const val IMAGE_GENERATION_SETTINGS = "image_generation_settings"
+    const val IMAGE_GENERATION_SOURCE = "image_generation_source/{sourceId}"
+    fun imageGenerationSource(sourceId: String) = "image_generation_source/$sourceId"
     const val PROVIDER_DETAIL = "provider/{instanceId}"
     /** [T-android-provider-voice] Read-only shadow Voice Service detail. */
     const val SHADOW_VOICE_DETAIL = "voice_service/{instanceId}"
@@ -812,6 +815,20 @@ fun AppNavigation(
 
         composable(Routes.IMAGE_GENERATION_SETTINGS) {
             ImageGenerationSettingsScreen(
+                providerRepository = providerRepository,
+                onBack = { navController.safePopBackStack() },
+                onAddSource = { navController.safeNavigate(Routes.imageGenerationSource("new")) },
+                onSourceClick = { sourceId -> navController.safeNavigate(Routes.imageGenerationSource(sourceId)) },
+            )
+        }
+
+        composable(
+            route = Routes.IMAGE_GENERATION_SOURCE,
+            arguments = listOf(navArgument("sourceId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val raw = backStackEntry.arguments?.getString("sourceId") ?: return@composable
+            ImageGenerationSourceScreen(
+                sourceId = raw.takeUnless { it == "new" },
                 providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
             )

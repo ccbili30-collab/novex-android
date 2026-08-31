@@ -1,8 +1,10 @@
 package com.openminis.app.tools
 
 import com.openminis.app.data.model.LLMModel
+import com.openminis.app.data.model.ImageEndpointMode
 import com.openminis.app.data.model.ModelEntry
 import com.openminis.app.data.model.ModelGroup
+import com.openminis.app.data.model.ModelOverrides
 import com.openminis.app.data.model.ProviderConfig
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
@@ -73,7 +75,7 @@ class ImageGenerationPolicyTest {
     fun `generation fallback continues after a failed model and reports attempts`() = runBlocking {
         val attempted = mutableListOf<String>()
 
-        val result = runImageGenerationFallback(listOf(firstEntry, secondEntry)) { entry ->
+        val result = runImageGenerationFallback<String>(listOf(firstEntry, secondEntry)) { entry ->
             attempted += entry.id
             if (entry.id == firstEntry.id) Result.failure(IllegalStateException("HTTP 503"))
             else Result.success("/var/minis/attachments/generated.png")
@@ -83,6 +85,34 @@ class ImageGenerationPolicyTest {
         assertTrue(result.isSuccess)
         assertEquals(secondEntry.id, result.getOrThrow().entry.id)
         assertEquals(listOf("image-a：HTTP 503"), result.getOrThrow().failures)
+    }
+
+    @Test
+    fun `authentication failure skips remaining models from the same source`() = runBlocking {
+        val sameSource = imageEntry("entry-a2", firstProvider.id, "image-a2")
+        val attempted = mutableListOf<String>()
+
+        val result = runImageGenerationFallback(listOf(firstEntry, sameSource, secondEntry)) { entry ->
+            attempted += entry.id
+            if (entry.providerInstanceId == firstProvider.id) Result.failure(IllegalStateException("HTTP 401 invalid API key"))
+            else Result.success("ok")
+        }
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf(firstEntry.id, secondEntry.id), attempted)
+    }
+
+    @Test
+    fun `content policy rejection stops without forwarding prompt to another source`() = runBlocking {
+        val attempted = mutableListOf<String>()
+
+        val result = runImageGenerationFallback<String>(listOf(firstEntry, secondEntry)) { entry ->
+            attempted += entry.id
+            Result.failure(IllegalStateException("content policy violation"))
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf(firstEntry.id), attempted)
     }
 
     @Test
@@ -101,6 +131,26 @@ class ImageGenerationPolicyTest {
 
         assertEquals(listOf(group.id), restored.imageGenerationGroupIds)
         assertEquals(listOf(firstProvider.id), restored.imageGenerationProviderInstanceIds)
+    }
+
+    @Test
+    fun `per-model image endpoint survives database mapping`() {
+        val entry = firstEntry.copy(
+            overrides = ModelOverrides(
+                imageEndpointMode = ImageEndpointMode.chatCompletions,
+                imageEndpointResolved = ImageEndpointMode.chatCompletions,
+            ),
+        )
+        val config = ProviderConfig(
+            instances = mutableListOf(firstProvider),
+            modelEntries = mutableListOf(entry),
+        )
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+        val restored = config.toSnapshot(json).toProviderConfig(json).modelEntries.single()
+
+        assertEquals(ImageEndpointMode.chatCompletions, restored.overrides.imageEndpointMode)
+        assertEquals(ImageEndpointMode.chatCompletions, restored.overrides.imageEndpointResolved)
     }
 
     @Test

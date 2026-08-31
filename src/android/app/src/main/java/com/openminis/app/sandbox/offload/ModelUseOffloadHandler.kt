@@ -1098,8 +1098,12 @@ class ModelUseOffloadHandler(
             return null
         }
 
+        val entryMode = entry.overrides.imageEndpointMode
         val effectiveMode = when {
             cfg.endpointOverride != null -> cfg.endpointOverride
+            entryMode == com.openminis.app.data.model.ImageEndpointMode.auto ->
+                entry.overrides.imageEndpointResolved ?: com.openminis.app.data.model.ImageEndpointMode.auto
+            entryMode != null -> entryMode
             isPureImageGenerator -> com.openminis.app.data.model.ImageEndpointMode.imagesGenerations
             instance.imageEndpointMode == com.openminis.app.data.model.ImageEndpointMode.auto &&
                 instance.imageEndpointResolved != null -> instance.imageEndpointResolved!!
@@ -1108,7 +1112,8 @@ class ModelUseOffloadHandler(
         Log.i(
             TAG,
             "[ModelUseRoute] image route model=${entry.model.id} mode=${instance.imageEndpointMode} " +
-                "resolved=${instance.imageEndpointResolved} pure=$isPureImageGenerator override=${cfg.endpointOverride} " +
+                "resolved=${instance.imageEndpointResolved} entryMode=$entryMode " +
+                "entryResolved=${entry.overrides.imageEndpointResolved} pure=$isPureImageGenerator override=${cfg.endpointOverride} " +
                 "effective=$effectiveMode",
         )
 
@@ -1150,8 +1155,8 @@ class ModelUseOffloadHandler(
                     openAI.editImage(prompt, inputImages, cfg.n, cfg.size, cfg.quality)
                 }
             }.also {
-                providerRepository.setImageEndpointResolved(
-                    instance.id, com.openminis.app.data.model.ImageEndpointMode.imagesGenerations,
+                providerRepository.setImageModelEndpointResolved(
+                    entry.id, com.openminis.app.data.model.ImageEndpointMode.imagesGenerations,
                 )
             }
         } catch (e: Throwable) {
@@ -1160,8 +1165,8 @@ class ModelUseOffloadHandler(
                 e is com.openminis.app.data.model.LLMError.InvalidApiKey) && looksLikeEndpointMissing(msg)
             if (routeMissing) {
                 Log.i(TAG, "[ModelUseRoute] auto probe → route missing (${msg.take(120)}) — caching chat_completions, falling back")
-                providerRepository.setImageEndpointResolved(
-                    instance.id, com.openminis.app.data.model.ImageEndpointMode.chatCompletions,
+                providerRepository.setImageModelEndpointResolved(
+                    entry.id, com.openminis.app.data.model.ImageEndpointMode.chatCompletions,
                 )
                 return null // fall through to chat path
             }

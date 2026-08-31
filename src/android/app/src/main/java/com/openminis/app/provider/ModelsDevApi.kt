@@ -137,6 +137,43 @@ object ModelsDevApi {
         }
     }
 
+    /**
+     * Return the provider models that the catalog explicitly marks as active
+     * and free for both input and output.  This is intentionally data-driven:
+     * some free models (for example OpenCode's `big-pickle`) do not have a
+     * `-free` suffix, while old `-free` models can remain in the live gateway
+     * list after the catalog has marked them deprecated.
+     */
+    fun freeActiveModels(providerId: String): List<CatalogModel> {
+        val provider = loadRegistry()?.get(providerId) ?: return emptyList()
+        return provider.models.values.mapNotNull { model ->
+            if (model.status.equals("deprecated", ignoreCase = true)) return@mapNotNull null
+            if (model.inputCost != 0.0 || model.outputCost != 0.0) return@mapNotNull null
+            CatalogModel(
+                model = LLMModel(
+                    id = model.id,
+                    displayName = model.name ?: model.id,
+                    provider = provider.name ?: provider.id,
+                    contextWindow = model.contextWindow,
+                    maxOutputTokens = model.maxOutputTokens,
+                    supportsReasoning = model.reasoning,
+                    interleavedReasoningField = model.interleavedField,
+                    inputModalities = model.inputModalities,
+                    outputModalities = model.outputModalities,
+                    reasoningEffortValues = model.reasoningEffortValues,
+                    declaresNoEffortTiers = if (model.declaresNoEffortTiers) true else null,
+                    supportsTools = model.supportsTools,
+                ),
+                providerPackage = model.providerPackage ?: provider.npm,
+            )
+        }
+    }
+
+    /** Force a foreground catalog refresh for an explicit user action. */
+    suspend fun refreshNow(): Boolean = withContext(Dispatchers.IO) {
+        refreshFromNetwork()
+    }
+
     // MARK: - Apply models.dev data
 
     private fun applyDevData(model: LLMModel, devModel: ModelDevEntry): LLMModel {
@@ -270,16 +307,16 @@ object ModelsDevApi {
         }
     }
 
-    private fun refreshFromNetwork() {
-        try {
+    private fun refreshFromNetwork(): Boolean {
+        return try {
             val request = Request.Builder().url(SOURCE_URL).build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.e(TAG, "models.dev HTTP error: ${response.code}")
                 response.close()
-                return
+                return false
             }
-            val body = response.body?.string() ?: return
+            val body = response.body?.string() ?: return false
             response.close()
 
             val parsed = parseRegistry(body)
@@ -290,9 +327,13 @@ object ModelsDevApi {
                 }
                 saveDiskCache(body)
                 Log.d(TAG, "Background-refreshed models.dev registry: ${parsed.size} providers")
+                true
+            } else {
+                false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch models.dev: ${e.message}")
+            false
         }
     }
 
@@ -319,7 +360,8 @@ object ModelsDevApi {
     private fun parseProviderEntry(id: String, obj: JSONObject): ProviderEntry? {
         val name = obj.optString("name", "").ifEmpty { null }
         val api = obj.optString("api", "").ifEmpty { null }
-        val modelsObj = obj.optJSONObject("models") ?: return ProviderEntry(id, name, api, emptyMap())
+        val npm = obj.optString("npm", "").ifEmpty { null }
+        val modelsObj = obj.optJSONObject("models") ?: return ProviderEntry(id, name, api, npm, emptyMap())
 
         val models = mutableMapOf<String, ModelDevEntry>()
         val modelKeys = modelsObj.keys()
@@ -328,7 +370,7 @@ object ModelsDevApi {
             val modelObj = modelsObj.optJSONObject(modelKey) ?: continue
             models[modelKey] = parseModelDevEntry(modelKey, modelObj)
         }
-        return ProviderEntry(id, name, api, models)
+        return ProviderEntry(id, name, api, npm, models)
     }
 
     private fun parseModelDevEntry(id: String, obj: JSONObject): ModelDevEntry {
@@ -413,9 +455,17 @@ object ModelsDevApi {
             reasoningEffortValues = reasoningEffortValues,
             declaresNoEffortTiers = declaresNoEffortTiers,
             releaseDate = obj.optString("release_date", "").ifEmpty { null },
+            inputCost = obj.optJSONObject("cost")
+                ?.optDouble("input", Double.NaN)
+                ?.takeIf { !it.isNaN() },
             outputCost = obj.optJSONObject("cost")
                 ?.optDouble("output", Double.NaN)
                 ?.takeIf { !it.isNaN() },
+            status = obj.optString("status", "").ifEmpty { null },
+            supportsTools = if (obj.has("tool_call")) obj.optBoolean("tool_call") else null,
+            providerPackage = obj.optJSONObject("provider")
+                ?.optString("npm", "")
+                ?.ifEmpty { null },
         )
     }
 
@@ -470,7 +520,13 @@ object ModelsDevApi {
         val id: String,
         val name: String?,
         val api: String?,
+        val npm: String?,
         val models: Map<String, ModelDevEntry>,
+    )
+
+    data class CatalogModel(
+        val model: LLMModel,
+        val providerPackage: String?,
     )
 
     data class ModelDevEntry(
@@ -498,9 +554,13 @@ object ModelsDevApi {
         // for every entry, but 181 of them carry `YYYY-MM` with no day — the
         // parser must tolerate that or those models sink in every sorted list.
         val releaseDate: String?,
+        val inputCost: Double?,
         // [T-model-release-ranking] USD per million output tokens. Tie-breaker
         // for same-day releases: sol/terra/luna all shipped 2026-07-09 and only
         // price (30 / 12 / 1.2) separates their tiers.
         val outputCost: Double?,
+        val status: String?,
+        val supportsTools: Boolean?,
+        val providerPackage: String?,
     )
 }
