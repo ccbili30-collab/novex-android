@@ -7,6 +7,30 @@ import org.junit.Test
 
 class NovexModelVerificationTest {
     @Test
+    fun `chat only model skips tool probes and is reported as available`() = runBlocking {
+        var toolCalls = 0
+
+        val result = verifyNovexModels(
+            modelIds = listOf("gemini-chat-only"),
+            repetitions = 3,
+            shouldProbeTools = { false },
+            chatProbe = { null },
+            toolProbe = {
+                toolCalls++
+                "must not run"
+            },
+        )
+
+        assertEquals(0, toolCalls)
+        assertEquals(listOf("gemini-chat-only"), result.availableModels)
+        assertEquals(listOf("gemini-chat-only"), result.toolDisabledModels)
+        assertEquals(
+            "gemini-chat-only：普通对话通过 · 工具已关闭",
+            formatNovexModelVerificationLine(result, "gemini-chat-only"),
+        )
+    }
+
+    @Test
     fun `one unavailable model is skipped and every remaining model is checked`() = runBlocking {
         val chatVisited = mutableListOf<String>()
         val toolVisited = mutableListOf<String>()

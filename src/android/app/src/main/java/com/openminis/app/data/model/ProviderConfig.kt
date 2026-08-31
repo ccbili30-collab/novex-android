@@ -267,6 +267,9 @@ data class ModelOverrides(
     // of older JSON (unlike adding an enum case) — old configs simply lack the
     // key and it defaults to null.
     val maxThinkingLevel: ThinkingLevel? = null,
+    // Per-entry tool capability. null = inherit the model/default-enabled
+    // behaviour; false = pure chat with no tool definitions or tool history.
+    val supportsTools: Boolean? = null,
 ) {
     val isEmpty: Boolean
         get() = displayName == null
@@ -276,6 +279,7 @@ data class ModelOverrides(
             && inputModalities == null
             && outputModalities == null
             && maxThinkingLevel == null
+            && supportsTools == null
 }
 
 @Serializable
@@ -300,6 +304,7 @@ data class ModelEntry(
             supportsReasoning = overrides.supportsReasoning ?: baseModel.supportsReasoning,
             inputModalities = overrides.inputModalities ?: baseModel.inputModalities,
             outputModalities = overrides.outputModalities ?: baseModel.outputModalities,
+            supportsTools = overrides.supportsTools ?: baseModel.supportsTools,
         )
 
     /** True when this entry carries user intent beyond API-reported defaults. */
@@ -331,6 +336,12 @@ data class ProviderConfig(
     // command) — mirrors iOS agentLoopModelEntryIds / agentLoopGroupIds.
     val agentLoopModelEntryIds: MutableList<String> = mutableListOf(),
     val agentLoopGroupIds: MutableList<String> = mutableListOf(),
+    // Ordered, enabled image-generation groups. These groups are resolved by
+    // the single generate_image tool and never exposed as ordinary LLM tools.
+    val imageGenerationGroupIds: MutableList<String> = mutableListOf(),
+    // Provider instances created from the dedicated image-generation screen.
+    // They stay out of the ordinary LLM provider list.
+    val imageGenerationProviderInstanceIds: MutableList<String> = mutableListOf(),
     // T273: bumped by ProviderRepository.saveConfig on every mutation so
     // data-class structural equals returns false even when callers mutate
     // inner MutableLists in place. Without this, MutableStateFlow's

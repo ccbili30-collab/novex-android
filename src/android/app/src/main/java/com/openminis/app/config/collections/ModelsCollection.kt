@@ -392,14 +392,23 @@ class ModelsCollection(
         )
 
     private fun supportsToolsField(id: String): ConfigField =
-        ReadOnlyField(
+        ClosureField(
             path = "models.$id.supportsTools",
             displayName = "Supports tools",
-            description = "Derived. True when the model can produce text output.",
+            description = "Whether structured tools and tool history are sent to this model. False keeps the model on pure chat.",
             valueSchema = ConfigSchema.Bool,
+            risk = ConfigRisk.SENSITIVE,
+            revertable = true,
             reader = {
-                val e = entry(id) ?: return@ReadOnlyField ConfigValue.Null
-                ConfigValue.Bool("text_output" in effectiveModalities(e))
+                val e = entry(id) ?: return@ClosureField ConfigValue.Null
+                ConfigValue.Bool(e.model.supportsTools != false)
+            },
+            writer = { v ->
+                val enabled = (v as? ConfigValue.Bool)?.value
+                    ?: throw ConfigError.TypeMismatch("bool")
+                mutate(id) { e ->
+                    e.copy(overrides = e.overrides.copy(supportsTools = enabled))
+                }
             },
         )
 

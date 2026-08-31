@@ -41,6 +41,7 @@ import com.openminis.app.ui.settings.AddModelsToGroupScreen
 import com.openminis.app.ui.settings.ShadowVoiceDetailScreen
 import com.openminis.app.ui.settings.AddProviderScreen
 import com.openminis.app.ui.settings.NovexProviderSetupScreen
+import com.openminis.app.ui.settings.ImageGenerationSettingsScreen
 import com.openminis.app.ui.settings.ModelEntryDetailScreen
 import com.openminis.app.ui.settings.ModelGroupDetailScreen
 import com.openminis.app.ui.settings.ModelGroupsScreen
@@ -95,6 +96,7 @@ object Routes {
     const val NOVEX_FEEDBACK = "novex_feedback"
     const val PROVIDER_LIST = "providers"
     const val ADD_PROVIDER = "add_provider"
+    const val IMAGE_GENERATION_SETTINGS = "image_generation_settings"
     const val PROVIDER_DETAIL = "provider/{instanceId}"
     /** [T-android-provider-voice] Read-only shadow Voice Service detail. */
     const val SHADOW_VOICE_DETAIL = "voice_service/{instanceId}"
@@ -591,6 +593,7 @@ fun AppNavigation(
                 onBack = { navController.safePopBackStack() },
                 onProvidersClick = { navController.safeNavigate(Routes.PROVIDER_LIST) },
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
+                onImageGenerationClick = { navController.safeNavigate(Routes.IMAGE_GENERATION_SETTINGS) },
                 onRootfsClick = { navController.safeNavigate(Routes.STORAGE) },
                 onEnvVarsClick = { navController.safeNavigate(Routes.ENV_VARS) },
                 onSkillsClick = { navController.safeNavigate(Routes.SKILLS) },
@@ -729,6 +732,13 @@ fun AppNavigation(
                 providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
                 onSaved = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(Routes.IMAGE_GENERATION_SETTINGS) {
+            ImageGenerationSettingsScreen(
+                providerRepository = providerRepository,
+                onBack = { navController.safePopBackStack() },
             )
         }
 

@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,7 +65,12 @@ fun ProviderListScreen(
     onVoiceServiceClick: (String) -> Unit = {},
 ) {
     val config by providerRepository.config.collectAsState()
-    val instances = config.instances
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            providerRepository.ensureImageGenerationMigration()
+        }
+    }
+    val instances = config.instances.filterNot { it.id in config.imageGenerationProviderInstanceIds }
     val groupedInstances = instances.groupBy { it.providerType }
     val context = LocalContext.current
 

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.tools.isImageGenerationEntry
 import com.openminis.app.ui.components.modelEntryPickerItems
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
@@ -75,7 +76,8 @@ fun AddAgentLoopModelsScreen(
         .flatMap { it.memberEntryIds }
         .toSet()
     val availableEntries = config.modelEntries.filter {
-        !it.isHidden && it.id !in pinnedEntries && it.id !in groupBackedEntries
+        !it.isHidden && !isImageGenerationEntry(it) &&
+            it.id !in pinnedEntries && it.id !in groupBackedEntries
     }
 
     val searchQuery = remember { mutableStateOf("") }
@@ -169,7 +171,9 @@ fun AddAgentLoopGroupsScreen(
     val config by providerRepository.config.collectAsState()
     val pinnedGroups = config.agentLoopGroupIds.toSet()
     val available = remember(config, pinnedGroups) {
-        config.modelGroups.filter { it.id !in pinnedGroups }
+        config.modelGroups.filter {
+            it.id !in pinnedGroups && it.id !in config.imageGenerationGroupIds
+        }
     }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
 

@@ -8,11 +8,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -30,7 +33,9 @@ import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.tools.AgentTools
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,14 +43,15 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private enum class CheckState { WAITING, RUNNING, PASSED, FAILED }
-private enum class VerificationSummaryState { PASSED, PARTIAL, FAILED }
-private data class ConnectionCheck(val label: String, var state: CheckState, var detail: String = "")
+private enum class ModelResultState { PASSED, WARNING, FAILED, CANCELLED }
+private data class ModelVerificationUiResult(
+    val state: ModelResultState,
+    val message: String,
+)
 private data class SetupValues(
     val base: String,
     val key: String,
     val models: List<String>,
-    val imageModel: String?,
 )
 private data class ConnectionVerification(
     val models: NovexModelVerification,
@@ -121,40 +127,36 @@ fun NovexProviderSetupScreen(
             .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
     }
     val selectedModels = remember(instanceId) { mutableStateListOf<String>().apply { addAll(initialModels) } }
-    var imageModelId by remember(instanceId) {
-        mutableStateOf(existingEntries.firstOrNull { it.model.outputModalities.orEmpty().contains("image") }?.model?.id.orEmpty())
+    val modelToolsEnabled = remember(instanceId) {
+        mutableStateMapOf<String, Boolean>().apply {
+            existingEntries
+                .filterNot { it.model.outputModalities.orEmpty().contains("image") }
+                .forEach { entry -> put(entry.model.id, entry.model.supportsTools != false) }
+        }
     }
     var manualModelId by remember { mutableStateOf("") }
-    var modelMenuExpanded by remember { mutableStateOf(false) }
-    var imageModelMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var verificationReport by remember { mutableStateOf<String?>(null) }
-    var verificationSummaryState by remember { mutableStateOf<VerificationSummaryState?>(null) }
     var fetchingModels by remember { mutableStateOf(false) }
-    var checking by remember { mutableStateOf(false) }
-    var verificationMenuExpanded by remember { mutableStateOf(false) }
+    var checkingModelId by remember { mutableStateOf<String?>(null) }
+    var verificationJob by remember { mutableStateOf<Job?>(null) }
+    val verificationResults = remember { mutableStateMapOf<String, ModelVerificationUiResult>() }
     val fetchedModels = remember { mutableStateListOf<String>() }
-    val checks = remember { mutableStateListOf(
-        ConnectionCheck("接口可连接", CheckState.WAITING), ConnectionCheck("密钥可验证", CheckState.WAITING),
-        ConnectionCheck("普通对话可用", CheckState.WAITING), ConnectionCheck("工具调用可用", CheckState.WAITING),
-    ) }
-    fun resetChecks() { checks.indices.forEach { checks[it] = checks[it].copy(state = CheckState.WAITING, detail = "") } }
     fun invalidateVerification() {
+        verificationJob?.cancel()
+        verificationJob = null
+        checkingModelId = null
         error = null
-        verificationReport = null
-        verificationSummaryState = null
-        resetChecks()
+        verificationResults.clear()
     }
     fun setSelectedModels(models: List<String>) {
         selectedModels.clear()
         selectedModels.addAll(models.map(String::trim).filter(String::isNotEmpty).distinct())
-        invalidateVerification()
     }
+    fun toolsEnabled(modelId: String): Boolean = modelToolsEnabled[modelId] != false
     fun validate(requireModels: Boolean = true): SetupValues? {
         val base = apiBase.trim().trimEnd('/')
         val key = apiKey.trim()
-        val imageModel = imageModelId.trim().takeIf(String::isNotEmpty)
-        val models = selectedModels.map(String::trim).filter(String::isNotEmpty).distinct().filterNot { it == imageModel }
+        val models = selectedModels.map(String::trim).filter(String::isNotEmpty).distinct()
         error = when {
             base.isEmpty() -> "请填写接口地址"
             !base.startsWith("http://") && !base.startsWith("https://") -> "接口地址需要以 https:// 或 http:// 开头"
@@ -162,46 +164,60 @@ fun NovexProviderSetupScreen(
             requireModels && models.isEmpty() -> "请至少勾选一个模型"
             else -> null
         }
-        return if (error == null) SetupValues(base, key, models, imageModel) else null
+        return if (error == null) SetupValues(base, key, models) else null
     }
-    fun startVerification(values: SetupValues, modelIds: List<String>) {
-        checking = true
+    fun startVerification(values: SetupValues, modelId: String) {
+        if (checkingModelId == modelId) {
+            verificationJob?.cancel()
+            return
+        }
+        if (checkingModelId != null) return
+        checkingModelId = modelId
         error = null
-        verificationReport = null
-        verificationSummaryState = null
-        resetChecks()
-        scope.launch {
+        verificationResults.remove(modelId)
+        verificationJob = scope.launch {
             try {
                 val verification = verifyConnection(
                     values.base,
                     values.key,
-                    modelIds,
-                ) { index, state, detail ->
-                    checks[index] = checks[index].copy(state = state, detail = detail)
-                }
+                    listOf(modelId),
+                    toolEnabledByModel = { toolsEnabled(it) },
+                )
                 if (verification.fatalError != null) {
-                    verificationSummaryState = VerificationSummaryState.FAILED
-                    error = "检测失败：${verification.fatalError}"
+                    verificationResults[modelId] = ModelVerificationUiResult(
+                        ModelResultState.FAILED,
+                        "$modelId：${verification.fatalError}",
+                    )
                 } else {
                     val result = verification.models
-                    verificationSummaryState = when {
-                        result.availableModels.isEmpty() -> VerificationSummaryState.FAILED
-                        result.failures.isNotEmpty() -> VerificationSummaryState.PARTIAL
-                        else -> VerificationSummaryState.PASSED
+                    val state = when {
+                        result.failures.any { it.modelId == modelId } -> ModelResultState.FAILED
+                        result.warnings.any { it.modelId == modelId } -> ModelResultState.WARNING
+                        else -> ModelResultState.PASSED
                     }
-                    val headline = when (verificationSummaryState) {
-                        VerificationSummaryState.PASSED -> "检测成功"
-                        VerificationSummaryState.PARTIAL -> "检测完成：部分模型不可用"
-                        VerificationSummaryState.FAILED -> "检测失败"
-                        null -> "检测完成"
-                    }
-                    verificationReport = "$headline\n${formatNovexVerificationReport(result)}"
+                    verificationResults[modelId] = ModelVerificationUiResult(
+                        state,
+                        formatNovexModelVerificationLine(result, modelId),
+                    )
                 }
+            } catch (cancelled: CancellationException) {
+                if (checkingModelId == modelId) {
+                    verificationResults[modelId] = ModelVerificationUiResult(
+                        ModelResultState.CANCELLED,
+                        "$modelId：检测已取消",
+                    )
+                }
+                throw cancelled
             } catch (failure: Throwable) {
-                verificationSummaryState = VerificationSummaryState.FAILED
-                error = "检测失败：${failure.message ?: failure.javaClass.simpleName}"
+                verificationResults[modelId] = ModelVerificationUiResult(
+                    ModelResultState.FAILED,
+                    "$modelId：${failure.message ?: failure.javaClass.simpleName}",
+                )
             } finally {
-                checking = false
+                if (checkingModelId == modelId) {
+                    checkingModelId = null
+                    verificationJob = null
+                }
             }
         }
     }
@@ -225,72 +241,104 @@ fun NovexProviderSetupScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ExposedDropdownMenuBox(
-                    expanded = modelMenuExpanded,
-                    onExpandedChange = { if (fetchedModels.isNotEmpty() || selectedModels.isNotEmpty()) modelMenuExpanded = it },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    OutlinedTextField(
-                        value = when (selectedModels.size) {
-                            0 -> "请选择模型"
-                            1 -> novexModelDisplayName(selectedModels.first())
-                            else -> "已选择 ${selectedModels.size} 个模型"
-                        },
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("启用的模型") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelMenuExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
+                Column(Modifier.weight(1f)) {
+                    Text("模型", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "勾选启用；扳手控制工具；刷新仅检测这一行",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val menuModels = (fetchedModels + selectedModels).distinct().take(100)
-                    ExposedDropdownMenu(
-                        expanded = modelMenuExpanded,
-                        onDismissRequest = { modelMenuExpanded = false },
-                    ) {
-                        if (fetchedModels.isNotEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("全选已拉取模型") },
-                                onClick = { setSelectedModels((selectedModels + fetchedModels).distinct()) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("清空选择") },
-                                onClick = { setSelectedModels(emptyList()) },
-                            )
-                            HorizontalDivider()
-                        }
-                        menuModels.forEach { id ->
-                            DropdownMenuItem(
-                                text = { Text(novexModelDisplayName(id)) },
-                                leadingIcon = {
-                                    Checkbox(
-                                        checked = id in selectedModels,
-                                        onCheckedChange = null,
-                                    )
-                                },
-                                onClick = { setSelectedModels(toggleModelSelection(selectedModels, id)) },
-                            )
-                        }
-                    }
                 }
-                OutlinedButton(enabled = !fetchingModels && !checking, onClick = {
+                OutlinedButton(enabled = !fetchingModels && checkingModelId == null, onClick = {
                     val values = validate(requireModels = false) ?: return@OutlinedButton
                     fetchingModels = true
                     scope.launch {
                         val models = fetchModels(values.base, values.key)
+                            .filterNot(::looksLikeImageGenerationModel)
                         fetchedModels.clear(); fetchedModels.addAll(models)
                         if (models.isEmpty()) error = "没有拉取到模型，请检查地址和密钥，或继续手动填写模型名称。"
                         else {
                             if (selectedModels.none { it in models }) setSelectedModels(listOf(models.first()))
-                            modelMenuExpanded = true
                         }
                         fetchingModels = false
                     }
                 }) { Text(if (fetchingModels) "拉取中" else "拉取模型") }
+            }
+            val displayModels = (fetchedModels + selectedModels)
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
+                .take(100)
+            if (displayModels.isEmpty()) {
+                Text(
+                    "尚无模型，请先拉取或手动添加。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                HorizontalDivider()
+                displayModels.forEach { modelId ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = modelId in selectedModels,
+                            onCheckedChange = { checked ->
+                                setSelectedModels(
+                                    if (checked) (selectedModels + modelId).distinct()
+                                    else selectedModels - modelId,
+                                )
+                            },
+                        )
+                        Text(
+                            novexModelDisplayName(modelId),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        IconButton(
+                            onClick = {
+                                modelToolsEnabled[modelId] = !toolsEnabled(modelId)
+                                verificationResults.remove(modelId)
+                            },
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Build,
+                                    contentDescription = if (toolsEnabled(modelId)) "关闭该模型的工具调用" else "开启该模型的工具调用",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (toolsEnabled(modelId)) Color(0xFF168A45) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    if (toolsEnabled(modelId)) "✓" else "×",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                        IconButton(
+                            enabled = checkingModelId == null || checkingModelId == modelId,
+                            onClick = {
+                                if (checkingModelId == modelId) {
+                                    verificationJob?.cancel()
+                                } else {
+                                    val values = validate(requireModels = false) ?: return@IconButton
+                                    startVerification(values, modelId)
+                                }
+                            },
+                        ) {
+                            Icon(
+                                if (checkingModelId == modelId) Icons.Default.Stop else Icons.Default.Refresh,
+                                contentDescription = if (checkingModelId == modelId) "停止检测 $modelId" else "检测 $modelId",
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -307,8 +355,13 @@ fun NovexProviderSetupScreen(
                     onClick = {
                         val id = manualModelId.trim()
                         if (id.isNotEmpty()) {
-                            setSelectedModels((selectedModels + id).distinct())
-                            manualModelId = ""
+                            if (looksLikeImageGenerationModel(id)) {
+                                error = "图片生成模型请前往“设置 → 生图服务”添加。"
+                            } else {
+                                if (id !in fetchedModels) fetchedModels.add(id)
+                                setSelectedModels((selectedModels + id).distinct())
+                                manualModelId = ""
+                            }
                         }
                     },
                     enabled = manualModelId.isNotBlank(),
@@ -316,122 +369,32 @@ fun NovexProviderSetupScreen(
                     Icon(Icons.Default.Add, "添加模型")
                 }
             }
-            if (selectedModels.isNotEmpty()) {
-                Text(
-                    "已勾选：${selectedModels.joinToString("、") { novexModelDisplayName(it) }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            ExposedDropdownMenuBox(
-                expanded = imageModelMenuExpanded,
-                onExpandedChange = { imageModelMenuExpanded = it },
-            ) {
-                OutlinedTextField(
-                    label = { Text("生图模型（可选）") },
-                    value = imageModelId,
-                    onValueChange = { value ->
-                        imageModelId = value
-                        if (value.isNotBlank()) selectedModels.remove(value.trim())
-                        invalidateVerification()
-                    },
-                    placeholder = { Text("例如 gpt-image") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(imageModelMenuExpanded) },
-                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryEditable).fillMaxWidth(),
-                    singleLine = true,
-                )
-                ExposedDropdownMenu(
-                    expanded = imageModelMenuExpanded,
-                    onDismissRequest = { imageModelMenuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("不使用生图模型") },
-                        onClick = {
-                            imageModelId = ""
-                            imageModelMenuExpanded = false
-                            invalidateVerification()
-                        },
-                    )
-                    val candidates = fetchedModels.distinct().sortedWith(
-                        compareByDescending<String>(::looksLikeImageGenerationModel).thenBy(String::lowercase),
-                    )
-                    candidates.forEach { id ->
-                        DropdownMenuItem(
-                            text = { Text(novexModelDisplayName(id)) },
-                            onClick = {
-                                imageModelId = id
-                                selectedModels.remove(id)
-                                imageModelMenuExpanded = false
-                                invalidateVerification()
-                            },
-                        )
-                    }
-                }
-            }
-            Text(
-                "配置后，人工智能需要图片时会自动调用。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("连通检测（可选）", style = MaterialTheme.typography.titleMedium)
-                    selectedModels.firstOrNull()?.let { modelId ->
-                        Text(
-                            "当前模型：${novexModelDisplayName(modelId)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Box {
-                    IconButton(
-                        enabled = !fetchingModels && !checking && selectedModels.isNotEmpty(),
-                        onClick = { verificationMenuExpanded = true },
-                    ) {
-                        Icon(Icons.Default.MoreVert, "更多检测选项")
-                    }
-                    DropdownMenu(
-                        expanded = verificationMenuExpanded,
-                        onDismissRequest = { verificationMenuExpanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("检测全部已选模型") },
-                            onClick = {
-                                verificationMenuExpanded = false
-                                val values = validate() ?: return@DropdownMenuItem
-                                startVerification(values, values.models)
-                            },
-                        )
-                    }
-                }
-            }
-            checks.forEach { CheckRow(it) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            verificationReport?.let {
-                val reportColor = when (verificationSummaryState) {
-                    VerificationSummaryState.PASSED -> Color(0xFF168A45)
-                    VerificationSummaryState.PARTIAL -> Color(0xFFB77900)
-                    VerificationSummaryState.FAILED -> MaterialTheme.colorScheme.error
-                    null -> MaterialTheme.colorScheme.onSurfaceVariant
+            if (verificationResults.isNotEmpty()) {
+                Text("检测结果", style = MaterialTheme.typography.titleMedium)
+                verificationResults.forEach { (_, result) ->
+                    val color = when (result.state) {
+                        ModelResultState.PASSED -> Color(0xFF168A45)
+                        ModelResultState.WARNING -> Color(0xFFB77900)
+                        ModelResultState.FAILED -> MaterialTheme.colorScheme.error
+                        ModelResultState.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    val icon = when (result.state) {
+                        ModelResultState.PASSED -> Icons.Default.CheckCircle
+                        ModelResultState.WARNING, ModelResultState.FAILED -> Icons.Default.Error
+                        ModelResultState.CANCELLED -> Icons.Default.Close
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
+                        Text(result.message, color = color, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                Text(it, color = reportColor, style = MaterialTheme.typography.bodySmall)
             }
-            OutlinedButton(
-                enabled = !fetchingModels && !checking && selectedModels.isNotEmpty(),
-                onClick = {
-                    val values = validate() ?: return@OutlinedButton
-                    val currentModel = values.models.firstOrNull() ?: return@OutlinedButton
-                    startVerification(values, listOf(currentModel))
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (checking) "正在检测…" else "检测当前模型")
-            }
-            Button(enabled = !fetchingModels && !checking, onClick = {
+            Button(onClick = {
                 val values = validate() ?: return@Button
                 error = null
                 runCatching {
@@ -442,7 +405,7 @@ fun NovexProviderSetupScreen(
                         base = values.base,
                         key = values.key,
                         modelIds = values.models,
-                        imageModelId = values.imageModel,
+                        modelToolsEnabled = values.models.associateWith(::toolsEnabled),
                     )
                 }.onSuccess {
                     onSaved()
@@ -456,38 +419,26 @@ fun NovexProviderSetupScreen(
     }
 }
 
-@Composable private fun CheckRow(check: ConnectionCheck) {
-    val color = when (check.state) { CheckState.PASSED -> Color(0xFF168A45); CheckState.FAILED -> MaterialTheme.colorScheme.error; CheckState.RUNNING -> Color(0xFFB77900); CheckState.WAITING -> MaterialTheme.colorScheme.onSurfaceVariant }
-    val icon = when (check.state) { CheckState.PASSED -> Icons.Default.CheckCircle; CheckState.FAILED -> Icons.Default.Error; else -> Icons.Default.HourglassTop }
-    val stateText = when (check.state) { CheckState.PASSED -> "通过"; CheckState.FAILED -> "失败"; CheckState.RUNNING -> "检测中"; CheckState.WAITING -> "待检测" }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, tint = color)
-        Column(Modifier.weight(1f)) { Text(check.label); if (check.detail.isNotBlank()) Text(check.detail, style = MaterialTheme.typography.bodySmall, color = color) }
-        Text(stateText, color = color)
-    }
-}
-
 private suspend fun fetchModels(base: String, key: String): List<String> = runCatching {
     OpenAIModelsApi.fetchModels(key, canonicalBase(base), forceRefresh = true).map { it.id }.distinct()
 }.getOrDefault(emptyList())
 
 private fun canonicalBase(base: String): String = base.trimEnd('/').let { if (it.endsWith("/v1")) it else "$it/v1" }
 
-private suspend fun verifyConnection(base: String, key: String, modelIds: List<String>, update: (Int, CheckState, String) -> Unit): ConnectionVerification = withContext(Dispatchers.IO) {
+private suspend fun verifyConnection(
+    base: String,
+    key: String,
+    modelIds: List<String>,
+    toolEnabledByModel: (String) -> Boolean,
+): ConnectionVerification = withContext(Dispatchers.IO) {
     val canonical = canonicalBase(base); val client = OkHttpClient()
-    fun fatal(index: Int, message: String): ConnectionVerification {
-        update(index, CheckState.FAILED, message)
+    fun fatal(message: String): ConnectionVerification {
         return ConnectionVerification(NovexModelVerification(emptyList(), emptyList()), message)
     }
-    update(0, CheckState.RUNNING, "")
     val reachable = runCatching { client.newCall(Request.Builder().url("$canonical/models").build()).execute().use { it.code in 200..499 } }.getOrDefault(false)
-    if (!reachable) return@withContext fatal(0, "无法连接接口地址")
-    update(0, CheckState.PASSED, "服务器已响应")
-    update(1, CheckState.RUNNING, "")
+    if (!reachable) return@withContext fatal("无法连接接口地址")
     val authCode = runCatching { client.newCall(Request.Builder().url("$canonical/models").header("Authorization", "Bearer $key").build()).execute().use { it.code } }.getOrDefault(0)
-    if (authCode == 401 || authCode == 403) return@withContext fatal(1, "密钥无效或访问被拒绝（HTTP $authCode）")
-    if (authCode in 200..299) update(1, CheckState.PASSED, "身份验证成功")
-    else update(1, CheckState.RUNNING, "站点未开放模型列表，将通过实际对话验证")
+    if (authCode == 401 || authCode == 403) return@withContext fatal("密钥无效或访问被拒绝（HTTP $authCode）")
 
     val instance = ProviderInstance(id = "novex-check", label = "连接检测", providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"))
     val providerResults = mutableMapOf<String, Result<LLMProvider>>()
@@ -510,7 +461,7 @@ private suspend fun verifyConnection(base: String, key: String, modelIds: List<S
                     listOf(LLMMessage(LLMMessage.Role.USER, "只回复：连接成功")),
                     null,
                     64,
-                    tools = verificationTools,
+                    tools = if (toolEnabledByModel(modelId)) verificationTools else emptyList(),
                 )
             }
             when {
@@ -564,36 +515,13 @@ private suspend fun verifyConnection(base: String, key: String, modelIds: List<S
         }.getOrElse { it.message ?: it.javaClass.simpleName }
     }
 
-    update(2, CheckState.RUNNING, "")
     val result = verifyNovexModels(
         modelIds = modelIds,
         repetitions = 3,
-        onProgress = { stage, index, total, modelId ->
-            val row = if (stage == NovexProbeStage.CHAT) 2 else 3
-            update(row, CheckState.RUNNING, "正在检测 ${index + 1}/$total：$modelId")
-        },
+        shouldProbeTools = toolEnabledByModel,
         chatProbe = ::probeChat,
         toolProbe = ::probeTool,
     )
-    val chatFailures = result.failures.filter { it.stage == NovexProbeStage.CHAT }
-    val toolFailures = result.failures.filter { it.stage == NovexProbeStage.TOOL }
-    val chatPassedCount = modelIds.distinct().size - chatFailures.size
-    update(
-        2,
-        if (chatPassedCount > 0) CheckState.PASSED else CheckState.FAILED,
-        if (chatFailures.isEmpty()) "$chatPassedCount 个模型普通回复正常"
-        else "通过 $chatPassedCount 个；失败：${chatFailures.joinToString("、") { it.modelId }}",
-    )
-    update(
-        3,
-        if (result.availableModels.isNotEmpty()) CheckState.PASSED else CheckState.FAILED,
-        if (toolFailures.isEmpty()) "${result.availableModels.size} 个模型工具调用正常"
-        else "可用 ${result.availableModels.size} 个；失败：${toolFailures.joinToString("、") { it.modelId }}",
-    )
-    if (authCode !in 200..299) {
-        if (chatPassedCount > 0) update(1, CheckState.PASSED, "已通过实际对话验证密钥")
-        else update(1, CheckState.FAILED, "密钥或模型无法通过实际请求验证")
-    }
     ConnectionVerification(result)
 }
 
@@ -604,21 +532,20 @@ private fun saveConnections(
     base: String,
     key: String,
     modelIds: List<String>,
-    imageModelId: String?,
+    modelToolsEnabled: Map<String, Boolean>,
 ) {
     val instance = (existing ?: ProviderInstance(id = UUID.randomUUID().toString(), label = label.ifBlank { "OpenAI 兼容接口" }, providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey)).copy(label = label.ifBlank { "OpenAI 兼容接口" }, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"), isEnabled = true)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)
+        .filterNot { it.model.outputModalities.orEmpty().contains("image") }
     val previousIds = previousEntries.map { it.id }.toSet()
     val group = repository.config.value.modelGroups.firstOrNull { candidate ->
         candidate.memberEntryIds.any { it in previousIds }
     }
-    val allModelIds = (modelIds + listOfNotNull(imageModelId)).distinct()
-    previousEntries.filter { it.model.id !in allModelIds }.forEach { repository.removeEntry(it.id) }
-    allModelIds.forEach { modelId ->
+    previousEntries.filter { it.model.id !in modelIds }.forEach { repository.removeEntry(it.id) }
+    modelIds.forEach { modelId ->
         if (repository.entriesFor(instance.id).none { it.model.id == modelId }) {
-            val isImageModel = modelId == imageModelId
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
@@ -626,32 +553,33 @@ private fun saveConnections(
                         id = modelId,
                         displayName = novexModelDisplayName(modelId),
                         provider = instance.label,
-                        inputModalities = if (isImageModel) {
-                            listOf("text", "image")
-                        } else {
-                            novexChatInputModalities(modelId)
-                        },
-                        outputModalities = if (isImageModel) listOf("image") else listOf("text"),
+                        inputModalities = novexChatInputModalities(modelId),
+                        outputModalities = listOf("text"),
+                    ),
+                    overrides = ModelOverrides(
+                        supportsTools = modelToolsEnabled[modelId],
                     ),
                     isCustom = true,
                 ),
             )
         }
     }
-    repository.entriesFor(instance.id).forEach { entry ->
-        val shouldBeImage = entry.model.id == imageModelId
-        val desiredInput = if (shouldBeImage) {
-            listOf("text", "image")
-        } else {
-            novexChatInputModalities(entry.model.id, entry.model.inputModalities)
-        }
-        val desiredOutput = if (shouldBeImage) listOf("image") else listOf("text")
-        if (entry.model.inputModalities != desiredInput || entry.model.outputModalities != desiredOutput) {
+    repository.entriesFor(instance.id)
+        .filterNot { it.model.outputModalities.orEmpty().contains("image") }
+        .forEach { entry ->
+        val desiredInput = novexChatInputModalities(entry.model.id, entry.model.inputModalities)
+        val desiredOutput = listOf("text")
+        val desiredTools = modelToolsEnabled[entry.model.id]
+        if (entry.model.inputModalities != desiredInput ||
+            entry.model.outputModalities != desiredOutput ||
+            entry.overrides.supportsTools != desiredTools
+        ) {
             repository.updateEntry(
                 entry.copy(
                     overrides = entry.overrides.copy(
                         inputModalities = desiredInput,
                         outputModalities = desiredOutput,
+                        supportsTools = desiredTools,
                     ),
                 ),
             )
@@ -668,10 +596,5 @@ private fun saveConnections(
         val retained = group.memberEntryIds.filterNot { it in previousIds }
         repository.updateGroup(group.copy(memberEntryIds = (retained + selectedIds).distinct().toMutableList()))
         repository.defaultPrimaryGroupId = group.id
-    }
-    imageModelId?.let { selectedImageId ->
-        repository.entriesFor(instance.id).firstOrNull { it.model.id == selectedImageId }?.let { imageEntry ->
-            repository.addAgentLoopEntry(imageEntry.id)
-        }
     }
 }

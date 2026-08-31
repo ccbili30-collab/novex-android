@@ -46,6 +46,8 @@ object ProviderConfigMetaKeys {
     const val VOICE_OUTPUT_GROUP_ID = "voice_output_group_id"
     // [T-android-vision-group / GH#182] Vision Group pointer (per-device meta KV).
     const val VISION_GROUP_ID = "vision_group_id"
+    const val IMAGE_GENERATION_GROUP_IDS = "image_generation_group_ids"
+    const val IMAGE_GENERATION_PROVIDER_INSTANCE_IDS = "image_generation_provider_instance_ids"
     const val JSON_SYNC_HASH = "json_sync_hash"
 }
 
@@ -181,6 +183,28 @@ fun ProviderConfig.toSnapshot(
     visionGroupId?.let {
         metaRows.add(ProviderConfigMetaEntity(ProviderConfigMetaKeys.VISION_GROUP_ID, it))
     }
+    if (imageGenerationGroupIds.isNotEmpty()) {
+        metaRows.add(
+            ProviderConfigMetaEntity(
+                ProviderConfigMetaKeys.IMAGE_GENERATION_GROUP_IDS,
+                jsonForBlobs.encodeToString(
+                    ListSerializer(String.serializer()),
+                    imageGenerationGroupIds,
+                ),
+            ),
+        )
+    }
+    if (imageGenerationProviderInstanceIds.isNotEmpty()) {
+        metaRows.add(
+            ProviderConfigMetaEntity(
+                ProviderConfigMetaKeys.IMAGE_GENERATION_PROVIDER_INSTANCE_IDS,
+                jsonForBlobs.encodeToString(
+                    ListSerializer(String.serializer()),
+                    imageGenerationProviderInstanceIds,
+                ),
+            ),
+        )
+    }
     jsonSyncHash?.let {
         metaRows.add(ProviderConfigMetaEntity(ProviderConfigMetaKeys.JSON_SYNC_HASH, it))
     }
@@ -266,6 +290,20 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
         .toMutableList()
 
     val metaMap = this.meta.associate { it.key to it.value }
+    val imageGenerationGroupIds = metaMap[ProviderConfigMetaKeys.IMAGE_GENERATION_GROUP_IDS]
+        ?.let { encoded ->
+            runCatching { jsonForBlobs.decodeFromString(stringListSerializer, encoded) }
+                .getOrDefault(emptyList())
+        }
+        .orEmpty()
+        .toMutableList()
+    val imageGenerationProviderInstanceIds = metaMap[ProviderConfigMetaKeys.IMAGE_GENERATION_PROVIDER_INSTANCE_IDS]
+        ?.let { encoded ->
+            runCatching { jsonForBlobs.decodeFromString(stringListSerializer, encoded) }
+                .getOrDefault(emptyList())
+        }
+        .orEmpty()
+        .toMutableList()
     return ProviderConfig(
         instances = instances,
         modelEntries = entries,
@@ -277,6 +315,8 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
         visionGroupId = metaMap[ProviderConfigMetaKeys.VISION_GROUP_ID],
         agentLoopModelEntryIds = entryLoopIds,
         agentLoopGroupIds = groupLoopIds,
+        imageGenerationGroupIds = imageGenerationGroupIds,
+        imageGenerationProviderInstanceIds = imageGenerationProviderInstanceIds,
     )
 }
 

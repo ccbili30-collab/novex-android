@@ -97,7 +97,12 @@ fun ModelGroupsScreen(
     onAddAgentLoopGroups: () -> Unit = {},
 ) {
     val config by providerRepository.config.collectAsState()
-    val groups = config.modelGroups
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            providerRepository.ensureImageGenerationMigration()
+        }
+    }
+    val groups = config.modelGroups.filterNot { it.id in config.imageGenerationGroupIds }
     var showNewGroupDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
 

@@ -27,6 +27,7 @@ object AgentTools {
         // attempt those calls. Mirrors the iOS gate at
         // AIChatViewModel.makeAgentTools(memoryEnabled:).
         memoryEnabled: Boolean = true,
+        imageGenerationConfigured: Boolean = false,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
@@ -38,6 +39,9 @@ object AgentTools {
         add(registerControlsDefinition())
         if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
+        }
+        if (imageGenerationConfigured) {
+            add(GenerateImageTool.definition())
         }
         add(browserUseDefinition())
         if (memoryEnabled) {

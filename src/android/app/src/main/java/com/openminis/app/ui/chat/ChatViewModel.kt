@@ -58,6 +58,7 @@ import com.openminis.app.tools.AgentTools
 import com.openminis.app.tools.FileEditTool
 import com.openminis.app.tools.FileReadTool
 import com.openminis.app.tools.FileWriteTool
+import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
@@ -833,7 +834,9 @@ class ChatViewModel(
      * fixed list of definition objects, no I/O.
      */
     private val agentTools: List<AgentToolDefinition>
-        get() = AgentTools.makeAgentTools(
+        get() = if (currentModel?.supportsTools == false) {
+            emptyList()
+        } else AgentTools.makeAgentTools(
             // [T-android-vision-group / GH#182] The main model's own vision
             // capability. When false but a Vision Group is configured, read_image
             // is still exposed and routes through the group (see
@@ -847,6 +850,7 @@ class ChatViewModel(
                 providerRepository, context,
             ),
             memoryEnabled = _memoryEnabled.value,
+            imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
         )
 
     /**
@@ -4284,6 +4288,10 @@ class ChatViewModel(
             val idx = if (currentIdx >= 0) (currentIdx + offset) % members.size else offset
             val entryId = members[idx]
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
+            if (!entry.model.isTextOutput) continue
+            // Tool-disabled models are a strict pure-chat boundary. Crossing it
+            // during fallback could reintroduce tool traffic into a clean turn.
+            if (!hasSameToolMode(primaryProvider.model, entry.model)) continue
             val instance = config.instances.find { it.id == entry.providerInstanceId } ?: continue
             if (!instance.isEnabled) continue
             val apiKey = providerRepository.usableApiKey(instance) ?: continue
@@ -4310,6 +4318,7 @@ class ChatViewModel(
         val result = mutableListOf<String>()
         for (entryId in group.memberEntryIds) {
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
+            if (!entry.model.isTextOutput) continue
             val instance = config.instances.find { it.id == entry.providerInstanceId } ?: continue
             val label = instance.label.ifEmpty { entry.model.provider }
             val reason = when {
@@ -6801,10 +6810,14 @@ class ChatViewModel(
                     // [_compactSummary] is prepended as a `<context-summary>`
                     // user message. Falls through to the raw agentHistory when
                     // no compact has happened, so the common path stays zero-copy.
+                    val requestToolsEnabled = currentProvider.model.supportsTools != false
+                    val requestHistory = effectiveAgentHistory().let { history ->
+                        if (requestToolsEnabled) history else pureChatHistory(history)
+                    }
                     currentProvider.streamMessage(
-                        applyRequestImageBudget(effectiveAgentHistory()),
+                        applyRequestImageBudget(requestHistory),
                         systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
-                        tools = agentTools,
+                        tools = if (requestToolsEnabled) agentTools else emptyList(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
                 when (chunk) {
@@ -8139,6 +8152,12 @@ class ChatViewModel(
             // bindMounts map and would surface another session's
             // /var/minis/{workspace,attachments,offloads,browser} files.
             ReadImageTool.NAME -> executeReadImageTool(argsJson)
+            GenerateImageTool.NAME -> GenerateImageTool.execute(
+                argsJson = argsJson,
+                sessionId = activeSessionId,
+                context = context,
+                repository = providerRepository,
+            )
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
@@ -9140,7 +9159,10 @@ class ChatViewModel(
 
         // Count of agent-loop-visible models for the `minis-model-use` CLI
         // (exposed as a shell command via the native_offload handler).
-        val modelUseCount = try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
+        val toolsEnabled = currentModel?.supportsTools != false
+        val modelUseCount = if (toolsEnabled) {
+            try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
+        } else 0
 
         // [T-soul-md] Layer 1 is rendered by SystemPromptBuilder, which
         // owns the "You are <name>, a capable AI assistant running on an
@@ -9273,7 +9295,7 @@ CLI tools at /usr/local/bin with the `android-` prefix give you access to Androi
 - android-a11y-cli — drive system UI (read screen, tap, type, swipe, scroll) via the Android AccessibilityService when enabled. Run with no args (or --help) for the subcommand list.
 - minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/minis/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: minis-open https://example.com, minis-open /var/minis/workspace/report.md, minis-open /var/minis/attachments/chart.png. Prefer this over android-open for anything that can be previewed in-app so the user doesn't lose conversation context. Use android-open for non-web schemes (tel:, mailto:, geo:, intent:, etc.) or when the user explicitly wants the system handler.
 - minis-sessions-cli: Manage chat sessions. `list` recent or by date range, `search --keywords` cross-session, `messages --id` to read, `send` to create/continue a session, `retry` to re-run, `status` to check, `open` to navigate the app UI. Run --help for full options.
-- minis-model-use: Invoke other LLM models pre-configured by the user. Use `minis-model-use list` to see them (includes each model's modality capabilities like image_output, audio_output, etc.), `minis-model-use search <query>` to filter by name/provider. `minis-model-use run --model <id_or_name>` sends an OpenAI-compatible messages request; pass input via --input <json_file> or stdin, output goes to stdout or --output <path>. The OpenAI shape is the PRIMARY input for every model and modality; standard params are auto-converted to the underlying provider, so do not hand-write provider-native bodies as the primary input. For provider-specific extras the standard schema doesn't model (web-search plugins, image-to-image fields, TTS/video or other custom endpoints), escape hatches exist for OpenAI-compatible providers (they error or are ignored on Anthropic/Gemini models): `extra_body` (object merged verbatim into the request body), a custom `endpoint` path, and a top-level `passthrough` envelope for fully verbatim requests with RAW (unparsed) responses. Results may carry `warnings` (fields that were ignored/downgraded and why) and `applied_extras` (which extras actually took effect) — read them to self-correct. Run --help for the full contract before using these. Models may support multimodal output (image generation, TTS/audio, video) — check the modalities field in list output. For image_output models, pass generation params in the input JSON: top-level `n`/`size`/`quality`/`prompt` (OpenAI /images/generations style) or `generation_config.{aspect_ratio,image_size,number_of_images,person_generation}` (Gemini). Run with --help for full usage.
+- minis-model-use: Invoke other ordinary LLM models pre-configured by the user. Image-generation models are deliberately excluded; use generate_image for every image generation or editing request. Use `minis-model-use list` to inspect the remaining models and `minis-model-use run --model <id_or_name>` to invoke one. Run --help for the full contract.
 - minis-config: Read or change Minis settings programmatically. Run `minis-config --help` for subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers an in-app confirmation sheet and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Settings → Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in [Settings → Permissions](minis://settings/permissions); relay that message and don't retry. You CAN add new providers and write their `apiKey` (literal string OR a `${'$'}${'$'}ENV_VAR` reference to copy from an env var at write time), but `get` never echoes API keys / OAuth tokens / env var values back — those reads return `permission_denied` by design. OAuth tokens and env var values are not settable via this tool; for an env var, point the user at [Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=) so they enter the value themselves.
 - minis-scheduled: Create and manage scheduled tasks — prompts that run automatically at a chosen time. `minis-scheduled create --time HH:MM --prompt "..." [--label L] [--repeat once|daily|weekdays|custom --days mon,tue,...] [--target new|follow-up|rerun --session <id> --message <id>] [--model <modelId>] [--start YYYY-MM-DD] [--end YYYY-MM-DD]` schedules it; `list` shows existing tasks (with nextTriggerMs and run history), `delete --id <taskId>`, `enable`/`disable --id <taskId>`, and `run --id <taskId>` fires one immediately. Target modes: `new` runs the prompt in a fresh chat; `follow-up` appends the prompt to an existing chat (--session); `rerun` re-runs an existing chat (--session) from a chosen user message (--message). Use this when the user asks to "remind me / do X every morning / run this later / schedule a task". Run --help for full usage.
 Interactive terminal: minis://open_terminal opens a terminal for tasks that require interactive stdin (passwords, ssh, TUI apps like htop/vi). Write it as a Markdown link in your response — the app opens it when tapped. The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). Only use this for genuinely interactive sessions — for everything else, use shell_execute. Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).
@@ -9291,6 +9313,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             context = context,
             personalitySection = identitySection,
             memoryEnabled = memoryOn,
+            toolsEnabled = toolsEnabled,
         )
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
@@ -9301,13 +9324,16 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // the file_write hook below) becomes visible on the very next user
         // turn instead of "after kill app". Cheap: loadAll is a SQLite
         // SELECT + listFiles, no network.
-        skillRepository?.reloadFromDisk()
-        val skillFragment = skillRepository?.skillPromptFragment(activeSessionId)
+        if (toolsEnabled) skillRepository?.reloadFromDisk()
+        val skillFragment = if (toolsEnabled) skillRepository?.skillPromptFragment(activeSessionId) else null
+        val imageGenerationSkill = if (
+            toolsEnabled && providerRepository.resolvedImageGenerationEntries().isNotEmpty()
+        ) GenerateImageTool.skillPrompt() else null
         // [T-mcp-integration-android] Re-read servers.json (the CLI / file
         // browser may have changed it out-of-band) then build the Top-20
         // enabled-MCP disclosure, injected right after the skills fragment.
-        mcpRepository?.reloadFromDisk()
-        val mcpFragment = mcpRepository?.mcpPromptFragment(activeSessionId)
+        if (toolsEnabled) mcpRepository?.reloadFromDisk()
+        val mcpFragment = if (toolsEnabled) mcpRepository?.mcpPromptFragment(activeSessionId) else null
         // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
         // GLOBAL.md + recent daily logs entirely when the user has turned
         // memory off for this session. Cheaper (no disk read) and — more
@@ -9324,6 +9350,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             if (skillFragment != null) {
                 append("\n\n")
                 append(skillFragment)
+            }
+            if (imageGenerationSkill != null) {
+                append("\n\n")
+                append(imageGenerationSkill)
             }
             if (mcpFragment != null) {
                 append("\n\n")
@@ -9343,7 +9373,11 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             append("\n\nRuntime context:\n")
             append("- Current date: ").append(dateStr).append(" (").append(tzId).append(")\n")
             append("- Device language: ").append(lang).append("\n")
-            append("- minis-model-use models available: ").append(modelUseCount)
+            if (toolsEnabled) {
+                append("- minis-model-use models available: ").append(modelUseCount)
+            } else {
+                append("- Model mode: pure chat; structured tools disabled")
+            }
         }
     }
 
@@ -11256,6 +11290,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "file_edit" -> "Edit File"
         "browser_use" -> "Browse Web"
         "read_image" -> "Read Image"
+        "generate_image" -> "生成图片"
         "memory_write" -> "Write Memory"
         "present_choices" -> "提供行动选项"
         "render_panel", "panel", "present_system_panel" -> "显示资料面板"

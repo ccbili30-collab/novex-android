@@ -38,6 +38,9 @@ import com.openminis.app.provider.anthropic.AnthropicModelsApi
 import com.openminis.app.provider.gemini.GeminiModelsApi
 import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.provider.openrouter.OpenRouterModelsApi
+import com.openminis.app.tools.migrateLegacyImageGenerationConfig
+import com.openminis.app.tools.resolveImageGenerationEntries
+import com.openminis.app.tools.resolveOrdinaryAgentLoopEntries
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -583,6 +586,8 @@ class ProviderRepository(private val context: Context) {
                 modelGroups = canonical.modelGroups.toMutableList(),
                 agentLoopModelEntryIds = canonical.agentLoopModelEntryIds.toMutableList(),
                 agentLoopGroupIds = canonical.agentLoopGroupIds.toMutableList(),
+                imageGenerationGroupIds = canonical.imageGenerationGroupIds.toMutableList(),
+                imageGenerationProviderInstanceIds = canonical.imageGenerationProviderInstanceIds.toMutableList(),
                 revision = ProviderConfig.nextRevision(),
             )
         }
@@ -630,6 +635,8 @@ class ProviderRepository(private val context: Context) {
                 .toMutableList(),
             agentLoopModelEntryIds = live.agentLoopModelEntryIds.toMutableList(),
             agentLoopGroupIds = live.agentLoopGroupIds.toMutableList(),
+            imageGenerationGroupIds = live.imageGenerationGroupIds.toMutableList(),
+            imageGenerationProviderInstanceIds = live.imageGenerationProviderInstanceIds.toMutableList(),
         )
     }
 
@@ -812,6 +819,7 @@ class ProviderRepository(private val context: Context) {
             .map { it.id }
             .toSet()
         config.instances.removeAll { it.id == instanceId }
+        config.imageGenerationProviderInstanceIds.removeAll { it == instanceId }
         config.modelEntries.removeAll { it.providerInstanceId == instanceId }
 
         if (removedEntryIds.isNotEmpty()) {
@@ -823,6 +831,7 @@ class ProviderRepository(private val context: Context) {
         val emptyGroupIds = config.modelGroups.filter { it.memberEntryIds.isEmpty() }.map { it.id }.toSet()
         if (emptyGroupIds.isNotEmpty()) {
             config.modelGroups.removeAll { it.id in emptyGroupIds }
+            config.imageGenerationGroupIds.removeAll { it in emptyGroupIds }
             if (config.defaultPrimaryGroupId in emptyGroupIds) config.defaultPrimaryGroupId = null
             if (config.defaultSubGroupId in emptyGroupIds) config.defaultSubGroupId = null
         }
@@ -1229,6 +1238,7 @@ class ProviderRepository(private val context: Context) {
             config.visionGroupId = null
         }
         config.agentLoopGroupIds.removeAll { it == groupId }
+        config.imageGenerationGroupIds.removeAll { it == groupId }
         saveConfig(config)
     }
 
@@ -1430,29 +1440,58 @@ class ProviderRepository(private val context: Context) {
      * ProviderConfigStore.resolvedAgentLoopEntries.
      */
     fun resolvedAgentLoopEntries(): List<ModelEntry> {
-        val config = _config.value
-        val enabledIds = config.instances.filter { it.isEnabled }.map { it.id }.toSet()
-        val seen = mutableSetOf<String>()
-        val out = mutableListOf<ModelEntry>()
+        ensureImageGenerationMigration()
+        return resolveOrdinaryAgentLoopEntries(_config.value)
+    }
 
-        fun consider(entry: ModelEntry) {
-            if (entry.providerInstanceId !in enabledIds) return
-            if (!seen.add(entry.id)) return
-            out.add(entry)
+    fun resolvedImageGenerationEntries(): List<ModelEntry> {
+        ensureImageGenerationMigration()
+        return resolveImageGenerationEntries(_config.value).filter { entry ->
+            val instance = instance(entry.providerInstanceId) ?: return@filter false
+            usableApiKey(instance) != null
         }
+    }
 
-        // Individual entries first (preserves the order the user arranged in UI)
-        for (id in config.agentLoopModelEntryIds) {
-            config.modelEntries.find { it.id == id }?.let(::consider)
+    fun ensureImageGenerationMigration(): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val current = _config.value
+        val migrated = migrateLegacyImageGenerationConfig(current)
+        if (migrated !== current && migrated != current) saveConfig(migrated)
+    }
+
+    fun setImageGenerationGroupEnabled(groupId: String, enabled: Boolean): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        if (enabled) {
+            if (config.modelGroups.none { it.id == groupId }) return@synchronized
+            if (groupId !in config.imageGenerationGroupIds) config.imageGenerationGroupIds.add(groupId)
+        } else {
+            config.imageGenerationGroupIds.removeAll { it == groupId }
         }
-        // Then group members, in group order
-        for (gid in config.agentLoopGroupIds) {
-            val group = config.modelGroups.find { it.id == gid } ?: continue
-            for (memberId in group.memberEntryIds) {
-                config.modelEntries.find { it.id == memberId }?.let(::consider)
+        saveConfig(config)
+    }
+
+    fun reorderImageGenerationGroups(groupIds: List<String>): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val valid = groupIds.filter { id -> config.modelGroups.any { it.id == id } }.distinct()
+        config.imageGenerationGroupIds.clear()
+        config.imageGenerationGroupIds.addAll(valid)
+        saveConfig(config)
+    }
+
+    fun setImageGenerationProvider(instanceId: String, enabled: Boolean): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        if (enabled) {
+            if (config.instances.none { it.id == instanceId }) return@synchronized
+            if (instanceId !in config.imageGenerationProviderInstanceIds) {
+                config.imageGenerationProviderInstanceIds.add(instanceId)
             }
+        } else {
+            config.imageGenerationProviderInstanceIds.removeAll { it == instanceId }
         }
-        return out
+        saveConfig(config)
     }
 
     fun group(id: String): ModelGroup? =

@@ -37,6 +37,12 @@ data class LLMModel(
     // Mirrors iOS ModelModality flags. When null, treat as text-in/text-out only.
     val inputModalities: List<String>? = null,
     val outputModalities: List<String>? = null,
+    /**
+     * Whether this model may receive structured tool definitions and tool
+     * history. `null` preserves the historical default (tools enabled), while
+     * `false` is an explicit user choice to keep this model on pure chat.
+     */
+    val supportsTools: Boolean? = null,
 ) {
     companion object {
         // Anthropic — mirrors iOS LLMTypes.swift allAnthropic.

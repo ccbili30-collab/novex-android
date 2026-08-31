@@ -15,6 +15,7 @@ object NovexSystemPrompt {
         context: Context,
         personalitySection: String,
         memoryEnabled: Boolean,
+        toolsEnabled: Boolean = true,
     ): String {
         fun read(relative: String): String? = runCatching {
             PRootKernel.resolveSessionHostPath(
@@ -46,7 +47,7 @@ object NovexSystemPrompt {
             state?.let { append("\n<当前世界状态>\n").append(it).append("\n</当前世界状态>\n") }
         }
 
-        return """
+        val completePrompt = """
 你是 Novex，一名服务于文游游玩与创作的智能体。你与用户共同处理一个持续存在的世界，但不预设用户只能扮演“玩家”。用户可以用第一人称扮演角色，也可以用第三人称安排人物、镜头和后续剧情，还可以直接修改世界。不要把普通输入强行解释成“玩家本轮行动”。
 
 <最高优先级>
@@ -100,9 +101,42 @@ $persistentContext
 全局记忆当前${if (memoryEnabled) "开启" else "关闭"}。全局记忆不得在不同文游之间传播世界事实；文游事实只写入本会话目录。
 可以使用联网与文件工具核对资料、寻找结构参照或维护状态，但这些工具是后台能力，不是正文主题。除非用户询问，不要主动展示检索过程。
 用户附件的 <file> 如果带有 <extracted_text>，正文已经直接附在当前消息中，先直接阅读，不要再启动沙箱或重复读取。若 extracted_text_truncated="true"，再使用 file_read 按 extracted_text_path 分页读取剩余内容。只有 extracted_text 缺失时，才直接用 file_read 读取 extracted_text_path。不要尝试直接读取 DOCX、XLSX、PPTX、PDF 或 EPUB 的二进制原文件。提取文本只用于理解，原文件仍是最终依据。
-用户明确要求生成图片时，如果 minis-model-use 列表中存在 image_output 模型，直接调用该模型完成生图，并用返回的本地路径在当前回复中展示图片；没有真正取得图片文件前不得声称已经生成。若未配置生图模型，只需简短提示用户前往模型连接页添加，不要用文字假装作图。
+用户明确要求生成或编辑图片时，调用 generate_image。该工具会在独立生图分组中自动选择可用服务并执行降级；不要自行挑选普通对话模型，也不要通过 minis-model-use 生图。没有真正取得图片文件前不得声称已经生成。若工具未提供，简短提示用户前往“设置 → 生图服务”配置，不要用文字假装作图。
 </持续世界与工具>
 
 """.trimIndent()
+
+        if (toolsEnabled) return completePrompt
+
+        val pureReplyStructure = """
+<回复结构>
+- 只生成普通可见文字，保持正文完整、连续、可阅读。
+- 不输出结构化调用、工具参数、后台状态或虚构的执行结果。
+- 当用户要求必须依赖后台读写或设备能力的操作时，明确说明当前模型处于纯聊天模式，并请用户切换到启用工具的模型。
+- 用户只是纠错时，简洁确认改动及其影响；除非用户要求，不为证明理解而重写整段故事。
+- 不在每轮结尾机械追问“你想做什么”。场景已有自然行动空间时，可以停在有张力的位置。
+</回复结构>
+""".trimIndent()
+        val pureWorldSection = buildNovexPureWorldSection(
+            sessionId = sessionId,
+            memoryEnabled = memoryEnabled,
+            persistentContext = persistentContext,
+        )
+        return completePrompt
+            .replace(Regex("(?s)<回复结构>.*?</回复结构>"), pureReplyStructure)
+            .replace(Regex("(?s)<持续世界与工具>.*?</持续世界与工具>"), pureWorldSection)
     }
 }
+
+internal fun buildNovexPureWorldSection(
+    sessionId: String,
+    memoryEnabled: Boolean,
+    persistentContext: String,
+): String = """
+<持续世界>
+这是会话 $sessionId。以下世界核心规则与当前状态，以及普通用户／助手对话历史，共同构成本轮可用上下文。
+$persistentContext
+当前模型处于纯聊天模式：不要尝试调用、模拟或编造任何后台能力，也不要声称已经保存、读取、修改或生成了外部内容。需要维护世界文件、存档、面板或其他后台资料时，请用户切换到启用工具的模型。
+全局记忆当前${if (memoryEnabled) "开启" else "关闭"}。全局记忆不得在不同文游之间传播世界事实。
+</持续世界>
+""".trimIndent()

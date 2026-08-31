@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.FrontHand
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Psychology
@@ -74,6 +75,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onProvidersClick: () -> Unit,
     onModelGroupsClick: () -> Unit,
+    onImageGenerationClick: () -> Unit = {},
     onRootfsClick: () -> Unit = {},
     onEnvVarsClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
@@ -139,6 +141,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_manage_providers),
                     subtitle = stringResource(R.string.settings_manage_providers_subtitle),
                     onClick = onProvidersClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.AddPhotoAlternate,
+                    iconColor = Color(0xFFAF52DE),
+                    title = "生图服务",
+                    subtitle = "独立接口、模型与自动降级分组",
+                    onClick = onImageGenerationClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.BarChart,

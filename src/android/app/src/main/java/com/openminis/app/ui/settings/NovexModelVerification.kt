@@ -18,6 +18,7 @@ internal data class NovexModelVerification(
     val availableModels: List<String>,
     val failures: List<NovexModelFailure>,
     val warnings: List<NovexModelWarning> = emptyList(),
+    val toolDisabledModels: List<String> = emptyList(),
 )
 
 /**
@@ -28,6 +29,7 @@ internal suspend fun verifyNovexModels(
     modelIds: List<String>,
     repetitions: Int = 1,
     onProgress: (NovexProbeStage, Int, Int, String) -> Unit = { _, _, _, _ -> },
+    shouldProbeTools: (String) -> Boolean = { true },
     chatProbe: suspend (String) -> String?,
     toolProbe: suspend (String) -> String?,
 ): NovexModelVerification {
@@ -63,11 +65,12 @@ internal suspend fun verifyNovexModels(
         }
     }
 
-    val available = mutableListOf<String>()
-    for ((modelIndex, modelId) in chatPassed.withIndex()) {
+    val available = chatPassed.filterNot(shouldProbeTools).toMutableList()
+    val toolCandidates = chatPassed.filter(shouldProbeTools)
+    for ((modelIndex, modelId) in toolCandidates.withIndex()) {
         val errors = mutableListOf<String>()
         repeat(repetitions) { attempt ->
-            onProgress(NovexProbeStage.TOOL, modelIndex, chatPassed.size, modelId)
+            onProgress(NovexProbeStage.TOOL, modelIndex, toolCandidates.size, modelId)
             val error = runCatching { toolProbe(modelId) }
                 .getOrElse { it.message ?: it.javaClass.simpleName }
             if (error != null) errors += "第 ${attempt + 1}/$repetitions 轮：$error"
@@ -89,7 +92,33 @@ internal suspend fun verifyNovexModels(
         }
     }
 
-    return NovexModelVerification(available, failures, warnings)
+    return NovexModelVerification(
+        availableModels = available,
+        failures = failures,
+        warnings = warnings,
+        toolDisabledModels = chatPassed.filterNot(shouldProbeTools),
+    )
+}
+
+internal fun formatNovexModelVerificationLine(
+    result: NovexModelVerification,
+    modelId: String,
+): String {
+    val failure = result.failures.firstOrNull { it.modelId == modelId }
+    if (failure != null) {
+        val stage = if (failure.stage == NovexProbeStage.CHAT) "普通对话" else "工具调用"
+        return "$modelId：$stage${failure.detail}"
+    }
+    val warning = result.warnings.firstOrNull { it.modelId == modelId }
+    if (warning != null) {
+        val stage = if (warning.stage == NovexProbeStage.CHAT) "普通对话" else "工具调用"
+        return "$modelId：$stage${warning.detail}"
+    }
+    return if (modelId in result.toolDisabledModels) {
+        "$modelId：普通对话通过 · 工具已关闭"
+    } else {
+        "$modelId：普通对话与工具调用均通过"
+    }
 }
 
 internal fun formatNovexVerificationReport(result: NovexModelVerification): String = buildString {
