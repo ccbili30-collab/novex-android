@@ -279,6 +279,9 @@ interface ChatDao {
     @Query("UPDATE sessions SET source = :source WHERE id = :id")
     suspend fun updateSource(id: String, source: String?)
 
+    @Query("UPDATE sessions SET chat_background_path = :path WHERE id = :id")
+    suspend fun updateChatBackground(id: String, path: String?)
+
     // Messages: increment stream_interrupt_count
     @Query("UPDATE messages SET stream_interrupt_count = stream_interrupt_count + 1, updated_at = :updatedAt WHERE id = :id")
     suspend fun incrementStreamInterruptCount(id: String, updatedAt: Long = System.currentTimeMillis())

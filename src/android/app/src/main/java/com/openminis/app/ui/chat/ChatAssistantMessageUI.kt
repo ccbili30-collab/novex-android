@@ -284,7 +284,9 @@ internal fun AssistantHeader() {
     // `name` field is user-customizable — defaults to "Minis" when
     // SOUL.md is missing the field or set to the default value.
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
-    val displayName = soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
+    val immersiveProfile = LocalImmersiveChatProfile.current
+    val displayName = immersiveProfile.character?.name?.ifBlank { null }
+        ?: soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -294,21 +296,33 @@ internal fun AssistantHeader() {
             // inside the turn is unaffected (that's this row's bottom=2).
             .padding(top = 10.dp, bottom = 2.dp),
     ) {
-        val sparkleGradient = Brush.linearGradient(
-            colors = listOf(SparkleColor1, SparkleColor2),
-        )
-        Icon(
-            imageVector = Icons.Filled.AutoAwesome,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier
-                .size(18.dp)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(brush = sparkleGradient, blendMode = BlendMode.SrcIn)
-                },
-        )
+        val avatar = immersiveProfile.character?.avatarPath
+            ?.let(::java.io.File)
+            ?.takeIf { it.exists() }
+        if (avatar != null) {
+            AsyncImage(
+                model = avatar,
+                contentDescription = "$displayName 头像",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(28.dp).clip(CircleShape),
+            )
+        } else {
+            val sparkleGradient = Brush.linearGradient(
+                colors = listOf(SparkleColor1, SparkleColor2),
+            )
+            Icon(
+                imageVector = Icons.Filled.AutoAwesome,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(brush = sparkleGradient, blendMode = BlendMode.SrcIn)
+                    },
+            )
+        }
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = displayName,

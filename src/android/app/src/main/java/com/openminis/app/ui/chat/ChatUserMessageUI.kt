@@ -297,6 +297,8 @@ internal fun UserMessageBubble(
     var showMenu by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
     val haptics = LocalHapticFeedback.current
+    val persona = LocalImmersiveChatProfile.current.persona
+    val personaAvatar = persona?.avatarPath?.let(::java.io.File)?.takeIf { it.exists() }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -515,6 +517,15 @@ internal fun UserMessageBubble(
                     )
                 }
             }
+        }
+        if (personaAvatar != null) {
+            Spacer(Modifier.width(8.dp))
+            AsyncImage(
+                model = personaAvatar,
+                contentDescription = "${persona.name} 头像",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(30.dp).clip(CircleShape).align(Alignment.Bottom),
+            )
         }
     }
     }

@@ -3092,6 +3092,9 @@ class ChatViewModel(
     /** Whether this is a draft session (not yet persisted to DB). */
     private val isDraft: Boolean = sessionId.startsWith("__new__")
 
+    private fun draftMarker(name: String): String? =
+        sessionId.substringAfter("__${name}__", "").substringBefore("__").takeIf { it.isNotEmpty() }
+
     /** Novex modes share one system prompt. Creation only adds hidden leading context. */
     private val initialNovexMode: String =
         if (sessionId.contains("__novex__creation")) "creation" else "play"
@@ -3099,16 +3102,31 @@ class ChatViewModel(
     /** Model group ID from long-press FAB, encoded in the draft session ID.
      *  substringBefore strips the folder marker in case both are present. */
     private val initialGroupId: String? =
-        sessionId.substringAfter("__grp__", "").substringBefore("__fld__").substringBefore("__novex__")
-            .takeIf { it.isNotEmpty() }
+        draftMarker("grp")
 
     /** Session-group (folder) id from the folder card's "New Chat in Group"
      *  menu item, encoded in the draft id. Filed at draft promotion — the
      *  folder_id row can only exist once the session does (iOS defers the
      *  same way via pendingFolderDraft). */
     private val initialFolderId: String? =
-        sessionId.substringAfter("__fld__", "").substringBefore("__grp__").substringBefore("__novex__")
-            .takeIf { it.isNotEmpty() }
+        draftMarker("fld")
+
+    private val initialCharacterId: String? = draftMarker("char")
+    private val initialPersonaId: String? = draftMarker("persona")
+
+    private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
+    val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
+        _immersiveProfile.asStateFlow()
+
+    /** null = inherit the role card background; empty = explicitly hide it. */
+    fun setImmersiveBackground(path: String?) {
+        val effective = path ?: _immersiveProfile.value.character?.defaultBackgroundPath
+        _immersiveProfile.value = _immersiveProfile.value.copy(backgroundPath = effective)
+        val sid = realSessionId
+        if (sid.isNotEmpty()) {
+            viewModelScope.launch { chatRepository.updateChatBackground(sid, path) }
+        }
+    }
 
     /** The real session ID (same as sessionId for existing sessions, generated on first message for drafts). */
     internal var realSessionId: String = if (isDraft) "" else sessionId
@@ -3318,6 +3336,11 @@ class ChatViewModel(
         val session = chatRepository.createSession(
             modelId = modelId,
             memoryEnabled = _memoryEnabled.value,
+            characterId = _immersiveProfile.value.character?.id,
+            characterSnapshotJson = _immersiveProfile.value.character?.toJson()?.toString(),
+            personaId = _immersiveProfile.value.persona?.id,
+            personaSnapshotJson = _immersiveProfile.value.persona?.toJson()?.toString(),
+            chatBackgroundPath = _immersiveProfile.value.backgroundPath,
         )
         realSessionId = session.id
         // "New Chat in Group": file the just-promoted draft into its folder.
@@ -3485,6 +3508,13 @@ class ChatViewModel(
                 // Draft session: just set up provider using default group or first entry
                 _sessionTitle.value = "New Chat"
                 _sessionCategory.value = null
+                val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(context, initialCharacterId)
+                val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
+                _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
+                    character = draftCharacter,
+                    persona = draftPersona,
+                    backgroundPath = draftCharacter?.defaultBackgroundPath,
+                )
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
                 if (effectiveGroupId != null) {
@@ -3510,6 +3540,21 @@ class ChatViewModel(
             val session = chatRepository.getSession(sessionId) ?: return@launch
             _sessionTitle.value = session.title ?: "New Chat"
             _sessionCategory.value = session.category
+            val sessionCharacter = session.characterSnapshotJson?.let {
+                runCatching {
+                    com.openminis.app.data.character.CharacterCard.fromJson(org.json.JSONObject(it))
+                }.getOrNull()
+            }
+            val sessionPersona = session.personaSnapshotJson?.let {
+                runCatching {
+                    com.openminis.app.data.character.PlayerPersona.fromJson(org.json.JSONObject(it))
+                }.getOrNull()
+            }
+            _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
+                character = sessionCharacter,
+                persona = sessionPersona,
+                backgroundPath = session.chatBackgroundPath ?: sessionCharacter?.defaultBackgroundPath,
+            )
             _memoryEnabled.value = session.memoryEnabled != 0
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user
@@ -9315,6 +9360,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             memoryEnabled = memoryOn,
             toolsEnabled = toolsEnabled,
         )
+        val characterFragment = com.openminis.app.data.character.CharacterPromptComposer.compose(
+            characterSnapshot = _immersiveProfile.value.character?.toJson()?.toString(),
+            personaSnapshot = _immersiveProfile.value.persona?.toJson()?.toString(),
+        )
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
@@ -9347,6 +9396,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
         return buildString {
             append(base)
+            if (characterFragment != null) {
+                append("\n\n")
+                append(characterFragment)
+            }
             if (skillFragment != null) {
                 append("\n\n")
                 append(skillFragment)

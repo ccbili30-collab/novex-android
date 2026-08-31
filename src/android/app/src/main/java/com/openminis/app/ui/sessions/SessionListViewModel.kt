@@ -1070,6 +1070,11 @@ class SessionListViewModel(
             val newSession = chatRepository.createSession(
                 modelId = session.modelId,
                 title = "${session.title ?: "Chat"} (Copy)",
+                characterId = session.characterId,
+                characterSnapshotJson = session.characterSnapshotJson,
+                personaId = session.personaId,
+                personaSnapshotJson = session.personaSnapshotJson,
+                chatBackgroundPath = session.chatBackgroundPath,
             )
             for (msg in messages) {
                 chatRepository.appendMessage(

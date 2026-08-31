@@ -21,6 +21,11 @@ class ChatRepository(internal val dao: ChatDao) {
         // here; existing call sites that omit it keep the prior
         // memoryEnabled=1 behavior (legacy default).
         memoryEnabled: Boolean = true,
+        characterId: String? = null,
+        characterSnapshotJson: String? = null,
+        personaId: String? = null,
+        personaSnapshotJson: String? = null,
+        chatBackgroundPath: String? = null,
     ): ChatSessionEntity {
         val now = System.currentTimeMillis()
         val session = ChatSessionEntity(
@@ -30,6 +35,11 @@ class ChatRepository(internal val dao: ChatDao) {
             createdAt = now,
             updatedAt = now,
             memoryEnabled = if (memoryEnabled) 1 else 0,
+            characterId = characterId,
+            characterSnapshotJson = characterSnapshotJson,
+            personaId = personaId,
+            personaSnapshotJson = personaSnapshotJson,
+            chatBackgroundPath = chatBackgroundPath,
         )
         dao.insertSession(session)
         return session
@@ -99,6 +109,10 @@ class ChatRepository(internal val dao: ChatDao) {
 
     suspend fun updateSessionModel(sessionId: String, modelId: String) {
         dao.updateSessionModel(sessionId, modelId)
+    }
+
+    suspend fun updateChatBackground(sessionId: String, path: String?) {
+        dao.updateChatBackground(sessionId, path)
     }
 
     suspend fun updateSessionBinding(sessionId: String, binding: String, modelId: String) {

@@ -92,6 +92,7 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Translate
@@ -406,6 +407,7 @@ fun SessionListScreen(
     onSessionClick: (String) -> Unit,
     onNewChat: (String) -> Unit,
     onSettingsClick: () -> Unit,
+    onCharactersClick: () -> Unit = {},
     onAddProviderClick: () -> Unit = {},
     onSelectModelsClick: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
@@ -667,6 +669,17 @@ fun SessionListScreen(
                                 onDismissRequest = { showOverflowMenu = false },
                                 offset = DpOffset(0.dp, 0.dp),
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("角色与身份") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        onCharactersClick()
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Person, contentDescription = null)
+                                    },
+                                )
+                                MinisMenuDivider()
                                 if (sessions.isNotEmpty()) {
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.sessionlist_select_action)) },

@@ -428,6 +428,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // synchronous metadata read-path (chat header / system prompt).
         com.openminis.app.agent.SoulStore.ensureExists(this)
         com.openminis.app.agent.SoulStore.refreshCache(this)
+        com.openminis.app.data.character.CharacterCardStore.initialize(this)
 
         // T-config: minis-config CLI surface — registry / audit log /
         // master-switch store. Initialized eagerly here so

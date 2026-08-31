@@ -154,6 +154,10 @@ object Routes {
     const val MCP = "mcp"
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
+    const val CHARACTERS = "characters"
+    const val CHARACTER_EDIT = "characters/edit?characterId={characterId}"
+    const val PERSONA_EDIT = "characters/persona/edit?personaId={personaId}"
+    const val CHARACTER_START = "characters/start/{characterId}"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
     /**
@@ -191,6 +195,11 @@ object Routes {
     fun logDetail(fileName: String) = "log_detail/$fileName"
     fun sessionStorageDetail(sessionId: String) = "session_storage/$sessionId"
     fun memoryFileEdit(fileName: String, isGlobal: Boolean) = "memory_file/$fileName/$isGlobal"
+    fun characterEdit(characterId: String? = null) =
+        if (characterId == null) "characters/edit" else "characters/edit?characterId=${android.net.Uri.encode(characterId)}"
+    fun personaEdit(personaId: String? = null) =
+        if (personaId == null) "characters/persona/edit" else "characters/persona/edit?personaId=${android.net.Uri.encode(personaId)}"
+    fun characterStart(characterId: String) = "characters/start/${android.net.Uri.encode(characterId)}"
     fun chat(sessionId: String) = "chat/$sessionId"
     fun providerDetail(instanceId: String) = "provider/$instanceId"
     fun shadowVoiceDetail(instanceId: String) = "voice_service/$instanceId"
@@ -507,6 +516,7 @@ fun AppNavigation(
                 onSettingsClick = {
                     navController.safeNavigate(Routes.SETTINGS)
                 },
+                onCharactersClick = { navController.safeNavigate(Routes.CHARACTERS) },
                 onAddProviderClick = {
                     navController.safeNavigate(Routes.ADD_PROVIDER)
                 },
@@ -610,6 +620,62 @@ fun AppNavigation(
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
                 onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
+            )
+        }
+
+        composable(Routes.CHARACTERS) {
+            com.openminis.app.ui.settings.CharacterHubScreen(
+                onBack = { navController.safePopBackStack() },
+                onEditCharacter = { navController.safeNavigate(Routes.characterEdit(it)) },
+                onEditPersona = { navController.safeNavigate(Routes.personaEdit(it)) },
+                onStartCharacter = { navController.safeNavigate(Routes.characterStart(it)) },
+            )
+        }
+
+        composable(
+            route = Routes.CHARACTER_EDIT,
+            arguments = listOf(navArgument("characterId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            }),
+        ) { entry ->
+            com.openminis.app.ui.settings.CharacterEditorScreen(
+                cardId = entry.arguments?.getString("characterId"),
+                onBack = { navController.safePopBackStack() },
+                onSaved = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(
+            route = Routes.PERSONA_EDIT,
+            arguments = listOf(navArgument("personaId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            }),
+        ) { entry ->
+            com.openminis.app.ui.settings.PersonaEditorScreen(
+                personaId = entry.arguments?.getString("personaId"),
+                onBack = { navController.safePopBackStack() },
+                onSaved = { navController.safePopBackStack() },
+            )
+        }
+
+        composable(
+            route = Routes.CHARACTER_START,
+            arguments = listOf(navArgument("characterId") { type = NavType.StringType }),
+        ) { entry ->
+            val characterId = entry.arguments?.getString("characterId") ?: return@composable
+            com.openminis.app.ui.settings.StartCharacterChatScreen(
+                characterId = characterId,
+                onBack = { navController.safePopBackStack() },
+                onCreatePersona = { navController.safeNavigate(Routes.personaEdit()) },
+                onCreateDraft = { draftId ->
+                    navController.safeNavigate(Routes.chat(draftId)) {
+                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
+                    }
+                },
             )
         }
 

@@ -143,13 +143,13 @@
     <string name="settings_memory">记忆</string>
     <string name="settings_memory_subtitle">跨会话保留的持久化知识</string>
     <!-- T-soul-md — SOUL.md 人格 / 身份配置 -->
-    <string name="settings_soul">人格</string>
-    <string name="settings_soul_subtitle">持久化人格与身份（SOUL.md）</string>
-    <string name="soul_settings_title">人格</string>
+    <string name="settings_soul">全局预设</string>
+    <string name="settings_soul_subtitle">所有对话默认使用的系统提示词</string>
+    <string name="soul_settings_title">全局预设</string>
     <string name="soul_section_preview">预览</string>
     <string name="soul_section_identity">身份</string>
-    <string name="soul_section_personality">人格提示词</string>
-    <string name="soul_personality_footer">人格正文会完整写入 SOUL.md，不会静默截断。它作为高优先级人格与文风注入每次对话；当前上限为中文 100 万字符或英文 100 万词，超限时会明确阻止保存。</string>
+    <string name="soul_section_personality">系统提示词</string>
+    <string name="soul_personality_footer">这里是所有对话默认使用的全局预设。角色卡、玩家身份和世界规则会在新对话中单独叠加，不会覆盖此处内容。</string>
     <string name="soul_field_name">名称</string>
     <string name="soul_field_style">风格</string>
     <string name="soul_field_lang">语言</string>

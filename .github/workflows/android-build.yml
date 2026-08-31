@@ -172,10 +172,15 @@ jobs:
               dist/SHA256SUMS.txt \
               --clobber
           else
+            release_flags=()
+            if [[ "$version" == *-* ]]; then
+              release_flags+=(--prerelease)
+            fi
             gh release create "$GITHUB_REF_NAME" \
               "dist/novex-$version.apk" \
               dist/novex.apk \
               dist/SHA256SUMS.txt \
               --title "Novex $version" \
-              --generate-notes
+              --generate-notes \
+              "${release_flags[@]}"
           fi

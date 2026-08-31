@@ -199,6 +199,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.paint
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -261,6 +262,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
 import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
@@ -456,6 +458,7 @@ fun ChatScreen(
     val modelName by viewModel.modelName.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val sessionCategory by viewModel.sessionCategory.collectAsState()
+    val immersiveProfile by viewModel.immersiveProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
     val availableGroups by viewModel.availableGroups.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
@@ -783,6 +786,23 @@ fun ChatScreen(
                 "Only the first $ATTACHMENT_PICK_LIMIT items were attached.",
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
+        }
+    }
+
+    val immersiveBackgroundPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                com.openminis.app.data.character.CharacterCardStore.copyMedia(
+                    context,
+                    uri,
+                    "chat-background",
+                )
+            }.onSuccess { viewModel.setImmersiveBackground(it) }
+                .onFailure {
+                    android.widget.Toast.makeText(context, it.message ?: "背景读取失败", android.widget.Toast.LENGTH_SHORT).show()
+                }
         }
     }
 
@@ -2382,9 +2402,19 @@ fun ChatScreen(
         // minis://attachments/* lookups don't rely on the global bindMounts
         // map (which is last-writer-wins across sessions).
         LocalMarkdownSessionId provides sessionId,
+        LocalImmersiveChatProfile provides immersiveProfile,
     ) {
+    val immersiveBackground = immersiveProfile.backgroundPath
+        ?.let(::java.io.File)
+        ?.takeIf { it.exists() }
+    val immersiveBackgroundPainter = rememberAsyncImagePainter(immersiveBackground)
     Scaffold(
-        containerColor = ChatColors.background,
+        modifier = if (immersiveBackground != null) {
+            Modifier.paint(immersiveBackgroundPainter, contentScale = ContentScale.Crop)
+        } else Modifier,
+        containerColor = if (immersiveBackground != null) {
+            ChatColors.background.copy(alpha = 0.80f)
+        } else ChatColors.background,
         contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
@@ -2436,6 +2466,8 @@ fun ChatScreen(
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
                             val displayTitle = when {
+                                immersiveProfile.character?.name?.isNotBlank() == true ->
+                                    immersiveProfile.character!!.name
                                 showChatTitlePill
                                     && sessionTitle.isNotBlank()
                                     && sessionTitle != "New Chat" -> sessionTitle
@@ -2640,6 +2672,28 @@ fun ChatScreen(
                                     Icon(Icons.Default.Settings, contentDescription = null)
                                 },
                             )
+                            if (immersiveProfile.character != null) {
+                                DropdownMenuItem(
+                                    text = { Text("更换对话背景") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        immersiveBackgroundPickerLauncher.launch(
+                                            androidx.activity.result.PickVisualMediaRequest(
+                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                            ),
+                                        )
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("恢复角色默认背景") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        viewModel.setImmersiveBackground(null)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                )
+                            }
                             // [T-new-chat-menu-entry] New Chat — first item
                             // (iOS parity: square.and.pencil at the top of the
                             // "..." menu). Streaming sessions confirm first.
@@ -3819,15 +3873,42 @@ fun ChatScreen(
                 }
                 } // AlwaysStretchOverscrollBox
                 if (messages.isEmpty() && !isStreaming) {
-                    Text(
-                        text = "导入你的模拟器启动词，开始游戏吧",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(horizontal = 36.dp),
-                    )
+                    val character = immersiveProfile.character
+                    if (character != null) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.align(Alignment.Center).padding(horizontal = 36.dp),
+                        ) {
+                            character.avatarPath?.let(::java.io.File)?.takeIf { it.exists() }?.let { avatar ->
+                                AsyncImage(
+                                    model = avatar,
+                                    contentDescription = "${character.name} 头像",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(84.dp).clip(CircleShape),
+                                )
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            Text(character.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            val greeting = character.greeting.ifBlank { character.summary }
+                            if (greeting.isNotBlank()) {
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    text = greeting,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "导入你的模拟器启动词，开始游戏吧",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.align(Alignment.Center).padding(horizontal = 36.dp),
+                        )
+                    }
                 }
                 // SelectionDragTracker bridges gesture-published dragIntent
                 // with listState scroll observation — that's what keeps the

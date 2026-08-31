@@ -270,13 +270,13 @@
     <string name="mcp_delete_title">Delete %1$s?</string>
     <string name="mcp_delete_message">This removes the server from servers.json. This cannot be undone.</string>
     <!-- T-soul-md — SOUL.md personality / identity settings -->
-    <string name="settings_soul">Soul</string>
-    <string name="settings_soul_subtitle">Persistent personality and identity (SOUL.md)</string>
-    <string name="soul_settings_title">Soul</string>
+    <string name="settings_soul">Global Preset</string>
+    <string name="settings_soul_subtitle">Default system prompt for every conversation</string>
+    <string name="soul_settings_title">Global Preset</string>
     <string name="soul_section_preview">Preview</string>
     <string name="soul_section_identity">Identity</string>
-    <string name="soul_section_personality">Personality Prompt</string>
-    <string name="soul_personality_footer">The full personality body is saved to SOUL.md without silent truncation. It is injected as high-priority identity and writing style on every turn. The current limit is 1,000,000 Chinese characters or 1,000,000 English words; saving is explicitly blocked if exceeded.</string>
+    <string name="soul_section_personality">System Prompt</string>
+    <string name="soul_personality_footer">This global preset is used by default in every conversation. Character cards, player personas, and world rules are layered separately for each new chat.</string>
     <string name="soul_field_name">Name</string>
     <string name="soul_field_style">Style</string>
     <string name="soul_field_lang">Language</string>
