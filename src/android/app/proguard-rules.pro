@@ -14,6 +14,13 @@
 -dontwarn java.beans.ConstructorProperties
 -dontwarn net.sf.saxon.**
 -dontwarn org.apache.batik.**
+-dontwarn com.github.javaparser.**
+-dontwarn com.microsoft.schemas.**
+-dontwarn com.sun.org.apache.xml.internal.resolver.**
+-dontwarn org.apache.maven.**
+-dontwarn org.apache.tools.ant.**
+-dontwarn org.openxmlformats.schemas.**
+-dontwarn org.osgi.annotation.**
 -dontwarn org.osgi.framework.**
 
 # XMLBeans resolves generated OOXML type systems and Aalto StAX factories by
