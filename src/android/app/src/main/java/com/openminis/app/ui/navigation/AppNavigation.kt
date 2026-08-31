@@ -155,6 +155,7 @@ object Routes {
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
     const val CHARACTERS = "characters"
+    const val STORY_WORLD_EDIT = "characters/world/edit"
     const val CHARACTER_EDIT = "characters/edit?characterId={characterId}"
     const val PERSONA_EDIT = "characters/persona/edit?personaId={personaId}"
     const val CHARACTER_START = "characters/start/{characterId}"
@@ -626,9 +627,17 @@ fun AppNavigation(
         composable(Routes.CHARACTERS) {
             com.openminis.app.ui.settings.CharacterHubScreen(
                 onBack = { navController.safePopBackStack() },
+                onEditWorld = { navController.safeNavigate(Routes.STORY_WORLD_EDIT) },
                 onEditCharacter = { navController.safeNavigate(Routes.characterEdit(it)) },
                 onEditPersona = { navController.safeNavigate(Routes.personaEdit(it)) },
                 onStartCharacter = { navController.safeNavigate(Routes.characterStart(it)) },
+            )
+        }
+
+        composable(Routes.STORY_WORLD_EDIT) {
+            com.openminis.app.ui.settings.StoryWorldEditorScreen(
+                onBack = { navController.safePopBackStack() },
+                onSaved = { navController.safePopBackStack() },
             )
         }
 

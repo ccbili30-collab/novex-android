@@ -56,6 +56,7 @@ data class ChatSessionEntity(
     /** Character/persona snapshots are immutable per conversation. Library edits only affect new chats. */
     @ColumnInfo(name = "character_id") val characterId: String? = null,
     @ColumnInfo(name = "character_snapshot_json") val characterSnapshotJson: String? = null,
+    @ColumnInfo(name = "world_snapshot_json") val worldSnapshotJson: String? = null,
     @ColumnInfo(name = "persona_id") val personaId: String? = null,
     @ColumnInfo(name = "persona_snapshot_json") val personaSnapshotJson: String? = null,
     /** Null inherits the character snapshot's default background. Empty string explicitly clears it. */

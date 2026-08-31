@@ -918,7 +918,7 @@ class ChatViewModel(
      * op-log row are mutated.
      */
     fun revokeMemoryRecord(record: MemoryToolRecord): com.openminis.app.data.repository.MemoryRepository.EntryMutationResult {
-        val repo = memoryRepository
+        val repo = activeMemoryRepository()
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.IOError("Memory not available")
         val written = record.writtenContent
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.NotFound
@@ -946,7 +946,7 @@ class ChatViewModel(
      * still get pulled from the in-memory record list.
      */
     private fun revokeMemoryWritesInDeletedMessages(deletedMessages: List<ChatMessage>) {
-        if (memoryRepository == null) return
+        if (activeMemoryRepository() == null) return
         val deletedContents = mutableListOf<String>()
         for (msg in deletedMessages) {
             for (block in msg.toolBlocks) {
@@ -982,7 +982,7 @@ class ChatViewModel(
         record: MemoryToolRecord,
         newContent: String,
     ): com.openminis.app.data.repository.MemoryRepository.EntryMutationResult {
-        val repo = memoryRepository
+        val repo = activeMemoryRepository()
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.IOError("Memory not available")
         val old = record.writtenContent
             ?: return com.openminis.app.data.repository.MemoryRepository.EntryMutationResult.NotFound
@@ -3118,9 +3118,25 @@ class ChatViewModel(
     val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
         _immersiveProfile.asStateFlow()
 
+    private var scopedMemoryCharacterId: String? = null
+    private var scopedMemoryRepository: MemoryRepository? = null
+
+    /** A role card owns its memory across conversations; ordinary chats keep global memory. */
+    private fun activeMemoryRepository(): MemoryRepository? {
+        val characterId = _immersiveProfile.value.character?.id ?: return memoryRepository
+        if (scopedMemoryCharacterId != characterId || scopedMemoryRepository == null) {
+            scopedMemoryCharacterId = characterId
+            scopedMemoryRepository = com.openminis.app.data.character.CharacterCardStore
+                .characterMemoryRepository(context, characterId)
+        }
+        return scopedMemoryRepository
+    }
+
     /** null = inherit the role card background; empty = explicitly hide it. */
     fun setImmersiveBackground(path: String?) {
-        val effective = path ?: _immersiveProfile.value.character?.defaultBackgroundPath
+        val effective = path
+            ?: _immersiveProfile.value.character?.defaultBackgroundPath
+            ?: _immersiveProfile.value.world?.backgroundPath
         _immersiveProfile.value = _immersiveProfile.value.copy(backgroundPath = effective)
         val sid = realSessionId
         if (sid.isNotEmpty()) {
@@ -3338,6 +3354,7 @@ class ChatViewModel(
             memoryEnabled = _memoryEnabled.value,
             characterId = _immersiveProfile.value.character?.id,
             characterSnapshotJson = _immersiveProfile.value.character?.toJson()?.toString(),
+            worldSnapshotJson = _immersiveProfile.value.world?.toJson()?.toString(),
             personaId = _immersiveProfile.value.persona?.id,
             personaSnapshotJson = _immersiveProfile.value.persona?.toJson()?.toString(),
             chatBackgroundPath = _immersiveProfile.value.backgroundPath,
@@ -3510,10 +3527,14 @@ class ChatViewModel(
                 _sessionCategory.value = null
                 val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(context, initialCharacterId)
                 val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
+                val draftWorld = if (draftCharacter != null) {
+                    com.openminis.app.data.character.CharacterCardStore.currentWorld(context)
+                } else null
                 _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
+                    world = draftWorld,
                     character = draftCharacter,
                     persona = draftPersona,
-                    backgroundPath = draftCharacter?.defaultBackgroundPath,
+                    backgroundPath = draftCharacter?.defaultBackgroundPath ?: draftWorld?.backgroundPath,
                 )
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
@@ -3550,10 +3571,18 @@ class ChatViewModel(
                     com.openminis.app.data.character.PlayerPersona.fromJson(org.json.JSONObject(it))
                 }.getOrNull()
             }
+            val sessionWorld = session.worldSnapshotJson?.let {
+                runCatching {
+                    com.openminis.app.data.character.StoryWorld.fromJson(org.json.JSONObject(it))
+                }.getOrNull()
+            }
             _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
+                world = sessionWorld,
                 character = sessionCharacter,
                 persona = sessionPersona,
-                backgroundPath = session.chatBackgroundPath ?: sessionCharacter?.defaultBackgroundPath,
+                backgroundPath = session.chatBackgroundPath
+                    ?: sessionCharacter?.defaultBackgroundPath
+                    ?: sessionWorld?.backgroundPath,
             )
             _memoryEnabled.value = session.memoryEnabled != 0
             // T239: hydrate persisted thinking-mode override. null = unset
@@ -8760,7 +8789,7 @@ class ChatViewModel(
     }
 
     private fun executeMemoryWriteTool(argsJson: String): ToolExecutionResult {
-        val repo = memoryRepository ?: return ToolExecutionResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
         if (!_memoryEnabled.value) {
             val msg = "Memory writes are disabled for this session (user toggled /memory off). Reads remain available."
             return ToolExecutionResult(msg, false, toolTitle = "Memory (disabled)")
@@ -8781,7 +8810,7 @@ class ChatViewModel(
     }
 
     private fun executeMemoryGetTool(argsJson: String): ToolExecutionResult {
-        val repo = memoryRepository ?: return ToolExecutionResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
         val result = MemoryTools.executeMemoryGet(argsJson, repo)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")
@@ -9363,6 +9392,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         val characterFragment = com.openminis.app.data.character.CharacterPromptComposer.compose(
             characterSnapshot = _immersiveProfile.value.character?.toJson()?.toString(),
             personaSnapshot = _immersiveProfile.value.persona?.toJson()?.toString(),
+            worldSnapshot = _immersiveProfile.value.world?.toJson()?.toString(),
         )
 
         // Match iOS order exactly: skills → global memory → recent daily memory.
@@ -9391,8 +9421,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // intentionally NOT gated by this toggle: skills are part of the
         // tool surface and SOUL.md is part of identity, both orthogonal
         // to the memory feature.
-        val globalMemoryFragment = if (memoryOn) memoryRepository?.loadGlobalMemoryFragment() else null
-        val dailyMemoryFragment = if (memoryOn) memoryRepository?.loadRecentDailyMemoryFragment() else null
+        val activeMemory = activeMemoryRepository()
+        val globalMemoryFragment = if (memoryOn) activeMemory?.loadGlobalMemoryFragment() else null
+        val dailyMemoryFragment = if (memoryOn) activeMemory?.loadRecentDailyMemoryFragment() else null
 
         return buildString {
             append(base)
@@ -9437,7 +9468,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     // ─── Legacy tool execution methods (kept for compatibility) ───────────
 
     fun executeMemoryWrite(argsJson: String): MemoryTools.ToolResult {
-        val repo = memoryRepository ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
         if (!_memoryEnabled.value) {
             return MemoryTools.ToolResult(
                 "Memory writes are disabled for this session. Reads are still available. The user can re-enable writes via the /memory slash command.",
@@ -9459,7 +9490,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     }
 
     fun executeMemoryGet(argsJson: String): MemoryTools.ToolResult {
-        val repo = memoryRepository ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
         val result = MemoryTools.executeMemoryGet(argsJson, repo)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")

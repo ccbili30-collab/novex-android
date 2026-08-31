@@ -2,6 +2,39 @@ package com.openminis.app.data.character
 
 import org.json.JSONObject
 
+data class StoryWorld(
+    val id: String = "default-world",
+    val name: String = "我的世界",
+    val description: String = "",
+    val backgroundPath: String? = null,
+    val createdAt: Long,
+    val updatedAt: Long,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("schema", "novex-story-world-v1")
+        put("id", id)
+        put("name", name)
+        put("description", description)
+        put("backgroundPath", backgroundPath)
+        put("createdAt", createdAt)
+        put("updatedAt", updatedAt)
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject): StoryWorld {
+            val now = System.currentTimeMillis()
+            return StoryWorld(
+                id = json.optString("id").ifBlank { "default-world" },
+                name = json.optString("name").trim().ifBlank { "我的世界" },
+                description = json.optString("description"),
+                backgroundPath = json.optNullableString("backgroundPath"),
+                createdAt = json.optLong("createdAt", now),
+                updatedAt = json.optLong("updatedAt", now),
+            )
+        }
+    }
+}
+
 data class CharacterCard(
     val id: String,
     val name: String,
@@ -11,6 +44,13 @@ data class CharacterCard(
     val scenario: String = "",
     val greeting: String = "",
     val exampleDialogue: String = "",
+    val systemPrompt: String = "",
+    val postHistoryInstructions: String = "",
+    val alternateGreetings: List<String> = emptyList(),
+    val creatorNotes: String = "",
+    val tags: List<String> = emptyList(),
+    val knowledge: String = "",
+    val sourceFormat: String? = null,
     val avatarPath: String? = null,
     val coverPath: String? = null,
     val defaultBackgroundPath: String? = null,
@@ -27,6 +67,13 @@ data class CharacterCard(
         put("scenario", scenario)
         put("greeting", greeting)
         put("exampleDialogue", exampleDialogue)
+        put("systemPrompt", systemPrompt)
+        put("postHistoryInstructions", postHistoryInstructions)
+        put("alternateGreetings", org.json.JSONArray(alternateGreetings))
+        put("creatorNotes", creatorNotes)
+        put("tags", org.json.JSONArray(tags))
+        put("knowledge", knowledge)
+        put("sourceFormat", sourceFormat)
         put("avatarPath", avatarPath)
         put("coverPath", coverPath)
         put("defaultBackgroundPath", defaultBackgroundPath)
@@ -46,6 +93,13 @@ data class CharacterCard(
                 scenario = json.optString("scenario"),
                 greeting = json.optString("greeting"),
                 exampleDialogue = json.optString("exampleDialogue"),
+                systemPrompt = json.optString("systemPrompt"),
+                postHistoryInstructions = json.optString("postHistoryInstructions"),
+                alternateGreetings = json.optStringList("alternateGreetings"),
+                creatorNotes = json.optString("creatorNotes"),
+                tags = json.optStringList("tags"),
+                knowledge = json.optString("knowledge"),
+                sourceFormat = json.optNullableString("sourceFormat"),
                 avatarPath = json.optNullableString("avatarPath"),
                 coverPath = json.optNullableString("coverPath"),
                 defaultBackgroundPath = json.optNullableString("defaultBackgroundPath"),
@@ -99,6 +153,7 @@ data class PlayerPersona(
 }
 
 data class ImmersiveChatProfile(
+    val world: StoryWorld? = null,
     val character: CharacterCard? = null,
     val persona: PlayerPersona? = null,
     val backgroundPath: String? = null,
@@ -107,3 +162,11 @@ data class ImmersiveChatProfile(
 private fun JSONObject.optNullableString(key: String): String? =
     if (isNull(key)) null else optString(key).trim().ifBlank { null }
 
+private fun JSONObject.optStringList(key: String): List<String> {
+    val array = optJSONArray(key) ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            array.optString(index).trim().takeIf { it.isNotEmpty() }?.let(::add)
+        }
+    }
+}

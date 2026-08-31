@@ -2,6 +2,7 @@ package com.openminis.app.data.character
 
 import android.content.Context
 import android.net.Uri
+import com.openminis.app.data.repository.MemoryRepository
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,11 +16,14 @@ object CharacterCardStore {
     private const val PREFS = "novex_character_cards"
     private const val KEY_CHARACTERS = "characters"
     private const val KEY_PERSONAS = "personas"
+    private const val KEY_WORLD = "story_world"
 
     private val _characters = MutableStateFlow<List<CharacterCard>>(emptyList())
     val characters: StateFlow<List<CharacterCard>> = _characters.asStateFlow()
     private val _personas = MutableStateFlow<List<PlayerPersona>>(emptyList())
     val personas: StateFlow<List<PlayerPersona>> = _personas.asStateFlow()
+    private val _world = MutableStateFlow<StoryWorld?>(null)
+    val world: StateFlow<StoryWorld?> = _world.asStateFlow()
     @Volatile private var initialized = false
 
     @Synchronized
@@ -32,7 +36,29 @@ object CharacterCardStore {
         _personas.value = parseArray(prefs.getString(KEY_PERSONAS, null)) { PlayerPersona.fromJson(it) }
             .filter { it.name.isNotBlank() }
             .sortedWith(compareByDescending<PlayerPersona> { it.isDefault }.thenByDescending { it.updatedAt })
+        _world.value = prefs.getString(KEY_WORLD, null)?.let {
+            runCatching { StoryWorld.fromJson(JSONObject(it)) }.getOrNull()
+        }
         initialized = true
+    }
+
+    fun currentWorld(context: Context): StoryWorld? {
+        initialize(context)
+        return _world.value
+    }
+
+    @Synchronized
+    fun saveWorld(context: Context, world: StoryWorld): StoryWorld {
+        initialize(context)
+        val now = System.currentTimeMillis()
+        val normalized = world.copy(
+            name = world.name.trim().ifBlank { "我的世界" },
+            createdAt = world.createdAt.takeIf { it > 0 } ?: now,
+            updatedAt = now,
+        )
+        _world.value = normalized
+        persist(context)
+        return normalized
     }
 
     fun character(context: Context, id: String?): CharacterCard? {
@@ -106,16 +132,35 @@ object CharacterCardStore {
     }
 
     fun importCharacter(context: Context, source: String): CharacterCard {
-        val json = JSONObject(source)
-        val sourceCard = when {
-            json.optJSONObject("data") != null -> json.getJSONObject("data")
-            else -> json
+        val preview = SillyTavernCardParser.parseJson(source)
+        return saveImportedCharacter(context, preview)
+    }
+
+    fun saveImportedCharacter(context: Context, preview: CharacterCardImportPreview): CharacterCard {
+        val avatarPath = preview.avatarPng?.let { bytes ->
+            val dir = File(context.filesDir, "immersive-media").apply { mkdirs() }
+            File(dir, "character-avatar-${UUID.randomUUID()}.png").apply { writeBytes(bytes) }.absolutePath
         }
-        val parsed = CharacterCard.fromJson(sourceCard)
         return saveCharacter(
             context,
-            parsed.copy(id = UUID.randomUUID().toString(), createdAt = System.currentTimeMillis()),
+            preview.card.copy(
+                id = UUID.randomUUID().toString(),
+                avatarPath = avatarPath ?: preview.card.avatarPath,
+                createdAt = System.currentTimeMillis(),
+            ),
         )
+    }
+
+    /** Role chats use this directory instead of the application-wide memory directory. */
+    fun characterMemoryRepository(context: Context, characterId: String): MemoryRepository {
+        val safeId = characterId.replace(Regex("[^A-Za-z0-9._-]"), "_").take(96).ifBlank { "unknown" }
+        return MemoryRepository(File(context.filesDir, "minis-global/character-memory/$safeId"))
+    }
+
+    fun characterMemoryFileCount(context: Context, characterId: String): Int {
+        val safeId = characterId.replace(Regex("[^A-Za-z0-9._-]"), "_").take(96).ifBlank { "unknown" }
+        return File(context.filesDir, "minis-global/character-memory/$safeId")
+            .listFiles()?.count { it.isFile && it.extension.equals("md", true) } ?: 0
     }
 
     fun copyMedia(context: Context, uri: Uri, kind: String): String {
@@ -142,6 +187,7 @@ object CharacterCardStore {
             .edit()
             .putString(KEY_CHARACTERS, chars.toString())
             .putString(KEY_PERSONAS, personas.toString())
+            .putString(KEY_WORLD, _world.value?.toJson()?.toString())
             .apply()
     }
 
@@ -157,4 +203,3 @@ object CharacterCardStore {
         }.getOrDefault(emptyList())
     }
 }
-

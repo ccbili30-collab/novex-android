@@ -34,15 +34,29 @@ class CharacterPromptComposerTest {
             createdAt = 3,
             updatedAt = 4,
         )
+        val world = StoryWorld(
+            name = "永夜港",
+            description = "天空终年无日，港口由潮汐钟管理。",
+            backgroundPath = "/private/world.jpg",
+            createdAt = 1,
+            updatedAt = 2,
+        )
 
-        val prompt = CharacterPromptComposer.compose(character.toJson().toString(), persona.toJson().toString())!!
+        val prompt = CharacterPromptComposer.compose(
+            character.toJson().toString(),
+            persona.toJson().toString(),
+            world.toJson().toString(),
+        )!!
 
+        assertTrue(prompt.contains("<当前世界观>"))
+        assertTrue(prompt.contains("名称：永夜港"))
         assertTrue(prompt.contains("<当前角色卡>"))
         assertTrue(prompt.contains("名称：艾琳"))
         assertTrue(prompt.contains("<当前玩家身份>"))
         assertTrue(prompt.contains("名称：林墨"))
         assertTrue(prompt.contains("角色对玩家的称呼：林先生"))
         assertFalse(prompt.contains("/private/"))
+        assertTrue(prompt.contains("记忆读取与写入只属于该角色"))
     }
 
     @Test
