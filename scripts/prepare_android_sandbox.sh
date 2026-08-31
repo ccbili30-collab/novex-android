@@ -11,6 +11,7 @@ JNILIBS_DIR="$PROJECT_ROOT/src/android/app/src/main/jniLibs/arm64-v8a"
 ALPINE_VERSION="3.21"
 ALPINE_RELEASE="3.21.3"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-minirootfs-${ALPINE_RELEASE}-aarch64.tar.gz"
+ALPINE_SHA256="ead8a4b37867bd19e7417dd078748e2312c0aea364403d96758d63ea8ff261ea"
 
 TERMUX_BASE="https://packages.termux.dev/apt/termux-main"
 PROOT_REL="pool/main/p/proot/proot_5.1.107.92_aarch64.deb"
@@ -24,16 +25,30 @@ mkdir -p "$ASSETS_DIR" "$JNILIBS_DIR"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-download_checked() {
-    local url="$1" expected="$2" output="$3"
-    curl -fSL --retry 3 -o "$output" "$url"
+sha256_file() {
+    local input="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$input" | awk '{print $1}'
+    else
+        shasum -a 256 "$input" | awk '{print $1}'
+    fi
+}
+
+verify_checksum() {
+    local input="$1" expected="$2" label="$3"
     local actual
-    actual="$(shasum -a 256 "$output" | awk '{print $1}')"
+    actual="$(sha256_file "$input")"
     if [ "$actual" != "$expected" ]; then
-        echo "Checksum mismatch for $url" >&2
+        echo "Checksum mismatch for $label" >&2
         echo "expected=$expected actual=$actual" >&2
         exit 1
     fi
+}
+
+download_checked() {
+    local url="$1" expected="$2" output="$3"
+    curl -fSL --retry 3 -o "$output" "$url"
+    verify_checksum "$output" "$expected" "$url"
 }
 
 extract_deb() {
@@ -70,7 +85,9 @@ extract_deb() {
 ROOTFS_FILE="$ASSETS_DIR/alpine-minirootfs.tar.gz"
 if [ ! -s "$ROOTFS_FILE" ]; then
     echo "Downloading Alpine Linux ${ALPINE_RELEASE} aarch64 minirootfs..."
-    curl -fSL --retry 3 -o "$ROOTFS_FILE" "$ALPINE_URL"
+    download_checked "$ALPINE_URL" "$ALPINE_SHA256" "$ROOTFS_FILE"
+else
+    verify_checksum "$ROOTFS_FILE" "$ALPINE_SHA256" "$ROOTFS_FILE"
 fi
 
 download_checked "$TERMUX_BASE/$PROOT_REL" "$PROOT_SHA256" "$WORK_DIR/proot.deb"
@@ -89,8 +106,15 @@ SHMEM_SOURCE="$WORK_DIR/shmem/$TERMUX_PREFIX/lib/libandroid-shmem.so"
 
 install -m 0755 "$PROOT_SOURCE" "$ASSETS_DIR/proot-aarch64"
 install -m 0755 "$PROOT_SOURCE" "$JNILIBS_DIR/libproot.so"
-install -m 0755 "$LOADER_SOURCE" "$JNILIBS_DIR/libproot-loader.so"
-install -m 0755 "$LOADER32_SOURCE" "$JNILIBS_DIR/libproot-loader32.so"
+# These two loaders are tracked recovery-critical binaries. Preserve them on a
+# clean checkout instead of silently replacing them with the current package's
+# variants; only populate them for source bundles where they are absent.
+if [ ! -s "$JNILIBS_DIR/libproot-loader.so" ]; then
+    install -m 0755 "$LOADER_SOURCE" "$JNILIBS_DIR/libproot-loader.so"
+fi
+if [ ! -s "$JNILIBS_DIR/libproot-loader32.so" ]; then
+    install -m 0755 "$LOADER32_SOURCE" "$JNILIBS_DIR/libproot-loader32.so"
+fi
 install -m 0644 "$TALLOC_SOURCE" "$JNILIBS_DIR/libtalloc.so"
 install -m 0644 "$SHMEM_SOURCE" "$JNILIBS_DIR/libandroid-shmem.so"
 

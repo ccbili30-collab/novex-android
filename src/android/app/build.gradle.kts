@@ -22,6 +22,20 @@ val appCustomization = Properties().apply {
 fun customizationValue(key: String): String =
     (appCustomization.getProperty(key) ?: "").replace("\"", "\\\"")
 
+// CI can provide the certificate that signed the previous public release via
+// environment variables. Local builds keep the historical debug-signing
+// fallback so existing developer workflows remain unchanged.
+val releaseKeystorePath = System.getenv("NOVEX_RELEASE_KEYSTORE_PATH").orEmpty()
+val releaseStorePassword = System.getenv("NOVEX_RELEASE_STORE_PASSWORD").orEmpty()
+val releaseKeyAlias = System.getenv("NOVEX_RELEASE_KEY_ALIAS").orEmpty()
+val releaseKeyPassword = System.getenv("NOVEX_RELEASE_KEY_PASSWORD").orEmpty()
+val hasReleaseSigningEnvironment = listOf(
+    releaseKeystorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isNotBlank() }
+
 android {
     namespace = "com.openminis.app"
     // [T-android-dynamic-island] Bumped 35→36 so the Android 16 (Baklava)
@@ -68,6 +82,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigningEnvironment) {
+            create("releaseEnvironment") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Keep arm64 for real devices and x86_64 for the Windows screenshot
@@ -83,7 +108,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigningEnvironment) {
+                signingConfigs.getByName("releaseEnvironment")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

@@ -1,0 +1,154 @@
+name: Android build
+
+on:
+  push:
+    branches:
+      - work/novex-v1
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - work/novex-v1
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  # Publishing a tag needs to create or update its release. Pull requests from
+  # forks still receive GitHub's read-only token and never run the release step.
+  contents: write
+
+jobs:
+  build:
+    name: Test and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Install Android build components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;27.0.12077973"
+
+      - name: Prepare sandbox runtime
+        run: ./scripts/prepare_android_sandbox.sh
+
+      - name: Validate signing configuration
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NOVEX_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+        run: |
+          configured=0
+          for value in "$KEYSTORE_BASE64" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD"; do
+            if [ -n "$value" ]; then
+              configured=$((configured + 1))
+            fi
+          done
+          if [ "$configured" -ne 0 ] && [ "$configured" -ne 4 ]; then
+            echo "Release signing secrets are incomplete." >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$configured" -ne 4 ]; then
+            echo "A tagged release requires all release signing secrets." >&2
+            exit 1
+          fi
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NOVEX_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/novex-release.jks"
+          fi
+
+      - name: Run unit tests and build release APK
+        working-directory: src/android
+        env:
+          NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
+          NOVEX_RELEASE_STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
+          NOVEX_RELEASE_KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
+          NOVEX_RELEASE_KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Verify and stage release APK
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NOVEX_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          expected_tag=""
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            expected_tag="$GITHUB_REF_NAME"
+          fi
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            export EXPECTED_CERT_SHA256="cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6"
+          fi
+          ./scripts/verify_android_release.sh \
+            src/android/app/build/outputs/apk/release/app-release.apk \
+            "$expected_tag" \
+            dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: novex-android-${{ github.sha }}
+          path: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unit-test report after failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-test-report-${{ github.sha }}
+          path: src/android/app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish GitHub release
+        if: ${{ github.ref_type == 'tag' && success() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "dist/novex-$version.apk" \
+              dist/novex.apk \
+              dist/SHA256SUMS.txt \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "dist/novex-$version.apk" \
+              dist/novex.apk \
+              dist/SHA256SUMS.txt \
+              --title "Novex $version" \
+              --generate-notes
+          fi
