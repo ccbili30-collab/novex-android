@@ -40,6 +40,13 @@ struct LocalDocumentExtraction: Equatable {
 /// producer-specific package.
 enum LocalDocumentExtractor {
     static let inlineCharacterLimit = 48_000
+    // iOS does not publish the macOS-only `.officeOpenXML` convenience
+    // member. Keep the platform document-type raw value as a best-effort
+    // native reader; producer-specific or unsupported files fall back to the
+    // read-only OOXML package extractor below.
+    private static let officeOpenXMLDocumentType = NSAttributedString.DocumentType(
+        rawValue: "NSOfficeOpenXMLTextDocumentType"
+    )
 
     static func extract(url: URL) throws -> LocalDocumentExtraction {
         guard url.pathExtension.lowercased() == "docx" else {
@@ -60,7 +67,7 @@ enum LocalDocumentExtractor {
         do {
             nativeText = try NSAttributedString(
                 data: data,
-                options: [.documentType: NSAttributedString.DocumentType.officeOpenXML],
+                options: [.documentType: officeOpenXMLDocumentType],
                 documentAttributes: nil
             ).string
         } catch {
