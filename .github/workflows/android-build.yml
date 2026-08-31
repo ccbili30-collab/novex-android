@@ -98,6 +98,7 @@ jobs:
           NOVEX_RELEASE_STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
           NOVEX_RELEASE_KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
           NOVEX_RELEASE_KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
         run: ./gradlew --no-daemon --stacktrace --info :app:testDebugUnitTest :app:assembleRelease
 
       - name: Verify and stage release APK
