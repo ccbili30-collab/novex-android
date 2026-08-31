@@ -91,7 +91,7 @@ jobs:
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/novex-release.jks"
           fi
 
-      - name: Run unit tests and build release APK
+      - name: Run unit tests
         working-directory: src/android
         env:
           NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
@@ -99,9 +99,29 @@ jobs:
           NOVEX_RELEASE_KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
           NOVEX_RELEASE_KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
           NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
-        run: ./gradlew --no-daemon --stacktrace --info :app:testDebugUnitTest :app:assembleRelease
+        run: >-
+          ./gradlew --no-daemon --stacktrace --max-workers=2
+          -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          :app:testDebugUnitTest
+
+      - name: Build release APK
+        if: ${{ github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' }}
+        working-directory: src/android
+        env:
+          NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
+          NOVEX_RELEASE_STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
+          NOVEX_RELEASE_KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
+          NOVEX_RELEASE_KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
+        run: >-
+          ./gradlew --no-daemon --stacktrace --max-workers=2
+          -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          :app:assembleRelease
 
       - name: Verify and stage release APK
+        if: ${{ github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' }}
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.NOVEX_RELEASE_KEYSTORE_BASE64 }}
@@ -119,6 +139,7 @@ jobs:
             dist
 
       - name: Upload APK artifact
+        if: ${{ github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: novex-android-${{ github.sha }}

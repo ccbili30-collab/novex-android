@@ -33,9 +33,10 @@ src/android/app/build/outputs/apk/debug/app-debug.apk
 
 ### GitHub 云端构建
 
-仓库内置 GitHub Actions（GitHub 自动化工作流）。推送到默认分支、提交
-Pull Request（拉取请求）或手动运行工作流时，它会执行单元测试、构建并校验
-正式 APK（安卓应用安装包），完成后可从工作流的 Artifact（构建产物）区域下载。
+仓库内置 GitHub Actions（GitHub 自动化工作流）。推送到默认分支或提交
+Pull Request（拉取请求）时只执行单元测试，避免每次改动都重复正式打包。
+手动运行工作流时，它会先执行单元测试，再单独构建并校验正式 APK
+（安卓应用安装包）；完成后可从工作流的 Artifact（构建产物）区域下载。
 
 推送与应用版本一致的标签（例如 `v0.1.8`）时，工作流还会自动创建或更新
 GitHub Release（GitHub 版本发布页），同时上传带版本名称的安装包、固定名称
