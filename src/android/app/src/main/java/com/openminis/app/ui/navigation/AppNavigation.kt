@@ -158,9 +158,11 @@ object Routes {
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
     const val CHARACTERS = "characters"
-    const val STORY_WORLD_EDIT = "characters/world/edit"
-    const val CHARACTER_EDIT = "characters/edit?characterId={characterId}"
-    const val PERSONA_EDIT = "characters/persona/edit?personaId={personaId}"
+    const val STORY_WORLD = "characters/world/{worldId}"
+    const val STORY_WORLD_EDIT = "characters/world/edit?worldId={worldId}"
+    const val CHARACTER_DETAIL = "characters/card/{characterId}"
+    const val CHARACTER_EDIT = "characters/edit?worldId={worldId}&characterId={characterId}"
+    const val PERSONA_EDIT = "characters/persona/edit?worldId={worldId}&personaId={personaId}"
     const val CHARACTER_START = "characters/start/{characterId}"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
@@ -199,10 +201,18 @@ object Routes {
     fun logDetail(fileName: String) = "log_detail/$fileName"
     fun sessionStorageDetail(sessionId: String) = "session_storage/$sessionId"
     fun memoryFileEdit(fileName: String, isGlobal: Boolean) = "memory_file/$fileName/$isGlobal"
-    fun characterEdit(characterId: String? = null) =
-        if (characterId == null) "characters/edit" else "characters/edit?characterId=${android.net.Uri.encode(characterId)}"
-    fun personaEdit(personaId: String? = null) =
-        if (personaId == null) "characters/persona/edit" else "characters/persona/edit?personaId=${android.net.Uri.encode(personaId)}"
+    fun storyWorld(worldId: String) = "characters/world/${android.net.Uri.encode(worldId)}"
+    fun storyWorldEdit(worldId: String? = null) =
+        if (worldId == null) "characters/world/edit" else "characters/world/edit?worldId=${android.net.Uri.encode(worldId)}"
+    fun characterDetail(characterId: String) = "characters/card/${android.net.Uri.encode(characterId)}"
+    fun characterEdit(worldId: String, characterId: String? = null) = buildString {
+        append("characters/edit?worldId=").append(android.net.Uri.encode(worldId))
+        characterId?.let { append("&characterId=").append(android.net.Uri.encode(it)) }
+    }
+    fun personaEdit(worldId: String, personaId: String? = null) = buildString {
+        append("characters/persona/edit?worldId=").append(android.net.Uri.encode(worldId))
+        personaId?.let { append("&personaId=").append(android.net.Uri.encode(it)) }
+    }
     fun characterStart(characterId: String) = "characters/start/${android.net.Uri.encode(characterId)}"
     fun chat(sessionId: String) = "chat/$sessionId"
     fun providerDetail(instanceId: String) = "provider/$instanceId"
@@ -521,6 +531,9 @@ fun AppNavigation(
                     navController.safeNavigate(Routes.SETTINGS)
                 },
                 onCharactersClick = { navController.safeNavigate(Routes.CHARACTERS) },
+                onWorldClick = { worldId ->
+                    navController.safeNavigate(Routes.storyWorld(worldId))
+                },
                 onAddProviderClick = {
                     navController.safeNavigate(Routes.ADD_PROVIDER)
                 },
@@ -628,46 +641,114 @@ fun AppNavigation(
         }
 
         composable(Routes.CHARACTERS) {
-            com.openminis.app.ui.settings.CharacterHubScreen(
+            com.openminis.app.ui.settings.WorldLibraryScreen(
                 onBack = { navController.safePopBackStack() },
-                onEditWorld = { navController.safeNavigate(Routes.STORY_WORLD_EDIT) },
-                onEditCharacter = { navController.safeNavigate(Routes.characterEdit(it)) },
-                onEditPersona = { navController.safeNavigate(Routes.personaEdit(it)) },
-                onStartCharacter = { navController.safeNavigate(Routes.characterStart(it)) },
+                onOpenWorld = { navController.safeNavigate(Routes.storyWorld(it)) },
+                onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
             )
         }
 
-        composable(Routes.STORY_WORLD_EDIT) {
-            com.openminis.app.ui.settings.StoryWorldEditorScreen(
+        composable(
+            route = Routes.STORY_WORLD,
+            arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
+        ) { entry ->
+            val worldId = entry.arguments?.getString("worldId") ?: return@composable
+            val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
+            com.openminis.app.ui.settings.StoryWorldDetailScreen(
+                worldId = worldId,
+                sessions = sessions,
                 onBack = { navController.safePopBackStack() },
-                onSaved = { navController.safePopBackStack() },
+                onEditWorld = { navController.safeNavigate(Routes.storyWorldEdit(worldId)) },
+                onEditPersona = { navController.safeNavigate(Routes.personaEdit(worldId, it)) },
+                onCreateCharacter = { navController.safeNavigate(Routes.characterEdit(worldId)) },
+                onOpenCharacter = { navController.safeNavigate(Routes.characterDetail(it)) },
+                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
+                onStartWorldNovax = { personaId ->
+                    val draft = buildString {
+                        append("__new__").append(java.util.UUID.randomUUID())
+                        append("__world__").append(worldId)
+                        personaId?.let { append("__persona__").append(it) }
+                    }
+                    navController.safeNavigate(Routes.chat(draft))
+                },
+            )
+        }
+
+        composable(
+            route = Routes.STORY_WORLD_EDIT,
+            arguments = listOf(navArgument("worldId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            }),
+        ) { entry ->
+            com.openminis.app.ui.settings.Card3WorldEditorScreen(
+                worldId = entry.arguments?.getString("worldId"),
+                onBack = { navController.safePopBackStack() },
+                onSaved = { worldId ->
+                    navController.safeNavigate(Routes.storyWorld(worldId)) {
+                        popUpTo(Routes.CHARACTERS) { inclusive = false }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = Routes.CHARACTER_DETAIL,
+            arguments = listOf(navArgument("characterId") { type = NavType.StringType }),
+        ) { entry ->
+            val characterId = entry.arguments?.getString("characterId") ?: return@composable
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val card = com.openminis.app.data.character.CharacterCardStore.character(context, characterId)
+            val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
+            com.openminis.app.ui.settings.CharacterDetailScreen(
+                characterId = characterId,
+                sessions = sessions,
+                onBack = { navController.safePopBackStack() },
+                onEdit = { card?.let { navController.safeNavigate(Routes.characterEdit(it.worldId, it.id)) } },
+                onNewChat = { navController.safeNavigate(Routes.characterStart(characterId)) },
+                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
             )
         }
 
         composable(
             route = Routes.CHARACTER_EDIT,
-            arguments = listOf(navArgument("characterId") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            }),
+            arguments = listOf(
+                navArgument("worldId") { type = NavType.StringType },
+                navArgument("characterId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
         ) { entry ->
-            com.openminis.app.ui.settings.CharacterEditorScreen(
+            val worldId = entry.arguments?.getString("worldId") ?: return@composable
+            com.openminis.app.ui.settings.Card3CharacterEditorScreen(
+                worldId = worldId,
                 cardId = entry.arguments?.getString("characterId"),
                 onBack = { navController.safePopBackStack() },
-                onSaved = { navController.safePopBackStack() },
+                onSaved = { characterId ->
+                    navController.safeNavigate(Routes.characterDetail(characterId)) {
+                        popUpTo(Routes.storyWorld(worldId)) { inclusive = false }
+                    }
+                },
             )
         }
 
         composable(
             route = Routes.PERSONA_EDIT,
-            arguments = listOf(navArgument("personaId") {
-                type = NavType.StringType
-                nullable = true
-                defaultValue = null
-            }),
+            arguments = listOf(
+                navArgument("worldId") { type = NavType.StringType },
+                navArgument("personaId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
         ) { entry ->
-            com.openminis.app.ui.settings.PersonaEditorScreen(
+            val worldId = entry.arguments?.getString("worldId") ?: return@composable
+            com.openminis.app.ui.settings.Card3PersonaEditorScreen(
+                worldId = worldId,
                 personaId = entry.arguments?.getString("personaId"),
                 onBack = { navController.safePopBackStack() },
                 onSaved = { navController.safePopBackStack() },
@@ -679,10 +760,14 @@ fun AppNavigation(
             arguments = listOf(navArgument("characterId") { type = NavType.StringType }),
         ) { entry ->
             val characterId = entry.arguments?.getString("characterId") ?: return@composable
+            val context = androidx.compose.ui.platform.LocalContext.current
             com.openminis.app.ui.settings.StartCharacterChatScreen(
                 characterId = characterId,
                 onBack = { navController.safePopBackStack() },
-                onCreatePersona = { navController.safeNavigate(Routes.personaEdit()) },
+                onCreatePersona = {
+                    val card = com.openminis.app.data.character.CharacterCardStore.character(context, characterId)
+                    card?.let { navController.safeNavigate(Routes.personaEdit(it.worldId)) }
+                },
                 onCreateDraft = { draftId ->
                     navController.safeNavigate(Routes.chat(draftId)) {
                         popUpTo(Routes.SESSION_LIST) { inclusive = false }

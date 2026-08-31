@@ -6,10 +6,40 @@ import java.util.Base64
 import java.util.zip.CRC32
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SillyTavernCardParserTest {
+    @Test
+    fun `v2 export round trips core fields without local paths or private history`() {
+        val card = CharacterCard(
+            id = "role-1",
+            name = "艾琳",
+            summary = "夜港向导",
+            background = "在夜港长大",
+            personality = "克制、敏锐",
+            scenario = "雨夜酒馆",
+            greeting = "你终于来了。",
+            systemPrompt = "保持角色身份",
+            knowledge = "潮汐钟每天午夜响起。",
+            avatarPath = "/private/avatar.png",
+            allowedTools = listOf("present_choices"),
+            createdAt = 1,
+            updatedAt = 2,
+        )
+
+        val json = SillyTavernCardExporter.exportV2(card).toString()
+        val imported = SillyTavernCardParser.parseJson(json).card
+
+        assertEquals("艾琳", imported.name)
+        assertEquals("在夜港长大", imported.background)
+        assertEquals("克制、敏锐", imported.personality)
+        assertEquals("你终于来了。", imported.greeting)
+        assertTrue(imported.knowledge.contains("潮汐钟每天午夜响起"))
+        assertFalse(json.contains("/private/avatar.png"))
+        assertFalse(json.contains("conversation"))
+    }
     private val v2Json = """
         {
           "spec": "chara_card_v2",

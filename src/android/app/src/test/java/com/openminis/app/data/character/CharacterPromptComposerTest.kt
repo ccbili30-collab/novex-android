@@ -56,7 +56,7 @@ class CharacterPromptComposerTest {
         assertTrue(prompt.contains("名称：林墨"))
         assertTrue(prompt.contains("角色对玩家的称呼：林先生"))
         assertFalse(prompt.contains("/private/"))
-        assertTrue(prompt.contains("记忆读取与写入只属于该角色"))
+        assertTrue(prompt.contains("只属于该世界、玩家身份与角色卡的组合"))
     }
 
     @Test
@@ -81,5 +81,106 @@ class CharacterPromptComposerTest {
         assertTrue(prompt.contains("旧人格"))
         assertFalse(prompt.contains(edited.name))
         assertEquals("新名字", edited.name)
+    }
+
+    @Test
+    fun `role card is the final and most specific editable identity layer`() {
+        val character = CharacterCard(
+            id = "role-1",
+            name = "艾琳",
+            systemPrompt = "始终以艾琳的身份回应",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+        val persona = PlayerPersona(
+            id = "persona-1",
+            name = "玩家",
+            description = "旅人",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+
+        val prompt = CharacterPromptComposer.compose(
+            character.toJson().toString(),
+            persona.toJson().toString(),
+        )!!
+
+        assertTrue(prompt.indexOf("<当前玩家身份>") < prompt.indexOf("<当前角色卡>"))
+        assertTrue(prompt.trim().endsWith("</当前角色卡>"))
+        assertFalse(prompt.contains("你是 Novex"))
+    }
+
+    @Test
+    fun `role system prompt excludes Novax identity and defaults to no tools`() {
+        val character = CharacterCard(
+            id = "role-1",
+            name = "艾琳",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+
+        val prompt = CharacterSystemPromptComposer.compose(
+            characterSnapshot = character.toJson().toString(),
+            personaSnapshot = null,
+            worldSnapshot = null,
+            enabledTools = emptySet(),
+        )
+
+        assertTrue(prompt.contains("这是角色卡对话，不是 Novax 助手对话"))
+        assertTrue(prompt.contains("未启用结构化工具"))
+        assertFalse(prompt.contains("shell_execute"))
+        assertFalse(prompt.contains("你是 Novex，一名"))
+        assertTrue(prompt.trim().endsWith("</当前角色卡>"))
+    }
+
+    @Test
+    fun `role tool policy defaults closed and never exposes general Novax tools`() {
+        val available = setOf("present_choices", "generate_image", "shell_execute", "read_file")
+        val closed = CharacterCard(id = "closed", name = "艾琳", createdAt = 1, updatedAt = 1)
+        val enabled = closed.copy(
+            id = "enabled",
+            allowedTools = listOf("present_choices", "generate_image", "shell_execute"),
+        )
+
+        assertTrue(CharacterToolPolicy.allowedToolNames(closed, available).isEmpty())
+        assertEquals(
+            setOf("present_choices", "generate_image"),
+            CharacterToolPolicy.allowedToolNames(enabled, available),
+        )
+        assertEquals(available, CharacterToolPolicy.allowedToolNames(null, available))
+    }
+
+    @Test
+    fun `world and optional player fields survive snapshot round trip`() {
+        val card = CharacterCard(
+            id = "role-1",
+            name = "艾琳",
+            worldId = "world-7",
+            contentBoundary = "不要替玩家决定行动",
+            allowedTools = listOf("present_choices", "shell_execute"),
+            createdAt = 1,
+            updatedAt = 2,
+        )
+        val player = PlayerPersona(
+            id = "player-1",
+            name = "",
+            worldId = "world-7",
+            appearance = "黑色斗篷",
+            abilities = "辨认古文字",
+            boundaries = "不替玩家发言",
+            createdAt = 1,
+            updatedAt = 2,
+        )
+
+        val restoredCard = CharacterCard.fromJson(card.toJson())
+        val restoredPlayer = PlayerPersona.fromJson(player.toJson())
+
+        assertEquals("world-7", restoredCard.worldId)
+        assertEquals(listOf("present_choices"), restoredCard.allowedTools)
+        assertEquals("不要替玩家决定行动", restoredCard.contentBoundary)
+        assertEquals("world-7", restoredPlayer.worldId)
+        assertEquals("黑色斗篷", restoredPlayer.appearance)
+        assertEquals("辨认古文字", restoredPlayer.abilities)
+        assertEquals("不替玩家发言", restoredPlayer.boundaries)
     }
 }

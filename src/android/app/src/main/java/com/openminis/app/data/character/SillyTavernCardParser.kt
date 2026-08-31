@@ -63,6 +63,7 @@ object SillyTavernCardParser {
         val name = data.optString("name").ifBlank { root.optString("name") }.trim()
         require(name.isNotBlank()) { "酒馆角色卡缺少 name（角色名称）字段" }
         val description = data.optString("description")
+        val novexExtension = data.optJSONObject("extensions")?.optJSONObject("novex")
         val knowledgeResult = extractKnowledge(data.optJSONObject("character_book") ?: root.optJSONObject("character_book"))
         val spec = root.optString("spec").ifBlank {
             when {
@@ -76,7 +77,9 @@ object SillyTavernCardParser {
             card = CharacterCard(
                 id = UUID.randomUUID().toString(),
                 name = name,
-                summary = description.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty(),
+                summary = novexExtension?.optString("summary").orEmpty().ifBlank {
+                    description.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(160).orEmpty()
+                },
                 personality = data.optString("personality"),
                 background = description,
                 scenario = data.optString("scenario"),
@@ -88,6 +91,9 @@ object SillyTavernCardParser {
                 creatorNotes = data.optString("creator_notes"),
                 tags = data.optJSONArray("tags").toStringList(),
                 knowledge = knowledgeResult.first,
+                allowedTools = novexExtension?.optJSONArray("allowed_tools").toStringList()
+                    .filter { it in setOf("present_choices", "generate_image") },
+                contentBoundary = novexExtension?.optString("content_boundary").orEmpty(),
                 sourceFormat = sourceLabel,
                 createdAt = now,
                 updatedAt = now,

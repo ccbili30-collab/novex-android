@@ -645,8 +645,11 @@ fun StartCharacterChatScreen(
 ) {
     val context = LocalContext.current
     val card = remember(characterId) { CharacterCardStore.character(context, characterId) }
-    val world = remember(characterId) { CharacterCardStore.currentWorld(context) }
-    val personas by CharacterCardStore.personas.collectAsState()
+    val world = remember(characterId) { CharacterCardStore.worldForCharacter(context, characterId) }
+    val allPersonas by CharacterCardStore.personas.collectAsState()
+    val personas = remember(allPersonas, card?.worldId) {
+        allPersonas.filter { it.worldId == card?.worldId }
+    }
     var selectedPersonaId by remember(personas) {
         mutableStateOf(personas.firstOrNull { it.isDefault }?.id ?: personas.firstOrNull()?.id)
     }
@@ -680,8 +683,15 @@ fun StartCharacterChatScreen(
             }
         }
         SettingsSection(header = "选择玩家身份") {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { selectedPersonaId = null }.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selectedPersonaId == null, onClick = { selectedPersonaId = null })
+                Text("不使用玩家身份", modifier = Modifier.padding(start = 10.dp))
+            }
             if (personas.isEmpty()) {
-                EmptyLibraryRow("尚未创建玩家身份", "现在创建", onCreatePersona)
+                EmptyLibraryRow("玩家身份可选", "添加身份", onCreatePersona)
             } else {
                 personas.forEach { persona ->
                     Row(

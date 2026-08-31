@@ -38,6 +38,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Schedule
@@ -297,7 +298,9 @@ internal fun UserMessageBubble(
     var showMenu by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
     val haptics = LocalHapticFeedback.current
-    val persona = LocalImmersiveChatProfile.current.persona
+    val immersiveProfile = LocalImmersiveChatProfile.current
+    val persona = immersiveProfile.persona
+    val isCharacterConversation = immersiveProfile.character != null
     val personaAvatar = persona?.avatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }
 
     BoxWithConstraints(
@@ -526,6 +529,22 @@ internal fun UserMessageBubble(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(30.dp).clip(CircleShape).align(Alignment.Bottom),
             )
+        } else if (isCharacterConversation) {
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = CircleShape,
+                modifier = Modifier.size(30.dp).align(Alignment.Bottom),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = "玩家默认头像",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+            }
         }
     }
     }

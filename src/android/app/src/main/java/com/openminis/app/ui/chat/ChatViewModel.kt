@@ -833,7 +833,7 @@ class ChatViewModel(
      * The cost is negligible — [AgentTools.makeAgentTools] just builds a
      * fixed list of definition objects, no I/O.
      */
-    private val agentTools: List<AgentToolDefinition>
+    private val allAgentTools: List<AgentToolDefinition>
         get() = if (currentModel?.supportsTools == false) {
             emptyList()
         } else AgentTools.makeAgentTools(
@@ -852,6 +852,18 @@ class ChatViewModel(
             memoryEnabled = _memoryEnabled.value,
             imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
         )
+
+    /** Role chats start with no tools and expose only the role card's explicit allow-list. */
+    private val agentTools: List<AgentToolDefinition>
+        get() {
+            val all = allAgentTools
+            val role = _immersiveProfile.value.character ?: return all
+            val allowed = com.openminis.app.data.character.CharacterToolPolicy.allowedToolNames(
+                character = role,
+                availableToolNames = all.mapTo(mutableSetOf()) { it.name },
+            )
+            return all.filter { it.name in allowed }
+        }
 
     /**
      * Per-session loop detector. Reset alongside [agentHistory] whenever the
@@ -3113,21 +3125,26 @@ class ChatViewModel(
 
     private val initialCharacterId: String? = draftMarker("char")
     private val initialPersonaId: String? = draftMarker("persona")
+    private val initialWorldId: String? = draftMarker("world")
 
     private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
     val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
         _immersiveProfile.asStateFlow()
 
-    private var scopedMemoryCharacterId: String? = null
+    private var scopedMemoryKey: String? = null
     private var scopedMemoryRepository: MemoryRepository? = null
 
-    /** A role card owns its memory across conversations; ordinary chats keep global memory. */
+    /** Role memory is isolated by world + player identity + role card. */
     private fun activeMemoryRepository(): MemoryRepository? {
-        val characterId = _immersiveProfile.value.character?.id ?: return memoryRepository
-        if (scopedMemoryCharacterId != characterId || scopedMemoryRepository == null) {
-            scopedMemoryCharacterId = characterId
+        val profile = _immersiveProfile.value
+        val characterId = profile.character?.id ?: return memoryRepository
+        val worldId = profile.world?.id ?: profile.character?.worldId
+        val personaId = profile.persona?.id
+        val key = listOf(worldId, personaId, characterId).joinToString("|")
+        if (scopedMemoryKey != key || scopedMemoryRepository == null) {
+            scopedMemoryKey = key
             scopedMemoryRepository = com.openminis.app.data.character.CharacterCardStore
-                .characterMemoryRepository(context, characterId)
+                .characterMemoryRepository(context, characterId, worldId, personaId)
         }
         return scopedMemoryRepository
     }
@@ -3527,9 +3544,11 @@ class ChatViewModel(
                 _sessionCategory.value = null
                 val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(context, initialCharacterId)
                 val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
-                val draftWorld = if (draftCharacter != null) {
-                    com.openminis.app.data.character.CharacterCardStore.currentWorld(context)
-                } else null
+                val draftWorld = when {
+                    draftCharacter != null -> com.openminis.app.data.character.CharacterCardStore.world(context, draftCharacter.worldId)
+                    initialWorldId != null -> com.openminis.app.data.character.CharacterCardStore.world(context, initialWorldId)
+                    else -> null
+                }
                 _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
                     world = draftWorld,
                     character = draftCharacter,
@@ -6884,14 +6903,15 @@ class ChatViewModel(
                     // [_compactSummary] is prepended as a `<context-summary>`
                     // user message. Falls through to the raw agentHistory when
                     // no compact has happened, so the common path stays zero-copy.
-                    val requestToolsEnabled = currentProvider.model.supportsTools != false
+                    val conversationTools = agentTools
+                    val requestToolsEnabled = conversationTools.isNotEmpty()
                     val requestHistory = effectiveAgentHistory().let { history ->
                         if (requestToolsEnabled) history else pureChatHistory(history)
                     }
                     currentProvider.streamMessage(
                         applyRequestImageBudget(requestHistory),
                         systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
-                        tools = if (requestToolsEnabled) agentTools else emptyList(),
+                        tools = if (requestToolsEnabled) conversationTools else emptyList(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
                 when (chunk) {
@@ -9233,10 +9253,29 @@ class ChatViewModel(
 
         // Count of agent-loop-visible models for the `minis-model-use` CLI
         // (exposed as a shell command via the native_offload handler).
-        val toolsEnabled = currentModel?.supportsTools != false
+        val toolsEnabled = agentTools.isNotEmpty()
         val modelUseCount = if (toolsEnabled) {
             try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
         } else 0
+
+        val roleProfile = _immersiveProfile.value
+        val role = roleProfile.character
+        if (role != null) {
+            val roleMemory = if (_memoryEnabled.value) {
+                val repository = activeMemoryRepository()
+                listOfNotNull(
+                    repository?.loadGlobalMemoryFragment(),
+                    repository?.loadRecentDailyMemoryFragment(),
+                ).joinToString("\n\n").takeIf { it.isNotBlank() }
+            } else null
+            return com.openminis.app.data.character.CharacterSystemPromptComposer.compose(
+                characterSnapshot = role.toJson().toString(),
+                personaSnapshot = roleProfile.persona?.toJson()?.toString(),
+                worldSnapshot = roleProfile.world?.toJson()?.toString(),
+                enabledTools = agentTools.mapTo(linkedSetOf()) { it.name },
+                memoryContext = roleMemory,
+            )
+        }
 
         // [T-soul-md] Layer 1 is rendered by SystemPromptBuilder, which
         // owns the "You are <name>, a capable AI assistant running on an

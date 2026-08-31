@@ -39,6 +39,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Schedule
@@ -306,6 +307,21 @@ internal fun AssistantHeader() {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(28.dp).clip(CircleShape),
             )
+        } else if (immersiveProfile.character != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = CircleShape,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = "$displayName 默认头像",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         } else {
             val sparkleGradient = Brush.linearGradient(
                 colors = listOf(SparkleColor1, SparkleColor2),
@@ -330,6 +346,29 @@ internal fun AssistantHeader() {
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * Character conversations use a visible left-side speech bubble. General
+ * Novax conversations deliberately keep the existing borderless text layout.
+ */
+@Composable
+internal fun CharacterAssistantBubble(content: @Composable () -> Unit) {
+    if (LocalImmersiveChatProfile.current.character == null) {
+        content()
+        return
+    }
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.widthIn(max = 360.dp),
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                content()
+            }
+        }
     }
 }
 

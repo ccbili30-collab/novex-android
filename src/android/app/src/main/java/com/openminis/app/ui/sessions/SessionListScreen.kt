@@ -178,6 +178,9 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.FolderEntity
+import com.openminis.app.data.character.CharacterCard
+import com.openminis.app.data.character.CharacterCardStore
+import com.openminis.app.data.character.StoryWorld
 import com.openminis.app.data.model.hasUsableNovexModel
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.minisFabColor
@@ -408,6 +411,7 @@ fun SessionListScreen(
     onNewChat: (String) -> Unit,
     onSettingsClick: () -> Unit,
     onCharactersClick: () -> Unit = {},
+    onWorldClick: (String) -> Unit = {},
     onAddProviderClick: () -> Unit = {},
     onSelectModelsClick: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
@@ -445,6 +449,8 @@ fun SessionListScreen(
     val configLoaded by providerRepository.configLoaded.collectAsState()
     val scope = rememberCoroutineScope()
     val isDark = isSystemInDarkTheme()
+    LaunchedEffect(context) { CharacterCardStore.initialize(context) }
+    val worlds by CharacterCardStore.worlds.collectAsState()
 
     // [T-android-search-focus-sticky] When the user opens search but types
     // nothing (or only whitespace) and then navigates into a chat, the
@@ -499,9 +505,16 @@ fun SessionListScreen(
     // While searching, group cards are suppressed: padding a result set with
     // every non-matching group is noise, not structure.
     val showFolderBlock = !isSearchActive || searchQuery.isBlank()
-    val folderPartition = remember(sessions, folders, collapsedFolderIds, showFolderBlock) {
-        if (showFolderBlock) partitionByFolder(sessions, folders, collapsedFolderIds)
-        else emptyList<FolderGroupBlock>() to sessions
+    val showCard3Hierarchy = !isSearchActive && !isSelecting
+    val generalSessions = remember(sessions, showCard3Hierarchy) {
+        if (showCard3Hierarchy) sessions.filter { it.worldSnapshotJson.isNullOrBlank() } else sessions
+    }
+    val recentWorldSessions = remember(sessions, showCard3Hierarchy) {
+        if (showCard3Hierarchy) sessions.filter { !it.worldSnapshotJson.isNullOrBlank() } else emptyList()
+    }
+    val folderPartition = remember(generalSessions, folders, collapsedFolderIds, showFolderBlock) {
+        if (showFolderBlock) partitionByFolder(generalSessions, folders, collapsedFolderIds)
+        else emptyList<FolderGroupBlock>() to generalSessions
     }
     val folderBlocks = folderPartition.first
     val groupedSessions = remember(folderPartition) { groupSessionsByDate(folderPartition.second) }
@@ -514,9 +527,9 @@ fun SessionListScreen(
     val pinnedFirst = groupedSessions.firstOrNull()?.first == DatePeriod.PINNED
     val leadingDateGroups = if (pinnedFirst) groupedSessions.take(1) else emptyList()
     val trailingDateGroups = if (pinnedFirst) groupedSessions.drop(1) else groupedSessions
-    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks) {
+    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks, showCard3Hierarchy, worlds) {
         buildMap {
-            var idx = 0
+            var idx = if (showCard3Hierarchy && worlds.isNotEmpty()) 2 else 0
             leadingDateGroups.forEach { (_, rows) -> idx += 1 + rows.size }
             if (folderBlocks.isNotEmpty()) {
                 idx += 1 // the "分组" section header item
@@ -749,7 +762,7 @@ fun SessionListScreen(
                             onStartConversation = {},
                         )
                     }
-                } else if (sessions.isEmpty()) {
+                } else if (sessions.isEmpty() && worlds.isEmpty()) {
                     if (isSearchActive && searchQuery.isNotBlank()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -796,6 +809,14 @@ fun SessionListScreen(
                         // Leave space for bottom FAB row
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp),
                     ) {
+                        if (showCard3Hierarchy && worlds.isNotEmpty()) {
+                            item(key = "card3_worlds") {
+                                WorldOverviewSection(worlds = worlds, onWorldClick = onWorldClick)
+                            }
+                            item(key = "card3_general_header") {
+                                SectionHeader(title = "通用对话")
+                            }
+                        }
                         // T25: search-active path used to flatten the list and skip
                         // section headers entirely. Now reuses the same grouped
                         // rendering — `displayedSessions` is already filtered by
@@ -820,6 +841,7 @@ fun SessionListScreen(
                             // welded container (iOS FolderMemberRowBackground);
                             // ungrouped rows stay full-bleed.
                             inFolder: Boolean = false,
+                            showWorldContext: Boolean = false,
                         ) {
                             items(rows, key = { it.id }) { session ->
                                 val activeQuery =
@@ -870,6 +892,15 @@ fun SessionListScreen(
                                         )
                                         .then(rowModifier),
                                 ) {
+                                Column {
+                                if (showWorldContext) {
+                                    Text(
+                                        text = session.worldAndCharacterLabel(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 20.dp, top = 8.dp),
+                                    )
+                                }
                                 SessionItemContent(
                                     session = session,
                                     isSelecting = isSelecting,
@@ -898,6 +929,7 @@ fun SessionListScreen(
                                     // surface shows through member rows.
                                     rowBackground = if (inFolder) Color.Transparent else null,
                                 )
+                                }
                                 }
                             }
                         }
@@ -969,6 +1001,13 @@ fun SessionListScreen(
                                 }))
                             }
                             renderSessionRows(periodSessions)
+                        }
+
+                        if (showCard3Hierarchy && recentWorldSessions.isNotEmpty()) {
+                            item(key = "card3_recent_header") {
+                                SectionHeader(title = "最近对话")
+                            }
+                            renderSessionRows(recentWorldSessions, showWorldContext = true)
                         }
                     }
                 }
@@ -1068,7 +1107,7 @@ fun SessionListScreen(
                     onDelete = { showBulkDeleteDialog = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-            } else if (hasProviders && (sessions.isNotEmpty() || isSearchActive)) {
+            } else if (hasProviders && (sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive)) {
                 // Dual FAB row (matching iOS: New Chat left + Search right, or vice versa).
                 // Hidden while the onboarding landing is showing — Step 3 provides the CTA.
                 // T46: stay visible while search is active even when the result
@@ -1079,7 +1118,7 @@ fun SessionListScreen(
                     isSearchActive = isSearchActive,
                     searchQuery = searchQuery,
                     isSearching = isSearching,
-                    hasSessions = sessions.isNotEmpty() || isSearchActive,
+                    hasSessions = sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive,
                     onNewChat = {
                         scope.launch {
                             val sessionId = viewModel.createNewSession()
@@ -1600,6 +1639,68 @@ private fun SelectionToolbar(
 }
 
 // ─── Section Header (matching iOS .subheadline.weight(.semibold)) ───────────
+
+@Composable
+private fun WorldOverviewSection(
+    worlds: List<StoryWorld>,
+    onWorldClick: (String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionHeader(title = "世界")
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        ) {
+            items(worlds, key = { it.id }) { world ->
+                Surface(
+                    onClick = { onWorldClick(world.id) },
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.width(190.dp).heightIn(min = 96.dp),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Map,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = world.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (world.description.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = world.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+private fun ChatSessionEntity.worldAndCharacterLabel(): String {
+    val worldName = runCatching {
+        StoryWorld.fromJson(org.json.JSONObject(worldSnapshotJson.orEmpty())).name
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "世界"
+    val characterName = runCatching {
+        CharacterCard.fromJson(org.json.JSONObject(characterSnapshotJson.orEmpty())).name
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "Novax"
+    return "$worldName · $characterName"
+}
 
 @Composable
 private fun SectionHeader(title: String) {

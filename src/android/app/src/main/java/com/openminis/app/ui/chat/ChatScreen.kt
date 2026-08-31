@@ -3692,6 +3692,7 @@ fun ChatScreen(
                                 slotKey = "text:${item.block.id}",
                                 markdown = item.messageMarkdown,
                             ) {
+                                CharacterAssistantBubble {
                                 // T-android-gc-storm-issue17: collapse oversized frozen
                                 // assistant text before feeding the markdown parser, which
                                 // is the GC-storm hotspot for legacy sessions.
@@ -3712,12 +3713,14 @@ fun ChatScreen(
                                         ),
                                     )
                                 }
+                                }
                             }
                             is FlatChatItem.AssistantMarkdownBlock -> BoundsTrackedBlock(
                                 messageId = item.messageId,
                                 slotKey = "mdblock:${item.parentBlockId}:${item.blockIndex}",
                                 markdown = item.messageMarkdown,
                             ) {
+                                CharacterAssistantBubble {
                                 LargeContentGuard(
                                     content = item.rawText,
                                     isStreaming = item.isStreaming,
@@ -3734,6 +3737,7 @@ fun ChatScreen(
                                             shardId = "mdblock:${item.parentBlockId}:${item.blockIndex}",
                                         ),
                                     )
+                                }
                                 }
                             }
                             is FlatChatItem.AssistantThinking -> {
