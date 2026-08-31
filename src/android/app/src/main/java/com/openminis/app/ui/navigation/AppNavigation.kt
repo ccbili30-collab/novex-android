@@ -584,8 +584,16 @@ fun AppNavigation(
                 // removes the current chat from the stack (back → list) and
                 // a double-fire just replaces one unpersisted draft with
                 // another instead of stacking two chats.
-                onNewChat = {
-                    navController.safeNavigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
+                onNewChat = { worldId, characterId, personaId ->
+                    val draftId = buildChatDraftId(
+                        draftId = java.util.UUID.randomUUID().toString(),
+                        context = ChatDraftContext(
+                            worldId = worldId,
+                            characterId = characterId,
+                            personaId = personaId,
+                        ),
+                    )
+                    navController.safeNavigate(Routes.chat(draftId)) {
                         popUpTo(Routes.SESSION_LIST) { inclusive = false }
                         launchSingleTop = true
                     }

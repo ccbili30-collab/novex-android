@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ScrollFollowPolicyTest {
     @Test
-    fun freshConversationStaysDetachedUntilBottomIsExplicitlyConfirmed() {
+    fun freshConversationStaysDetachedUntilBottomButtonIsExplicitlyRequested() {
         var following = initialStreamingFollowEnabled(isFreshConversation = true)
 
         following = reduceStreamingFollow(
@@ -29,6 +29,12 @@ class ScrollFollowPolicyTest {
         following = reduceStreamingFollow(
             following,
             StreamingFollowEvent.UserDragStoppedAtBottom,
+        )
+
+        assertFalse(following)
+        following = reduceStreamingFollow(
+            following,
+            StreamingFollowEvent.ExplicitBottomRequested,
         )
 
         assertTrue(following)
@@ -86,6 +92,25 @@ class ScrollFollowPolicyTest {
     }
 
     @Test
+    fun approachingBottomAfterManualDragCannotReattachStreaming() {
+        var following = true
+        following = reduceStreamingFollow(following, StreamingFollowEvent.UserDragStarted)
+        following = reduceStreamingFollow(following, StreamingFollowEvent.UserDragStoppedAtBottom)
+        following = reduceStreamingFollow(following, StreamingFollowEvent.UserTurnStarted)
+
+        assertFalse("靠近底部不能重新授权程序滚动", following)
+        assertFalse(
+            shouldFollowStreamingGrowth(
+                isStreaming = true,
+                streamingFollowEnabled = following,
+                userScrolledAway = false,
+                scrollInProgress = false,
+                millisSinceUserInterrupt = 5_000L,
+            ),
+        )
+    }
+
+    @Test
     fun followResumesOnlyAfterUserActuallyReturnsToBottom() {
         assertFalse(
             reduceStreamingFollow(
@@ -93,7 +118,7 @@ class ScrollFollowPolicyTest {
                 event = StreamingFollowEvent.UserDragStoppedAway,
             ),
         )
-        assertTrue(
+        assertFalse(
             reduceStreamingFollow(
                 current = false,
                 event = StreamingFollowEvent.UserDragStoppedAtBottom,
@@ -123,7 +148,7 @@ class ScrollFollowPolicyTest {
 
     @Test
     fun completedFingerDragMaySettleWhileFollowingLiveOutput() {
-        assertTrue(
+        assertFalse(
             shouldSettleAfterInteraction(
                 scrollInProgress = false,
                 userDragPending = true,

@@ -403,7 +403,7 @@ fun ChatScreen(
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
-    onNewChat: () -> Unit = {},
+    onNewChat: (worldId: String?, characterId: String?, personaId: String?) -> Unit = { _, _, _ -> },
     onSettings: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     /** Open the in-app terminal with [command] pre-filled at the prompt
@@ -979,21 +979,11 @@ fun ChatScreen(
     // position. Kept as named lambdas so re-enabling per-call telemetry
     // (during a scroll-positioning regression) is a one-line edit here
     // instead of changing 20+ call sites. Currently silent.
-    val tracedScrollToItem: suspend (source: String, idx: Int, off: Int) -> Unit = { source, idx, off ->
-        // [T-android-top-drag-jump] TEMP: log every programmatic scroll's source
-        // so we can see which one fights the user near the top. Remove after fix.
-        AppLogger.debug(
-            "ScrollSrc",
-            "scrollToItem src=$source idx=$idx off=$off canBwd=${listState.canScrollBackward} firstIdx=${listState.firstVisibleItemIndex} firstOff=${listState.firstVisibleItemScrollOffset} inProgress=${listState.isScrollInProgress}",
-        )
+    val tracedScrollToItem: suspend (source: String, idx: Int, off: Int) -> Unit = { _, idx, off ->
         runCatching { listState.scrollToItem(idx, off) }
         Unit
     }
-    val tracedScrollBy: suspend (source: String, delta: Float) -> Unit = { source, delta ->
-        AppLogger.debug(
-            "ScrollSrc",
-            "scrollBy src=$source delta=$delta canBwd=${listState.canScrollBackward} firstIdx=${listState.firstVisibleItemIndex} firstOff=${listState.firstVisibleItemScrollOffset}",
-        )
+    val tracedScrollBy: suspend (source: String, delta: Float) -> Unit = { _, delta ->
         runCatching { listState.scrollBy(delta) }
         Unit
     }
@@ -1478,17 +1468,6 @@ fun ChatScreen(
         val headerInset = listState.layoutInfo.beforeContentPadding
         val topOffset = rowSize - vpH + headerInset
         tracedScrollToItem("FAB-UP/turn-walk-top", landIndex, topOffset)
-    }
-
-    // [T-android-scroll-fab-reversed] TEMP diagnostic — capture BOTH FABs'
-    // gates so we can verify the matrix (bottom=none, middle=both, top=down
-    // only) and why the down-FAB is missing at the top. Remove after fix.
-    LaunchedEffect(listState) {
-        snapshotFlow {
-            val up = !isNearBottom.value && messages.isNotEmpty()
-            val down = userScrolledAway && contentOverflows.value && messages.isNotEmpty()
-            "FABs up=$up down=$down | nearBottom=${isNearBottom.value} lastJumped=${lastJumpedUserId?.take(8)} scrolledAway=$userScrolledAway overflow=${contentOverflows.value} canFwd=${listState.canScrollForward} canBwd=${listState.canScrollBackward}"
-        }.collect { AppLogger.debug("ScrollFAB2", it) }
     }
 
     // T-drag-send-queue: shared send-or-enqueue handler used by BOTH the
@@ -2088,30 +2067,12 @@ fun ChatScreen(
         snapshotFlow { isNearBottom.value }
             .distinctUntilChanged()
             .collect { nearBottom ->
-                val firstIdx = listState.firstVisibleItemIndex
                 // Content-growth drift during a live turn is not a user intent.
                 val sinceStreamEnd = System.currentTimeMillis() - lastStreamEndMs
                 val streamingDrift = viewModel.isStreaming.value ||
                     (lastStreamEndMs > 0L && sinceStreamEnd <= STREAM_END_ARM_GRACE_MS)
                 if (!nearBottom && !userScrolledAway && !streamingDrift) {
                     userScrolledAway = true
-                    // [T-android-stream-follow-dies-after-first-paragraph]
-                    // Arming kills streaming auto-follow, so record WHY. If a
-                    // "reply stopped scrolling" report ever recurs, this line
-                    // is the first thing to grep: streaming=true here means
-                    // the drift heuristic let a non-gesture through.
-                    AppLogger.debug(
-                        "ScrollFollow",
-                        "userScrolledAway ARMED inProgress=${listState.isScrollInProgress} " +
-                            "firstIdx=$firstIdx streaming=${viewModel.isStreaming.value}",
-                    )
-                } else if (!nearBottom && streamingDrift) {
-                    val why = if (viewModel.isStreaming.value) "streaming content growth"
-                              else "stream-end reflow (+${sinceStreamEnd}ms)"
-                    AppLogger.debug(
-                        "ScrollFollow",
-                        "arm SUPPRESSED ($why) firstIdx=$firstIdx",
-                    )
                 }
             }
     }
@@ -2720,7 +2681,11 @@ fun ChatScreen(
                                     if (isStreaming) {
                                         showNewChatStopDialog = true
                                     } else {
-                                        onNewChat()
+                                        onNewChat(
+                                            immersiveProfile.world?.id,
+                                            immersiveProfile.character?.id,
+                                            immersiveProfile.persona?.id,
+                                        )
                                     }
                                 },
                                 leadingIcon = {
@@ -2747,20 +2712,12 @@ fun ChatScreen(
                     containerColor = ChatColors.background.copy(alpha = 0.92f),
                     scrolledContainerColor = ChatColors.background.copy(alpha = 0.92f),
                 ),
-                // [T-android-topbar-shrink] 76dp → 68dp. The earlier
-                // T-topbar-model-row-clip fix bumped 60dp → 76dp to give the
-                // 3-row title (14sp/lh17 + 12sp/lh14 + 11sp/lh13 ≈ 44sp text
-                // + 4dp+2dp+1dp vertical padding ≈ 51dp on mdpi, mid-60s on
-                // xxhdpi) room to breathe — but overshot, leaving visible
-                // dead-space below the model row. This trim pairs with the
-                // outer Column's vertical-padding drop (4dp→2dp above):
-                // budget is now ~44sp text + 2dp+2dp+1dp ≈ 49dp typical,
-                // ~58-62dp at xxhdpi 2.625× rounding. 68dp keeps a 6-10dp
-                // safety margin so the model name still fits at any
-                // user-configured font scale on xhdpi/xxhdpi without
-                // re-clipping (T-topbar-model-row-clip regression check).
-                // Font sizes + lineHeights stay untouched per spec.
-                expandedHeight = 68.dp,
+                // Three title rows need a real font-scale-aware height budget.
+                // The former fixed 68 dp clipped the provider/model baseline
+                // on real devices, most visibly for long OpenCode names.
+                expandedHeight = chatTopBarExpandedHeightDp(
+                    LocalDensity.current.fontScale,
+                ).dp,
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -2939,7 +2896,8 @@ fun ChatScreen(
                 // frame's list while the next one computes. Keyed on `sessionId` so a
                 // chat-switch resets the cache; LaunchedEffect(messages) reruns the
                 // computation on every new emission.
-                var flatItems by remember(sessionId) {
+                val showAssistantIdentity = immersiveProfile.character != null
+                var flatItems by remember(sessionId, showAssistantIdentity) {
                     mutableStateOf<List<FlatChatItem>>(emptyList())
                 }
                 // [T-android-coldload-offmain-parse] Composition-snapshot
@@ -2962,7 +2920,7 @@ fun ChatScreen(
                 // scope. The flatten still runs per token (cheap-ish; ran
                 // before too), but the rebuild stays off the main UI
                 // composable's invalidation list.
-                LaunchedEffect(messages, sessionId) {
+                LaunchedEffect(messages, sessionId, showAssistantIdentity) {
                     // [T-android-stream-pipeline-incremental] Frozen/live split.
                     //
                     // `messages` is CONSTANT within this effect (the effect is
@@ -3050,7 +3008,11 @@ fun ChatScreen(
                                     // threw ConcurrentModificationException from
                                     // a later frame's SubList.equals. Copying
                                     // severs the view so it can't comodify.
-                                    buildFlatChatItems(msgs.take(splitIdx), sessionId)
+                                    buildFlatChatItems(
+                                        messages = msgs.take(splitIdx),
+                                        sessionId = sessionId,
+                                        showAssistantIdentity = showAssistantIdentity,
+                                    )
                                 }
                                 val buildMs = (System.nanoTime() - tBuildStart) / 1_000_000
                                 frozenRows = rows
@@ -3126,7 +3088,13 @@ fun ChatScreen(
                             } else {
                                 withContext(Dispatchers.Default) {
                                     val merged = mergeStreamingOverlay(msgs, stream)
-                                    buildFlatChatItems(merged, null, fromIndex = splitIdx, seedKeys = frozenKeys)
+                                    buildFlatChatItems(
+                                        messages = merged,
+                                        sessionId = null,
+                                        fromIndex = splitIdx,
+                                        seedKeys = frozenKeys,
+                                        showAssistantIdentity = showAssistantIdentity,
+                                    )
                                 }
                             }
                             flatItems = if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows
@@ -6172,7 +6140,11 @@ fun ChatScreen(
                     onConfirm = {
                         showNewChatStopDialog = false
                         viewModel.cancelStream()
-                        onNewChat()
+                        onNewChat(
+                            immersiveProfile.world?.id,
+                            immersiveProfile.character?.id,
+                            immersiveProfile.persona?.id,
+                        )
                     },
                 )
             }

@@ -530,6 +530,11 @@ internal fun buildFlatChatItems(
     // prefix so the defensive key-collision suffixing behaves exactly as a
     // single full build would.
     seedKeys: Set<String> = emptySet(),
+    /**
+     * Whether this conversation is spoken by a role card. General and world
+     * Novax conversations keep their established identity-free transcript.
+     */
+    showAssistantIdentity: Boolean = false,
 ): List<FlatChatItem> {
     val out = mutableListOf<FlatChatItem>()
     val usedKeys = if (seedKeys.isEmpty()) mutableSetOf() else seedKeys.toMutableSet()
@@ -617,9 +622,13 @@ internal fun buildFlatChatItems(
             .map { messages[it] }
             .firstOrNull { it.role != "system" }
         val isResumeContinuation = prevNonSystem?.role == "assistant"
-        // Novex keeps the narrative as the primary surface. Repeating an
-        // assistant avatar/name before every turn wastes phone width and makes
-        // the story read like a messenger transcript, so no header row is added.
+        // General/world Novax keeps the narrative as the primary surface and
+        // therefore has no identity row. A role-card conversation is different:
+        // one header identifies each uninterrupted assistant run, while
+        // consecutive assistant messages share it until the player speaks.
+        if (showAssistantIdentity && !isSystem && !isResumeContinuation) {
+            out.add(dedupe(FlatChatItem.AssistantHeader(message.id)))
+        }
 
         val blocks = message.toolBlocks
         val toolPillBlocks = blocks.filter { it.kind == "tool_use" }

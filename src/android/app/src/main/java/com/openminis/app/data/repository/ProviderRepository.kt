@@ -1497,6 +1497,22 @@ class ProviderRepository(private val context: Context) {
         saveConfig(config)
     }
 
+    fun setOpenCodeFreeModelToolsEnabled(entryId: String, enabled: Boolean): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val index = config.modelEntries.indexOfFirst {
+            it.id == entryId && isOpenCodeFreeInstance(it.providerInstanceId)
+        }
+        if (index < 0) return@synchronized
+        val current = config.modelEntries[index]
+        if ((current.model.supportsTools != false) == enabled) return@synchronized
+        config.modelEntries[index] = current.copy(
+            overrides = current.overrides.copy(supportsTools = enabled),
+            userModifiedAt = System.currentTimeMillis(),
+        )
+        saveConfig(config)
+    }
+
     private fun applyOpenCodeFreeCatalog(models: List<OpenCodeFreeModelsApi.FreeModel>): Unit =
         synchronized(configLock) {
             ensureConfigLoaded()

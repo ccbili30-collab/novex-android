@@ -40,8 +40,8 @@ internal fun reduceStreamingFollow(
 ): Boolean = when (event) {
     StreamingFollowEvent.UserDragStarted,
     StreamingFollowEvent.UserDragStoppedAway -> false
-    StreamingFollowEvent.UserTurnStarted -> current
-    StreamingFollowEvent.UserDragStoppedAtBottom,
+    StreamingFollowEvent.UserTurnStarted,
+    StreamingFollowEvent.UserDragStoppedAtBottom -> current
     StreamingFollowEvent.ExplicitBottomRequested -> true
 }
 
@@ -77,8 +77,4 @@ internal fun shouldSettleAfterInteraction(
     userScrolledAway: Boolean,
     isNearBottom: Boolean,
     isStreaming: Boolean,
-): Boolean = !scrollInProgress &&
-    userDragPending &&
-    !userScrolledAway &&
-    isNearBottom &&
-    isStreaming
+): Boolean = false

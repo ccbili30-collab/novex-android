@@ -21,7 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.VpnKey
@@ -44,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.key
 import sh.calvin.reorderable.ReorderableColumn
 import com.openminis.app.data.model.ProviderInstance
+import com.openminis.app.data.model.ModelEntry
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +84,8 @@ fun ProviderListScreen(
     var openCodeRefreshing by remember { mutableStateOf(false) }
     var openCodeStatus by remember { mutableStateOf<String?>(null) }
     var openCodePendingEntryId by remember { mutableStateOf<String?>(null) }
+    var openCodeExpanded by rememberSaveable { mutableStateOf(false) }
+    var openCodeQuickTestEntry by remember { mutableStateOf<ModelEntry?>(null) }
 
     fun refreshOpenCode(force: Boolean) {
         if (openCodeRefreshing) return
@@ -162,8 +170,10 @@ fun ProviderListScreen(
     ) {
         OpenCodeFreeSection(
             entries = providerRepository.openCodeFreeEntries(),
+            expanded = openCodeExpanded,
             refreshing = openCodeRefreshing,
             status = openCodeStatus,
+            onExpandedChange = { openCodeExpanded = it },
             onRefresh = { refreshOpenCode(force = true) },
             onCheckedChange = { entryId, checked ->
                 if (checked && !providerRepository.hasAcceptedOpenCodeFreeDisclosure()) {
@@ -172,6 +182,10 @@ fun ProviderListScreen(
                     providerRepository.setOpenCodeFreeModelEnabled(entryId, checked)
                 }
             },
+            onToolsEnabledChange = { entryId, enabled ->
+                providerRepository.setOpenCodeFreeModelToolsEnabled(entryId, enabled)
+            },
+            onQuickTest = { openCodeQuickTestEntry = it },
         )
 
         if (instances.isEmpty()) {
@@ -398,15 +412,27 @@ fun ProviderListScreen(
             },
         )
     }
+
+    openCodeQuickTestEntry?.let { entry ->
+        com.openminis.app.ui.components.QuickTestSheet(
+            entry = entry,
+            providerRepository = providerRepository,
+            onDismiss = { openCodeQuickTestEntry = null },
+        )
+    }
 }
 
 @Composable
 private fun OpenCodeFreeSection(
-    entries: List<com.openminis.app.data.model.ModelEntry>,
+    entries: List<ModelEntry>,
+    expanded: Boolean,
     refreshing: Boolean,
     status: String?,
+    onExpandedChange: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onCheckedChange: (String, Boolean) -> Unit,
+    onToolsEnabledChange: (String, Boolean) -> Unit,
+    onQuickTest: (ModelEntry) -> Unit,
 ) {
     SettingsSection(
         header = "OpenCode 免费模型 · 实验性",
@@ -415,11 +441,16 @@ private fun OpenCodeFreeSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onExpandedChange(!expanded) }
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("免费模型", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(
+                    "免费模型 · 已启用 ${entries.count { !it.isHidden }}/${entries.size}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
                 Text(
                     when {
                         refreshing -> "正在同步当前模型…"
@@ -441,9 +472,15 @@ private fun OpenCodeFreeSection(
                     Icon(Icons.Default.Refresh, contentDescription = "刷新 OpenCode 模型")
                 }
             }
+            Icon(
+                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "折叠免费模型" else "展开免费模型",
+            )
         }
-        if (entries.isNotEmpty()) HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
-        entries.forEachIndexed { index, entry ->
+        if (expanded && entries.isNotEmpty()) {
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
+        }
+        if (expanded) entries.forEachIndexed { index, entry ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -463,6 +500,38 @@ private fun OpenCodeFreeSection(
                     checked = !entry.isHidden,
                     onCheckedChange = { onCheckedChange(entry.id, it) },
                 )
+                IconButton(
+                    onClick = {
+                        onToolsEnabledChange(entry.id, entry.model.supportsTools == false)
+                    },
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Build,
+                            contentDescription = if (entry.model.supportsTools != false) {
+                                "关闭 ${entry.model.displayName} 的工具调用"
+                            } else {
+                                "开启 ${entry.model.displayName} 的工具调用"
+                            },
+                            modifier = Modifier.size(20.dp),
+                            tint = if (entry.model.supportsTools != false) {
+                                Color(0xFF168A45)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                        Text(
+                            if (entry.model.supportsTools != false) "✓" else "×",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                IconButton(onClick = { onQuickTest(entry) }) {
+                    Icon(
+                        Icons.Default.Bolt,
+                        contentDescription = "测试 ${entry.model.displayName}",
+                    )
+                }
             }
             if (index < entries.lastIndex) {
                 HorizontalDivider(modifier = Modifier.padding(start = 14.dp, end = 14.dp))
