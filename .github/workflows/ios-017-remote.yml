@@ -72,6 +72,20 @@ jobs:
           test -f deps/libs/libish.a || ./deps/build_ish.sh
           test -f deps/resources/alpine-rootfs.zip || ./deps/prepare_alpine_rootfs.sh
 
+      - name: Save completed iOS native dependencies
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            deps/lame-build
+            deps/ffmpeg-6.1.2
+            deps/frameworks
+            deps/ish/build-ios
+            deps/libs
+            deps/include
+            deps/resources
+          key: ios-device-native-${{ runner.arch }}-${{ hashFiles('deps/build_lame.sh', 'deps/build_ffmpeg.sh', 'deps/build_ish.sh', 'deps/prepare_alpine_rootfs.sh', '.gitmodules') }}
+
       - name: Prepare optional build customization
         run: |
           set -euo pipefail
