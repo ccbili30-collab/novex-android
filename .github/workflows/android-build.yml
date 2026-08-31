@@ -165,7 +165,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          notes_file=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ ! -s "$notes_file" ]; then
+            echo "Missing concise release notes: $notes_file" >&2
+            echo "Add a short, user-facing summary before publishing this tag." >&2
+            exit 1
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "Novex $version" \
+              --notes-file "$notes_file"
             gh release upload "$GITHUB_REF_NAME" \
               "dist/novex-$version.apk" \
               dist/novex.apk \
@@ -181,6 +190,6 @@ jobs:
               dist/novex.apk \
               dist/SHA256SUMS.txt \
               --title "Novex $version" \
-              --generate-notes \
+              --notes-file "$notes_file" \
               "${release_flags[@]}"
           fi
