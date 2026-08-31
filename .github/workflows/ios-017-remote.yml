@@ -31,6 +31,14 @@ jobs:
           sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
           xcodebuild -version
 
+      - name: Materialize declared native source dependencies
+        run: |
+          set -euo pipefail
+          if test ! -d deps/ish; then
+            git clone --depth 1 --recursive --branch feature/fork-guard \
+              https://github.com/OpenMinis/ish-arm64.git deps/ish
+          fi
+
       - name: Install native build tools
         run: |
           set -euo pipefail
@@ -98,6 +106,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/novex-evidence"
+          printf 'run=%s\ncommit=%s\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/novex-evidence/run.txt"
           test ! -f "$RUNNER_TEMP/novex-build-for-testing.log" || cp "$RUNNER_TEMP/novex-build-for-testing.log" "$RUNNER_TEMP/novex-evidence/"
           test ! -f "$RUNNER_TEMP/novex-archive.log" || cp "$RUNNER_TEMP/novex-archive.log" "$RUNNER_TEMP/novex-evidence/"
           if test -d "$RUNNER_TEMP/Novex-0.1.7.xcarchive"; then
