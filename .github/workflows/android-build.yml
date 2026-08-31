@@ -5,14 +5,12 @@ on:
     branches:
       - main
       - next
-      - work/novex-v1
     tags:
       - "v*"
   pull_request:
     branches:
       - main
       - next
-      - work/novex-v1
   workflow_dispatch:
 
 concurrency:
