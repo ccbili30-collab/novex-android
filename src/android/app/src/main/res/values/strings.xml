@@ -43,6 +43,9 @@
     <!-- Check Update -->
     <string name="check_update_section_header">App Update</string>
     <string name="check_update_current_version">Current version: %1$s</string>
+    <string name="check_update_current_version_channel">Current version: %1$s · %2$s</string>
+    <string name="update_channel_stable">Stable</string>
+    <string name="update_channel_preview">Preview</string>
     <string name="check_update_check_button">Check for Updates</string>
     <string name="check_update_checking">Checking…</string>
     <string name="check_update_up_to_date">You\'re on the latest version.</string>
@@ -50,9 +53,17 @@
     <string name="check_update_no_apk_asset">Release %1$s is published but doesn\'t include an APK.</string>
     <string name="check_update_error">Check failed: %1$s</string>
     <string name="check_update_available_title">Update Available</string>
+    <string name="check_update_available_title_stable">Stable Update Available</string>
+    <string name="check_update_available_title_preview">Preview Update Available</string>
+    <string name="check_update_available_title_preview_baseline">Preview Synced to Stable Baseline</string>
     <string name="check_update_available_subtitle">%1$s → %2$s</string>
+    <string name="check_update_detected_stable">Stable %1$s available</string>
+    <string name="check_update_detected_preview">Preview %1$s available</string>
+    <string name="check_update_preview_notice">This build is for feature testing and may contain unfinished work. Preview data is isolated from the stable app.</string>
+    <string name="check_update_preview_baseline_notice">These preview features have reached a stable baseline. This package keeps the separate preview app and its isolated data.</string>
     <string name="check_update_changelog_header">What\'s New</string>
     <string name="check_update_download_button">Download &amp; Install</string>
+    <string name="check_update_download_preview_button">Download Preview</string>
     <string name="check_update_downloading">Downloading… %1$d%%</string>
     <string name="check_update_download_failed">Download failed: %1$s</string>
     <string name="check_update_install_perm_required">Allow installs from this app to continue.</string>

@@ -36,6 +36,33 @@ val hasReleaseSigningEnvironment = listOf(
     releaseKeyPassword,
 ).all { it.isNotBlank() }
 
+val novexVersionName = System.getenv("NOVEX_VERSION_NAME")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: "0.2.1"
+
+fun versionCodeFor(versionName: String): Int {
+    val match = Regex("""^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$""")
+        .matchEntire(versionName)
+        ?: error("NOVEX_VERSION_NAME must use semantic versioning: $versionName")
+    val major = match.groupValues[1].toInt()
+    val minor = match.groupValues[2].toInt()
+    val patch = match.groupValues[3].toInt()
+    val prerelease = match.groupValues[4]
+    val stage = if (prerelease.isEmpty()) {
+        9_999
+    } else {
+        prerelease.split('.', '-').lastOrNull()?.toIntOrNull()?.coerceIn(1, 9_998) ?: 1
+    }
+    return major * 100_000_000 + minor * 1_000_000 + patch * 10_000 + stage
+}
+
+val novexVersionCode = System.getenv("NOVEX_VERSION_CODE")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?.toInt()
+    ?: versionCodeFor(novexVersionName)
+
 android {
     namespace = "com.openminis.app"
     // [T-android-dynamic-island] Bumped 35→36 so the Android 16 (Baklava)
@@ -50,8 +77,8 @@ android {
         applicationId = "com.noven.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.2.0"
+        versionCode = novexVersionCode
+        versionName = novexVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -72,6 +99,19 @@ android {
                 cppFlags += "-std=c++17"
                 arguments += "-DANDROID_STL=c++_shared"
             }
+        }
+    }
+
+    flavorDimensions += "updateChannel"
+    productFlavors {
+        create("stable") {
+            dimension = "updateChannel"
+            buildConfigField("String", "UPDATE_CHANNEL", "\"stable\"")
+        }
+        create("preview") {
+            dimension = "updateChannel"
+            applicationIdSuffix = ".preview"
+            buildConfigField("String", "UPDATE_CHANNEL", "\"preview\"")
         }
     }
 

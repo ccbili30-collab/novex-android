@@ -3,15 +3,33 @@
 
 set -euo pipefail
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
-    echo "Usage: $0 APK_PATH [EXPECTED_TAG] [OUTPUT_DIR]" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 4 ]; then
+    echo "Usage: $0 APK_PATH [EXPECTED_TAG] [OUTPUT_DIR] [stable|preview]" >&2
     exit 2
 fi
 
 APK_PATH="$1"
 EXPECTED_TAG="${2:-}"
 OUTPUT_DIR="${3:-dist}"
-EXPECTED_PACKAGE="com.noven.player"
+UPDATE_CHANNEL="${4:-stable}"
+
+case "$UPDATE_CHANNEL" in
+    stable)
+        EXPECTED_PACKAGE="com.noven.player"
+        VERSIONED_OUTPUT_PREFIX="novex"
+        LATEST_OUTPUT_NAME="novex.apk"
+        ;;
+    preview)
+        EXPECTED_PACKAGE="com.noven.player.preview"
+        VERSIONED_OUTPUT_PREFIX="novex-preview"
+        LATEST_OUTPUT_NAME="novex-preview.novex"
+        VERSIONED_OUTPUT_EXTENSION="novex"
+        ;;
+    *)
+        echo "Unknown update channel: $UPDATE_CHANNEL" >&2
+        exit 2
+        ;;
+esac
 
 if [ ! -s "$APK_PATH" ]; then
     echo "Release APK is missing or empty: $APK_PATH" >&2
@@ -80,14 +98,23 @@ if [ -n "$EXPECTED_TAG" ] && [ "$EXPECTED_TAG" != "v$VERSION_NAME" ]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
-cp "$APK_PATH" "$OUTPUT_DIR/novex-$VERSION_NAME.apk"
-cp "$APK_PATH" "$OUTPUT_DIR/novex.apk"
+if [ "$UPDATE_CHANNEL" = "stable" ]; then
+    VERSIONED_OUTPUT_EXTENSION="apk"
+fi
+cp "$APK_PATH" "$OUTPUT_DIR/$VERSIONED_OUTPUT_PREFIX-$VERSION_NAME.$VERSIONED_OUTPUT_EXTENSION"
+cp "$APK_PATH" "$OUTPUT_DIR/$LATEST_OUTPUT_NAME"
 
 if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$OUTPUT_DIR" && sha256sum "novex-$VERSION_NAME.apk" novex.apk > SHA256SUMS.txt)
+    (
+        cd "$OUTPUT_DIR"
+        find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | sed 's#^./##' | sort | xargs sha256sum > SHA256SUMS.txt
+    )
 else
-    (cd "$OUTPUT_DIR" && shasum -a 256 "novex-$VERSION_NAME.apk" novex.apk > SHA256SUMS.txt)
+    (
+        cd "$OUTPUT_DIR"
+        find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | sed 's#^./##' | sort | xargs shasum -a 256 > SHA256SUMS.txt
+    )
 fi
 
-printf 'Verified package=%s versionCode=%s versionName=%s\n' \
-    "$PACKAGE_NAME" "$VERSION_CODE" "$VERSION_NAME"
+printf 'Verified channel=%s package=%s versionCode=%s versionName=%s\n' \
+    "$UPDATE_CHANNEL" "$PACKAGE_NAME" "$VERSION_CODE" "$VERSION_NAME"

@@ -46,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
+import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
 import kotlinx.coroutines.launch
@@ -115,7 +116,11 @@ fun CheckUpdateSection() {
 
     SettingsSection(
         header = stringResource(R.string.check_update_section_header),
-        footer = stringResource(R.string.check_update_current_version, BuildConfig.VERSION_NAME),
+        footer = stringResource(
+            R.string.check_update_current_version_channel,
+            BuildConfig.VERSION_NAME,
+            updateChannelLabel(UpdateChecker.currentChannel),
+        ),
     ) {
         SettingsRow(
             icon = Icons.Outlined.SystemUpdate,
@@ -277,7 +282,14 @@ fun NovexUpdateAction() {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (detectedUpdate != null) {
             Text(
-                "检测到新版本",
+                stringResource(
+                    if (detectedUpdate?.channel == UpdateChannel.PREVIEW) {
+                        R.string.check_update_detected_preview
+                    } else {
+                        R.string.check_update_detected_stable
+                    },
+                    detectedUpdate?.versionName.orEmpty(),
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -377,7 +389,18 @@ private fun UpdateDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Text(stringResource(R.string.check_update_available_title))
+                Text(
+                    stringResource(
+                        when {
+                            update.channel == UpdateChannel.STABLE ->
+                                R.string.check_update_available_title_stable
+                            !update.isPrerelease ->
+                                R.string.check_update_available_title_preview_baseline
+                            else ->
+                                R.string.check_update_available_title_preview
+                        },
+                    ),
+                )
                 Text(
                     stringResource(
                         R.string.check_update_available_subtitle,
@@ -391,6 +414,24 @@ private fun UpdateDialog(
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    updateChannelLabel(update.channel),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                if (update.channel == UpdateChannel.PREVIEW) {
+                    Text(
+                        stringResource(
+                            if (update.isPrerelease) {
+                                R.string.check_update_preview_notice
+                            } else {
+                                R.string.check_update_preview_baseline_notice
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (update.changelog.isNotBlank()) {
                     Text(
                         stringResource(R.string.check_update_changelog_header).uppercase(),
@@ -460,7 +501,15 @@ private fun UpdateDialog(
                             Text(stringResource(R.string.check_update_downloading, (downloadProgress * 100).toInt()))
                         }
                     } else {
-                        Text(stringResource(R.string.check_update_download_button))
+                        Text(
+                            stringResource(
+                                if (update.channel == UpdateChannel.PREVIEW) {
+                                    R.string.check_update_download_preview_button
+                                } else {
+                                    R.string.check_update_download_button
+                                },
+                            ),
+                        )
                     }
                 }
             }
@@ -472,3 +521,11 @@ private fun UpdateDialog(
         },
     )
 }
+
+@Composable
+private fun updateChannelLabel(channel: UpdateChannel): String = stringResource(
+    when (channel) {
+        UpdateChannel.STABLE -> R.string.update_channel_stable
+        UpdateChannel.PREVIEW -> R.string.update_channel_preview
+    },
+)

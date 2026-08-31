@@ -199,8 +199,9 @@ step is needed.
 
 ```sh
 cd src/android
-./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
-./gradlew :app:installDebug           # install onto a connected device
+./gradlew :app:assembleStableDebug    # → app/build/outputs/apk/stable/debug/
+./gradlew :app:installStableDebug     # install stable channel onto a connected device
+./gradlew :app:installPreviewDebug    # install isolated preview channel
 ```
 
 Release builds are configured with the debug signing config, so no keystore is
@@ -209,8 +210,8 @@ required to produce one locally.
 ### Tests
 
 ```sh
-./gradlew :app:testDebugUnitTest        # JVM unit tests
-./gradlew :app:connectedAndroidTest     # instrumented; needs a device/emulator
+./gradlew :app:testStableDebugUnitTest  # JVM unit tests
+./gradlew :app:connectedStableDebugAndroidTest # instrumented; needs a device/emulator
 ```
 
 ---

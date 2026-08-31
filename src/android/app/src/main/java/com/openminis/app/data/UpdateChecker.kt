@@ -26,10 +26,9 @@ import java.util.concurrent.TimeUnit
  * coordinates download → install. iOS has no equivalent (sideloading is not
  * permitted) so this is Android-only.
  *
- * Comparison strategy: strip a leading `v` from `tag_name`, then split both
- * the tag and the local versionName on `.` and compare numerically component
- * by component. A tag like `v1.0.1` beats local `1.0.0`; `v1.0.0-rc1` beats
- * `1.0.0` because the suffix sorts higher under string fallback.
+ * Release selection is delegated to [UpdateReleasePolicy]. It preserves
+ * semantic-version prerelease suffixes and requires the exact APK asset for
+ * the channel baked into this build.
  */
 object UpdateChecker {
 
@@ -43,7 +42,6 @@ object UpdateChecker {
     private const val REPO = "novex-android"
     private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
     private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
-    private const val DOWNLOAD_FILENAME = "novex.apk"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
      * moved off `cacheDir/shared/` (the original location) so the OS can't
@@ -63,6 +61,8 @@ object UpdateChecker {
             val changelog: String,
             val apkUrl: String,
             val apkSizeBytes: Long,
+            val channel: UpdateChannel,
+            val isPrerelease: Boolean,
         ) : CheckResult()
         data object UpToDate : CheckResult()
         // The repo has zero non-draft releases (or 404'd entirely).
@@ -89,6 +89,9 @@ object UpdateChecker {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    val currentChannel: UpdateChannel
+        get() = UpdateChannel.fromWireName(BuildConfig.UPDATE_CHANNEL)
 
     /**
      * Hit `repos/{owner}/{repo}/releases` (the list endpoint, NOT
@@ -146,81 +149,64 @@ object UpdateChecker {
                 // Build a list of non-draft releases. GitHub already returns
                 // them sorted by created_at desc, but we re-sort by parsed
                 // version number to be robust against odd ordering.
-                data class ReleaseInfo(
-                    val tagName: String,
-                    val versionName: String,
-                    val releaseName: String,
-                    val changelog: String,
-                    val isPrerelease: Boolean,
-                    val apkUrl: String?,
-                    val apkSize: Long,
-                )
-
-                val candidates = mutableListOf<ReleaseInfo>()
+                val candidates = mutableListOf<PublishedUpdate>()
                 for (i in 0 until arr.length()) {
                     val r = arr.optJSONObject(i) ?: continue
                     if (r.optBoolean("draft", false)) continue
                     val tag = r.optString("tag_name")
                     if (tag.isEmpty()) continue
-                    val (apkUrl, apkSize) = findApkAsset(r.optJSONArray("assets"))
-                    candidates += ReleaseInfo(
+                    candidates += PublishedUpdate(
                         tagName = tag,
                         versionName = normalizeTag(tag),
                         releaseName = r.optString("name").ifEmpty { tag },
                         changelog = r.optString("body", ""),
                         isPrerelease = r.optBoolean("prerelease", false),
-                        apkUrl = apkUrl,
-                        apkSize = apkSize,
+                        assets = readUpdateAssets(r.optJSONArray("assets")),
                     )
                 }
+                val channel = currentChannel
+                val eligible = UpdateReleasePolicy.eligibleReleases(channel, candidates)
                 AppLogger.info(
                     TAG,
-                    "non-draft releases=${candidates.size} (apk-bearing=${candidates.count { it.apkUrl != null }})",
+                    "non-draft releases=${candidates.size} channel=${channel.wireName} " +
+                        "eligible=${eligible.size} asset=${channel.assetName} " +
+                        "(asset-bearing=${eligible.count { it.assets.containsKey(channel.assetName) }})",
                 )
-                if (candidates.isEmpty()) {
+                if (eligible.isEmpty()) {
                     return@withContext CheckResult.NoReleaseAvailable
                 }
 
-                // [T-android-updatechecker-localver-normalize] Normalize the
-                // LOCAL version the same way remote tags are (normalizeTag),
-                // otherwise the comparison is asymmetric: remote "v0.11-preview"
-                // becomes "0.11" but local "0.11-preview" stays raw, and
-                // compareVersions("0.11","0.11-preview") puts "" before
-                // "preview" in the 3rd component → remote judged OLDER → the
-                // user is told they're up to date when they're actually on the
-                // matching version (and a real newer "0.12-preview" → "0.12"
-                // still compares greater, so updates still surface).
                 // Highest version we've seen at all (used for the "release
                 // exists but is older or equal" → UpToDate decision and for
                 // logging).
-                val highest = candidates.maxWithOrNull(
-                    compareBy { compareVersions(it.versionName, "0") },
-                ) ?: candidates.first()
+                val highest = UpdateReleasePolicy.highestEligible(channel, eligible) ?: eligible.first()
                 AppLogger.info(
                     TAG,
-                    "highest-published tag=${highest.tagName} parsed=${highest.versionName} prerelease=${highest.isPrerelease} apk=${highest.apkUrl != null}",
+                    "highest-eligible tag=${highest.tagName} parsed=${highest.versionName} " +
+                        "prerelease=${highest.isPrerelease} asset=${highest.assets.containsKey(channel.assetName)}",
                 )
 
                 // First APK-bearing release with version > local. We pick the
                 // highest such release so a stale older APK never shadows a
                 // newer non-APK preview.
-                val upgradeCandidate = candidates
-                    .filter { it.apkUrl != null }
-                    .filter { compareVersions(it.versionName, localVer) > 0 }
-                    .maxWithOrNull(compareBy { compareVersions(it.versionName, "0") })
+                val upgradeCandidate = UpdateReleasePolicy.selectUpgrade(channel, localVer, eligible)
 
                 if (upgradeCandidate != null) {
+                    val asset = requireNotNull(upgradeCandidate.assets[channel.assetName])
                     AppLogger.info(
                         TAG,
-                        "Update available: $localVer → ${upgradeCandidate.versionName} (${upgradeCandidate.tagName})",
+                        "Update available: $localVer → ${upgradeCandidate.versionName} " +
+                            "(${upgradeCandidate.tagName}, channel=${channel.wireName})",
                     )
                     return@withContext CheckResult.UpdateAvailable(
                         tagName = upgradeCandidate.tagName,
                         versionName = upgradeCandidate.versionName,
                         releaseName = upgradeCandidate.releaseName,
                         changelog = upgradeCandidate.changelog,
-                        apkUrl = upgradeCandidate.apkUrl!!,
-                        apkSizeBytes = upgradeCandidate.apkSize,
+                        apkUrl = asset.url,
+                        apkSizeBytes = asset.sizeBytes,
+                        channel = channel,
+                        isPrerelease = upgradeCandidate.isPrerelease,
                     )
                 }
 
@@ -232,10 +218,10 @@ object UpdateChecker {
                 //      release manually if they really want).
                 //   3. Otherwise (all releases ≤ local) → UpToDate as well.
                 val highestVsLocal = compareVersions(highest.versionName, localVer)
-                if (highestVsLocal > 0 && highest.apkUrl == null) {
+                if (highestVsLocal > 0 && !highest.assets.containsKey(channel.assetName)) {
                     AppLogger.info(
                         TAG,
-                        "Release ${highest.tagName} > local but no APK asset",
+                        "Release ${highest.tagName} > local but no ${channel.assetName} asset",
                     )
                     return@withContext CheckResult.NoApkAsset(highest.tagName)
                 }
@@ -277,7 +263,7 @@ object UpdateChecker {
                 AppLogger.info(TAG, "Atom HTTP ${response.code}")
                 if (!response.isSuccessful) return@use originalFailure
                 val body = response.body?.string() ?: return@use originalFailure
-                parseAtomReleaseFeed(body, localVersion)
+                parseAtomReleaseFeed(body, localVersion, currentChannel)
             }
         } catch (e: Exception) {
             AppLogger.warning(TAG, "Atom fallback failed: ${e.javaClass.simpleName}: ${e.message}")
@@ -288,10 +274,14 @@ object UpdateChecker {
     /**
      * Parse GitHub's releases Atom feed without depending on Android XML APIs,
      * so the fallback remains unit-testable on the JVM. The feed does not list
-     * assets; Novex releases use the stable `novex.apk` asset name, allowing a
-     * deterministic browser-download URL.
+     * assets; each Novex channel uses a fixed asset name, allowing a
+     * deterministic browser-download URL after the tag is filtered.
      */
-    internal fun parseAtomReleaseFeed(body: String, localVersion: String): CheckResult {
+    internal fun parseAtomReleaseFeed(
+        body: String,
+        localVersion: String,
+        channel: UpdateChannel = currentChannel,
+    ): CheckResult {
         val entries = Regex("<entry>(.*?)</entry>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
             .findAll(body)
             .mapNotNull { match ->
@@ -306,56 +296,60 @@ object UpdateChecker {
                 val tag = href.groupValues[2]
                 val title = Regex("<title>(.*?)</title>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
                     .find(entry)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "")?.trim().orEmpty()
-                Triple(tag, normalizeTag(tag), title.ifEmpty { tag })
+                PublishedUpdate(
+                    tagName = tag,
+                    versionName = normalizeTag(tag),
+                    releaseName = title.ifEmpty { tag },
+                    changelog = "",
+                    isPrerelease = UpdateReleasePolicy.isPrereleaseVersion(tag),
+                    assets = mapOf(
+                        channel.assetName to PublishedAsset(
+                            url = "https://github.com/$OWNER/$REPO/releases/download/$tag/${channel.assetName}",
+                            sizeBytes = 0,
+                        ),
+                    ),
+                )
             }
             .toList()
 
-        if (entries.isEmpty()) return CheckResult.NoReleaseAvailable
-        val highest = entries.maxWithOrNull { left, right -> compareVersions(left.second, right.second) }
-            ?: return CheckResult.NoReleaseAvailable
-        if (compareVersions(highest.second, localVersion) <= 0) return CheckResult.UpToDate
-
-        val tag = highest.first
+        val eligible = UpdateReleasePolicy.eligibleReleases(channel, entries)
+        if (eligible.isEmpty()) return CheckResult.NoReleaseAvailable
+        val highest = UpdateReleasePolicy.selectUpgrade(channel, localVersion, eligible)
+            ?: return CheckResult.UpToDate
+        val asset = requireNotNull(highest.assets[channel.assetName])
         return CheckResult.UpdateAvailable(
-            tagName = tag,
-            versionName = highest.second,
-            releaseName = highest.third,
+            tagName = highest.tagName,
+            versionName = highest.versionName,
+            releaseName = highest.releaseName,
             changelog = "",
-            apkUrl = "https://github.com/$OWNER/$REPO/releases/download/$tag/$DOWNLOAD_FILENAME",
+            apkUrl = asset.url,
             apkSizeBytes = 0,
+            channel = channel,
+            isPrerelease = highest.isPrerelease,
         )
     }
 
     /** Public so UI can deep-link users to manual download when GitHub is blocked. */
     const val RELEASES_URL: String = "https://github.com/ccbili30-collab/novex-android/releases"
 
-    /** Returns (downloadUrl, sizeBytes) for the first .apk asset, or (null, 0). */
-    private fun findApkAsset(assets: JSONArray?): Pair<String?, Long> {
-        if (assets == null) return null to 0L
+    /** Index installable assets by exact file name so channels cannot cross. */
+    private fun readUpdateAssets(assets: JSONArray?): Map<String, PublishedAsset> {
+        if (assets == null) return emptyMap()
+        val result = linkedMapOf<String, PublishedAsset>()
         for (i in 0 until assets.length()) {
             val a = assets.optJSONObject(i) ?: continue
-            val name = a.optString("name").lowercase()
-            if (name.endsWith(".apk")) {
-                val u = a.optString("browser_download_url").ifEmpty { null }
-                if (u != null) return u to a.optLong("size", 0)
-            }
+            val name = a.optString("name")
+            if (!name.endsWith(".apk", ignoreCase = true) &&
+                !name.endsWith(".novex", ignoreCase = true)
+            ) continue
+            val url = a.optString("browser_download_url").ifEmpty { null } ?: continue
+            result[name.lowercase()] = PublishedAsset(url, a.optLong("size", 0))
         }
-        return null to 0L
+        return result
     }
 
-    /**
-     * Strip the leading `v` and any `-preview` / `-rc1` / etc. trailing
-     * label so the numeric comparator keeps `0.1` and `0.1-preview`
-     * treated as equivalent. Without this, "0.1 (local) vs 0.1-preview
-     * (remote)" reported the remote as newer because the trailing token
-     * fell into string comparison.
-     */
-    private fun normalizeTag(tag: String): String {
-        val trimmed = tag.trim().removePrefix("v").removePrefix("V")
-        // "0.1-preview" → "0.1"; "0.1.0" → "0.1.0"; "1.2.3-rc1" → "1.2.3"
-        val dashIdx = trimmed.indexOf('-')
-        return if (dashIdx > 0) trimmed.substring(0, dashIdx) else trimmed
-    }
+    /** Strip only the conventional tag prefix; prerelease identity is significant. */
+    private fun normalizeTag(tag: String): String = UpdateReleasePolicy.normalizeTag(tag)
 
     /**
      * Stream the APK from [url] into `${cacheDir}/shared/minis-update.apk`,
@@ -383,7 +377,7 @@ object UpdateChecker {
                 ?.replace(Regex("[^A-Za-z0-9._-]"), "_")
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { "minis-$it.apk" }
-                ?: DOWNLOAD_FILENAME
+                ?: currentChannel.assetName
             val outFile = File(outDir, safeName)
             // A previous, possibly-aborted download could leave a stale APK
             // behind that the installer would happily try to consume. Wipe it.
@@ -490,9 +484,6 @@ object UpdateChecker {
         // Only resume if the persisted target is still newer than the running
         // build — protects against the case where the user updated by some
         // other means since the download.
-        // [T-android-updatechecker-localver-normalize] targetVersionName is a
-        // normalized version (set from upgradeCandidate.versionName), so the
-        // local side must be normalized too — same asymmetry fix as check().
         if (compareVersions(pending.targetVersionName, normalizeTag(BuildConfig.VERSION_NAME)) <= 0) {
             AppLogger.info(TAG, "pending target ${pending.targetVersionName} <= local; clearing")
             PendingUpdateStore.clearPending(context)
@@ -530,23 +521,6 @@ object UpdateChecker {
         }
     }
 
-    /**
-     * Numeric-aware version comparator. `1.0.10` beats `1.0.9`. Non-numeric
-     * components fall back to lexicographic compare so a `1.0.0-rc1` build is
-     * treated as "newer than 1.0.0" — acceptable noise for our use case.
-     */
-    private fun compareVersions(a: String, b: String): Int {
-        val ap = a.split('.', '-')
-        val bp = b.split('.', '-')
-        val n = maxOf(ap.size, bp.size)
-        for (i in 0 until n) {
-            val x = ap.getOrNull(i) ?: ""
-            val y = bp.getOrNull(i) ?: ""
-            val xi = x.toIntOrNull()
-            val yi = y.toIntOrNull()
-            val c = if (xi != null && yi != null) xi.compareTo(yi) else x.compareTo(y)
-            if (c != 0) return c
-        }
-        return 0
-    }
+    /** Semantic-version comparison with a legacy fallback for old tags. */
+    private fun compareVersions(a: String, b: String): Int = UpdateReleasePolicy.compareVersions(a, b)
 }

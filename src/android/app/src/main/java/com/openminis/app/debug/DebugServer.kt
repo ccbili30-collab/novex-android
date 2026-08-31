@@ -33,7 +33,7 @@ class DebugServer(
          * developer's own machine over USB) stay token-free so the local
          * tooling keeps working unchanged; any NON-loopback (LAN) connection
          * must present the device token. Rationale: Android debug builds are
-         * never distributed (release channel ships assembleRelease without
+         * never distributed (release channels ship their release variants without
          * this server), but the dev workflow leaves the device reachable on
          * the LAN for remote-worker e2e — an unauthenticated 0.0.0.0 RPC
          * surface there can read logs/files and burn API quota. The iOS

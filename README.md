@@ -22,13 +22,13 @@ Android（安卓）工程位于 `src/android`。需要 JDK 21（Java 开发工�
 
 ```bash
 cd src/android
-./gradlew :app:assembleDebug
+./gradlew :app:assembleStableDebug
 ```
 
 生成的 APK（安卓安装包）位于：
 
 ```text
-src/android/app/build/outputs/apk/debug/app-debug.apk
+src/android/app/build/outputs/apk/stable/debug/app-stable-debug.apk
 ```
 
 ### GitHub 云端构建
