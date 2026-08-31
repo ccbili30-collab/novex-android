@@ -2,6 +2,9 @@ name: Novex iOS 0.1.7 remote gate
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - work/novex-ios-017
 
 concurrency:
   group: novex-ios-017-${{ github.ref }}
