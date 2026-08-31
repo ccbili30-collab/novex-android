@@ -104,6 +104,9 @@ src/android/app/src/main/assets/bashism/
 # Locally collected APKs and emulator screenshots used for product review.
 artifacts/
 
+# Local release staging; authoritative binaries live in GitHub Releases.
+dist/
+
 # Xcode debugger state (breakpoints) — personal dev state, never track
 xcshareddata/xcdebugger/
 
