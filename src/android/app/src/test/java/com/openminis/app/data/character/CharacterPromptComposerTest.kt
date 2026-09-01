@@ -134,6 +134,47 @@ class CharacterPromptComposerTest {
     }
 
     @Test
+    fun `conversation prompt replaces derived role prompt only for this chat`() {
+        val character = CharacterCard(
+            id = "role-1",
+            name = "旧角色名",
+            personality = "旧人格",
+            createdAt = 1,
+            updatedAt = 1,
+        )
+
+        val prompt = CharacterSystemPromptComposer.compose(
+            characterSnapshot = character.toJson().toString(),
+            personaSnapshot = null,
+            worldSnapshot = null,
+            enabledTools = emptySet(),
+            conversationPrompt = "这是当前对话直接编辑后的完整角色提示词。",
+        )
+
+        assertTrue(prompt.contains("这是当前对话直接编辑后的完整角色提示词"))
+        assertFalse(prompt.contains("旧人格"))
+        assertFalse(prompt.contains("旧角色名"))
+    }
+
+    @Test
+    fun `role presentation can exist without a character card`() {
+        val profile = ImmersiveChatProfile(
+            rolePresentationEnabled = true,
+            assistantDisplayName = "临时角色",
+            assistantAvatarPath = "/assistant.png",
+            playerDisplayName = "玩家甲",
+            playerAvatarPath = "/player.png",
+        )
+
+        assertTrue(profile.usesRolePresentation)
+        assertEquals("临时角色", profile.effectiveAssistantName)
+        assertEquals("/assistant.png", profile.effectiveAssistantAvatarPath)
+        assertEquals("玩家甲", profile.effectivePlayerName)
+        assertEquals("/player.png", profile.effectivePlayerAvatarPath)
+        assertNull(profile.character)
+    }
+
+    @Test
     fun `role tool policy defaults closed and never exposes general Novax tools`() {
         val available = setOf("present_choices", "generate_image", "shell_execute", "read_file")
         val closed = CharacterCard(id = "closed", name = "艾琳", createdAt = 1, updatedAt = 1)

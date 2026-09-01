@@ -704,6 +704,7 @@ class ChatViewModel(
      *  this, opening a session that previously fell back mid-run flashes the
      *  default model name for one frame before the persisted binding settles. */
     private val sessionLoaded = MutableStateFlow(false)
+    val conversationSettingsReady: StateFlow<Boolean> = sessionLoaded.asStateFlow()
 
     private val _sessionTitle = MutableStateFlow("New Chat")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
@@ -3143,7 +3144,15 @@ class ChatViewModel(
                 personaSnapshot = profile.persona?.toJson()?.toString(),
                 worldSnapshot = profile.world?.toJson()?.toString(),
             )
-        } ?: com.openminis.app.agent.SoulStore.load(context)?.body.orEmpty()
+        } ?: com.openminis.app.agent.SoulStore.load(context)?.let { soul ->
+            buildString {
+                append(soul.body.trim())
+                soul.metadata.style.trim().takeIf { it.isNotEmpty() }?.let { style ->
+                    if (isNotEmpty()) append("\n\n")
+                    append("<回复风格>\n").append(style).append("\n</回复风格>")
+                }
+            }
+        }.orEmpty()
     }
 
     /** The current source prompt before conversation-level edits are applied. */

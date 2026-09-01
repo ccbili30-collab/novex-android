@@ -2,6 +2,7 @@ package com.openminis.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationSettingsTest {
@@ -29,5 +30,19 @@ class ConversationSettingsTest {
         )
         assertFalse(value.rolePresentationEnabled)
         assertEquals("角色", value.assistantDisplayName)
+    }
+
+    @Test
+    fun longConversationAndImagePromptsAreBoundedIndependently() {
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "甲".repeat(MAX_CONVERSATION_PROMPT_CHARS + 20),
+                imageStylePrompt = "乙".repeat(MAX_IMAGE_STYLE_PROMPT_CHARS + 20),
+            ),
+        )
+
+        assertEquals(MAX_CONVERSATION_PROMPT_CHARS, value.conversationPrompt.length)
+        assertEquals(MAX_IMAGE_STYLE_PROMPT_CHARS, value.imageStylePrompt.length)
+        assertTrue(value.conversationPrompt.all { it == '甲' })
     }
 }

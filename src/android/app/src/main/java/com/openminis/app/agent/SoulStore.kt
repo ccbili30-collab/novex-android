@@ -512,7 +512,6 @@ object SystemPromptBuilder {
             return identityTrimmed +
                 "\n\nCurrent conversation prompt (editable for this conversation only):\n" +
                 trimmed.take(com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS) +
-                styleBlock(style) +
                 "\n\n" +
                 soulEditHint +
                 "\n\n"

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -43,6 +43,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,14 +104,17 @@ fun ConversationSettingsScreen(
             mcpRepository = mcpRepository,
         ),
     )
-    val initial = remember(sessionId) { viewModel.conversationSettingsSnapshot() }
-    var prompt by remember(sessionId) { mutableStateOf(initial.conversationPrompt) }
-    var imageStyle by remember(sessionId) { mutableStateOf(initial.imageStylePrompt) }
-    var roleDisplay by remember(sessionId) { mutableStateOf(initial.rolePresentationEnabled) }
-    var assistantName by remember(sessionId) { mutableStateOf(initial.assistantDisplayName) }
-    var assistantAvatar by remember(sessionId) { mutableStateOf(initial.assistantAvatarPath) }
-    var playerName by remember(sessionId) { mutableStateOf(initial.playerDisplayName) }
-    var playerAvatar by remember(sessionId) { mutableStateOf(initial.playerAvatarPath) }
+    val ready by viewModel.conversationSettingsReady.collectAsState()
+    val seed = remember(sessionId) { viewModel.conversationSettingsSnapshot() }
+    var initial by remember(sessionId) { mutableStateOf(seed) }
+    var hydrated by remember(sessionId) { mutableStateOf(ready) }
+    var prompt by remember(sessionId) { mutableStateOf(seed.conversationPrompt) }
+    var imageStyle by remember(sessionId) { mutableStateOf(seed.imageStylePrompt) }
+    var roleDisplay by remember(sessionId) { mutableStateOf(seed.rolePresentationEnabled) }
+    var assistantName by remember(sessionId) { mutableStateOf(seed.assistantDisplayName) }
+    var assistantAvatar by remember(sessionId) { mutableStateOf(seed.assistantAvatarPath) }
+    var playerName by remember(sessionId) { mutableStateOf(seed.playerDisplayName) }
+    var playerAvatar by remember(sessionId) { mutableStateOf(seed.playerAvatarPath) }
     var saving by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -124,7 +129,22 @@ fun ConversationSettingsScreen(
         playerDisplayName = playerName,
         playerAvatarPath = playerAvatar,
     )
-    val changed = current() != initial
+    LaunchedEffect(ready) {
+        if (ready && !hydrated) {
+            val loaded = viewModel.conversationSettingsSnapshot()
+            initial = loaded
+            prompt = loaded.conversationPrompt
+            imageStyle = loaded.imageStylePrompt
+            roleDisplay = loaded.rolePresentationEnabled
+            assistantName = loaded.assistantDisplayName
+            assistantAvatar = loaded.assistantAvatarPath
+            playerName = loaded.playerDisplayName
+            playerAvatar = loaded.playerAvatarPath
+            hydrated = true
+        }
+    }
+
+    val changed = hydrated && current() != initial
     fun leave() {
         if (changed) showDiscardDialog = true else onBack()
     }
@@ -155,14 +175,18 @@ fun ConversationSettingsScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = ::save, enabled = !saving) {
+                    TextButton(onClick = ::save, enabled = hydrated && !saving) {
                         Text(if (saving) "保存中…" else "保存")
                     }
                 },
             )
         },
     ) { padding ->
-        Column(
+        if (!hydrated) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)

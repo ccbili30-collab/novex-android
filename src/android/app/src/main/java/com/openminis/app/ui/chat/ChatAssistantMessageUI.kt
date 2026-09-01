@@ -358,7 +358,7 @@ internal fun AssistantHeader() {
  */
 @Composable
 internal fun CharacterAssistantBubble(content: @Composable () -> Unit) {
-    if (LocalImmersiveChatProfile.current.character == null) {
+    if (!LocalImmersiveChatProfile.current.usesRolePresentation) {
         content()
         return
     }
