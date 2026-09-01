@@ -3114,6 +3114,7 @@ class ChatViewModel(
         draftMarker("fld")
 
     private val initialCharacterId: String? = draftMarker("char")
+    private val initialCharacterVersionId: String? = draftMarker("version")
     private val initialPersonaId: String? = draftMarker("persona")
     private val initialWorldId: String? = draftMarker("world")
 
@@ -3428,6 +3429,8 @@ class ChatViewModel(
             worldSnapshotJson = _immersiveProfile.value.world?.toJson()?.toString(),
             personaId = _immersiveProfile.value.persona?.id,
             personaSnapshotJson = _immersiveProfile.value.persona?.toJson()?.toString(),
+            worldId = _immersiveProfile.value.worldId,
+            characterVersionId = _immersiveProfile.value.characterVersionId,
             chatBackgroundPath = _immersiveProfile.value.backgroundPath,
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value.ifBlank { null },
@@ -3605,20 +3608,45 @@ class ChatViewModel(
                 // Draft session: just set up provider using default group or first entry
                 _sessionTitle.value = "New Chat"
                 _sessionCategory.value = null
-                val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(context, initialCharacterId)
                 val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
-                val draftWorld = when {
-                    draftCharacter != null -> com.openminis.app.data.character.CharacterCardStore.world(context, draftCharacter.worldId)
-                    initialWorldId != null -> com.openminis.app.data.character.CharacterCardStore.world(context, initialWorldId)
-                    else -> null
+                if (initialCharacterVersionId != null && initialWorldId != null) {
+                    val database = com.openminis.app.data.db.AppDatabase.getInstance(context)
+                    val snapshot = com.openminis.app.data.character.CharacterConversationSnapshotFactory(
+                        catalog = com.openminis.app.data.character.CharacterCatalogRepository(
+                            database.characterCatalogDao(),
+                        ),
+                        modules = com.openminis.app.data.character.ContentModuleRepository(
+                            database.contentModuleDao(),
+                        ),
+                        media = com.openminis.app.data.character.MediaAssetRepository(
+                            database.mediaAssetDao(),
+                        ) { path -> java.io.File(path).delete() },
+                    ).create(initialWorldId, initialCharacterVersionId, draftPersona)
+                    _immersiveProfile.value = snapshot.profile
+                } else {
+                    val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(
+                        context,
+                        initialCharacterId,
+                    )
+                    val draftWorld = when {
+                        draftCharacter != null -> com.openminis.app.data.character.CharacterCardStore.world(
+                            context,
+                            draftCharacter.worldId,
+                        )
+                        initialWorldId != null -> com.openminis.app.data.character.CharacterCardStore.world(
+                            context,
+                            initialWorldId,
+                        )
+                        else -> null
+                    }
+                    _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
+                        world = draftWorld,
+                        character = draftCharacter,
+                        persona = draftPersona,
+                        backgroundPath = draftCharacter?.defaultBackgroundPath ?: draftWorld?.backgroundPath,
+                        rolePresentationEnabled = draftCharacter != null,
+                    )
                 }
-                _immersiveProfile.value = com.openminis.app.data.character.ImmersiveChatProfile(
-                    world = draftWorld,
-                    character = draftCharacter,
-                    persona = draftPersona,
-                    backgroundPath = draftCharacter?.defaultBackgroundPath ?: draftWorld?.backgroundPath,
-                    rolePresentationEnabled = draftCharacter != null,
-                )
                 _conversationPrompt.value = inheritedEditablePrompt()
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
@@ -3664,6 +3692,8 @@ class ChatViewModel(
                 world = sessionWorld,
                 character = sessionCharacter,
                 persona = sessionPersona,
+                worldId = session.worldId ?: sessionWorld?.id,
+                characterVersionId = session.characterVersionId,
                 backgroundPath = session.chatBackgroundPath
                     ?: sessionCharacter?.defaultBackgroundPath
                     ?: sessionWorld?.backgroundPath,

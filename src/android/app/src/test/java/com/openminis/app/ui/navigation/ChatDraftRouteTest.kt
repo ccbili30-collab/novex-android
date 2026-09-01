@@ -5,6 +5,21 @@ import org.junit.Test
 
 class ChatDraftRouteTest {
     @Test
+    fun normalizedWorldRoleDraftKeepsConcreteVersionAndPersona() {
+        assertEquals(
+            "__new__draft-0__version__version-1__world__world-1__persona__player-1",
+            buildChatDraftId(
+                draftId = "draft-0",
+                context = ChatDraftContext(
+                    worldId = "world-1",
+                    characterVersionId = "version-1",
+                    personaId = "player-1",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun roleChatDraftKeepsCharacterAndPersona() {
         assertEquals(
             "__new__draft-1__char__role-1__persona__player-1",

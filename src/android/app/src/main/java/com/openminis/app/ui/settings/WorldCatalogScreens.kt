@@ -171,6 +171,7 @@ fun CatalogWorldDetailScreen(
     onEditCharacterVersion: (String, String) -> Unit,
     onOpenSession: (String) -> Unit,
     onStartWorldNovax: (String?) -> Unit,
+    onStartCharacterChat: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
     CharacterCardStore.initialize(context)
@@ -189,6 +190,9 @@ fun CatalogWorldDetailScreen(
     var data by remember { mutableStateOf<WorldPageData?>(null) }
     var missing by remember { mutableStateOf(false) }
     var addCharacter by remember { mutableStateOf(false) }
+    var startCharacterChat by remember { mutableStateOf(false) }
+    var selectedPersonaId by remember { mutableStateOf<String?>(null) }
+    var selectedVersionId by remember { mutableStateOf<String?>(null) }
     var editVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
@@ -253,6 +257,21 @@ fun CatalogWorldDetailScreen(
                     header = "角色卡",
                     footer = "世界关联具体本体或分身；角色版本仍归角色库所有。",
                 ) {
+                    Button(
+                        onClick = {
+                            when {
+                                personas.isEmpty() -> onEditPersona(null)
+                                current.versions.isEmpty() -> addCharacter = true
+                                else -> {
+                                    selectedPersonaId = personas.firstOrNull { it.isDefault }?.id
+                                        ?: personas.first().id
+                                    selectedVersionId = current.versions.first().id
+                                    startCharacterChat = true
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    ) { Text("新建世界角色对话") }
                     current.versions.forEach { version ->
                         Row(
                             Modifier.fillMaxWidth().clickable { onOpenCharacter(version.characterId) }.padding(12.dp),
@@ -287,28 +306,28 @@ fun CatalogWorldDetailScreen(
                         Text("从角色库添加")
                     }
                 }
-                if (legacyWorld != null) {
-                    SettingsSection(
-                        header = "玩家身份",
-                        footer = "旧世界的玩家身份入口会保留到新的世界对话流程接管为止。",
-                    ) {
-                        personas.forEach { persona ->
-                            SettingsRow(
-                                title = persona.name.ifBlank { "玩家" },
-                                subtitle = persona.description.ifBlank {
-                                    if (persona.isDefault) "默认身份" else "未填写身份说明"
-                                },
-                                onClick = { onEditPersona(persona.id) },
-                            )
-                        }
-                        TextButton(
-                            onClick = { onEditPersona(null) },
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Text(if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份")
-                        }
+                SettingsSection(
+                    header = "玩家身份",
+                    footer = "一段世界角色对话选择一个玩家身份和一个本体或分身。",
+                ) {
+                    personas.forEach { persona ->
+                        SettingsRow(
+                            title = persona.name.ifBlank { "玩家" },
+                            subtitle = persona.description.ifBlank {
+                                if (persona.isDefault) "默认身份" else "未填写身份说明"
+                            },
+                            onClick = { onEditPersona(persona.id) },
+                        )
                     }
+                    TextButton(
+                        onClick = { onEditPersona(null) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text(if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份")
+                    }
+                }
+                if (legacyWorld != null) {
                     SettingsSection(header = "Novax 世界助手") {
                         SettingsRow(
                             title = "与 Novax 讨论这个世界",
@@ -367,6 +386,51 @@ fun CatalogWorldDetailScreen(
             }
         },
         confirmButton = { TextButton(onClick = { addCharacter = false }) { Text("关闭") } },
+    )
+    if (startCharacterChat && current != null) AlertDialog(
+        onDismissRequest = { startCharacterChat = false },
+        title = { Text("新建世界角色对话") },
+        text = {
+            Column {
+                Text("玩家身份", fontWeight = FontWeight.Bold)
+                personas.forEach { persona ->
+                    TextButton(
+                        onClick = { selectedPersonaId = persona.id },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (selectedPersonaId == persona.id) "✓  ${persona.name.ifBlank { "玩家" }}" else persona.name.ifBlank { "玩家" })
+                    }
+                }
+                Text("角色版本", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                current.versions.forEach { version ->
+                    TextButton(
+                        onClick = { selectedVersionId = version.id },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        val label = "${version.profileName()} · ${version.label}"
+                        Text(if (selectedVersionId == version.id) "✓  $label" else label)
+                    }
+                }
+                Text(
+                    "当前只选择一个本体或分身，不会创建多角色共同对话。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedPersonaId != null && selectedVersionId != null,
+                onClick = {
+                    val personaId = selectedPersonaId ?: return@TextButton
+                    val versionId = selectedVersionId ?: return@TextButton
+                    startCharacterChat = false
+                    onStartCharacterChat(versionId, personaId)
+                },
+            ) { Text("开始对话") }
+        },
+        dismissButton = { TextButton(onClick = { startCharacterChat = false }) { Text("取消") } },
     )
     editVersion?.let { version ->
         val affectedWorlds = current?.versionWorlds?.get(version.id).orEmpty()

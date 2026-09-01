@@ -380,7 +380,12 @@ fun ChatScreen(
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
-    onNewChat: (worldId: String?, characterId: String?, personaId: String?) -> Unit = { _, _, _ -> },
+    onNewChat: (
+        worldId: String?,
+        characterId: String?,
+        characterVersionId: String?,
+        personaId: String?,
+    ) -> Unit = { _, _, _, _ -> },
     onSettings: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     /** Open the in-app terminal with [command] pre-filled at the prompt
@@ -1904,7 +1909,10 @@ fun ChatScreen(
                                     } else {
                                         onNewChat(
                                             immersiveProfile.world?.id,
-                                            immersiveProfile.character?.id,
+                                            immersiveProfile.character?.id.takeIf {
+                                                immersiveProfile.characterVersionId == null
+                                            },
+                                            immersiveProfile.characterVersionId,
                                             immersiveProfile.persona?.id,
                                         )
                                     }
@@ -5160,7 +5168,10 @@ fun ChatScreen(
                         viewModel.cancelStream()
                         onNewChat(
                             immersiveProfile.world?.id,
-                            immersiveProfile.character?.id,
+                            immersiveProfile.character?.id.takeIf {
+                                immersiveProfile.characterVersionId == null
+                            },
+                            immersiveProfile.characterVersionId,
                             immersiveProfile.persona?.id,
                         )
                     },

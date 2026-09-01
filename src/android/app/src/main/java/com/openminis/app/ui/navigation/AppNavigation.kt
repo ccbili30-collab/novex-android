@@ -535,12 +535,13 @@ fun AppNavigation(
                 // removes the current chat from the stack (back → list) and
                 // a double-fire just replaces one unpersisted draft with
                 // another instead of stacking two chats.
-                onNewChat = { worldId, characterId, personaId ->
+                onNewChat = { worldId, characterId, characterVersionId, personaId ->
                     val draftId = buildChatDraftId(
                         draftId = java.util.UUID.randomUUID().toString(),
                         context = ChatDraftContext(
                             worldId = worldId,
                             characterId = characterId,
+                            characterVersionId = characterVersionId,
                             personaId = personaId,
                         ),
                     )
@@ -662,6 +663,17 @@ fun AppNavigation(
                         append("__world__").append(worldId)
                         personaId?.let { append("__persona__").append(it) }
                     }
+                    navController.safeNavigate(Routes.chat(draft))
+                },
+                onStartCharacterChat = { versionId, personaId ->
+                    val draft = buildChatDraftId(
+                        draftId = java.util.UUID.randomUUID().toString(),
+                        context = ChatDraftContext(
+                            worldId = worldId,
+                            characterVersionId = versionId,
+                            personaId = personaId,
+                        ),
+                    )
                     navController.safeNavigate(Routes.chat(draft))
                 },
             )

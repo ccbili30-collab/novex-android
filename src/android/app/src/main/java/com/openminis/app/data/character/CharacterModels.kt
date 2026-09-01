@@ -182,6 +182,9 @@ data class ImmersiveChatProfile(
     val world: StoryWorld? = null,
     val character: CharacterCard? = null,
     val persona: PlayerPersona? = null,
+    /** Normalized catalog identity; snapshots above remain immutable after creation. */
+    val worldId: String? = world?.id,
+    val characterVersionId: String? = null,
     val backgroundPath: String? = null,
     val rolePresentationEnabled: Boolean = character != null,
     val assistantDisplayName: String? = null,

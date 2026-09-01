@@ -4,6 +4,7 @@ package com.openminis.app.ui.navigation
 internal data class ChatDraftContext(
     val worldId: String? = null,
     val characterId: String? = null,
+    val characterVersionId: String? = null,
     val personaId: String? = null,
 )
 
@@ -13,6 +14,12 @@ internal fun buildChatDraftId(
 ): String = buildString {
     append("__new__").append(draftId)
     when {
+        !context.characterVersionId.isNullOrBlank() -> {
+            append("__version__").append(context.characterVersionId)
+            context.worldId?.takeIf(String::isNotBlank)?.let {
+                append("__world__").append(it)
+            }
+        }
         !context.characterId.isNullOrBlank() -> append("__char__").append(context.characterId)
         !context.worldId.isNullOrBlank() -> append("__world__").append(context.worldId)
     }
