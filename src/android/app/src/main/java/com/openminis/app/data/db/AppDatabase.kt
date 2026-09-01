@@ -11,6 +11,7 @@ import com.openminis.app.data.character.CharacterCatalogConverters
 import com.openminis.app.data.character.CharacterCatalogDao
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.CatalogMigrationStateEntity
 import com.openminis.app.data.character.WorldCharacterVersionEntity
 import com.openminis.app.data.character.WorldEntity
 
@@ -25,8 +26,9 @@ import com.openminis.app.data.character.WorldEntity
         CharacterEntity::class,
         CharacterVersionEntity::class,
         WorldCharacterVersionEntity::class,
+        CatalogMigrationStateEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 @TypeConverters(CharacterCatalogConverters::class)
@@ -392,6 +394,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Import bookkeeping and non-destructive catalog references for legacy sessions. */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE worlds ADD COLUMN legacy_snapshot_json TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN world_id TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN character_version_id TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS catalog_migration_state (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        completed_at INTEGER NOT NULL,
+                        world_count INTEGER NOT NULL,
+                        character_count INTEGER NOT NULL,
+                        membership_count INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -429,7 +451,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -429,6 +429,17 @@ class MinisApp : Application(), ImageLoaderFactory {
         com.openminis.app.agent.SoulStore.ensureExists(this)
         com.openminis.app.agent.SoulStore.refreshCache(this)
         com.openminis.app.data.character.CharacterCardStore.initialize(this)
+        // Copy the v1 card library into the normalized catalog. The old
+        // SharedPreferences payload stays in place throughout the preview
+        // rollout, so a failed import never removes the currently working UI.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching {
+                com.openminis.app.data.character.LegacyCharacterCatalogMigrator
+                    .migrate(this@MinisApp, database)
+            }.onFailure { error ->
+                Log.e("MinisApp", "legacy character catalog migration failed", error)
+            }
+        }
 
         // T-config: minis-config CLI surface — registry / audit log /
         // master-switch store. Initialized eagerly here so

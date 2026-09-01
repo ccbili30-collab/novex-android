@@ -35,7 +35,7 @@ class CharacterCatalogRepository(
         originalProfileJson: String = "{}",
         now: Long = System.currentTimeMillis(),
         characterId: String = UUID.randomUUID().toString(),
-        originalVersionId: String = UUID.randomUUID().toString(),
+        originalVersionId: String = characterId,
     ): CharacterAggregate {
         val normalizedName = name.trim()
         require(normalizedName.isNotEmpty()) { "角色名称不能为空" }

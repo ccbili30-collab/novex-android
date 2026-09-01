@@ -59,6 +59,9 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "world_snapshot_json") val worldSnapshotJson: String? = null,
     @ColumnInfo(name = "persona_id") val personaId: String? = null,
     @ColumnInfo(name = "persona_snapshot_json") val personaSnapshotJson: String? = null,
+    /** Normalized catalog references; legacy snapshot fields remain authoritative during rollout. */
+    @ColumnInfo(name = "world_id") val worldId: String? = null,
+    @ColumnInfo(name = "character_version_id") val characterVersionId: String? = null,
     /** Null inherits the character snapshot's default background. Empty string explicitly clears it. */
     @ColumnInfo(name = "chat_background_path") val chatBackgroundPath: String? = null,
     /** User-editable prompt snapshot. Null means the legacy/source prompt has not been snapshotted yet. */

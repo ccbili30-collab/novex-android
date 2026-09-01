@@ -79,6 +79,8 @@ data class WorldEntity(
     val name: String,
     /** The only world content section present before users add modules. */
     val overview: String = "",
+    /** Exact v1 payload retained until every world field has a normalized home. */
+    @ColumnInfo(name = "legacy_snapshot_json") val legacySnapshotJson: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
@@ -122,3 +124,18 @@ data class CharacterAggregate(
     val allVersions: List<CharacterVersionEntity>
         get() = listOf(original) + variants
 }
+
+@Entity(tableName = "catalog_migration_state")
+data class CatalogMigrationStateEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "completed_at") val completedAt: Long,
+    @ColumnInfo(name = "world_count") val worldCount: Int,
+    @ColumnInfo(name = "character_count") val characterCount: Int,
+    @ColumnInfo(name = "membership_count") val membershipCount: Int,
+)
+
+data class CatalogSessionReference(
+    val sessionId: String,
+    val worldId: String?,
+    val characterVersionId: String?,
+)

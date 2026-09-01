@@ -71,6 +71,42 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration17AddsIdempotentImportStateAndSessionReferences() {
+        val db = helper.writableDatabase
+        db.execSQL(
+            """
+            CREATE TABLE sessions (
+                id TEXT NOT NULL PRIMARY KEY,
+                character_id TEXT,
+                world_snapshot_json TEXT
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("INSERT INTO sessions VALUES ('s1', 'legacy-card', '{\"id\":\"world-1\"}')")
+        AppDatabase.MIGRATION_15_16.migrate(db)
+        AppDatabase.MIGRATION_16_17.migrate(db)
+
+        val columns = db.query("PRAGMA table_info(sessions)").use { cursor ->
+            buildSet {
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+            }
+        }
+        assertEquals(true, "world_id" in columns)
+        assertEquals(true, "character_version_id" in columns)
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'catalog_migration_state'",
+        ).use { cursor -> assertEquals(true, cursor.moveToFirst()) }
+        val legacyColumn = db.query("PRAGMA table_info(worlds)").use { cursor ->
+            buildSet {
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+            }
+        }
+        assertEquals(true, "legacy_snapshot_json" in legacyColumn)
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

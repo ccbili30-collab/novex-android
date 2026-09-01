@@ -20,6 +20,60 @@ interface CharacterCatalogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertWorldMembership(membership: WorldCharacterVersionEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertWorldIfAbsent(world: WorldEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCharacterIfAbsent(character: CharacterEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertVersionIfAbsent(version: CharacterVersionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertWorldMembershipIfAbsent(membership: WorldCharacterVersionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertMigrationState(state: CatalogMigrationStateEntity)
+
+    @Query("SELECT * FROM catalog_migration_state WHERE id = :id")
+    suspend fun migrationState(id: String): CatalogMigrationStateEntity?
+
+    @Query(
+        "UPDATE sessions SET world_id = :worldId, character_version_id = :characterVersionId " +
+            "WHERE id = :sessionId",
+    )
+    suspend fun updateSessionCatalogReferences(
+        sessionId: String,
+        worldId: String?,
+        characterVersionId: String?,
+    )
+
+    /** One transaction makes a failed or interrupted legacy import retryable. */
+    @Transaction
+    suspend fun importLegacyCatalogIfNeeded(
+        state: CatalogMigrationStateEntity,
+        worlds: List<WorldEntity>,
+        characters: List<CharacterEntity>,
+        versions: List<CharacterVersionEntity>,
+        memberships: List<WorldCharacterVersionEntity>,
+        sessionReferences: List<CatalogSessionReference>,
+    ): Boolean {
+        if (migrationState(state.id) != null) return false
+        worlds.forEach { insertWorldIfAbsent(it) }
+        characters.forEach { insertCharacterIfAbsent(it) }
+        versions.forEach { insertVersionIfAbsent(it) }
+        memberships.forEach { insertWorldMembershipIfAbsent(it) }
+        sessionReferences.forEach { reference ->
+            updateSessionCatalogReferences(
+                sessionId = reference.sessionId,
+                worldId = reference.worldId,
+                characterVersionId = reference.characterVersionId,
+            )
+        }
+        insertMigrationState(state)
+        return true
+    }
+
     @Transaction
     suspend fun insertCharacterWithOriginal(
         character: CharacterEntity,
