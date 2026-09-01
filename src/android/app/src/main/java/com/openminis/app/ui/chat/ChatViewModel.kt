@@ -3587,6 +3587,7 @@ class ChatViewModel(
         // cancel) — see CrashFrequencyDetector.maybeShowOnActivity.
         if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
             android.util.Log.w(TAG, "loadSession: safe-mode active, skipping session restore")
+            sessionLoaded.value = true
             // [T-android-perf-logging] Surface the skip on the Perf timeline
             // too — when a crash_or_stall recovery loop is suspected, this
             // distinguishes "loadSession ran and was slow" from "loadSession
