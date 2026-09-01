@@ -110,6 +110,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify source can be promoted
+        id: source
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
@@ -117,22 +118,39 @@ jobs:
         run: |
           git fetch origin main next --tags
           git cat-file -e "$SOURCE_SHA^{commit}"
-          if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
-            echo "Candidate is not a fast-forward of main." >&2
-            exit 1
-          fi
           if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/next; then
             echo "Candidate is no longer part of next." >&2
             exit 1
           fi
+
+          promotion_sha="$SOURCE_SHA"
+          if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
+            next_sha="$(git rev-parse origin/next)"
+            if ! git merge-base --is-ancestor origin/main "$next_sha"; then
+              echo "Current next cannot fast-forward main." >&2
+              exit 1
+            fi
+            if ! git diff --quiet "$SOURCE_SHA" "$next_sha" -- \
+              src/android \
+              deps \
+              scripts/prepare_android_sandbox.sh \
+              .gitmodules; then
+              echo "Android product inputs changed after the candidate was built." >&2
+              exit 1
+            fi
+            promotion_sha="$next_sha"
+            echo "Using product-equivalent next commit $promotion_sha as the promotion target."
+          fi
+
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
             git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
             tagged_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
-            if [ "$tagged_sha" != "$SOURCE_SHA" ]; then
+            if [ "$tagged_sha" != "$promotion_sha" ]; then
               echo "Release tag $RELEASE_TAG belongs to another source commit." >&2
               exit 1
             fi
           fi
+          echo "promotion_sha=$promotion_sha" >> "$GITHUB_OUTPUT"
 
       - name: Set up Android SDK verifier
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
@@ -164,7 +182,7 @@ jobs:
       - name: Prepare release notes
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.promotion_sha }}
           VERSION: ${{ steps.candidate.outputs.version }}
         run: |
           ./scripts/render_android_release_notes.sh \
@@ -176,7 +194,7 @@ jobs:
         if: ${{ inputs.publish }}
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.promotion_sha }}
           RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
@@ -246,7 +264,8 @@ jobs:
             echo "### Android stable candidate"
             echo
             echo "- Candidate run: ${{ steps.candidate.outputs.run_id }}"
-            echo "- Source SHA: \`${{ steps.candidate.outputs.source_sha }}\`"
+            echo "- Candidate source SHA: \`${{ steps.candidate.outputs.source_sha }}\`"
+            echo "- Promotion target SHA: \`${{ steps.source.outputs.promotion_sha }}\`"
             echo "- Stable version: \`${{ steps.candidate.outputs.version }}\`"
             echo "- Artifact verification: passed"
             echo "- Published: \`${{ inputs.publish }}\`"
