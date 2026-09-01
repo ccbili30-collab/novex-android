@@ -1,14 +1,27 @@
 package com.openminis.app.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
+import com.openminis.app.data.ConversationBranchGraph
 import com.openminis.app.data.db.ChatDao
 import com.openminis.app.data.db.ChatSessionEntity
+import com.openminis.app.data.db.CompactMarkerEntity
 import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.db.MessageEntity
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
 class ChatRepository(internal val dao: ChatDao) {
+
+    data class ActiveConversation(
+        val allMessages: List<MessageEntity>,
+        val activeMessages: List<MessageEntity>,
+        val graph: ConversationBranchGraph,
+    )
+
+    data class DeletedConversationBranch(
+        val conversation: ActiveConversation,
+        val deletedMessages: List<MessageEntity>,
+    )
 
     fun observeSessions(): Flow<List<ChatSessionEntity>> = dao.observeSessions()
 
@@ -338,6 +351,103 @@ class ChatRepository(internal val dao: ChatDao) {
         return out
     }
 
+    /** Resolve the one persisted path shared by UI, model context and preview. */
+    suspend fun loadActiveConversation(sessionId: String): ActiveConversation {
+        val all = loadMessages(sessionId)
+        val state = dao.conversationBranchState(sessionId)
+        val graph = ConversationBranchGraph.open(
+            nodes = all.map { row ->
+                ConversationBranchGraph.Node(
+                    id = row.id,
+                    parentId = row.parentMessageId,
+                    activeChildId = row.activeChildId,
+                    order = row.sortOrder,
+                )
+            },
+            activeRootId = state?.activeRootMessageId ?: all.firstOrNull()?.id,
+            activeLeafId = state?.activeLeafMessageId ?: all.lastOrNull()?.id,
+        )
+        val byId = all.associateBy(MessageEntity::id)
+        return ActiveConversation(
+            allMessages = all,
+            activeMessages = graph.activePathIds.mapNotNull(byId::get),
+            graph = graph,
+        )
+    }
+
+    suspend fun loadActiveMessages(sessionId: String): List<MessageEntity> =
+        loadActiveConversation(sessionId).activeMessages
+
+    /** Latest summary whose persisted boundary belongs to the selected path. */
+    suspend fun latestActiveCompactMarker(
+        sessionId: String,
+        activeMessages: List<MessageEntity>,
+    ): CompactMarkerEntity? {
+        val activeIds = activeMessages.mapTo(hashSetOf(), MessageEntity::id)
+        return dao.listCompactMarkers(sessionId).asReversed().firstOrNull { marker ->
+            val anchorId = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
+                ?: marker.firstKeptMessageId?.takeIf(String::isNotEmpty)
+                ?: marker.boundaryMessageId?.takeIf(String::isNotEmpty)
+            anchorId == null || anchorId in activeIds
+        }
+    }
+
+    suspend fun forkReplyFrom(sessionId: String, messageId: String): ActiveConversation =
+        mutateConversationBranch(sessionId) { it.forkReplyFrom(messageId) }
+
+    suspend fun forkEditedMessageFrom(sessionId: String, messageId: String): ActiveConversation =
+        mutateConversationBranch(sessionId) { it.forkEditedMessageFrom(messageId) }
+
+    suspend fun switchMessageSibling(
+        sessionId: String,
+        messageId: String,
+        delta: Int,
+    ): ActiveConversation = mutateConversationBranch(sessionId) {
+        it.switchSibling(messageId, delta)
+    }
+
+    suspend fun deleteMessageBranch(
+        sessionId: String,
+        messageId: String,
+    ): DeletedConversationBranch {
+        val before = loadActiveConversation(sessionId)
+        val plan = before.graph.deleteBranchFrom(messageId)
+        val deleted = before.allMessages.filter { it.id in plan.deletedMessageIds }
+        return DeletedConversationBranch(
+            conversation = applyConversationBranchMutation(sessionId, before, plan),
+            deletedMessages = deleted,
+        )
+    }
+
+    private suspend fun mutateConversationBranch(
+        sessionId: String,
+        mutation: (ConversationBranchGraph) -> ConversationBranchGraph.Mutation,
+    ): ActiveConversation {
+        val before = loadActiveConversation(sessionId)
+        val plan = mutation(before.graph)
+        return applyConversationBranchMutation(sessionId, before, plan)
+    }
+
+    private suspend fun applyConversationBranchMutation(
+        sessionId: String,
+        before: ActiveConversation,
+        plan: ConversationBranchGraph.Mutation,
+    ): ActiveConversation {
+        val byId = before.allMessages.associateBy(MessageEntity::id)
+        val activeRows = plan.activePathIds.mapNotNull(byId::get)
+        val preview = activeRows.lastOrNull()?.let { extractTextPreview(it.partsJson) }
+        dao.applyConversationBranchMutation(
+            sessionId = sessionId,
+            rootId = plan.activeRootId,
+            leafId = plan.activeLeafId,
+            childUpdates = plan.activeChildUpdates,
+            deletedMessageIds = plan.deletedMessageIds,
+            preview = preview,
+            updatedAt = System.currentTimeMillis(),
+        )
+        return loadActiveConversation(sessionId)
+    }
+
     private suspend fun loadPageRowByRow(
         sessionId: String,
         baseOffset: Int,
@@ -357,35 +467,20 @@ class ChatRepository(internal val dao: ChatDao) {
         return result
     }
 
-    suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int) =
-        dao.deleteMessagesAfter(sessionId, keepCount)
-
-    suspend fun rewindMessagesFrom(
-        sessionId: String,
-        cutoffSortOrder: Int,
-        invalidateCompactMarkers: Boolean,
-    ) = dao.rewindMessagesFrom(sessionId, cutoffSortOrder, invalidateCompactMarkers)
-
-    /**
-     * Rewrite a single message row's parts_json in place. Used by
-     * [com.openminis.app.ui.chat.ChatViewModel.rerunFromToolBlock]'s block-
-     * boundary cut to trim the kept assistant row to the parts before the
-     * target tool_use. Mirrors iOS ChatStore.updateMessageParts.
-     */
-    suspend fun updateMessageParts(id: String, partsJson: String) =
-        dao.updateMessageParts(id, partsJson)
-
     /** [T-error-persist-android] Set/clear the error sticker on a row by id. */
     suspend fun updateMessageErrorInfo(messageId: String, errorInfo: String?) =
         dao.updateMessageErrorInfo(messageId, errorInfo)
 
     /**
-     * [T-error-persist-android] Set/clear the error sticker on a session's last
-     * assistant row. See [ChatDao.updateLastAssistantError]. No-op when no
-     * assistant row exists yet.
+     * Set/clear the error sticker on the selected path's last assistant row.
+     * A later-created sibling may have a larger sort order, so the legacy
+     * session-wide "last assistant" query is not branch safe.
      */
-    suspend fun updateLastAssistantError(sessionId: String, errorInfo: String?) =
-        dao.updateLastAssistantError(sessionId, errorInfo)
+    suspend fun updateLastActiveAssistantError(sessionId: String, errorInfo: String?) {
+        loadActiveConversation(sessionId).activeMessages
+            .lastOrNull { it.role.equals("assistant", ignoreCase = true) }
+            ?.let { dao.updateMessageErrorInfo(it.id, errorInfo) }
+    }
 
     suspend fun appendMessage(
         sessionId: String,
@@ -393,8 +488,8 @@ class ChatRepository(internal val dao: ChatDao) {
         partsJson: String,
         tokenUsage: String? = null,
         reasoningContent: String? = null,
+        messageId: String = UUID.randomUUID().toString(),
     ): MessageEntity {
-        val sortOrder = dao.nextSortOrder(sessionId)
         val now = System.currentTimeMillis()
         // Cap the body so a runaway tool_result (e.g. a 13 MB browser_use
         // dump — Issue #17) cannot land an oversize blob into a Room row
@@ -408,19 +503,18 @@ class ChatRepository(internal val dao: ChatDao) {
             partsJson
         }
         val message = MessageEntity(
-            id = UUID.randomUUID().toString(),
+            id = messageId,
             sessionId = sessionId,
             role = role,
             partsJson = capped,
             createdAt = now,
             tokenUsage = tokenUsage,
-            sortOrder = sortOrder,
+            // Assigned inside appendMessageOnActivePath's database transaction.
+            sortOrder = -1,
             reasoningContent = reasoningContent,
         )
-        dao.insertMessage(message)
         val preview = extractTextPreview(capped)
-        dao.updateLastMessage(sessionId, preview, now)
-        return message
+        return dao.appendMessageOnActivePath(message, preview, now)
     }
 
     /**
@@ -447,7 +541,7 @@ class ChatRepository(internal val dao: ChatDao) {
         sessionId: String,
         remainingMessages: List<MessageEntity>? = null,
     ) {
-        val remaining = remainingMessages ?: loadMessages(sessionId)
+        val remaining = remainingMessages ?: loadActiveMessages(sessionId)
         val preview = remaining.lastOrNull()?.let { extractTextPreview(it.partsJson) }
         dao.updateLastMessage(sessionId, preview, System.currentTimeMillis())
     }

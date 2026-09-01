@@ -121,14 +121,18 @@ object MemoryTools {
         }
     }
 
-    fun executeMemoryGet(inputJson: String, repository: MemoryRepository): ToolResult {
+    fun executeMemoryGet(
+        inputJson: String,
+        repository: MemoryRepository,
+        excludedBranchEntries: Map<String, Int> = emptyMap(),
+    ): ToolResult {
         return try {
             val obj = JSONObject(inputJson)
             val keywords = obj.optString("keywords", "")
             val scope = obj.optString("scope", "all")
             val toolTitle = obj.optString("tool_title", "memory_get")
 
-            val result = repository.getMemory(keywords, scope)
+            val result = repository.getMemory(keywords, scope, excludedBranchEntries)
             ToolResult(result, true, toolTitle)
         } catch (e: Exception) {
             ToolResult("Error: ${e.message}", false)

@@ -2330,6 +2330,7 @@ fun ChatScreen(
                     is FlatChatItem.AssistantInfo -> false  // system rows never grayed
                     is FlatChatItem.AssistantTyping -> false
                     is FlatChatItem.AssistantError -> grayedMap[originalMessageId(messageId)] == true
+                    is FlatChatItem.BranchSwitcher -> false
                     is FlatChatItem.AssistantLegacyContent -> grayedMap[originalMessageId(messageId)] == true
                 }
                 // SelectionContainer must wrap the WHOLE LazyColumn — placing
@@ -2886,6 +2887,16 @@ fun ChatScreen(
                                 onRetry = {
                                     safeMutate { viewModel.retryLast() }
                                     coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
+                                },
+                            )
+                            is FlatChatItem.BranchSwitcher -> ConversationBranchSwitcher(
+                                index = item.index,
+                                count = item.count,
+                                onPrevious = {
+                                    safeMutate { viewModel.switchMessageBranch(item.messageId, -1) }
+                                },
+                                onNext = {
+                                    safeMutate { viewModel.switchMessageBranch(item.messageId, 1) }
                                 },
                             )
                             is FlatChatItem.AssistantLegacyContent -> BoundsTrackedBlock(
@@ -5555,6 +5566,51 @@ private fun ThinkingLevelBadge(
             color = badgeColor,
             maxLines = 1,
         )
+    }
+}
+
+@Composable
+private fun ConversationBranchSwitcher(
+    index: Int,
+    count: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = onPrevious,
+            enabled = index > 1,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ChevronLeft,
+                contentDescription = "上一分支",
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Text(
+            text = "$index/$count",
+            color = ChatColors.secondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 34.dp),
+        )
+        IconButton(
+            onClick = onNext,
+            enabled = index < count,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "下一分支",
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 

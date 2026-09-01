@@ -87,24 +87,27 @@ class SessionForkManager(
         source.thinkingOverride?.let { override ->
             chatRepository.dao.updateThinkingOverride(new.id, override)
         }
-        // [T-session-duplicate-compact-marker-android] Track old→new message id
-        // and old→new sort_order so copied compact markers (which reference DB
-        // message ids + legacy sort_orders) can be remapped onto the freshly
-        // minted duplicate messages. appendMessage returns the new MessageEntity
-        // (id + sortOrder), so no re-query is needed. Aligns iOS e8ac8b82.
-        val oldToNewId = HashMap<String, String>()
-        val oldToNewSort = HashMap<String, Int>()
+        // Allocate every id before inserting so parent/selected-child pointers
+        // can be remapped without flattening a retained conversation tree.
+        val oldToNewId = messages.associate { it.id to java.util.UUID.randomUUID().toString() }
+        val oldToNewSort = messages.associate { it.id to it.sortOrder }
         for (msg in messages) {
-            val newMsg = chatRepository.appendMessage(
-                sessionId = new.id,
-                role = msg.role,
-                partsJson = msg.partsJson,
-                tokenUsage = msg.tokenUsage,
-                reasoningContent = msg.reasoningContent,
+            chatRepository.dao.insertMessage(
+                msg.copy(
+                    id = oldToNewId.getValue(msg.id),
+                    sessionId = new.id,
+                    parentMessageId = msg.parentMessageId?.let(oldToNewId::get),
+                    activeChildId = msg.activeChildId?.let(oldToNewId::get),
+                ),
             )
-            oldToNewId[msg.id] = newMsg.id
-            oldToNewSort[msg.id] = newMsg.sortOrder
         }
+        chatRepository.dao.updateActiveConversationPath(
+            sessionId = new.id,
+            rootId = source.activeRootMessageId?.let(oldToNewId::get),
+            leafId = source.activeLeafMessageId?.let(oldToNewId::get),
+            preview = source.lastMessage,
+            updatedAt = System.currentTimeMillis(),
+        )
 
         // [T-session-duplicate-compact-marker-android] Copy compact markers
         // AFTER all messages are appended (so the new sort_orders exist). A

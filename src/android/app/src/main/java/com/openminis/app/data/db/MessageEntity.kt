@@ -16,7 +16,10 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE,
         )
     ],
-    indices = [Index(value = ["session_id", "sort_order"])]
+    indices = [
+        Index(value = ["session_id", "sort_order"]),
+        Index(value = ["session_id", "parent_message_id"]),
+    ]
 )
 data class MessageEntity(
     @PrimaryKey val id: String,
@@ -34,4 +37,8 @@ data class MessageEntity(
     // (mirrors iOS messages.error_info / ChatMessage.error). Null for normal
     // rows; device-local, never synced to iCloud.
     @ColumnInfo(name = "error_info") val errorInfo: String? = null,
+    /** Parent in the retained conversation tree. Null identifies a root branch. */
+    @ColumnInfo(name = "parent_message_id") val parentMessageId: String? = null,
+    /** Persisted child selection used to restore this branch's active tail. */
+    @ColumnInfo(name = "active_child_id") val activeChildId: String? = null,
 )

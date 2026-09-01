@@ -40,6 +40,32 @@ class MemoryRepository(private val memoryDir: File) {
         // back into the next LLM call. Counted as UTF-8 bytes (matches
         // what the provider sees over the wire).
         private const val MAX_OUTPUT_BYTES = 30 * 1024  // 30 KB
+
+        /** Remove timestamped entries produced only by inactive chat paths. */
+        internal fun filterBranchEntries(content: String, excludedBodies: Map<String, Int>): String {
+            if (content.isEmpty() || excludedBodies.isEmpty()) return content
+            val remaining = excludedBodies
+                .mapKeys { (body, _) -> body.trim() }
+                .toMutableMap()
+            val markerRegex = Regex("""<!-- \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} -->\n""")
+            val markers = markerRegex.findAll(content).toList()
+            if (markers.isEmpty()) return content
+            return buildString(content.length) {
+                append(content, 0, markers.first().range.first)
+                markers.forEachIndexed { index, marker ->
+                    val end = markers.getOrNull(index + 1)?.range?.first ?: content.length
+                    val bodyStart = marker.range.last + 1
+                    val body = content.substring(bodyStart, end)
+                    val normalized = body.trim()
+                    val removeCount = remaining.getOrDefault(normalized, 0)
+                    if (removeCount > 0) {
+                        remaining[normalized] = removeCount - 1
+                    } else {
+                        append(content, marker.range.first, end)
+                    }
+                }
+            }
+        }
     }
 
     init {
@@ -85,7 +111,11 @@ class MemoryRepository(private val memoryDir: File) {
      * @param scope "daily" (logs only) or "all" (include GLOBAL.md)
      * @return search results with context lines
      */
-    fun getMemory(keywords: String, scope: String): String {
+    fun getMemory(
+        keywords: String,
+        scope: String,
+        excludedBranchEntries: Map<String, Int> = emptyMap(),
+    ): String {
         val keywordList = keywords.trim()
             .lowercase()
             .split(Regex("\\s+"))
@@ -134,7 +164,10 @@ class MemoryRepository(private val memoryDir: File) {
 
         for ((label, file) in filesToSearch) {
             if (totalLines >= lineCap || byteCapHit) break
-            val content = try { file.readText() } catch (_: Exception) { continue }
+            val rawContent = try { file.readText() } catch (_: Exception) { continue }
+            val content = if (label == GLOBAL_FILE) rawContent else {
+                filterBranchEntries(rawContent, excludedBranchEntries)
+            }
             if (content.isEmpty()) continue
             val budget = lineCap - totalLines
 
@@ -261,7 +294,9 @@ class MemoryRepository(private val memoryDir: File) {
      * same intro paragraph, same per-entry labels, same 200-line cap, same
      * "(N more lines, use memory_get to search)" continuation.
      */
-    fun loadRecentDailyMemoryFragment(): String? {
+    fun loadRecentDailyMemoryFragment(
+        excludedBranchEntries: Map<String, Int> = emptyMap(),
+    ): String? {
         val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val now = Date()
         val fragments = mutableListOf<String>()
@@ -273,7 +308,8 @@ class MemoryRepository(private val memoryDir: File) {
             val file = File(memoryDir, "$dateStr.md")
 
             if (file.exists()) {
-                val content = try { file.readText() } catch (_: Exception) { "" }
+                val rawContent = try { file.readText() } catch (_: Exception) { "" }
+                val content = filterBranchEntries(rawContent, excludedBranchEntries)
                 if (content.isNotEmpty()) {
                     val lines = content.lines()
                     val preview = lines.take(MAX_INJECT_LINES).joinToString("\n")

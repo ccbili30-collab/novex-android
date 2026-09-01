@@ -147,6 +147,11 @@ data class ChatMessage(
     // ChatMessage.sourceSortOrder, which serves the same UI↔raw mapping
     // role (AIChatViewModel.swift:3411, 3421).
     val sourceDbIds: List<String> = emptyList(),
+    /** First persisted row represented by this bubble; sibling navigation uses it. */
+    val branchAnchorDbId: String? = sourceDbIds.firstOrNull(),
+    /** One-based sibling position rendered as e.g. 2/2. */
+    val branchIndex: Int = 1,
+    val branchCount: Int = 1,
 ) {
     /**
      * [T-bridge-message-ui-leak-android] True when this UI message is the

@@ -42,6 +42,11 @@ data class MessageSearchRow(
     @ColumnInfo(name = "parts_json") val partsJson: String,
 )
 
+data class ConversationBranchStateRow(
+    @ColumnInfo(name = "active_root_message_id") val activeRootMessageId: String?,
+    @ColumnInfo(name = "active_leaf_message_id") val activeLeafMessageId: String?,
+)
+
 /**
  * Row projection for [ChatDao.lastMessageTailPerSession] (T-android-session-
  * paused-badge-hardkill). One row = the last message of a session (by
@@ -182,6 +187,86 @@ interface ChatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
 
+    @Query(
+        "SELECT active_root_message_id, active_leaf_message_id FROM sessions " +
+            "WHERE id = :sessionId",
+    )
+    suspend fun conversationBranchState(sessionId: String): ConversationBranchStateRow?
+
+    @Query("UPDATE messages SET active_child_id = :childId WHERE id = :messageId")
+    suspend fun updateActiveChild(messageId: String, childId: String?)
+
+    @Query(
+        "UPDATE sessions SET active_root_message_id = :rootId, " +
+            "active_leaf_message_id = :leafId, last_message = :preview, " +
+            "updated_at = :updatedAt WHERE id = :sessionId",
+    )
+    suspend fun updateActiveConversationPath(
+        sessionId: String,
+        rootId: String?,
+        leafId: String?,
+        preview: String?,
+        updatedAt: Long,
+    )
+
+    @Query("DELETE FROM messages WHERE session_id = :sessionId AND id IN (:messageIds)")
+    suspend fun deleteMessageBranches(sessionId: String, messageIds: List<String>)
+
+    @Query(
+        "DELETE FROM compact_markers WHERE session_id = :sessionId AND (" +
+            "last_compacted_message_id IN (:messageIds) OR " +
+            "first_kept_message_id IN (:messageIds) OR " +
+            "boundary_message_id IN (:messageIds))",
+    )
+    suspend fun deleteCompactMarkersAnchoredTo(sessionId: String, messageIds: List<String>)
+
+    /** Append to the selected leaf and make the new row the persisted tail. */
+    @Transaction
+    suspend fun appendMessageOnActivePath(
+        message: MessageEntity,
+        preview: String?,
+        updatedAt: Long,
+    ): MessageEntity {
+        val state = conversationBranchState(message.sessionId)
+        val parentId = state?.activeLeafMessageId
+        val persisted = message.copy(
+            sortOrder = nextSortOrder(message.sessionId),
+            parentMessageId = parentId,
+            activeChildId = null,
+        )
+        insertMessage(persisted)
+        if (parentId != null) updateActiveChild(parentId, persisted.id)
+        updateActiveConversationPath(
+            sessionId = message.sessionId,
+            rootId = state?.activeRootMessageId ?: persisted.id,
+            leafId = persisted.id,
+            preview = preview,
+            updatedAt = updatedAt,
+        )
+        return persisted
+    }
+
+    /** Apply a pure graph mutation without invoking model or tool code. */
+    @Transaction
+    suspend fun applyConversationBranchMutation(
+        sessionId: String,
+        rootId: String?,
+        leafId: String?,
+        childUpdates: Map<String, String?>,
+        deletedMessageIds: Set<String>,
+        preview: String?,
+        updatedAt: Long,
+    ) {
+        childUpdates.forEach { (messageId, childId) ->
+            updateActiveChild(messageId, childId)
+        }
+        if (deletedMessageIds.isNotEmpty()) {
+            deleteCompactMarkersAnchoredTo(sessionId, deletedMessageIds.toList())
+            deleteMessageBranches(sessionId, deletedMessageIds.toList())
+        }
+        updateActiveConversationPath(sessionId, rootId, leafId, preview, updatedAt)
+    }
+
     /**
      * [T-android-voice-correction] User messages newer than [since] (epoch ms),
      * across every session, for typed-vocabulary mining.
@@ -201,20 +286,6 @@ interface ChatDao {
 
     @Query("DELETE FROM messages WHERE session_id = :sessionId")
     suspend fun deleteMessages(sessionId: String)
-
-    @Query("DELETE FROM messages WHERE session_id = :sessionId AND sort_order >= :keepCount")
-    suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int)
-
-    /** Atomically remove a conversation branch and any summary built from it. */
-    @Transaction
-    suspend fun rewindMessagesFrom(
-        sessionId: String,
-        cutoffSortOrder: Int,
-        invalidateCompactMarkers: Boolean,
-    ) {
-        deleteMessagesAfter(sessionId, cutoffSortOrder)
-        if (invalidateCompactMarkers) deleteCompactMarkers(sessionId)
-    }
 
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun totalMessageCount(): Int
@@ -250,9 +321,10 @@ interface ChatDao {
 
     // Last message preview for session list
     @Query("""
-        SELECT parts_json FROM messages
-        WHERE session_id = :sessionId
-        ORDER BY sort_order DESC LIMIT 1
+        SELECT m.parts_json FROM sessions AS s
+        JOIN messages AS m ON m.id = s.active_leaf_message_id
+        WHERE s.id = :sessionId
+        LIMIT 1
     """)
     suspend fun lastMessageParts(sessionId: String): String?
 
@@ -266,10 +338,8 @@ interface ChatDao {
      */
     @Query("""
         SELECT m.session_id AS session_id, m.role AS role, m.parts_json AS parts_json
-        FROM messages m
-        WHERE m.sort_order = (
-            SELECT MAX(m2.sort_order) FROM messages m2 WHERE m2.session_id = m.session_id
-        )
+        FROM sessions AS s
+        JOIN messages AS m ON m.id = s.active_leaf_message_id
     """)
     suspend fun lastMessageTailPerSession(): List<SessionTailRow>
 
@@ -322,40 +392,11 @@ interface ChatDao {
     @Query("UPDATE messages SET stream_interrupt_count = stream_interrupt_count + 1, updated_at = :updatedAt WHERE id = :id")
     suspend fun incrementStreamInterruptCount(id: String, updatedAt: Long = System.currentTimeMillis())
 
-    // Messages: rewrite a single row's parts_json in place. Mirrors iOS
-    // ChatStore.updateMessageParts. Used by rerunFromToolBlock's block-
-    // boundary cut: deleteMessagesAfter drops whole rows after the boundary,
-    // but the kept assistant row itself needs its parts trimmed to before the
-    // target tool_use — that's an UPDATE of an existing row, not a delete.
-    @Query("UPDATE messages SET parts_json = :partsJson, updated_at = :updatedAt WHERE id = :id")
-    suspend fun updateMessageParts(id: String, partsJson: String, updatedAt: Long = System.currentTimeMillis())
-
     // [T-error-persist-android] Write/clear the terminal error sticker on a
     // specific message row by id. Used when the persisted DB id is known
     // (clear-on-retry via sourceDbIds).
     @Query("UPDATE messages SET error_info = :errorInfo WHERE id = :messageId")
     suspend fun updateMessageErrorInfo(messageId: String, errorInfo: String?)
-
-    /**
-     * [T-error-persist-android] Stamp the error sticker onto the LAST assistant
-     * row of a session (max sort_order among role='assistant'). The agent loop
-     * persists each turn with a fresh random row id while the in-memory UI
-     * bubble keeps its own id, so setInlineError() can't address the row by the
-     * in-memory ChatMessage id. Targeting "last assistant row" matches both iOS
-     * (which attaches the error to `messages.last(where role==.assistant)`) and
-     * the load-side merge that folds consecutive assistant rows keeping the last
-     * row's identity. No-op when the session has no assistant row yet (e.g. a
-     * first-turn failure before any turn persisted).
-     */
-    @Query("""
-        UPDATE messages SET error_info = :errorInfo
-        WHERE id = (
-            SELECT id FROM messages
-            WHERE session_id = :sessionId AND role = 'assistant'
-            ORDER BY sort_order DESC LIMIT 1
-        )
-    """)
-    suspend fun updateLastAssistantError(sessionId: String, errorInfo: String?)
 
     // Pinned sessions first, then by updated_at
     @Query("SELECT * FROM sessions ORDER BY CASE WHEN pinned_at IS NOT NULL THEN 0 ELSE 1 END, pinned_at DESC, updated_at DESC")

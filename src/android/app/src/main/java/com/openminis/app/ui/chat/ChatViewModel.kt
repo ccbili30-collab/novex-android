@@ -446,8 +446,8 @@ class ChatViewModel(
             //
             // Also verified end-to-end on device (Pixel 4a, build with this
             // `.toList()` deliberately REVERTED): create a multi-turn session,
-            // long-press a middle user message → 编辑 → send. `truncateBeforeEdit`
-            // provably ran (8 messages → 4), storing a live SubList as
+            // long-press a middle user message → 编辑 → send. The former
+            // destructive edit path provably ran (8 messages → 4), storing a live SubList as
             // `_messages.value`, and a further message was sent — NO crash. The
             // next `+` copies the SubList back into a plain ArrayList, so the
             // view stops being the state before anything can invalidate it.
@@ -701,8 +701,8 @@ class ChatViewModel(
      * T187: id of a user message currently being re-edited via the
      * long-press → Edit context menu. While non-null, the composer
      * shows an "Exit Edit Mode" pill, and the next sendMessage()
-     * call truncates the conversation from this message (inclusive)
-     * before persisting the new content as a fresh user turn.
+     * call retains the old subtree and persists the edited content as a
+     * sibling user turn.
      * Mirrors iOS AIChatViewModel.editingMessageIndex.
      */
     private val _editingMessageId = MutableStateFlow<String?>(null)
@@ -880,6 +880,9 @@ class ChatViewModel(
      * can't bleed warnings into a fresh prompt.
      */
     private val toolLoopDetector = ToolLoopDetector()
+    private val conversationBranchMutex = kotlinx.coroutines.sync.Mutex()
+    private var activeBranchMessageIds: Set<String> = emptySet()
+    private var excludedBranchMemoryWrites: Map<String, Int> = emptyMap()
 
     /**
      * Cached reference to the lazily-created [BrowserTabPool] so
@@ -950,45 +953,22 @@ class ChatViewModel(
         return result
     }
 
-    /**
-     * T149: revoke every `memory_write` tool block embedded in the supplied
-     * messages. Used when a retry path truncates the conversation — the
-     * deleted assistant turns may have written entries to today's daily
-     * memory log, and leaving them on disk after the conversation rewinds
-     * means user-visible history is gone but the side effects remain.
-     *
-     * We match by the `content` field of the tool args against
-     * [MemoryToolRecord.writtenContent] (which is what `revokeMemoryRecord`
-     * keys on). If multiple records share the same content body — possible
-     * if the agent wrote the same note twice — we revoke them in the
-     * reverse insertion order so the most recent disk write is removed
-     * first; the repository's revokeEntry only removes the first match
-     * each call, so subsequent records may end up NotFound on disk but
-     * still get pulled from the in-memory record list.
-     */
-    private fun revokeMemoryWritesInDeletedMessages(deletedMessages: List<ChatMessage>) {
-        if (activeMemoryRepository() == null) return
-        val deletedContents = mutableListOf<String>()
-        for (msg in deletedMessages) {
-            for (block in msg.toolBlocks) {
-                if (block.kind != "tool_use") continue
-                if (block.toolName != "memory_write") continue
-                val content = try {
-                    JSONObject(block.toolArgs).optString("content", "")
-                } catch (_: Exception) { "" }
-                if (content.isNotBlank()) deletedContents.add(content)
-            }
-        }
+    /** Remove writes owned only by physically deleted branch rows. */
+    private fun revokeMemoryWritesInDeletedRows(
+        deletedMessages: List<com.openminis.app.data.db.MessageEntity>,
+        remainingMessages: List<com.openminis.app.data.db.MessageEntity>,
+    ) {
+        val repository = activeMemoryRepository() ?: return
+        val deletedContents = com.openminis.app.data.ConversationBranchMemory
+            .writesOwnedOnlyByDeletedMessages(deletedMessages, remainingMessages)
         if (deletedContents.isEmpty()) return
-        Log.i(TAG, "revokeMemoryWritesInDeletedMessages: ${deletedContents.size} write(s) to revoke")
+        Log.i(TAG, "revokeMemoryWritesInDeletedRows: ${deletedContents.size} write(s) to revoke")
         for (content in deletedContents.asReversed()) {
-            // Find the latest matching record so revoke targets the most
-            // recent disk entry first. Snapshot value because revoke mutates
-            // the flow.
+            val result = repository.revokeEntry(content)
             val record = _memoryToolRecords.value.lastOrNull {
                 it.isWrite && it.writtenContent == content
-            } ?: continue
-            val result = revokeMemoryRecord(record)
+            }
+            if (record != null) _memoryToolRecords.value = _memoryToolRecords.value - record
             Log.i(TAG, "  revoke result: ${result::class.simpleName}")
         }
     }
@@ -2044,7 +2024,8 @@ class ChatViewModel(
             }
 
             // Refresh cache to next-most-recent marker (or null).
-            val next = chatRepository.dao.latestCompactMarker(sid)
+            val activeRows = chatRepository.loadActiveMessages(sid)
+            val next = chatRepository.latestActiveCompactMarker(sid, activeRows)
             _cachedLatestMarker = next
             _compactSummary.value = next?.summary
 
@@ -3765,20 +3746,22 @@ class ChatViewModel(
                 val messages: List<com.openminis.app.data.db.MessageEntity>,
                 val ordered: List<ChatMessage>,
                 val llmHistory: List<LLMMessage>,
+                val excludedMemoryWrites: Map<String, Int>,
                 val loadMs: Long,
                 val transformMs: Long,
             )
             com.openminis.app.diagnostics.PerfLongCtx.step(sessionId, "db.query.begin")
             val loaded = withContext(Dispatchers.IO) {
                 val tIoBeforeLoad = System.currentTimeMillis()
-                val rows = chatRepository.loadMessages(sessionId)
+                val conversation = chatRepository.loadActiveConversation(sessionId)
+                val rows = conversation.activeMessages
                 val tIoAfterLoad = System.currentTimeMillis()
                 com.openminis.app.diagnostics.PerfLongCtx.step(
                     sessionId,
                     "db.query.end",
                     "count=${rows.size}",
                 )
-                val chatUi = rows.toChatMessages()
+                val chatUi = rows.toChatMessages(conversation.graph)
                 val tIoAfterTransform = System.currentTimeMillis()
                 com.openminis.app.diagnostics.PerfLongCtx.step(
                     sessionId,
@@ -3806,11 +3789,18 @@ class ChatViewModel(
                     messages = rows,
                     ordered = chatUi,
                     llmHistory = llm,
+                    excludedMemoryWrites = com.openminis.app.data.ConversationBranchMemory
+                        .excludedWriteCounts(
+                            allMessages = conversation.allMessages,
+                            activeMessageIds = rows.mapTo(hashSetOf()) { it.id },
+                        ),
                     loadMs = tIoAfterLoad - tIoBeforeLoad,
                     transformMs = tIoAfterTransform - tIoAfterLoad,
                 )
             }
             val messages = loaded.messages
+            activeBranchMessageIds = messages.mapTo(hashSetOf()) { it.id }
+            excludedBranchMemoryWrites = loaded.excludedMemoryWrites
             val ordered = loaded.ordered
             val tHangDiagAfterLoad = tHangDiagBeforeLoad + loaded.loadMs
             val tHangDiagAfterTransform = tHangDiagAfterLoad + loaded.transformMs
@@ -3908,7 +3898,9 @@ class ChatViewModel(
             // the folded-away context via [effectiveAgentHistory]. Also gray
             // out every UI message that falls before the marker's boundary —
             // mirrors iOS Phase 2.5 restore (AIChatViewModel.swift:3360+).
-            val marker = runCatching { chatRepository.dao.latestCompactMarker(sessionId) }
+            val marker = runCatching {
+                chatRepository.latestActiveCompactMarker(sessionId, loaded.messages)
+            }
                 .onFailure { Log.w(TAG, "latestCompactMarker failed: ${it.message}") }
                 .getOrNull()
             _compactSummary.value = marker?.summary
@@ -4676,31 +4668,20 @@ class ChatViewModel(
      * [T-android-rerun-from-tool-block-position] Re-run the conversation from
      * the exact point a specific tool_use block was about to be issued —
      * BLOCK-boundary, not turn-boundary. Keeps the blocks BEFORE the target
-     * tool_use in the same assistant turn; drops the target block + every
-     * later block in that turn + its tool_result + all later turns, then
-     * re-runs so the model re-decides from that point.
+     * tool_use in the same assistant turn as context, retains the original
+     * subtree, and creates a sibling so the model re-decides from that point.
      *
      * Ported from iOS `retryFromToolBlock` (commit 0149457e). Anchor is the
      * block's tool_use id ([blockId], which for a tool_use [AssistantBlock]
      * equals its `id`) — stable + unique, NOT a positional count, so streaming
      * / merged-turn alignment can't drift the cut point.
      *
-     * Degenerate case: when the target is the FIRST real block of its turn
-     * (nothing precedes it), this is equivalent to truncating at the preceding
-     * user message — delegate to [retryFromMessage] (the existing whole-turn
-     * path) and skip the sub-message DB rewrite.
+     * Degenerate case: when the target is the first real block of its turn,
+     * delegate to [retryFromMessage], which creates a whole-reply sibling.
      *
-     * Android does the cut DB-first (delete rows after the trimmed assistant
-     * row, then rewrite that row's parts in place via
-     * [ChatRepository.updateMessageParts]) and rebuilds agentHistory from the
-     * trimmed DB state. The UI is trimmed in-memory (same as
-     * [retryFromMessage]'s `retainedHead`, so compact-marker graying isn't
-     * disturbed). Because the agent loop persists each turn as its own row and
-     * `toChatMessages` merges consecutive assistant rows into one bubble, the
-     * surviving trimmed turn and the new generation coalesce on the next
-     * reload — no duplicate header (iOS needed an explicit resume-into-turn
-     * fix for the same; Android gets it from the merge). The thinking
-     * indicator shows immediately via [runAgentLoop]'s awaiting placeholder.
+     * Android persists any kept prefix as a fresh sibling assistant row. Its
+     * completed tool calls are history only and are never dispatched again.
+     * Consecutive assistant rows merge back into one visible bubble.
      *
      * No-op (returns false) when streaming, when the message/block isn't
      * found, or when the block isn't a tool_use. The caller gates the menu
@@ -4761,18 +4742,6 @@ class ChatViewModel(
         _canResume.value = false
         _error.value = null
 
-        // T149 parity: revoke memory_writes in the parts we're about to drop
-        // so the on-disk daily log doesn't keep entries the user rewound past.
-        // The dropped range is: the target turn's blocks FROM the target
-        // onward (the target tool_use itself + any later same-turn blocks) +
-        // every later message. The surviving earlier blocks of the target turn
-        // are kept, so they're excluded.
-        val droppedTargetTail = asstMsg.copy(
-            toolBlocks = asstMsg.toolBlocks.drop(blockIdx),
-        )
-        val deletedMessages = listOf(droppedTargetTail) +
-            messages.subList(asstIdx + 1, messages.size).toList()
-
         // Claim the streaming flag synchronously so a rapid second tap is
         // rejected by the entry guard (same rationale as retryFromMessage T145).
         AppLogger.info(TAG_STREAM, "rerunFromToolBlock _isStreaming=true (sync, sid=$activeSessionId)")
@@ -4818,77 +4787,26 @@ class ChatViewModel(
                 val keptArr = org.json.JSONArray()
                 for (i in 0 until cutPartIdx) keptArr.put(srcArr.get(i))
 
-                if (cutPartIdx == 0) {
-                    // Nothing precedes the target in its DB row — trimming would
-                    // leave an empty assistant row. Drop the whole row instead
-                    // (keepCount = its sort_order). The UI degenerate guard
-                    // above normally catches this, but a merged-bubble layout
-                    // could route a first-in-row tool_use here; handle it so we
-                    // never persist a phantom empty assistant message.
-                    chatRepository.deleteMessagesAfter(sid, row.sortOrder)
-                    Log.i(TAG, "rerunFromToolBlock cut at row start (empty trim) tuId=${targetToolUseId.take(12)} keepCount=${row.sortOrder} row=${row.id.take(8)}")
-                } else {
-                    // Delete every row after the trimmed assistant row, then
-                    // rewrite the trimmed row in place. deleteMessagesAfter
-                    // keeps rows with sort_order < keepCount, so keepCount =
-                    // thisRow.sortOrder + 1 drops the following tool_result row
-                    // + all later turns while keeping (then overwriting) this one.
-                    chatRepository.deleteMessagesAfter(sid, row.sortOrder + 1)
-                    chatRepository.updateMessageParts(row.id, keptArr.toString())
-                    Log.i(TAG, "rerunFromToolBlock sub-message cut tuId=${targetToolUseId.take(12)} keepCount=${row.sortOrder + 1} partIdx=$cutPartIdx trimmedRow=${row.id.take(8)}")
+                // Retain the original row and its complete descendant tree.
+                // A non-empty kept prefix is persisted as a new sibling row;
+                // already-completed tools in that prefix are context only and
+                // are never dispatched again.
+                chatRepository.forkEditedMessageFrom(sid, row.id)
+                if (cutPartIdx > 0) {
+                    chatRepository.appendMessage(
+                        sessionId = sid,
+                        role = "assistant",
+                        partsJson = keptArr.toString(),
+                        reasoningContent = row.reasoningContent,
+                    )
                 }
-
-                // T149 parity: revoke memory writes in the dropped range.
-                revokeMemoryWritesInDeletedMessages(deletedMessages)
-
-                // Trim the UI in-memory (same approach as retryFromMessage's
-                // `_messages.value = retainedHead`, which doesn't reload from
-                // DB and so doesn't disturb compact-marker graying): keep the
-                // target assistant message with only its blocks BEFORE the
-                // target, and drop every later message. Block trim mirrors the
-                // parts trim above so UI ↔ history stay in lockstep.
-                withContext(Dispatchers.Main) {
-                    val cur = _messages.value
-                    val ai = cur.indexOfFirst { it.id == assistantMessageId }
-                    if (ai >= 0) {
-                        val keptBlocks = cur[ai].toolBlocks.take(blockIdx)
-                        if (keptBlocks.isEmpty()) {
-                            // [T-android-rerun-from-tool-deletes-earlier-turns]
-                            // Target was the first block of its bubble — the DB
-                            // side dropped the whole row (cutPartIdx==0). Drop
-                            // the bubble in the UI too instead of leaving an
-                            // empty assistant message; earlier bubbles (the
-                            // turns that precede this one) are preserved by
-                            // subList(0, ai).
-                            _messages.value = cur.subList(0, ai).toList()
-                        } else {
-                            // Recompute `content` from the surviving text blocks
-                            // so it doesn't keep text the renderer just dropped.
-                            // The chat list renders ordering from toolBlocks, but
-                            // `content` feeds previews / copy, so keep it in sync.
-                            val keptText = keptBlocks.filter { it.isText }
-                                .joinToString("") { it.content }
-                            val trimmed = cur[ai].copy(
-                                content = keptText,
-                                toolBlocks = keptBlocks,
-                                isStreaming = false,
-                            )
-                            _messages.value = cur.subList(0, ai).toList() + trimmed
-                        }
-                    }
-                }
-                val keptIds = _messages.value.mapTo(mutableSetOf()) { it.id }
-                retainStreamFlushStates(keptIds)
-                if (_streamingById.value.isNotEmpty()) {
-                    _streamingById.value = _streamingById.value.filterKeys { it in keptIds }
-                }
-
-                // Rebuild agentHistory from the trimmed DB state.
-                agentHistory.clear()
-                toolLoopDetector.reset()
-                for (entity in chatRepository.loadMessages(sid)) {
-                    agentHistory.add(entity.toLLMMessage())
-                }
+                val conversation = chatRepository.loadActiveConversation(sid)
+                installActiveConversation(conversation)
+                Log.i(
+                    TAG,
+                    "rerunFromToolBlock retained old branch tuId=${targetToolUseId.take(12)} " +
+                        "partIdx=$cutPartIdx row=${row.id.take(8)}",
+                )
 
                 streamLaunched = runRerunStreamTail(initialProvider, "rerunFromToolBlock")
             } finally {
@@ -4901,11 +4819,7 @@ class ChatViewModel(
         return true
     }
 
-    /**
-     * Retry from a specific user message: truncate all messages after it
-     * (including the assistant response), rebuild agent history, and resend.
-     * Mirrors iOS's edit/retry behavior — no duplicate user messages.
-     */
+    /** Retry from a user turn by retaining its existing reply as a sibling. */
     fun retryFromMessage(messageId: String) {
         if (_isStreaming.value) return
         _canResume.value = false
@@ -4925,35 +4839,14 @@ class ChatViewModel(
         val provider: LLMProvider = initialProvider
         _error.value = null
 
-        // T149: snapshot messages about to be truncated so we can revoke any
-        // memory_write tool blocks they contain. Without this, a retry leaves
-        // the on-disk daily log with entries the user has just rewound past.
-        val deletedMessages = messages.subList(index + 1, messages.size).toList()
-
-        // Truncate UI messages: keep up to and including this user message.
-        // T189: if the retried bubble was still in the queued state (manual
-        // retry of a queued message before resumeQueueAfterCancel's grace
-        // window — or fallback when auto-resume is disabled), flip it out of
-        // queued visuals and drop its queue entry so the upcoming send
-        // doesn't double up against a later auto-drain.
-        val retainedHead = messages.subList(0, index + 1).map { m ->
-            if (m.id == messageId && m.isQueued) {
-                m.queuedPromptId?.let { pid ->
-                    _promptQueue.value = _promptQueue.value.filterNot { it.id == pid }
-                }
-                m.copy(isQueued = false, queuedPromptId = null)
-            } else m
+        // A queued bubble is already persisted. Remove only its queue entry;
+        // the active-path reload below restores the same user row unqueued.
+        message.queuedPromptId?.let { promptId ->
+            _promptQueue.value = _promptQueue.value.filterNot { it.id == promptId }
         }
-        _messages.value = retainedHead
-        // T-streaming-side-channel: scrub stream deltas pointing at
-        // messages we just truncated so they can't resurface later.
-        val keptIds = retainedHead.mapTo(mutableSetOf()) { it.id }
-        retainStreamFlushStates(keptIds)
-        if (_streamingById.value.isNotEmpty()) {
-            _streamingById.value = _streamingById.value.filterKeys { it in keptIds }
-        }
-
-        revokeMemoryWritesInDeletedMessages(deletedMessages)
+        val persistedUserId = message.branchAnchorDbId
+            ?: message.sourceDbIds.firstOrNull()
+            ?: message.id
 
         // T145: claim the streaming flag SYNCHRONOUSLY so a rapid second tap
         // (or any concurrent send/retry attempt) is rejected by the entry
@@ -4973,52 +4866,8 @@ class ChatViewModel(
             try {
             val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
 
-            // Find the DB sort_order cutoff for this user message.
-            // UI visible user messages are the N-th user msg with actual text content.
-            // Count which visible user message this is (0-based).
-            val visibleUserIndex = messages.subList(0, index + 1).count { it.role == "user" } - 1
-            val dbMessages = chatRepository.loadMessages(sid)
-            // Walk DB rows, counting visible user messages (those with non-toolResult text)
-            var visibleUserCount = 0
-            var cutoffSortOrder = -1
-            for (entity in dbMessages) {
-                if (entity.role == "user") {
-                    // Check if this user message has visible text (not toolResult-only).
-                    // [T-ios-retry-anchor-synthetic-user] Synthetic user rows the
-                    // agent loop persists WITHOUT a UI bubble — resume()'s
-                    // stop-continue "<system-reminder>" message — must not count,
-                    // or the cutoff anchors one user message too early and the
-                    // retried bubble (plus the whole last turn) is silently
-                    // dropped from the rebuilt history (mirrors the iOS fix).
-                    val hasText = try {
-                        val arr = org.json.JSONArray(entity.partsJson)
-                        (0 until arr.length()).any { i ->
-                            val o = arr.getJSONObject(i)
-                            val v = o.optString("value", "")
-                            o.optString("type") == "text" && v.isNotBlank() &&
-                                !v.trimStart().startsWith("<system-reminder>")
-                        }
-                    } catch (_: Exception) { true }
-                    if (hasText) {
-                        if (visibleUserCount == visibleUserIndex) {
-                            cutoffSortOrder = entity.sortOrder + 1
-                            break
-                        }
-                        visibleUserCount++
-                    }
-                }
-            }
-            if (cutoffSortOrder >= 0) {
-                chatRepository.deleteMessagesAfter(sid, cutoffSortOrder)
-            }
-
-            // Rebuild agentHistory from remaining DB messages
-            agentHistory.clear()
-            toolLoopDetector.reset()
-            val remaining = chatRepository.loadMessages(sid)
-            for (entity in remaining) {
-                agentHistory.add(entity.toLLMMessage())
-            }
+            val conversation = chatRepository.forkReplyFrom(sid, persistedUserId)
+            installActiveConversation(conversation)
 
             streamLaunched = runRerunStreamTail(provider, "retryFromMessage")
             } finally {
@@ -5027,6 +4876,85 @@ class ChatViewModel(
                     _isStreaming.value = false
                 }
             }
+        }
+    }
+
+    /**
+     * Select a persisted sibling path. This only rebuilds local projections;
+     * it never enters the agent loop or dispatches a tool.
+     */
+    fun switchMessageBranch(messageId: String, delta: Int) {
+        if (_isStreaming.value || delta == 0) return
+        val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+        if (sid.isEmpty()) return
+        viewModelScope.launch {
+            conversationBranchMutex.lock()
+            try {
+                val conversation = withContext(Dispatchers.IO) {
+                    chatRepository.switchMessageSibling(sid, messageId, delta)
+                }
+                installActiveConversation(conversation)
+                _canResume.value = false
+            } catch (error: Exception) {
+                AppLogger.error(
+                    TAG_STREAM,
+                    "branch switch failed ${error::class.java.simpleName}: ${error.message}",
+                )
+                _error.value = "切换分支失败：${error.message ?: error::class.java.simpleName}"
+            } finally {
+                conversationBranchMutex.unlock()
+            }
+        }
+    }
+
+    /** Rebuild every branch-sensitive in-memory view from one DB snapshot. */
+    private suspend fun installActiveConversation(
+        conversation: ChatRepository.ActiveConversation,
+    ) {
+        val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+        data class ActiveProjection(
+            val ordered: List<ChatMessage>,
+            val llmHistory: List<LLMMessage>,
+            val marker: com.openminis.app.data.db.CompactMarkerEntity?,
+            val activeIds: Set<String>,
+            val excludedMemoryWrites: Map<String, Int>,
+        )
+        val projection = withContext(Dispatchers.IO) {
+            val rows = conversation.activeMessages
+            val activeIds = rows.mapTo(hashSetOf()) { it.id }
+            ActiveProjection(
+                ordered = rows.toChatMessages(conversation.graph),
+                llmHistory = rows.map { it.toLLMMessage() },
+                marker = chatRepository.latestActiveCompactMarker(sid, rows),
+                activeIds = activeIds,
+                excludedMemoryWrites = com.openminis.app.data.ConversationBranchMemory
+                    .excludedWriteCounts(conversation.allMessages, activeIds),
+            )
+        }
+        val ordered = projection.ordered
+        val llmHistory = projection.llmHistory
+        val marker = projection.marker
+        activeBranchMessageIds = projection.activeIds
+        excludedBranchMemoryWrites = projection.excludedMemoryWrites
+        agentHistory.clear()
+        agentHistory.addAll(llmHistory)
+        toolLoopDetector.reset()
+        _cachedLatestMarker = marker
+        _compactSummary.value = marker?.summary
+        _messages.value = if (marker == null) {
+            ordered
+        } else {
+            applyCompactMarkerGraying(
+                messages = ordered,
+                marker = marker,
+                rawMessages = conversation.activeMessages,
+                historyDbIds = activeBranchMessageIds,
+            )
+        }
+        val keptIds = ordered.mapTo(mutableSetOf()) { it.id }
+        retainStreamFlushStates(keptIds)
+        if (_streamingById.value.isNotEmpty()) {
+            _streamingById.value = _streamingById.value.filterKeys { it in keptIds }
         }
     }
 
@@ -5154,7 +5082,7 @@ class ChatViewModel(
      * cannot be edited (streaming in progress, message missing, or not
      * a user turn). Setting `_editingMessageId` is what flips the
      * composer into edit-mode UI; the next sendMessage call sees the
-     * non-null id and truncates the conversation from that point.
+     * non-null id and creates a sibling branch from that point.
      * Mirrors iOS AIChatViewModel.editMessage(_:) (L2468).
      */
     fun editMessage(messageId: String): String? {
@@ -5189,95 +5117,42 @@ class ChatViewModel(
         _editingMessageId.value = null
     }
 
-    /**
-     * T187: drop the message at [messageId] *and* every later message
-     * (in UI, in agentHistory, and on disk) so the new sendMessage()
-     * call below this can persist the edited text as a fresh user
-     * turn at the same position. Reuses the cutoff-search machinery
-     * from retryFromMessage but offsets by `entity.sortOrder` (not
-     * +1) — retry preserves the original turn, edit replaces it.
-     */
-    private suspend fun truncateBeforeEdit(messageId: String): Boolean =
-        rewindConversationFromMessage(messageId, reason = "edit")
+    /** Keep the original user subtree and position the next send as its sibling. */
+    private suspend fun forkBeforeEdit(messageId: String): Boolean =
+        forkConversationBeforeEditedMessage(messageId)
 
-    /**
-     * Delete [messageId] and every later turn from the visible transcript,
-     * persisted history and model history. The persisted source id is the
-     * anchor — ordinal user-message counting is unsafe once hidden synthetic
-     * tool rows or attachment-only rows exist.
-     */
-    private suspend fun rewindConversationFromMessage(
-        messageId: String,
-        reason: String,
-    ): Boolean {
-        val plan = ConversationTimelineMutation.inclusive(_messages.value, messageId)
-            ?: return false
+    private suspend fun forkConversationBeforeEditedMessage(messageId: String): Boolean {
+        val message = _messages.value.firstOrNull { it.id == messageId } ?: return false
+        val persistedId = message.branchAnchorDbId
+            ?: message.sourceDbIds.firstOrNull()
+            ?: message.id
         val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
-        val dbMessages = chatRepository.loadMessages(sid)
-        val cutoff = dbMessages.firstOrNull { it.id == plan.cutoffDbMessageId }
-        if (cutoff == null) {
-            AppLogger.error(
-                TAG_STREAM,
-                "timeline rewind failed reason=$reason message=${messageId.take(8)} " +
-                    "source=${plan.cutoffDbMessageId.take(8)}: persisted row missing",
-            )
-            return false
-        }
-
-        // Persist first. If storage fails, keep the visible transcript intact
-        // rather than showing a rewritten branch that returns after reload.
-        // If the summary contains this turn, keeping it would silently feed
-        // the old reply back to the model even though its bubbles are gone —
-        // exactly the reported "edited but remembered" failure mode. All
-        // markers are chained, so the DAO invalidates the set atomically with
-        // message deletion.
-        chatRepository.rewindMessagesFrom(
-            sessionId = sid,
-            cutoffSortOrder = cutoff.sortOrder,
-            invalidateCompactMarkers = plan.invalidateCompactMarkers,
-        )
-        val remaining = chatRepository.loadMessages(sid)
-        chatRepository.refreshSessionPreviewFromHistory(sid, remaining)
-
-        revokeMemoryWritesInDeletedMessages(plan.deletedMessages)
-        val retained = if (plan.invalidateCompactMarkers) {
-            plan.retainedMessages.map { it.copy(isCompactedHistory = false) }
-        } else {
-            plan.retainedMessages
-        }
-        _messages.value = retained
-        val keptIds = retained.mapTo(mutableSetOf()) { it.id }
-        retainStreamFlushStates(keptIds)
-        if (_streamingById.value.isNotEmpty()) {
-            _streamingById.value = _streamingById.value.filterKeys { it in keptIds }
-        }
-        if (plan.invalidateCompactMarkers) {
-            _compactSummary.value = null
-            _cachedLatestMarker = null
-        }
-        agentHistory.clear()
-        toolLoopDetector.reset()
-        remaining.forEach { agentHistory.add(it.toLLMMessage()) }
+        val conversation = chatRepository.forkEditedMessageFrom(sid, persistedId)
+        installActiveConversation(conversation)
         _canResume.value = false
-
-        AppLogger.info(
-            TAG_STREAM,
-            "timeline rewind reason=$reason cutoff=${cutoff.sortOrder} remaining=${remaining.size} " +
-                "compactInvalidated=${plan.invalidateCompactMarkers}",
-        )
         return true
     }
 
-    /** Long-press delete: remove this user turn and the branch after it. */
+    /** Long-press delete removes only the selected subtree. */
     fun deleteFromMessage(messageId: String) {
         if (_isStreaming.value) return
         _editingMessageId.value = null
         _isStreaming.value = true
         viewModelScope.launch {
             try {
-                if (!rewindConversationFromMessage(messageId, reason = "delete")) {
-                    _error.value = "无法定位要删除的消息，请重新打开对话后重试"
-                }
+                val message = _messages.value.firstOrNull { it.id == messageId }
+                    ?: error("无法定位要删除的消息")
+                val persistedId = message.branchAnchorDbId
+                    ?: message.sourceDbIds.firstOrNull()
+                    ?: message.id
+                val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+                val deletion = chatRepository.deleteMessageBranch(sid, persistedId)
+                revokeMemoryWritesInDeletedRows(
+                    deletedMessages = deletion.deletedMessages,
+                    remainingMessages = deletion.conversation.allMessages,
+                )
+                installActiveConversation(deletion.conversation)
+                _canResume.value = false
             } catch (error: Exception) {
                 AppLogger.error(
                     TAG_STREAM,
@@ -5700,11 +5575,10 @@ class ChatViewModel(
             flushAllStreamingDeltas()
         }
 
-        // T187: when the user is editing a previous message, truncate the
-        // conversation from that message (inclusive) before persisting the
-        // edited text as a fresh user turn. Snapshot + clear the id here so
-        // any error in the truncate path doesn't leave the composer stuck
-        // in edit mode.
+        // T187: when the user is editing a previous message, retain its
+        // subtree and position the new text as a sibling user turn. Snapshot
+        // + clear the id here so any error in the branch path doesn't leave
+        // the composer stuck in edit mode.
         val editingId = _editingMessageId.value
         if (editingId != null) _editingMessageId.value = null
 
@@ -5715,7 +5589,7 @@ class ChatViewModel(
             val activeSessionId = ensureSession()
 
             if (editingId != null) {
-                if (!truncateBeforeEdit(editingId)) {
+                if (!forkBeforeEdit(editingId)) {
                     _error.value = "无法定位原消息，已取消编辑发送；请重新打开对话后重试"
                     return@launch
                 }
@@ -5911,16 +5785,23 @@ class ChatViewModel(
             )
             _messages.value = msgs
             // [T-error-persist-android] Persist the terminal error onto the
-            // session's last assistant DB row so the inline error + Retry button
+            // selected path's last assistant DB row so the inline error + Retry button
             // survive a session reload. This is a targeted UPDATE (not a fresh
             // insert): the in-memory bubble id differs from the persisted row id,
-            // so we address the row by "last assistant" — matching the load-side
-            // merge that keeps the last assistant row's identity. No-op when the
+            // so we address the last source row when known, otherwise resolve
+            // the last assistant from the persisted active path. No-op when the
             // failing turn never persisted a row (first-turn failure).
             val sid = realSessionId.ifEmpty { sessionId }
             if (sid.isNotEmpty()) {
+                val sourceId = msg.sourceDbIds.lastOrNull()
                 viewModelScope.launch(Dispatchers.IO) {
-                    try { chatRepository.updateLastAssistantError(sid, safeError) }
+                    try {
+                        if (sourceId != null) {
+                            chatRepository.updateMessageErrorInfo(sourceId, safeError)
+                        } else {
+                            chatRepository.updateLastActiveAssistantError(sid, safeError)
+                        }
+                    }
                     catch (e: Exception) { Log.w(TAG, "persist error_info failed: ${e.message}") }
                 }
             }
@@ -5966,7 +5847,7 @@ class ChatViewModel(
                     if (dbIds.isNotEmpty()) {
                         dbIds.forEach { chatRepository.updateMessageErrorInfo(it, null) }
                     } else {
-                        chatRepository.updateLastAssistantError(sid, null)
+                        chatRepository.updateLastActiveAssistantError(sid, null)
                     }
                 } catch (e: Exception) { Log.w(TAG, "clear error_info failed: ${e.message}") }
             }
@@ -5984,7 +5865,7 @@ class ChatViewModel(
         val sid = realSessionId.ifEmpty { sessionId }
         if (sid.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            try { chatRepository.updateLastAssistantError(sid, null) }
+            try { chatRepository.updateLastActiveAssistantError(sid, null) }
             catch (e: Exception) { Log.w(TAG, "clear error_info (persisted) failed: ${e.message}") }
         }
     }
@@ -6008,8 +5889,9 @@ class ChatViewModel(
      *     history is already valid, leave it.
      *   - GC orphaned tool_result rows whose tool_use is no longer in
      *     agentHistory (defends against the API "unexpected tool_use_id" 400).
-     *   - Sync the DB: if we popped a trailing assistant, drop just its
-     *     persisted row so a re-load doesn't resurrect the failed turn.
+     *   - If a persisted trailing assistant is retried, retain it and create
+     *     the replacement as a sibling. A tool-result tail is reused as model
+     *     context without dispatching its completed tools again.
      */
     fun retryLast() {
         if (_isStreaming.value) return
@@ -6037,16 +5919,6 @@ class ChatViewModel(
             toolBlocks = keptToolBlocks,
         )
         _messages.value = msgs
-        // [T-error-persist-android] Clear the persisted error sticker on the last
-        // assistant row up-front. The DB-sync below only DELETES the trailing
-        // assistant row when a trailing assistant was popped (Case A); in the
-        // Case B path (tail = user(tool_result), next LLM call errored) the
-        // stamped row is an EARLIER completed turn that is NOT deleted, so
-        // without this clear the new successful turn would merge-resurrect the
-        // old error banner on reload (msg.error ?: prev.error). Harmless in
-        // Case A too — the row is deleted moments later regardless.
-        clearPersistedLastAssistantError()
-
         // 2. Pop ONLY a trailing assistant entry from agentHistory (mirrors
         //    iOS retry() :2107-2109). If the tail is already user(tool_result),
         //    the next-turn LLM call errored — leave history alone.
@@ -6087,23 +5959,19 @@ class ChatViewModel(
             try {
             val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
 
-            // T258: only sync the DB when step 2 popped a trailing assistant
-            // entry from agentHistory. In that case the persisted partial-
-            // assistant row would resurrect the failed turn on next session
-            // load — drop it (and only it) by deleting from its sort_order.
-            // Completed assistant + tool_result rows for earlier turns are
-            // unchanged and stay persisted, so retry preserves their cards.
-            // toolLoopDetector keeps its accumulated state — completed tools
-            // shouldn't be unlearned just because the next turn errored.
+            // Preserve a persisted failed/partial reply as a sibling. If the
+            // history tail is already a tool_result there is no failed
+            // assistant row yet, so the new response simply appends there and
+            // completed tools are never executed again.
             if (poppedAssistant != null) {
-                val dbMessages = chatRepository.loadMessages(sid)
-                val trailingAssistantSortOrder = dbMessages
-                    .lastOrNull { it.role == "assistant" }?.sortOrder
-                if (trailingAssistantSortOrder != null) {
-                    chatRepository.deleteMessagesAfter(sid, trailingAssistantSortOrder)
+                val persistedReplyId = poppedAssistant.dbMessageId
+                    ?: lastMsg.sourceDbIds.lastOrNull()
+                if (persistedReplyId != null) {
+                    val conversation = chatRepository.forkEditedMessageFrom(sid, persistedReplyId)
+                    installActiveConversation(conversation)
                     AppLogger.info(
                         TAG_STREAM,
-                        "retryLast: deleted trailing assistant row sortOrder=$trailingAssistantSortOrder, kept ${trailingAssistantSortOrder} prior rows",
+                        "retryLast: retained failed reply ${persistedReplyId.take(8)} as sibling",
                     )
                 }
             } else {
@@ -8255,6 +8123,15 @@ class ChatViewModel(
         } else {
             AppLogger.info(TAG_STREAM, "runAgentLoop EXIT (loop body ended naturally)")
         }
+        // Replace volatile streaming bubbles with the canonical active-path
+        // projection. This attaches sibling counts to newly persisted reply
+        // and edit branches and keeps tool-result rows in model history.
+        val finishedConversation = chatRepository.loadActiveConversation(
+            realSessionId.ifEmpty { sessionId },
+        )
+        withContext(Dispatchers.Main) {
+            installActiveConversation(finishedConversation)
+        }
     }
 
     /**
@@ -8938,7 +8815,7 @@ class ChatViewModel(
 
     private fun executeMemoryGetTool(argsJson: String): ToolExecutionResult {
         val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
-        val result = MemoryTools.executeMemoryGet(argsJson, repo)
+        val result = MemoryTools.executeMemoryGet(argsJson, repo, excludedBranchMemoryWrites)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")
         } catch (_: Exception) { "" }
@@ -9372,7 +9249,7 @@ class ChatViewModel(
                 val repository = activeMemoryRepository()
                 listOfNotNull(
                     repository?.loadGlobalMemoryFragment(),
-                    repository?.loadRecentDailyMemoryFragment(),
+                    repository?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites),
                 ).joinToString("\n\n").takeIf { it.isNotBlank() }
             } else null
             return com.openminis.app.data.character.CharacterSystemPromptComposer.compose(
@@ -9572,7 +9449,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // to the memory feature.
         val activeMemory = activeMemoryRepository()
         val globalMemoryFragment = if (memoryOn) activeMemory?.loadGlobalMemoryFragment() else null
-        val dailyMemoryFragment = if (memoryOn) activeMemory?.loadRecentDailyMemoryFragment() else null
+        val dailyMemoryFragment = if (memoryOn) {
+            activeMemory?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites)
+        } else null
 
         return buildString {
             append(base)
@@ -9640,7 +9519,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
     fun executeMemoryGet(argsJson: String): MemoryTools.ToolResult {
         val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
-        val result = MemoryTools.executeMemoryGet(argsJson, repo)
+        val result = MemoryTools.executeMemoryGet(argsJson, repo, excludedBranchMemoryWrites)
         val keywords = try {
             JSONObject(argsJson).optString("keywords", "")
         } catch (_: Exception) { "" }
@@ -11130,7 +11009,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         }
     }
 
-    private fun List<MessageEntity>.toChatMessages(): List<ChatMessage> {
+    private fun List<MessageEntity>.toChatMessages(
+        branchGraph: com.openminis.app.data.ConversationBranchGraph? = null,
+    ): List<ChatMessage> {
         // First pass: extract all toolResult data keyed by toolUseId
         val toolResultMap = mutableMapOf<String, ToolResultData>()
         for (entity in this) {
@@ -11299,6 +11180,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             // and have no tool / thinking blocks to fall back on — would otherwise
             // render as a phantom blank assistant bubble.
             if (entity.role == "assistant" && text.isBlank() && blocks.isEmpty()) return@mapNotNull null
+            val sibling = branchGraph?.siblingPosition(entity.id)
             ChatMessage(
                 id = entity.id,
                 role = entity.role,
@@ -11308,6 +11190,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 attachmentUris = restoredAttachmentUris,
                 toolBlocks = blocks,
                 sourceDbIds = listOf(entity.id),
+                branchAnchorDbId = entity.id,
+                branchIndex = sibling?.index ?: 1,
+                branchCount = sibling?.count ?: 1,
                 // [T-error-persist-android] Restore the persisted terminal error
                 // so the inline error banner + Retry button survive a reload.
                 // Coalesce a blank value to null: the UI gate is `error?.let`, so
@@ -11338,6 +11223,12 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                         msg.content.isBlank() -> prev.content
                         else -> prev.content + "\n\n" + msg.content
                     }
+                    // Tool-result rows are hidden, so several persisted
+                    // assistant rows can collapse into one visible bubble. If
+                    // a rerun branched at a later row, carry that deepest
+                    // visible branch control onto the merged bubble instead of
+                    // silently keeping the first row's non-branch metadata.
+                    val branchSource = if (msg.branchCount > 1) msg else prev
                     merged[merged.lastIndex] = prev.copy(
                         id = msg.id,
                         content = combinedText,
@@ -11348,6 +11239,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                         // an assistant row that gets folded into a later
                         // assistant turn).
                         sourceDbIds = prev.sourceDbIds + msg.sourceDbIds,
+                        branchAnchorDbId = branchSource.branchAnchorDbId,
+                        branchIndex = branchSource.branchIndex,
+                        branchCount = branchSource.branchCount,
                         // [T-error-persist-android] The error sticker is written
                         // to the LAST assistant row of the turn, so the later row
                         // (`msg`) wins; fall back to `prev` if only it carried one.

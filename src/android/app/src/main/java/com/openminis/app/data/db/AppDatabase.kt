@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WebAppShortcutEntity::class,
         FolderEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -232,6 +232,78 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Retained conversation branches. Existing histories are backfilled as
+         * one active parent/child chain without deleting or rewriting content.
+         * The global sort order remains append-only and now orders siblings.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN parent_message_id TEXT")
+                db.execSQL("ALTER TABLE messages ADD COLUMN active_child_id TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN active_root_message_id TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN active_leaf_message_id TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_messages_session_id_parent_message_id " +
+                        "ON messages(session_id, parent_message_id)",
+                )
+
+                // Stable legacy order is sort_order, then created_at and id for
+                // the rare imported history containing duplicate sort values.
+                db.execSQL(
+                    """
+                    UPDATE messages
+                    SET parent_message_id = (
+                        SELECT previous.id
+                        FROM messages AS previous
+                        WHERE previous.session_id = messages.session_id
+                          AND (
+                            previous.sort_order < messages.sort_order OR
+                            (previous.sort_order = messages.sort_order AND previous.created_at < messages.created_at) OR
+                            (previous.sort_order = messages.sort_order AND previous.created_at = messages.created_at AND previous.id < messages.id)
+                          )
+                        ORDER BY previous.sort_order DESC, previous.created_at DESC, previous.id DESC
+                        LIMIT 1
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE messages
+                    SET active_child_id = (
+                        SELECT next.id
+                        FROM messages AS next
+                        WHERE next.session_id = messages.session_id
+                          AND (
+                            next.sort_order > messages.sort_order OR
+                            (next.sort_order = messages.sort_order AND next.created_at > messages.created_at) OR
+                            (next.sort_order = messages.sort_order AND next.created_at = messages.created_at AND next.id > messages.id)
+                          )
+                        ORDER BY next.sort_order ASC, next.created_at ASC, next.id ASC
+                        LIMIT 1
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    UPDATE sessions
+                    SET active_root_message_id = (
+                        SELECT root.id FROM messages AS root
+                        WHERE root.session_id = sessions.id
+                        ORDER BY root.sort_order ASC, root.created_at ASC, root.id ASC
+                        LIMIT 1
+                    ),
+                    active_leaf_message_id = (
+                        SELECT leaf.id FROM messages AS leaf
+                        WHERE leaf.session_id = sessions.id
+                        ORDER BY leaf.sort_order DESC, leaf.created_at DESC, leaf.id DESC
+                        LIMIT 1
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -269,7 +341,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -459,6 +459,15 @@ internal sealed class FlatChatItem {
         override val contentType = "error"
     }
 
+    data class BranchSwitcher(
+        val messageId: String,
+        val index: Int,
+        val count: Int,
+    ) : FlatChatItem() {
+        override val key = "branch:$messageId"
+        override val contentType = "branch"
+    }
+
     /**
      * See [AssistantText] — same cheap-equals rationale.
      */
@@ -568,6 +577,7 @@ internal fun buildFlatChatItems(
             is FlatChatItem.AssistantInfo -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantTyping -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantError -> item.copy(messageId = "${item.messageId}#$n")
+            is FlatChatItem.BranchSwitcher -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantLegacyContent -> FlatChatItem.AssistantLegacyContent(
                 messageId = "${item.messageId}#$n",
                 content = item.content,
@@ -597,6 +607,13 @@ internal fun buildFlatChatItems(
             // AssistantHeader between them and visually merge.
             val prevIsUser = idx > 0 && messages[idx - 1].role == "user"
             out.add(dedupe(FlatChatItem.UserBubble(message, precededByUser = prevIsUser)))
+            if (message.branchCount > 1) {
+                out.add(dedupe(FlatChatItem.BranchSwitcher(
+                    messageId = message.branchAnchorDbId ?: message.id,
+                    index = message.branchIndex,
+                    count = message.branchCount,
+                )))
+            }
             continue
         }
         // System messages (slash-command notices, compact divider, etc.) render
@@ -809,6 +826,13 @@ internal fun buildFlatChatItems(
         // Inline error banner
         message.error?.let {
             out.add(dedupe(FlatChatItem.AssistantError(message.id, it)))
+        }
+        if (!isSystem && message.branchCount > 1) {
+            out.add(dedupe(FlatChatItem.BranchSwitcher(
+                messageId = message.branchAnchorDbId ?: message.id,
+                index = message.branchIndex,
+                count = message.branchCount,
+            )))
         }
     }
     return out
