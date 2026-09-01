@@ -671,7 +671,7 @@ fun AppNavigation(
         }
 
         composable(Routes.CHARACTERS) {
-            com.openminis.app.ui.settings.WorldLibraryScreen(
+            com.openminis.app.ui.settings.CatalogWorldLibraryScreen(
                 onBack = { navController.safePopBackStack() },
                 onOpenWorld = { navController.safeNavigate(Routes.storyWorld(it)) },
                 onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
@@ -684,7 +684,7 @@ fun AppNavigation(
         ) { entry ->
             val worldId = entry.arguments?.getString("worldId") ?: return@composable
             val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
-            com.openminis.app.ui.settings.StoryWorldDetailScreen(
+            com.openminis.app.ui.settings.CatalogWorldDetailScreen(
                 worldId = worldId,
                 sessions = sessions,
                 onBack = { navController.safePopBackStack() },
@@ -712,7 +712,7 @@ fun AppNavigation(
                 defaultValue = null
             }),
         ) { entry ->
-            com.openminis.app.ui.settings.Card3WorldEditorScreen(
+            com.openminis.app.ui.settings.CatalogWorldEditorScreen(
                 worldId = entry.arguments?.getString("worldId"),
                 onBack = { navController.safePopBackStack() },
                 onSaved = { worldId ->

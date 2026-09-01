@@ -151,6 +151,21 @@ class CharacterCatalogMigrationInstrumentedTest {
         assertEquals(listOf("media_assets" to "RESTRICT"), foreignKeys)
     }
 
+    @Test
+    fun migration20AddsWorldTagsWithoutInventingModules() {
+        val db = helper.writableDatabase
+        db.execSQL(
+            "CREATE TABLE worlds (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, overview TEXT NOT NULL, " +
+                "legacy_snapshot_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+        )
+        db.execSQL("INSERT INTO worlds VALUES ('w1', '雾港', '概述', NULL, 1, 2)")
+        AppDatabase.MIGRATION_19_20.migrate(db)
+        db.query("SELECT tags_json FROM worlds WHERE id = 'w1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("[]", cursor.getString(0))
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

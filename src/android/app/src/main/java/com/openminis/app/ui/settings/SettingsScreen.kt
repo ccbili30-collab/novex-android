@@ -130,6 +130,18 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            // Keep the community feedback entrance above every configuration section.
+            SettingsSection(title = "反馈与交流") {
+                SettingsItem(
+                    icon = Icons.Outlined.Feedback,
+                    iconColor = Color(0xFF007AFF),
+                    title = "QQ 反馈与交流",
+                    subtitle = "加入 QQ 群反馈问题、建议新功能",
+                    onClick = onFeedbackClick,
+                    showDivider = false,
+                )
+            }
+
             // -- LLM Providers --
             SettingsSection(
                 title = stringResource(R.string.settings_section_llm_providers),
@@ -213,13 +225,6 @@ fun SettingsScreen(
                     subtitle = null,
                     // iOS canonical URL — ContentView.swift / AddProviderView.swift
                     onClick = { openExternalUrl(context, "https://openminis.github.io/privacy-policy.html") },
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Feedback,
-                    iconColor = Color(0xFF007AFF),
-                    title = "QQ 反馈与交流",
-                    subtitle = null,
-                    onClick = onFeedbackClick,
                     showDivider = false,
                 )
             }

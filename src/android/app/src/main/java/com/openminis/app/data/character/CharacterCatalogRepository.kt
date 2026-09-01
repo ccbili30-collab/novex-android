@@ -15,6 +15,7 @@ class CharacterCatalogRepository(
     suspend fun createWorld(
         name: String,
         overview: String = "",
+        tagsJson: String = "[]",
         now: Long = System.currentTimeMillis(),
         id: String = UUID.randomUUID().toString(),
     ): WorldEntity {
@@ -22,6 +23,7 @@ class CharacterCatalogRepository(
             id = id,
             name = name.trim().ifBlank { "我的世界" },
             overview = overview,
+            tagsJson = tagsJson,
             createdAt = now,
             updatedAt = now,
         )
@@ -118,6 +120,24 @@ class CharacterCatalogRepository(
     }
 
     suspend fun world(id: String): WorldEntity? = dao.world(id)
+
+    suspend fun listWorlds(): List<WorldEntity> = dao.listWorlds()
+
+    suspend fun listVersions(): List<CharacterVersionEntity> = dao.listVersions()
+
+    suspend fun saveWorld(
+        world: WorldEntity,
+        now: Long = System.currentTimeMillis(),
+    ): WorldEntity {
+        requireNotNull(dao.world(world.id)) { "世界不存在" }
+        val saved = world.copy(
+            name = world.name.trim().ifBlank { "我的世界" },
+            overview = world.overview.trim(),
+            updatedAt = now,
+        )
+        dao.updateWorld(saved)
+        return saved
+    }
 
     suspend fun version(id: String): CharacterVersionEntity? = dao.version(id)
 

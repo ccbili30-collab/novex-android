@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 
 @Dao
 interface CharacterCatalogDao {
@@ -89,11 +90,20 @@ interface CharacterCatalogDao {
     @Query("SELECT * FROM worlds WHERE id = :id")
     suspend fun world(id: String): WorldEntity?
 
+    @Query("SELECT * FROM worlds ORDER BY updated_at DESC, id ASC")
+    suspend fun listWorlds(): List<WorldEntity>
+
     @Query("SELECT * FROM characters WHERE id = :id")
     suspend fun character(id: String): CharacterEntity?
 
     @Query("SELECT * FROM character_versions WHERE id = :id")
     suspend fun version(id: String): CharacterVersionEntity?
+
+    @Query("SELECT * FROM character_versions ORDER BY updated_at DESC, id ASC")
+    suspend fun listVersions(): List<CharacterVersionEntity>
+
+    @Update
+    suspend fun updateWorld(world: WorldEntity)
 
     @Query(
         "SELECT * FROM character_versions WHERE character_id = :characterId " +

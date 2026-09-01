@@ -79,6 +79,7 @@ data class WorldEntity(
     val name: String,
     /** The only world content section present before users add modules. */
     val overview: String = "",
+    @ColumnInfo(name = "tags_json", defaultValue = "'[]'") val tagsJson: String = "[]",
     /** Exact v1 payload retained until every world field has a normalized home. */
     @ColumnInfo(name = "legacy_snapshot_json") val legacySnapshotJson: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long,
