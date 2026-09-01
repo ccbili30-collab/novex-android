@@ -31,14 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardReturn
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Launch
 import androidx.compose.material.icons.outlined.Psychology
@@ -76,7 +73,6 @@ import kotlin.math.roundToInt
 // -- Preference Keys --
 const val PREF_APPEARANCE = "appearance_prefs"
 const val KEY_THEME_MODE = "theme_mode"            // 0=System, 1=Light, 2=Dark
-const val KEY_LAUNCH_SESSION = "launch_session"    // 0=Auto, 1=LastSession, 2=NewChat, 3=Home
 // iOS-aligned key names — match `@AppStorage("returnKeyBehavior")` and
 // `@AppStorage("keepScreenAwakeDuringTasks")` in ContentView.swift so
 // future cross-platform sync (if it ever lands) reads the same values.
@@ -182,7 +178,6 @@ fun AppearanceScreen(
     val prefs = remember { getAppearancePrefs(context) }
 
     var themeMode by remember { mutableIntStateOf(prefs.getInt(KEY_THEME_MODE, 0)) }
-    var launchSession by remember { mutableIntStateOf(prefs.getInt(KEY_LAUNCH_SESSION, 0)) }
     var returnKeyBehavior by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
     var keepScreenAwake by remember { mutableStateOf(prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, false)) }
     var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
@@ -238,41 +233,6 @@ fun AppearanceScreen(
                         )
                     },
                     showDivider = idx < themeRows.size - 1,
-                )
-            }
-        }
-
-        // -- Launch Session --
-        // Same per-row icon treatment as the Theme section. Bolt = Auto
-        // (system picks), History = Last Session (revisit), ChatBubble =
-        // New Chat (compose), Home = Home screen.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_launch),
-            footer = stringResource(R.string.appearance_launch_footer),
-        ) {
-            data class LaunchRow(val label: String, val icon: ImageVector, val tint: Color)
-            val launchRows = listOf(
-                LaunchRow(stringResource(R.string.appearance_launch_auto), Icons.Outlined.Bolt, tileBlue),
-                LaunchRow(stringResource(R.string.appearance_launch_last), Icons.Outlined.History, tileTeal),
-                LaunchRow(stringResource(R.string.appearance_launch_new), Icons.Outlined.ChatBubbleOutline, tileGreen),
-                LaunchRow(stringResource(R.string.appearance_launch_home), Icons.Outlined.Home, tileBlue),
-            )
-            launchRows.forEachIndexed { idx, row ->
-                SettingsChoiceRow(
-                    title = row.label,
-                    selected = launchSession == idx,
-                    onSelect = {
-                        launchSession = idx
-                        prefs.edit().putInt(KEY_LAUNCH_SESSION, idx).apply()
-                    },
-                    leading = {
-                        androidx.compose.material3.Icon(
-                            row.icon,
-                            contentDescription = null,
-                            tint = row.tint,
-                        )
-                    },
-                    showDivider = idx < launchRows.size - 1,
                 )
             }
         }

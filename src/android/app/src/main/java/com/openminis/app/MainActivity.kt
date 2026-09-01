@@ -43,7 +43,6 @@ import com.openminis.app.ui.navigation.safeNavigate
 import com.openminis.app.ui.settings.KEY_FONT_APP_BASE
 import com.openminis.app.ui.settings.KEY_KEEP_SCREEN_AWAKE
 import com.openminis.app.ui.settings.KEY_LANGUAGE
-import com.openminis.app.ui.settings.KEY_LAUNCH_SESSION
 import com.openminis.app.ui.settings.KEY_THEME_MODE
 import com.openminis.app.ui.settings.PREF_APPEARANCE
 import com.openminis.app.ui.settings.getAppearancePrefs
@@ -72,17 +71,6 @@ class MainActivity : ComponentActivity() {
      * synthesised deep-link.
      */
     private var restoredChatSessionId: String? = null
-
-    /**
-     * T293 / issue #10: tracks whether [onStart] has fired at least once, so
-     * that the very first ON_START (the cold-start one — already covered by
-     * [com.openminis.app.ui.navigation.AppNavigation]'s LaunchedEffect that
-     * resolves [KEY_LAUNCH_SESSION]) is skipped here. Subsequent ON_STARTs
-     * are background → foreground transitions, where the launch-session
-     * preference must be honoured again so "New Chat on launch" actually
-     * does what it says when the user resumes from the recents tray.
-     */
-    private var hasResumedFromBackground = false
 
     /**
      * Bridges [OffloadPermissionManager.requestAndroidPermission] to the system
@@ -595,38 +583,6 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         currentChatSessionId?.let {
             outState.putString(KEY_CURRENT_CHAT_SESSION_ID, it)
-        }
-    }
-
-    /**
-     * T293 / issue #10: re-honour the "Launch Session" preference when the
-     * app comes back to the foreground from the recents tray. Cold start
-     * is already covered by [com.openminis.app.ui.navigation.AppNavigation]
-     * resolving [KEY_LAUNCH_SESSION] in its `LaunchedEffect(Unit)` —
-     * skipped here via [hasResumedFromBackground] so we don't double-fire
-     * on the first start.
-     *
-     * Scoped to mode 2 (New Chat). Modes 0 (Auto) / 1 (Last Session) /
-     * 3 (Home) are intentionally NOT re-evaluated on resume — bouncing
-     * the user out of whatever screen they were on every time they
-     * returned from the recents tray would be jarring. "New Chat" is the
-     * only mode whose semantics genuinely demand a fresh chat on every
-     * activation (cold or warm) — that's exactly the user expectation
-     * the issue is reporting on.
-     */
-    override fun onStart() {
-        super.onStart()
-        if (!hasResumedFromBackground) {
-            hasResumedFromBackground = true
-            return
-        }
-        val mode = getAppearancePrefs(this).getInt(KEY_LAUNCH_SESSION, 0)
-        if (mode != 2) return
-        val nav = navController ?: return
-        val newRoute = Routes.chat("__new__${java.util.UUID.randomUUID()}")
-        AppLogger.info("LaunchSession", "resume → mode=NewChat, navigating to $newRoute")
-        nav.safeNavigate(newRoute) {
-            popUpTo(Routes.SESSION_LIST) { inclusive = false }
         }
     }
 
