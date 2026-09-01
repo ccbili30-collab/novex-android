@@ -7,6 +7,11 @@ on:
         description: "Successful preview-candidate run ID; leave blank to promote the latest successful next run"
         required: false
         type: string
+      publish:
+        description: "Publish after verification; leave off for a safe dry run"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: android-promote-stable
@@ -168,6 +173,7 @@ jobs:
             stable > "$RUNNER_TEMP/stable-release-notes.md"
 
       - name: Fast-forward main and create release tag
+        if: ${{ inputs.publish }}
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
@@ -182,6 +188,7 @@ jobs:
           git push origin "$RELEASE_TAG"
 
       - name: Publish stable release without rebuilding
+        if: ${{ inputs.publish }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -211,6 +218,7 @@ jobs:
           retention-days: 30
 
       - name: Open the next preview version
+        if: ${{ inputs.publish }}
         continue-on-error: true
         shell: bash
         env:
@@ -230,3 +238,16 @@ jobs:
           git add src/android/app/build.gradle.kts
           git commit -m "chore(android): open Novex $next_version preview line [skip ci]"
           git push origin next
+
+      - name: Write promotion summary
+        shell: bash
+        run: |
+          {
+            echo "### Android stable candidate"
+            echo
+            echo "- Candidate run: ${{ steps.candidate.outputs.run_id }}"
+            echo "- Source SHA: \`${{ steps.candidate.outputs.source_sha }}\`"
+            echo "- Stable version: \`${{ steps.candidate.outputs.version }}\`"
+            echo "- Artifact verification: passed"
+            echo "- Published: \`${{ inputs.publish }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
