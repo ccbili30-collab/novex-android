@@ -11,6 +11,14 @@ on:
       - ".github/release-notes/**"
   workflow_dispatch:
     inputs:
+      package_channel:
+        description: "Package channel"
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - stable
       stage:
         description: "Preview stage"
         required: true
@@ -103,7 +111,7 @@ jobs:
           done
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/novex-release.jks"
 
-      - name: Run full candidate validation
+      - name: Run stable unit tests
         working-directory: src/android
         env:
           NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
@@ -116,9 +124,24 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
           :app:testStableDebugUnitTest
+
+      - name: Compile preview channel
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.package_channel == 'preview' }}
+        working-directory: src/android
+        env:
+          NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
+          NOVEX_RELEASE_STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
+          NOVEX_RELEASE_KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
+          NOVEX_RELEASE_KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
+        run: >-
+          ./gradlew --no-daemon --stacktrace --max-workers=2
+          -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
           :app:compilePreviewDebugKotlin
 
       - name: Build signed preview package
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.package_channel == 'preview' }}
         working-directory: src/android
         env:
           NOVEX_VERSION_NAME: ${{ steps.versions.outputs.preview }}
@@ -134,6 +157,7 @@ jobs:
           :app:assemblePreviewRelease
 
       - name: Build signed stable candidate once
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_channel == 'stable' }}
         working-directory: src/android
         env:
           NOVEX_VERSION_NAME: ${{ steps.versions.outputs.stable }}
@@ -148,7 +172,8 @@ jobs:
           -Pkotlin.compiler.execution.strategy=in-process
           :app:assembleStableRelease
 
-      - name: Verify and stage candidate packages
+      - name: Verify and stage preview package
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.package_channel == 'preview' }}
         shell: bash
         env:
           EXPECTED_CERT_SHA256: cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6
@@ -168,6 +193,13 @@ jobs:
               sed 's#^./##' | sort | xargs sha256sum > SHA256SUMS.txt
           )
 
+      - name: Verify and stage stable candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_channel == 'stable' }}
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6
+        run: |
+          rm -rf dist/candidate
           ./scripts/verify_android_release.sh \
             src/android/app/build/outputs/apk/stable/release/app-stable-release.apk \
             "v${{ steps.versions.outputs.stable }}" \
@@ -188,6 +220,7 @@ jobs:
           EOF
 
       - name: Upload reusable stable candidate
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_channel == 'stable' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: novex-stable-candidate
@@ -196,6 +229,7 @@ jobs:
           retention-days: 30
 
       - name: Publish preview update
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.package_channel == 'preview' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

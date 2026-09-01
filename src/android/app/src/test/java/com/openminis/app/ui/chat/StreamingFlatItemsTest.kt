@@ -43,14 +43,63 @@ class StreamingFlatItemsTest {
     }
 
     @Test
-    fun completedReplyMayFreezeIntoMultipleMarkdownRows() {
+    fun latestReplyKeepsTheSameBodyRowWhenStreamingEnds() {
+        val live = bodyRows(
+            buildFlatChatItems(
+                listOf(streamingMessage("第一段。\n\n第二段。\n\n第三段。", streaming = true)),
+            ),
+        )
         val frozen = bodyRows(
             buildFlatChatItems(
                 listOf(streamingMessage("第一段。\n\n第二段。\n\n第三段。", streaming = false)),
             ),
         )
 
-        assertTrue("输出结束后允许按段冻结正文", frozen.size > 1)
+        assertEquals("流式结束不能把当前正文替换成一批新列表行", 1, frozen.size)
+        assertEquals("流式与最终排版必须保留同一个列表行锚点", live.single().key, frozen.single().key)
+    }
+
+    @Test
+    fun olderReplyStillFreezesIntoVirtualizedMarkdownRows() {
+        val rows = bodyRows(
+            buildFlatChatItems(
+                listOf(
+                    streamingMessage("第一段。\n\n第二段。\n\n第三段。", streaming = false),
+                    ChatMessage(id = "user-2", role = "user", content = "继续"),
+                ),
+            ),
+        )
+
+        assertTrue("离开活动尾部后仍应拆分长正文，避免冷历史成为超高单行", rows.size > 1)
+    }
+
+    @Test
+    fun toolStatusAndGeneratedArtifactGrowthKeepTheSameRowKey() {
+        fun rows(status: ToolBlockStatus) = buildFlatChatItems(
+            listOf(
+                ChatMessage(
+                    id = "assistant-tool",
+                    role = "assistant",
+                    content = "",
+                    isStreaming = status != ToolBlockStatus.SUCCESS,
+                    toolBlocks = listOf(
+                        AssistantBlock(
+                            id = "image-tool",
+                            kind = "tool_use",
+                            toolName = "generate_image",
+                            toolStatus = status,
+                            imageFilePath = if (status == ToolBlockStatus.SUCCESS) "/tmp/result.png" else null,
+                        ),
+                    ),
+                ),
+            ),
+        ).filterIsInstance<FlatChatItem.AssistantToolUse>()
+
+        assertEquals(
+            "工具卡和图片完成重测不能更换列表锚点",
+            rows(ToolBlockStatus.RUNNING).single().key,
+            rows(ToolBlockStatus.SUCCESS).single().key,
+        )
     }
 
     @Test

@@ -295,6 +295,7 @@ internal fun UserMessageBubble(
     onShare: (() -> Unit)? = null,
     onRetry: (() -> Unit)? = {},
     onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onWithdraw: (() -> Unit)? = null,
     onPreviewFile: (Uri, String) -> Unit = { _, _ -> },
 ) {
@@ -522,6 +523,13 @@ internal fun UserMessageBubble(
                         text = { Text(stringResource(R.string.chat_longpress_edit)) },
                         onClick = { showMenu = false; onEdit() },
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    )
+                }
+                if (onDelete != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.chat_longpress_delete_from_here)) },
+                        onClick = { showMenu = false; onDelete() },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
             }

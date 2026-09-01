@@ -620,6 +620,21 @@ class ChatViewModel(
      */
     val listState: LazyListState = LazyListState(0, 0)
 
+    // A chronological LazyColumn starts at its oldest row. Each session-scoped
+    // ViewModel consumes exactly one initial navigation to the newest row; the
+    // flag then survives forward navigation together with listState so returning
+    // to the conversation preserves the reader's actual position.
+    private var needsInitialTranscriptPositioning = true
+
+    val isTranscriptViewportPositioned: Boolean
+        get() = !needsInitialTranscriptPositioning
+
+    fun consumeInitialTranscriptPositioning(): Boolean {
+        if (!needsInitialTranscriptPositioning) return false
+        needsInitialTranscriptPositioning = false
+        return true
+    }
+
     fun setInputText(value: String) {
         _inputText.value = value
     }
@@ -741,16 +756,9 @@ class ChatViewModel(
     val requestBudgetEvent: SharedFlow<ImageBudget.RequestBudgetPlan> = _requestBudgetEvent.asSharedFlow()
 
     /**
-     * [T-android-tool-autoscroll] Fire-and-forget edge events that ask the
-     * ChatScreen to scroll the LazyColumn to the visual bottom (index 0 under
-     * reverseLayout). Distinct from the streaming-auto-follow collector — that
-     * pipeline needs growth ticks to advance its distinctUntilChanged tuple,
-     * but agent-loop START events (sendMessage, resume / "Continue", retry)
-     * produce only a brief thinking placeholder before any content streams.
-     * Without an explicit edge signal, the placeholder + composer interaction
-     * area sits behind the input bar until the model's first token arrives
-     * and the regular auto-follow finally fires. Each ViewModel entry that
-     * starts a fresh agent-loop turn emits to this flow.
+     * Fire-and-forget edge events for explicit resume/retry actions. ChatScreen
+     * responds with one navigation to the chronological tail. No stream token,
+     * image decode or later row remeasure can repeat that movement.
      */
     private val _forceScrollToBottom = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val forceScrollToBottom: SharedFlow<Unit> = _forceScrollToBottom.asSharedFlow()
@@ -5189,85 +5197,97 @@ class ChatViewModel(
      * from retryFromMessage but offsets by `entity.sortOrder` (not
      * +1) — retry preserves the original turn, edit replaces it.
      */
-    private suspend fun truncateBeforeEdit(messageId: String) {
-        val messages = _messages.value
-        val index = messages.indexOfFirst { it.id == messageId }
-        if (index < 0) return
+    private suspend fun truncateBeforeEdit(messageId: String): Boolean =
+        rewindConversationFromMessage(messageId, reason = "edit")
 
-        val deletedMessages = messages.subList(index, messages.size).toList()
-        // [T-android-uimessages-sublist-cme] Defensive: without `.toList()` this
-        // stores a live subList VIEW as `_messages.value`.
-        //
-        // Reproduced on device with this `.toList()` reverted (Pixel 4a): the
-        // truncation ran (8 messages → 4) and a further message was sent, and it
-        // did NOT crash — the next `+` copies the view into a plain ArrayList
-        // before anything can invalidate it. So this line is hardening, not the
-        // proven cause of the reported CME. See the long note on `uiMessages`.
-        // (`deletedMessages` above already copies; this line did not.)
-        val kept = messages.subList(0, index).toList()
-        _messages.value = kept
+    /**
+     * Delete [messageId] and every later turn from the visible transcript,
+     * persisted history and model history. The persisted source id is the
+     * anchor — ordinal user-message counting is unsafe once hidden synthetic
+     * tool rows or attachment-only rows exist.
+     */
+    private suspend fun rewindConversationFromMessage(
+        messageId: String,
+        reason: String,
+    ): Boolean {
+        val plan = ConversationTimelineMutation.inclusive(_messages.value, messageId)
+            ?: return false
+        val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
+        val dbMessages = chatRepository.loadMessages(sid)
+        val cutoff = dbMessages.firstOrNull { it.id == plan.cutoffDbMessageId }
+        if (cutoff == null) {
+            AppLogger.error(
+                TAG_STREAM,
+                "timeline rewind failed reason=$reason message=${messageId.take(8)} " +
+                    "source=${plan.cutoffDbMessageId.take(8)}: persisted row missing",
+            )
+            return false
+        }
+
+        // Persist first. If storage fails, keep the visible transcript intact
+        // rather than showing a rewritten branch that returns after reload.
+        // If the summary contains this turn, keeping it would silently feed
+        // the old reply back to the model even though its bubbles are gone —
+        // exactly the reported "edited but remembered" failure mode. All
+        // markers are chained, so the DAO invalidates the set atomically with
+        // message deletion.
+        chatRepository.rewindMessagesFrom(
+            sessionId = sid,
+            cutoffSortOrder = cutoff.sortOrder,
+            invalidateCompactMarkers = plan.invalidateCompactMarkers,
+        )
+        val remaining = chatRepository.loadMessages(sid)
+        chatRepository.refreshSessionPreviewFromHistory(sid, remaining)
+
+        revokeMemoryWritesInDeletedMessages(plan.deletedMessages)
+        val retained = if (plan.invalidateCompactMarkers) {
+            plan.retainedMessages.map { it.copy(isCompactedHistory = false) }
+        } else {
+            plan.retainedMessages
+        }
+        _messages.value = retained
+        val keptIds = retained.mapTo(mutableSetOf()) { it.id }
+        retainStreamFlushStates(keptIds)
         if (_streamingById.value.isNotEmpty()) {
-            val keptIds = kept.mapTo(mutableSetOf()) { it.id }
-            retainStreamFlushStates(keptIds)
             _streamingById.value = _streamingById.value.filterKeys { it in keptIds }
         }
-        revokeMemoryWritesInDeletedMessages(deletedMessages)
-
-        val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
-        // Visible-user index of the *edited* message — count user turns
-        // strictly before `index`, which is the 0-based ordinal of the
-        // edited turn itself.
-        val visibleUserIndex = messages.subList(0, index).count { it.role == "user" }
-        val dbMessages = chatRepository.loadMessages(sid)
-        var visibleUserCount = 0
-        var cutoffSortOrder = -1
-        for (entity in dbMessages) {
-            if (entity.role == "user") {
-                val hasText = try {
-                    val arr = org.json.JSONArray(entity.partsJson)
-                    (0 until arr.length()).any { i ->
-                        val o = arr.getJSONObject(i)
-                        // [T-android-retry-attachment-loss] Exclude the now-
-                        // persisted <user-attached-files> XML text part so this
-                        // "is this a visible user bubble?" count stays identical
-                        // to pre-XML-persistence behaviour. An attachments-only
-                        // turn must NOT flip to hasText just because the XML
-                        // inventory is now a text part — that would shift the
-                        // retry/edit cutoff onto the wrong message.
-                        // [T-ios-retry-anchor-synthetic-user] Likewise exclude
-                        // resume()'s synthetic stop-continue <system-reminder>
-                        // user row — it has no UI bubble, so counting it shifts
-                        // the cutoff one user message too early.
-                        o.optString("type") == "text" &&
-                            stripAttachedFilesXml(o.optString("value", "")).isNotBlank() &&
-                            !o.optString("value", "").trimStart().startsWith("<system-reminder>")
-                    }
-                } catch (_: Exception) { true }
-                if (hasText) {
-                    if (visibleUserCount == visibleUserIndex) {
-                        // ChatDao.deleteMessagesAfter is `sort_order >= keepCount`
-                        // → passing this row's sortOrder deletes IT and everything
-                        // after, which is exactly what edit semantics want.
-                        cutoffSortOrder = entity.sortOrder
-                        break
-                    }
-                    visibleUserCount++
-                }
-            }
-        }
-        if (cutoffSortOrder >= 0) {
-            chatRepository.deleteMessagesAfter(sid, cutoffSortOrder)
+        if (plan.invalidateCompactMarkers) {
+            _compactSummary.value = null
+            _cachedLatestMarker = null
         }
         agentHistory.clear()
         toolLoopDetector.reset()
-        val remaining = chatRepository.loadMessages(sid)
-        for (entity in remaining) {
-            agentHistory.add(entity.toLLMMessage())
-        }
+        remaining.forEach { agentHistory.add(it.toLLMMessage()) }
+        _canResume.value = false
+
         AppLogger.info(
             TAG_STREAM,
-            "✏️ truncateBeforeEdit cutoffSortOrder=$cutoffSortOrder remaining=${remaining.size}"
+            "timeline rewind reason=$reason cutoff=${cutoff.sortOrder} remaining=${remaining.size} " +
+                "compactInvalidated=${plan.invalidateCompactMarkers}",
         )
+        return true
+    }
+
+    /** Long-press delete: remove this user turn and the branch after it. */
+    fun deleteFromMessage(messageId: String) {
+        if (_isStreaming.value) return
+        _editingMessageId.value = null
+        _isStreaming.value = true
+        viewModelScope.launch {
+            try {
+                if (!rewindConversationFromMessage(messageId, reason = "delete")) {
+                    _error.value = "无法定位要删除的消息，请重新打开对话后重试"
+                }
+            } catch (error: Exception) {
+                AppLogger.error(
+                    TAG_STREAM,
+                    "timeline delete failed ${error::class.java.simpleName}: ${error.message}",
+                )
+                _error.value = "删除失败：${error.message ?: error::class.java.simpleName}"
+            } finally {
+                _isStreaming.value = false
+            }
+        }
     }
 
     /**
@@ -5695,7 +5715,10 @@ class ChatViewModel(
             val activeSessionId = ensureSession()
 
             if (editingId != null) {
-                truncateBeforeEdit(editingId)
+                if (!truncateBeforeEdit(editingId)) {
+                    _error.value = "无法定位原消息，已取消编辑发送；请重新打开对话后重试"
+                    return@launch
+                }
             }
 
             val prepared = prepareUserAttachments(currentAttachments, activeSessionId)
@@ -10890,11 +10913,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // turn-limit banner on the next reload.
         clearPersistedLastAssistantError()
         AppLogger.info(TAG, "▶️ resume: continuing partial assistant message (no new header emitted)")
-        // [T-android-tool-autoscroll] Start-of-turn snap. The thinking
-        // placeholder is the only visible delta until the model's first
-        // token, and the auto-follow tuple won't advance until content
-        // streams — ChatScreen would otherwise leave the placeholder
-        // behind the input bar.
+        // Resume is explicit navigation intent: reveal its thinking placeholder
+        // once, then let the reply grow without moving the viewport.
         _forceScrollToBottom.tryEmit(Unit)
 
         // If history ends with assistant (Case 2: text-cancel committed a

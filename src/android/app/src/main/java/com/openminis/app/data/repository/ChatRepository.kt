@@ -360,6 +360,12 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int) =
         dao.deleteMessagesAfter(sessionId, keepCount)
 
+    suspend fun rewindMessagesFrom(
+        sessionId: String,
+        cutoffSortOrder: Int,
+        invalidateCompactMarkers: Boolean,
+    ) = dao.rewindMessagesFrom(sessionId, cutoffSortOrder, invalidateCompactMarkers)
+
     /**
      * Rewrite a single message row's parts_json in place. Used by
      * [com.openminis.app.ui.chat.ChatViewModel.rerunFromToolBlock]'s block-
@@ -433,6 +439,16 @@ class ChatRepository(internal val dao: ChatDao) {
      */
     suspend fun updateSessionPreview(sessionId: String, partsJson: String) {
         val preview = extractTextPreview(partsJson) ?: return
+        dao.updateLastMessage(sessionId, preview, System.currentTimeMillis())
+    }
+
+    /** Recompute the session-list preview after an inclusive history rewind. */
+    suspend fun refreshSessionPreviewFromHistory(
+        sessionId: String,
+        remainingMessages: List<MessageEntity>? = null,
+    ) {
+        val remaining = remainingMessages ?: loadMessages(sessionId)
+        val preview = remaining.lastOrNull()?.let { extractTextPreview(it.partsJson) }
         dao.updateLastMessage(sessionId, preview, System.currentTimeMillis())
     }
 

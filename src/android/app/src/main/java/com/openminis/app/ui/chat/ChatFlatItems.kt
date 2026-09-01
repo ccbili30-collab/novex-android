@@ -640,6 +640,12 @@ internal fun buildFlatChatItems(
         val lastBlockId = blocks.lastOrNull()?.id
         val lastTextIdx = blocks.indexOfLast { it.kind == "text" }
         val hasAnyTextBlock = lastTextIdx >= 0
+        // Keep the newest assistant body in one stable row across the
+        // streaming -> completed transition. Replacing the live AssistantText
+        // with several markdown rows invalidates the active viewport anchor at
+        // exactly the moment final formatting remeasures the content.
+        val isTailAssistantMessage = idx == messages.lastIndex ||
+            (idx + 1 until messages.size).all { messages[it].role == "system" }
         // Only the last cancelled tool_use in the message gets the Retry button —
         // retryLast() re-runs the whole turn, so one button is enough.
         val lastCancelledToolId = blocks.lastOrNull { it.kind == "tool_use" && it.toolStatus == ToolBlockStatus.CANCELLED }?.id
@@ -655,11 +661,11 @@ internal fun buildFlatChatItems(
                         // sibling row or moves the list anchor. Once the turn
                         // freezes, the existing markdown-fragment path below
                         // may split it for cold-history rendering.
-                        if (message.isStreaming) {
+                        if (message.isStreaming || isTailAssistantMessage) {
                             out.add(dedupe(FlatChatItem.AssistantText(
                                 messageId = message.id,
                                 block = block,
-                                isStreaming = true,
+                                isStreaming = message.isStreaming,
                                 messageMarkdown = joinedMarkdown,
                             )))
                             return@forEachIndexed

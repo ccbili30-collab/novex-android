@@ -1295,7 +1295,11 @@
 
     <!-- T187 — user-bubble long-press Edit + Exit Edit Mode + Clear Chat dialog -->
     <string name="chat_longpress_edit">Edit</string>
+    <string name="chat_longpress_delete_from_here">Delete from here</string>
     <string name="chat_edit_exit_button">Exit Edit Mode</string>
+    <string name="chat_delete_from_here_title">Delete this branch?</string>
+    <string name="chat_delete_from_here_body">This message and every reply after it will be removed. Earlier messages and chat files are kept.</string>
+    <string name="chat_delete_from_here_confirm">Delete</string>
     <string name="chat_clear_dialog_body">Remove all messages from this session? Files in workspace, attachments, and offloads are kept.</string>
     <string name="chat_clear_dialog_confirm">Clear</string>
 

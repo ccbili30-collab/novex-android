@@ -2,6 +2,7 @@ package com.openminis.app.provider.image
 
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ProviderType
+import com.openminis.app.logging.AppLogger
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,17 +23,25 @@ object ImageModelCatalog {
         providerType: ProviderType,
         baseURL: String,
         apiKey: String,
+        appendV1Suffix: Boolean = false,
     ): List<LLMModel> = withContext(Dispatchers.IO) {
         when (providerType) {
             ProviderType.gemini -> fetchGemini(baseURL, apiKey)
-            else -> fetchOpenAICompatible(baseURL, apiKey)
+            else -> fetchOpenAICompatible(baseURL, apiKey, appendV1Suffix)
         }
     }
 
-    private fun fetchOpenAICompatible(baseURL: String, apiKey: String): List<LLMModel> {
+    private fun fetchOpenAICompatible(
+        baseURL: String,
+        apiKey: String,
+        appendV1Suffix: Boolean,
+    ): List<LLMModel> {
         val official = baseURL.contains("api.openai.com", ignoreCase = true)
+        val effectiveBase = baseURL.trimEnd('/').let { base ->
+            if (appendV1Suffix && !base.endsWith("/v1")) "$base/v1" else base
+        }
         val request = Request.Builder()
-            .url(baseURL.trimEnd('/') + "/models")
+            .url("$effectiveBase/models")
             .apply {
                 if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
             }
@@ -107,11 +116,41 @@ object ImageModelCatalog {
     private fun <T> execute(request: Request, parse: (String) -> T): T {
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
+            val contentType = response.header("Content-Type").orEmpty()
+            val safeUrl = request.url.newBuilder().query(null).build().toString()
+            val compactBody = body.replace(Regex("\\s+"), " ").take(2_000)
             if (!response.isSuccessful) {
-                val detail = body.replace(Regex("\\s+"), " ").take(500)
+                AppLogger.error(
+                    "ImageModelCatalog",
+                    "model list failed url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
+                )
+                val detail = compactBody.take(500)
                 error("HTTP ${response.code}${detail.takeIf(String::isNotBlank)?.let { "：$it" }.orEmpty()}")
             }
-            return parse(body)
+            val trimmed = body.trimStart()
+            val isHtml = contentType.contains("text/html", ignoreCase = true) ||
+                trimmed.startsWith("<!doctype", ignoreCase = true) ||
+                trimmed.startsWith("<html", ignoreCase = true)
+            if (isHtml) {
+                AppLogger.error(
+                    "ImageModelCatalog",
+                    "model list returned HTML url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
+                )
+                error("模型列表地址返回了网页而不是 JSON，请检查“自动补 /v1”开关（请求地址：$safeUrl）")
+            }
+            return try {
+                parse(body)
+            } catch (error: Exception) {
+                AppLogger.error(
+                    "ImageModelCatalog",
+                    "model list parse failed url=$safeUrl status=${response.code} contentType=$contentType " +
+                        "error=${error::class.java.simpleName}: ${error.message} body=$compactBody",
+                )
+                throw IllegalStateException(
+                    "模型列表响应不是有效的 JSON（请求地址：$safeUrl）",
+                    error,
+                )
+            }
         }
     }
 

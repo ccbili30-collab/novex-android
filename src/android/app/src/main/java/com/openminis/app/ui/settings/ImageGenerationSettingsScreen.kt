@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -206,6 +207,9 @@ fun ImageGenerationSourceScreen(
     var sourceEndpoint by remember(sourceId) {
         mutableStateOf(initial?.imageEndpointMode ?: ImageEndpointMode.auto)
     }
+    var appendV1Suffix by remember(sourceId) {
+        mutableStateOf(initial?.appendV1Suffix ?: true)
+    }
     var protocolExpanded by remember { mutableStateOf(false) }
     var endpointExpanded by remember { mutableStateOf(false) }
     var pulling by remember { mutableStateOf(false) }
@@ -239,7 +243,7 @@ fun ImageGenerationSourceScreen(
         )).copy(
             label = label.trim(),
             customBaseURL = apiBase.trim().trimEnd('/'),
-            appendV1Suffix = false,
+            appendV1Suffix = providerType != ProviderType.gemini && appendV1Suffix,
             imageEndpointMode = if (providerType == ProviderType.openAI) sourceEndpoint else ImageEndpointMode.chatCompletions,
             imageEndpointResolved = null,
             isEnabled = true,
@@ -270,6 +274,7 @@ fun ImageGenerationSourceScreen(
                         providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI,
                         baseURL = apiBase.trim().trimEnd('/'),
                         apiKey = apiKey.trim(),
+                        appendV1Suffix = protocol == ImageProtocol.OPENAI && appendV1Suffix,
                     )
                 }
             }
@@ -350,6 +355,30 @@ fun ImageGenerationSourceScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             )
+            if (protocol == ImageProtocol.OPENAI) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("自动补全 /v1")
+                        Text(
+                            if (appendV1Suffix) {
+                                "填写域名即可；请求时自动补上 /v1"
+                            } else {
+                                "完全按填写的 API 地址请求"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = appendV1Suffix,
+                        onCheckedChange = { appendV1Suffix = it; status = null },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = { apiKey = it; status = null },

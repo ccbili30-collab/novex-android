@@ -1115,7 +1115,11 @@
 
     <!-- T187 — user-bubble long-press Edit + Exit Edit + Clear Chat dialog -->
     <string name="chat_longpress_edit">编辑</string>
+    <string name="chat_longpress_delete_from_here">从这里删除</string>
     <string name="chat_edit_exit_button">退出编辑</string>
+    <string name="chat_delete_from_here_title">删除这条时间线？</string>
+    <string name="chat_delete_from_here_body">这条消息及其后的所有回复都会被删除，更早的消息和对话文件会保留。</string>
+    <string name="chat_delete_from_here_confirm">删除</string>
     <string name="chat_clear_dialog_body">删除此会话的所有消息？工作区文件、附件和卸载内容会保留。</string>
     <string name="chat_clear_dialog_confirm">清除</string>
 

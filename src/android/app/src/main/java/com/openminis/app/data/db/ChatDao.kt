@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RawQuery
+import androidx.room.Transaction
 import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
@@ -203,6 +204,17 @@ interface ChatDao {
 
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND sort_order >= :keepCount")
     suspend fun deleteMessagesAfter(sessionId: String, keepCount: Int)
+
+    /** Atomically remove a conversation branch and any summary built from it. */
+    @Transaction
+    suspend fun rewindMessagesFrom(
+        sessionId: String,
+        cutoffSortOrder: Int,
+        invalidateCompactMarkers: Boolean,
+    ) {
+        deleteMessagesAfter(sessionId, cutoffSortOrder)
+        if (invalidateCompactMarkers) deleteCompactMarkers(sessionId)
+    }
 
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun totalMessageCount(): Int
