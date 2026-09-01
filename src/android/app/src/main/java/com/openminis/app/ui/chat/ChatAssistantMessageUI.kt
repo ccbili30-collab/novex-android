@@ -888,6 +888,65 @@ internal fun ToolCallPill(
         // other entry points (long-press menu, etc.).
         // iOS: Spacer(minLength: 0) — pill stays content-width, not full-row-width
     }
+
+    generatedImageArtifact(block)?.let { artifact ->
+        GeneratedImageArtifactCard(artifact)
+    }
+}
+
+/**
+ * A fixed-height surface prevents asynchronous image decoding from changing the
+ * transcript geometry and moving the reader. Full resolution, saving, and
+ * sharing are handled by the existing full-screen image viewer.
+ */
+@Composable
+private fun GeneratedImageArtifactCard(artifact: GeneratedImageArtifact) {
+    val openImage = LocalMarkdownUrlClickHandler.current
+    var imageLoadFailed by remember(artifact.filePath) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp, bottom = 3.dp)
+            .height(240.dp)
+            .clip(shape)
+            .background(ChatColors.toolCapsuleBg)
+            .border(0.5.dp, ChatColors.toolBorder, shape)
+            .clickable(enabled = !imageLoadFailed && openImage != null) {
+                openImage?.invoke(Uri.fromFile(File(artifact.filePath)).toString())
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = File(artifact.filePath),
+            contentDescription = artifact.title,
+            contentScale = ContentScale.Fit,
+            onSuccess = { imageLoadFailed = false },
+            onError = { imageLoadFailed = true },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        if (imageLoadFailed) {
+            Text(
+                text = stringResource(R.string.generated_image_unavailable),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(20.dp),
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.generated_image_open_save_hint),
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(10.dp)
+                    .background(Color.Black.copy(alpha = 0.58f), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+    }
 }
 
 // iOS-style bouncing dots (3 dots, easeInOut, staggered delay)

@@ -825,4 +825,6 @@
     </plurals>
     <string name="model_picker_quick_test">快速測試</string>
     <string name="provider_no_key_required">無需金鑰</string>
+    <string name="generated_image_open_save_hint">點擊查看或儲存</string>
+    <string name="generated_image_unavailable">生成的圖片檔案不可用</string>
 </resources>

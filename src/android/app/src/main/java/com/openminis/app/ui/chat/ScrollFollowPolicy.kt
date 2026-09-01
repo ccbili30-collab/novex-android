@@ -9,13 +9,13 @@ internal enum class StreamingFollowEvent {
 }
 
 /**
- * A blank draft has no reader-confirmed bottom anchor yet. Starting it detached
- * prevents the first growing reply from repeatedly moving the whole short
- * transcript upward. Existing conversations may restore their saved bottom
- * position and will still detach on the first real user drag.
+ * Restoring or opening a conversation must not grant the application permission
+ * to move the viewport. The transcript remains detached until the user performs
+ * a direct navigation action.
  */
-internal fun initialStreamingFollowEnabled(isFreshConversation: Boolean): Boolean =
-    !isFreshConversation
+internal fun initialStreamingFollowEnabled(
+    @Suppress("UNUSED_PARAMETER") isFreshConversation: Boolean,
+): Boolean = false
 
 internal const val STREAMING_FOLLOW_BOTTOM_THRESHOLD_DP = 4
 
@@ -29,42 +29,31 @@ internal fun isInsideStreamingFollowBottomZone(
     (STREAMING_FOLLOW_BOTTOM_THRESHOLD_DP * pixelsPerDp).toInt()
 
 /**
- * Streaming follow is an explicit user-intent state, not a side effect of
- * transient LazyColumn geometry. A real finger drag suspends follow
- * immediately; only an actual return to the bottom (or an explicit send / jump
- * request) enables it again.
+ * Navigation buttons perform their own one-shot scroll. They deliberately do
+ * not leave behind a live-follow latch: a later token, image decode, keyboard
+ * resize, or LazyColumn remeasure must not move the reader again.
  */
 internal fun reduceStreamingFollow(
-    current: Boolean,
-    event: StreamingFollowEvent,
-): Boolean = when (event) {
-    StreamingFollowEvent.UserDragStarted,
-    StreamingFollowEvent.UserDragStoppedAway -> false
-    StreamingFollowEvent.UserTurnStarted,
-    StreamingFollowEvent.UserDragStoppedAtBottom -> current
-    StreamingFollowEvent.ExplicitBottomRequested -> true
-}
+    @Suppress("UNUSED_PARAMETER") current: Boolean,
+    @Suppress("UNUSED_PARAMETER") event: StreamingFollowEvent,
+): Boolean = false
 
 /** Only a confirmed live-tail attachment may move the viewport during growth. */
 internal fun shouldFollowStreamingGrowth(
-    isStreaming: Boolean,
-    streamingFollowEnabled: Boolean,
-    userScrolledAway: Boolean,
-    scrollInProgress: Boolean,
-    millisSinceUserInterrupt: Long,
-): Boolean = isStreaming &&
-    streamingFollowEnabled &&
-    !userScrolledAway &&
-    !scrollInProgress &&
-    millisSinceUserInterrupt >= 1_000L
+    @Suppress("UNUSED_PARAMETER") isStreaming: Boolean,
+    @Suppress("UNUSED_PARAMETER") streamingFollowEnabled: Boolean,
+    @Suppress("UNUSED_PARAMETER") userScrolledAway: Boolean,
+    @Suppress("UNUSED_PARAMETER") scrollInProgress: Boolean,
+    @Suppress("UNUSED_PARAMETER") millisSinceUserInterrupt: Long,
+): Boolean = false
 
 /**
  * Short detached conversations grow from the visual top. Bottom alignment is
  * reserved for a reader-confirmed live-tail attachment.
  */
 internal fun shouldAlignShortConversationToBottom(
-    streamingFollowEnabled: Boolean,
-): Boolean = streamingFollowEnabled
+    @Suppress("UNUSED_PARAMETER") streamingFollowEnabled: Boolean,
+): Boolean = false
 
 /**
  * A post-scroll settle belongs only to a completed finger drag. Compose also

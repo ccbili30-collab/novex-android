@@ -1560,4 +1560,6 @@
     </plurals>
     <string name="model_picker_quick_test">快速测试</string>
     <string name="provider_no_key_required">无需密钥</string>
+    <string name="generated_image_open_save_hint">点击查看或保存</string>
+    <string name="generated_image_unavailable">生成的图片文件不可用</string>
 </resources>

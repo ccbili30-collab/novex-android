@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ScrollFollowPolicyTest {
     @Test
-    fun freshConversationStaysDetachedUntilBottomButtonIsExplicitlyRequested() {
+    fun freshConversationStaysDetachedAfterOneShotBottomNavigation() {
         var following = initialStreamingFollowEnabled(isFreshConversation = true)
 
         following = reduceStreamingFollow(
@@ -37,8 +37,8 @@ class ScrollFollowPolicyTest {
             StreamingFollowEvent.ExplicitBottomRequested,
         )
 
-        assertTrue(following)
-        assertTrue(shouldAlignShortConversationToBottom(following))
+        assertFalse(following)
+        assertFalse(shouldAlignShortConversationToBottom(following))
     }
 
     @Test
@@ -52,13 +52,36 @@ class ScrollFollowPolicyTest {
     }
 
     @Test
-    fun existingConversationMayRestoreBottomFollow() {
-        assertTrue(initialStreamingFollowEnabled(isFreshConversation = false))
+    fun existingConversationRestoresWithoutAutomaticViewportMovement() {
+        assertFalse(initialStreamingFollowEnabled(isFreshConversation = false))
     }
 
     @Test
-    fun confirmedBottomFollowsOnlyActiveUninterruptedGrowth() {
-        assertTrue(
+    fun sendingFromBottomDetachesAutomaticFollow() {
+        assertFalse(
+            reduceStreamingFollow(
+                current = true,
+                event = StreamingFollowEvent.UserTurnStarted,
+            ),
+        )
+    }
+
+    @Test
+    fun passiveStreamingGrowthNeverMovesTheViewport() {
+        assertFalse(
+            shouldFollowStreamingGrowth(
+                isStreaming = true,
+                streamingFollowEnabled = true,
+                userScrolledAway = false,
+                scrollInProgress = false,
+                millisSinceUserInterrupt = 5_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun evenConfirmedBottomDoesNotForcePassiveGrowth() {
+        assertFalse(
             shouldFollowStreamingGrowth(
                 isStreaming = true,
                 streamingFollowEnabled = true,
@@ -127,8 +150,8 @@ class ScrollFollowPolicyTest {
     }
 
     @Test
-    fun explicitSendOrBottomRequestEnablesFollow() {
-        assertTrue(
+    fun explicitBottomRequestDoesNotLeaveALiveFollowLatch() {
+        assertFalse(
             reduceStreamingFollow(false, StreamingFollowEvent.ExplicitBottomRequested),
         )
     }

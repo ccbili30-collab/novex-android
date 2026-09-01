@@ -1705,4 +1705,6 @@
     <string name="browser_downloads_failed">Failed</string>
     <string name="browser_downloads_open">Open</string>
     <string name="provider_no_key_required">No key required</string>
+    <string name="generated_image_open_save_hint">Tap to view or save</string>
+    <string name="generated_image_unavailable">The generated image file is unavailable</string>
 </resources>
