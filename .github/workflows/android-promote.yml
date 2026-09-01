@@ -1,0 +1,232 @@
+name: Android promote stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: "Successful preview-candidate run ID; leave blank to promote the latest successful next run"
+        required: false
+        type: string
+
+concurrency:
+  group: android-promote-stable
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  promote:
+    name: Verify and promote tested artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out release controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and download candidate
+        id: candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          run_id="${REQUESTED_RUN_ID//[[:space:]]/}"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh run list \
+              --workflow android-preview.yml \
+              --branch next \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')"
+          fi
+          if ! [[ "$run_id" =~ ^[0-9]+$ ]]; then
+            echo "No successful preview candidate run is available." >&2
+            exit 1
+          fi
+
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          conclusion="$(printf '%s' "$run_json" | jq -r '.conclusion')"
+          head_branch="$(printf '%s' "$run_json" | jq -r '.head_branch')"
+          run_sha="$(printf '%s' "$run_json" | jq -r '.head_sha')"
+          workflow_path="$(printf '%s' "$run_json" | jq -r '.path')"
+          if [ "$conclusion" != "success" ] || [ "$head_branch" != "next" ]; then
+            echo "Run $run_id is not a successful next-branch candidate." >&2
+            exit 1
+          fi
+          if [[ "$workflow_path" != */android-preview.yml ]]; then
+            echo "Run $run_id did not come from android-preview.yml." >&2
+            exit 1
+          fi
+
+          gh run download "$run_id" \
+            --name novex-stable-candidate \
+            --dir candidate-download
+          metadata="candidate-download/candidate.env"
+          if [ ! -s "$metadata" ]; then
+            echo "Candidate metadata is missing." >&2
+            exit 1
+          fi
+          read_value() {
+            sed -n "s/^$1=//p" "$metadata" | tail -1
+          }
+          source_sha="$(read_value SOURCE_SHA)"
+          stable_version="$(read_value STABLE_VERSION)"
+          recorded_run_id="$(read_value CANDIDATE_RUN_ID)"
+          signer_sha256="$(read_value SIGNER_SHA256)"
+          if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || [ "$source_sha" != "$run_sha" ]; then
+            echo "Candidate source SHA does not match its workflow run." >&2
+            exit 1
+          fi
+          if ! [[ "$stable_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Candidate stable version is invalid: $stable_version" >&2
+            exit 1
+          fi
+          if [ "$recorded_run_id" != "$run_id" ]; then
+            echo "Candidate run ID does not match its artifact metadata." >&2
+            exit 1
+          fi
+          if ! [[ "$signer_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Candidate signer metadata is invalid." >&2
+            exit 1
+          fi
+
+          {
+            echo "run_id=$run_id"
+            echo "source_sha=$source_sha"
+            echo "version=$stable_version"
+            echo "tag=v$stable_version"
+            echo "signer_sha256=$signer_sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify source can be promoted
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          git fetch origin main next --tags
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
+            echo "Candidate is not a fast-forward of main." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/next; then
+            echo "Candidate is no longer part of next." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            tagged_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [ "$tagged_sha" != "$SOURCE_SHA" ]; then
+              echo "Release tag $RELEASE_TAG belongs to another source commit." >&2
+              exit 1
+            fi
+          fi
+
+      - name: Set up Android SDK verifier
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: ""
+
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "build-tools;35.0.0"
+
+      - name: Verify exact signed candidate
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: ${{ steps.candidate.outputs.signer_sha256 }}
+          RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          (
+            cd candidate-download
+            sha256sum --check SHA256SUMS.txt
+          )
+          ./scripts/verify_android_release.sh \
+            candidate-download/novex.apk \
+            "$RELEASE_TAG" \
+            dist \
+            stable
+
+      - name: Prepare release notes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          ./scripts/render_android_release_notes.sh \
+            "$VERSION" \
+            "$SOURCE_SHA" \
+            stable > "$RUNNER_TEMP/stable-release-notes.md"
+
+      - name: Fast-forward main and create release tag
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git push origin "$SOURCE_SHA:refs/heads/main"
+          if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            git tag -a "$RELEASE_TAG" "$SOURCE_SHA" -m "Novex ${RELEASE_TAG#v}"
+          fi
+          git push origin "$RELEASE_TAG"
+
+      - name: Publish stable release without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
+          VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          shopt -s nullglob
+          assets=(dist/*.apk dist/SHA256SUMS.txt)
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "Novex $VERSION" \
+              --notes-file "$RUNNER_TEMP/stable-release-notes.md"
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --verify-tag \
+              --title "Novex $VERSION" \
+              --notes-file "$RUNNER_TEMP/stable-release-notes.md"
+          fi
+
+      - name: Upload promoted release artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: novex-stable-${{ steps.candidate.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Open the next preview version
+        continue-on-error: true
+        shell: bash
+        env:
+          PROMOTED_VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          git fetch origin next
+          git checkout -B next origin/next
+          current_version="$(sed -n 's/.*?: "\([0-9][0-9.]*\)"/\1/p' src/android/app/build.gradle.kts | head -1)"
+          if [ "$current_version" != "$PROMOTED_VERSION" ]; then
+            echo "next already targets $current_version; no version-line bump needed."
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<< "$PROMOTED_VERSION"
+          next_version="$major.$minor.$((patch + 1))"
+          sed -i "0,/?: \"$PROMOTED_VERSION\"/s//?: \"$next_version\"/" \
+            src/android/app/build.gradle.kts
+          git add src/android/app/build.gradle.kts
+          git commit -m "chore(android): open Novex $next_version preview line [skip ci]"
+          git push origin next
