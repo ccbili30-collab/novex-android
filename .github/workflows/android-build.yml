@@ -156,6 +156,15 @@ jobs:
               tasks=(":app:assemblePreviewRelease")
             fi
           elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            # Manually packaged builds are candidates, never final releases.
+            # Give them a prerelease identity so a later tagged build always
+            # has a higher version name/code and remains discoverable in-app.
+            base_version="$(sed -n 's/.*?: "\([0-9][0-9.]*\)"/\1/p' app/build.gradle.kts | head -1)"
+            if [ -z "$base_version" ]; then
+              echo "Unable to read the default Novex version." >&2
+              exit 1
+            fi
+            export NOVEX_VERSION_NAME="${base_version}-dev.${GITHUB_RUN_NUMBER}"
             case "${{ inputs.channel }}" in
               stable) tasks=(":app:assembleStableRelease") ;;
               preview) tasks=(":app:assemblePreviewRelease") ;;

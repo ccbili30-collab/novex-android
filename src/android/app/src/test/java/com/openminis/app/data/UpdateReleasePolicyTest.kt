@@ -33,6 +33,28 @@ class UpdateReleasePolicyTest {
     }
 
     @Test
+    fun `stable final replaces both previous final and same-line candidate`() {
+        val finalRelease = release("v0.2.3", prerelease = false, stableAsset)
+
+        assertEquals(
+            "v0.2.3",
+            UpdateReleasePolicy.selectUpgrade(
+                UpdateChannel.STABLE,
+                "0.2.2",
+                listOf(finalRelease),
+            )?.tagName,
+        )
+        assertEquals(
+            "v0.2.3",
+            UpdateReleasePolicy.selectUpgrade(
+                UpdateChannel.STABLE,
+                "0.2.3-dev.123",
+                listOf(finalRelease),
+            )?.tagName,
+        )
+    }
+
+    @Test
     fun `preview channel receives the next beta`() {
         val releases = listOf(
             release("v0.3.0-beta.2", prerelease = true, previewAsset),
