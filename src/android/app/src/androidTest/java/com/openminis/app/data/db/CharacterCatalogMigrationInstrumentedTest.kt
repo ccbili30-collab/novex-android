@@ -128,6 +128,29 @@ class CharacterCatalogMigrationInstrumentedTest {
         assertEquals(listOf("content_module_references", "content_modules"), tables)
     }
 
+    @Test
+    fun migration19CreatesManagedAssetsAndProtectedReferences() {
+        val db = helper.writableDatabase
+        AppDatabase.MIGRATION_18_19.migrate(db)
+        val tables = db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' " +
+                "AND name IN ('media_assets', 'media_asset_references') ORDER BY name",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+        assertEquals(listOf("media_asset_references", "media_assets"), tables)
+        val foreignKeys = db.query("PRAGMA foreign_key_list(media_asset_references)").use { cursor ->
+            buildList {
+                val tableIndex = cursor.getColumnIndexOrThrow("table")
+                val onDeleteIndex = cursor.getColumnIndexOrThrow("on_delete")
+                while (cursor.moveToNext()) add(cursor.getString(tableIndex) to cursor.getString(onDeleteIndex))
+            }
+        }
+        assertEquals(listOf("media_assets" to "RESTRICT"), foreignKeys)
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

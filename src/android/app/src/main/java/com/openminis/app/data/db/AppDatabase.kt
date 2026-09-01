@@ -16,6 +16,10 @@ import com.openminis.app.data.character.ContentModuleConverters
 import com.openminis.app.data.character.ContentModuleDao
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleReferenceEntity
+import com.openminis.app.data.character.MediaAssetConverters
+import com.openminis.app.data.character.MediaAssetDao
+import com.openminis.app.data.character.MediaAssetEntity
+import com.openminis.app.data.character.MediaAssetReferenceEntity
 import com.openminis.app.data.character.WorldCharacterVersionEntity
 import com.openminis.app.data.character.WorldEntity
 
@@ -33,16 +37,23 @@ import com.openminis.app.data.character.WorldEntity
         CatalogMigrationStateEntity::class,
         ContentModuleEntity::class,
         ContentModuleReferenceEntity::class,
+        MediaAssetEntity::class,
+        MediaAssetReferenceEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = false,
 )
-@TypeConverters(CharacterCatalogConverters::class, ContentModuleConverters::class)
+@TypeConverters(
+    CharacterCatalogConverters::class,
+    ContentModuleConverters::class,
+    MediaAssetConverters::class,
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun webAppShortcutDao(): WebAppShortcutDao
     abstract fun characterCatalogDao(): CharacterCatalogDao
     abstract fun contentModuleDao(): ContentModuleDao
+    abstract fun mediaAssetDao(): MediaAssetDao
 
     companion object {
         @Volatile
@@ -463,6 +474,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Shared, reference-counted image assets for worlds and character versions. */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS media_assets (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        managed_path TEXT NOT NULL,
+                        mime_type TEXT NOT NULL,
+                        content_hash TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_media_assets_managed_path " +
+                        "ON media_assets(managed_path)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_media_assets_content_hash " +
+                        "ON media_assets(content_hash)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS media_asset_references (
+                        owner_type TEXT NOT NULL,
+                        owner_id TEXT NOT NULL,
+                        slot TEXT NOT NULL,
+                        asset_id TEXT NOT NULL,
+                        PRIMARY KEY (owner_type, owner_id, slot),
+                        FOREIGN KEY (asset_id) REFERENCES media_assets(id) ON DELETE RESTRICT
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_media_asset_references_asset_id " +
+                        "ON media_asset_references(asset_id)",
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -500,7 +552,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                     .build()
                     .also { INSTANCE = it }
             }
