@@ -107,6 +107,27 @@ class CharacterCatalogMigrationInstrumentedTest {
         assertEquals(true, "legacy_snapshot_json" in legacyColumn)
     }
 
+    @Test
+    fun migration18CreatesOneSharedModuleAndReferenceSchema() {
+        val db = helper.writableDatabase
+        db.execSQL(
+            "CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY, character_id TEXT, world_snapshot_json TEXT)",
+        )
+        AppDatabase.MIGRATION_15_16.migrate(db)
+        AppDatabase.MIGRATION_16_17.migrate(db)
+        AppDatabase.MIGRATION_17_18.migrate(db)
+
+        val tables = db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' " +
+                "AND name IN ('content_modules', 'content_module_references') ORDER BY name",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+        assertEquals(listOf("content_module_references", "content_modules"), tables)
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }
