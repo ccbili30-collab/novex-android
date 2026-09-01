@@ -47,11 +47,15 @@ object GenerateImageTool {
         sessionId: String,
         context: Context,
         repository: ProviderRepository,
+        imageStylePrompt: String? = null,
     ): ToolExecutionResult {
         val args = runCatching { JSONObject(argsJson) }.getOrElse {
             return ToolExecutionResult("生图参数不是有效的 JSON：${it.message}", false, toolTitle = "生成图片")
         }
-        val prompt = args.optString("prompt").trim()
+        val prompt = com.openminis.app.data.mergeImageStylePrompt(
+            requestPrompt = args.optString("prompt"),
+            imageStylePrompt = imageStylePrompt,
+        )
         val title = args.optString("tool_title", "生成图片").ifBlank { "生成图片" }
         if (prompt.isEmpty()) return ToolExecutionResult("缺少生图提示词", false, toolTitle = title)
 

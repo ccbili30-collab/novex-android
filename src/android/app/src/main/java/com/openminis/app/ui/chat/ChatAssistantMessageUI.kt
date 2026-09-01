@@ -272,6 +272,9 @@ import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.data.character.effectiveAssistantAvatarPath
+import com.openminis.app.data.character.effectiveAssistantName
+import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
@@ -286,7 +289,7 @@ internal fun AssistantHeader() {
     // SOUL.md is missing the field or set to the default value.
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
     val immersiveProfile = LocalImmersiveChatProfile.current
-    val displayName = immersiveProfile.character?.name?.ifBlank { null }
+    val displayName = immersiveProfile.effectiveAssistantName
         ?: soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -297,7 +300,7 @@ internal fun AssistantHeader() {
             // inside the turn is unaffected (that's this row's bottom=2).
             .padding(top = 10.dp, bottom = 2.dp),
     ) {
-        val avatar = immersiveProfile.character?.avatarPath
+        val avatar = immersiveProfile.effectiveAssistantAvatarPath
             ?.let { java.io.File(it) }
             ?.takeIf { it.exists() }
         if (avatar != null) {
@@ -307,7 +310,7 @@ internal fun AssistantHeader() {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(28.dp).clip(CircleShape),
             )
-        } else if (immersiveProfile.character != null) {
+        } else if (immersiveProfile.usesRolePresentation) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = CircleShape,

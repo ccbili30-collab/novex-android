@@ -27,6 +27,13 @@ class ChatRepository(internal val dao: ChatDao) {
         personaId: String? = null,
         personaSnapshotJson: String? = null,
         chatBackgroundPath: String? = null,
+        conversationPrompt: String? = null,
+        imageStylePrompt: String? = null,
+        rolePresentationEnabled: Boolean = characterSnapshotJson != null,
+        assistantDisplayName: String? = null,
+        assistantAvatarPath: String? = null,
+        playerDisplayName: String? = null,
+        playerAvatarPath: String? = null,
     ): ChatSessionEntity {
         val now = System.currentTimeMillis()
         val session = ChatSessionEntity(
@@ -42,6 +49,13 @@ class ChatRepository(internal val dao: ChatDao) {
             personaId = personaId,
             personaSnapshotJson = personaSnapshotJson,
             chatBackgroundPath = chatBackgroundPath,
+            conversationPrompt = conversationPrompt,
+            imageStylePrompt = imageStylePrompt,
+            rolePresentationEnabled = if (rolePresentationEnabled) 1 else 0,
+            assistantDisplayName = assistantDisplayName,
+            assistantAvatarPath = assistantAvatarPath,
+            playerDisplayName = playerDisplayName,
+            playerAvatarPath = playerAvatarPath,
         )
         dao.insertSession(session)
         return session
@@ -115,6 +129,23 @@ class ChatRepository(internal val dao: ChatDao) {
 
     suspend fun updateChatBackground(sessionId: String, path: String?) {
         dao.updateChatBackground(sessionId, path)
+    }
+
+    suspend fun updateConversationSettings(
+        sessionId: String,
+        settings: com.openminis.app.data.ConversationSettingsSnapshot,
+    ) {
+        val value = com.openminis.app.data.normalizeConversationSettings(settings)
+        dao.updateConversationSettings(
+            id = sessionId,
+            conversationPrompt = value.conversationPrompt,
+            imageStylePrompt = value.imageStylePrompt.ifBlank { null },
+            rolePresentationEnabled = if (value.rolePresentationEnabled) 1 else 0,
+            assistantDisplayName = value.assistantDisplayName.ifBlank { null },
+            assistantAvatarPath = value.assistantAvatarPath,
+            playerDisplayName = value.playerDisplayName.ifBlank { null },
+            playerAvatarPath = value.playerAvatarPath,
+        )
     }
 
     suspend fun updateSessionBinding(sessionId: String, binding: String, modelId: String) {

@@ -66,6 +66,7 @@ object CharacterSystemPromptComposer {
         worldSnapshot: String?,
         enabledTools: Set<String>,
         memoryContext: String? = null,
+        conversationPrompt: String? = null,
     ): String {
         val roleContext = requireNotNull(
             CharacterPromptComposer.compose(characterSnapshot, personaSnapshot, worldSnapshot),
@@ -87,7 +88,7 @@ $toolRule
             memoryContext?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 append("<角色长期记忆>\n").append(it).append("\n</角色长期记忆>\n\n")
             }
-            append(roleContext)
+            append(conversationPrompt ?: roleContext)
         }
     }
 }

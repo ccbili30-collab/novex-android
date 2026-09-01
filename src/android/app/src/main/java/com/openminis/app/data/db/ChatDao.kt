@@ -282,6 +282,30 @@ interface ChatDao {
     @Query("UPDATE sessions SET chat_background_path = :path WHERE id = :id")
     suspend fun updateChatBackground(id: String, path: String?)
 
+    @Query("""
+        UPDATE sessions SET
+            conversation_prompt = :conversationPrompt,
+            image_style_prompt = :imageStylePrompt,
+            role_presentation_enabled = :rolePresentationEnabled,
+            assistant_display_name = :assistantDisplayName,
+            assistant_avatar_path = :assistantAvatarPath,
+            player_display_name = :playerDisplayName,
+            player_avatar_path = :playerAvatarPath,
+            updated_at = :updatedAt
+        WHERE id = :id
+    """)
+    suspend fun updateConversationSettings(
+        id: String,
+        conversationPrompt: String?,
+        imageStylePrompt: String?,
+        rolePresentationEnabled: Int,
+        assistantDisplayName: String?,
+        assistantAvatarPath: String?,
+        playerDisplayName: String?,
+        playerAvatarPath: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    )
+
     // Messages: increment stream_interrupt_count
     @Query("UPDATE messages SET stream_interrupt_count = stream_interrupt_count + 1, updated_at = :updatedAt WHERE id = :id")
     suspend fun incrementStreamInterruptCount(id: String, updatedAt: Long = System.currentTimeMillis())

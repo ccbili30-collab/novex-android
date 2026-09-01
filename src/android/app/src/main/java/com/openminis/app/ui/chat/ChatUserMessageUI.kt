@@ -272,6 +272,9 @@ import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.data.character.effectivePlayerAvatarPath
+import com.openminis.app.data.character.effectivePlayerName
+import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
@@ -299,9 +302,11 @@ internal fun UserMessageBubble(
     val isQueued = message.isQueued
     val haptics = LocalHapticFeedback.current
     val immersiveProfile = LocalImmersiveChatProfile.current
-    val persona = immersiveProfile.persona
-    val isCharacterConversation = immersiveProfile.character != null
-    val personaAvatar = persona?.avatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+    val playerName = immersiveProfile.effectivePlayerName ?: "玩家"
+    val isRolePresentation = immersiveProfile.usesRolePresentation
+    val personaAvatar = immersiveProfile.effectivePlayerAvatarPath
+        ?.let { java.io.File(it) }
+        ?.takeIf { it.exists() }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -525,11 +530,11 @@ internal fun UserMessageBubble(
             Spacer(Modifier.width(8.dp))
             AsyncImage(
                 model = personaAvatar,
-                contentDescription = "${persona.name} 头像",
+                contentDescription = "$playerName 头像",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(30.dp).clip(CircleShape).align(Alignment.Bottom),
             )
-        } else if (isCharacterConversation) {
+        } else if (isRolePresentation) {
             Spacer(Modifier.width(8.dp))
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHighest,

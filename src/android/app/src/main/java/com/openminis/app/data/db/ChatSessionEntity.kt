@@ -61,4 +61,14 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "persona_snapshot_json") val personaSnapshotJson: String? = null,
     /** Null inherits the character snapshot's default background. Empty string explicitly clears it. */
     @ColumnInfo(name = "chat_background_path") val chatBackgroundPath: String? = null,
+    /** User-editable prompt snapshot. Null means the legacy/source prompt has not been snapshotted yet. */
+    @ColumnInfo(name = "conversation_prompt") val conversationPrompt: String? = null,
+    /** Style text appended directly to every generate_image request in this conversation. */
+    @ColumnInfo(name = "image_style_prompt") val imageStylePrompt: String? = null,
+    /** Presentation is independent from character prompt attachment. Existing character chats migrate to 1. */
+    @ColumnInfo(name = "role_presentation_enabled") val rolePresentationEnabled: Int = 0,
+    @ColumnInfo(name = "assistant_display_name") val assistantDisplayName: String? = null,
+    @ColumnInfo(name = "assistant_avatar_path") val assistantAvatarPath: String? = null,
+    @ColumnInfo(name = "player_display_name") val playerDisplayName: String? = null,
+    @ColumnInfo(name = "player_avatar_path") val playerAvatarPath: String? = null,
 )

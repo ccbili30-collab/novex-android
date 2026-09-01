@@ -3130,6 +3130,62 @@ class ChatViewModel(
     private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
     val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
         _immersiveProfile.asStateFlow()
+    private val _conversationPrompt = MutableStateFlow<String?>(null)
+    val conversationPrompt: StateFlow<String?> = _conversationPrompt.asStateFlow()
+    private val _imageStylePrompt = MutableStateFlow("")
+    val imageStylePrompt: StateFlow<String> = _imageStylePrompt.asStateFlow()
+
+    private fun inheritedEditablePrompt(): String {
+        val profile = _immersiveProfile.value
+        return profile.character?.let {
+            com.openminis.app.data.character.CharacterPromptComposer.compose(
+                characterSnapshot = it.toJson().toString(),
+                personaSnapshot = profile.persona?.toJson()?.toString(),
+                worldSnapshot = profile.world?.toJson()?.toString(),
+            )
+        } ?: com.openminis.app.agent.SoulStore.load(context)?.body.orEmpty()
+    }
+
+    /** The current source prompt before conversation-level edits are applied. */
+    fun sourceConversationPrompt(): String = inheritedEditablePrompt()
+
+    fun conversationSettingsSnapshot(): com.openminis.app.data.ConversationSettingsSnapshot {
+        val profile = _immersiveProfile.value
+        return com.openminis.app.data.ConversationSettingsSnapshot(
+            conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
+            imageStylePrompt = _imageStylePrompt.value,
+            rolePresentationEnabled = profile.rolePresentationEnabled || profile.character != null,
+            assistantDisplayName = profile.assistantDisplayName.orEmpty(),
+            assistantAvatarPath = profile.assistantAvatarPath,
+            playerDisplayName = profile.playerDisplayName.orEmpty(),
+            playerAvatarPath = profile.playerAvatarPath,
+        )
+    }
+
+    fun saveConversationSettings(
+        settings: com.openminis.app.data.ConversationSettingsSnapshot,
+        onComplete: (Result<Unit>) -> Unit = {},
+    ) {
+        val value = com.openminis.app.data.normalizeConversationSettings(settings)
+        _conversationPrompt.value = value.conversationPrompt
+        _imageStylePrompt.value = value.imageStylePrompt
+        _immersiveProfile.value = _immersiveProfile.value.copy(
+            rolePresentationEnabled = value.rolePresentationEnabled,
+            assistantDisplayName = value.assistantDisplayName.ifBlank { null },
+            assistantAvatarPath = value.assistantAvatarPath,
+            playerDisplayName = value.playerDisplayName.ifBlank { null },
+            playerAvatarPath = value.playerAvatarPath,
+        )
+        val sid = realSessionId
+        if (sid.isEmpty()) {
+            onComplete(Result.success(Unit))
+            return
+        }
+        viewModelScope.launch {
+            val result = runCatching { chatRepository.updateConversationSettings(sid, value) }
+            withContext(Dispatchers.Main) { onComplete(result) }
+        }
+    }
 
     private var scopedMemoryKey: String? = null
     private var scopedMemoryRepository: MemoryRepository? = null
@@ -3375,6 +3431,14 @@ class ChatViewModel(
             personaId = _immersiveProfile.value.persona?.id,
             personaSnapshotJson = _immersiveProfile.value.persona?.toJson()?.toString(),
             chatBackgroundPath = _immersiveProfile.value.backgroundPath,
+            conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
+            imageStylePrompt = _imageStylePrompt.value.ifBlank { null },
+            rolePresentationEnabled = _immersiveProfile.value.rolePresentationEnabled ||
+                _immersiveProfile.value.character != null,
+            assistantDisplayName = _immersiveProfile.value.assistantDisplayName,
+            assistantAvatarPath = _immersiveProfile.value.assistantAvatarPath,
+            playerDisplayName = _immersiveProfile.value.playerDisplayName,
+            playerAvatarPath = _immersiveProfile.value.playerAvatarPath,
         )
         realSessionId = session.id
         // "New Chat in Group": file the just-promoted draft into its folder.
@@ -3554,7 +3618,9 @@ class ChatViewModel(
                     character = draftCharacter,
                     persona = draftPersona,
                     backgroundPath = draftCharacter?.defaultBackgroundPath ?: draftWorld?.backgroundPath,
+                    rolePresentationEnabled = draftCharacter != null,
                 )
+                _conversationPrompt.value = inheritedEditablePrompt()
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
                 if (effectiveGroupId != null) {
@@ -3602,7 +3668,14 @@ class ChatViewModel(
                 backgroundPath = session.chatBackgroundPath
                     ?: sessionCharacter?.defaultBackgroundPath
                     ?: sessionWorld?.backgroundPath,
+                rolePresentationEnabled = session.rolePresentationEnabled != 0 || sessionCharacter != null,
+                assistantDisplayName = session.assistantDisplayName,
+                assistantAvatarPath = session.assistantAvatarPath,
+                playerDisplayName = session.playerDisplayName,
+                playerAvatarPath = session.playerAvatarPath,
             )
+            _conversationPrompt.value = session.conversationPrompt
+            _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
             _memoryEnabled.value = session.memoryEnabled != 0
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user
@@ -8251,6 +8324,7 @@ class ChatViewModel(
                 sessionId = activeSessionId,
                 context = context,
                 repository = providerRepository,
+                imageStylePrompt = _imageStylePrompt.value,
             )
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
@@ -9274,6 +9348,7 @@ class ChatViewModel(
                 worldSnapshot = roleProfile.world?.toJson()?.toString(),
                 enabledTools = agentTools.mapTo(linkedSetOf()) { it.name },
                 memoryContext = roleMemory,
+                conversationPrompt = _conversationPrompt.value,
             )
         }
 
@@ -9287,7 +9362,9 @@ class ChatViewModel(
         // has no personality body, identitySection() returns the identity
         // sentence with its original single trailing space — the full
         // assembled prompt then matches the pre-SOUL prompt byte-for-byte.
-        val identitySection = com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
+        val identitySection = _conversationPrompt.value?.let {
+            com.openminis.app.agent.SystemPromptBuilder.identitySection(context, it)
+        } ?: com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
         // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
         // gate: when memory is disabled for this session, replace the
         // "memory_write / memory_get" tool bullets and the "Memory system:"

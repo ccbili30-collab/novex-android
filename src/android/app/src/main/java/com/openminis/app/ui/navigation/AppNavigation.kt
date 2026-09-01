@@ -31,6 +31,7 @@ import androidx.navigation.navArgument
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.chat.ChatScreen
+import com.openminis.app.ui.chat.ConversationSettingsScreen
 import com.openminis.app.ui.sessions.SessionListScreen
 import com.openminis.app.ui.settings.AboutScreen
 import com.openminis.app.ui.settings.AddAgentLoopGroupsScreen
@@ -93,6 +94,7 @@ private val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0.0f, 0.8f, 0.15f)
 object Routes {
     const val SESSION_LIST = "sessions"
     const val CHAT = "chat/{sessionId}"
+    const val CONVERSATION_SETTINGS = "conversation_settings/{sessionId}"
     const val SETTINGS = "settings"
     const val NOVEX_FEEDBACK = "novex_feedback"
     const val PROVIDER_LIST = "providers"
@@ -215,6 +217,8 @@ object Routes {
     }
     fun characterStart(characterId: String) = "characters/start/${android.net.Uri.encode(characterId)}"
     fun chat(sessionId: String) = "chat/$sessionId"
+    fun conversationSettings(sessionId: String) =
+        "conversation_settings/${android.net.Uri.encode(sessionId)}"
     fun providerDetail(instanceId: String) = "provider/$instanceId"
     fun shadowVoiceDetail(instanceId: String) = "voice_service/$instanceId"
     fun modelGroupDetail(groupId: String) = "model_group/$groupId"
@@ -598,7 +602,9 @@ fun AppNavigation(
                         launchSingleTop = true
                     }
                 },
-                onSettings = { navController.safeNavigate(Routes.SETTINGS) },
+                onSettings = {
+                    navController.safeNavigate(Routes.conversationSettings(sessionId))
+                },
                 onOpenTerminal = {
                     navController.safeNavigate(Routes.terminal(sessionId = sessionId))
                 },
@@ -620,6 +626,22 @@ fun AppNavigation(
                     navController.safeNavigate(Routes.FILE_PREVIEW)
                 },
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
+            )
+        }
+
+        composable(
+            route = Routes.CONVERSATION_SETTINGS,
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
+            ConversationSettingsScreen(
+                sessionId = sessionId,
+                chatRepository = chatRepository,
+                providerRepository = providerRepository,
+                memoryRepository = memoryRepository,
+                skillRepository = skillRepository,
+                mcpRepository = mcpRepository,
+                onBack = { navController.safePopBackStack() },
             )
         }
 

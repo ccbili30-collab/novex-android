@@ -454,7 +454,13 @@ object SystemPromptBuilder {
      * sentence alone is the safe fallback when SOUL.md is missing or
      * empty, matching pre-SOUL behavior.
      */
-    fun identitySection(context: Context): String {
+    fun identitySection(context: Context): String = identitySectionInternal(context, null)
+
+    /** Same global metadata and fixed identity, but a conversation-owned personality body. */
+    fun identitySection(context: Context, conversationPrompt: String): String =
+        identitySectionInternal(context, conversationPrompt)
+
+    private fun identitySectionInternal(context: Context, conversationPrompt: String?): String {
         val file = SoulStore.load(context)
         val name = (file?.metadata?.name ?: SoulMetadata.DEFAULT.name)
             .trim()
@@ -492,10 +498,24 @@ object SystemPromptBuilder {
             return "\n\nResponse style (from SOUL.md `style` — apply to every reply unless the user explicitly asks otherwise; if it prescribes a reply language, it overrides the default match-the-user's-language rule):\n$s"
         }
 
-        val body = file?.body
+        val body = conversationPrompt ?: file?.body
         val trimmed = body?.trim().orEmpty()
         if (trimmed.isEmpty()) {
             return identityTrimmed + styleBlock(style) + "\n\n" + soulEditHint + "\n\n"
+        }
+
+        // A conversation-owned prompt is intentionally not constrained by
+        // SOUL.md's short personality-editor limit. It is a separate 48,000
+        // character snapshot, edited from the conversation settings screen,
+        // and is allowed to contain complete role/task instructions.
+        if (conversationPrompt != null) {
+            return identityTrimmed +
+                "\n\nCurrent conversation prompt (editable for this conversation only):\n" +
+                trimmed.take(com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS) +
+                styleBlock(style) +
+                "\n\n" +
+                soulEditHint +
+                "\n\n"
         }
 
         // Reject (NOT truncate) bodies that exceed the language-aware

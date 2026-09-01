@@ -277,6 +277,9 @@ import com.openminis.app.data.model.ProviderConfig
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.model.RoutingStrategy
 import com.openminis.app.data.model.ThinkingLevel
+import com.openminis.app.data.character.effectiveAssistantAvatarPath
+import com.openminis.app.data.character.effectiveAssistantName
+import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
@@ -2443,8 +2446,8 @@ fun ChatScreen(
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
                             val displayTitle = when {
-                                immersiveProfile.character?.name?.isNotBlank() == true ->
-                                    immersiveProfile.character!!.name
+                                immersiveProfile.effectiveAssistantName?.isNotBlank() == true ->
+                                    immersiveProfile.effectiveAssistantName!!
                                 showChatTitlePill
                                     && sessionTitle.isNotBlank()
                                     && sessionTitle != "New Chat" -> sessionTitle
@@ -2640,7 +2643,7 @@ fun ChatScreen(
                             onDismissRequest = { showChatMenu = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("设置") },
+                                text = { Text("对话设置") },
                                 onClick = {
                                     showChatMenu = false
                                     onSettings()
@@ -2649,7 +2652,7 @@ fun ChatScreen(
                                     Icon(Icons.Default.Settings, contentDescription = null)
                                 },
                             )
-                            if (immersiveProfile.character != null) {
+                            if (immersiveProfile.usesRolePresentation) {
                                 DropdownMenuItem(
                                     text = { Text("更换对话背景") },
                                     onClick = {
@@ -2896,7 +2899,7 @@ fun ChatScreen(
                 // frame's list while the next one computes. Keyed on `sessionId` so a
                 // chat-switch resets the cache; LaunchedEffect(messages) reruns the
                 // computation on every new emission.
-                val showAssistantIdentity = immersiveProfile.character != null
+                val showAssistantIdentity = immersiveProfile.usesRolePresentation
                 var flatItems by remember(sessionId, showAssistantIdentity) {
                     mutableStateOf<List<FlatChatItem>>(emptyList())
                 }
@@ -3888,22 +3891,23 @@ fun ChatScreen(
                 } // AlwaysStretchOverscrollBox
                 if (messages.isEmpty() && !isStreaming) {
                     val character = immersiveProfile.character
-                    if (character != null) {
+                    val assistantName = immersiveProfile.effectiveAssistantName
+                    if (immersiveProfile.usesRolePresentation && assistantName != null) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.align(Alignment.Center).padding(horizontal = 36.dp),
                         ) {
-                            character.avatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }?.let { avatar ->
+                            immersiveProfile.effectiveAssistantAvatarPath?.let { java.io.File(it) }?.takeIf { it.exists() }?.let { avatar ->
                                 AsyncImage(
                                     model = avatar,
-                                    contentDescription = "${character.name} 头像",
+                                    contentDescription = "$assistantName 头像",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.size(84.dp).clip(CircleShape),
                                 )
                                 Spacer(Modifier.height(12.dp))
                             }
-                            Text(character.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                            val greeting = character.greeting.ifBlank { character.summary }
+                            Text(assistantName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            val greeting = character?.greeting?.ifBlank { character.summary }.orEmpty()
                             if (greeting.isNotBlank()) {
                                 Spacer(Modifier.height(10.dp))
                                 Text(

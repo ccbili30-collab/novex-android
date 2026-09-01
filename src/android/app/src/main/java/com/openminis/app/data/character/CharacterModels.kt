@@ -183,7 +183,29 @@ data class ImmersiveChatProfile(
     val character: CharacterCard? = null,
     val persona: PlayerPersona? = null,
     val backgroundPath: String? = null,
+    val rolePresentationEnabled: Boolean = character != null,
+    val assistantDisplayName: String? = null,
+    val assistantAvatarPath: String? = null,
+    val playerDisplayName: String? = null,
+    val playerAvatarPath: String? = null,
 )
+
+val ImmersiveChatProfile.usesRolePresentation: Boolean
+    get() = rolePresentationEnabled || character != null
+
+val ImmersiveChatProfile.effectiveAssistantName: String?
+    get() = assistantDisplayName?.takeIf { it.isNotBlank() }
+        ?: character?.name?.takeIf { it.isNotBlank() }
+
+val ImmersiveChatProfile.effectiveAssistantAvatarPath: String?
+    get() = assistantAvatarPath?.takeIf { it.isNotBlank() } ?: character?.avatarPath
+
+val ImmersiveChatProfile.effectivePlayerName: String?
+    get() = playerDisplayName?.takeIf { it.isNotBlank() }
+        ?: persona?.name?.takeIf { it.isNotBlank() }
+
+val ImmersiveChatProfile.effectivePlayerAvatarPath: String?
+    get() = playerAvatarPath?.takeIf { it.isNotBlank() } ?: persona?.avatarPath
 
 private fun JSONObject.optNullableString(key: String): String? =
     if (isNull(key)) null else optString(key).trim().ifBlank { null }

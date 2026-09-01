@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WebAppShortcutEntity::class,
         FolderEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -216,6 +216,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN conversation_prompt TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN image_style_prompt TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN role_presentation_enabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN assistant_display_name TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN assistant_avatar_path TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN player_display_name TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN player_avatar_path TEXT")
+                db.execSQL(
+                    "UPDATE sessions SET role_presentation_enabled = 1 " +
+                        "WHERE character_snapshot_json IS NOT NULL AND TRIM(character_snapshot_json) != ''",
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -253,7 +269,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .build()
                     .also { INSTANCE = it }
             }
