@@ -4,8 +4,15 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.openminis.app.data.character.CharacterCatalogConverters
+import com.openminis.app.data.character.CharacterCatalogDao
+import com.openminis.app.data.character.CharacterEntity
+import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.WorldCharacterVersionEntity
+import com.openminis.app.data.character.WorldEntity
 
 @Database(
     entities = [
@@ -14,13 +21,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CompactMarkerEntity::class,
         WebAppShortcutEntity::class,
         FolderEntity::class,
+        WorldEntity::class,
+        CharacterEntity::class,
+        CharacterVersionEntity::class,
+        WorldCharacterVersionEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
+@TypeConverters(CharacterCatalogConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun webAppShortcutDao(): WebAppShortcutDao
+    abstract fun characterCatalogDao(): CharacterCatalogDao
 
     companion object {
         @Volatile
@@ -304,6 +317,81 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Reusable character versions and their many-to-many world membership.
+         * This migration intentionally creates empty tables only; importing the
+         * legacy SharedPreferences card library is the next checkpoint.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS worlds (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        overview TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS characters (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        original_version_id TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_characters_original_version_id " +
+                        "ON characters(original_version_id)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS character_versions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        character_id TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        label TEXT NOT NULL,
+                        profile_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_character_versions_character_id " +
+                        "ON character_versions(character_id)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_character_versions_character_id_kind " +
+                        "ON character_versions(character_id, kind)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS world_character_versions (
+                        world_id TEXT NOT NULL,
+                        character_version_id TEXT NOT NULL,
+                        position INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        PRIMARY KEY (world_id, character_version_id),
+                        FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE,
+                        FOREIGN KEY (character_version_id) REFERENCES character_versions(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_world_character_versions_character_version_id " +
+                        "ON world_character_versions(character_version_id)",
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -341,7 +429,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .build()
                     .also { INSTANCE = it }
             }
