@@ -1,0 +1,107 @@
+package com.openminis.app.data.character
+
+/** Coordinates root/version data with shared modules and protected media references. */
+class CharacterLibraryService(
+    private val catalog: CharacterCatalogRepository,
+    private val modules: ContentModuleRepository,
+    private val media: MediaAssetRepository,
+) {
+    suspend fun importDocument(
+        document: CharacterLibraryDocument,
+        now: Long = System.currentTimeMillis(),
+    ): CharacterAggregate {
+        val originalDocument = document.versions.single { it.kind == CharacterVersionKind.ORIGINAL }
+        val created = catalog.createCharacter(
+            name = document.name,
+            originalLabel = originalDocument.label,
+            originalProfileJson = originalDocument.profileJson,
+            now = now,
+        )
+        addModules(created.original.id, originalDocument.modules, now)
+        val variants = document.versions.filter { it.kind == CharacterVersionKind.VARIANT }.map { version ->
+            catalog.createVariant(
+                characterId = created.character.id,
+                label = version.label,
+                profileJson = version.profileJson,
+                now = now,
+            ).also { addModules(it.id, version.modules, now) }
+        }
+        return CharacterAggregate(created.character, created.original, variants)
+    }
+
+    suspend fun exportDocument(characterId: String): CharacterLibraryDocument {
+        val aggregate = requireNotNull(catalog.character(characterId)) { "角色不存在" }
+        return CharacterLibraryDocument(
+            name = aggregate.character.name,
+            versions = aggregate.allVersions.map { version ->
+                CharacterVersionDocument(
+                    kind = version.kind,
+                    label = version.label,
+                    profileJson = version.profileJson,
+                    modules = modules.list(ModuleOwner.characterVersion(version.id)).map { module ->
+                        CharacterModuleDocument(
+                            type = module.type,
+                            name = module.name,
+                            contentJson = module.contentJson,
+                            collapsed = module.collapsed,
+                        )
+                    },
+                )
+            },
+        )
+    }
+
+    suspend fun duplicateCharacter(
+        characterId: String,
+        now: Long = System.currentTimeMillis(),
+    ): CharacterAggregate {
+        val source = requireNotNull(catalog.character(characterId)) { "角色不存在" }
+        val copy = catalog.duplicateCharacter(characterId, now)
+        source.allVersions.zip(copy.allVersions).forEach { (sourceVersion, copiedVersion) ->
+            val sourceOwner = ModuleOwner.characterVersion(sourceVersion.id)
+            val copiedOwner = ModuleOwner.characterVersion(copiedVersion.id)
+            modules.copyAll(sourceOwner, copiedOwner, now)
+            listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
+                media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(copiedOwner, slot, asset.id) }
+            }
+        }
+        return copy
+    }
+
+    suspend fun deleteVariant(versionId: String) {
+        val version = requireNotNull(catalog.version(versionId)) { "角色版本不存在" }
+        require(version.kind == CharacterVersionKind.VARIANT) { "不能删除角色本体" }
+        val owner = ModuleOwner.characterVersion(version.id)
+        modules.list(owner).forEach { modules.delete(it.id) }
+        media.removeAll(owner)
+        catalog.deleteVersion(version.id)
+    }
+
+    suspend fun deleteCharacter(characterId: String) {
+        val aggregate = requireNotNull(catalog.character(characterId)) { "角色不存在" }
+        aggregate.allVersions.forEach { version ->
+            val owner = ModuleOwner.characterVersion(version.id)
+            modules.list(owner).forEach { modules.delete(it.id) }
+            media.removeAll(owner)
+        }
+        catalog.deleteCharacter(characterId)
+    }
+
+    private suspend fun addModules(
+        versionId: String,
+        documents: List<CharacterModuleDocument>,
+        now: Long,
+    ) {
+        val owner = ModuleOwner.characterVersion(versionId)
+        documents.forEach { module ->
+            modules.add(
+                owner = owner,
+                type = module.type,
+                name = module.name,
+                contentJson = module.contentJson,
+                collapsed = module.collapsed,
+                now = now,
+            )
+        }
+    }
+}

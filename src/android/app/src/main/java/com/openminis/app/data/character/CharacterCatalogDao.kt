@@ -87,6 +87,18 @@ interface CharacterCatalogDao {
         insertVersion(original)
     }
 
+    @Transaction
+    suspend fun insertCharacterAggregate(
+        character: CharacterEntity,
+        versions: List<CharacterVersionEntity>,
+    ) {
+        require(versions.count { it.kind == CharacterVersionKind.ORIGINAL } == 1)
+        require(versions.any { it.id == character.originalVersionId })
+        require(versions.all { it.characterId == character.id })
+        insertCharacter(character)
+        versions.forEach { insertVersion(it) }
+    }
+
     @Query("SELECT * FROM worlds WHERE id = :id")
     suspend fun world(id: String): WorldEntity?
 
@@ -96,6 +108,9 @@ interface CharacterCatalogDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     suspend fun character(id: String): CharacterEntity?
 
+    @Query("SELECT * FROM characters ORDER BY updated_at DESC, id ASC")
+    suspend fun listCharacters(): List<CharacterEntity>
+
     @Query("SELECT * FROM character_versions WHERE id = :id")
     suspend fun version(id: String): CharacterVersionEntity?
 
@@ -104,6 +119,12 @@ interface CharacterCatalogDao {
 
     @Update
     suspend fun updateWorld(world: WorldEntity)
+
+    @Update
+    suspend fun updateCharacter(character: CharacterEntity)
+
+    @Update
+    suspend fun updateVersion(version: CharacterVersionEntity)
 
     @Query(
         "SELECT * FROM character_versions WHERE character_id = :characterId " +
@@ -134,6 +155,12 @@ interface CharacterCatalogDao {
             "WHERE world_id = :worldId AND character_version_id = :versionId",
     )
     suspend fun removeWorldMembership(worldId: String, versionId: String)
+
+    @Query("DELETE FROM character_versions WHERE id = :versionId")
+    suspend fun deleteVersion(versionId: String)
+
+    @Query("DELETE FROM characters WHERE id = :characterId")
+    suspend fun deleteCharacter(characterId: String)
 
     @Query("DELETE FROM worlds WHERE id = :worldId")
     suspend fun deleteWorld(worldId: String)

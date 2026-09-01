@@ -18,12 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -60,9 +56,6 @@ import com.openminis.app.MinisApp
 import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterVersionEntity
-import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleRepository
-import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetRepository
@@ -79,7 +72,6 @@ import org.json.JSONObject
 
 private data class WorldPageData(
     val world: WorldEntity,
-    val modules: List<ContentModuleEntity>,
     val versions: List<CharacterVersionEntity>,
     val availableVersions: List<CharacterVersionEntity>,
     val media: Map<MediaAssetSlot, MediaAssetEntity>,
@@ -90,6 +82,7 @@ fun CatalogWorldLibraryScreen(
     onBack: () -> Unit,
     onOpenWorld: (String) -> Unit,
     onCreateWorld: () -> Unit,
+    onOpenCharacterLibrary: () -> Unit,
 ) {
     val app = LocalContext.current.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
@@ -108,6 +101,11 @@ fun CatalogWorldLibraryScreen(
     SettingsScaffold(
         title = "我的世界",
         onBack = onBack,
+        actions = {
+            IconButton(onClick = onOpenCharacterLibrary) {
+                Icon(Icons.Default.Person, contentDescription = "打开角色库")
+            }
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onCreateWorld,
@@ -178,19 +176,13 @@ fun CatalogWorldDetailScreen(
     val personas = allPersonas.filter { it.worldId == worldId }
     val app = context.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepo = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
     val mediaRepo = rememberMediaRepository(app)
     val owner = remember(worldId) { ModuleOwner.world(worldId) }
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var data by remember { mutableStateOf<WorldPageData?>(null) }
     var missing by remember { mutableStateOf(false) }
-    var addModule by remember { mutableStateOf(false) }
     var addCharacter by remember { mutableStateOf(false) }
-    var renameModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    var editModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
-    var editText by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
         val world = catalog.world(worldId)
@@ -201,7 +193,6 @@ fun CatalogWorldDetailScreen(
             missing = false
             data = WorldPageData(
                 world = world,
-                modules = moduleRepo.list(owner),
                 versions = catalog.versionsForWorld(worldId),
                 availableVersions = catalog.listVersions(),
                 media = MediaAssetSlot.entries.mapNotNull { slot ->
@@ -242,36 +233,13 @@ fun CatalogWorldDetailScreen(
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
-                SettingsSection(
+                SharedContentModuleEditor(
+                    owner = owner,
                     header = "世界设定模块",
                     footer = "时间线、事件、地图、地区、势力、种族和自定义模块只在添加后出现。",
-                ) {
-                    current.modules.forEachIndexed { index, module ->
-                        WorldModuleRow(
-                            module = module,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < current.modules.lastIndex,
-                            onToggle = {
-                                scope.launch {
-                                    moduleRepo.setCollapsed(module.id, !module.collapsed)
-                                    refresh++
-                                }
-                            },
-                            onRename = { renameModule = module; renameText = module.name },
-                            onEdit = { editModule = module; editText = module.editableText() },
-                            onMove = { delta ->
-                                scope.launch { moduleRepo.move(module.id, index + delta); refresh++ }
-                            },
-                            onDelete = {
-                                scope.launch { moduleRepo.delete(module.id); refresh++ }
-                            },
-                        )
-                    }
-                    TextButton(onClick = { addModule = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text("添加模块")
-                    }
-                }
+                    allowedTypes = WORLD_PAGE_MODULE_TYPES,
+                    typeName = ::worldModuleDisplayName,
+                )
                 SettingsSection(
                     header = "角色卡",
                     footer = "世界关联具体本体或分身；角色版本仍归角色库所有。",
@@ -361,17 +329,6 @@ fun CatalogWorldDetailScreen(
             }
         }
     }
-    if (addModule) ModulePickerDialog(
-        onDismiss = { addModule = false },
-        onPick = { type ->
-            addModule = false
-            scope.launch {
-                runCatching { moduleRepo.add(owner, type, worldModuleDisplayName(type)) }
-                    .onSuccess { refresh++ }
-                    .onFailure { error = it.message }
-            }
-        },
-    )
     if (addCharacter && current != null) AlertDialog(
         onDismissRequest = { addCharacter = false },
         title = { Text("从角色库添加") },
@@ -399,48 +356,6 @@ fun CatalogWorldDetailScreen(
         },
         confirmButton = { TextButton(onClick = { addCharacter = false }) { Text("关闭") } },
     )
-    renameModule?.let { module ->
-        AlertDialog(
-            onDismissRequest = { renameModule = null },
-            title = { Text("重命名模块") },
-            text = { OutlinedTextField(renameText, { renameText = it }, singleLine = true) },
-            confirmButton = {
-                TextButton(
-                    enabled = renameText.isNotBlank(),
-                    onClick = {
-                        renameModule = null
-                        scope.launch { moduleRepo.rename(module.id, renameText); refresh++ }
-                    },
-                ) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { renameModule = null }) { Text("取消") } },
-        )
-    }
-    editModule?.let { module ->
-        AlertDialog(
-            onDismissRequest = { editModule = null },
-            title = { Text("编辑${module.name}") },
-            text = {
-                OutlinedTextField(
-                    value = editText,
-                    onValueChange = { editText = it },
-                    label = { Text("内容") },
-                    minLines = 8,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    editModule = null
-                    scope.launch {
-                        moduleRepo.updateContent(module.id, encodeWorldModuleText(editText))
-                        refresh++
-                    }
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { editModule = null }) { Text("取消") } },
-        )
-    }
     error?.let { message ->
         AlertDialog(
             onDismissRequest = { error = null },
@@ -634,59 +549,6 @@ private fun WorldHero(data: WorldPageData) {
 }
 
 @Composable
-private fun WorldModuleRow(
-    module: ContentModuleEntity,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onToggle: () -> Unit,
-    onEdit: () -> Unit,
-    onRename: () -> Unit,
-    onMove: (Int) -> Unit,
-    onDelete: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (module.collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, contentDescription = null)
-            Text(module.name, modifier = Modifier.weight(1f).padding(start = 8.dp), fontWeight = FontWeight.Medium)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移")
-            }
-            IconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移")
-            }
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "编辑内容") }
-            TextButton(onClick = onRename) { Text("重命名") }
-            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "删除模块") }
-        }
-        if (!module.collapsed) Text(
-            module.editableText().ifBlank { "尚未填写内容" },
-            modifier = Modifier.padding(start = 40.dp, end = 16.dp, bottom = 12.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun ModulePickerDialog(onDismiss: () -> Unit, onPick: (ContentModuleType) -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("添加世界模块") },
-        text = { Column { WORLD_PAGE_MODULE_TYPES.forEach { type ->
-            TextButton(onClick = { onPick(type) }, modifier = Modifier.fillMaxWidth()) {
-                Text(worldModuleDisplayName(type))
-            }
-        } } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-}
-
-@Composable
 private fun WorldImageEditorRow(
     label: String,
     path: String?,
@@ -729,7 +591,7 @@ private fun WorldEmptyRow(title: String, action: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun rememberMediaRepository(app: MinisApp): MediaAssetRepository {
+internal fun rememberMediaRepository(app: MinisApp): MediaAssetRepository {
     val context = LocalContext.current.applicationContext
     return remember(app) {
         val root = File(context.filesDir, "novex-media").canonicalFile
@@ -741,41 +603,12 @@ private fun rememberMediaRepository(app: MinisApp): MediaAssetRepository {
 }
 
 @Composable
-private fun rememberManagedMediaStore(
+internal fun rememberManagedMediaStore(
     context: Context,
     repository: MediaAssetRepository,
 ): ManagedMediaAssetStore = remember(repository) {
     ManagedMediaAssetStore(File(context.filesDir, "novex-media"), repository)
 }
-
-internal val WORLD_PAGE_MODULE_TYPES = listOf(
-    ContentModuleType.TIMELINE,
-    ContentModuleType.ERA_EVENT,
-    ContentModuleType.MAP,
-    ContentModuleType.REGION,
-    ContentModuleType.FACTION,
-    ContentModuleType.RACE,
-    ContentModuleType.CUSTOM,
-)
-
-internal fun worldModuleDisplayName(type: ContentModuleType): String = when (type) {
-    ContentModuleType.TIMELINE -> "时间线"
-    ContentModuleType.ERA_EVENT -> "时代与事件"
-    ContentModuleType.MAP -> "地图"
-    ContentModuleType.REGION -> "地区设定"
-    ContentModuleType.FACTION -> "势力设定"
-    ContentModuleType.RACE -> "种族设定"
-    ContentModuleType.CUSTOM -> "自定义模块"
-    else -> type.name
-}
-
-internal fun encodeWorldModuleText(text: String): String = JSONObject().put("text", text).toString()
-
-internal fun decodeWorldModuleText(contentJson: String): String = runCatching {
-    JSONObject(contentJson).optString("text")
-}.getOrElse { contentJson }
-
-private fun ContentModuleEntity.editableText(): String = decodeWorldModuleText(contentJson)
 
 private fun WorldEntity.tags(): List<String> = runCatching {
     val array = JSONArray(tagsJson)
@@ -796,4 +629,4 @@ private fun String?.worldIdFromSnapshot(): String? = this?.let { raw ->
     runCatching { JSONObject(raw).optString("id").trim().ifBlank { null } }.getOrNull()
 }
 
-private fun String?.existingMediaFile(): File? = this?.let(::File)?.takeIf(File::exists)
+internal fun String?.existingMediaFile(): File? = this?.let(::File)?.takeIf(File::exists)

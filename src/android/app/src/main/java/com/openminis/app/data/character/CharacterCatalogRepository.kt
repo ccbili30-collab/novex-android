@@ -123,7 +123,81 @@ class CharacterCatalogRepository(
 
     suspend fun listWorlds(): List<WorldEntity> = dao.listWorlds()
 
+    suspend fun listCharacters(): List<CharacterEntity> = dao.listCharacters()
+
     suspend fun listVersions(): List<CharacterVersionEntity> = dao.listVersions()
+
+    suspend fun saveCharacter(
+        character: CharacterEntity,
+        now: Long = System.currentTimeMillis(),
+    ): CharacterEntity {
+        val existing = requireNotNull(dao.character(character.id)) { "角色不存在" }
+        val saved = existing.copy(
+            name = character.name.trim().ifBlank { existing.name },
+            updatedAt = now,
+        )
+        dao.updateCharacter(saved)
+        return saved
+    }
+
+    suspend fun saveVersion(
+        version: CharacterVersionEntity,
+        now: Long = System.currentTimeMillis(),
+    ): CharacterVersionEntity {
+        val existing = requireNotNull(dao.version(version.id)) { "角色版本不存在" }
+        val saved = existing.copy(
+            label = version.label.trim().ifBlank {
+                if (existing.kind == CharacterVersionKind.ORIGINAL) "本体" else "分身"
+            },
+            profileJson = version.profileJson,
+            updatedAt = now,
+        )
+        dao.updateVersion(saved)
+        return saved
+    }
+
+    suspend fun duplicateCharacter(
+        characterId: String,
+        now: Long = System.currentTimeMillis(),
+        newCharacterId: String = UUID.randomUUID().toString(),
+        newOriginalVersionId: String = newCharacterId,
+    ): CharacterAggregate {
+        val source = requireNotNull(character(characterId)) { "角色不存在" }
+        val copiedCharacter = CharacterEntity(
+            id = newCharacterId,
+            name = "${source.character.name} 副本",
+            originalVersionId = newOriginalVersionId,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val copiedOriginal = source.original.copy(
+            id = newOriginalVersionId,
+            characterId = newCharacterId,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val copiedVariants = source.variants.map { version ->
+            version.copy(
+                id = UUID.randomUUID().toString(),
+                characterId = newCharacterId,
+                createdAt = now,
+                updatedAt = now,
+            )
+        }
+        dao.insertCharacterAggregate(copiedCharacter, listOf(copiedOriginal) + copiedVariants)
+        return CharacterAggregate(copiedCharacter, copiedOriginal, copiedVariants)
+    }
+
+    suspend fun deleteVersion(versionId: String) {
+        val version = requireNotNull(dao.version(versionId)) { "角色版本不存在" }
+        require(version.kind == CharacterVersionKind.VARIANT) { "不能删除角色本体" }
+        dao.deleteVersion(versionId)
+    }
+
+    suspend fun deleteCharacter(characterId: String) {
+        requireNotNull(dao.character(characterId)) { "角色不存在" }
+        dao.deleteCharacter(characterId)
+    }
 
     suspend fun saveWorld(
         world: WorldEntity,

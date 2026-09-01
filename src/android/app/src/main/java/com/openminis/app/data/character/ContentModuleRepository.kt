@@ -70,6 +70,41 @@ class ContentModuleRepository(
         dao.deleteAndCompact(id)
     }
 
+    /** Copies module values and references once; later edits do not stay synchronized. */
+    suspend fun copyAll(
+        source: ModuleOwner,
+        target: ModuleOwner,
+        now: Long = System.currentTimeMillis(),
+    ): List<ContentModuleEntity> {
+        requireOwner(source)
+        requireOwner(target)
+        val sourceModules = list(source)
+        val copies = sourceModules.map { module ->
+            add(
+                owner = target,
+                type = module.type,
+                name = module.name,
+                contentJson = module.contentJson,
+                collapsed = module.collapsed,
+                now = now,
+            )
+        }
+        val copiedIds = sourceModules.map(ContentModuleEntity::id).zip(copies.map(ContentModuleEntity::id)).toMap()
+        sourceModules.zip(copies).forEach { (sourceModule, copiedModule) ->
+            references(sourceModule.id).forEach { reference ->
+                val targetId = if (reference.targetType == ModuleReferenceTargetType.MODULE) {
+                    copiedIds[reference.targetId] ?: reference.targetId
+                } else reference.targetId
+                addReference(
+                    copiedModule.id,
+                    ModuleReferenceTarget(reference.targetType, targetId),
+                    reference.position,
+                )
+            }
+        }
+        return copies
+    }
+
     suspend fun addReference(
         sourceModuleId: String,
         target: ModuleReferenceTarget,
