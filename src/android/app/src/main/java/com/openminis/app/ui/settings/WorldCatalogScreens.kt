@@ -55,7 +55,9 @@ import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCardStore
+import com.openminis.app.data.character.CharacterLibraryService
 import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetRepository
@@ -74,6 +76,7 @@ private data class WorldPageData(
     val world: WorldEntity,
     val versions: List<CharacterVersionEntity>,
     val availableVersions: List<CharacterVersionEntity>,
+    val versionWorlds: Map<String, List<WorldEntity>>,
     val media: Map<MediaAssetSlot, MediaAssetEntity>,
 )
 
@@ -165,6 +168,7 @@ fun CatalogWorldDetailScreen(
     onEditPersona: (String?) -> Unit,
     onCreateCharacter: () -> Unit,
     onOpenCharacter: (String) -> Unit,
+    onEditCharacterVersion: (String, String) -> Unit,
     onOpenSession: (String) -> Unit,
     onStartWorldNovax: (String?) -> Unit,
 ) {
@@ -176,13 +180,16 @@ fun CatalogWorldDetailScreen(
     val personas = allPersonas.filter { it.worldId == worldId }
     val app = context.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
+    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
     val mediaRepo = rememberMediaRepository(app)
+    val characterLibrary = remember(app) { CharacterLibraryService(catalog, moduleRepository, mediaRepo) }
     val owner = remember(worldId) { ModuleOwner.world(worldId) }
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var data by remember { mutableStateOf<WorldPageData?>(null) }
     var missing by remember { mutableStateOf(false) }
     var addCharacter by remember { mutableStateOf(false) }
+    var editVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
         val world = catalog.world(worldId)
@@ -191,10 +198,12 @@ fun CatalogWorldDetailScreen(
             data = null
         } else {
             missing = false
+            val versions = catalog.versionsForWorld(worldId)
             data = WorldPageData(
                 world = world,
-                versions = catalog.versionsForWorld(worldId),
+                versions = versions,
                 availableVersions = catalog.listVersions(),
+                versionWorlds = versions.associate { it.id to catalog.worldsForVersion(it.id) },
                 media = MediaAssetSlot.entries.mapNotNull { slot ->
                     mediaRepo.assetFor(owner, slot)?.let { slot to it }
                 }.toMap(),
@@ -257,6 +266,9 @@ fun CatalogWorldDetailScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
+                            TextButton(onClick = {
+                                editVersion = version
+                            }) { Text("编辑") }
                             TextButton(onClick = {
                                 scope.launch {
                                     catalog.removeVersionFromWorld(worldId, version.id)
@@ -356,6 +368,38 @@ fun CatalogWorldDetailScreen(
         },
         confirmButton = { TextButton(onClick = { addCharacter = false }) { Text("关闭") } },
     )
+    editVersion?.let { version ->
+        val affectedWorlds = current?.versionWorlds?.get(version.id).orEmpty()
+        AlertDialog(
+            onDismissRequest = { editVersion = null },
+            title = { Text("如何修改${version.profileName()}？") },
+            text = {
+                Text(
+                    "编辑共享版本会同步影响：" +
+                        affectedWorlds.joinToString("、") { it.name }.ifBlank { "当前角色库版本" } +
+                        "。另存为新分身只替换当前世界的关联。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    editVersion = null
+                    onEditCharacterVersion(version.characterId, version.id)
+                }) { Text("编辑共享版本") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    editVersion = null
+                    scope.launch {
+                        runCatching { characterLibrary.saveAsWorldVariant(version.id, worldId) }
+                            .onSuccess { created ->
+                                onEditCharacterVersion(created.characterId, created.id)
+                            }
+                            .onFailure { error = it.message }
+                    }
+                }) { Text("仅当前世界另存分身") }
+            },
+        )
+    }
     error?.let { message ->
         AlertDialog(
             onDismissRequest = { error = null },

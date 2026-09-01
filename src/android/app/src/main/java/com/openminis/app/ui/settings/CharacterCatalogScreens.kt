@@ -245,6 +245,7 @@ fun CatalogCharacterDetailScreen(
     var selectedVersionId by rememberSaveable(characterId) { mutableStateOf<String?>(null) }
     var confirmDeleteRoot by remember { mutableStateOf(false) }
     var confirmDeleteVariant by remember { mutableStateOf<CharacterVersionEntity?>(null) }
+    var confirmSharedEdit by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(characterId, refresh) {
         val aggregate = catalog.character(characterId)
@@ -343,7 +344,13 @@ fun CatalogCharacterDetailScreen(
                     CharacterInfoRow("种族", profile.race.ifBlank { "未填写" })
                     CharacterInfoRow("职业", profile.occupation.ifBlank { "未填写" })
                     CharacterInfoRow("简介", profile.summary.ifBlank { "未填写" })
-                    TextButton(onClick = { onEditVersion(selected.id) }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    TextButton(
+                        onClick = {
+                            if (current.worlds[selected.id].orEmpty().isEmpty()) onEditVersion(selected.id)
+                            else confirmSharedEdit = selected
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Text("编辑这个版本")
                     }
@@ -400,6 +407,23 @@ fun CatalogCharacterDetailScreen(
                 }) { Text("删除") }
             },
             dismissButton = { TextButton(onClick = { confirmDeleteVariant = null }) { Text("取消") } },
+        )
+    }
+    confirmSharedEdit?.let { version ->
+        val affectedWorlds = current?.worlds?.get(version.id).orEmpty()
+        AlertDialog(
+            onDismissRequest = { confirmSharedEdit = null },
+            title = { Text("编辑共享版本？") },
+            text = {
+                Text("保存后的修改会同步显示在：${affectedWorlds.joinToString("、") { it.name }}。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSharedEdit = null
+                    onEditVersion(version.id)
+                }) { Text("继续编辑") }
+            },
+            dismissButton = { TextButton(onClick = { confirmSharedEdit = null }) { Text("取消") } },
         )
     }
     error?.let { CharacterErrorDialog(it) { error = null } }

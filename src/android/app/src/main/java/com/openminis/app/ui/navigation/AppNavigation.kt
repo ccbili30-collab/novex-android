@@ -717,6 +717,11 @@ fun AppNavigation(
                     navController.safeNavigate(Routes.characterCatalogEdit(worldId = worldId))
                 },
                 onOpenCharacter = { navController.safeNavigate(Routes.characterDetail(it)) },
+                onEditCharacterVersion = { characterId, versionId ->
+                    navController.safeNavigate(
+                        Routes.characterCatalogEdit(characterId = characterId, versionId = versionId),
+                    )
+                },
                 onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
                 onStartWorldNovax = { personaId ->
                     val draft = buildString {

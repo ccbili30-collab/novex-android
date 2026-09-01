@@ -68,6 +68,34 @@ class CharacterLibraryService(
         return copy
     }
 
+    /** Copies one reusable version and swaps only the requesting world's membership. */
+    suspend fun saveAsWorldVariant(
+        sourceVersionId: String,
+        worldId: String,
+        now: Long = System.currentTimeMillis(),
+    ): CharacterVersionEntity {
+        val source = requireNotNull(catalog.version(sourceVersionId)) { "角色版本不存在" }
+        val world = requireNotNull(catalog.world(worldId)) { "世界不存在" }
+        val currentVersions = catalog.versionsForWorld(worldId)
+        val position = currentVersions.indexOfFirst { it.id == source.id }
+        require(position >= 0) { "当前世界未关联这个角色版本" }
+        val variant = catalog.createVariant(
+            characterId = source.characterId,
+            label = "${world.name}分身",
+            profileJson = source.profileJson,
+            now = now,
+        )
+        val sourceOwner = ModuleOwner.characterVersion(source.id)
+        val variantOwner = ModuleOwner.characterVersion(variant.id)
+        modules.copyAll(sourceOwner, variantOwner, now)
+        listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
+            media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(variantOwner, slot, asset.id) }
+        }
+        catalog.removeVersionFromWorld(worldId, source.id)
+        catalog.addVersionToWorld(worldId, variant.id, position, now)
+        return variant
+    }
+
     suspend fun deleteVariant(versionId: String) {
         val version = requireNotNull(catalog.version(versionId)) { "角色版本不存在" }
         require(version.kind == CharacterVersionKind.VARIANT) { "不能删除角色本体" }

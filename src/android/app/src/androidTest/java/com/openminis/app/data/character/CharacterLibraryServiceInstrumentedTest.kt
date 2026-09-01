@@ -109,4 +109,46 @@ class CharacterLibraryServiceInstrumentedTest {
         assertNull(mediaRepository.asset(avatar.id))
         assertFalse(avatarFile.exists())
     }
+
+    @Test
+    fun saveAsWorldVariantReplacesOnlyCurrentWorldAndCopiesVersionContent() = runBlocking {
+        val worldA = catalog.createWorld("雾港", now = 1)
+        val worldB = catalog.createWorld("星城", now = 2)
+        val character = catalog.createCharacter("伊薇", originalProfileJson = "{\"name\":\"伊薇\"}", now = 3)
+        catalog.addVersionToWorld(worldA.id, character.original.id, 0, now = 4)
+        catalog.addVersionToWorld(worldB.id, character.original.id, 0, now = 5)
+        moduleRepository.add(
+            ModuleOwner.characterVersion(character.original.id),
+            ContentModuleType.EQUIPMENT,
+            "随身装备",
+            "{\"text\":\"银色怀表\"}",
+            now = 6,
+        )
+        val backgroundFile = File(directory, "background.png").apply { writeBytes(byteArrayOf(9)) }
+        val background = mediaRepository.register(
+            backgroundFile.absolutePath,
+            "image/png",
+            "background-hash",
+            now = 7,
+        )
+        mediaRepository.attach(
+            ModuleOwner.characterVersion(character.original.id),
+            MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
+            background.id,
+        )
+
+        val variant = service.saveAsWorldVariant(character.original.id, worldA.id, now = 20)
+
+        assertEquals(CharacterVersionKind.VARIANT, variant.kind)
+        assertEquals(listOf(variant.id), catalog.versionsForWorld(worldA.id).map { it.id })
+        assertEquals(listOf(character.original.id), catalog.versionsForWorld(worldB.id).map { it.id })
+        assertEquals(listOf(worldA.id), catalog.worldsForVersion(variant.id).map { it.id })
+        assertEquals(
+            "银色怀表",
+            org.json.JSONObject(
+                moduleRepository.list(ModuleOwner.characterVersion(variant.id)).single().contentJson,
+            ).getString("text"),
+        )
+        assertEquals(2, mediaRepository.referenceCount(background.id))
+    }
 }
