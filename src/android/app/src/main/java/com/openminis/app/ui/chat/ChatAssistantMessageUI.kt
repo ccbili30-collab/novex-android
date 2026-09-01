@@ -894,57 +894,106 @@ internal fun ToolCallPill(
     }
 }
 
+private data class GeneratedImageBounds(val widthPx: Int, val heightPx: Int)
+
+private sealed interface GeneratedImageBoundsState {
+    data object Loading : GeneratedImageBoundsState
+    data object Unavailable : GeneratedImageBoundsState
+    data class Available(val bounds: GeneratedImageBounds) : GeneratedImageBoundsState
+}
+
+private fun readGeneratedImageBounds(file: File): GeneratedImageBounds? {
+    if (!file.isFile || file.length() <= 0L) return null
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, options)
+    if (options.outWidth <= 0 || options.outHeight <= 0) return null
+    return GeneratedImageBounds(options.outWidth, options.outHeight)
+}
+
 /**
- * A fixed-height surface prevents asynchronous image decoding from changing the
- * transcript geometry and moving the reader. Full resolution, saving, and
- * sharing are handled by the existing full-screen image viewer.
+ * Read only the local image header off the main thread, then make the visible
+ * frame match that aspect ratio. The full-screen image viewer still owns
+ * saving and sharing.
  */
 @Composable
 private fun GeneratedImageArtifactCard(artifact: GeneratedImageArtifact) {
     val openImage = LocalMarkdownUrlClickHandler.current
+    val imageFile = remember(artifact.filePath) { File(artifact.filePath) }
+    val boundsState by produceState<GeneratedImageBoundsState>(
+        initialValue = GeneratedImageBoundsState.Loading,
+        key1 = artifact.filePath,
+    ) {
+        value = withContext(Dispatchers.IO) { readGeneratedImageBounds(imageFile) }
+            ?.let(GeneratedImageBoundsState::Available)
+            ?: GeneratedImageBoundsState.Unavailable
+    }
     var imageLoadFailed by remember(artifact.filePath) { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    val density = LocalDensity.current
 
-    Box(
+    if (boundsState == GeneratedImageBoundsState.Loading) return
+    if (boundsState == GeneratedImageBoundsState.Unavailable) {
+        Text(
+            text = stringResource(R.string.generated_image_unavailable),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 5.dp),
+        )
+        return
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 3.dp)
-            .height(240.dp)
-            .clip(shape)
-            .background(ChatColors.toolCapsuleBg)
-            .border(0.5.dp, ChatColors.toolBorder, shape)
-            .clickable(enabled = !imageLoadFailed && openImage != null) {
-                openImage?.invoke(Uri.fromFile(File(artifact.filePath)).toString())
-            },
+            .padding(top = 6.dp, bottom = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
-        AsyncImage(
-            model = File(artifact.filePath),
-            contentDescription = artifact.title,
-            contentScale = ContentScale.Fit,
-            onSuccess = { imageLoadFailed = false },
-            onError = { imageLoadFailed = true },
-            modifier = Modifier.fillMaxSize(),
-        )
+        val sourceBounds = (boundsState as? GeneratedImageBoundsState.Available)?.bounds
+            ?: return@BoxWithConstraints
+        val frame = generatedImageFrame(
+            maxWidthPx = constraints.maxWidth,
+            maxHeightPx = with(density) { 420.dp.roundToPx() },
+            imageWidthPx = sourceBounds.widthPx,
+            imageHeightPx = sourceBounds.heightPx,
+        ) ?: return@BoxWithConstraints
+        val frameWidth = with(density) { frame.widthPx.toDp() }
+        val frameHeight = with(density) { frame.heightPx.toDp() }
 
-        if (imageLoadFailed) {
-            Text(
-                text = stringResource(R.string.generated_image_unavailable),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(20.dp),
+        Box(
+            modifier = Modifier
+                .width(frameWidth)
+                .height(frameHeight)
+                .clip(shape)
+                .then(
+                    if (imageLoadFailed) {
+                        Modifier.background(ChatColors.toolCapsuleBg)
+                    } else {
+                        Modifier
+                    },
+                )
+                .border(0.5.dp, ChatColors.toolBorder, shape)
+                .clickable(enabled = !imageLoadFailed && openImage != null) {
+                    openImage?.invoke(Uri.fromFile(imageFile).toString())
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = imageFile,
+                contentDescription = artifact.title,
+                contentScale = ContentScale.Fit,
+                onSuccess = { imageLoadFailed = false },
+                onError = { imageLoadFailed = true },
+                modifier = Modifier.fillMaxSize(),
             )
-        } else {
-            Text(
-                text = stringResource(R.string.generated_image_open_save_hint),
-                color = Color.White,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(10.dp)
-                    .background(Color.Black.copy(alpha = 0.58f), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+
+            if (imageLoadFailed) {
+                Text(
+                    text = stringResource(R.string.generated_image_unavailable),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(20.dp),
+                )
+            }
         }
     }
 }

@@ -6,6 +6,44 @@ import org.junit.Test
 
 class GeneratedImageArtifactPolicyTest {
     @Test
+    fun portraitFrameHugsImageWithoutFullWidthSideBars() {
+        assertEquals(
+            GeneratedImageFrame(widthPx = 280, heightPx = 420),
+            generatedImageFrame(
+                maxWidthPx = 360,
+                maxHeightPx = 420,
+                imageWidthPx = 1024,
+                imageHeightPx = 1536,
+            ),
+        )
+    }
+
+    @Test
+    fun landscapeFrameUsesAvailableWidthAndKeepsItsRatio() {
+        assertEquals(
+            GeneratedImageFrame(widthPx = 360, heightPx = 240),
+            generatedImageFrame(
+                maxWidthPx = 360,
+                maxHeightPx = 420,
+                imageWidthPx = 1536,
+                imageHeightPx = 1024,
+            ),
+        )
+    }
+
+    @Test
+    fun missingImageDimensionsCannotCreateAWhiteFrame() {
+        assertNull(
+            generatedImageFrame(
+                maxWidthPx = 360,
+                maxHeightPx = 420,
+                imageWidthPx = 0,
+                imageHeightPx = 0,
+            ),
+        )
+    }
+
+    @Test
     fun successfulGeneratedImageBecomesAVisibleArtifact() {
         val artifact = generatedImageArtifact(
             AssistantBlock(
