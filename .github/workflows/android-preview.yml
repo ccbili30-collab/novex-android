@@ -161,6 +161,7 @@ jobs:
             preview
           cp src/android/app/build/outputs/apk/preview/release/app-preview-release.apk \
             dist/preview/zz-novex-preview-installer.apk
+          rm "dist/preview/novex-preview-${{ steps.versions.outputs.preview }}.novex"
           (
             cd dist/preview
             find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | \
@@ -172,6 +173,11 @@ jobs:
             "v${{ steps.versions.outputs.stable }}" \
             dist/candidate \
             stable
+          rm "dist/candidate/novex-${{ steps.versions.outputs.stable }}.apk"
+          (
+            cd dist/candidate
+            sha256sum novex.apk > SHA256SUMS.txt
+          )
           cat > dist/candidate/candidate.env <<EOF
           SOURCE_SHA=$GITHUB_SHA
           STABLE_VERSION=${{ steps.versions.outputs.stable }}
@@ -186,14 +192,6 @@ jobs:
         with:
           name: novex-stable-candidate
           path: dist/candidate/
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload preview package artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: novex-preview-${{ steps.versions.outputs.preview }}
-          path: dist/preview/
           if-no-files-found: error
           retention-days: 30
 
