@@ -2446,7 +2446,8 @@ fun ChatScreen(
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
                             val displayTitle = when {
-                                immersiveProfile.effectiveAssistantName?.isNotBlank() == true ->
+                                immersiveProfile.usesRolePresentation &&
+                                    immersiveProfile.effectiveAssistantName?.isNotBlank() == true ->
                                     immersiveProfile.effectiveAssistantName!!
                                 showChatTitlePill
                                     && sessionTitle.isNotBlank()
