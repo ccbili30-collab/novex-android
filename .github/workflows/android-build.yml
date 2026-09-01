@@ -12,6 +12,21 @@ on:
       - main
       - next
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel to package"
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - preview
+          - both
+      run_validation:
+        description: "Repeat unit tests and preview compilation before packaging"
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: android-${{ github.workflow }}-${{ github.ref }}
@@ -94,6 +109,7 @@ jobs:
           fi
 
       - name: Run unit tests
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_validation }}
         working-directory: src/android
         env:
           NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
@@ -108,6 +124,7 @@ jobs:
           :app:testStableDebugUnitTest
 
       - name: Compile preview channel
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_validation }}
         working-directory: src/android
         env:
           NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
@@ -138,6 +155,13 @@ jobs:
             if [[ "$NOVEX_VERSION_NAME" == *-* ]]; then
               tasks=(":app:assemblePreviewRelease")
             fi
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            case "${{ inputs.channel }}" in
+              stable) tasks=(":app:assembleStableRelease") ;;
+              preview) tasks=(":app:assemblePreviewRelease") ;;
+              both) tasks=(":app:assembleStableRelease" ":app:assemblePreviewRelease") ;;
+              *) echo "Unsupported release channel: ${{ inputs.channel }}" >&2; exit 1 ;;
+            esac
           fi
           ./gradlew --no-daemon --stacktrace --max-workers=2 \
             -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
@@ -152,34 +176,45 @@ jobs:
         run: |
           rm -rf dist
           expected_tag=""
+          include_stable=true
+          include_preview=true
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             expected_tag="$GITHUB_REF_NAME"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            case "${{ inputs.channel }}" in
+              stable) include_preview=false ;;
+              preview) include_stable=false ;;
+              both) ;;
+              *) echo "Unsupported release channel: ${{ inputs.channel }}" >&2; exit 1 ;;
+            esac
           fi
           if [ -n "$KEYSTORE_BASE64" ]; then
             export EXPECTED_CERT_SHA256="cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6"
           fi
           version="${GITHUB_REF_NAME#v}"
-          if [ "$GITHUB_REF_TYPE" != "tag" ] || [[ "$version" != *-* ]]; then
+          if [ "$include_stable" = true ] && { [ "$GITHUB_REF_TYPE" != "tag" ] || [[ "$version" != *-* ]]; }; then
             ./scripts/verify_android_release.sh \
               src/android/app/build/outputs/apk/stable/release/app-stable-release.apk \
               "$expected_tag" \
               dist \
               stable
           fi
-          ./scripts/verify_android_release.sh \
-            src/android/app/build/outputs/apk/preview/release/app-preview-release.apk \
-            "$expected_tag" \
-            dist \
-            preview
-          if [ "$GITHUB_REF_TYPE" != "tag" ] || [[ "$version" != *-* ]]; then
+          if [ "$include_preview" = true ]; then
+            ./scripts/verify_android_release.sh \
+              src/android/app/build/outputs/apk/preview/release/app-preview-release.apk \
+              "$expected_tag" \
+              dist \
+              preview
+          fi
+          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] && { [ "$GITHUB_REF_TYPE" != "tag" ] || [[ "$version" != *-* ]]; }; then
             cp src/android/app/build/outputs/apk/preview/release/app-preview-release.apk \
               dist/zz-novex-preview-installer.apk
-            (
-              cd dist
-              find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | \
-                sed 's#^./##' | sort | xargs sha256sum > SHA256SUMS.txt
-            )
           fi
+          (
+            cd dist
+            find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | \
+              sed 's#^./##' | sort | xargs sha256sum > SHA256SUMS.txt
+          )
 
       - name: Upload APK artifact
         if: ${{ github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' }}
