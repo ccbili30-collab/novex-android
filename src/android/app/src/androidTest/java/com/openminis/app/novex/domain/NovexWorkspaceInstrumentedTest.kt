@@ -512,6 +512,88 @@ class NovexWorkspaceInstrumentedTest {
     }
 
     @Test
+    fun characterPageDraftSavesProfileModulesImagesAndVariantInheritanceAsOneCommit() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val root = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = null,
+                versionId = null,
+                sourceVersionId = null,
+                createVariant = false,
+                rootName = "苏晚晴",
+                label = "本体",
+                profileJson = "{\"name\":\"苏晚晴\",\"occupation\":\"医师\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "root-quotes",
+                        type = ContentModuleType.QUOTES,
+                        name = "语录",
+                        contentJson = "{\"version\":1,\"kind\":\"collection\",\"items\":[]}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        MediaAssetSlot.CHARACTER_AVATAR,
+                        byteArrayOf(2, 3, 5, 7),
+                        "image/png",
+                    ),
+                ),
+                linkWorldId = world.id,
+                now = 10,
+            ),
+        ).requireCharacter()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val rootSnapshot = requireNotNull(workspace.character(root.character.id))
+        assertEquals("苏晚晴", rootSnapshot.character.character.name)
+        assertEquals(listOf("root-quotes"), rootSnapshot.modulesByVersion.getValue(root.original.id).map { it.id })
+        assertEquals(listOf("云岚书院"), rootSnapshot.worldsByVersion.getValue(root.original.id).map { it.name })
+        assertEquals(
+            byteArrayOf(2, 3, 5, 7).toList(),
+            File(
+                rootSnapshot.mediaByVersion.getValue(root.original.id)
+                    .getValue(MediaAssetSlot.CHARACTER_AVATAR).managedPath,
+            ).readBytes().toList(),
+        )
+
+        val withVariant = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = root.character.id,
+                versionId = null,
+                sourceVersionId = root.original.id,
+                createVariant = true,
+                rootName = "苏晚晴",
+                label = "云岚分身",
+                profileJson = "{\"name\":\"苏晚晴\",\"occupation\":\"书院医师\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "variant-experience",
+                        type = ContentModuleType.WORLD_EXPERIENCE,
+                        name = "世界经历",
+                        contentJson = "{\"version\":1,\"kind\":\"timeline\",\"nodes\":[]}",
+                    ),
+                ),
+                linkWorldId = world.id,
+                now = 20,
+            ),
+        ).requireCharacter()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = requireNotNull(workspace.character(root.character.id))
+        val variant = withVariant.variants.single()
+        assertEquals(listOf("variant-experience"), restored.modulesByVersion.getValue(variant.id).map { it.id })
+        assertNotEquals(
+            restored.mediaByVersion.getValue(root.original.id).getValue(MediaAssetSlot.CHARACTER_AVATAR),
+            null,
+        )
+        assertEquals(
+            restored.mediaByVersion.getValue(root.original.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+            restored.mediaByVersion.getValue(variant.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+        )
+        assertEquals(listOf("云岚书院"), restored.worldsByVersion.getValue(variant.id).map { it.name })
+    }
+
+    @Test
     fun moduleReferencesRecoverAndCanBeRemovedThroughWorkspaceCommands() = runBlocking {
         val sourceWorld = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
         val targetWorld = workspace.apply(NovexCommand.CreateWorld("雾港", now = 2)).requireWorld()

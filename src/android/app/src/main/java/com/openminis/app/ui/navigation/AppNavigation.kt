@@ -792,7 +792,7 @@ fun AppNavigation(
         ) { entry ->
             val editingCharacterId = entry.arguments?.getString("characterId")
             val editingWorldId = entry.arguments?.getString("worldId")
-            com.openminis.app.ui.settings.CatalogCharacterEditorScreen(
+            com.openminis.app.ui.settings.NovexCharacterEditorScreen(
                 characterId = editingCharacterId,
                 versionId = entry.arguments?.getString("versionId"),
                 worldId = editingWorldId,

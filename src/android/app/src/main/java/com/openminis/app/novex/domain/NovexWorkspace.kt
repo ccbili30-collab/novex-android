@@ -205,6 +205,21 @@ sealed interface NovexCommand {
         val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
+    /** Saves one character-version editor draft at a single transaction boundary. */
+    data class SaveCharacterPage(
+        val characterId: String?,
+        val versionId: String?,
+        val sourceVersionId: String?,
+        val createVariant: Boolean,
+        val rootName: String,
+        val label: String,
+        val profileJson: String,
+        val modules: List<NovexModuleDraft> = emptyList(),
+        val imageChanges: List<NovexImageChange> = emptyList(),
+        val linkWorldId: String? = null,
+        val now: Long = System.currentTimeMillis(),
+    ) : NovexCommand
+
     data class DeleteVariant(val versionId: String) : NovexCommand
 
     data class LinkCharacterVersion(
@@ -632,6 +647,95 @@ internal class DefaultNovexWorkspace(
             }
             NovexChange.CharacterSaved(
                 requireNotNull(catalog.character(savedRoot.id)) { "角色不存在" },
+            )
+        }
+        is NovexCommand.SaveCharacterPage -> {
+            require(command.rootName.isNotBlank()) { "角色名称不能为空" }
+            val profileName = runCatching {
+                com.openminis.app.data.character.CharacterVersionProfile.fromJson(command.profileJson).name
+            }.getOrDefault("")
+            require(profileName.isNotBlank()) { "角色姓名不能为空" }
+            val duplicateSlots = command.imageChanges.groupingBy(NovexImageChange::slot)
+                .eachCount()
+                .filterValues { it > 1 }
+            require(duplicateSlots.isEmpty()) { "同一图片位置不能重复修改" }
+            val editingExisting = command.characterId != null && !command.createVariant
+            require(!editingExisting || command.versionId != null) { "缺少要编辑的角色版本" }
+            require(!command.createVariant || command.characterId != null) { "创建分身需要所属角色" }
+            require(!command.createVariant || command.sourceVersionId != null) { "创建分身需要来源版本" }
+
+            val aggregateBefore = command.characterId?.let { characterId ->
+                requireNotNull(catalog.character(characterId)) { "角色不存在" }
+            }
+            val targetVersion = when {
+                aggregateBefore == null -> catalog.createCharacter(
+                    command.rootName.trim(),
+                    command.label.ifBlank { "本体" },
+                    command.profileJson,
+                    command.now,
+                ).original
+                command.createVariant -> {
+                    val source = requireNotNull(catalog.version(command.sourceVersionId!!)) {
+                        "来源角色版本不存在"
+                    }
+                    require(source.characterId == aggregateBefore.character.id) { "来源版本不属于当前角色" }
+                    catalog.createVariant(
+                        aggregateBefore.character.id,
+                        command.label.ifBlank { "新分身" },
+                        command.profileJson,
+                        command.now,
+                    )
+                }
+                else -> {
+                    val existing = aggregateBefore.allVersions.firstOrNull { it.id == command.versionId }
+                        ?: error("角色版本不存在")
+                    catalog.saveVersion(
+                        existing.copy(label = command.label, profileJson = command.profileJson),
+                        command.now,
+                    )
+                }
+            }
+            val rootId = targetVersion.characterId
+            if (targetVersion.kind == com.openminis.app.data.character.CharacterVersionKind.ORIGINAL) {
+                val root = requireNotNull(catalog.character(rootId)) { "角色不存在" }.character
+                catalog.saveCharacter(root.copy(name = command.rootName.trim()), command.now)
+            }
+
+            val owner = ModuleOwner.characterVersion(targetVersion.id)
+            saveModules(owner, command.modules, command.now)
+            val supportedSlots = setOf(
+                MediaAssetSlot.CHARACTER_AVATAR,
+                MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
+            )
+            command.imageChanges.forEach { change ->
+                require(change.slot in supportedSlots) { "角色页面不支持该图片位置" }
+            }
+            if (command.createVariant) {
+                val sourceOwner = ModuleOwner.characterVersion(command.sourceVersionId!!)
+                supportedSlots.filterNot(command.imageChanges.map(NovexImageChange::slot).toSet()::contains)
+                    .forEach { slot ->
+                        media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(owner, slot, asset.id) }
+                    }
+            }
+            command.imageChanges.forEach { change ->
+                when (change) {
+                    is NovexImageChange.Replace -> {
+                        require(change.bytes.isNotEmpty()) { "图片内容不能为空" }
+                        val asset = media.import(change.bytes, change.mimeType, command.now)
+                        media.attach(owner, change.slot, asset.id)
+                    }
+                    is NovexImageChange.Remove -> media.detach(owner, change.slot)
+                }
+            }
+            command.linkWorldId?.let { worldId ->
+                requireNotNull(catalog.world(worldId)) { "世界不存在" }
+                val linked = catalog.versionsForWorld(worldId)
+                if (linked.none { it.id == targetVersion.id }) {
+                    catalog.link(worldId, targetVersion.id, linked.size, command.now)
+                }
+            }
+            NovexChange.CharacterSaved(
+                requireNotNull(catalog.character(rootId)) { "角色不存在" },
             )
         }
         is NovexCommand.DeleteVariant -> {

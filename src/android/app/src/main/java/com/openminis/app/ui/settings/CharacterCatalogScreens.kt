@@ -53,7 +53,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,7 +114,7 @@ private data class CharacterDetailData(
     val media: Map<String, Map<MediaAssetSlot, MediaAssetEntity>>,
 )
 
-private data class CharacterPageData(
+internal data class CharacterPageData(
     val rootName: String,
     val version: CharacterVersionEntity,
     val profile: CharacterVersionProfile,
@@ -452,6 +451,7 @@ fun CatalogCharacterDetailScreen(
                 version = version,
                 selected = version.id == selected.id,
                 worlds = current.worlds[version.id].orEmpty(),
+                avatar = current.media[version.id]?.get(MediaAssetSlot.CHARACTER_AVATAR),
                 onClick = {
                     selectedVersionId = version.id
                     versionSheet = false
@@ -837,12 +837,13 @@ fun CatalogCharacterEditorScreen(
 }
 
 @Composable
-private fun CharacterPrimaryContent(
+internal fun CharacterPrimaryContent(
     data: CharacterPageData,
     onChooseVersion: (() -> Unit)?,
     onOpenModule: ((String) -> Unit)?,
+    mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
-    CharacterHero(data, onChooseVersion)
+    CharacterHero(data, onChooseVersion, mediaModels)
     CharacterFactsBlock(data.profile)
     if (data.profile.customAttributes.isNotEmpty()) {
         CharacterLabeledBlock("自定义属性") {
@@ -884,42 +885,51 @@ private fun CharacterPrimaryContent(
 }
 
 @Composable
-private fun CharacterHero(data: CharacterPageData, onChooseVersion: (() -> Unit)?) {
+private fun CharacterHero(
+    data: CharacterPageData,
+    onChooseVersion: (() -> Unit)?,
+    mediaModels: Map<MediaAssetSlot, Any?>,
+) {
     val name = data.profile.name.ifBlank { data.rootName }
-    val avatarFile = data.media[MediaAssetSlot.CHARACTER_AVATAR]?.managedPath.existingMediaFile()
-    val backgroundFile = data.media[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]?.managedPath.existingMediaFile()
-    Box(Modifier.fillMaxWidth().height(270.dp)) {
-        NovexArtwork(
-            kind = NovexArtworkKind.CHARACTER,
-            seed = data.version.id,
-            imageModel = backgroundFile,
-            contentDescription = "$name 主页背景",
-            modifier = Modifier.fillMaxWidth().height(270.dp),
-        )
+    val avatarModel = mediaModels[MediaAssetSlot.CHARACTER_AVATAR]
+        ?: data.media[MediaAssetSlot.CHARACTER_AVATAR]?.managedPath.existingMediaFile()
+    val backgroundModel = mediaModels[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]
+        ?: data.media[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]?.managedPath.existingMediaFile()
+    Column(Modifier.fillMaxWidth().background(NovexColors.Surface)) {
         Box(
-            Modifier.fillMaxWidth().height(270.dp).background(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.48f),
-                ),
-            ),
-        )
-        Row(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.Bottom,
+            Modifier.fillMaxWidth().height(238.dp)
+                .background(if (backgroundModel == null) NovexColors.PrimarySoft else Color.Transparent),
+            contentAlignment = Alignment.Center,
         ) {
-            if (avatarFile != null) {
+            if (backgroundModel != null) {
                 AsyncImage(
-                    model = avatarFile,
-                    contentDescription = "$name 头像",
+                    model = backgroundModel,
+                    contentDescription = "$name 主页背景",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(82.dp).clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.fillMaxWidth().height(238.dp),
+                )
+                Box(
+                    Modifier.fillMaxWidth().height(238.dp)
+                        .background(Color.White.copy(alpha = 0.7f)),
                 )
             }
-            Column(Modifier.weight(1f).padding(start = if (avatarFile == null) 0.dp else 12.dp)) {
+            NovexArtwork(
+                kind = NovexArtworkKind.CHARACTER,
+                seed = data.version.id,
+                imageModel = avatarModel,
+                contentDescription = "$name 头像",
+                modifier = Modifier.size(width = 184.dp, height = 196.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     name,
-                    color = Color.White,
+                    color = NovexColors.Text,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -930,13 +940,13 @@ private fun CharacterHero(data: CharacterPageData, onChooseVersion: (() -> Unit)
                 ) {
                     Text(
                         characterVersionSelectorLabel(data.version.kind, data.version.label, data.variantCount),
-                        color = Color.White.copy(alpha = 0.82f),
+                        color = NovexColors.SecondaryText,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (onChooseVersion != null) Icon(
                         painterResource(R.drawable.ic_phosphor_caret_right),
                         contentDescription = "选择角色版本",
-                        tint = Color.White.copy(alpha = 0.82f),
+                        tint = NovexColors.SecondaryText,
                         modifier = Modifier.padding(start = 3.dp).size(14.dp),
                     )
                 }
@@ -982,22 +992,32 @@ private fun CharacterVersionChoice(
     version: CharacterVersionEntity,
     selected: Boolean,
     worlds: List<WorldEntity>,
+    avatar: MediaAssetEntity?,
     onClick: () -> Unit,
 ) {
+    val profile = CharacterVersionProfile.fromJson(version.profileJson, version.label)
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        NovexArtwork(
+            kind = NovexArtworkKind.CHARACTER,
+            seed = version.id,
+            imageModel = avatar?.managedPath.existingMediaFile(),
+            contentDescription = "${profile.name}头像",
+            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(10.dp)),
+        )
         Column(Modifier.weight(1f)) {
             Text(
-                if (version.kind == CharacterVersionKind.ORIGINAL) "本体" else version.label,
+                if (version.kind == CharacterVersionKind.ORIGINAL) "本体 · ${profile.name}" else version.label,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.padding(start = 12.dp),
             )
             Text(
                 if (worlds.isEmpty()) "尚未加入世界" else worlds.joinToString(" · ") { it.name },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 3.dp),
+                modifier = Modifier.padding(start = 12.dp, top = 3.dp),
             )
         }
         if (selected) Text("当前", color = MaterialTheme.colorScheme.primary)
