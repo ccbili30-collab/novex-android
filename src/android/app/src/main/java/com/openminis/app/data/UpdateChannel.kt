@@ -59,11 +59,10 @@ internal object UpdateReleasePolicy {
         releases: List<PublishedUpdate>,
     ): List<PublishedUpdate> = when (channel) {
         UpdateChannel.STABLE -> releases.filterNot { it.isPrerelease }
-        // Preview installs may advance to a final release when that release
-        // also carries a preview-package APK. Proper semantic comparison keeps
-        // a newer preview (for example 0.3.0-beta.2) above an older stable
-        // patch (for example 0.2.4), while 0.3.0 final beats every 0.3.0 beta.
-        UpdateChannel.PREVIEW -> releases
+        // Preview is an independent installation and only follows preview
+        // candidates. A final release never moves users across channels even
+        // if a release was accidentally published with both asset names.
+        UpdateChannel.PREVIEW -> releases.filter { it.isPrerelease }
     }
 
     fun normalizeTag(tag: String): String = tag.trim().removePrefix("v").removePrefix("V")

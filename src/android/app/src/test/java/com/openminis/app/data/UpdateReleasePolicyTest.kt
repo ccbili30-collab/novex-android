@@ -67,14 +67,28 @@ class UpdateReleasePolicyTest {
     }
 
     @Test
-    fun `preview channel advances from beta to matching final baseline`() {
+    fun `preview channel never advances to a stable release`() {
         val selected = UpdateReleasePolicy.selectUpgrade(
             UpdateChannel.PREVIEW,
             "0.3.0-beta.5",
             listOf(release("v0.3.0", prerelease = false, stableAsset, previewAsset)),
         )
 
-        assertEquals("v0.3.0", selected?.tagName)
+        assertNull(selected)
+    }
+
+    @Test
+    fun `published preview updates itself to the next preview`() {
+        val selected = UpdateReleasePolicy.selectUpgrade(
+            UpdateChannel.PREVIEW,
+            "0.2.5-beta.4",
+            listOf(
+                release("v0.2.5-beta.5", prerelease = true, previewAsset),
+                release("v0.2.5", prerelease = false, stableAsset),
+            ),
+        )
+
+        assertEquals("v0.2.5-beta.5", selected?.tagName)
     }
 
     @Test
