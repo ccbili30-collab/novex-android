@@ -1,5 +1,6 @@
 package com.openminis.app.novex.adapter
 
+import androidx.room.withTransaction
 import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ManagedMediaAssetStore
@@ -30,6 +31,7 @@ object NovexWorkspaceFactory {
             catalog = RoomCatalogAdapter(catalog),
             content = RoomContentAdapter(content),
             media = ManagedMediaAdapter(mediaRepository, ManagedMediaAssetStore(mediaRoot, mediaRepository)),
+            transaction = { block -> database.withTransaction { block() } },
         )
     }
 }
@@ -88,7 +90,8 @@ private class RoomContentAdapter(
         contentJson: String,
         collapsed: Boolean,
         now: Long,
-    ) = repository.add(owner, type, name, contentJson, collapsed, now)
+        id: String,
+    ) = repository.add(owner, type, name, contentJson, collapsed, now, id)
     override suspend fun module(id: String) = repository.module(id)
     override suspend fun save(id: String, name: String, contentJson: String, now: Long) =
         repository.run {

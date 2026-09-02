@@ -97,6 +97,64 @@ class NovexWorkspaceInstrumentedTest {
     }
 
     @Test
+    fun moduleDraftsStayInMemoryUntilOneExplicitSaveAndThenRecoverInOrder() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val timeline = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(world.id),
+                type = ContentModuleType.TIMELINE,
+                name = "时间线",
+                contentJson = "{\"text\":\"旧内容\"}",
+                now = 2,
+            ),
+        ).requireModule()
+        val map = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(world.id),
+                type = ContentModuleType.MAP,
+                name = "地图",
+                contentJson = "{\"text\":\"旧地图\"}",
+                now = 3,
+            ),
+        ).requireModule()
+        val drafts = listOf(
+            NovexModuleDraft(
+                id = "new-faction",
+                type = ContentModuleType.FACTION,
+                name = "势力",
+                contentJson = "{\"text\":\"四方势力\"}",
+            ),
+            NovexModuleDraft(
+                id = timeline.id,
+                type = ContentModuleType.TIMELINE,
+                name = "王朝时间线",
+                contentJson = "{\"text\":\"新内容\"}",
+            ),
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        assertEquals(listOf(timeline.id, map.id), workspace.world(world.id)!!.modules.map { it.id })
+        assertEquals("旧内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(
+            workspace.world(world.id)!!.modules.first().contentJson,
+        ))
+
+        workspace.apply(
+            NovexCommand.SaveModules(
+                owner = ModuleOwner.world(world.id),
+                modules = drafts,
+                now = 10,
+            ),
+        )
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = workspace.world(world.id)!!.modules
+
+        assertEquals(listOf("new-faction", timeline.id), restored.map { it.id })
+        assertEquals(listOf("势力", "王朝时间线"), restored.map { it.name })
+        assertEquals(listOf(0, 1), restored.map { it.position })
+        assertEquals("新内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(restored.last().contentJson))
+    }
+
+    @Test
     fun worldLinksAndSharedMediaRemainValidWhenOneOwnerIsDeleted() = runBlocking {
         val worldA = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 10)).requireWorld()
         val worldB = workspace.apply(NovexCommand.CreateWorld("雾港", now = 11)).requireWorld()

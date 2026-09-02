@@ -8,12 +8,14 @@ import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.CharacterLibraryDocument
 import com.openminis.app.data.character.CharacterModuleDocument
 import com.openminis.app.data.character.CharacterVersionDocument
+import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.character.WorldEntity
+import java.util.UUID
 
 /**
  * The single Novex seam used by pages and future automation.
@@ -78,6 +80,24 @@ data class NovexModuleReferenceOption(
     val label: String,
     val kindLabel: String,
 )
+
+data class NovexModuleDraft(
+    val id: String,
+    val type: ContentModuleType,
+    val name: String,
+    val contentJson: String = "{}",
+    val collapsed: Boolean = true,
+) {
+    companion object {
+        fun from(module: ContentModuleEntity) = NovexModuleDraft(
+            id = module.id,
+            type = module.type,
+            name = module.name,
+            contentJson = module.contentJson,
+            collapsed = module.collapsed,
+        )
+    }
+}
 
 sealed interface NovexCommand {
     data class CreateWorld(
@@ -157,6 +177,14 @@ sealed interface NovexCommand {
         val contentJson: String = "{}",
         val collapsed: Boolean = true,
         val now: Long = System.currentTimeMillis(),
+        val id: String = UUID.randomUUID().toString(),
+    ) : NovexCommand
+
+    /** Reconciles one editor's complete in-memory module draft at the save boundary. */
+    data class SaveModules(
+        val owner: ModuleOwner,
+        val modules: List<NovexModuleDraft>,
+        val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
     data class SaveModule(
@@ -204,6 +232,7 @@ sealed interface NovexChange {
     data class CharacterSaved(val character: CharacterAggregate) : NovexChange
     data class VersionSaved(val version: CharacterVersionEntity) : NovexChange
     data class ModuleSaved(val module: ContentModuleEntity) : NovexChange
+    data class ModulesSaved(val modules: List<ContentModuleEntity>) : NovexChange
     data class MediaAttached(val asset: MediaAssetEntity) : NovexChange
     data class CharacterExported(val document: CharacterLibraryDocument) : NovexChange
     data object Completed : NovexChange
@@ -217,6 +246,9 @@ fun NovexChange.requireCharacter(): CharacterAggregate =
 fun NovexChange.requireVersion(): CharacterVersionEntity = (this as NovexChange.VersionSaved).version
 
 fun NovexChange.requireModule(): ContentModuleEntity = (this as NovexChange.ModuleSaved).module
+
+fun NovexChange.requireModules(): List<ContentModuleEntity> =
+    (this as NovexChange.ModulesSaved).modules
 
 fun NovexChange.requireMedia(): MediaAssetEntity = (this as NovexChange.MediaAttached).asset
 
@@ -269,6 +301,7 @@ internal interface NovexContentPort {
         contentJson: String,
         collapsed: Boolean,
         now: Long,
+        id: String,
     ): ContentModuleEntity
     suspend fun module(id: String): ContentModuleEntity?
     suspend fun save(id: String, name: String, contentJson: String, now: Long): ContentModuleEntity
@@ -292,6 +325,7 @@ internal class DefaultNovexWorkspace(
     private val catalog: NovexCatalogPort,
     private val content: NovexContentPort,
     private val media: NovexMediaPort,
+    private val transaction: suspend (suspend () -> NovexChange) -> NovexChange,
 ) : NovexWorkspace {
     override suspend fun worlds(): List<NovexWorldCard> = catalog.listWorlds().map { world ->
         val owner = ModuleOwner.world(world.id)
@@ -367,7 +401,11 @@ internal class DefaultNovexWorkspace(
         )
     }
 
-    override suspend fun apply(command: NovexCommand): NovexChange = when (command) {
+    override suspend fun apply(command: NovexCommand): NovexChange = transaction {
+        applyInsideTransaction(command)
+    }
+
+    private suspend fun applyInsideTransaction(command: NovexCommand): NovexChange = when (command) {
         is NovexCommand.CreateWorld -> NovexChange.WorldSaved(
             catalog.createWorld(command.name, command.overview, command.tagsJson, command.now),
         )
@@ -502,8 +540,56 @@ internal class DefaultNovexWorkspace(
                 command.contentJson,
                 command.collapsed,
                 command.now,
+                command.id,
             ),
         )
+        is NovexCommand.SaveModules -> {
+            val scope = requireNotNull(ContentModuleCatalog.scopeFor(command.owner.type)) {
+                "该对象不能拥有内容模块"
+            }
+            require(command.modules.map(NovexModuleDraft::id).distinct().size == command.modules.size) {
+                "模块编号不能重复"
+            }
+            val occupiedBuiltIns = mutableSetOf<ContentModuleType>()
+            command.modules.forEach { draft ->
+                require(draft.name.isNotBlank()) { "模块名称不能为空" }
+                val definition = ContentModuleCatalog.definition(draft.type)
+                require(definition in ContentModuleCatalog.definitions(scope)) { "该对象不支持${definition.displayName}" }
+                require(definition.repeatable || occupiedBuiltIns.add(draft.type)) {
+                    "${definition.displayName}已经存在，每个对象只能添加一个"
+                }
+            }
+            val existing = content.list(command.owner).associateBy(ContentModuleEntity::id)
+            command.modules.forEach { draft ->
+                existing[draft.id]?.let { saved ->
+                    require(saved.type == draft.type) { "不能改变已有模块类型" }
+                }
+            }
+            val desiredIds = command.modules.map(NovexModuleDraft::id).toSet()
+            existing.values.filter { it.id !in desiredIds }.forEach { removed ->
+                media.removeAll(ModuleOwner.contentModule(removed.id))
+                content.delete(removed.id)
+            }
+            command.modules.forEach { draft ->
+                if (draft.id in existing) {
+                    content.save(draft.id, draft.name, draft.contentJson, command.now)
+                } else {
+                    content.add(
+                        owner = command.owner,
+                        type = draft.type,
+                        name = draft.name,
+                        contentJson = draft.contentJson,
+                        collapsed = draft.collapsed,
+                        now = command.now,
+                        id = draft.id,
+                    )
+                }
+            }
+            command.modules.forEachIndexed { index, draft ->
+                content.move(draft.id, index, command.now)
+            }
+            NovexChange.ModulesSaved(content.list(command.owner))
+        }
         is NovexCommand.SaveModule -> NovexChange.ModuleSaved(
             content.save(command.moduleId, command.name, command.contentJson, command.now),
         )
@@ -611,6 +697,7 @@ internal class DefaultNovexWorkspace(
                 module.contentJson,
                 module.collapsed,
                 now,
+                UUID.randomUUID().toString(),
             )
         }
     }

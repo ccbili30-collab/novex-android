@@ -1,12 +1,10 @@
 package com.openminis.app.data.character
 
-import org.json.JSONObject
-
-/** Backward-compatible text payload used until individual module kinds gain richer schemas. */
+/** Compatibility adapter for the remaining text-only editor surfaces. */
 object ContentModuleTextCodec {
-    fun encode(text: String): String = JSONObject().put("text", text).toString()
+    fun encode(text: String): String = ContentModuleDocumentCodec.encode(
+        ContentModuleDocument.Article(text),
+    )
 
-    fun decode(contentJson: String): String = runCatching {
-        JSONObject(contentJson).optString("text")
-    }.getOrElse { contentJson }
+    fun decode(contentJson: String): String = ContentModuleDocumentCodec.decode(contentJson).toPlainText()
 }

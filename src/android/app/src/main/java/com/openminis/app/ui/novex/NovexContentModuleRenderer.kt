@@ -24,9 +24,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.toPlainText
 
 internal enum class NovexContentModuleLayout {
     MAP,
@@ -58,6 +60,7 @@ internal data class NovexContentModulePresentation(
     val id: String,
     val type: ContentModuleType,
     val title: String,
+    val document: ContentModuleDocument,
     val body: String,
     val summary: String,
 ) {
@@ -68,11 +71,13 @@ internal data class NovexContentModulePresentation(
 internal fun ContentModuleEntity.toNovexPresentation(
     maxSummaryCharacters: Int = 48,
 ): NovexContentModulePresentation {
-    val body = ContentModuleTextCodec.decode(contentJson)
+    val document = ContentModuleDocumentCodec.decode(type, contentJson)
+    val body = document.toPlainText()
     return NovexContentModulePresentation(
         id = id,
         type = type,
         title = name,
+        document = document,
         body = body,
         summary = novexModuleSummary(body, maxSummaryCharacters),
     )
@@ -132,6 +137,7 @@ internal fun NovexContentModuleSummary(
 internal fun NovexContentModuleBlock(
     presentation: NovexContentModulePresentation,
     imageModel: Any?,
+    itemImageModels: Map<String, Any?> = emptyMap(),
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -157,7 +163,11 @@ internal fun NovexContentModuleBlock(
         when (presentation.type.novexContentLayout()) {
             NovexContentModuleLayout.MAP -> MapModuleBody(presentation, imageModel)
             NovexContentModuleLayout.TIMELINE -> TimelineModuleBody(presentation, imageModel)
-            NovexContentModuleLayout.COLLECTION -> CollectionModuleBody(presentation, imageModel)
+            NovexContentModuleLayout.COLLECTION -> CollectionModuleBody(
+                presentation,
+                imageModel,
+                itemImageModels,
+            )
             NovexContentModuleLayout.ARTICLE -> ArticleModuleBody(presentation, imageModel)
         }
     }
@@ -188,37 +198,138 @@ private fun MapModuleBody(presentation: NovexContentModulePresentation, imageMod
 
 @Composable
 private fun TimelineModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
-    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(16.dp)) {
-            Spacer(Modifier.height(5.dp))
-            Spacer(Modifier.size(8.dp).clip(CircleShape).background(NovexColors.Primary))
-            Spacer(Modifier.width(2.dp).height(56.dp).background(NovexColors.Divider))
-        }
-        if (imageModel != null) {
-            AsyncImage(
-                model = imageModel,
-                contentDescription = "${presentation.title}图片",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.padding(start = 8.dp).size(72.dp).clip(RoundedCornerShape(8.dp)),
+    val timeline = presentation.document as? ContentModuleDocument.Timeline
+    val nodes = timeline?.nodes.orEmpty()
+    if (imageModel != null) {
+        AsyncImage(
+            model = imageModel,
+            contentDescription = "${presentation.title}图片",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(132.dp)
+                .clip(RoundedCornerShape(8.dp)),
+        )
+    }
+    if (nodes.isEmpty()) {
+        ModuleText(presentation, maxLines = 5)
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        nodes.take(6).forEachIndexed { index, node ->
+            TimelineNodeRow(
+                time = node.time,
+                title = node.title,
+                description = node.description,
+                drawTail = index < nodes.lastIndex && index < 5,
             )
         }
-        ModuleText(presentation, maxLines = 5, modifier = Modifier.weight(1f).padding(start = 10.dp, top = 0.dp))
     }
 }
 
 @Composable
-private fun CollectionModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
-    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
-        if (imageModel != null) {
-            AsyncImage(
-                model = imageModel,
-                contentDescription = "${presentation.title}代表图",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(8.dp)),
-            )
-            Spacer(Modifier.width(12.dp))
+private fun TimelineNodeRow(
+    time: String,
+    title: String,
+    description: String,
+    drawTail: Boolean,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(16.dp)) {
+            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.size(8.dp).clip(CircleShape).background(NovexColors.Primary))
+            if (drawTail) Spacer(Modifier.width(2.dp).height(52.dp).background(NovexColors.Divider))
         }
-        ModuleText(presentation, maxLines = 5, modifier = Modifier.weight(1f).padding(top = 0.dp))
+        Column(Modifier.weight(1f).padding(start = 10.dp, bottom = if (drawTail) 10.dp else 0.dp)) {
+            val heading = listOf(time, title).filter(String::isNotBlank).joinToString(" · ")
+            if (heading.isNotBlank()) {
+                Text(
+                    heading,
+                    color = NovexColors.Text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (description.isNotBlank()) {
+                Text(
+                    description,
+                    color = NovexColors.SecondaryText,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = if (heading.isBlank()) 0.dp else 2.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionModuleBody(
+    presentation: NovexContentModulePresentation,
+    imageModel: Any?,
+    itemImageModels: Map<String, Any?>,
+) {
+    val collection = presentation.document as? ContentModuleDocument.Collection
+    val items = collection?.items.orEmpty()
+    if (items.isEmpty()) {
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
+            if (imageModel != null) {
+                AsyncImage(
+                    model = imageModel,
+                    contentDescription = "${presentation.title}代表图",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(88.dp).clip(RoundedCornerShape(8.dp)),
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            ModuleText(presentation, maxLines = 5, modifier = Modifier.weight(1f).padding(top = 0.dp))
+        }
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        items.take(6).forEachIndexed { index, item ->
+            val itemImage = item.visualKey?.let(itemImageModels::get)
+                ?: imageModel.takeIf { index == 0 }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (itemImage != null) {
+                    AsyncImage(
+                        model = itemImage,
+                        contentDescription = "${item.name.ifBlank { presentation.title }}代表图",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    if (item.name.isNotBlank()) {
+                        Text(
+                            item.name,
+                            color = NovexColors.Text,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (item.summary.isNotBlank()) {
+                        Text(
+                            item.summary,
+                            color = NovexColors.SecondaryText,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = if (item.name.isBlank()) 0.dp else 2.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
