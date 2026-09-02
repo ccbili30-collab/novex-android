@@ -247,9 +247,9 @@ fun StoryWorldDetailScreen(
                 )
             }
         }
-        SettingsSection(header = "Novax 世界助手") {
+        SettingsSection(header = "Nova 世界助手") {
             Card3ActionRow(
-                title = "与 Novax 讨论这个世界",
+                title = "与 Nova 讨论这个世界",
                 subtitle = "读取世界观和玩家身份，但不扮演角色卡。",
                 onClick = { onStartWorldNovax(personas.firstOrNull { it.isDefault }?.id ?: personas.firstOrNull()?.id) },
             )
@@ -258,7 +258,7 @@ fun StoryWorldDetailScreen(
             if (worldSessions.isEmpty()) {
                 Text("还没有对话", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else worldSessions.take(20).forEach { session ->
-                val roleName = session.characterSnapshotJson.characterNameOrNull() ?: "Novax"
+                val roleName = session.characterSnapshotJson.characterNameOrNull() ?: "Nova"
                 Card3ActionRow(
                     title = session.title?.ifBlank { null } ?: "新对话",
                     subtitle = "$roleName · ${session.lastMessage.orEmpty().ifBlank { "暂无消息" }}",

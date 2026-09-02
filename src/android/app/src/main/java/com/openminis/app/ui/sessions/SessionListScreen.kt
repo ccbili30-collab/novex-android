@@ -1737,7 +1737,7 @@ private fun ChatSessionEntity.worldAndCharacterLabel(worldNames: Map<String, Str
         ?: runCatching {
             CharacterCard.fromJson(org.json.JSONObject(characterSnapshotJson.orEmpty())).name
         }.getOrNull()?.takeIf { it.isNotBlank() }
-        ?: "Novax"
+        ?: "Nova"
     return "$worldName · $characterName"
 }
 

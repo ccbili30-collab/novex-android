@@ -59,7 +59,7 @@ data class SoulMetadata(
         const val DISPLAY_EMOJI = "✨"
 
         val DEFAULT = SoulMetadata(
-            name = "Novex",
+            name = "Nova",
             // Default emoji is intentionally empty — UI uses the fixed
             // [displayEmoji] sparkle and [SoulMDParser.serialize] no longer
             // writes the `emoji:` line. The field is kept on the struct only
@@ -151,6 +151,10 @@ object SoulMDParser {
         s.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 
+internal fun migrateLegacyAssistantName(source: String): String =
+    Regex("(?m)^name:\\s*\"(?:Minis|Novex)\"\\s*$")
+        .replaceFirst(source, "name: \"Nova\"")
+
 /**
  * Result of a SOUL.md body length check. The hard limit depends on what
  * language the body is written in — Chinese / Japanese / Korean text is
@@ -180,6 +184,8 @@ object SoulStore {
     private const val TAG = "SoulStore"
     private const val FILE_NAME = "SOUL.md"
     private const val MEMORY_SUBDIR = "minis-global/memory"
+    private const val MIGRATION_PREFS = "soul_migrations"
+    private const val NOVA_NAME_MIGRATION_KEY = "assistant_name_nova_v1"
 
     fun fileLocation(context: Context): File =
         File(File(context.filesDir, MEMORY_SUBDIR), FILE_NAME)
@@ -286,7 +292,7 @@ object SoulStore {
      * `SoulStore.defaultContent` byte-for-byte (74c0daf).
      */
     val DEFAULT_CONTENT: String = """---
-name: "Novex"
+name: "Nova"
 style: ""
 lang: "auto"
 ---
@@ -305,10 +311,20 @@ lang: "auto"
     fun ensureExists(context: Context) {
         val file = fileLocation(context)
         if (file.exists()) {
-            runCatching {
-                val existing = file.readText()
-                if (existing.contains("name: \"Minis\"")) {
-                    file.writeText(existing.replaceFirst("name: \"Minis\"", "name: \"Novex\""))
+            val migrations = context.getSharedPreferences(MIGRATION_PREFS, Context.MODE_PRIVATE)
+            if (!migrations.getBoolean(NOVA_NAME_MIGRATION_KEY, false)) {
+                runCatching {
+                    val existing = file.readText()
+                    val migrated = migrateLegacyAssistantName(existing)
+                    if (migrated != existing) {
+                        file.writeText(migrated)
+                    }
+                }.onFailure {
+                    AppLogger.warning(TAG, "SOUL.md Nova name migration failed: ${it.message}")
+                }.onSuccess {
+                    // One-time only: after this migration users may freely
+                    // rename Nova (including back to a historical name).
+                    migrations.edit().putBoolean(NOVA_NAME_MIGRATION_KEY, true).apply()
                 }
             }
             return
@@ -464,7 +480,7 @@ object SystemPromptBuilder {
         val file = SoulStore.load(context)
         val name = (file?.metadata?.name ?: SoulMetadata.DEFAULT.name)
             .trim()
-            .ifEmpty { "Novex" }
+            .ifEmpty { "Nova" }
 
         val style = (file?.metadata?.style ?: "").trim()
 

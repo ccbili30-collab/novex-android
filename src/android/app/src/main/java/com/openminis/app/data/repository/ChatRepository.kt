@@ -106,11 +106,11 @@ class ChatRepository(internal val dao: ChatDao) {
      * over a raw `parts_json` string, matching ChatViewModel.loadSession's
      * AgentContentPart-based logic:
      *   - role USER + ALL parts are tool_result (tools ran, next model call never
-     *     fired), OR the single synthetic "Continue" reminder text part, OR
+     *     fired), OR
      *   - role ASSISTANT + any tool_use part (model asked for tools that never ran)
      * Part type discriminator is the JSON "type" field — the @SerialName values
      * from [com.openminis.app.data.model.ContentPart]: "toolUse" / "toolResult"
-     * / "text" (camelCase, NOT snake_case); text payload is the "value" field.
+     * / "text" (camelCase, NOT snake_case).
      */
     private fun isInterruptedTail(role: String, partsJson: String): Boolean {
         val arr = runCatching { org.json.JSONArray(partsJson) }.getOrNull() ?: return false
@@ -118,18 +118,11 @@ class ChatRepository(internal val dao: ChatDao) {
         for (i in 0 until arr.length()) {
             arr.optJSONObject(i)?.let { types.add(it.optString("type")) }
         }
-        return when (role.uppercase()) {
-            "USER" -> {
-                val allToolResults = types.isNotEmpty() && types.all { it == "toolResult" }
-                val isContinueReminder = arr.length() == 1 &&
-                    arr.optJSONObject(0)?.takeIf { it.optString("type") == "text" }
-                        ?.optString("value")
-                        ?.contains("The user stopped the previous response") == true
-                allToolResults || isContinueReminder
-            }
-            "ASSISTANT" -> types.any { it == "toolUse" }
-            else -> false
-        }
+        val singleText = arr.takeIf { it.length() == 1 }
+            ?.optJSONObject(0)
+            ?.takeIf { it.optString("type") == "text" }
+            ?.optString("value")
+        return com.openminis.app.ui.chat.isInterruptedAgentTail(role, types, singleText)
     }
 
     suspend fun updateSessionTitle(id: String, title: String) {
