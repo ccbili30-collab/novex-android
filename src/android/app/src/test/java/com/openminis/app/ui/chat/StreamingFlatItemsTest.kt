@@ -60,6 +60,70 @@ class StreamingFlatItemsTest {
     }
 
     @Test
+    fun firstReplyContentKeepsTheWaitingRowAnchor() {
+        val waiting = buildFlatChatItems(
+            listOf(
+                ChatMessage(
+                    id = "assistant-1",
+                    role = "assistant",
+                    content = "",
+                    isStreaming = true,
+                    isAwaitingModelResponse = true,
+                ),
+            ),
+        )
+        val firstText = buildFlatChatItems(
+            listOf(streamingMessage("第一段。")),
+        )
+
+        assertEquals(
+            "首个流式内容到达时必须继承等待行的锚点，不能回退到旧消息",
+            waiting.single().key,
+            firstText.first().key,
+        )
+    }
+
+    @Test
+    fun firstThinkingContentKeepsTheWaitingRowAnchor() {
+        val waiting = buildFlatChatItems(
+            listOf(
+                ChatMessage(
+                    id = "assistant-1",
+                    role = "assistant",
+                    content = "",
+                    isStreaming = true,
+                    isAwaitingModelResponse = true,
+                    thinkingLevel = com.openminis.app.data.model.ThinkingLevel.LOW,
+                ),
+            ),
+        )
+        val firstThinking = buildFlatChatItems(
+            listOf(
+                ChatMessage(
+                    id = "assistant-1",
+                    role = "assistant",
+                    content = "",
+                    isStreaming = true,
+                    thinkingLevel = com.openminis.app.data.model.ThinkingLevel.LOW,
+                    toolBlocks = listOf(
+                        AssistantBlock(
+                            id = "thinking-1",
+                            kind = "thinking",
+                            content = "分析中",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "首个思考内容到达时必须继承等待行的锚点，不能回退到旧消息",
+            waiting.single().key,
+            firstThinking.first().key,
+        )
+    }
+
+    @Test
     fun olderReplyStillFreezesIntoVirtualizedMarkdownRows() {
         val rows = bodyRows(
             buildFlatChatItems(
@@ -125,7 +189,7 @@ class StreamingFlatItemsTest {
     }
 
     @Test
-    fun novaxConversationDoesNotReceiveCharacterHeader() {
+    fun novaConversationDoesNotReceiveCharacterHeader() {
         val items = buildFlatChatItems(
             messages = listOf(streamingMessage("通用回复", streaming = false)),
             showAssistantIdentity = false,

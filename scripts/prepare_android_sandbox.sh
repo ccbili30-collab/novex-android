@@ -72,9 +72,14 @@ extract_deb() {
     fi
     if [ -n "$seven_zip" ]; then
         "$seven_zip" x -y "-o$output" "$deb" >/dev/null
-        mkdir -p "$output/data-archive" "$output/data"
+        mkdir -p "$output/data-archive"
         "$seven_zip" x -y "-o$output/data-archive" "$output/data.tar.xz" >/dev/null
-        "$seven_zip" x -y "-o$output/data" "$output/data-archive/data.tar" >/dev/null
+        # data.tar already contains the Termux `data/data/...` prefix. Extract
+        # at `$output` so the path matches the bsdtar/ar branches above.
+        # 7-Zip exits non-zero for package documentation symlinks that point
+        # outside their immediate directory; the runtime files are regular
+        # files and are validated by the install steps below.
+        "$seven_zip" x -y "-o$output" "$output/data-archive/data.tar" >/dev/null || true
         return
     fi
 

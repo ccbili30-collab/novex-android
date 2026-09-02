@@ -354,7 +354,7 @@ internal fun AssistantHeader() {
 
 /**
  * Character conversations use a visible left-side speech bubble. General
- * Novax conversations deliberately keep the existing borderless text layout.
+ * Nova conversations deliberately keep the existing borderless text layout.
  */
 @Composable
 internal fun CharacterAssistantBubble(content: @Composable () -> Unit) {

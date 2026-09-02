@@ -322,9 +322,9 @@ fun CatalogWorldDetailScreen(
                     }
                 }
                 if (hasLegacyWorld) {
-                    SettingsSection(header = "Novax 世界助手") {
+                    SettingsSection(header = "Nova 世界助手") {
                         SettingsRow(
-                            title = "与 Novax 讨论这个世界",
+                            title = "与 Nova 讨论这个世界",
                             subtitle = "沿用升级前的世界观和玩家身份，不扮演角色卡。",
                             onClick = {
                                 onStartWorldNovax(

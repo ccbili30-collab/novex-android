@@ -111,7 +111,7 @@ class CharacterPromptComposerTest {
     }
 
     @Test
-    fun `role system prompt excludes Novax identity and defaults to no tools`() {
+    fun `role system prompt excludes Nova identity and defaults to no tools`() {
         val character = CharacterCard(
             id = "role-1",
             name = "艾琳",
@@ -126,7 +126,7 @@ class CharacterPromptComposerTest {
             enabledTools = emptySet(),
         )
 
-        assertTrue(prompt.contains("这是角色卡对话，不是 Novax 助手对话"))
+        assertTrue(prompt.contains("这是角色卡对话，不是 Nova 助手对话"))
         assertTrue(prompt.contains("未启用结构化工具"))
         assertFalse(prompt.contains("shell_execute"))
         assertFalse(prompt.contains("你是 Novex，一名"))
@@ -175,7 +175,7 @@ class CharacterPromptComposerTest {
     }
 
     @Test
-    fun `role tool policy defaults closed and never exposes general Novax tools`() {
+    fun `role tool policy defaults closed and never exposes general Nova tools`() {
         val available = setOf("present_choices", "generate_image", "shell_execute", "read_file")
         val closed = CharacterCard(id = "closed", name = "艾琳", createdAt = 1, updatedAt = 1)
         val enabled = closed.copy(

@@ -124,7 +124,7 @@ fun SoulSettingsScreen(onBack: () -> Unit) {
                 )
                 Column(modifier = Modifier.padding(start = 4.dp)) {
                     Text(
-                        text = name.ifBlank { "Novex" },
+                        text = name.ifBlank { "Nova" },
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,

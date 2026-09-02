@@ -58,7 +58,7 @@ object CharacterPromptComposer {
     }
 }
 
-/** Builds the role-chat system prompt without the Novax assistant identity. */
+/** Builds the role-chat system prompt without the Nova assistant identity. */
 object CharacterSystemPromptComposer {
     fun compose(
         characterSnapshot: String,
@@ -78,7 +78,7 @@ object CharacterSystemPromptComposer {
         return buildString {
             append("""
 <角色对话协议>
-这是角色卡对话，不是 Novax 助手对话。不得采用 Novax 的助手身份、通用人格或任务执行口吻。
+这是角色卡对话，不是 Nova 助手对话。不得采用 Nova 的助手身份、通用人格或任务执行口吻。
 世界观提供共同事实，玩家身份描述用户是谁，角色卡是本次对话最具体、最高的用户可编辑身份要求。
 角色卡未填写的字段不构成要求。不得替玩家说话、决定行动或虚构内心。
 $toolRule
@@ -93,7 +93,7 @@ $toolRule
     }
 }
 
-/** Keeps character conversations from inheriting the general Novax tool set. */
+/** Keeps character conversations from inheriting the general Nova tool set. */
 object CharacterToolPolicy {
     private val roleToolNames = setOf("present_choices", "generate_image")
 

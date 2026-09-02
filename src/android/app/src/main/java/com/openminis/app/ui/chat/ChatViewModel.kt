@@ -3963,7 +3963,7 @@ class ChatViewModel(
             }
 
             // Cold-start interrupt detection: an agent loop that was killed by
-            // the OS (or app force-quit) leaves agentHistory in one of three
+            // the OS (or app force-quit) leaves agentHistory in one of two
             // tell-tale shapes. Detecting any of them lets the user tap
             // Resume to pick up where the model left off — the in-memory
             // [_canResume] flag set by [handleUserCancelledCleanup] is lost
@@ -3973,26 +3973,16 @@ class ChatViewModel(
             //           tools completed but the next model call never fired.
             //   Case B: last entry is assistant with any tool_use parts —
             //           the model requested tools that never executed.
-            //   Case C: last entry is user with the synthetic "Continue"
-            //           reminder text — text-cancel handler committed it
-            //           but [resume] never re-entered the agent loop.
             val lastEntry = agentHistory.lastOrNull()
             if (lastEntry != null && !_isStreaming.value) {
-                val isInterrupted = when (lastEntry.role) {
-                    LLMMessage.Role.USER -> {
-                        val parts = lastEntry.contentParts
-                        val allToolResults = parts.isNotEmpty() &&
-                            parts.all { it is AgentContentPart.ToolResult }
-                        val isContinueReminder = parts.size == 1 &&
-                            (parts.first() as? AgentContentPart.Text)?.text
-                                ?.contains("The user stopped the previous response") == true
-                        allToolResults || isContinueReminder
+                val partTypes = lastEntry.contentParts.map { part ->
+                    when (part) {
+                        is AgentContentPart.ToolResult -> "toolResult"
+                        is AgentContentPart.ToolUse -> "toolUse"
+                        else -> "text"
                     }
-                    LLMMessage.Role.ASSISTANT -> {
-                        lastEntry.contentParts.any { it is AgentContentPart.ToolUse }
-                    }
-                    else -> false
                 }
+                val isInterrupted = isInterruptedAgentTail(lastEntry.role.name, partTypes)
                 if (isInterrupted) {
                     _canResume.value = true
                     Log.i(TAG, "loadSession: detected interrupted agent loop, canResume=true (lastRole=${lastEntry.role})")
@@ -5056,6 +5046,7 @@ class ChatViewModel(
                         systemPrompt = systemPrompt,
                         fallbackProviders = fallbackProviders,
                         fallbackStrategy = activeFallbackStrategy,
+                        recoveryOrigin = AgentRunRecoveryOrigin.RETRY,
                     )
                     AppLogger.info(TAG_STREAM, "$label runAgentLoop RETURN normal")
                 } catch (e: CancellationException) {
@@ -5925,6 +5916,7 @@ class ChatViewModel(
      */
     fun retryLast() {
         if (_isStreaming.value) return
+        _canResume.value = resumeEligibilityAfterRecoveryAction(RecoveryAction.RETRY)
         // T-streaming-side-channel: belt-and-suspenders flush in case any
         // delta survived an earlier abnormal exit; retryLast is gated on
         // !isStreaming so this is normally a no-op.
@@ -6062,6 +6054,7 @@ class ChatViewModel(
                             systemPrompt = systemPrompt,
                             fallbackProviders = fallbackProviders,
                             fallbackStrategy = activeFallbackStrategy,
+                            recoveryOrigin = AgentRunRecoveryOrigin.RETRY,
                         )
                         AppLogger.info(TAG_STREAM, "retryLast runAgentLoop RETURN normal")
                         drainQueuedPrompts(provider, systemPrompt, fallbackProviders, activeFallbackStrategy)
@@ -6524,6 +6517,7 @@ class ChatViewModel(
         systemPrompt: String?,
         fallbackProviders: List<FallbackCandidate> = emptyList(),
         fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
+        recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
         // [T-android-mem-probe-trust] Send-path context shape. The existing
@@ -6783,7 +6777,7 @@ class ChatViewModel(
                             "Tap Continue to resume, or start a new chat.",
                         iconKind = "compact",
                     )
-                    _canResume.value = true
+                    _canResume.value = shouldOfferResumeAfterFailure(recoveryOrigin)
                     // Android's equivalent of iOS's `hitTurnLimit = false`: this
                     // is a deliberate stop, NOT the runaway-ceiling path, so the
                     // post-loop tail must not slap a fake "hit 200 turns" error
@@ -7557,7 +7551,7 @@ class ChatViewModel(
                     )
                     setInlineError(context.getString(R.string.chat_error_stream_dropped_partial))
                 }
-                _canResume.value = true
+                _canResume.value = shouldOfferResumeAfterFailure(recoveryOrigin)
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
                 break
@@ -7620,7 +7614,7 @@ class ChatViewModel(
                     )
                     setInlineError(hint)
                 }
-                _canResume.value = true
+                _canResume.value = shouldOfferResumeAfterFailure(recoveryOrigin)
                 loopExitedNormally = true
                 break
             }
@@ -8148,7 +8142,12 @@ class ChatViewModel(
                 "runAgentLoop EXIT — hit MAX_AGENT_TURNS=$MAX_AGENT_TURNS, finalizing as resumable",
             )
             withContext(Dispatchers.Main) {
-                finalizeAtTurnLimit(assistantId, accumulatedText, allToolBlocks)
+                finalizeAtTurnLimit(
+                    assistantId,
+                    accumulatedText,
+                    allToolBlocks,
+                    recoveryOrigin,
+                )
             }
         } else {
             AppLogger.info(TAG_STREAM, "runAgentLoop EXIT (loop body ended naturally)")
@@ -8175,6 +8174,7 @@ class ChatViewModel(
         assistantId: String,
         text: String,
         blocks: List<AssistantBlock>,
+        recoveryOrigin: AgentRunRecoveryOrigin,
     ) {
         updateAssistantMessage(
             assistantId, text, false, blocks,
@@ -8200,7 +8200,7 @@ class ChatViewModel(
             "tool use. The model kept calling tools without finishing — tap " +
             "Resume to continue from here, or send a new message to start over.",
         )
-        _canResume.value = true
+        _canResume.value = shouldOfferResumeAfterFailure(recoveryOrigin)
     }
 
     /**
@@ -10814,7 +10814,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             _error.value = "No provider configured"
             return
         }
-        _canResume.value = false
+        _canResume.value = resumeEligibilityAfterRecoveryAction(RecoveryAction.RESUME)
         _error.value = null
         // [T-error-persist-android] resume() follows finalizeAtTurnLimit's
         // setInlineError (which persisted an error sticker on the last assistant
@@ -10880,6 +10880,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                             systemPrompt = systemPrompt,
                             fallbackProviders = fallbackProviders,
                             fallbackStrategy = activeFallbackStrategy,
+                            recoveryOrigin = AgentRunRecoveryOrigin.RESUME,
                         )
                         AppLogger.info(TAG_STREAM, "resume runAgentLoop RETURN normal")
                         drainQueuedPrompts(provider, systemPrompt, fallbackProviders, activeFallbackStrategy)

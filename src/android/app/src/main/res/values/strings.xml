@@ -562,11 +562,11 @@
     <string name="browser_stop">Stop</string>
     <string name="browser_reload">Reload</string>
     <string name="browser_minis_browsing">Novex is browsing</string>
-    <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "Novex"). -->
+    <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "Nova"). -->
     <string name="chat_typing_indicator">%1$s is thinking</string>
     <string name="read_aloud_unavailable">Read aloud failed: no usable voice engine. Check Voice Output settings or install a system speech engine.</string>
     <string name="chat_error_stream_dropped_partial">The connection dropped — this reply may be incomplete. Tap Retry to continue.</string>
-    <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "Novex"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
+    <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "Nova"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
     <string name="chat_input_placeholder">Message %1$s (@ to mention files)</string>
     <string name="browser_takeover">Takeover</string>
     <string name="browser_settings_done">Done</string>

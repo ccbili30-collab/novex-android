@@ -326,10 +326,11 @@ internal sealed class FlatChatItem {
         val messageId: String,
         val block: AssistantBlock,
         val isStreaming: Boolean,
+        val isTurnStart: Boolean = false,
         /** Joined raw markdown of the parent message, used by the selection toolbar's Copy Markdown action. */
         val messageMarkdown: String,
     ) : FlatChatItem() {
-        override val key = "text:$messageId:${block.id}"
+        override val key = if (isTurnStart) "assistant-start:$messageId" else "text:$messageId:${block.id}"
         override val contentType = "text"
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -337,12 +338,14 @@ internal sealed class FlatChatItem {
             return messageId == other.messageId &&
                 block === other.block &&
                 isStreaming == other.isStreaming &&
+                isTurnStart == other.isTurnStart &&
                 messageMarkdown.length == other.messageMarkdown.length
         }
         override fun hashCode(): Int {
             var h = messageId.hashCode()
             h = h * 31 + System.identityHashCode(block)
             h = h * 31 + isStreaming.hashCode()
+            h = h * 31 + isTurnStart.hashCode()
             h = h * 31 + messageMarkdown.length
             return h
         }
@@ -368,10 +371,11 @@ internal sealed class FlatChatItem {
         val blockIndex: Int,
         val isLastBlockOfMessage: Boolean,
         val messageIsStreaming: Boolean,
+        val isTurnStart: Boolean = false,
         /** Joined raw markdown of the parent message, used by Copy Markdown. */
         val messageMarkdown: String,
     ) : FlatChatItem() {
-        override val key = "mdblock:$messageId:$parentBlockId:$blockIndex"
+        override val key = if (isTurnStart) "assistant-start:$messageId" else "mdblock:$messageId:$parentBlockId:$blockIndex"
         override val contentType = "mdblock"
         /** True when this fragment is the streaming tail of a live message. */
         val isStreaming: Boolean get() = messageIsStreaming && isLastBlockOfMessage
@@ -383,6 +387,7 @@ internal sealed class FlatChatItem {
                 blockIndex == other.blockIndex &&
                 isLastBlockOfMessage == other.isLastBlockOfMessage &&
                 messageIsStreaming == other.messageIsStreaming &&
+                isTurnStart == other.isTurnStart &&
                 rawText.length == other.rawText.length &&
                 messageMarkdown.length == other.messageMarkdown.length
         }
@@ -392,6 +397,7 @@ internal sealed class FlatChatItem {
             h = h * 31 + blockIndex
             h = h * 31 + isLastBlockOfMessage.hashCode()
             h = h * 31 + messageIsStreaming.hashCode()
+            h = h * 31 + isTurnStart.hashCode()
             h = h * 31 + rawText.length
             h = h * 31 + messageMarkdown.length
             return h
@@ -417,8 +423,9 @@ internal sealed class FlatChatItem {
         // restored / legacy items render collapsed (the pre-change
         // behaviour for non-trailing thinking).
         val isLastBlockOverall: Boolean = false,
+        val isTurnStart: Boolean = false,
     ) : FlatChatItem() {
-        override val key = "thinking:$messageId:${block.id}"
+        override val key = if (isTurnStart) "assistant-start:$messageId" else "thinking:$messageId:${block.id}"
         override val contentType = "thinking"
     }
 
@@ -428,8 +435,9 @@ internal sealed class FlatChatItem {
         val allToolBlocks: List<AssistantBlock>,
         /** True if this is the last cancelled tool in its message — only one Retry button per message. */
         val isLastCancelled: Boolean = false,
+        val isTurnStart: Boolean = false,
     ) : FlatChatItem() {
-        override val key = "tool:$messageId:${block.id}"
+        override val key = if (isTurnStart) "assistant-start:$messageId" else "tool:$messageId:${block.id}"
         override val contentType = "tool"
     }
 
@@ -449,8 +457,11 @@ internal sealed class FlatChatItem {
         override val contentType = "info"
     }
 
-    data class AssistantTyping(val messageId: String) : FlatChatItem() {
-        override val key = "typing:$messageId"
+    data class AssistantTyping(
+        val messageId: String,
+        val isTurnStart: Boolean = false,
+    ) : FlatChatItem() {
+        override val key = if (isTurnStart) "assistant-start:$messageId" else "typing:$messageId"
         override val contentType = "typing"
     }
 
@@ -541,7 +552,7 @@ internal fun buildFlatChatItems(
     seedKeys: Set<String> = emptySet(),
     /**
      * Whether this conversation is spoken by a role card. General and world
-     * Novax conversations keep their established identity-free transcript.
+     * Nova conversations keep their established identity-free transcript.
      */
     showAssistantIdentity: Boolean = false,
 ): List<FlatChatItem> {
@@ -560,6 +571,7 @@ internal fun buildFlatChatItems(
                 messageId = "${item.messageId}#$n",
                 block = item.block,
                 isStreaming = item.isStreaming,
+                isTurnStart = item.isTurnStart,
                 messageMarkdown = item.messageMarkdown,
             )
             is FlatChatItem.AssistantMarkdownBlock -> FlatChatItem.AssistantMarkdownBlock(
@@ -569,6 +581,7 @@ internal fun buildFlatChatItems(
                 blockIndex = item.blockIndex,
                 isLastBlockOfMessage = item.isLastBlockOfMessage,
                 messageIsStreaming = item.messageIsStreaming,
+                isTurnStart = item.isTurnStart,
                 messageMarkdown = item.messageMarkdown,
             )
             is FlatChatItem.AssistantThinking -> item.copy(messageId = "${item.messageId}#$n")
@@ -639,7 +652,7 @@ internal fun buildFlatChatItems(
             .map { messages[it] }
             .firstOrNull { it.role != "system" }
         val isResumeContinuation = prevNonSystem?.role == "assistant"
-        // General/world Novax keeps the narrative as the primary surface and
+        // General/world Nova keeps the narrative as the primary surface and
         // therefore has no identity row. A role-card conversation is different:
         // one header identifies each uninterrupted assistant run, while
         // consecutive assistant messages share it until the player speaks.
@@ -667,6 +680,17 @@ internal fun buildFlatChatItems(
         // retryLast() re-runs the whole turn, so one button is enough.
         val lastCancelledToolId = blocks.lastOrNull { it.kind == "tool_use" && it.toolStatus == ToolBlockStatus.CANCELLED }?.id
 
+        // The first visible row of a streaming assistant turn owns one stable
+        // key from the waiting indicator through the first thinking/text/tool
+        // content. Without this hand-off, LazyColumn loses its active tail
+        // anchor when "typing" is replaced and falls back to an older row.
+        var hasTurnStartRow = false
+        fun claimTurnStartRow(rendered: Boolean = true): Boolean {
+            if (!rendered || hasTurnStartRow) return false
+            hasTurnStartRow = true
+            return true
+        }
+
         blocks.forEachIndexed { index, block ->
             when (block.kind) {
                 "text" -> {
@@ -683,6 +707,7 @@ internal fun buildFlatChatItems(
                                 messageId = message.id,
                                 block = block,
                                 isStreaming = message.isStreaming,
+                                isTurnStart = claimTurnStartRow(),
                                 messageMarkdown = joinedMarkdown,
                             )))
                             return@forEachIndexed
@@ -732,6 +757,7 @@ internal fun buildFlatChatItems(
                                 blockIndex = 0,
                                 isLastBlockOfMessage = isLastText && message.isStreaming,
                                 messageIsStreaming = message.isStreaming && isLastText,
+                                isTurnStart = claimTurnStartRow(),
                                 messageMarkdown = joinedMarkdown,
                             )))
                         } else {
@@ -744,6 +770,7 @@ internal fun buildFlatChatItems(
                                     blockIndex = fragIdx,
                                     isLastBlockOfMessage = isLastText && isLastFragOfText,
                                     messageIsStreaming = message.isStreaming && isLastText,
+                                    isTurnStart = claimTurnStartRow(),
                                     messageMarkdown = joinedMarkdown,
                                 )))
                             }
@@ -757,6 +784,7 @@ internal fun buildFlatChatItems(
                     messageIsStreaming = message.isStreaming,
                     messageThinkingLevel = message.thinkingLevel,
                     isLastBlockOverall = block.id == lastBlockId,
+                    isTurnStart = claimTurnStartRow(message.thinkingLevel?.isEnabled ?: true),
                 )))
                 "info" -> out.add(dedupe(FlatChatItem.AssistantInfo(
                     messageId = message.id,
@@ -767,6 +795,7 @@ internal fun buildFlatChatItems(
                     block = block,
                     allToolBlocks = toolPillBlocks,
                     isLastCancelled = block.id == lastCancelledToolId,
+                    isTurnStart = claimTurnStartRow(),
                 )))
             }
         }
@@ -797,7 +826,10 @@ internal fun buildFlatChatItems(
             }
         }
         if (message.isStreaming && (!hasVisibleContent || message.isAwaitingModelResponse)) {
-            out.add(dedupe(FlatChatItem.AssistantTyping(message.id)))
+            out.add(dedupe(FlatChatItem.AssistantTyping(
+                messageId = message.id,
+                isTurnStart = claimTurnStartRow(),
+            )))
         }
 
         // Legacy fallback: pre-migration sessions stored all text in message.content
