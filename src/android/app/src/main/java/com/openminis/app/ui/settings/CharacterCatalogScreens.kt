@@ -1,7 +1,6 @@
 package com.openminis.app.ui.settings
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,7 +58,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterAggregate
@@ -74,12 +72,17 @@ import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.NovexCardKind
+import com.openminis.app.data.character.NovexCardPackageCodec
+import com.openminis.app.data.character.NovexCardTransferParser
+import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.SillyTavernCardParser
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.requireCharacter
-import com.openminis.app.novex.domain.requireDocument
 import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.novex.domain.requireNativeCard
+import com.openminis.app.novex.domain.requireNativeImport
 import com.openminis.app.novex.domain.requireVersion
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
@@ -89,7 +92,6 @@ import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.toNovexPresentation
 import com.openminis.app.ui.novex.rememberNovexWorkspace
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,6 +103,11 @@ private data class CharacterLibraryRow(
     val avatar: MediaAssetEntity?,
     val variantCount: Int,
 )
+
+private sealed interface CharacterImportOutcome {
+    data class NativePreview(val preview: NovexValidatedCardImport) : CharacterImportOutcome
+    data class Imported(val characterId: String) : CharacterImportOutcome
+}
 
 private data class CharacterDetailData(
     val aggregate: CharacterAggregate,
@@ -116,6 +123,7 @@ private data class CharacterPageData(
     val media: Map<MediaAssetSlot, MediaAssetEntity>,
     val modules: List<ContentModuleEntity>,
     val moduleImages: Map<String, MediaAssetEntity>,
+    val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
     val variantCount: Int,
 )
 
@@ -132,6 +140,7 @@ fun CatalogCharacterLibraryScreen(
     var refresh by remember { mutableIntStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    var nativeImportPreview by remember { mutableStateOf<NovexValidatedCardImport?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(refresh) {
         rows = novex.characters().map { card ->
@@ -151,11 +160,24 @@ fun CatalogCharacterLibraryScreen(
         if (uri != null) scope.launch {
             importing = true
             runCatching {
-                val result = withContext(Dispatchers.IO) {
+                val source = withContext(Dispatchers.IO) {
                     val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: error("无法读取角色卡文件")
                     val mime = context.contentResolver.getType(uri)
                     val name = context.displayName(uri)
+                    Triple(bytes, mime, name)
+                }
+                val (bytes, mime, name) = source
+                val native = name.orEmpty().endsWith(".novexcharacter", true) ||
+                    (bytes.size >= 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte())
+                if (native) {
+                    val preview = NovexCardPackageCodec.decode(bytes)
+                    require(preview.kind == NovexCardKind.CHARACTER) { "请选择 .novexcharacter 角色卡" }
+                    return@runCatching CharacterImportOutcome.NativePreview(
+                        NovexCardTransferParser.parse(preview),
+                    )
+                }
+                val result = withContext(Dispatchers.Default) {
                     val structured = if (!name.orEmpty().endsWith(".png", true)) {
                         runCatching { CharacterLibraryDocumentCodec.decode(bytes.toString(Charsets.UTF_8)) }.getOrNull()
                     } else null
@@ -175,11 +197,16 @@ fun CatalogCharacterLibraryScreen(
                         ),
                     )
                 }
-                created.character.id
-            }.onSuccess { characterId ->
+                CharacterImportOutcome.Imported(created.character.id)
+            }.onSuccess { result ->
                 importing = false
-                refresh++
-                onOpenCharacter(characterId)
+                when (result) {
+                    is CharacterImportOutcome.NativePreview -> nativeImportPreview = result.preview
+                    is CharacterImportOutcome.Imported -> {
+                        refresh++
+                        onOpenCharacter(result.characterId)
+                    }
+                }
             }.onFailure {
                 importing = false
                 error = it.message ?: "导入失败"
@@ -192,7 +219,18 @@ fun CatalogCharacterLibraryScreen(
         actions = {
             IconButton(
                 enabled = !importing,
-                onClick = { importer.launch(arrayOf("image/png", "application/json", "text/json", "text/plain")) },
+                onClick = {
+                    importer.launch(
+                        arrayOf(
+                            "application/zip",
+                            "application/octet-stream",
+                            "image/png",
+                            "application/json",
+                            "text/json",
+                            "text/plain",
+                        ),
+                    )
+                },
             ) { Icon(Icons.Default.Upload, contentDescription = "导入酒馆角色卡或 Novex 结构化数据") }
         },
         floatingActionButton = {
@@ -239,6 +277,29 @@ fun CatalogCharacterLibraryScreen(
         }
         Spacer(Modifier.height(96.dp))
     }
+    nativeImportPreview?.let { preview ->
+        NovexCardImportPreviewDialog(
+            preview = preview,
+            importing = importing,
+            onDismiss = { nativeImportPreview = null },
+            onConfirm = {
+                scope.launch {
+                    importing = true
+                    runCatching {
+                        novex.apply(NovexCommand.ImportNativeCard(preview)).requireNativeImport()
+                    }.onSuccess { imported ->
+                        nativeImportPreview = null
+                        importing = false
+                        refresh++
+                        onOpenCharacter(imported.localId)
+                    }.onFailure {
+                        importing = false
+                        error = it.message ?: "角色卡导入失败"
+                    }
+                }
+            },
+        )
+    }
     error?.let { CharacterErrorDialog(it) { error = null } }
 }
 
@@ -260,6 +321,9 @@ fun CatalogCharacterDetailScreen(
     var modulesByVersion by remember { mutableStateOf<Map<String, List<ContentModuleEntity>>>(emptyMap()) }
     var moduleImagesByVersion by remember {
         mutableStateOf<Map<String, Map<String, MediaAssetEntity>>>(emptyMap())
+    }
+    var moduleItemImagesByVersion by remember {
+        mutableStateOf<Map<String, Map<String, Map<String, MediaAssetEntity>>>>(emptyMap())
     }
     var missing by remember { mutableStateOf(false) }
     var selectedVersionId by rememberSaveable(characterId) { mutableStateOf<String?>(null) }
@@ -287,6 +351,11 @@ fun CatalogCharacterDetailScreen(
             moduleImagesByVersion = snapshot.modulesByVersion.mapValues { (_, modules) ->
                 modules.mapNotNull { module -> snapshot.moduleImages[module.id]?.let { module.id to it } }.toMap()
             }
+            moduleItemImagesByVersion = snapshot.modulesByVersion.mapValues { (_, modules) ->
+                modules.mapNotNull { module ->
+                    snapshot.moduleItemImages[module.id]?.let { module.id to it }
+                }.toMap()
+            }
         }
     }
     val current = data
@@ -301,6 +370,7 @@ fun CatalogCharacterDetailScreen(
         media = current.media[selected.id].orEmpty(),
         modules = modulesByVersion[selected.id].orEmpty(),
         moduleImages = moduleImagesByVersion[selected.id].orEmpty(),
+        moduleItemImages = moduleItemImagesByVersion[selected.id].orEmpty(),
         variantCount = current.aggregate.variants.size,
     ) else null
     NovexDetailScaffold(
@@ -344,15 +414,10 @@ fun CatalogCharacterDetailScreen(
                     onExport = {
                         scope.launch {
                             runCatching {
-                                novex.apply(NovexCommand.ExportCharacter(characterId)).requireDocument()
+                                novex.apply(NovexCommand.ExportNativeCharacter(characterId)).requireNativeCard()
                             }
-                                .onSuccess {
-                                    shareCharacterDocument(
-                                        context,
-                                        it.name,
-                                        CharacterLibraryDocumentCodec.encode(it).toString(2),
-                                    )
-                                }.onFailure { error = it.message }
+                                .onSuccess { shareNovexCardPackage(context, it) }
+                                .onFailure { error = it.message }
                         }
                     },
                     onDuplicate = {
@@ -588,6 +653,9 @@ fun CatalogCharacterEditorScreen(
                 moduleImages = modules.mapNotNull { module ->
                     savedSnapshot?.moduleImages?.get(module.id)?.let { module.id to it }
                 }.toMap(),
+                moduleItemImages = modules.mapNotNull { module ->
+                    savedSnapshot?.moduleItemImages?.get(module.id)?.let { module.id to it }
+                }.toMap(),
                 variantCount = (sourceAggregate?.variants?.size ?: 0) + if (createVariant) 1 else 0,
             )
         }
@@ -799,6 +867,9 @@ private fun CharacterPrimaryContent(
         NovexContentModuleBlock(
             presentation = module.toNovexPresentation(),
             imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
+            itemImageModels = data.moduleItemImages[module.id].orEmpty().mapValues {
+                it.value.managedPath.existingMediaFile()
+            },
             onClick = onOpenModule?.let { open -> { open(module.id) } },
         )
     }
@@ -1051,20 +1122,4 @@ internal fun parseCharacterRelationships(raw: String): List<CharacterRelationshi
 private fun Context.displayName(uri: Uri): String? = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
     val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
     if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-}
-
-private fun shareCharacterDocument(context: Context, name: String, content: String) {
-    runCatching {
-        val directory = File(context.cacheDir, "shared").apply { mkdirs() }
-        val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "character" }
-        val file = File(directory, "$safeName.novex-character.json").apply { writeText(content) }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-            type = "application/json"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }, "导出角色结构化数据"))
-    }.onFailure {
-        android.widget.Toast.makeText(context, it.message ?: "导出失败", android.widget.Toast.LENGTH_SHORT).show()
-    }
 }

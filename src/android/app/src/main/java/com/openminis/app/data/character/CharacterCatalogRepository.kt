@@ -16,6 +16,7 @@ class CharacterCatalogRepository(
         name: String,
         overview: String = "",
         tagsJson: String = "[]",
+        legacySnapshotJson: String? = null,
         now: Long = System.currentTimeMillis(),
         id: String = UUID.randomUUID().toString(),
     ): WorldEntity {
@@ -24,6 +25,7 @@ class CharacterCatalogRepository(
             name = name.trim().ifBlank { "我的世界" },
             overview = overview,
             tagsJson = tagsJson,
+            legacySnapshotJson = legacySnapshotJson,
             createdAt = now,
             updatedAt = now,
         )
@@ -54,6 +56,7 @@ class CharacterCatalogRepository(
             kind = CharacterVersionKind.ORIGINAL,
             label = originalLabel.trim().ifBlank { "本体" },
             profileJson = originalProfileJson,
+            position = 0,
             createdAt = now,
             updatedAt = now,
         )
@@ -75,6 +78,7 @@ class CharacterCatalogRepository(
             kind = CharacterVersionKind.VARIANT,
             label = label.trim().ifBlank { "分身" },
             profileJson = profileJson,
+            position = dao.nextVersionPosition(characterId),
             createdAt = now,
             updatedAt = now,
         )

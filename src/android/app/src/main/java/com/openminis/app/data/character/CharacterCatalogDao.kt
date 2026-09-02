@@ -128,9 +128,12 @@ interface CharacterCatalogDao {
 
     @Query(
         "SELECT * FROM character_versions WHERE character_id = :characterId " +
-            "ORDER BY CASE kind WHEN 'ORIGINAL' THEN 0 ELSE 1 END, updated_at DESC, id ASC",
+            "ORDER BY position ASC, created_at ASC, id ASC",
     )
     suspend fun versionsForCharacter(characterId: String): List<CharacterVersionEntity>
+
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM character_versions WHERE character_id = :characterId")
+    suspend fun nextVersionPosition(characterId: String): Int
 
     @Query(
         "SELECT versions.* FROM character_versions AS versions " +

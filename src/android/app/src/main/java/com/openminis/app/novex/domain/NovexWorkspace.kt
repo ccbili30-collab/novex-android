@@ -1,6 +1,8 @@
 package com.openminis.app.novex.domain
 
 import com.openminis.app.data.character.CharacterAggregate
+import com.openminis.app.data.character.CharacterVersionKind
+import com.openminis.app.data.character.CharacterVersionProfile
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleReferenceEntity
 import com.openminis.app.data.character.ContentModuleType
@@ -9,13 +11,28 @@ import com.openminis.app.data.character.CharacterLibraryDocument
 import com.openminis.app.data.character.CharacterModuleDocument
 import com.openminis.app.data.character.CharacterVersionDocument
 import com.openminis.app.data.character.ContentModuleCatalog
+import com.openminis.app.data.character.ContentModuleCollectionItem
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ModuleReferenceTarget
+import com.openminis.app.data.character.NovexCardImportDocument
+import com.openminis.app.data.character.NovexCardKind
+import com.openminis.app.data.character.NovexCardMedia
+import com.openminis.app.data.character.NovexCardPackagePreview
+import com.openminis.app.data.character.NovexCharacterImportDocument
+import com.openminis.app.data.character.NovexCharacterVersionImportDocument
+import com.openminis.app.data.character.NovexModuleImportDocument
+import com.openminis.app.data.character.NovexValidatedCardImport
+import com.openminis.app.data.character.NovexWorldImportDocument
+import com.openminis.app.data.character.NovexWorldImportLink
 import com.openminis.app.data.character.WorldEntity
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The single Novex seam used by pages and future automation.
@@ -53,6 +70,7 @@ data class NovexWorldSnapshot(
     val media: Map<MediaAssetSlot, MediaAssetEntity>,
     val modules: List<ContentModuleEntity>,
     val moduleImages: Map<String, MediaAssetEntity>,
+    val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
 )
 
 data class NovexCharacterSnapshot(
@@ -61,11 +79,13 @@ data class NovexCharacterSnapshot(
     val mediaByVersion: Map<String, Map<MediaAssetSlot, MediaAssetEntity>>,
     val modulesByVersion: Map<String, List<ContentModuleEntity>>,
     val moduleImages: Map<String, MediaAssetEntity>,
+    val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
 )
 
 data class NovexModuleSnapshot(
     val modules: List<ContentModuleEntity>,
     val images: Map<String, MediaAssetEntity>,
+    val itemImages: Map<String, Map<String, MediaAssetEntity>>,
 )
 
 data class NovexModuleDetail(
@@ -131,6 +151,15 @@ sealed interface NovexCommand {
     ) : NovexCommand
 
     data class ExportCharacter(val characterId: String) : NovexCommand
+
+    data class ImportNativeCard(
+        val card: NovexValidatedCardImport,
+        val now: Long = System.currentTimeMillis(),
+    ) : NovexCommand
+
+    data class ExportNativeWorld(val worldId: String) : NovexCommand
+
+    data class ExportNativeCharacter(val characterId: String) : NovexCommand
 
     data class DeleteCharacter(val characterId: String) : NovexCommand
 
@@ -235,6 +264,8 @@ sealed interface NovexChange {
     data class ModulesSaved(val modules: List<ContentModuleEntity>) : NovexChange
     data class MediaAttached(val asset: MediaAssetEntity) : NovexChange
     data class CharacterExported(val document: CharacterLibraryDocument) : NovexChange
+    data class NativeCardImported(val kind: NovexCardKind, val localId: String) : NovexChange
+    data class NativeCardExported(val card: NovexCardPackagePreview) : NovexChange
     data object Completed : NovexChange
 }
 
@@ -255,8 +286,20 @@ fun NovexChange.requireMedia(): MediaAssetEntity = (this as NovexChange.MediaAtt
 fun NovexChange.requireDocument(): CharacterLibraryDocument =
     (this as NovexChange.CharacterExported).document
 
+fun NovexChange.requireNativeImport(): NovexChange.NativeCardImported =
+    this as NovexChange.NativeCardImported
+
+fun NovexChange.requireNativeCard(): NovexCardPackagePreview =
+    (this as NovexChange.NativeCardExported).card
+
 internal interface NovexCatalogPort {
-    suspend fun createWorld(name: String, overview: String, tagsJson: String, now: Long): WorldEntity
+    suspend fun createWorld(
+        name: String,
+        overview: String,
+        tagsJson: String,
+        legacySnapshotJson: String?,
+        now: Long,
+    ): WorldEntity
     suspend fun saveWorld(world: WorldEntity, now: Long): WorldEntity
     suspend fun deleteWorld(worldId: String)
     suspend fun world(id: String): WorldEntity?
@@ -319,6 +362,7 @@ internal interface NovexMediaPort {
     suspend fun detach(owner: ModuleOwner, slot: MediaAssetSlot)
     suspend fun removeAll(owner: ModuleOwner)
     suspend fun assetFor(owner: ModuleOwner, slot: MediaAssetSlot): MediaAssetEntity?
+    suspend fun read(asset: MediaAssetEntity): ByteArray
 }
 
 internal class DefaultNovexWorkspace(
@@ -364,6 +408,7 @@ internal class DefaultNovexWorkspace(
             ),
             modules = modules,
             moduleImages = moduleImages(modules),
+            moduleItemImages = moduleItemImages(modules),
         )
     }
 
@@ -383,12 +428,13 @@ internal class DefaultNovexWorkspace(
             },
             modulesByVersion = modulesByVersion,
             moduleImages = moduleImages(modulesByVersion.values.flatten()),
+            moduleItemImages = moduleItemImages(modulesByVersion.values.flatten()),
         )
     }
 
     override suspend fun modules(owner: ModuleOwner): NovexModuleSnapshot {
         val modules = content.list(owner)
-        return NovexModuleSnapshot(modules, moduleImages(modules))
+        return NovexModuleSnapshot(modules, moduleImages(modules), moduleItemImages(modules))
     }
 
     override suspend fun module(id: String): NovexModuleDetail? {
@@ -407,12 +453,12 @@ internal class DefaultNovexWorkspace(
 
     private suspend fun applyInsideTransaction(command: NovexCommand): NovexChange = when (command) {
         is NovexCommand.CreateWorld -> NovexChange.WorldSaved(
-            catalog.createWorld(command.name, command.overview, command.tagsJson, command.now),
+            catalog.createWorld(command.name, command.overview, command.tagsJson, null, command.now),
         )
         is NovexCommand.SaveWorld -> NovexChange.WorldSaved(catalog.saveWorld(command.world, command.now))
         is NovexCommand.DeleteWorld -> {
             content.list(ModuleOwner.world(command.worldId)).forEach { module ->
-                media.removeAll(ModuleOwner.contentModule(module.id))
+                removeModuleMedia(module)
                 content.delete(module.id)
             }
             media.removeAll(ModuleOwner.world(command.worldId))
@@ -474,6 +520,19 @@ internal class DefaultNovexWorkspace(
                 ),
             )
         }
+        is NovexCommand.ImportNativeCard -> {
+            val localId = when (val document = command.card.document) {
+                is NovexWorldImportDocument -> importWorldCard(document, command.card, command.now)
+                is NovexCharacterImportDocument -> importCharacterCard(document, command.card, command.now)
+            }
+            NovexChange.NativeCardImported(command.card.document.kind(), localId)
+        }
+        is NovexCommand.ExportNativeWorld -> NovexChange.NativeCardExported(
+            exportWorldCard(command.worldId),
+        )
+        is NovexCommand.ExportNativeCharacter -> NovexChange.NativeCardExported(
+            exportCharacterCard(command.characterId),
+        )
         is NovexCommand.DeleteCharacter -> {
             val aggregate = requireNotNull(catalog.character(command.characterId)) { "角色不存在" }
             aggregate.allVersions.forEach { version -> deleteVersionContents(version.id) }
@@ -567,11 +626,12 @@ internal class DefaultNovexWorkspace(
             }
             val desiredIds = command.modules.map(NovexModuleDraft::id).toSet()
             existing.values.filter { it.id !in desiredIds }.forEach { removed ->
-                media.removeAll(ModuleOwner.contentModule(removed.id))
+                removeModuleMedia(removed)
                 content.delete(removed.id)
             }
             command.modules.forEach { draft ->
                 if (draft.id in existing) {
+                    removeMissingItemMedia(existing.getValue(draft.id), draft.contentJson)
                     content.save(draft.id, draft.name, draft.contentJson, command.now)
                 } else {
                     content.add(
@@ -590,14 +650,17 @@ internal class DefaultNovexWorkspace(
             }
             NovexChange.ModulesSaved(content.list(command.owner))
         }
-        is NovexCommand.SaveModule -> NovexChange.ModuleSaved(
-            content.save(command.moduleId, command.name, command.contentJson, command.now),
-        )
+        is NovexCommand.SaveModule -> {
+            content.module(command.moduleId)?.let { removeMissingItemMedia(it, command.contentJson) }
+            NovexChange.ModuleSaved(
+                content.save(command.moduleId, command.name, command.contentJson, command.now),
+            )
+        }
         is NovexCommand.MoveModule -> NovexChange.ModuleSaved(
             content.move(command.moduleId, command.toIndex, command.now),
         )
         is NovexCommand.DeleteModule -> {
-            media.removeAll(ModuleOwner.contentModule(command.moduleId))
+            content.module(command.moduleId)?.let { removeModuleMedia(it) }
             content.delete(command.moduleId)
             NovexChange.Completed
         }
@@ -634,6 +697,19 @@ internal class DefaultNovexWorkspace(
             ?.let { module.id to it }
     }.toMap()
 
+    private suspend fun moduleItemImages(
+        modules: List<ContentModuleEntity>,
+    ): Map<String, Map<String, MediaAssetEntity>> = modules.mapNotNull { module ->
+        val collection = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
+            as? ContentModuleDocument.Collection
+        val images = collection?.items.orEmpty().mapNotNull { item ->
+            val itemId = item.id.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            media.assetFor(ModuleOwner.contentModuleItem(module.id, itemId), MediaAssetSlot.MODULE_IMAGE)
+                ?.let { itemId to it }
+        }.toMap()
+        images.takeIf(Map<String, MediaAssetEntity>::isNotEmpty)?.let { module.id to it }
+    }.toMap()
+
     private suspend fun moduleReferenceOptions(module: ContentModuleEntity): List<NovexModuleReferenceOption> {
         val ownerTarget = when (module.ownerType) {
             ModuleOwnerType.WORLD -> ModuleReferenceTarget.world(module.ownerId)
@@ -668,6 +744,21 @@ internal class DefaultNovexWorkspace(
             media.assetFor(ModuleOwner.contentModule(sourceModule.id), MediaAssetSlot.MODULE_IMAGE)?.let { asset ->
                 media.attach(ModuleOwner.contentModule(copiedModule.id), MediaAssetSlot.MODULE_IMAGE, asset.id)
             }
+            val sourceCollection = ContentModuleDocumentCodec.decode(sourceModule.type, sourceModule.contentJson)
+                as? ContentModuleDocument.Collection
+            sourceCollection?.items.orEmpty().forEach { item ->
+                val itemId = item.id.takeIf(String::isNotBlank) ?: return@forEach
+                media.assetFor(
+                    ModuleOwner.contentModuleItem(sourceModule.id, itemId),
+                    MediaAssetSlot.MODULE_IMAGE,
+                )?.let { asset ->
+                    media.attach(
+                        ModuleOwner.contentModuleItem(copiedModule.id, itemId),
+                        MediaAssetSlot.MODULE_IMAGE,
+                        asset.id,
+                    )
+                }
+            }
         }
         listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
             media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(targetOwner, slot, asset.id) }
@@ -677,10 +768,30 @@ internal class DefaultNovexWorkspace(
     private suspend fun deleteVersionContents(versionId: String) {
         val owner = ModuleOwner.characterVersion(versionId)
         content.list(owner).forEach { module ->
-            media.removeAll(ModuleOwner.contentModule(module.id))
+            removeModuleMedia(module)
             content.delete(module.id)
         }
         media.removeAll(owner)
+    }
+
+    private suspend fun removeModuleMedia(module: ContentModuleEntity) {
+        val collection = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
+            as? ContentModuleDocument.Collection
+        collection?.items.orEmpty().map(ContentModuleCollectionItem::id)
+            .filter(String::isNotBlank)
+            .distinct()
+            .forEach { itemId -> media.removeAll(ModuleOwner.contentModuleItem(module.id, itemId)) }
+        media.removeAll(ModuleOwner.contentModule(module.id))
+    }
+
+    private suspend fun removeMissingItemMedia(module: ContentModuleEntity, nextContentJson: String) {
+        val previousIds = (ContentModuleDocumentCodec.decode(module.type, module.contentJson)
+            as? ContentModuleDocument.Collection)?.items.orEmpty().map(ContentModuleCollectionItem::id).toSet()
+        val nextIds = (ContentModuleDocumentCodec.decode(module.type, nextContentJson)
+            as? ContentModuleDocument.Collection)?.items.orEmpty().map(ContentModuleCollectionItem::id).toSet()
+        (previousIds - nextIds).filter(String::isNotBlank).forEach { itemId ->
+            media.removeAll(ModuleOwner.contentModuleItem(module.id, itemId))
+        }
     }
 
     private suspend fun addDocumentModules(
@@ -700,5 +811,439 @@ internal class DefaultNovexWorkspace(
                 UUID.randomUUID().toString(),
             )
         }
+    }
+
+    private suspend fun importWorldCard(
+        document: NovexWorldImportDocument,
+        card: NovexValidatedCardImport,
+        now: Long,
+    ): String {
+        val world = catalog.createWorld(
+            name = document.name,
+            overview = document.overview,
+            tagsJson = JSONArray(document.tags).toString(),
+            legacySnapshotJson = document.originalJson,
+            now = now,
+        )
+        val assets = mutableMapOf<String, MediaAssetEntity>()
+        suspend fun attach(path: String?, owner: ModuleOwner, slot: MediaAssetSlot) {
+            if (path == null) return
+            val asset = importCardMedia(path, card, assets, now)
+            media.attach(owner, slot, asset.id)
+        }
+        val owner = ModuleOwner.world(world.id)
+        attach(document.coverPath, owner, MediaAssetSlot.WORLD_COVER)
+        attach(document.logoPath, owner, MediaAssetSlot.WORLD_LOGO)
+        attach(document.backgroundPath, owner, MediaAssetSlot.WORLD_BACKGROUND)
+        importCardModules(owner, document.modules, card, assets, now)
+
+        val versionsBySourceId = catalog.listVersions().mapNotNull { version ->
+            version.sourceId()?.let { it to version }
+        }.toMap()
+        document.characterVersionLinks.forEachIndexed { index, link ->
+            versionsBySourceId[link.sourceVersionId]?.let { version ->
+                catalog.link(world.id, version.id, index, now)
+            }
+        }
+        return world.id
+    }
+
+    private suspend fun importCharacterCard(
+        document: NovexCharacterImportDocument,
+        card: NovexValidatedCardImport,
+        now: Long,
+    ): String {
+        val originalDocument = document.versions.single { it.kind == CharacterVersionKind.ORIGINAL }
+        val aggregate = catalog.createCharacter(
+            name = document.name,
+            originalLabel = originalDocument.label,
+            profileJson = originalDocument.profileJson,
+            now = now,
+        )
+        val importedVersions = mutableListOf(aggregate.original to originalDocument)
+        document.versions.filter { it.kind == CharacterVersionKind.VARIANT }.forEach { versionDocument ->
+            importedVersions += catalog.createVariant(
+                characterId = aggregate.character.id,
+                label = versionDocument.label,
+                profileJson = versionDocument.profileJson,
+                now = now,
+            ) to versionDocument
+        }
+        val assets = mutableMapOf<String, MediaAssetEntity>()
+        importedVersions.forEach { (version, versionDocument) ->
+            val owner = ModuleOwner.characterVersion(version.id)
+            suspend fun attach(path: String?, slot: MediaAssetSlot) {
+                if (path == null) return
+                val asset = importCardMedia(path, card, assets, now)
+                media.attach(owner, slot, asset.id)
+            }
+            attach(versionDocument.avatarPath, MediaAssetSlot.CHARACTER_AVATAR)
+            attach(versionDocument.pageBackgroundPath, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND)
+            importCardModules(owner, versionDocument.modules, card, assets, now)
+        }
+        reconcileImportedCharacterLinks(importedVersions, now)
+        return aggregate.character.id
+    }
+
+    private suspend fun importCardModules(
+        owner: ModuleOwner,
+        modules: List<NovexModuleImportDocument>,
+        card: NovexValidatedCardImport,
+        assets: MutableMap<String, MediaAssetEntity>,
+        now: Long,
+    ) {
+        modules.forEach { moduleDocument ->
+            val module = content.add(
+                owner = owner,
+                type = moduleDocument.type,
+                name = moduleDocument.title,
+                contentJson = ContentModuleDocumentCodec.encode(moduleDocument.document),
+                collapsed = true,
+                now = now,
+                id = UUID.randomUUID().toString(),
+            )
+            moduleDocument.imagePath?.let { path ->
+                val asset = importCardMedia(path, card, assets, now)
+                media.attach(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE, asset.id)
+            }
+            moduleDocument.itemImagePaths.forEach { (itemId, path) ->
+                val asset = importCardMedia(path, card, assets, now)
+                media.attach(
+                    ModuleOwner.contentModuleItem(module.id, itemId),
+                    MediaAssetSlot.MODULE_IMAGE,
+                    asset.id,
+                )
+            }
+        }
+    }
+
+    private suspend fun importCardMedia(
+        path: String,
+        card: NovexValidatedCardImport,
+        assets: MutableMap<String, MediaAssetEntity>,
+        now: Long,
+    ): MediaAssetEntity = assets[path] ?: run {
+        val source = requireNotNull(card.media[path]) { "卡包媒体不存在：$path" }
+        media.import(source.bytes, source.mimeType, now).also { assets[path] = it }
+    }
+
+    private suspend fun reconcileImportedCharacterLinks(
+        versions: List<Pair<CharacterVersionEntity, NovexCharacterVersionImportDocument>>,
+        now: Long,
+    ) {
+        val worlds = catalog.listWorlds()
+        versions.forEach { (version, document) ->
+            val worldSourceIds = document.worldLinks.map(NovexWorldImportLink::sourceWorldId).toSet()
+            worlds.filter { it.sourceId() in worldSourceIds }.forEach { world ->
+                val position = catalog.versionsForWorld(world.id).size
+                catalog.link(world.id, version.id, position, now)
+            }
+            worlds.forEach { world ->
+                val links = runCatching {
+                    JSONObject(world.legacySnapshotJson ?: "{}").optJSONArray("characterVersionLinks")
+                }.getOrNull()
+                val matchedPosition = links.objects().indexOfFirst { item ->
+                    item.optString("sourceVersionId") == document.sourceId
+                }
+                if (matchedPosition >= 0) catalog.link(world.id, version.id, matchedPosition, now)
+            }
+        }
+    }
+
+    private suspend fun exportWorldCard(worldId: String): NovexCardPackagePreview {
+        val snapshot = requireNotNull(world(worldId)) { "世界不存在" }
+        val original = runCatching { JSONObject(snapshot.world.legacySnapshotJson ?: "{}") }
+            .getOrDefault(JSONObject())
+        val sourceId = original.optString("sourceId").ifBlank { snapshot.world.id }
+        val mediaFiles = mutableListOf<NovexCardMedia>()
+        suspend fun exportAsset(basePath: String, asset: MediaAssetEntity?): String? {
+            asset ?: return null
+            val path = "$basePath.${asset.extension()}"
+            mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
+            return path
+        }
+        val rootMedia = JSONObject()
+        rootMedia.putMedia("cover", exportAsset("media/cover", snapshot.media[MediaAssetSlot.WORLD_COVER]))
+        rootMedia.putMedia("logo", exportAsset("media/logo", snapshot.media[MediaAssetSlot.WORLD_LOGO]))
+        rootMedia.putMedia("background", exportAsset("media/background", snapshot.media[MediaAssetSlot.WORLD_BACKGROUND]))
+        val moduleJson = snapshot.modules.map { module ->
+            exportModule(
+                module = module,
+                mainImage = snapshot.moduleImages[module.id],
+                itemImages = snapshot.moduleItemImages[module.id].orEmpty(),
+                mediaFiles = mediaFiles,
+            )
+        }
+        val unresolvedLinks = original.optJSONArray("characterVersionLinks").objects().toMutableList()
+        val existingVersionIds = unresolvedLinks.map { it.optString("sourceVersionId") }.toMutableSet()
+        snapshot.versions.forEach { version ->
+            val versionSourceId = version.sourceId() ?: version.id
+            if (existingVersionIds.add(versionSourceId)) {
+                val profile = CharacterVersionProfile.fromJson(version.profileJson, version.label)
+                unresolvedLinks += JSONObject()
+                    .put("sourceCharacterId", version.characterSourceId() ?: version.characterId)
+                    .put("sourceVersionId", versionSourceId)
+                    .put("fallbackCharacterName", profile.name)
+                    .put("fallbackVersionName", version.label)
+                    .put("roleInWorld", "")
+            }
+        }
+        val document = original.apply {
+            put("documentType", "novex.world")
+            put("schemaVersion", 1)
+            put("sourceId", sourceId)
+            put("name", snapshot.world.name)
+            put("tags", JSONArray(snapshot.world.tagsList()))
+            put("overview", snapshot.world.overview)
+            put("media", rootMedia)
+            put("modules", JSONArray(moduleJson))
+            put("moduleOrder", JSONArray(moduleJson.map { it.getString("id") }))
+            put("characterVersionLinks", JSONArray(unresolvedLinks))
+        }
+        return NovexCardPackagePreview(
+            kind = NovexCardKind.WORLD,
+            packageId = sourceId,
+            displayName = snapshot.world.name,
+            documentJson = document.toString(2),
+            media = mediaFiles.distinctBy(NovexCardMedia::path),
+        )
+    }
+
+    private suspend fun exportCharacterCard(characterId: String): NovexCardPackagePreview {
+        val snapshot = requireNotNull(character(characterId)) { "角色不存在" }
+        val originalProfileJson = JSONObject(snapshot.character.original.profileJson)
+        val original = runCatching { JSONObject(originalProfileJson.optString("_novexCharacterDocument")) }
+            .getOrDefault(JSONObject())
+        val sourceId = originalProfileJson.optString("_novexCharacterSourceId")
+            .ifBlank { snapshot.character.character.id }
+        val mediaFiles = mutableListOf<NovexCardMedia>()
+        suspend fun exportAsset(basePath: String, asset: MediaAssetEntity?): String? {
+            asset ?: return null
+            val path = "$basePath.${asset.extension()}"
+            mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
+            return path
+        }
+        val versionsJson = snapshot.character.allVersions.map { version ->
+            val profile = CharacterVersionProfile.fromJson(version.profileJson, snapshot.character.character.name)
+            val sourceVersionId = version.sourceId() ?: version.id
+            val versionMedia = snapshot.mediaByVersion[version.id].orEmpty()
+            val mediaJson = JSONObject()
+            mediaJson.putMedia(
+                "avatar",
+                exportAsset("media/versions/$sourceVersionId/avatar", versionMedia[MediaAssetSlot.CHARACTER_AVATAR]),
+            )
+            mediaJson.putMedia(
+                "pageBackground",
+                exportAsset(
+                    "media/versions/$sourceVersionId/background",
+                    versionMedia[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND],
+                ),
+            )
+            val modules = snapshot.modulesByVersion[version.id].orEmpty().map { module ->
+                exportModule(
+                    module = module,
+                    mainImage = snapshot.moduleImages[module.id],
+                    itemImages = snapshot.moduleItemImages[module.id].orEmpty(),
+                    mediaFiles = mediaFiles,
+                    pathPrefix = "media/versions/$sourceVersionId/modules",
+                )
+            }.toMutableList()
+            if (profile.relationships.isNotEmpty()) {
+                modules += JSONObject()
+                    .put("id", "$sourceVersionId-relationships")
+                    .put("type", "relationships")
+                    .put("title", "关系")
+                    .put("presentation", "compactList")
+                    .put("content", JSONObject().put("items", JSONArray().apply {
+                        profile.relationships.forEachIndexed { index, relation ->
+                            put(
+                                JSONObject()
+                                    .put("id", "relation-$index")
+                                    .put("fallbackName", relation.characterName)
+                                    .put("relation", relation.relationship)
+                                    .put("description", relation.description),
+                            )
+                        }
+                    }))
+            }
+            val worlds = snapshot.worldsByVersion[version.id].orEmpty().map { world ->
+                JSONObject()
+                    .put("sourceWorldId", world.sourceId() ?: world.id)
+                    .put("fallbackWorldName", world.name)
+                    .put("roleInWorld", "")
+            }
+            JSONObject()
+                .put("id", sourceVersionId)
+                .put("kind", if (version.kind == CharacterVersionKind.ORIGINAL) "origin" else "variant")
+                .put("name", version.label)
+                .put("tags", JSONArray(profile.tags))
+                .put(
+                    "profile",
+                    JSONObject()
+                        .put("displayName", profile.name)
+                        .put("gender", profile.gender)
+                        .put("age", profile.age)
+                        .put("race", profile.race)
+                        .put("occupation", profile.occupation)
+                        .put("introduction", profile.summary),
+                )
+                .put("media", mediaJson)
+                .put("customAttributes", JSONArray().apply {
+                    profile.customAttributes.forEach { attribute ->
+                        put(JSONObject().put("key", attribute.name).put("value", attribute.value))
+                    }
+                })
+                .put("modules", JSONArray(modules))
+                .put("moduleOrder", JSONArray(modules.map { it.getString("id") }))
+                .put("worldLinks", JSONArray(worlds))
+        }
+        val document = original.apply {
+            put("documentType", "novex.character")
+            put("schemaVersion", 1)
+            put("sourceId", sourceId)
+            put("name", snapshot.character.character.name)
+            put("summary", CharacterVersionProfile.fromJson(snapshot.character.original.profileJson).summary)
+            put("versions", JSONArray(versionsJson))
+            put("versionOrder", JSONArray(versionsJson.map { it.getString("id") }))
+            put("defaultVersionId", versionsJson.first { it.optString("kind") == "origin" }.getString("id"))
+        }
+        return NovexCardPackagePreview(
+            kind = NovexCardKind.CHARACTER,
+            packageId = sourceId,
+            displayName = snapshot.character.character.name,
+            documentJson = document.toString(2),
+            media = mediaFiles.distinctBy(NovexCardMedia::path),
+        )
+    }
+
+    private suspend fun exportModule(
+        module: ContentModuleEntity,
+        mainImage: MediaAssetEntity?,
+        itemImages: Map<String, MediaAssetEntity>,
+        mediaFiles: MutableList<NovexCardMedia>,
+        pathPrefix: String = "media/modules",
+    ): JSONObject {
+        suspend fun exportAsset(basePath: String, asset: MediaAssetEntity?): String? {
+            asset ?: return null
+            val path = "$basePath.${asset.extension()}"
+            mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
+            return path
+        }
+        val document = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
+        var originalType = module.type.transferName()
+        var presentation = module.type.defaultPresentation(document)
+        val content = when (document) {
+            is ContentModuleDocument.Article -> JSONObject().put("text", document.text)
+            is ContentModuleDocument.SingleImage -> JSONObject()
+                .put("image", exportAsset("$pathPrefix/${module.id}", mainImage)?.let { JSONObject().put("path", it) })
+                .put("description", document.description)
+            is ContentModuleDocument.Timeline -> JSONObject().put("nodes", JSONArray().apply {
+                document.nodes.forEachIndexed { index, node ->
+                    put(
+                        JSONObject()
+                            .put("id", "node-$index")
+                            .put("time", node.time)
+                            .put("title", node.title)
+                            .put("description", node.description),
+                    )
+                }
+            })
+            is ContentModuleDocument.Collection -> JSONObject().put("items", JSONArray().apply {
+                document.items.forEachIndexed { index, item ->
+                    val itemId = item.id.ifBlank { "item-$index" }
+                    val itemJson = runCatching { JSONObject(item.preservedJson) }.getOrDefault(JSONObject()).apply {
+                        put("id", itemId)
+                        put("name", item.name)
+                        put("summary", item.summary)
+                        put("description", item.description)
+                        exportAsset("$pathPrefix/${module.id}/$itemId", itemImages[item.id])?.let { path ->
+                            put("image", JSONObject().put("path", path))
+                        }
+                    }
+                    put(itemJson)
+                }
+            })
+            is ContentModuleDocument.Unsupported -> {
+                originalType = document.originalType
+                presentation = document.presentation.orEmpty()
+                runCatching { JSONObject(document.contentJson) }.getOrDefault(JSONObject().put("raw", document.contentJson))
+            }
+        }
+        return JSONObject()
+            .put("id", module.id)
+            .put("type", originalType)
+            .put("title", module.name)
+            .put("presentation", presentation)
+            .put("content", content)
+    }
+
+    private fun NovexCardImportDocument.kind(): NovexCardKind = when (this) {
+        is NovexWorldImportDocument -> NovexCardKind.WORLD
+        is NovexCharacterImportDocument -> NovexCardKind.CHARACTER
+    }
+
+    private fun CharacterVersionEntity.sourceId(): String? = runCatching {
+        JSONObject(profileJson).optString("_novexSourceId").takeIf(String::isNotBlank)
+    }.getOrNull()
+
+    private fun CharacterVersionEntity.characterSourceId(): String? = runCatching {
+        JSONObject(profileJson).optString("_novexCharacterSourceId").takeIf(String::isNotBlank)
+    }.getOrNull()
+
+    private fun WorldEntity.sourceId(): String? = runCatching {
+        JSONObject(legacySnapshotJson ?: "{}").optString("sourceId").takeIf(String::isNotBlank)
+    }.getOrNull()
+
+    private fun WorldEntity.tagsList(): List<String> = runCatching {
+        val array = JSONArray(tagsJson)
+        buildList {
+            repeat(array.length()) { index -> array.optString(index).takeIf(String::isNotBlank)?.let(::add) }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun MediaAssetEntity.extension(): String = when (mimeType.lowercase()) {
+        "image/png" -> "png"
+        "image/jpeg", "image/jpg" -> "jpg"
+        "image/webp" -> "webp"
+        "image/gif" -> "gif"
+        else -> "bin"
+    }
+
+    private fun JSONObject.putMedia(key: String, path: String?) {
+        put(key, path?.let { JSONObject().put("path", it) })
+    }
+
+    private fun ContentModuleType.transferName(): String = when (this) {
+        ContentModuleType.TIMELINE -> "timeline"
+        ContentModuleType.ERA_EVENT -> "eraEvents"
+        ContentModuleType.MAP -> "map"
+        ContentModuleType.REGION -> "regions"
+        ContentModuleType.FACTION -> "factions"
+        ContentModuleType.RACE -> "races"
+        ContentModuleType.QUOTES -> "quotes"
+        ContentModuleType.WORLD_EXPERIENCE -> "worldExperience"
+        ContentModuleType.ATTRIBUTE_PANEL -> "attributePanel"
+        ContentModuleType.EQUIPMENT -> "equipment"
+        ContentModuleType.TALENT_SKILL -> "skills"
+        ContentModuleType.APPEARANCE_PERSONALITY -> "appearancePersonality"
+        ContentModuleType.INTEREST -> "interests"
+        ContentModuleType.CUSTOM -> "custom"
+    }
+
+    private fun ContentModuleType.defaultPresentation(document: ContentModuleDocument): String = when (document) {
+        is ContentModuleDocument.Article -> "article"
+        is ContentModuleDocument.SingleImage -> "singleImage"
+        is ContentModuleDocument.Timeline -> "timeline"
+        is ContentModuleDocument.Collection -> when (this) {
+            ContentModuleType.FACTION -> "horizontalCards"
+            ContentModuleType.QUOTES -> "quoteCards"
+            else -> "compactList"
+        }
+        is ContentModuleDocument.Unsupported -> document.presentation.orEmpty()
+    }
+
+    private fun JSONArray?.objects(): List<JSONObject> = buildList {
+        val array = this@objects ?: return@buildList
+        repeat(array.length()) { index -> array.optJSONObject(index)?.let(::add) }
     }
 }

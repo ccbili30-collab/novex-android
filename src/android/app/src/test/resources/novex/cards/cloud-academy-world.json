@@ -1,0 +1,141 @@
+{
+  "documentType": "novex.world",
+  "schemaVersion": 1,
+  "sourceId": "novex-demo-world-cloud-academy",
+  "revision": 1,
+  "name": "云岚书院",
+  "tags": ["东方幻想", "修行", "书院", "群像"],
+  "overview": "云岚书院坐落于群山与云海交界的云岚山巅，传承上古文脉，也守护贯穿诸界的灵脉枢纽。书院不以出身论高低，求学者可以研习经史、医术、机关、剑道与观星之学。院中藏经云廊记录着历代见闻，听雨峰负责医药与济世，天衡台观测天象和界门变化。近年灵脉潮汐异常，失落多年的星图再次显现，书院与周边势力表面平静，暗中却都在寻找通往旧纪元遗迹的道路。这里既是修行问道之地，也是年轻弟子、远方来客与古老秘密相遇的舞台。",
+  "media": {
+    "cover": {"path": "media/cover.png", "alt": "晨光中的山谷、雪山与白色书院"},
+    "logo": null,
+    "background": null
+  },
+  "moduleOrder": [
+    "world-map",
+    "world-factions",
+    "world-regions"
+  ],
+  "modules": [
+    {
+      "id": "world-map",
+      "type": "map",
+      "title": "云岚山域图",
+      "presentation": "singleImage",
+      "content": {
+        "image": {"path": "media/map.png", "alt": "云岚山域及周边河谷、城镇与群岛地图"},
+        "description": "云岚山域北接终年积雪的寒岭，南面河网汇入澄心湖，东侧海路通往龙渊门，西侧古道则穿过雾林与旧纪元遗迹。书院位于中央山脉最高处，四条主要驿路在山脚的望云镇交会。地图暂不包含交互标记，地名和详细说明由模块正文呈现。"
+      }
+    },
+    {
+      "id": "world-factions",
+      "type": "factions",
+      "title": "势力",
+      "presentation": "horizontalCards",
+      "content": {
+        "items": [
+          {
+            "id": "faction-cloud-academy",
+            "name": "云岚书院",
+            "summary": "守护文脉，传授修行与济世之学。",
+            "description": "由院主与六院议事共同治理，重视知识、责任和克制。书院允许不同门派与种族求学，但严禁以术法干涉凡俗王朝更替。",
+            "image": {"path": "media/factions/cloud-academy.png", "alt": "云与山门主题的深蓝金色旗帜"}
+          },
+          {
+            "id": "faction-heavenly-mechanism",
+            "name": "天机阁",
+            "summary": "观天象、制机关，也交易最昂贵的情报。",
+            "description": "天机阁掌握遍布各地的观星台与信标塔，擅长推演灵脉变化。它与书院长期合作，却从不公开自己的全部预测。",
+            "image": {"path": "media/factions/heavenly-mechanism.png", "alt": "雷霆与天穹主题的蓝银旗帜"}
+          },
+          {
+            "id": "faction-dragon-abyss",
+            "name": "龙渊门",
+            "summary": "镇守东海深渊，以锻造和水战闻名。",
+            "description": "龙渊门弟子常年巡守海上裂隙，使用以深海玄铁锻造的兵器。其门主认为旧纪元遗迹中的力量必须由强者掌控。",
+            "image": {"path": "media/factions/dragon-abyss.png", "alt": "龙渊与深水主题的深青古铜旗帜"}
+          },
+          {
+            "id": "faction-underworld-order",
+            "name": "玄冥教",
+            "summary": "行事隐秘，追求跨越生死与长生的界限。",
+            "description": "玄冥教在北境雪原活动，门人擅长寒系术法和魂魄秘术。教中并非人人嗜杀，但其研究常常越过其他势力能够接受的底线。",
+            "image": {"path": "media/factions/underworld-order.png", "alt": "玄冥与夜雪主题的黑紫冰蓝旗帜"}
+          }
+        ]
+      }
+    },
+    {
+      "id": "world-regions",
+      "type": "regions",
+      "title": "地区",
+      "presentation": "compactList",
+      "content": {
+        "items": [
+          {
+            "id": "region-cloud-gate",
+            "name": "云岚山门",
+            "summary": "书院正门与来客登记之处。",
+            "description": "两座石峰之间架着长桥，桥下终年云海翻涌。所有外来访客都要在问心台留下姓名、来意与一缕灵息。"
+          },
+          {
+            "id": "region-rain-peak",
+            "name": "听雨峰",
+            "summary": "医馆、药圃与静养院所在。",
+            "description": "峰顶多雨，灵泉沿石阶流入层层药圃。这里由医师和药师共同管理，也接纳山下无法支付诊金的病患。"
+          },
+          {
+            "id": "region-scripture-gallery",
+            "name": "藏经云廊",
+            "summary": "收藏典籍、游记和历代观测记录。",
+            "description": "云廊随山势盘旋，书架之间以浮灯照明。部分旧纪元卷册具有自己的意志，未经司书允许不会向读者显现内容。"
+          },
+          {
+            "id": "region-starfall-valley",
+            "name": "星落谷",
+            "summary": "旧纪元陨星坠落形成的封禁区域。",
+            "description": "谷中夜色比外界更早降临，岩壁偶尔浮现陌生星图。书院只允许持有院主手令的人进入，但近期封印出现了细小裂纹。"
+          }
+        ]
+      }
+    }
+  ],
+  "characterVersionLinks": [
+    {
+      "sourceCharacterId": "novex-demo-character-su-wanqing",
+      "sourceVersionId": "su-wanqing-cloud-variant",
+      "fallbackCharacterName": "苏晚晴",
+      "fallbackVersionName": "云岚分身",
+      "roleInWorld": "听雨峰医官"
+    },
+    {
+      "sourceCharacterId": "novex-demo-character-bai-jingyuan",
+      "sourceVersionId": "bai-jingyuan-origin",
+      "fallbackCharacterName": "白景元",
+      "fallbackVersionName": "本体",
+      "roleInWorld": "院主"
+    },
+    {
+      "sourceCharacterId": "novex-demo-character-su-qinglan",
+      "sourceVersionId": "su-qinglan-origin",
+      "fallbackCharacterName": "苏清澜",
+      "fallbackVersionName": "本体",
+      "roleInWorld": "执事长老"
+    },
+    {
+      "sourceCharacterId": "novex-demo-character-lu-wuchen",
+      "sourceVersionId": "lu-wuchen-origin",
+      "fallbackCharacterName": "陆无尘",
+      "fallbackVersionName": "本体",
+      "roleInWorld": "首席弟子"
+    },
+    {
+      "sourceCharacterId": "novex-demo-character-ye-jue",
+      "sourceVersionId": "ye-jue-origin",
+      "fallbackCharacterName": "叶珏",
+      "fallbackVersionName": "本体",
+      "roleInWorld": "藏经阁司书"
+    }
+  ],
+  "extensions": {}
+}

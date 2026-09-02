@@ -166,6 +166,28 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration21BackfillsStableCharacterVersionOrder() {
+        val db = helper.writableDatabase
+        db.execSQL(
+            "CREATE TABLE character_versions (" +
+                "id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, kind TEXT NOT NULL, " +
+                "created_at INTEGER NOT NULL)",
+        )
+        db.execSQL("INSERT INTO character_versions VALUES ('origin', 'c1', 'ORIGINAL', 50)")
+        db.execSQL("INSERT INTO character_versions VALUES ('later', 'c1', 'VARIANT', 30)")
+        db.execSQL("INSERT INTO character_versions VALUES ('earlier', 'c1', 'VARIANT', 20)")
+
+        AppDatabase.MIGRATION_20_21.migrate(db)
+
+        db.query("SELECT id, position FROM character_versions ORDER BY position").use { cursor ->
+            val rows = buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getInt(1))
+            }
+            assertEquals(listOf("origin" to 0, "earlier" to 1, "later" to 2), rows)
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

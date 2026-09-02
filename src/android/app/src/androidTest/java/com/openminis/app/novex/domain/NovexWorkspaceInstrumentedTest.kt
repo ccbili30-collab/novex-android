@@ -3,8 +3,13 @@ package com.openminis.app.novex.domain
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.CharacterLibraryDocument
+import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.NovexCardKind
+import com.openminis.app.data.character.NovexCardPackageCodec
+import com.openminis.app.data.character.NovexCardTransferParser
+import com.openminis.app.data.character.NovexCharacterImportDocument
+import com.openminis.app.data.character.NovexWorldImportDocument
 import com.openminis.app.data.character.CharacterModuleDocument
 import com.openminis.app.data.character.CharacterVersionDocument
 import com.openminis.app.data.character.CharacterVersionKind
@@ -19,6 +24,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -152,6 +158,80 @@ class NovexWorkspaceInstrumentedTest {
         assertEquals(listOf("势力", "王朝时间线"), restored.map { it.name })
         assertEquals(listOf(0, 1), restored.map { it.position })
         assertEquals("新内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(restored.last().contentJson))
+    }
+
+    @Test
+    fun nativeSampleCardsPreviewImportDisplayAndReExportAsOneClosedLoop() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val worldPreview = context.assets.open("novex/cards/cloud-academy.novexworld").use {
+            NovexCardPackageCodec.decode(it.readBytes())
+        }
+        val characterPreview = context.assets.open("novex/cards/su-wanqing.novexcharacter").use {
+            NovexCardPackageCodec.decode(it.readBytes())
+        }
+        val worldImport = NovexCardTransferParser.parse(worldPreview)
+        val characterImport = NovexCardTransferParser.parse(characterPreview)
+
+        assertEquals(NovexCardKind.WORLD, worldPreview.kind)
+        assertEquals(NovexCardKind.CHARACTER, characterPreview.kind)
+        assertTrue(workspace.worlds().isEmpty())
+        assertTrue(workspace.characters().isEmpty())
+
+        val importedWorld = workspace.apply(NovexCommand.ImportNativeCard(worldImport))
+            .requireNativeImport()
+        val worldBeforeCharacter = requireNotNull(workspace.world(importedWorld.localId))
+        assertEquals("云岚书院", worldBeforeCharacter.world.name)
+        assertEquals(listOf(ContentModuleType.MAP, ContentModuleType.FACTION, ContentModuleType.REGION), worldBeforeCharacter.modules.map { it.type })
+        assertEquals(4, worldBeforeCharacter.moduleItemImages.values.single { it.size == 4 }.size)
+        assertTrue(worldBeforeCharacter.versions.isEmpty())
+
+        val importedCharacter = workspace.apply(NovexCommand.ImportNativeCard(characterImport))
+            .requireNativeImport()
+        val character = requireNotNull(workspace.character(importedCharacter.localId))
+        assertEquals(3, character.character.allVersions.size)
+        assertEquals(3, character.mediaByVersion.values.count { it.isNotEmpty() })
+        assertTrue(character.modulesByVersion.values.all { it.size == 3 })
+        val worldAfterCharacter = requireNotNull(workspace.world(importedWorld.localId))
+        assertEquals(listOf("云岚分身"), worldAfterCharacter.versions.map { it.label })
+
+        val exportedWorld = workspace.apply(NovexCommand.ExportNativeWorld(importedWorld.localId))
+            .requireNativeCard()
+        val exportedCharacter = workspace.apply(NovexCommand.ExportNativeCharacter(importedCharacter.localId))
+            .requireNativeCard()
+        val worldRoundTrip = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exportedWorld)),
+        ).document as NovexWorldImportDocument
+        val characterRoundTrip = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exportedCharacter)),
+        ).document as NovexCharacterImportDocument
+
+        assertEquals("云岚书院", worldRoundTrip.name)
+        assertEquals(listOf(ContentModuleType.MAP, ContentModuleType.FACTION, ContentModuleType.REGION), worldRoundTrip.modules.map { it.type })
+        assertEquals(4, worldRoundTrip.modules.single { it.type == ContentModuleType.FACTION }.itemImagePaths.size)
+        assertEquals(listOf("本体", "医馆时期", "云岚分身"), characterRoundTrip.versions.map { it.label })
+        assertEquals(3, characterRoundTrip.versions.first().modules.size)
+    }
+
+    @Test
+    fun failedNativeImportRollsBackDatabaseRowsAndNewManagedFilesTogether() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val preview = context.assets.open("novex/cards/cloud-academy.novexworld").use {
+            NovexCardTransferParser.parse(NovexCardPackageCodec.decode(it.readBytes()))
+        }
+        val world = preview.document as NovexWorldImportDocument
+        val duplicateMap = world.modules.first().copy(sourceId = "duplicate-map")
+        val invalid = preview.copy(document = world.copy(modules = listOf(world.modules.first(), duplicateMap)))
+
+        var failed = false
+        try {
+            workspace.apply(NovexCommand.ImportNativeCard(invalid))
+        } catch (_: IllegalArgumentException) {
+            failed = true
+        }
+
+        assertTrue(failed)
+        assertTrue(workspace.worlds().isEmpty())
+        assertTrue(mediaRoot.listFiles().orEmpty().isEmpty())
     }
 
     @Test

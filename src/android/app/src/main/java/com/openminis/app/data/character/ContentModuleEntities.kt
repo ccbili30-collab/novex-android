@@ -18,9 +18,15 @@ data class ModuleOwner(
     val id: String,
 ) {
     companion object {
+        private const val ITEM_SEPARATOR = "::item::"
+
         fun world(id: String) = ModuleOwner(ModuleOwnerType.WORLD, id)
         fun characterVersion(id: String) = ModuleOwner(ModuleOwnerType.CHARACTER_VERSION, id)
         fun contentModule(id: String) = ModuleOwner(ModuleOwnerType.CONTENT_MODULE, id)
+        fun contentModuleItem(moduleId: String, itemId: String) =
+            ModuleOwner(ModuleOwnerType.CONTENT_MODULE, "$moduleId$ITEM_SEPARATOR$itemId")
+
+        fun contentModuleId(ownerId: String): String = ownerId.substringBefore(ITEM_SEPARATOR)
     }
 }
 

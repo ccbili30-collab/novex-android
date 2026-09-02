@@ -15,32 +15,103 @@ import com.openminis.app.novex.domain.NovexContentPort
 import com.openminis.app.novex.domain.NovexMediaPort
 import com.openminis.app.novex.domain.NovexWorkspace
 import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 object NovexWorkspaceFactory {
     fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace {
         val catalog = CharacterCatalogRepository(database.characterCatalogDao())
         val content = ContentModuleRepository(database.contentModuleDao())
         val canonicalMediaRoot = mediaRoot.canonicalFile
+        val fileTransaction = ManagedMediaFileTransaction(canonicalMediaRoot)
+        val commandMutex = Mutex()
         val mediaRepository = MediaAssetRepository(database.mediaAssetDao()) { path ->
-            runCatching {
-                val target = File(path).canonicalFile
-                target.parentFile == canonicalMediaRoot && target.delete()
-            }.getOrDefault(false)
+            fileTransaction.deleteAfterCommit(path)
         }
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
             content = RoomContentAdapter(content),
-            media = ManagedMediaAdapter(mediaRepository, ManagedMediaAssetStore(mediaRoot, mediaRepository)),
-            transaction = { block -> database.withTransaction { block() } },
+            media = ManagedMediaAdapter(
+                mediaRepository,
+                ManagedMediaAssetStore(mediaRoot, mediaRepository, fileTransaction::deleteAfterRollback),
+            ),
+            transaction = { block ->
+                commandMutex.withLock {
+                    fileTransaction.begin()
+                    try {
+                        database.withTransaction { block() }.also { fileTransaction.commit() }
+                    } catch (error: Throwable) {
+                        fileTransaction.rollback()
+                        throw error
+                    }
+                }
+            },
         )
     }
+}
+
+/** Keeps managed-file side effects aligned with the surrounding Room transaction. */
+private class ManagedMediaFileTransaction(
+    private val root: File,
+) {
+    private var active = false
+    private val rollbackDeletes = linkedSetOf<File>()
+    private val commitDeletes = linkedSetOf<File>()
+
+    fun begin() {
+        check(!active) { "媒体事务不能嵌套" }
+        active = true
+        rollbackDeletes.clear()
+        commitDeletes.clear()
+    }
+
+    fun deleteAfterRollback(path: String) {
+        val file = managedFile(path) ?: return
+        if (active) rollbackDeletes += file else file.delete()
+    }
+
+    fun deleteAfterCommit(path: String): Boolean {
+        val file = managedFile(path) ?: return false
+        return if (active) {
+            commitDeletes += file
+            true
+        } else {
+            file.delete()
+        }
+    }
+
+    fun commit() {
+        check(active)
+        commitDeletes.forEach(File::delete)
+        finish()
+    }
+
+    fun rollback() {
+        if (!active) return
+        rollbackDeletes.forEach(File::delete)
+        finish()
+    }
+
+    private fun finish() {
+        rollbackDeletes.clear()
+        commitDeletes.clear()
+        active = false
+    }
+
+    private fun managedFile(path: String): File? = runCatching { File(path).canonicalFile }.getOrNull()
+        ?.takeIf { it.parentFile == root }
 }
 
 private class RoomCatalogAdapter(
     private val repository: CharacterCatalogRepository,
 ) : NovexCatalogPort {
-    override suspend fun createWorld(name: String, overview: String, tagsJson: String, now: Long) =
-        repository.createWorld(name, overview, tagsJson, now)
+    override suspend fun createWorld(
+        name: String,
+        overview: String,
+        tagsJson: String,
+        legacySnapshotJson: String?,
+        now: Long,
+    ) = repository.createWorld(name, overview, tagsJson, legacySnapshotJson, now)
     override suspend fun saveWorld(world: WorldEntity, now: Long) = repository.saveWorld(world, now)
     override suspend fun deleteWorld(worldId: String) = repository.deleteWorld(worldId)
     override suspend fun world(id: String) = repository.world(id)
@@ -125,4 +196,6 @@ private class ManagedMediaAdapter(
     override suspend fun detach(owner: ModuleOwner, slot: MediaAssetSlot) = repository.detach(owner, slot)
     override suspend fun removeAll(owner: ModuleOwner) = repository.removeAll(owner)
     override suspend fun assetFor(owner: ModuleOwner, slot: MediaAssetSlot) = repository.assetFor(owner, slot)
+    override suspend fun read(asset: com.openminis.app.data.character.MediaAssetEntity) =
+        File(asset.managedPath).readBytes()
 }

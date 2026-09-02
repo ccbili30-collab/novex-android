@@ -69,6 +69,7 @@ data class CharacterVersionEntity(
     val label: String,
     /** Transitional structured profile; the shared module layer will replace its optional sections. */
     @ColumnInfo(name = "profile_json") val profileJson: String = "{}",
+    @ColumnInfo(defaultValue = "0") val position: Int = 0,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )

@@ -1,0 +1,261 @@
+{
+  "documentType": "novex.character",
+  "schemaVersion": 1,
+  "sourceId": "novex-demo-character-su-wanqing",
+  "revision": 1,
+  "name": "苏晚晴",
+  "summary": "出身江南医馆的年轻医者，温和清醒，面对危难时比任何人都坚定。",
+  "defaultVersionId": "su-wanqing-origin",
+  "versionOrder": [
+    "su-wanqing-origin",
+    "su-wanqing-apprentice",
+    "su-wanqing-cloud-variant"
+  ],
+  "versions": [
+    {
+      "id": "su-wanqing-origin",
+      "kind": "origin",
+      "name": "本体",
+      "tags": ["医者", "坚韧", "仁善"],
+      "profile": {
+        "displayName": "苏晚晴",
+        "gender": "女",
+        "age": "25",
+        "race": "人类",
+        "occupation": "医师",
+        "introduction": "江南临川医馆之女，自幼随父识药问诊。她言辞温和，却不以安慰代替判断；面对病痛、谎言和危险时，总能迅速找到最需要先处理的事情。她相信医术不是施舍，而是让人重新拥有选择的能力。"
+      },
+      "media": {
+        "avatar": {"path": "media/origin.png", "alt": "身着米白浅青医者衣袍的苏晚晴"},
+        "pageBackground": null
+      },
+      "customAttributes": [
+        {"key": "出身", "value": "江南临川医馆"},
+        {"key": "擅长", "value": "内科、外伤、药理与银针"},
+        {"key": "随身物", "value": "旧药囊、银针盒、父亲留下的脉案"}
+      ],
+      "moduleOrder": [
+        "origin-world-experience",
+        "origin-quotes",
+        "origin-skills",
+        "origin-relationships"
+      ],
+      "modules": [
+        {
+          "id": "origin-world-experience",
+          "type": "worldExperience",
+          "title": "世界经历",
+          "presentation": "article",
+          "content": {
+            "text": "苏晚晴幼承家学，十六岁开始独立记录脉案。临川疫病期间，她曾在药材断绝的情况下重新调整方剂，因此得到百姓信任，也第一次意识到医术会受到权力、交通和资源左右。疫病结束后，她离开故乡游历各地，在山村、渡口和战后营地行医。一次追查异常寒症时，她发现病因与北境流出的灵脉碎片有关，由此踏上通往云岚山的道路。"
+          }
+        },
+        {
+          "id": "origin-quotes",
+          "type": "quotes",
+          "title": "语录",
+          "presentation": "quoteCards",
+          "content": {
+            "items": [
+              {"id": "quote-calm", "form": "平静", "text": "医者能做的不是替人决定，而是让他还有机会自己决定。"},
+              {"id": "quote-emergency", "form": "危急", "text": "先止血。其他的，等人活下来再说。"},
+              {"id": "quote-friend", "form": "亲近", "text": "药确实苦了些，我给你备了梅子。别趁我转身就倒掉。"}
+            ]
+          }
+        },
+        {
+          "id": "origin-skills",
+          "type": "skills",
+          "title": "技能",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "skill-diagnosis", "name": "望闻问切", "summary": "从细微体征和生活环境中判断病因。"},
+              {"id": "skill-needles", "name": "银针封脉", "summary": "暂时稳定出血、疼痛与紊乱灵息。"},
+              {"id": "skill-herbs", "name": "百草辨识", "summary": "识别药性、毒性以及相互替代关系。"},
+              {"id": "skill-calm", "name": "临危持静", "summary": "越是危险，越能维持清晰的处理次序。"}
+            ]
+          }
+        },
+        {
+          "id": "origin-relationships",
+          "type": "relationships",
+          "title": "关系",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "relation-father", "fallbackName": "苏济川", "relation": "父亲与启蒙老师", "description": "行医严谨，对女儿要求极高，却把所有珍贵脉案都留给了她。"},
+              {"id": "relation-yunjin", "fallbackName": "沈云锦", "relation": "旧友", "description": "临川疫病时期并肩工作的药商，擅长寻找稀缺药材。"},
+              {"id": "relation-jingyuan", "sourceCharacterId": "novex-demo-character-bai-jingyuan", "fallbackName": "白景元", "relation": "引路人与院主", "description": "邀请她进入云岚书院，并允许她调查灵脉寒症。"}
+            ]
+          }
+        }
+      ],
+      "worldLinks": []
+    },
+    {
+      "id": "su-wanqing-apprentice",
+      "kind": "variant",
+      "name": "医馆时期",
+      "tags": ["学徒", "谨慎", "好奇"],
+      "profile": {
+        "displayName": "苏晚晴",
+        "gender": "女",
+        "age": "19",
+        "race": "人类",
+        "occupation": "医馆学徒",
+        "introduction": "尚未离开临川医馆的苏晚晴。她熟悉书本和药柜，却还不习惯独自承担生死判断；遇到无法解释的病症时，会把所有细节逐项记下，直到找出被忽略的线索。"
+      },
+      "media": {
+        "avatar": {"path": "media/apprentice.png", "alt": "在临川医馆学习时期的苏晚晴"},
+        "pageBackground": null
+      },
+      "customAttributes": [
+        {"key": "所在地", "value": "江南临川医馆"},
+        {"key": "当前目标", "value": "完成第一本独立脉案"}
+      ],
+      "moduleOrder": [
+        "apprentice-world-experience",
+        "apprentice-quotes",
+        "apprentice-skills",
+        "apprentice-relationships"
+      ],
+      "modules": [
+        {
+          "id": "apprentice-world-experience",
+          "type": "worldExperience",
+          "title": "世界经历",
+          "presentation": "article",
+          "content": {
+            "text": "她的生活范围还没有离开临川城：清晨整理药柜，午后跟随父亲出诊，夜里誊写脉案。城中偶尔出现无法用普通病理解释的寒症，她把这些记录藏在自己的笔记末页，尚不知道它们将把自己引向更广阔的世界。"
+          }
+        },
+        {
+          "id": "apprentice-quotes",
+          "type": "quotes",
+          "title": "语录",
+          "presentation": "quoteCards",
+          "content": {
+            "items": [
+              {"id": "quote-study", "form": "求学", "text": "我还不能确定病因，但至少能先排除三种可能。"},
+              {"id": "quote-stubborn", "form": "坚持", "text": "脉案没有写完之前，我不会说自己已经尽力了。"}
+            ]
+          }
+        },
+        {
+          "id": "apprentice-skills",
+          "type": "skills",
+          "title": "技能",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "skill-herb-basics", "name": "药材基础", "summary": "熟悉常用药材的炮制与配伍。"},
+              {"id": "skill-case-notes", "name": "脉案记录", "summary": "能够持续追踪病情变化和用药反应。"}
+            ]
+          }
+        },
+        {
+          "id": "apprentice-relationships",
+          "type": "relationships",
+          "title": "关系",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "relation-father", "fallbackName": "苏济川", "relation": "父亲与老师", "description": "仍在亲自监督她的每一次问诊和处方。"},
+              {"id": "relation-yunjin", "fallbackName": "沈云锦", "relation": "药材商朋友", "description": "常带来医馆买不到的药材和外地消息。"}
+            ]
+          }
+        }
+      ],
+      "worldLinks": []
+    },
+    {
+      "id": "su-wanqing-cloud-variant",
+      "kind": "variant",
+      "name": "云岚分身",
+      "tags": ["医官", "灵脉研究", "温和坚定"],
+      "profile": {
+        "displayName": "苏晚晴",
+        "gender": "女",
+        "age": "25",
+        "race": "人类",
+        "occupation": "听雨峰医官",
+        "introduction": "进入云岚书院后的苏晚晴，负责听雨峰日常诊疗和异常灵脉病例。她在传统医理之外学习灵息观测，并逐渐发现多年前席卷故乡的疫病可能并非自然发生。"
+      },
+      "media": {
+        "avatar": {"path": "media/cloud-variant.png", "alt": "身处云岚仙山的苏晚晴分身"},
+        "pageBackground": null
+      },
+      "customAttributes": [
+        {"key": "所属", "value": "云岚书院·听雨峰"},
+        {"key": "研究方向", "value": "灵脉寒症与旧纪元残响"},
+        {"key": "权限", "value": "可查阅听雨峰脉案与部分藏经云廊卷册"}
+      ],
+      "moduleOrder": [
+        "cloud-world-experience",
+        "cloud-quotes",
+        "cloud-skills",
+        "cloud-relationships"
+      ],
+      "modules": [
+        {
+          "id": "cloud-world-experience",
+          "type": "worldExperience",
+          "title": "世界经历",
+          "presentation": "article",
+          "content": {
+            "text": "苏晚晴循着异常寒症的线索来到云岚山，在听雨峰协助治疗灵息逆行的弟子。她发现患者体内残留的晶屑与临川疫病时期保存的样本一致，因此获得院主许可，开始查阅被封存的旧纪元脉案。如今她一面承担医官职责，一面调查星落谷封印松动与寒症扩散之间的联系。"
+          }
+        },
+        {
+          "id": "cloud-quotes",
+          "type": "quotes",
+          "title": "语录",
+          "presentation": "quoteCards",
+          "content": {
+            "items": [
+              {"id": "quote-duty", "form": "医官", "text": "灵息会说谎，疼痛不会。先听身体告诉我们的事实。"},
+              {"id": "quote-secret", "form": "调查", "text": "若一份脉案被人刻意抹去，留下的空白本身就是证据。"},
+              {"id": "quote-comfort", "form": "安慰", "text": "你不必现在就坚强。把手给我，先把这一夜熬过去。"}
+            ]
+          }
+        },
+        {
+          "id": "cloud-skills",
+          "type": "skills",
+          "title": "技能",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "skill-spirit-diagnosis", "name": "灵息诊脉", "summary": "判断经脉、灵息与身体症状之间的因果。"},
+              {"id": "skill-frost-needles", "name": "定寒针", "summary": "以银针暂时阻断异常寒息扩散。"},
+              {"id": "skill-case-archive", "name": "脉案溯源", "summary": "通过不同时代病例寻找共同源头。"},
+              {"id": "skill-herbal-barrier", "name": "百草护脉", "summary": "使用复合药香保护患者经脉和意识。"}
+            ]
+          }
+        },
+        {
+          "id": "cloud-relationships",
+          "type": "relationships",
+          "title": "关系",
+          "presentation": "compactList",
+          "content": {
+            "items": [
+              {"id": "relation-jingyuan", "sourceCharacterId": "novex-demo-character-bai-jingyuan", "fallbackName": "白景元", "relation": "院主与调查授权人", "description": "认可她的判断，但仍对星落谷的全部真相有所保留。"},
+              {"id": "relation-qinglan", "sourceCharacterId": "novex-demo-character-su-qinglan", "fallbackName": "苏清澜", "relation": "听雨峰上司", "description": "在医术上要求严格，也替她挡下了不少来自六院议事的质疑。"},
+              {"id": "relation-wuchen", "sourceCharacterId": "novex-demo-character-lu-wuchen", "fallbackName": "陆无尘", "relation": "患者与同行者", "description": "曾因灵息逆行接受她的治疗，后来协助调查星落谷外围。"}
+            ]
+          }
+        }
+      ],
+      "worldLinks": [
+        {
+          "sourceWorldId": "novex-demo-world-cloud-academy",
+          "fallbackWorldName": "云岚书院",
+          "roleInWorld": "听雨峰医官"
+        }
+      ]
+    }
+  ],
+  "extensions": {}
+}

@@ -72,7 +72,7 @@ class MediaAssetRepository(
         val exists = when (owner.type) {
             ModuleOwnerType.WORLD -> dao.worldExists(owner.id)
             ModuleOwnerType.CHARACTER_VERSION -> dao.characterVersionExists(owner.id)
-            ModuleOwnerType.CONTENT_MODULE -> dao.contentModuleExists(owner.id)
+            ModuleOwnerType.CONTENT_MODULE -> dao.contentModuleExists(ModuleOwner.contentModuleId(owner.id))
         }
         require(exists) { "资源所有者不存在" }
     }
@@ -102,6 +102,7 @@ class MediaAssetRepository(
 class ManagedMediaAssetStore(
     private val root: File,
     private val repository: MediaAssetRepository,
+    private val onCreatedManagedFile: (String) -> Unit = {},
 ) {
     suspend fun import(
         bytes: ByteArray,
@@ -139,7 +140,11 @@ class ManagedMediaAssetStore(
             target.delete()
             throw error
         }
-        if (registered.id != id) target.delete()
+        if (registered.id != id) {
+            target.delete()
+        } else {
+            onCreatedManagedFile(target.absolutePath)
+        }
         registered
     }
 }

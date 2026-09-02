@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,11 +57,17 @@ import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.NovexCardKind
+import com.openminis.app.data.character.NovexCardPackageCodec
+import com.openminis.app.data.character.NovexCardTransferParser
+import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexWorldSnapshot
 import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.novex.domain.requireNativeCard
+import com.openminis.app.novex.domain.requireNativeImport
 import com.openminis.app.novex.domain.requireVersion
 import com.openminis.app.novex.domain.requireWorld
 import com.openminis.app.ui.novex.NovexArtwork
@@ -112,19 +119,50 @@ fun CatalogWorldLibraryScreen(
     onCreateWorld: () -> Unit,
     onOpenCharacterLibrary: () -> Unit,
 ) {
+    val context = LocalContext.current
     val novex = rememberNovexWorkspace()
+    val scope = rememberCoroutineScope()
     var worlds by remember { mutableStateOf<List<Pair<com.openminis.app.data.character.WorldEntity, String?>>>(emptyList()) }
+    var refresh by remember { mutableIntStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
+    var importing by remember { mutableStateOf(false) }
+    var importPreview by remember { mutableStateOf<NovexValidatedCardImport?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(refresh) {
         worlds = novex.worlds().map { card ->
             card.world to (card.image?.managedPath ?: card.world.legacyBackgroundPath())
         }
         loaded = true
     }
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            importing = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("无法读取世界卡文件")
+                    val preview = NovexCardPackageCodec.decode(bytes)
+                    require(preview.kind == NovexCardKind.WORLD) { "请选择 .novexworld 世界卡" }
+                    NovexCardTransferParser.parse(preview)
+                }
+            }.onSuccess {
+                importPreview = it
+                importing = false
+            }.onFailure {
+                importing = false
+                error = it.message ?: "世界卡预览失败"
+            }
+        }
+    }
     SettingsScaffold(
         title = "我的世界",
         onBack = onBack,
         actions = {
+            IconButton(enabled = !importing, onClick = {
+                importer.launch(arrayOf("application/zip", "application/octet-stream"))
+            }) {
+                Icon(Icons.Default.Upload, contentDescription = "导入 Novex 世界卡")
+            }
             IconButton(onClick = onOpenCharacterLibrary) {
                 Icon(Icons.Default.Person, contentDescription = "打开角色库")
             }
@@ -177,6 +215,37 @@ fun CatalogWorldLibraryScreen(
         }
         Spacer(Modifier.height(96.dp))
     }
+    importPreview?.let { preview ->
+        NovexCardImportPreviewDialog(
+            preview = preview,
+            importing = importing,
+            onDismiss = { importPreview = null },
+            onConfirm = {
+                scope.launch {
+                    importing = true
+                    runCatching {
+                        novex.apply(NovexCommand.ImportNativeCard(preview)).requireNativeImport()
+                    }.onSuccess { imported ->
+                        importPreview = null
+                        importing = false
+                        refresh++
+                        onOpenWorld(imported.localId)
+                    }.onFailure {
+                        importing = false
+                        error = it.message ?: "世界卡导入失败"
+                    }
+                }
+            },
+        )
+    }
+    error?.let { message ->
+        AlertDialog(
+            onDismissRequest = { error = null },
+            title = { Text("世界卡导入失败") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
+        )
+    }
 }
 
 @Composable
@@ -196,6 +265,7 @@ fun CatalogWorldDetailScreen(
     onStartCharacterChat: (String, String) -> Unit,
     onOpenModule: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     val novex = rememberNovexWorkspace()
     val owner = remember(worldId) { ModuleOwner.world(worldId) }
     val scope = rememberCoroutineScope()
@@ -349,6 +419,19 @@ fun CatalogWorldDetailScreen(
                             onClick = { onOpenSession(session.id) },
                         )
                     }
+                }
+                SettingsSection(header = "世界管理") {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                runCatching {
+                                    novex.apply(NovexCommand.ExportNativeWorld(worldId)).requireNativeCard()
+                                }.onSuccess { shareNovexCardPackage(context, it) }
+                                    .onFailure { error = it.message ?: "世界卡导出失败" }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("导出 Novex 世界卡") }
                 }
                 Spacer(Modifier.height(40.dp))
             }
@@ -599,6 +682,7 @@ fun CatalogWorldEditorScreen(
                 media = media,
                 modules = draftModules,
                 moduleImages = savedSnapshot?.moduleImages.orEmpty(),
+                moduleItemImages = savedSnapshot?.moduleItemImages.orEmpty(),
             )
         }
     }
@@ -782,6 +866,9 @@ private fun WorldPrimaryContent(
         NovexContentModuleBlock(
             presentation = module.toNovexPresentation(),
             imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
+            itemImageModels = data.moduleItemImages[module.id].orEmpty().mapValues {
+                it.value.managedPath.existingMediaFile()
+            },
             onClick = onOpenModule?.let { open -> { open(module.id) } },
         )
     }
