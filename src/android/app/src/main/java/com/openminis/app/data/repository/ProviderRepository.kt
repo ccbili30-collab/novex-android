@@ -14,6 +14,8 @@ import com.openminis.app.data.db.ProviderDatabase
 import com.openminis.app.data.db.compositeEntryKey
 import com.openminis.app.data.db.toProviderConfig
 import com.openminis.app.data.db.toSnapshot
+import com.openminis.app.data.normalizeModelGroupOrder
+import com.openminis.app.data.removeModelGroupAndBindings
 import com.openminis.app.data.model.ImageEndpointMode
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ModelEntry
@@ -1223,24 +1225,7 @@ class ProviderRepository(private val context: Context) {
     fun removeGroup(groupId: String): Unit = synchronized(configLock) {
         ensureConfigLoaded()
         val config = workingCopy()
-        config.modelGroups.removeAll { it.id == groupId }
-        if (config.defaultPrimaryGroupId == groupId) {
-            config.defaultPrimaryGroupId = null
-        }
-        if (config.defaultSubGroupId == groupId) {
-            config.defaultSubGroupId = null
-        }
-        if (config.voiceInputGroupId == groupId) {
-            config.voiceInputGroupId = null
-        }
-        if (config.voiceOutputGroupId == groupId) {
-            config.voiceOutputGroupId = null
-        }
-        if (config.visionGroupId == groupId) {
-            config.visionGroupId = null
-        }
-        config.agentLoopGroupIds.removeAll { it == groupId }
-        config.imageGenerationGroupIds.removeAll { it == groupId }
+        config.removeModelGroupAndBindings(groupId)
         saveConfig(config)
     }
 
@@ -1413,17 +1398,8 @@ class ProviderRepository(private val context: Context) {
         if (current.isEmpty()) return
 
         val byId = current.associateBy { it.id }
-        val seen = LinkedHashSet<String>()
-        val reordered = ArrayList<ModelGroup>(current.size)
-        for (id in newOrder) {
-            val group = byId[id] ?: continue     // drop unknown ids
-            if (!seen.add(id)) continue          // drop duplicates
-            reordered.add(group)
-        }
-        // Anything the caller didn't mention keeps its existing relative order.
-        for (group in current) {
-            if (seen.add(group.id)) reordered.add(group)
-        }
+        val reordered = normalizeModelGroupOrder(current.map { it.id }, newOrder)
+            .mapNotNull(byId::get)
 
         // No-op guard: skip the DB write + StateFlow churn when nothing moved.
         if (reordered.map { it.id } == current.map { it.id }) return

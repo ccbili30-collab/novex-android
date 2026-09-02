@@ -1164,6 +1164,28 @@
     <string name="model_groups_group_name">Group name</string>
     <string name="model_groups_create">Create</string>
     <string name="model_groups_none">None</string>
+    <string name="model_groups_manage">Manage</string>
+    <string name="model_groups_done">Done</string>
+    <string name="model_groups_more_actions">More group actions</string>
+    <string name="model_groups_duplicate_group">Duplicate group</string>
+    <string name="model_groups_copy_suffix">Copy</string>
+    <string name="model_groups_move_to_top">Move to top</string>
+    <string name="model_groups_move_up">Move up</string>
+    <string name="model_groups_move_down">Move down</string>
+    <string name="model_groups_move_to_bottom">Move to bottom</string>
+    <string name="model_groups_order_saved">Group order saved</string>
+    <string name="model_groups_undo">Undo</string>
+    <string name="model_groups_delete_keeps_models">Models and providers inside the group will be kept.</string>
+    <string name="model_groups_delete_clears_bindings">Models and providers inside the group will be kept. These bindings will be cleared: %1$s.</string>
+    <string name="model_groups_delete_named_group_safe_confirm">Delete “%1$s”? %2$s This cannot be undone.</string>
+    <string name="model_groups_binding_separator">, </string>
+    <string name="model_groups_binding_default_primary">default primary model</string>
+    <string name="model_groups_binding_default_sub">default sub model</string>
+    <string name="model_groups_binding_voice_input">voice input</string>
+    <string name="model_groups_binding_voice_output">voice output</string>
+    <string name="model_groups_binding_vision">vision input</string>
+    <string name="model_groups_binding_agent_loop">agent-loop group</string>
+    <string name="model_groups_binding_image_generation">image generation</string>
     <string name="add_models_to_group_search_models">Search models</string>
     <string name="add_models_to_group_clear">Clear</string>
     <string name="settings_agent_loop_models">Agent Loop Models</string>    <string name="agent_loop_models_groups">Groups</string>
@@ -1198,7 +1220,7 @@
     <string name="model_group_no_usable_models_badge">No usable models</string>
     <string name="model_group_detail_remove_named_model_confirm">Remove \"%1$s\" from the group?</string>
     <string name="model_group_detail_remove_this_model_fallback">this model</string>
-    <string name="model_group_detail_delete_named_group_confirm">Are you sure you want to delete \"%1$s\"? This cannot be undone.</string>
+    <string name="model_group_detail_delete_named_group_confirm">Delete “%1$s”? Models and providers inside the group will be kept; any default, voice, vision, agent-loop, or image-generation binding that uses this group will be cleared. This cannot be undone.</string>
     <string name="provider_list_models_count">%1$d models</string>
 
     <!-- T180-bg-notif — Task Notifications toggle + completion notification

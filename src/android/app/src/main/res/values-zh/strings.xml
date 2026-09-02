@@ -989,6 +989,28 @@
     <string name="model_groups_group_name">分组名称</string>
     <string name="model_groups_create">创建</string>
     <string name="model_groups_none">无</string>
+    <string name="model_groups_manage">管理</string>
+    <string name="model_groups_done">完成</string>
+    <string name="model_groups_more_actions">更多分组操作</string>
+    <string name="model_groups_duplicate_group">复制分组</string>
+    <string name="model_groups_copy_suffix">副本</string>
+    <string name="model_groups_move_to_top">移到顶部</string>
+    <string name="model_groups_move_up">上移</string>
+    <string name="model_groups_move_down">下移</string>
+    <string name="model_groups_move_to_bottom">移到底部</string>
+    <string name="model_groups_order_saved">分组顺序已保存</string>
+    <string name="model_groups_undo">撤销</string>
+    <string name="model_groups_delete_keeps_models">分组内的模型和服务商仍会保留。</string>
+    <string name="model_groups_delete_clears_bindings">分组内的模型和服务商仍会保留。以下绑定将被清除：%1$s。</string>
+    <string name="model_groups_delete_named_group_safe_confirm">删除“%1$s”？%2$s 此操作无法撤销。</string>
+    <string name="model_groups_binding_separator">、</string>
+    <string name="model_groups_binding_default_primary">默认主模型</string>
+    <string name="model_groups_binding_default_sub">默认辅助模型</string>
+    <string name="model_groups_binding_voice_input">语音输入</string>
+    <string name="model_groups_binding_voice_output">语音输出</string>
+    <string name="model_groups_binding_vision">视觉输入</string>
+    <string name="model_groups_binding_agent_loop">智能体循环分组</string>
+    <string name="model_groups_binding_image_generation">图片生成</string>
     <!-- [T-android-vision-group / GH#182] Vision Input slot label -->
     <string name="model_groups_vision">视觉输入</string>
     <string name="add_models_to_group_search_models">搜索模型</string>
@@ -1021,7 +1043,7 @@
     <string name="model_group_detail_models_header_count">模型 (%1$d)</string>
     <string name="model_group_detail_remove_named_model_confirm">将 \"%1$s\" 从分组中移除?</string>
     <string name="model_group_detail_remove_this_model_fallback">此模型</string>
-    <string name="model_group_detail_delete_named_group_confirm">确定要删除 \"%1$s\" 吗?此操作无法撤销。</string>
+    <string name="model_group_detail_delete_named_group_confirm">删除“%1$s”？分组内的模型和服务商仍会保留；使用该分组的默认、语音、视觉、智能体循环或图片生成绑定将被清除。此操作无法撤销。</string>
     <string name="provider_list_models_count">%1$d 个模型</string>
 
     <!-- T180-bg-notif — Task Notifications toggle + completion notification

@@ -27,18 +27,26 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MovieCreation
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -51,6 +59,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -62,6 +73,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +85,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.data.model.ModelGroup
 import com.openminis.app.data.model.RoutingStrategy
+import com.openminis.app.data.ModelGroupBinding
+import com.openminis.app.data.ModelGroupMove
+import com.openminis.app.data.modelGroupRemovalImpact
+import com.openminis.app.data.moveManagedModelGroup
+import com.openminis.app.data.reorderManagedModelGroups
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
 import com.openminis.app.ui.components.MinisOutlinedButton
@@ -82,6 +99,8 @@ import com.openminis.app.ui.components.SectionDesign
 import com.openminis.app.ui.components.SectionDivider
 import com.openminis.app.ui.components.SectionFooter
 import com.openminis.app.ui.components.SectionHeader
+import java.util.UUID
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,6 +124,37 @@ fun ModelGroupsScreen(
     val groups = config.modelGroups.filterNot { it.id in config.imageGenerationGroupIds }
     var showNewGroupDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
+    var isManagingGroups by remember { mutableStateOf(false) }
+    var pendingDeleteGroupId by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val reorderSavedMessage = stringResource(R.string.model_groups_order_saved)
+    val undoLabel = stringResource(R.string.model_groups_undo)
+
+    LaunchedEffect(groups.isEmpty()) {
+        if (groups.isEmpty()) isManagingGroups = false
+    }
+
+    fun commitMenuMove(groupId: String, move: ModelGroupMove) {
+        val current = providerRepository.config.value
+        val before = current.modelGroups.map { it.id }
+        val managed = current.modelGroups
+            .filterNot { it.id in current.imageGenerationGroupIds }
+            .map { it.id }
+        val after = moveManagedModelGroup(before, managed, groupId, move)
+        if (after == before) return
+        providerRepository.reorderModelGroups(after)
+        coroutineScope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = reorderSavedMessage,
+                actionLabel = undoLabel,
+                withDismissAction = true,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                providerRepository.reorderModelGroups(before)
+            }
+        }
+    }
 
     // T186: parent LazyListState shared with rememberReorderableLazyListState
     // so each agent-loop pinned row (rendered as its own LazyColumn item)
@@ -148,17 +198,19 @@ fun ModelGroupsScreen(
             fromKey.startsWith("group:") && toKey.startsWith("group:") -> {
                 val fromId = fromKey.removePrefix("group:")
                 val toId = toKey.removePrefix("group:")
-                val cur = providerRepository.config.value.modelGroups.map { it.id }
-                val fromIdx = cur.indexOf(fromId)
-                val toIdx = cur.indexOf(toId)
-                if (fromIdx < 0 || toIdx < 0) return@rememberReorderableLazyListState
-                val newOrder = cur.toMutableList().apply { add(toIdx, removeAt(fromIdx)) }
+                val current = providerRepository.config.value
+                val cur = current.modelGroups.map { it.id }
+                val managed = current.modelGroups
+                    .filterNot { it.id in current.imageGenerationGroupIds }
+                    .map { it.id }
+                val newOrder = reorderManagedModelGroups(cur, managed, fromId, toId)
                 providerRepository.reorderModelGroups(newOrder)
             }
         }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.model_groups_model_groups)) },
@@ -168,8 +220,21 @@ fun ModelGroupsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showNewGroupDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.model_groups_new_group))
+                    if (groups.isNotEmpty()) {
+                        MinisTextButton(onClick = { isManagingGroups = !isManagingGroups }) {
+                            Text(
+                                if (isManagingGroups) {
+                                    stringResource(R.string.model_groups_done)
+                                } else {
+                                    stringResource(R.string.model_groups_manage)
+                                },
+                            )
+                        }
+                    }
+                    if (!isManagingGroups) {
+                        IconButton(onClick = { showNewGroupDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.model_groups_new_group))
+                        }
                     }
                 },
             )
@@ -232,6 +297,7 @@ fun ModelGroupsScreen(
                     SectionHeader(text = stringResource(R.string.agent_loop_models_groups))
                 }
                 itemsIndexed(groups, key = { _, g -> "group:${g.id}" }) { index, group ->
+                    val copySuffix = stringResource(R.string.model_groups_copy_suffix)
                     ReorderableItem(
                         state = reorderState,
                         key = "group:${group.id}",
@@ -239,7 +305,8 @@ fun ModelGroupsScreen(
                         val dismissState = rememberSwipeToDismissBoxState()
                         LaunchedEffect(dismissState.currentValue) {
                             if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-                                providerRepository.removeGroup(group.id)
+                                pendingDeleteGroupId = group.id
+                                dismissState.reset()
                             }
                         }
                         Column {
@@ -252,15 +319,56 @@ fun ModelGroupsScreen(
                             ) {
                                 SwipeToDismissBox(
                                     state = dismissState,
-                                    backgroundContent = {},
+                                    backgroundContent = {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(MaterialTheme.colorScheme.errorContainer)
+                                                .padding(end = 20.dp),
+                                            contentAlignment = Alignment.CenterEnd,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.DeleteOutline,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                                )
+                                                Text(
+                                                    stringResource(R.string.common_delete),
+                                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                                )
+                                            }
+                                        }
+                                    },
                                     enableDismissFromStartToEnd = false,
+                                    gesturesEnabled = !isManagingGroups,
                                 ) {
                                     GroupRow(
                                         group = group,
                                         config = config,
                                         onClick = { onGroupClick(group.id) },
-                                        dragHandleModifier = with(this@ReorderableItem) {
-                                            Modifier.draggableHandle()
+                                        isManaging = isManagingGroups,
+                                        canMoveUp = index > 0,
+                                        canMoveDown = index < groups.lastIndex,
+                                        onEdit = { onGroupClick(group.id) },
+                                        onDuplicate = {
+                                            providerRepository.addGroup(
+                                                group.copy(
+                                                    id = UUID.randomUUID().toString(),
+                                                    name = group.name + " " + copySuffix,
+                                                    memberEntryIds = group.memberEntryIds.toMutableList(),
+                                                ),
+                                            )
+                                        },
+                                        onMove = { move -> commitMenuMove(group.id, move) },
+                                        onDelete = { pendingDeleteGroupId = group.id },
+                                        dragHandleModifier = if (isManagingGroups) {
+                                            with(this@ReorderableItem) { Modifier.draggableHandle() }
+                                        } else {
+                                            null
                                         },
                                     )
                                 }
@@ -397,6 +505,60 @@ fun ModelGroupsScreen(
                     showNewGroupDialog = false
                     newGroupName = ""
                 }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    val pendingDeleteGroup = pendingDeleteGroupId?.let { id ->
+        config.modelGroups.find { it.id == id }
+    }
+    if (pendingDeleteGroup != null) {
+        val impact = config.modelGroupRemovalImpact(pendingDeleteGroup.id)
+        val bindingNames = impact.bindings.map { binding ->
+            when (binding) {
+                ModelGroupBinding.DEFAULT_PRIMARY -> stringResource(R.string.model_groups_binding_default_primary)
+                ModelGroupBinding.DEFAULT_SUB -> stringResource(R.string.model_groups_binding_default_sub)
+                ModelGroupBinding.VOICE_INPUT -> stringResource(R.string.model_groups_binding_voice_input)
+                ModelGroupBinding.VOICE_OUTPUT -> stringResource(R.string.model_groups_binding_voice_output)
+                ModelGroupBinding.VISION -> stringResource(R.string.model_groups_binding_vision)
+                ModelGroupBinding.AGENT_LOOP -> stringResource(R.string.model_groups_binding_agent_loop)
+                ModelGroupBinding.IMAGE_GENERATION -> stringResource(R.string.model_groups_binding_image_generation)
+            }
+        }
+        val impactText = if (bindingNames.isEmpty()) {
+            stringResource(R.string.model_groups_delete_keeps_models)
+        } else {
+            stringResource(
+                R.string.model_groups_delete_clears_bindings,
+                bindingNames.joinToString(stringResource(R.string.model_groups_binding_separator)),
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { pendingDeleteGroupId = null },
+            title = { Text(stringResource(R.string.model_group_detail_delete_group)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.model_groups_delete_named_group_safe_confirm,
+                        pendingDeleteGroup.name,
+                        impactText,
+                    ),
+                )
+            },
+            confirmButton = {
+                MinisTextButton(
+                    onClick = {
+                        providerRepository.removeGroup(pendingDeleteGroup.id)
+                        pendingDeleteGroupId = null
+                    },
+                ) {
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                MinisTextButton(onClick = { pendingDeleteGroupId = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -857,6 +1019,13 @@ private fun GroupRow(
     group: ModelGroup,
     config: com.openminis.app.data.model.ProviderConfig,
     onClick: () -> Unit,
+    isManaging: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onMove: (ModelGroupMove) -> Unit,
+    onDelete: () -> Unit,
     /**
      * [T-android-modelgroup-reorder] When non-null, a leading drag handle is
      * rendered carrying this modifier (ReorderableItem.draggableHandle).
@@ -866,6 +1035,7 @@ private fun GroupRow(
      */
     dragHandleModifier: Modifier? = null,
 ) {
+    var actionsExpanded by remember(group.id) { mutableStateOf(false) }
     val memberNames = group.memberEntryIds.mapNotNull { entryId ->
         config.modelEntries.find { it.id == entryId }?.model?.displayName
     }
@@ -895,6 +1065,10 @@ private fun GroupRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // SwipeToDismissBox always composes its reveal layer. Keep the
+            // row opaque at rest so the destructive background appears only
+            // while the foreground is actually being swiped away.
+            .background(SectionDesign.cardColor())
             .clickable(onClick = onClick)
             .padding(
                 horizontal = SectionDesign.RowHorizontalPadding,
@@ -902,19 +1076,15 @@ private fun GroupRow(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (dragHandleModifier != null) {
-            // T198 (same as AgentLoopRow): the handle must be an IconButton —
-            // a bare Icon has no pointer consumer, so draggableHandle() would
-            // never receive ACTION_DOWN/MOVE.
+        if (isManaging) {
             IconButton(
-                onClick = {},
-                modifier = dragHandleModifier.size(36.dp),
+                onClick = onDelete,
+                modifier = Modifier.size(40.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.DragHandle,
-                    contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp),
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = stringResource(R.string.model_group_detail_delete_group),
+                    tint = MaterialTheme.colorScheme.error,
                 )
             }
             Spacer(modifier = Modifier.width(4.dp))
@@ -973,10 +1143,103 @@ private fun GroupRow(
                 )
             }
         }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (isManaging && dragHandleModifier != null) {
+            IconButton(
+                onClick = {},
+                modifier = dragHandleModifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        } else {
+            Box {
+                IconButton(onClick = { actionsExpanded = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.model_groups_more_actions),
+                    )
+                }
+                DropdownMenu(
+                    expanded = actionsExpanded,
+                    onDismissRequest = { actionsExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.common_edit)) },
+                        onClick = {
+                            actionsExpanded = false
+                            onEdit()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_groups_duplicate_group)) },
+                        onClick = {
+                            actionsExpanded = false
+                            onDuplicate()
+                        },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_groups_move_to_top)) },
+                        enabled = canMoveUp,
+                        onClick = {
+                            actionsExpanded = false
+                            onMove(ModelGroupMove.TOP)
+                        },
+                        leadingIcon = { Icon(Icons.Default.VerticalAlignTop, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_groups_move_up)) },
+                        enabled = canMoveUp,
+                        onClick = {
+                            actionsExpanded = false
+                            onMove(ModelGroupMove.UP)
+                        },
+                        leadingIcon = { Icon(Icons.Default.KeyboardArrowUp, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_groups_move_down)) },
+                        enabled = canMoveDown,
+                        onClick = {
+                            actionsExpanded = false
+                            onMove(ModelGroupMove.DOWN)
+                        },
+                        leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.model_groups_move_to_bottom)) },
+                        enabled = canMoveDown,
+                        onClick = {
+                            actionsExpanded = false
+                            onMove(ModelGroupMove.BOTTOM)
+                        },
+                        leadingIcon = { Icon(Icons.Default.VerticalAlignBottom, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.common_delete),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            actionsExpanded = false
+                            onDelete()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                    )
+                }
+            }
+        }
     }
 }
