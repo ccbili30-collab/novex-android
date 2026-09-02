@@ -10,7 +10,8 @@ internal fun shouldShowNovexRootDock(
     configLoaded: Boolean,
     hasUsableModel: Boolean,
     homeReady: Boolean,
-): Boolean = configLoaded && hasUsableModel && homeReady
+    hasRootContent: Boolean,
+): Boolean = configLoaded && hasUsableModel && homeReady && hasRootContent
 
 internal fun novexRootSpaceAtOffset(offset: Float, width: Float): NovexRootSpace {
     if (width <= 0f) return NovexRootSpace.CONVERSATIONS
@@ -40,10 +41,7 @@ internal fun isNovexRootDockHit(
     return x in left..right && y >= pageHeight - dockHeight
 }
 
-internal fun nextNovexRootDockUnlocked(
-    wasUnlocked: Boolean,
-    homeReady: Boolean,
-): Boolean = wasUnlocked || homeReady
+internal fun nextNovexRootDockVisibility(reportedVisible: Boolean): Boolean = reportedVisible
 
 internal data class NovexRootNavigationState(
     val selected: NovexRootSpace = NovexRootSpace.CONVERSATIONS,

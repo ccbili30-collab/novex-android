@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -123,6 +124,9 @@ class SessionListViewModel(
     }
 
     private val _allSessions = MutableStateFlow<List<ChatSessionEntity>>(emptyList())
+    val hasSessions: StateFlow<Boolean> = _allSessions
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * Tracks whether the first DB emission has landed. Before this flips true

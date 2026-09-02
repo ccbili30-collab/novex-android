@@ -181,7 +181,6 @@ import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.character.CharacterCard
-import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.StoryWorld
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.model.hasUsableNovexModel
@@ -189,6 +188,7 @@ import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.minisFabColor
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -405,6 +405,7 @@ fun SessionListScreen(
         factory = SessionListViewModel.factory(chatRepository, providerRepository, context),
     )
     val sessions by viewModel.displayedSessions.collectAsState()
+    val hasSessions by viewModel.hasSessions.collectAsState()
     val isInitialLoadComplete by viewModel.isInitialLoadComplete.collectAsState()
     val isSearchActive by viewModel.isSearchActive.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -424,31 +425,30 @@ fun SessionListScreen(
     val configLoaded by providerRepository.configLoaded.collectAsState()
     val scope = rememberCoroutineScope()
     val isDark = isSystemInDarkTheme()
-    val app = context.applicationContext as com.openminis.app.MinisApp
-    val characterCatalog = remember(app) {
-        CharacterCatalogRepository(app.database.characterCatalogDao())
-    }
+    val novex = rememberNovexWorkspace()
     var worlds by remember { mutableStateOf<List<WorldEntity>>(emptyList()) }
     var worldsLoaded by remember { mutableStateOf(false) }
-    LaunchedEffect(sessions) {
-        worlds = characterCatalog.listWorlds()
+    LaunchedEffect(Unit) {
+        worlds = novex.worlds().map { it.world }
         worldsLoaded = true
     }
     LaunchedEffect(
         configLoaded,
         hasGroups,
         isInitialLoadComplete,
-        sessions,
+        hasSessions,
         worlds,
         worldsLoaded,
         showBottomActions,
     ) {
-        if (!showBottomActions) {
+        val homeReady = configLoaded && isInitialLoadComplete && worldsLoaded
+        if (!showBottomActions && homeReady) {
             onRootNavigationVisibilityChange(
                 shouldShowNovexRootDock(
                     configLoaded = configLoaded,
                     hasUsableModel = hasGroups,
-                    homeReady = isInitialLoadComplete && worldsLoaded,
+                    homeReady = homeReady,
+                    hasRootContent = hasSessions || worlds.isNotEmpty(),
                 ),
             )
         }
@@ -675,6 +675,27 @@ fun SessionListScreen(
                             )
                         }
                     } else {
+                        if (!showBottomActions) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .width(52.dp)
+                                    .height(48.dp)
+                                    .clickable { homeFilter = SessionHomeFilter.CREATION },
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_phosphor_sparkle),
+                                    contentDescription = "帮我创作",
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Text(
+                                    "帮我创作",
+                                    fontSize = 9.sp,
+                                    lineHeight = 10.sp,
+                                )
+                            }
+                        }
                         IconButton(onClick = {
                             if (isSearchActive) {
                                 viewModel.searchQuery.value = ""

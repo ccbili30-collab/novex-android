@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -39,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +100,7 @@ fun NovexRootScreen(
     var selectedName by rememberSaveable { mutableStateOf(NovexRootSpace.CONVERSATIONS.name) }
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
     var showRootDock by rememberSaveable { mutableStateOf(false) }
+    val pageStateHolder = rememberSaveableStateHolder()
     val selected = NovexRootSpace.valueOf(selectedName)
     val density = LocalDensity.current
     val swipeThreshold = with(density) { 72.dp.toPx() }
@@ -173,23 +176,25 @@ fun NovexRootScreen(
             },
     ) {
         Box(Modifier.fillMaxSize()) {
-            when (selected) {
-                NovexRootSpace.CONVERSATIONS -> conversationContent(
-                    { select(NovexRootSpace.WORLDS) },
-                    { visible ->
-                        showRootDock = nextNovexRootDockUnlocked(showRootDock, visible)
-                    },
-                )
+            pageStateHolder.SaveableStateProvider(selected.name) {
+                when (selected) {
+                    NovexRootSpace.CONVERSATIONS -> conversationContent(
+                        { select(NovexRootSpace.WORLDS) },
+                        { visible ->
+                            showRootDock = nextNovexRootDockVisibility(visible)
+                        },
+                    )
 
-                NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
-                    onOpenWorld = onOpenWorld,
-                    onCreateWorld = onCreateWorld,
-                )
+                    NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
+                        onOpenWorld = onOpenWorld,
+                        onCreateWorld = onCreateWorld,
+                    )
 
-                NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
-                    onOpenCharacter = onOpenCharacter,
-                    onCreateCharacter = onCreateCharacter,
-                )
+                    NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
+                        onOpenCharacter = onOpenCharacter,
+                        onCreateCharacter = onCreateCharacter,
+                    )
+                }
             }
         }
 
@@ -290,6 +295,7 @@ private fun NovexWorldLibraryRoot(
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
         rows = novex.worlds().map { card ->
@@ -325,6 +331,7 @@ private fun NovexWorldLibraryRoot(
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的世界")
             rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld)
             else -> LazyColumn(
+                state = listState,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
@@ -350,6 +357,7 @@ private fun NovexCharacterLibraryRoot(
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
         rows = novex.characters().map { card ->
@@ -383,6 +391,7 @@ private fun NovexCharacterLibraryRoot(
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的角色")
             rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter)
             else -> LazyColumn(
+                state = listState,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxSize(),

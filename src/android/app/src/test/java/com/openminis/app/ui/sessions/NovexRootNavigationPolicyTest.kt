@@ -48,6 +48,7 @@ class NovexRootNavigationPolicyTest {
                 configLoaded = false,
                 hasUsableModel = false,
                 homeReady = false,
+                hasRootContent = false,
             ),
         )
         assertFalse(
@@ -55,6 +56,7 @@ class NovexRootNavigationPolicyTest {
                 configLoaded = true,
                 hasUsableModel = true,
                 homeReady = false,
+                hasRootContent = true,
             ),
         )
         assertTrue(
@@ -62,17 +64,19 @@ class NovexRootNavigationPolicyTest {
                 configLoaded = true,
                 hasUsableModel = true,
                 homeReady = true,
+                hasRootContent = true,
             ),
         )
     }
 
     @Test
-    fun configuredEmptyLibraryStillShowsAllThreeRootEntrances() {
-        assertTrue(
+    fun configuredEmptyOnboardingKeepsItsOriginalBottomLinksUnobstructed() {
+        assertFalse(
             shouldShowNovexRootDock(
                 configLoaded = true,
                 hasUsableModel = true,
                 homeReady = true,
+                hasRootContent = false,
             ),
         )
     }
@@ -110,9 +114,8 @@ class NovexRootNavigationPolicyTest {
     }
 
     @Test
-    fun unlockedDockDoesNotDisappearDuringHomeRecreation() {
-        assertFalse(nextNovexRootDockUnlocked(wasUnlocked = false, homeReady = false))
-        assertTrue(nextNovexRootDockUnlocked(wasUnlocked = false, homeReady = true))
-        assertTrue(nextNovexRootDockUnlocked(wasUnlocked = true, homeReady = false))
+    fun returningToAnEmptyOnboardingHidesAPreviouslyUnlockedDock() {
+        assertFalse(nextNovexRootDockVisibility(reportedVisible = false))
+        assertTrue(nextNovexRootDockVisibility(reportedVisible = true))
     }
 }
