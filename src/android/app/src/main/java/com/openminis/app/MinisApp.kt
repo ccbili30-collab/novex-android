@@ -133,6 +133,8 @@ class MinisApp : Application(), ImageLoaderFactory {
 
     lateinit var database: AppDatabase
         private set
+    lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
+        private set
     lateinit var chatRepository: ChatRepository
         private set
     lateinit var providerRepository: ProviderRepository
@@ -386,6 +388,10 @@ class MinisApp : Application(), ImageLoaderFactory {
         // first Compose frame forever.
         try {
         database = AppDatabase.getInstance(this)
+        novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.create(
+            database,
+            java.io.File(filesDir, "novex-media"),
+        )
         chatRepository = ChatRepository(database.chatDao())
         providerRepository = ProviderRepository(this)
         envVarRepository = EnvVarRepository(this)

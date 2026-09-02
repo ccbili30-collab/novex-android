@@ -34,13 +34,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.openminis.app.MinisApp
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,10 +53,7 @@ fun CatalogContentModuleDetailScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as MinisApp
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepository = rememberMediaRepository(app)
-    val mediaStore = rememberManagedMediaStore(context, mediaRepository)
+    val novex = rememberNovexWorkspace()
     val owner = remember(moduleId) { ModuleOwner.contentModule(moduleId) }
     val scope = rememberCoroutineScope()
     var module by remember { mutableStateOf<ContentModuleEntity?>(null) }
@@ -74,19 +72,25 @@ fun CatalogContentModuleDetailScreen(
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: error("无法读取图片")
                 }
-                val asset = mediaStore.import(bytes, context.contentResolver.getType(uri) ?: "image/*")
-                mediaRepository.attach(owner, MediaAssetSlot.MODULE_IMAGE, asset.id)
+                val asset = novex.apply(
+                    NovexCommand.AttachImage(
+                        owner,
+                        MediaAssetSlot.MODULE_IMAGE,
+                        bytes,
+                        context.contentResolver.getType(uri) ?: "image/*",
+                    ),
+                ).requireMedia()
                 image = asset
             }.onFailure { error = it.message }
         }
     }
 
     LaunchedEffect(moduleId) {
-        moduleRepository.module(moduleId)?.let { found ->
-            module = found
-            name = found.name
-            body = ContentModuleTextCodec.decode(found.contentJson)
-            image = mediaRepository.assetFor(owner, MediaAssetSlot.MODULE_IMAGE)
+        novex.module(moduleId)?.let { detail ->
+            module = detail.module
+            name = detail.module.name
+            body = ContentModuleTextCodec.decode(detail.module.contentJson)
+            image = detail.image
         }
         loaded = true
     }
@@ -96,8 +100,9 @@ fun CatalogContentModuleDetailScreen(
         saving = true
         scope.launch {
             runCatching {
-                moduleRepository.rename(moduleId, name)
-                moduleRepository.updateContent(moduleId, ContentModuleTextCodec.encode(body))
+                novex.apply(
+                    NovexCommand.SaveModule(moduleId, name, ContentModuleTextCodec.encode(body)),
+                )
             }.onSuccess { onBack() }.onFailure {
                 saving = false
                 error = it.message
@@ -138,7 +143,7 @@ fun CatalogContentModuleDetailScreen(
                     }) { Text(if (image == null) "添加代表图（可选）" else "更换代表图") }
                     if (image != null) TextButton(onClick = {
                         scope.launch {
-                            mediaRepository.detach(owner, MediaAssetSlot.MODULE_IMAGE)
+                            novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
                             image = null
                         }
                     }) { Text("移除") }

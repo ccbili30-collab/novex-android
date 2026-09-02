@@ -31,6 +31,7 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.chat.ChatScreen
 import com.openminis.app.ui.chat.ConversationSettingsScreen
 import com.openminis.app.ui.sessions.NovexRootScreen
+import com.openminis.app.ui.sessions.SessionListScreen
 import com.openminis.app.ui.settings.AboutScreen
 import com.openminis.app.ui.settings.AddAgentLoopGroupsScreen
 import com.openminis.app.ui.settings.AddAgentLoopModelsScreen
@@ -472,16 +473,41 @@ fun AppNavigation(
     ) {
         composable(Routes.SESSION_LIST) {
             NovexRootScreen(
-                chatRepository = chatRepository,
-                providerRepository = providerRepository,
-                onSessionClick = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-                onNewChat = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-                onSettingsClick = {
-                    navController.safeNavigate(Routes.SETTINGS)
+                conversationContent = { onWorldsClick, onRootNavigationVisibilityChange ->
+                    SessionListScreen(
+                        chatRepository = chatRepository,
+                        providerRepository = providerRepository,
+                        onSessionClick = { sessionId ->
+                            navController.safeNavigate(Routes.chat(sessionId))
+                        },
+                        onNewChat = { sessionId ->
+                            navController.safeNavigate(Routes.chat(sessionId))
+                        },
+                        onSettingsClick = {
+                            navController.safeNavigate(Routes.SETTINGS)
+                        },
+                        onCharactersClick = onWorldsClick,
+                        onWorldClick = { worldId ->
+                            navController.safeNavigate(Routes.storyWorld(worldId))
+                        },
+                        onAddProviderClick = {
+                            navController.safeNavigate(Routes.ADD_PROVIDER)
+                        },
+                        onSelectModelsClick = {
+                            navController.safeNavigate(Routes.ONBOARDING_MODELS)
+                        },
+                        onTerminalClick = {
+                            navController.safeNavigate(Routes.terminal())
+                        },
+                        onRootfsClick = {
+                            navController.safeNavigate(Routes.ROOTFS_MANAGEMENT)
+                        },
+                        onScheduledTasksClick = {
+                            navController.safeNavigate(Routes.SCHEDULED_TASKS)
+                        },
+                        showBottomActions = false,
+                        onRootNavigationVisibilityChange = onRootNavigationVisibilityChange,
+                    )
                 },
                 onOpenWorld = { worldId ->
                     navController.safeNavigate(Routes.storyWorld(worldId))
@@ -492,21 +518,6 @@ fun AppNavigation(
                 },
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit())
-                },
-                onAddProviderClick = {
-                    navController.safeNavigate(Routes.ADD_PROVIDER)
-                },
-                onSelectModelsClick = {
-                    navController.safeNavigate(Routes.ONBOARDING_MODELS)
-                },
-                onTerminalClick = {
-                    navController.safeNavigate(Routes.terminal())
-                },
-                onRootfsClick = {
-                    navController.safeNavigate(Routes.ROOTFS_MANAGEMENT)
-                },
-                onScheduledTasksClick = {
-                    navController.safeNavigate(Routes.SCHEDULED_TASKS)
                 },
             )
         }

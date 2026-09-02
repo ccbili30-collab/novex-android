@@ -30,19 +30,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ContentModuleTextCodec
-import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.requireModule
 import com.openminis.app.ui.novex.ContentModuleWorkspaceState
 import com.openminis.app.ui.novex.NovexContentModuleSummary
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.novex.toNovexPresentation
 import kotlinx.coroutines.launch
 
@@ -54,8 +53,7 @@ internal fun SharedContentModuleEditor(
     footer: String,
     onOpenModule: (String) -> Unit,
 ) {
-    val app = LocalContext.current.applicationContext as MinisApp
-    val repository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
+    val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var workspace by remember(owner) {
@@ -68,15 +66,10 @@ internal fun SharedContentModuleEditor(
     val moduleScope = remember(owner.type) {
         requireNotNull(ContentModuleCatalog.scopeFor(owner.type)) { "该对象不能拥有内容模块" }
     }
-    val mediaRepository = rememberMediaRepository(app)
-
     LaunchedEffect(owner, refresh) {
-        val saved = repository.list(owner)
-        workspace = ContentModuleWorkspaceState.fromSaved(saved)
-        moduleImages = saved.mapNotNull { module ->
-            mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
-                ?.managedPath?.let { module.id to it }
-        }.toMap()
+        val saved = novex.modules(owner)
+        workspace = ContentModuleWorkspaceState.fromSaved(saved.modules)
+        moduleImages = saved.images.mapValues { it.value.managedPath }
     }
 
     SettingsSection(header = header, footer = footer) {
@@ -98,9 +91,13 @@ internal fun SharedContentModuleEditor(
                 canMoveDown = index < workspace.modules.lastIndex,
                 onToggle = { workspace = workspace.toggleExpanded(module.id) },
                 onSave = { name, body ->
-                    repository.rename(module.id, name)
-                    repository.updateContent(module.id, ContentModuleTextCodec.encode(body))
-                    requireNotNull(repository.module(module.id)) { "模块不存在" }
+                    novex.apply(
+                        NovexCommand.SaveModule(
+                            moduleId = module.id,
+                            name = name,
+                            contentJson = ContentModuleTextCodec.encode(body),
+                        ),
+                    ).requireModule()
                 },
                 onSaved = { saved -> workspace = workspace.replace(saved) },
                 onOpenDetails = { onOpenModule(module.id) },
@@ -108,7 +105,7 @@ internal fun SharedContentModuleEditor(
                     val target = index + delta
                     workspace = workspace.move(module.id, target)
                     scope.launch {
-                        runCatching { repository.move(module.id, target) }
+                        runCatching { novex.apply(NovexCommand.MoveModule(module.id, target)) }
                             .onFailure {
                                 error = it.message
                                 refresh++
@@ -145,7 +142,9 @@ internal fun SharedContentModuleEditor(
                             addModule = false
                             scope.launch {
                                 runCatching {
-                                    repository.add(owner, definition.type, definition.displayName)
+                                    novex.apply(
+                                        NovexCommand.AddModule(owner, definition.type, definition.displayName),
+                                    ).requireModule()
                                 }.onSuccess { created ->
                                     workspace = workspace.add(created)
                                 }.onFailure { error = it.message }
@@ -169,8 +168,7 @@ internal fun SharedContentModuleEditor(
                     deleteModule = null
                     scope.launch {
                         runCatching {
-                            mediaRepository.removeAll(ModuleOwner.contentModule(module.id))
-                            repository.delete(module.id)
+                            novex.apply(NovexCommand.DeleteModule(module.id))
                         }.onSuccess {
                             workspace = workspace.remove(module.id)
                             moduleImages = moduleImages - module.id

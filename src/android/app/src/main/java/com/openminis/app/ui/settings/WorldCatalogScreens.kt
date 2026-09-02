@@ -1,6 +1,5 @@
 package com.openminis.app.ui.settings
 
-import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,20 +51,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.openminis.app.MinisApp
-import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCardStore
-import com.openminis.app.data.character.CharacterLibraryService
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleRepository
-import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
-import com.openminis.app.data.character.MediaAssetRepository
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
+import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexWorldSnapshot
+import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.novex.domain.requireVersion
+import com.openminis.app.novex.domain.requireWorld
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
@@ -73,6 +71,7 @@ import com.openminis.app.ui.novex.NovexContentModuleBlock
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.toNovexPresentation
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,15 +79,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-private data class WorldPageData(
-    val world: WorldEntity,
-    val versions: List<CharacterVersionEntity>,
-    val availableVersions: List<CharacterVersionEntity>,
-    val versionWorlds: Map<String, List<WorldEntity>>,
-    val media: Map<MediaAssetSlot, MediaAssetEntity>,
-    val modules: List<ContentModuleEntity>,
-    val moduleImages: Map<String, MediaAssetEntity>,
-)
+private typealias WorldPageData = NovexWorldSnapshot
 
 @Composable
 fun CatalogWorldLibraryScreen(
@@ -97,17 +88,12 @@ fun CatalogWorldLibraryScreen(
     onCreateWorld: () -> Unit,
     onOpenCharacterLibrary: () -> Unit,
 ) {
-    val app = LocalContext.current.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val media = rememberMediaRepository(app)
-    var worlds by remember { mutableStateOf<List<Pair<WorldEntity, String?>>>(emptyList()) }
+    val novex = rememberNovexWorkspace()
+    var worlds by remember { mutableStateOf<List<Pair<com.openminis.app.data.character.WorldEntity, String?>>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        worlds = catalog.listWorlds().map { world ->
-            val owner = ModuleOwner.world(world.id)
-            val image = media.assetFor(owner, MediaAssetSlot.WORLD_COVER)
-                ?: media.assetFor(owner, MediaAssetSlot.WORLD_BACKGROUND)
-            world to (image?.managedPath ?: world.legacyBackgroundPath())
+        worlds = novex.worlds().map { card ->
+            card.world to (card.image?.managedPath ?: card.world.legacyBackgroundPath())
         }
         loaded = true
     }
@@ -190,11 +176,7 @@ fun CatalogWorldDetailScreen(
     val allPersonas by CharacterCardStore.personas.collectAsState()
     val legacyWorld = legacyWorlds.firstOrNull { it.id == worldId }
     val personas = allPersonas.filter { it.worldId == worldId }
-    val app = context.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepo = rememberMediaRepository(app)
-    val characterLibrary = remember(app) { CharacterLibraryService(catalog, moduleRepository, mediaRepo) }
+    val novex = rememberNovexWorkspace()
     val owner = remember(worldId) { ModuleOwner.world(worldId) }
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
@@ -208,32 +190,13 @@ fun CatalogWorldDetailScreen(
     var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
-        val world = catalog.world(worldId)
-        if (world == null) {
+        val snapshot = novex.world(worldId)
+        if (snapshot == null) {
             missing = true
             data = null
         } else {
             missing = false
-            val versions = catalog.versionsForWorld(worldId)
-            val modules = moduleRepository.list(owner)
-            data = WorldPageData(
-                world = world,
-                versions = versions,
-                availableVersions = catalog.listVersions(),
-                versionWorlds = versions.associate { it.id to catalog.worldsForVersion(it.id) },
-                media = listOf(
-                    MediaAssetSlot.WORLD_COVER,
-                    MediaAssetSlot.WORLD_LOGO,
-                    MediaAssetSlot.WORLD_BACKGROUND,
-                ).mapNotNull { slot ->
-                    mediaRepo.assetFor(owner, slot)?.let { slot to it }
-                }.toMap(),
-                modules = modules,
-                moduleImages = modules.mapNotNull { module ->
-                    mediaRepo.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
-                        ?.let { module.id to it }
-                }.toMap(),
-            )
+            data = snapshot
         }
     }
     val current = data
@@ -301,7 +264,7 @@ fun CatalogWorldDetailScreen(
                             }) { Text("编辑") }
                             TextButton(onClick = {
                                 scope.launch {
-                                    catalog.removeVersionFromWorld(worldId, version.id)
+                                    novex.apply(NovexCommand.UnlinkCharacterVersion(worldId, version.id))
                                     refresh++
                                 }
                             }) { Text("移除") }
@@ -383,10 +346,12 @@ fun CatalogWorldDetailScreen(
                         onClick = {
                             addCharacter = false
                             scope.launch {
-                                catalog.addVersionToWorld(
-                                    worldId,
-                                    version.id,
-                                    current.versions.size,
+                                novex.apply(
+                                    NovexCommand.LinkCharacterVersion(
+                                        worldId,
+                                        version.id,
+                                        current.versions.size,
+                                    ),
                                 )
                                 refresh++
                             }
@@ -444,7 +409,7 @@ fun CatalogWorldDetailScreen(
         dismissButton = { TextButton(onClick = { startCharacterChat = false }) { Text("取消") } },
     )
     editVersion?.let { version ->
-        val affectedWorlds = current?.versionWorlds?.get(version.id).orEmpty()
+        val affectedWorlds = current?.worldsByVersion?.get(version.id).orEmpty()
         AlertDialog(
             onDismissRequest = { editVersion = null },
             title = { Text("如何修改${version.profileName()}？") },
@@ -465,7 +430,9 @@ fun CatalogWorldDetailScreen(
                 TextButton(onClick = {
                     editVersion = null
                     scope.launch {
-                        runCatching { characterLibrary.saveAsWorldVariant(version.id, worldId) }
+                        runCatching {
+                            novex.apply(NovexCommand.SaveAsWorldVariant(version.id, worldId)).requireVersion()
+                        }
                             .onSuccess { created ->
                                 onEditCharacterVersion(created.characterId, created.id)
                             }
@@ -499,11 +466,7 @@ fun CatalogWorldEditorScreen(
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepo = rememberMediaRepository(app)
-    val mediaStore = rememberManagedMediaStore(context, mediaRepo)
+    val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
     var source by remember { mutableStateOf<WorldEntity?>(null) }
     var loaded by remember { mutableStateOf(worldId == null) }
@@ -525,31 +488,28 @@ fun CatalogWorldEditorScreen(
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: error("无法读取图片")
                 }
-                val asset = mediaStore.import(
-                    bytes = bytes,
-                    mimeType = context.contentResolver.getType(uri) ?: "image/*",
-                )
-                mediaRepo.attach(owner, slot, asset.id)
+                val asset = novex.apply(
+                    NovexCommand.AttachImage(
+                        owner = owner,
+                        slot = slot,
+                        bytes = bytes,
+                        mimeType = context.contentResolver.getType(uri) ?: "image/*",
+                    ),
+                ).requireMedia()
                 media = media + (slot to asset)
             }.onFailure { error = it.message }
         }
     }
     LaunchedEffect(worldId) {
         if (worldId != null) {
-            val world = catalog.world(worldId)
+            val snapshot = novex.world(worldId)
+            val world = snapshot?.world
             source = world
-            if (world != null) {
-                name = world.name
-                tags = world.tags().joinToString("、")
-                overview = world.overview
-                val loadedMedia = listOf(
-                    MediaAssetSlot.WORLD_COVER,
-                    MediaAssetSlot.WORLD_LOGO,
-                    MediaAssetSlot.WORLD_BACKGROUND,
-                ).mapNotNull { slot ->
-                    mediaRepo.assetFor(ModuleOwner.world(worldId), slot)?.let { slot to it }
-                }.toMap()
-                media = loadedMedia
+            if (snapshot != null) {
+                name = snapshot.world.name
+                tags = snapshot.world.tags().joinToString("、")
+                overview = snapshot.world.overview
+                media = snapshot.media
             }
             loaded = true
         }
@@ -563,9 +523,11 @@ fun CatalogWorldEditorScreen(
                     tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
                 ).toString()
                 if (source == null) {
-                    catalog.createWorld(name, overview, tagsJson = tagsJson)
+                    novex.apply(NovexCommand.CreateWorld(name, overview, tagsJson)).requireWorld()
                 } else {
-                    catalog.saveWorld(source!!.copy(name = name, overview = overview, tagsJson = tagsJson))
+                    novex.apply(
+                        NovexCommand.SaveWorld(source!!.copy(name = name, overview = overview, tagsJson = tagsJson)),
+                    ).requireWorld()
                 }
             }.onSuccess { onSaved(it.id) }
                 .onFailure { error = it.message; saving = false }
@@ -589,18 +551,16 @@ fun CatalogWorldEditorScreen(
                 updatedAt = now,
             )
             val draftOwner = owner
-            val draftModules = if (draftOwner == null) emptyList() else moduleRepository.list(draftOwner)
+            val savedSnapshot = worldId?.let { novex.world(it) }
+            val draftModules = if (draftOwner == null) emptyList() else novex.modules(draftOwner).modules
             previewData = WorldPageData(
                 world = draftWorld,
-                versions = if (worldId == null) emptyList() else catalog.versionsForWorld(worldId),
+                versions = savedSnapshot?.versions.orEmpty(),
                 availableVersions = emptyList(),
-                versionWorlds = emptyMap(),
+                worldsByVersion = emptyMap(),
                 media = media,
                 modules = draftModules,
-                moduleImages = draftModules.mapNotNull { module ->
-                    mediaRepo.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
-                        ?.let { module.id to it }
-                }.toMap(),
+                moduleImages = savedSnapshot?.moduleImages.orEmpty(),
             )
         }
     }
@@ -681,7 +641,7 @@ fun CatalogWorldEditorScreen(
                         },
                         onRemove = {
                             if (owner != null) scope.launch {
-                                mediaRepo.detach(owner, slot)
+                                novex.apply(NovexCommand.DetachImage(owner, slot))
                                 media = media - slot
                             }
                         },
@@ -832,26 +792,6 @@ private fun WorldEmptyRow(title: String, action: String, onClick: () -> Unit) {
         Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = onClick) { Text(action) }
     }
-}
-
-@Composable
-internal fun rememberMediaRepository(app: MinisApp): MediaAssetRepository {
-    val context = LocalContext.current.applicationContext
-    return remember(app) {
-        val root = File(context.filesDir, "novex-media").canonicalFile
-        MediaAssetRepository(app.database.mediaAssetDao()) { path ->
-            val target = File(path).canonicalFile
-            if (target.parentFile == root) target.delete() else false
-        }
-    }
-}
-
-@Composable
-internal fun rememberManagedMediaStore(
-    context: Context,
-    repository: MediaAssetRepository,
-): ManagedMediaAssetStore = remember(repository) {
-    ManagedMediaAssetStore(File(context.filesDir, "novex-media"), repository)
 }
 
 private fun WorldEntity.tags(): List<String> = runCatching {

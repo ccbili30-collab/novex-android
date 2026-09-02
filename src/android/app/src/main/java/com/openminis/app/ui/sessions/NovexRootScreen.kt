@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -58,22 +57,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.MinisApp
 import com.openminis.app.R
-import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionProfile
-import com.openminis.app.data.character.ContentModuleRepository
-import com.openminis.app.data.character.MediaAssetSlot
-import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.settings.existingMediaFile
-import com.openminis.app.ui.settings.rememberMediaRepository
 import kotlin.math.abs
 
 private val NovexRootColors = NovexColors
@@ -94,20 +86,14 @@ private data class CharacterRootRow(
 
 @Composable
 fun NovexRootScreen(
-    chatRepository: ChatRepository,
-    providerRepository: ProviderRepository,
-    onSessionClick: (String) -> Unit,
-    onNewChat: (String) -> Unit,
-    onSettingsClick: () -> Unit,
+    conversationContent: @Composable (
+        onWorldsClick: () -> Unit,
+        onRootNavigationVisibilityChange: (Boolean) -> Unit,
+    ) -> Unit,
     onOpenWorld: (String) -> Unit,
     onCreateWorld: () -> Unit,
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
-    onAddProviderClick: () -> Unit,
-    onSelectModelsClick: () -> Unit,
-    onTerminalClick: () -> Unit,
-    onRootfsClick: () -> Unit,
-    onScheduledTasksClick: () -> Unit,
 ) {
     var selectedName by rememberSaveable { mutableStateOf(NovexRootSpace.CONVERSATIONS.name) }
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
@@ -188,25 +174,9 @@ fun NovexRootScreen(
     ) {
         Box(Modifier.fillMaxSize()) {
             when (selected) {
-                NovexRootSpace.CONVERSATIONS -> SessionListScreen(
-                    chatRepository = chatRepository,
-                    providerRepository = providerRepository,
-                    onSessionClick = onSessionClick,
-                    onNewChat = onNewChat,
-                    onSettingsClick = onSettingsClick,
-                    onCharactersClick = { select(NovexRootSpace.WORLDS) },
-                    onWorldClick = onOpenWorld,
-                    onAddProviderClick = onAddProviderClick,
-                    onSelectModelsClick = onSelectModelsClick,
-                    onTerminalClick = onTerminalClick,
-                    onRootfsClick = onRootfsClick,
-                    onScheduledTasksClick = onScheduledTasksClick,
-                    showBottomActions = false,
-                    // Once the user has reached the real home, keep the root dock
-                    // unlocked while switching destinations. Recreating the home
-                    // composable briefly reports an unloaded state; treating that
-                    // as a new onboarding session would remove the dock mid-drag.
-                    onRootNavigationVisibilityChange = { visible ->
+                NovexRootSpace.CONVERSATIONS -> conversationContent(
+                    { select(NovexRootSpace.WORLDS) },
+                    { visible ->
                         showRootDock = nextNovexRootDockUnlocked(showRootDock, visible)
                     },
                 )
@@ -315,25 +285,19 @@ private fun NovexWorldLibraryRoot(
     onOpenWorld: (String) -> Unit,
     onCreateWorld: () -> Unit,
 ) {
-    val app = LocalContext.current.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepository = rememberMediaRepository(app)
+    val novex = rememberNovexWorkspace()
     var rows by remember { mutableStateOf<List<WorldRootRow>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        rows = catalog.listWorlds().map { world ->
-            val owner = ModuleOwner.world(world.id)
-            val image = mediaRepository.assetFor(owner, MediaAssetSlot.WORLD_COVER)
-                ?: mediaRepository.assetFor(owner, MediaAssetSlot.WORLD_BACKGROUND)
+        rows = novex.worlds().map { card ->
             WorldRootRow(
-                world = world,
-                imagePath = image?.managedPath,
-                characterCount = catalog.versionsForWorld(world.id).size,
-                moduleCount = moduleRepository.list(owner).size,
+                world = card.world,
+                imagePath = card.image?.managedPath,
+                characterCount = card.characterCount,
+                moduleCount = card.moduleCount,
             )
         }
         loaded = true
@@ -381,23 +345,18 @@ private fun NovexCharacterLibraryRoot(
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
 ) {
-    val app = LocalContext.current.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val mediaRepository = rememberMediaRepository(app)
+    val novex = rememberNovexWorkspace()
     var rows by remember { mutableStateOf<List<CharacterRootRow>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        rows = catalog.listCharacters().mapNotNull { character ->
-            val aggregate = catalog.character(character.id) ?: return@mapNotNull null
+        rows = novex.characters().map { card ->
+            val aggregate = card.character
+            val character = aggregate.character
             val profile = CharacterVersionProfile.fromJson(aggregate.original.profileJson, character.name)
-            val avatar = mediaRepository.assetFor(
-                ModuleOwner.characterVersion(aggregate.original.id),
-                MediaAssetSlot.CHARACTER_AVATAR,
-            )
-            CharacterRootRow(character, profile, avatar?.managedPath, aggregate.variants.size)
+            CharacterRootRow(character, profile, card.avatar?.managedPath, aggregate.variants.size)
         }
         loaded = true
     }

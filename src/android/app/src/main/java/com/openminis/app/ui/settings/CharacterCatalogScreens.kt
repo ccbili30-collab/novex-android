@@ -61,27 +61,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
-import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterAggregate
-import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCustomAttribute
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterLibraryDocumentCodec
-import com.openminis.app.data.character.CharacterLibraryService
 import com.openminis.app.data.character.CharacterRelationship
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
-import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
-import com.openminis.app.data.character.MediaAssetRepository
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.SillyTavernCardParser
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.requireCharacter
+import com.openminis.app.novex.domain.requireDocument
+import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.novex.domain.requireVersion
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
@@ -89,6 +88,7 @@ import com.openminis.app.ui.novex.NovexContentModuleBlock
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.toNovexPresentation
+import com.openminis.app.ui.novex.rememberNovexWorkspace
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -126,12 +126,7 @@ fun CatalogCharacterLibraryScreen(
     onCreateCharacter: () -> Unit,
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepository = rememberMediaRepository(app)
-    val mediaStore = rememberManagedMediaStore(context, mediaRepository)
-    val service = remember(app) { CharacterLibraryService(catalog, moduleRepository, mediaRepository) }
+    val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf<List<CharacterLibraryRow>>(emptyList()) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -139,16 +134,14 @@ fun CatalogCharacterLibraryScreen(
     var importing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(refresh) {
-        rows = catalog.listCharacters().mapNotNull { character ->
-            val aggregate = catalog.character(character.id) ?: return@mapNotNull null
+        rows = novex.characters().map { card ->
+            val aggregate = card.character
+            val character = aggregate.character
             CharacterLibraryRow(
                 character = character,
                 original = aggregate.original,
                 profile = CharacterVersionProfile.fromJson(aggregate.original.profileJson, character.name),
-                avatar = mediaRepository.assetFor(
-                    ModuleOwner.characterVersion(aggregate.original.id),
-                    MediaAssetSlot.CHARACTER_AVATAR,
-                ),
+                avatar = card.avatar,
                 variantCount = aggregate.variants.size,
             )
         }
@@ -171,13 +164,15 @@ fun CatalogCharacterLibraryScreen(
                         Triple(CharacterLibraryDocumentCodec.fromTavernCard(preview.card), preview.avatarPng, preview.sourceLabel)
                     }
                 }
-                val created = service.importDocument(result.first)
+                val created = novex.apply(NovexCommand.ImportCharacter(result.first)).requireCharacter()
                 result.second?.let { avatarBytes ->
-                    val asset = mediaStore.import(avatarBytes, "image/png")
-                    mediaRepository.attach(
-                        ModuleOwner.characterVersion(created.original.id),
-                        MediaAssetSlot.CHARACTER_AVATAR,
-                        asset.id,
+                    novex.apply(
+                        NovexCommand.AttachImage(
+                            ModuleOwner.characterVersion(created.original.id),
+                            MediaAssetSlot.CHARACTER_AVATAR,
+                            avatarBytes,
+                            "image/png",
+                        ),
                     )
                 }
                 created.character.id
@@ -258,11 +253,7 @@ fun CatalogCharacterDetailScreen(
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepository = rememberMediaRepository(app)
-    val service = remember(app) { CharacterLibraryService(catalog, moduleRepository, mediaRepository) }
+    val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var data by remember { mutableStateOf<CharacterDetailData?>(null) }
@@ -278,35 +269,25 @@ fun CatalogCharacterDetailScreen(
     var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(characterId, refresh) {
-        val aggregate = catalog.character(characterId)
-        if (aggregate == null) {
+        val snapshot = novex.character(characterId)
+        if (snapshot == null) {
             missing = true
             data = null
         } else {
+            val aggregate = snapshot.character
             missing = false
             selectedVersionId = selectedVersionId?.takeIf { id -> aggregate.allVersions.any { it.id == id } }
                 ?: aggregate.original.id
             data = CharacterDetailData(
                 aggregate = aggregate,
-                worlds = aggregate.allVersions.associate { it.id to catalog.worldsForVersion(it.id) },
-                media = aggregate.allVersions.associate { version ->
-                    val owner = ModuleOwner.characterVersion(version.id)
-                    version.id to listOf(
-                        MediaAssetSlot.CHARACTER_AVATAR,
-                        MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
-                    ).mapNotNull { slot -> mediaRepository.assetFor(owner, slot)?.let { slot to it } }.toMap()
-                },
+                worlds = snapshot.worldsByVersion,
+                media = snapshot.mediaByVersion,
             )
+            modulesByVersion = snapshot.modulesByVersion
+            moduleImagesByVersion = snapshot.modulesByVersion.mapValues { (_, modules) ->
+                modules.mapNotNull { module -> snapshot.moduleImages[module.id]?.let { module.id to it } }.toMap()
+            }
         }
-    }
-    LaunchedEffect(selectedVersionId, refresh) {
-        val versionId = selectedVersionId ?: return@LaunchedEffect
-        val modules = moduleRepository.list(ModuleOwner.characterVersion(versionId))
-        modulesByVersion = modulesByVersion + (versionId to modules)
-        moduleImagesByVersion = moduleImagesByVersion + (versionId to modules.mapNotNull { module ->
-            mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
-                ?.let { module.id to it }
-        }.toMap())
     }
     val current = data
     val selected = current?.aggregate?.allVersions?.firstOrNull { it.id == selectedVersionId }
@@ -362,7 +343,9 @@ fun CatalogCharacterDetailScreen(
                     onCreateVariant = onCreateVariant,
                     onExport = {
                         scope.launch {
-                            runCatching { service.exportDocument(characterId) }
+                            runCatching {
+                                novex.apply(NovexCommand.ExportCharacter(characterId)).requireDocument()
+                            }
                                 .onSuccess {
                                     shareCharacterDocument(
                                         context,
@@ -374,7 +357,9 @@ fun CatalogCharacterDetailScreen(
                     },
                     onDuplicate = {
                         scope.launch {
-                            runCatching { service.duplicateCharacter(characterId) }
+                            runCatching {
+                                novex.apply(NovexCommand.DuplicateCharacter(characterId)).requireCharacter()
+                            }
                                 .onSuccess { onDuplicated(it.character.id) }
                                 .onFailure { error = it.message }
                         }
@@ -424,7 +409,7 @@ fun CatalogCharacterDetailScreen(
         confirmButton = {
             Button(onClick = {
                 confirmDeleteRoot = false
-                scope.launch { service.deleteCharacter(characterId); onBack() }
+                scope.launch { novex.apply(NovexCommand.DeleteCharacter(characterId)); onBack() }
             }) { Text("删除") }
         },
         dismissButton = { TextButton(onClick = { confirmDeleteRoot = false }) { Text("取消") } },
@@ -437,7 +422,11 @@ fun CatalogCharacterDetailScreen(
             confirmButton = {
                 Button(onClick = {
                     confirmDeleteVariant = null
-                    scope.launch { service.deleteVariant(version.id); selectedVersionId = null; refresh++ }
+                    scope.launch {
+                        novex.apply(NovexCommand.DeleteVariant(version.id))
+                        selectedVersionId = null
+                        refresh++
+                    }
                 }) { Text("删除") }
             },
             dismissButton = { TextButton(onClick = { confirmDeleteVariant = null }) { Text("取消") } },
@@ -480,11 +469,7 @@ fun CatalogCharacterEditorScreen(
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val app = context.applicationContext as MinisApp
-    val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
-    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
-    val mediaRepository = rememberMediaRepository(app)
-    val mediaStore = rememberManagedMediaStore(context, mediaRepository)
+    val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(characterId == null) }
     var sourceAggregate by remember { mutableStateOf<CharacterAggregate?>(null) }
@@ -515,15 +500,22 @@ fun CatalogCharacterEditorScreen(
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取图片")
                 }
-                val asset = mediaStore.import(bytes, context.contentResolver.getType(uri) ?: "image/*")
-                mediaRepository.attach(owner, slot, asset.id)
+                val asset = novex.apply(
+                    NovexCommand.AttachImage(
+                        owner,
+                        slot,
+                        bytes,
+                        context.contentResolver.getType(uri) ?: "image/*",
+                    ),
+                ).requireMedia()
                 media = media + (slot to asset)
             }.onFailure { error = it.message }
         }
     }
     LaunchedEffect(characterId, versionId, createVariant) {
         if (characterId != null) {
-            val aggregate = catalog.character(characterId)
+            val snapshot = novex.character(characterId)
+            val aggregate = snapshot?.character
             sourceAggregate = aggregate
             val version = when {
                 versionId != null -> aggregate?.allVersions?.firstOrNull { it.id == versionId }
@@ -547,11 +539,7 @@ fun CatalogCharacterEditorScreen(
                     listOf(it.characterName, it.relationship, it.description).joinToString("｜")
                 }
                 if (!createVariant) {
-                    val loadedOwner = ModuleOwner.characterVersion(version.id)
-                    media = listOf(
-                        MediaAssetSlot.CHARACTER_AVATAR,
-                        MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
-                    ).mapNotNull { slot -> mediaRepository.assetFor(loadedOwner, slot)?.let { slot to it } }.toMap()
+                    media = snapshot.mediaByVersion[version.id].orEmpty()
                 }
             }
             loaded = true
@@ -588,17 +576,17 @@ fun CatalogCharacterEditorScreen(
                     updatedAt = now,
                 )
             val draftOwner = sourceVersion?.id?.let { ModuleOwner.characterVersion(it) }
-            val modules = draftOwner?.let { moduleRepository.list(it) }.orEmpty()
+            val savedSnapshot = characterId?.let { novex.character(it) }
+            val modules = draftOwner?.let { novex.modules(it).modules }.orEmpty()
             previewData = CharacterPageData(
                 rootName = rootName.ifBlank { name },
                 version = draftVersion,
                 profile = draftProfile(),
-                worlds = sourceVersion?.id?.let { catalog.worldsForVersion(it) }.orEmpty(),
+                worlds = sourceVersion?.id?.let { savedSnapshot?.worldsByVersion?.get(it) }.orEmpty(),
                 media = media,
                 modules = modules,
                 moduleImages = modules.mapNotNull { module ->
-                    mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
-                        ?.let { module.id to it }
+                    savedSnapshot?.moduleImages?.get(module.id)?.let { module.id to it }
                 }.toMap(),
                 variantCount = (sourceAggregate?.variants?.size ?: 0) + if (createVariant) 1 else 0,
             )
@@ -611,32 +599,41 @@ fun CatalogCharacterEditorScreen(
             runCatching {
                 val profile = draftProfile()
                 val saved = when {
-                    sourceAggregate == null -> catalog.createCharacter(
-                        name = rootName.ifBlank { name },
-                        originalProfileJson = profile.toJson(),
-                    ).also { aggregate ->
+                    sourceAggregate == null -> novex.apply(
+                        NovexCommand.CreateCharacter(
+                            name = rootName.ifBlank { name },
+                            profileJson = profile.toJson(),
+                        ),
+                    ).requireCharacter().also { aggregate ->
                         if (worldId != null) {
-                            catalog.addVersionToWorld(
-                                worldId,
-                                aggregate.original.id,
-                                catalog.versionsForWorld(worldId).size,
+                            val position = novex.world(worldId)?.versions?.size ?: 0
+                            novex.apply(
+                                NovexCommand.LinkCharacterVersion(
+                                    worldId,
+                                    aggregate.original.id,
+                                    position,
+                                ),
                             )
                         }
                     }
                     createVariant -> {
-                        val variant = catalog.createVariant(
+                        val variant = novex.apply(NovexCommand.CreateVariant(
                             characterId = sourceAggregate!!.character.id,
                             label = label,
                             profileJson = profile.toJson(),
-                        )
+                        )).requireVersion()
                         CharacterAggregate(sourceAggregate!!.character, sourceAggregate!!.original, sourceAggregate!!.variants + variant)
                     }
                     else -> {
-                        val version = catalog.saveVersion(sourceVersion!!.copy(label = label, profileJson = profile.toJson()))
-                        if (version.kind == CharacterVersionKind.ORIGINAL) {
-                            catalog.saveCharacter(sourceAggregate!!.character.copy(name = rootName.ifBlank { name }))
-                        }
-                        sourceAggregate!!
+                        novex.apply(
+                            NovexCommand.SaveCharacterVersion(
+                                characterId = sourceAggregate!!.character.id,
+                                versionId = sourceVersion!!.id,
+                                rootName = rootName.ifBlank { name },
+                                label = label,
+                                profileJson = profile.toJson(),
+                            ),
+                        ).requireCharacter()
                     }
                 }
                 saved.character.id
@@ -735,7 +732,7 @@ fun CatalogCharacterEditorScreen(
                             },
                             onRemove = {
                                 if (owner != null) scope.launch {
-                                    mediaRepository.detach(owner, slot)
+                                    novex.apply(NovexCommand.DetachImage(owner, slot))
                                     media = media - slot
                                 }
                             },
