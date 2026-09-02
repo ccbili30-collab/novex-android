@@ -38,6 +38,20 @@ class ContentModuleWorkspaceStateTest {
         assertFalse("faction" in removed.expandedModuleIds)
     }
 
+    @Test
+    fun newlyAddedModulesOpenForEditingAndSavedValuesReplaceInPlace() {
+        val initial = ContentModuleWorkspaceState.fromSaved(listOf(module("map", 0)))
+        val added = initial.add(module("timeline", 99))
+
+        assertEquals(listOf("map", "timeline"), added.modules.map { it.id })
+        assertTrue("timeline" in added.expandedModuleIds)
+
+        val renamed = added.modules.last().copy(name = "王朝时间线")
+        val replaced = added.replace(renamed)
+        assertEquals("王朝时间线", replaced.modules.last().name)
+        assertEquals(listOf(0, 1), replaced.modules.map { it.position })
+    }
+
     private fun module(
         id: String,
         position: Int,

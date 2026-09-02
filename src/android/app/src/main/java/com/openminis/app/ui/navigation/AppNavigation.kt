@@ -704,6 +704,7 @@ fun AppNavigation(
                         popUpTo(Routes.CHARACTERS) { inclusive = false }
                     }
                 },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
             )
         }
 

@@ -37,6 +37,27 @@ internal class ContentModuleWorkspaceState private constructor(
         expandedModuleIds = expandedModuleIds - moduleId,
     )
 
+    fun add(
+        module: ContentModuleEntity,
+        expanded: Boolean = true,
+    ): ContentModuleWorkspaceState {
+        val normalized = (modules + module).mapIndexed { index, item -> item.copy(position = index) }
+        return ContentModuleWorkspaceState(
+            modules = normalized,
+            expandedModuleIds = if (expanded) expandedModuleIds + module.id else expandedModuleIds,
+        )
+    }
+
+    fun replace(module: ContentModuleEntity): ContentModuleWorkspaceState {
+        if (modules.none { it.id == module.id }) return this
+        return ContentModuleWorkspaceState(
+            modules = modules.map { current ->
+                if (current.id == module.id) module.copy(position = current.position) else current
+            },
+            expandedModuleIds = expandedModuleIds,
+        )
+    }
+
     companion object {
         fun fromSaved(modules: List<ContentModuleEntity>): ContentModuleWorkspaceState =
             ContentModuleWorkspaceState(

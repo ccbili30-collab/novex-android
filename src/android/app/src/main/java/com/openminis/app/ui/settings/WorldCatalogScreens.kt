@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,8 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,6 +57,7 @@ import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterLibraryService
 import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
@@ -66,6 +66,13 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
+import com.openminis.app.ui.novex.NovexArtwork
+import com.openminis.app.ui.novex.NovexArtworkKind
+import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexContentModuleBlock
+import com.openminis.app.ui.novex.NovexDetailScaffold
+import com.openminis.app.ui.novex.NovexTopAction
+import com.openminis.app.ui.novex.toNovexPresentation
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -79,6 +86,8 @@ private data class WorldPageData(
     val availableVersions: List<CharacterVersionEntity>,
     val versionWorlds: Map<String, List<WorldEntity>>,
     val media: Map<MediaAssetSlot, MediaAssetEntity>,
+    val modules: List<ContentModuleEntity>,
+    val moduleImages: Map<String, MediaAssetEntity>,
 )
 
 @Composable
@@ -206,6 +215,7 @@ fun CatalogWorldDetailScreen(
         } else {
             missing = false
             val versions = catalog.versionsForWorld(worldId)
+            val modules = moduleRepository.list(owner)
             data = WorldPageData(
                 world = world,
                 versions = versions,
@@ -218,21 +228,32 @@ fun CatalogWorldDetailScreen(
                 ).mapNotNull { slot ->
                     mediaRepo.assetFor(owner, slot)?.let { slot to it }
                 }.toMap(),
+                modules = modules,
+                moduleImages = modules.mapNotNull { module ->
+                    mediaRepo.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
+                        ?.let { module.id to it }
+                }.toMap(),
             )
         }
     }
     val current = data
-    SettingsScaffold(
+    NovexDetailScaffold(
         title = current?.world?.name ?: "世界",
         onBack = onBack,
         actions = {
             if (current != null) {
-                IconButton(onClick = { creatorNotice = true }) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = "帮我创作")
-                }
-                IconButton(onClick = onEditWorld) {
-                    Icon(Icons.Default.Edit, contentDescription = "编辑世界")
-                }
+                NovexTopAction(
+                    icon = com.openminis.app.R.drawable.ic_phosphor_sparkle,
+                    contentDescription = "帮我创作",
+                    label = "帮我创作",
+                    onClick = { creatorNotice = true },
+                )
+                NovexTopAction(
+                    icon = com.openminis.app.R.drawable.ic_phosphor_pencil_simple,
+                    contentDescription = "编辑世界",
+                    label = "编辑",
+                    onClick = onEditWorld,
+                )
             }
         },
     ) {
@@ -242,28 +263,7 @@ fun CatalogWorldDetailScreen(
                 CircularProgressIndicator()
             }
             else -> {
-                WorldHero(current)
-                SettingsSection(header = "世界观概述") {
-                    Text(
-                        current.world.overview.ifBlank { "尚未填写世界观概述" },
-                        modifier = Modifier.padding(16.dp),
-                        color = if (current.world.overview.isBlank()) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else MaterialTheme.colorScheme.onSurface,
-                    )
-                    if (current.world.tags().isNotEmpty()) Text(
-                        current.world.tags().joinToString("  ·  "),
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-                SharedContentModuleEditor(
-                    owner = owner,
-                    header = "世界设定模块",
-                    footer = "时间线、事件、地图、地区、势力、种族和自定义模块只在添加后出现。",
-                    onOpenModule = onOpenModule,
-                )
+                WorldPrimaryContent(current, onOpenModule)
                 SettingsSection(
                     header = "角色卡",
                     footer = "世界关联具体本体或分身；角色版本仍归角色库所有。",
@@ -496,10 +496,12 @@ fun CatalogWorldEditorScreen(
     worldId: String?,
     onBack: () -> Unit,
     onSaved: (String) -> Unit,
+    onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
+    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
     val mediaRepo = rememberMediaRepository(app)
     val mediaStore = rememberManagedMediaStore(context, mediaRepo)
     val scope = rememberCoroutineScope()
@@ -511,6 +513,7 @@ fun CatalogWorldEditorScreen(
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
     var pendingSlot by remember { mutableStateOf<MediaAssetSlot?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var previewData by remember { mutableStateOf<WorldPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val owner = worldId?.let(ModuleOwner::world)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -568,12 +571,71 @@ fun CatalogWorldEditorScreen(
                 .onFailure { error = it.message; saving = false }
         }
     }
+    fun preview() {
+        if (!loaded || name.isBlank()) return
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val draftWorld = (source ?: WorldEntity(
+                id = worldId ?: "draft-world",
+                name = name,
+                createdAt = now,
+                updatedAt = now,
+            )).copy(
+                name = name,
+                overview = overview,
+                tagsJson = JSONArray(
+                    tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
+                ).toString(),
+                updatedAt = now,
+            )
+            val draftOwner = owner
+            val draftModules = if (draftOwner == null) emptyList() else moduleRepository.list(draftOwner)
+            previewData = WorldPageData(
+                world = draftWorld,
+                versions = if (worldId == null) emptyList() else catalog.versionsForWorld(worldId),
+                availableVersions = emptyList(),
+                versionWorlds = emptyMap(),
+                media = media,
+                modules = draftModules,
+                moduleImages = draftModules.mapNotNull { module ->
+                    mediaRepo.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
+                        ?.let { module.id to it }
+                }.toMap(),
+            )
+        }
+    }
+    previewData?.let { draft ->
+        NovexDetailScaffold(
+            title = "世界草稿预览",
+            onBack = { previewData = null },
+            actions = {
+                NovexTopAction(
+                    icon = com.openminis.app.R.drawable.ic_phosphor_eye,
+                    contentDescription = "返回编辑",
+                    onClick = { previewData = null },
+                )
+            },
+        ) {
+            WorldPrimaryContent(draft, onOpenModule = null)
+            Spacer(Modifier.height(32.dp))
+        }
+        return
+    }
     SettingsScaffold(
         title = if (worldId == null) "创建世界" else "编辑世界",
         onBack = onBack,
-        actions = { TextButton(onClick = ::save, enabled = loaded && name.isNotBlank() && !saving) {
-            Text(if (saving) "保存中" else "保存")
-        } },
+        centerTitle = true,
+        actions = {
+            IconButton(onClick = ::preview, enabled = loaded && name.isNotBlank()) {
+                Icon(
+                    androidx.compose.ui.res.painterResource(com.openminis.app.R.drawable.ic_phosphor_eye),
+                    contentDescription = "预览世界草稿",
+                )
+            }
+            TextButton(onClick = ::save, enabled = loaded && name.isNotBlank() && !saving) {
+                Text(if (saving) "保存中" else "保存")
+            }
+        },
     ) {
         if (!loaded) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -626,6 +688,14 @@ fun CatalogWorldEditorScreen(
                     )
                 }
             }
+            if (owner != null) {
+                SharedContentModuleEditor(
+                    owner = owner,
+                    header = "内容模块",
+                    footer = "模块可展开编辑并调整顺序；内置类型只允许一个，自定义模块不限数量。",
+                    onOpenModule = onOpenModule,
+                )
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -647,54 +717,78 @@ private fun WorldHero(data: WorldPageData) {
     val logo = data.media[MediaAssetSlot.WORLD_LOGO]?.managedPath
     val backgroundFile = background.existingMediaFile()
     val logoFile = logo.existingMediaFile()
-    if (backgroundFile == null && logoFile == null) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text(data.world.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            data.world.tags().takeIf(List<String>::isNotEmpty)?.let { tags ->
-                Text(
-                    tags.joinToString("  ·  "),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 6.dp),
+    Box(Modifier.fillMaxWidth().height(210.dp)) {
+        NovexArtwork(
+            kind = NovexArtworkKind.WORLD,
+            seed = data.world.id,
+            imageModel = backgroundFile,
+            contentDescription = "${data.world.name}背景",
+            modifier = Modifier.fillMaxWidth().height(210.dp),
+        )
+        Box(
+            Modifier.fillMaxWidth().height(210.dp).background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to androidx.compose.ui.graphics.Color.Transparent,
+                    1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.62f),
+                ),
+            ),
+        )
+        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+            logoFile?.let { file ->
+                AsyncImage(
+                    model = file,
+                    contentDescription = "${data.world.name}标志",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
                 )
             }
             Text(
-                "封面、标志和背景都是可选内容",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                data.world.name,
+                color = androidx.compose.ui.graphics.Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = if (logoFile == null) 0.dp else 8.dp),
+            )
+            if (data.world.tags().isNotEmpty()) Text(
+                data.world.tags().joinToString(" · "),
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.86f),
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
-        return
     }
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
-    ) {
-        Box {
-            backgroundFile?.let { file ->
-                AsyncImage(
-                    model = file,
-                    contentDescription = "${data.world.name}背景",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().height(220.dp),
-                )
-            } ?: Spacer(Modifier.fillMaxWidth().height(148.dp))
-            Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-                logoFile?.let { file ->
-                    AsyncImage(
-                        model = file,
-                        contentDescription = "${data.world.name}标志",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
-                    )
-                }
-                Text(
-                    data.world.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
+}
+
+@Composable
+private fun WorldPrimaryContent(
+    data: WorldPageData,
+    onOpenModule: ((String) -> Unit)?,
+) {
+    WorldHero(data)
+    WorldOverviewBlock(data.world)
+    data.modules.forEachIndexed { index, module ->
+        if (index > 0) androidx.compose.material3.HorizontalDivider(
+            color = NovexColors.Divider,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        NovexContentModuleBlock(
+            presentation = module.toNovexPresentation(),
+            imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
+            onClick = onOpenModule?.let { open -> { open(module.id) } },
+        )
+    }
+}
+
+@Composable
+private fun WorldOverviewBlock(world: WorldEntity) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
+        Text("世界观概述", color = NovexColors.Text, fontWeight = FontWeight.SemiBold)
+        Text(
+            world.overview.ifBlank { "尚未填写世界观概述" },
+            color = if (world.overview.isBlank()) NovexColors.SecondaryText else NovexColors.Text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 
