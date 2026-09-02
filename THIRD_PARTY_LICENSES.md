@@ -1,5 +1,11 @@
 # Third-Party Licenses
 
+## Phosphor Icons
+
+The selected interface icons under `src/android/app/src/main/res/drawable/ic_phosphor_*.xml`
+are derived from Phosphor Icons and used under the MIT License. The complete
+license text is included in `src/android/app/src/main/res/raw/phosphor_icons_license.txt`.
+
 OpenMinis bundles, links, or depends on the following third-party components. Versions reflect the current source tree; license types were verified against each project's repository (GitHub license metadata / LICENSE files).
 
 ## Native C/C++ dependencies (`deps/`)

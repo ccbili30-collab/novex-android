@@ -5,9 +5,9 @@ import java.util.Calendar
 import java.util.TimeZone
 
 internal enum class SessionHomeFilter {
-    ALL,
-    WORLD,
+    RECENT,
     GENERAL,
+    CREATION,
 }
 
 internal enum class SessionHomeRecency {
@@ -20,9 +20,9 @@ internal fun ChatSessionEntity.isWorldConversation(): Boolean =
 
 internal fun List<ChatSessionEntity>.forHomeFilter(filter: SessionHomeFilter): List<ChatSessionEntity> =
     when (filter) {
-        SessionHomeFilter.ALL -> this
-        SessionHomeFilter.WORLD -> filter(ChatSessionEntity::isWorldConversation)
+        SessionHomeFilter.RECENT -> filter(ChatSessionEntity::isWorldConversation)
         SessionHomeFilter.GENERAL -> filterNot(ChatSessionEntity::isWorldConversation)
+        SessionHomeFilter.CREATION -> emptyList()
     }
 
 internal fun sessionHomeRecency(

@@ -19,16 +19,16 @@ class SessionHomePolicyTest {
     }
 
     @Test
-    fun filtersPreserveRecencyOrderAcrossAllWorldAndGeneral() {
+    fun filtersSeparateRecentWorldConversationsGeneralConversationsAndCreation() {
         val sessions = listOf(
             session("world-new", worldId = "world-a", updatedAt = 30),
             session("general", updatedAt = 20),
             session("world-old", worldSnapshotJson = "{}", updatedAt = 10),
         )
 
-        assertEquals(listOf("world-new", "general", "world-old"), sessions.forHomeFilter(SessionHomeFilter.ALL).map { it.id })
-        assertEquals(listOf("world-new", "world-old"), sessions.forHomeFilter(SessionHomeFilter.WORLD).map { it.id })
+        assertEquals(listOf("world-new", "world-old"), sessions.forHomeFilter(SessionHomeFilter.RECENT).map { it.id })
         assertEquals(listOf("general"), sessions.forHomeFilter(SessionHomeFilter.GENERAL).map { it.id })
+        assertEquals(emptyList<String>(), sessions.forHomeFilter(SessionHomeFilter.CREATION).map { it.id })
     }
 
     @Test

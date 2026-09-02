@@ -391,6 +391,8 @@ fun SessionListScreen(
     onRootfsClick: () -> Unit = {},
     // [T-android-scheduled-tasks-design] Entry to the scheduled-tasks list.
     onScheduledTasksClick: () -> Unit = {},
+    showBottomActions: Boolean = true,
+    onRootNavigationVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     // T46: hoist VM ownership to the NavBackStackEntry's ViewModelStore so
@@ -432,8 +434,27 @@ fun SessionListScreen(
         worlds = characterCatalog.listWorlds()
         worldsLoaded = true
     }
+    LaunchedEffect(
+        configLoaded,
+        hasGroups,
+        isInitialLoadComplete,
+        sessions,
+        worlds,
+        worldsLoaded,
+        showBottomActions,
+    ) {
+        if (!showBottomActions) {
+            onRootNavigationVisibilityChange(
+                shouldShowNovexRootDock(
+                    configLoaded = configLoaded,
+                    hasUsableModel = hasGroups,
+                    homeReady = isInitialLoadComplete && worldsLoaded,
+                ),
+            )
+        }
+    }
     val worldNames = remember(worlds) { worlds.associate { it.id to it.name } }
-    var homeFilter by rememberSaveable { mutableStateOf(SessionHomeFilter.ALL) }
+    var homeFilter by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT) }
     var showNewConversationMenu by rememberSaveable { mutableStateOf(false) }
 
     // [T-android-search-focus-sticky] When the user opens search but types
@@ -508,11 +529,9 @@ fun SessionListScreen(
     val pinnedFirst = groupedSessions.firstOrNull()?.first == DatePeriod.PINNED
     val leadingDateGroups = if (pinnedFirst) groupedSessions.take(1) else emptyList()
     val trailingDateGroups = if (pinnedFirst) groupedSessions.drop(1) else groupedSessions
-    val showWorldOverview = showCard3Hierarchy && homeFilter != SessionHomeFilter.GENERAL && worlds.isNotEmpty()
-    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks, showCard3Hierarchy, showWorldOverview) {
+    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks, showCard3Hierarchy) {
         buildMap {
             var idx = if (showCard3Hierarchy) 1 else 0
-            if (showWorldOverview) idx += 1
             leadingDateGroups.forEach { (_, rows) -> idx += 1 + rows.size }
             if (folderBlocks.isNotEmpty()) {
                 idx += 1 // the "分组" section header item
@@ -624,7 +643,7 @@ fun SessionListScreen(
                         )
                     } else {
                         Text(
-                            stringResource(R.string.app_name),
+                            if (showBottomActions) stringResource(R.string.app_name) else "Novex",
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
                         )
@@ -637,7 +656,11 @@ fun SessionListScreen(
                         }
                     } else {
                         IconButton(onClick = onSettingsClick) {
-                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.sessionlist_settings))
+                            Icon(
+                                painterResource(R.drawable.ic_phosphor_gear),
+                                contentDescription = stringResource(R.string.sessionlist_settings),
+                                modifier = Modifier.size(23.dp),
+                            )
                         }
                     }
                 },
@@ -652,12 +675,26 @@ fun SessionListScreen(
                             )
                         }
                     } else {
-                        com.openminis.app.ui.settings.NovexUpdateAction()
+                        IconButton(onClick = {
+                            if (isSearchActive) {
+                                viewModel.searchQuery.value = ""
+                                viewModel.isSearchActive.value = false
+                            } else {
+                                viewModel.isSearchActive.value = true
+                            }
+                        }) {
+                            Icon(
+                                painterResource(R.drawable.ic_phosphor_search),
+                                contentDescription = stringResource(R.string.sessionlist_search_action),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                         Box {
                             IconButton(onClick = { showOverflowMenu = true }) {
                                 Icon(
-                                    Icons.Outlined.AddComment,
+                                    painterResource(R.drawable.ic_phosphor_plus),
                                     contentDescription = stringResource(R.string.novex_create_menu),
+                                    modifier = Modifier.size(22.dp),
                                 )
                             }
                             MinisMenu(
@@ -732,6 +769,17 @@ fun SessionListScreen(
             // iOS `didInitialLoad` on ContentView. The transition is usually
             // sub-200ms, so no spinner.
             if (isInitialLoadComplete && worldsLoaded) Column(modifier = Modifier.fillMaxSize()) {
+                if (isSearchActive && showBottomActions.not()) {
+                    SessionInlineSearchField(
+                        value = searchQuery,
+                        searching = isSearching,
+                        onValueChange = { viewModel.searchQuery.value = it },
+                        onDismiss = {
+                            viewModel.searchQuery.value = ""
+                            viewModel.isSearchActive.value = false
+                        },
+                    )
+                }
                 if (!hasGroups) {
                     if (configLoaded) {
                         OnboardingLanding(
@@ -797,9 +845,29 @@ fun SessionListScreen(
                                 )
                             }
                         }
-                        if (showWorldOverview) {
-                            item(key = "card3_worlds") {
-                                WorldOverviewSection(worlds = worlds, onWorldClick = onWorldClick)
+                        if (showCard3Hierarchy && homeFilter == SessionHomeFilter.CREATION) {
+                            item(key = "creation_placeholder") {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 56.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(
+                                        Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        "创作空间即将开放",
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(top = 12.dp),
+                                    )
+                                    Text(
+                                        "世界与角色页面已经预留“帮我创作”入口。",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
+                                }
                             }
                         }
                         // T25: search-active path used to flatten the list and skip
@@ -985,6 +1053,26 @@ fun SessionListScreen(
                             }
                             renderSessionRows(periodSessions, showWorldContext = true)
                         }
+
+                        if (!showBottomActions && showCard3Hierarchy) {
+                            item(key = "home_new_conversation") {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showNewConversationMenu = true }
+                                        .padding(horizontal = 24.dp, vertical = 18.dp),
+                                ) {
+                                    Text("＋", fontSize = 23.sp, fontWeight = FontWeight.Light)
+                                    Text(
+                                        "新建对话",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(start = 12.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1083,7 +1171,7 @@ fun SessionListScreen(
                     onDelete = { showBulkDeleteDialog = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-            } else if (hasProviders && (sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive)) {
+            } else if (showBottomActions && hasProviders && (sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive)) {
                 // Dual FAB row (matching iOS: New Chat left + Search right, or vice versa).
                 // Hidden while the onboarding landing is showing — Step 3 provides the CTA.
                 // T46: stay visible while search is active even when the result
@@ -1656,21 +1744,97 @@ private fun SessionHomeFilterRow(
     selected: SessionHomeFilter,
     onSelect: (SessionHomeFilter) -> Unit,
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         SessionHomeFilter.entries.forEach { filter ->
             val label = when (filter) {
-                SessionHomeFilter.ALL -> "全部"
-                SessionHomeFilter.WORLD -> "世界"
+                SessionHomeFilter.RECENT -> "最近"
                 SessionHomeFilter.GENERAL -> "通用"
+                SessionHomeFilter.CREATION -> "创作"
             }
-            FilterChip(
-                selected = selected == filter,
-                onClick = { onSelect(filter) },
-                label = { Text(label) },
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .width(84.dp)
+                    .clickable { onSelect(filter) }
+                    .padding(top = 10.dp),
+            ) {
+                Text(
+                    label,
+                    fontSize = 15.sp,
+                    fontWeight = if (selected == filter) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selected == filter) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Box(
+                    Modifier
+                        .padding(top = 9.dp)
+                        .width(22.dp)
+                        .height(2.dp)
+                        .background(
+                            if (selected == filter) MaterialTheme.colorScheme.primary
+                            else Color.Transparent,
+                        ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionInlineSearchField(
+    value: String,
+    searching: Boolean,
+    onValueChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .height(42.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(start = 12.dp, end = 4.dp),
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_phosphor_search),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            if (value.isBlank()) {
+                Text(
+                    stringResource(R.string.search_chats_placeholder),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
+        }
+        if (searching) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.padding(end = 11.dp).size(17.dp),
+                strokeWidth = 2.dp,
+            )
+        } else {
+            IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.sessionlist_dismiss))
+            }
         }
     }
 }

@@ -30,7 +30,7 @@ import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.chat.ChatScreen
 import com.openminis.app.ui.chat.ConversationSettingsScreen
-import com.openminis.app.ui.sessions.SessionListScreen
+import com.openminis.app.ui.sessions.NovexRootScreen
 import com.openminis.app.ui.settings.AboutScreen
 import com.openminis.app.ui.settings.AddAgentLoopGroupsScreen
 import com.openminis.app.ui.settings.AddAgentLoopModelsScreen
@@ -471,7 +471,7 @@ fun AppNavigation(
         },
     ) {
         composable(Routes.SESSION_LIST) {
-            SessionListScreen(
+            NovexRootScreen(
                 chatRepository = chatRepository,
                 providerRepository = providerRepository,
                 onSessionClick = { sessionId ->
@@ -483,9 +483,15 @@ fun AppNavigation(
                 onSettingsClick = {
                     navController.safeNavigate(Routes.SETTINGS)
                 },
-                onCharactersClick = { navController.safeNavigate(Routes.CHARACTERS) },
-                onWorldClick = { worldId ->
+                onOpenWorld = { worldId ->
                     navController.safeNavigate(Routes.storyWorld(worldId))
+                },
+                onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
+                onOpenCharacter = { characterId ->
+                    navController.safeNavigate(Routes.characterDetail(characterId))
+                },
+                onCreateCharacter = {
+                    navController.safeNavigate(Routes.characterCatalogEdit())
                 },
                 onAddProviderClick = {
                     navController.safeNavigate(Routes.ADD_PROVIDER)
