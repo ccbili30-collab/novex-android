@@ -1,16 +1,20 @@
 package com.openminis.app.ui.novex
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import coil.compose.AsyncImage
+import com.openminis.app.R
 
 internal object NovexColors {
     val Background = Color(0xFFFBFBFC)
@@ -58,42 +62,22 @@ internal fun novexArtworkVariant(seed: String, variantCount: Int): Int {
 
 @Composable
 private fun NovexDefaultWorldArtwork(seed: String, modifier: Modifier) {
-    val palettes = listOf(
-        listOf(Color(0xFF5F7796), Color(0xFFB2C3D5), Color(0xFFE4D8C9)),
-        listOf(Color(0xFF6D617F), Color(0xFFB59EB5), Color(0xFFE0C5B9)),
-        listOf(Color(0xFF526F6A), Color(0xFF9DB7A7), Color(0xFFE0D7B7)),
-        listOf(Color(0xFF596579), Color(0xFF8DA2B8), Color(0xFFCFB7A7)),
+    val artworks = intArrayOf(
+        R.drawable.novex_world_default_mountain,
+        R.drawable.novex_world_default_neon,
+        R.drawable.novex_world_default_village,
+        R.drawable.novex_world_default_space,
     )
-    val colors = palettes[novexArtworkVariant(seed, palettes.size)]
-    Canvas(modifier) {
-        drawRect(Brush.linearGradient(colors))
-        drawCircle(
-            color = Color.White.copy(alpha = 0.2f),
-            radius = size.minDimension * 0.34f,
-            center = Offset(size.width * 0.78f, size.height * 0.2f),
+    Box(modifier) {
+        Image(
+            painter = painterResource(artworks[novexArtworkVariant(seed, artworks.size)]),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
         )
-        val back = Path().apply {
-            moveTo(0f, size.height * 0.72f)
-            lineTo(size.width * 0.24f, size.height * 0.38f)
-            lineTo(size.width * 0.48f, size.height * 0.68f)
-            lineTo(size.width * 0.7f, size.height * 0.3f)
-            lineTo(size.width, size.height * 0.66f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Color.White.copy(alpha = 0.08f))
         }
-        drawPath(back, Color(0xFF26394E).copy(alpha = 0.34f))
-        val front = Path().apply {
-            moveTo(0f, size.height * 0.82f)
-            lineTo(size.width * 0.32f, size.height * 0.62f)
-            lineTo(size.width * 0.58f, size.height * 0.82f)
-            lineTo(size.width * 0.84f, size.height * 0.55f)
-            lineTo(size.width, size.height * 0.74f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        drawPath(front, Color(0xFF182B3D).copy(alpha = 0.48f))
     }
 }
 

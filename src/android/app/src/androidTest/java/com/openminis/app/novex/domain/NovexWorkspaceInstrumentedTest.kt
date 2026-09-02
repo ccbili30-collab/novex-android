@@ -161,6 +161,68 @@ class NovexWorkspaceInstrumentedTest {
     }
 
     @Test
+    fun worldPageDraftSavesIdentityModulesAndOptionalImagesAsOneCommit() = runBlocking {
+        val created = workspace.apply(
+            NovexCommand.SaveWorldPage(
+                worldId = null,
+                name = "云岚书院",
+                overview = "悬于云海之上的修行书院",
+                tagsJson = "[\"仙侠\",\"学院\"]",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "draft-map",
+                        type = ContentModuleType.MAP,
+                        name = "山海地图",
+                        contentJson = "{\"version\":1,\"kind\":\"single_image\",\"description\":\"九峰环湖\"}",
+                    ),
+                    NovexModuleDraft(
+                        id = "draft-factions",
+                        type = ContentModuleType.FACTION,
+                        name = "势力",
+                        contentJson = "{\"version\":1,\"kind\":\"collection\",\"items\":[]}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        slot = MediaAssetSlot.WORLD_COVER,
+                        bytes = byteArrayOf(7, 11, 13, 17),
+                        mimeType = "image/png",
+                    ),
+                ),
+                now = 100,
+            ),
+        ).requireWorld()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = requireNotNull(workspace.world(created.id))
+        assertEquals("云岚书院", restored.world.name)
+        assertEquals("悬于云海之上的修行书院", restored.world.overview)
+        assertEquals(listOf("draft-map", "draft-factions"), restored.modules.map { it.id })
+        assertEquals(
+            byteArrayOf(7, 11, 13, 17).toList(),
+            File(restored.media.getValue(MediaAssetSlot.WORLD_COVER).managedPath).readBytes().toList(),
+        )
+
+        workspace.apply(
+            NovexCommand.SaveWorldPage(
+                worldId = created.id,
+                name = "云岚书院·新章",
+                overview = restored.world.overview,
+                tagsJson = restored.world.tagsJson,
+                modules = listOf(NovexModuleDraft.from(restored.modules.last())),
+                imageChanges = listOf(NovexImageChange.Remove(MediaAssetSlot.WORLD_COVER)),
+                now = 200,
+            ),
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val edited = requireNotNull(workspace.world(created.id))
+        assertEquals("云岚书院·新章", edited.world.name)
+        assertEquals(listOf("draft-factions"), edited.modules.map { it.id })
+        assertTrue(MediaAssetSlot.WORLD_COVER !in edited.media)
+    }
+
+    @Test
     fun nativeSampleCardsPreviewImportDisplayAndReExportAsOneClosedLoop() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().context
         val worldPreview = context.assets.open("novex/cards/cloud-academy.novexworld").use {

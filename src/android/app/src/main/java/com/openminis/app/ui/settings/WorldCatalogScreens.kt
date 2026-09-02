@@ -16,7 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
@@ -41,7 +45,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,9 +57,11 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.ContentModuleEntity
+import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardTransferParser
@@ -64,8 +69,9 @@ import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexImageChange
+import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.novex.domain.NovexWorldSnapshot
-import com.openminis.app.novex.domain.requireMedia
 import com.openminis.app.novex.domain.requireNativeCard
 import com.openminis.app.novex.domain.requireNativeImport
 import com.openminis.app.novex.domain.requireVersion
@@ -290,6 +296,18 @@ fun CatalogWorldDetailScreen(
         }
     }
     val current = data
+    fun beginWorldConversation() {
+        val page = current ?: return
+        when {
+            personas.isEmpty() -> onEditPersona(null)
+            page.versions.isEmpty() -> addCharacter = true
+            else -> {
+                selectedPersonaId = personas.firstOrNull { it.isDefault }?.id ?: personas.first().id
+                selectedVersionId = page.versions.first().id
+                startCharacterChat = true
+            }
+        }
+    }
     NovexDetailScaffold(
         title = current?.world?.name ?: "世界",
         onBack = onBack,
@@ -309,6 +327,12 @@ fun CatalogWorldDetailScreen(
                 )
             }
         },
+        bottomBar = {
+            if (current != null) Button(
+                onClick = ::beginWorldConversation,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            ) { Text("开始对话") }
+        },
     ) {
         when {
             missing -> Text("世界不存在或已删除", modifier = Modifier.padding(24.dp))
@@ -317,59 +341,14 @@ fun CatalogWorldDetailScreen(
             }
             else -> {
                 WorldPrimaryContent(current, onOpenModule)
-                SettingsSection(
-                    header = "角色卡",
-                    footer = "世界关联具体本体或分身；角色版本仍归角色库所有。",
-                ) {
-                    Button(
-                        onClick = {
-                            when {
-                                personas.isEmpty() -> onEditPersona(null)
-                                current.versions.isEmpty() -> addCharacter = true
-                                else -> {
-                                    selectedPersonaId = personas.firstOrNull { it.isDefault }?.id
-                                        ?: personas.first().id
-                                    selectedVersionId = current.versions.first().id
-                                    startCharacterChat = true
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    ) { Text("新建世界角色对话") }
-                    current.versions.forEach { version ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { onOpenCharacter(version.characterId) }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(version.profileName(), fontWeight = FontWeight.Medium)
-                                Text(
-                                    version.label,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            TextButton(onClick = {
-                                editVersion = version
-                            }) { Text("编辑") }
-                            TextButton(onClick = {
-                                scope.launch {
-                                    novex.apply(NovexCommand.UnlinkCharacterVersion(worldId, version.id))
-                                    refresh++
-                                }
-                            }) { Text("移除") }
-                        }
-                    }
-                    TextButton(
-                        onClick = {
-                            if (current.availableVersions.isEmpty()) onCreateCharacter() else addCharacter = true
-                        },
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text("从角色库添加")
-                    }
-                }
+                WorldCharacterStrip(
+                    data = current,
+                    onOpenCharacter = onOpenCharacter,
+                    onEditVersion = { editVersion = it },
+                    onAdd = {
+                        if (current.availableVersions.isEmpty()) onCreateCharacter() else addCharacter = true
+                    },
+                )
                 SettingsSection(
                     header = "玩家身份",
                     footer = "一段世界角色对话选择一个玩家身份和一个本体或分身。",
@@ -517,11 +496,25 @@ fun CatalogWorldDetailScreen(
             onDismissRequest = { editVersion = null },
             title = { Text("如何修改${version.profileName()}？") },
             text = {
-                Text(
-                    "编辑共享版本会同步影响：" +
-                        affectedWorlds.joinToString("、") { it.name }.ifBlank { "当前角色库版本" } +
-                        "。另存为新分身只替换当前世界的关联。",
-                )
+                Column {
+                    Text(
+                        "编辑共享版本会同步影响：" +
+                            affectedWorlds.joinToString("、") { it.name }.ifBlank { "当前角色库版本" } +
+                            "。另存为新分身只替换当前世界的关联。",
+                    )
+                    TextButton(
+                        onClick = {
+                            editVersion = null
+                            scope.launch {
+                                runCatching {
+                                    novex.apply(NovexCommand.UnlinkCharacterVersion(worldId, version.id))
+                                }.onSuccess { refresh++ }
+                                    .onFailure { error = it.message }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    ) { Text("从当前世界移除") }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -571,18 +564,16 @@ fun CatalogWorldEditorScreen(
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
-    var source by remember { mutableStateOf<WorldEntity?>(null) }
     var loaded by remember { mutableStateOf(worldId == null) }
-    var name by rememberSaveable(worldId) { mutableStateOf("我的世界") }
-    var tags by rememberSaveable(worldId) { mutableStateOf("") }
-    var overview by rememberSaveable(worldId) { mutableStateOf("") }
+    var draft by remember(worldId) { mutableStateOf(WorldEditorDraftState.create()) }
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
+    var persistedModuleIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var pendingImages by remember { mutableStateOf<Map<MediaAssetSlot, PendingWorldImage>>(emptyMap()) }
     var pendingSlot by remember { mutableStateOf<MediaAssetSlot?>(null) }
+    var visualExpanded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<WorldPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val owner = (source?.id ?: worldId)?.let(ModuleOwner::world)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val slot = pendingSlot
         pendingSlot = null
@@ -597,28 +588,18 @@ fun CatalogWorldEditorScreen(
                     bytes = bytes,
                     mimeType = context.contentResolver.getType(uri) ?: "image/*",
                 )
-                if (owner == null) {
-                    pendingImages = pendingImages + (slot to image)
-                } else {
-                    val asset = novex.apply(
-                        NovexCommand.AttachImage(owner, slot, image.bytes, image.mimeType),
-                    ).requireMedia()
-                    media = media + (slot to asset)
-                    pendingImages = pendingImages - slot
-                }
+                pendingImages = pendingImages + (slot to image)
+                draft = draft.replaceImage(slot, image.bytes, image.mimeType)
             }.onFailure { error = it.message }
         }
     }
     LaunchedEffect(worldId) {
         if (worldId != null) {
             val snapshot = novex.world(worldId)
-            val world = snapshot?.world
-            source = world
             if (snapshot != null) {
-                name = snapshot.world.name
-                tags = snapshot.world.tags().joinToString("、")
-                overview = snapshot.world.overview
+                draft = WorldEditorDraftState.from(snapshot.world, snapshot.modules)
                 media = snapshot.media
+                persistedModuleIds = snapshot.modules.mapTo(mutableSetOf()) { it.id }
             }
             loaded = true
         }
@@ -628,59 +609,26 @@ fun CatalogWorldEditorScreen(
         saving = true
         scope.launch {
             runCatching {
-                val tagsJson = JSONArray(
-                    tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
-                ).toString()
-                val saved = if (source == null) {
-                    novex.apply(NovexCommand.CreateWorld(name, overview, tagsJson)).requireWorld()
-                } else {
-                    novex.apply(
-                        NovexCommand.SaveWorld(source!!.copy(name = name, overview = overview, tagsJson = tagsJson)),
-                    ).requireWorld()
-                }
-                source = saved
-                if (pendingImages.isNotEmpty()) {
-                    val savedOwner = ModuleOwner.world(saved.id)
-                    val attached = pendingImages.mapValues { (slot, image) ->
-                        novex.apply(
-                            NovexCommand.AttachImage(savedOwner, slot, image.bytes, image.mimeType),
-                        ).requireMedia()
-                    }
-                    media = media + attached
-                    pendingImages = emptyMap()
-                }
-                saved
+                novex.apply(draft.toSaveCommand()).requireWorld()
             }.onSuccess { onSaved(it.id) }
                 .onFailure { error = it.message; saving = false }
         }
     }
     fun preview() {
-        if (!loaded || name.isBlank()) return
+        if (!loaded || draft.name.isBlank()) return
         scope.launch {
             val now = System.currentTimeMillis()
-            val draftWorld = (source ?: WorldEntity(
-                id = worldId ?: "draft-world",
-                name = name,
-                createdAt = now,
-                updatedAt = now,
-            )).copy(
-                name = name,
-                overview = overview,
-                tagsJson = JSONArray(
-                    tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
-                ).toString(),
-                updatedAt = now,
-            )
-            val draftOwner = owner
             val savedSnapshot = worldId?.let { novex.world(it) }
-            val draftModules = if (draftOwner == null) emptyList() else novex.modules(draftOwner).modules
+            val visibleMedia = media.filterKeys { slot -> draft.imageChanges[slot] !is NovexImageChange.Remove }
             previewData = WorldPageData(
-                world = draftWorld,
+                world = draft.previewWorld(now),
                 versions = savedSnapshot?.versions.orEmpty(),
                 availableVersions = emptyList(),
                 worldsByVersion = emptyMap(),
-                media = media,
-                modules = draftModules,
+                media = visibleMedia,
+                modules = draft.modules.mapIndexed { index, module ->
+                    module.toPreviewEntity(draft.worldId ?: "draft-world", index, now)
+                },
                 moduleImages = savedSnapshot?.moduleImages.orEmpty(),
                 moduleItemImages = savedSnapshot?.moduleItemImages.orEmpty(),
             )
@@ -711,13 +659,19 @@ fun CatalogWorldEditorScreen(
         title = if (worldId == null) "创建世界" else "编辑世界",
         onBack = onBack,
         actions = {
-            IconButton(onClick = ::preview, enabled = loaded && name.isNotBlank()) {
+            IconButton(onClick = ::preview, enabled = loaded && draft.name.isNotBlank()) {
                 Icon(
                     androidx.compose.ui.res.painterResource(com.openminis.app.R.drawable.ic_phosphor_eye),
                     contentDescription = "预览世界草稿",
                 )
             }
-            TextButton(onClick = ::save, enabled = loaded && name.isNotBlank() && !saving) {
+        },
+        bottomBar = {
+            Button(
+                onClick = ::save,
+                enabled = loaded && draft.name.isNotBlank() && !saving,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
                 Text(if (saving) "保存中" else "保存")
             }
         },
@@ -727,23 +681,24 @@ fun CatalogWorldEditorScreen(
         } else {
             WorldEditorSection(header = "基础资料") {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
+                    value = draft.name,
+                    onValueChange = { draft = draft.copy(name = it) },
                     label = { Text("世界名称") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 OutlinedTextField(
-                    value = tags,
-                    onValueChange = { tags = it },
+                    value = draft.tagsText,
+                    onValueChange = { draft = draft.copy(tagsText = it) },
                     label = { Text("标签（用顿号或逗号分隔）") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 OutlinedTextField(
-                    value = overview,
-                    onValueChange = { overview = it },
+                    value = draft.overview,
+                    onValueChange = { draft = draft.copy(overview = it) },
                     label = { Text("世界观概述") },
-                    minLines = 7,
+                    minLines = 4,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
@@ -751,37 +706,56 @@ fun CatalogWorldEditorScreen(
                 header = "视觉资源",
                 footer = "全部图片均可留空，也可以随时独立添加、更换或移除。",
             ) {
-                worldImageSlots().forEach { imageSlot ->
-                    val slot = imageSlot.slot
-                    val pending = pendingImages[slot]
-                    val imageModel = pending?.uri ?: media[slot]?.managedPath.existingMediaFile()
-                    WorldImageEditorRow(
-                        label = imageSlot.label,
-                        imageModel = imageModel,
-                        onPick = {
-                            pendingSlot = slot
-                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
-                        onRemove = {
-                            if (pending != null) {
-                                pendingImages = pendingImages - slot
-                            } else if (owner != null) scope.launch {
-                                runCatching { novex.apply(NovexCommand.DetachImage(owner, slot)) }
-                                    .onSuccess { media = media - slot }
-                                    .onFailure { error = it.message }
-                            }
-                        },
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { visualExpanded = !visualExpanded }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                ) {
+                    Text("封面、标志与全屏背景", modifier = Modifier.weight(1f))
+                    Text(
+                        if (visualExpanded) "收起" else "展开",
+                        color = NovexColors.SecondaryText,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                if (visualExpanded) {
+                    worldImageSlots().forEach { imageSlot ->
+                        val slot = imageSlot.slot
+                        val pending = pendingImages[slot]
+                        val imageModel = when (draft.imageChanges[slot]) {
+                            is NovexImageChange.Remove -> null
+                            is NovexImageChange.Replace -> pending?.uri
+                            null -> media[slot]?.managedPath.existingMediaFile()
+                        }
+                        WorldImageEditorRow(
+                            label = imageSlot.label,
+                            imageModel = imageModel,
+                            onPick = {
+                                pendingSlot = slot
+                                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            onRemove = {
+                                pendingImages = pendingImages - slot
+                                draft = draft.removeImage(slot)
+                            },
+                        )
+                    }
+                }
             }
-            if (owner != null) {
-                SharedContentModuleEditor(
-                    owner = owner,
-                    header = "内容模块",
-                    footer = "模块可展开编辑并调整顺序；内置类型只允许一个，自定义模块不限数量。",
-                    onOpenModule = onOpenModule,
-                )
-            }
+            SharedContentModuleDraftEditor(
+                scope = ContentModuleScope.WORLD,
+                modules = draft.modules,
+                expandedModuleIds = draft.expandedModuleIds,
+                persistedModuleIds = persistedModuleIds,
+                onToggle = { draft = draft.toggleModule(it) },
+                onAdd = { draft = draft.addModule(it) },
+                onUpdate = { moduleId, moduleName, document ->
+                    draft = draft.updateModule(moduleId, moduleName, document)
+                },
+                onMove = { moduleId, target -> draft = draft.moveModule(moduleId, target) },
+                onDelete = { draft = draft.removeModule(it) },
+                onOpenDetails = onOpenModule,
+            )
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -796,16 +770,98 @@ fun CatalogWorldEditorScreen(
 }
 
 @Composable
+private fun WorldCharacterStrip(
+    data: WorldPageData,
+    onOpenCharacter: (String) -> Unit,
+    onEditVersion: (CharacterVersionEntity) -> Unit,
+    onAdd: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().background(NovexColors.Surface).padding(vertical = 14.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        ) {
+            Text("角色", color = NovexColors.Text, fontWeight = FontWeight.SemiBold)
+            Text(
+                "${data.versions.size} 个角色版本",
+                color = NovexColors.SecondaryText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        ) {
+            items(data.versions, key = { it.id }) { version ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(72.dp),
+                ) {
+                    NovexArtwork(
+                        kind = NovexArtworkKind.CHARACTER,
+                        seed = version.id,
+                        imageModel = data.versionAvatars[version.id]?.managedPath.existingMediaFile(),
+                        contentDescription = "${version.profileName()}头像",
+                        modifier = Modifier.size(58.dp).clip(CircleShape)
+                            .clickable { onOpenCharacter(version.characterId) },
+                    )
+                    Text(
+                        version.profileName(),
+                        color = NovexColors.Text,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    Text(
+                        version.label,
+                        color = NovexColors.SecondaryText,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    TextButton(onClick = { onEditVersion(version) }) { Text("编辑") }
+                }
+            }
+            item(key = "add-character") {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(84.dp).clickable(onClick = onAdd),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(58.dp).clip(CircleShape).background(NovexColors.PrimarySoft),
+                    ) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(com.openminis.app.R.drawable.ic_phosphor_plus),
+                            contentDescription = "从角色库添加",
+                            tint = NovexColors.Primary,
+                        )
+                    }
+                    Text(
+                        "从角色库添加",
+                        color = NovexColors.Primary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WorldHero(
     data: WorldPageData,
     mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
-    val background = data.media[MediaAssetSlot.WORLD_BACKGROUND]?.managedPath
-        ?: data.media[MediaAssetSlot.WORLD_COVER]?.managedPath
+    val background = data.media[MediaAssetSlot.WORLD_COVER]?.managedPath
+        ?: data.media[MediaAssetSlot.WORLD_BACKGROUND]?.managedPath
         ?: data.world.legacyBackgroundPath()
     val logo = data.media[MediaAssetSlot.WORLD_LOGO]?.managedPath
-    val backgroundModel = mediaModels[MediaAssetSlot.WORLD_BACKGROUND]
-        ?: mediaModels[MediaAssetSlot.WORLD_COVER]
+    val backgroundModel = mediaModels[MediaAssetSlot.WORLD_COVER]
+        ?: mediaModels[MediaAssetSlot.WORLD_BACKGROUND]
         ?: background.existingMediaFile()
     val logoModel = mediaModels[MediaAssetSlot.WORLD_LOGO] ?: logo.existingMediaFile()
     Box(Modifier.fillMaxWidth().height(210.dp)) {
@@ -858,6 +914,10 @@ private fun WorldPrimaryContent(
 ) {
     WorldHero(data, mediaModels)
     WorldOverviewBlock(data.world)
+    if (data.modules.isNotEmpty()) androidx.compose.material3.HorizontalDivider(
+        color = NovexColors.Divider,
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
     data.modules.forEachIndexed { index, module ->
         if (index > 0) androidx.compose.material3.HorizontalDivider(
             color = NovexColors.Divider,
@@ -970,6 +1030,23 @@ private fun WorldEntity.legacyBackgroundPath(): String? = legacySnapshotJson?.le
 private fun CharacterVersionEntity.profileName(): String = runCatching {
     JSONObject(profileJson).optString("name").trim().ifBlank { label }
 }.getOrDefault(label)
+
+private fun NovexModuleDraft.toPreviewEntity(
+    ownerId: String,
+    position: Int,
+    now: Long,
+): ContentModuleEntity = ContentModuleEntity(
+    id = id,
+    ownerType = ModuleOwnerType.WORLD,
+    ownerId = ownerId,
+    type = type,
+    name = name,
+    contentJson = contentJson,
+    position = position,
+    collapsed = collapsed,
+    createdAt = now,
+    updatedAt = now,
+)
 
 private fun String?.worldIdFromSnapshot(): String? = this?.let { raw ->
     runCatching { JSONObject(raw).optString("id").trim().ifBlank { null } }.getOrNull()

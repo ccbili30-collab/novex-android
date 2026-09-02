@@ -71,6 +71,7 @@ data class NovexWorldSnapshot(
     val modules: List<ContentModuleEntity>,
     val moduleImages: Map<String, MediaAssetEntity>,
     val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
+    val versionAvatars: Map<String, MediaAssetEntity> = emptyMap(),
 )
 
 data class NovexCharacterSnapshot(
@@ -119,6 +120,20 @@ data class NovexModuleDraft(
     }
 }
 
+sealed interface NovexImageChange {
+    val slot: MediaAssetSlot
+
+    data class Replace(
+        override val slot: MediaAssetSlot,
+        val bytes: ByteArray,
+        val mimeType: String,
+    ) : NovexImageChange
+
+    data class Remove(
+        override val slot: MediaAssetSlot,
+    ) : NovexImageChange
+}
+
 sealed interface NovexCommand {
     data class CreateWorld(
         val name: String,
@@ -129,6 +144,17 @@ sealed interface NovexCommand {
 
     data class SaveWorld(
         val world: WorldEntity,
+        val now: Long = System.currentTimeMillis(),
+    ) : NovexCommand
+
+    /** Saves one world's complete editor draft at a single transaction boundary. */
+    data class SaveWorldPage(
+        val worldId: String?,
+        val name: String,
+        val overview: String = "",
+        val tagsJson: String = "[]",
+        val modules: List<NovexModuleDraft> = emptyList(),
+        val imageChanges: List<NovexImageChange> = emptyList(),
         val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
@@ -409,6 +435,12 @@ internal class DefaultNovexWorkspace(
             modules = modules,
             moduleImages = moduleImages(modules),
             moduleItemImages = moduleItemImages(modules),
+            versionAvatars = versions.mapNotNull { version ->
+                media.assetFor(
+                    ModuleOwner.characterVersion(version.id),
+                    MediaAssetSlot.CHARACTER_AVATAR,
+                )?.let { version.id to it }
+            }.toMap(),
         )
     }
 
@@ -456,6 +488,49 @@ internal class DefaultNovexWorkspace(
             catalog.createWorld(command.name, command.overview, command.tagsJson, null, command.now),
         )
         is NovexCommand.SaveWorld -> NovexChange.WorldSaved(catalog.saveWorld(command.world, command.now))
+        is NovexCommand.SaveWorldPage -> {
+            require(command.name.isNotBlank()) { "世界名称不能为空" }
+            val duplicateSlots = command.imageChanges.groupingBy(NovexImageChange::slot)
+                .eachCount()
+                .filterValues { it > 1 }
+            require(duplicateSlots.isEmpty()) { "同一图片位置不能重复修改" }
+            val world = command.worldId?.let { worldId ->
+                val existing = requireNotNull(catalog.world(worldId)) { "世界不存在" }
+                catalog.saveWorld(
+                    existing.copy(
+                        name = command.name.trim(),
+                        overview = command.overview,
+                        tagsJson = command.tagsJson,
+                    ),
+                    command.now,
+                )
+            } ?: catalog.createWorld(
+                name = command.name.trim(),
+                overview = command.overview,
+                tagsJson = command.tagsJson,
+                legacySnapshotJson = null,
+                now = command.now,
+            )
+            val owner = ModuleOwner.world(world.id)
+            saveModules(owner, command.modules, command.now)
+            command.imageChanges.forEach { change ->
+                require(
+                    change.slot == MediaAssetSlot.WORLD_COVER ||
+                        change.slot == MediaAssetSlot.WORLD_LOGO ||
+                        change.slot == MediaAssetSlot.WORLD_BACKGROUND,
+                ) { "世界页面不支持该图片位置" }
+                when (change) {
+                    is NovexImageChange.Replace -> {
+                        require(change.bytes.isNotEmpty()) { "图片内容不能为空" }
+                        val asset = media.import(change.bytes, change.mimeType, command.now)
+                        media.attach(owner, change.slot, asset.id)
+                    }
+
+                    is NovexImageChange.Remove -> media.detach(owner, change.slot)
+                }
+            }
+            NovexChange.WorldSaved(world)
+        }
         is NovexCommand.DeleteWorld -> {
             content.list(ModuleOwner.world(command.worldId)).forEach { module ->
                 removeModuleMedia(module)
@@ -602,54 +677,9 @@ internal class DefaultNovexWorkspace(
                 command.id,
             ),
         )
-        is NovexCommand.SaveModules -> {
-            val scope = requireNotNull(ContentModuleCatalog.scopeFor(command.owner.type)) {
-                "该对象不能拥有内容模块"
-            }
-            require(command.modules.map(NovexModuleDraft::id).distinct().size == command.modules.size) {
-                "模块编号不能重复"
-            }
-            val occupiedBuiltIns = mutableSetOf<ContentModuleType>()
-            command.modules.forEach { draft ->
-                require(draft.name.isNotBlank()) { "模块名称不能为空" }
-                val definition = ContentModuleCatalog.definition(draft.type)
-                require(definition in ContentModuleCatalog.definitions(scope)) { "该对象不支持${definition.displayName}" }
-                require(definition.repeatable || occupiedBuiltIns.add(draft.type)) {
-                    "${definition.displayName}已经存在，每个对象只能添加一个"
-                }
-            }
-            val existing = content.list(command.owner).associateBy(ContentModuleEntity::id)
-            command.modules.forEach { draft ->
-                existing[draft.id]?.let { saved ->
-                    require(saved.type == draft.type) { "不能改变已有模块类型" }
-                }
-            }
-            val desiredIds = command.modules.map(NovexModuleDraft::id).toSet()
-            existing.values.filter { it.id !in desiredIds }.forEach { removed ->
-                removeModuleMedia(removed)
-                content.delete(removed.id)
-            }
-            command.modules.forEach { draft ->
-                if (draft.id in existing) {
-                    removeMissingItemMedia(existing.getValue(draft.id), draft.contentJson)
-                    content.save(draft.id, draft.name, draft.contentJson, command.now)
-                } else {
-                    content.add(
-                        owner = command.owner,
-                        type = draft.type,
-                        name = draft.name,
-                        contentJson = draft.contentJson,
-                        collapsed = draft.collapsed,
-                        now = command.now,
-                        id = draft.id,
-                    )
-                }
-            }
-            command.modules.forEachIndexed { index, draft ->
-                content.move(draft.id, index, command.now)
-            }
-            NovexChange.ModulesSaved(content.list(command.owner))
-        }
+        is NovexCommand.SaveModules -> NovexChange.ModulesSaved(
+            saveModules(command.owner, command.modules, command.now),
+        )
         is NovexCommand.SaveModule -> {
             content.module(command.moduleId)?.let { removeMissingItemMedia(it, command.contentJson) }
             NovexChange.ModuleSaved(
@@ -681,6 +711,59 @@ internal class DefaultNovexWorkspace(
             media.detach(command.owner, command.slot)
             NovexChange.Completed
         }
+    }
+
+    private suspend fun saveModules(
+        owner: ModuleOwner,
+        drafts: List<NovexModuleDraft>,
+        now: Long,
+    ): List<ContentModuleEntity> {
+        val scope = requireNotNull(ContentModuleCatalog.scopeFor(owner.type)) {
+            "该对象不能拥有内容模块"
+        }
+        require(drafts.map(NovexModuleDraft::id).distinct().size == drafts.size) {
+            "模块编号不能重复"
+        }
+        val occupiedBuiltIns = mutableSetOf<ContentModuleType>()
+        drafts.forEach { draft ->
+            require(draft.name.isNotBlank()) { "模块名称不能为空" }
+            val definition = ContentModuleCatalog.definition(draft.type)
+            require(definition in ContentModuleCatalog.definitions(scope)) {
+                "该对象不支持${definition.displayName}"
+            }
+            require(definition.repeatable || occupiedBuiltIns.add(draft.type)) {
+                "${definition.displayName}已经存在，每个对象只能添加一个"
+            }
+        }
+        val existing = content.list(owner).associateBy(ContentModuleEntity::id)
+        drafts.forEach { draft ->
+            existing[draft.id]?.let { saved ->
+                require(saved.type == draft.type) { "不能改变已有模块类型" }
+            }
+        }
+        val desiredIds = drafts.map(NovexModuleDraft::id).toSet()
+        existing.values.filter { it.id !in desiredIds }.forEach { removed ->
+            removeModuleMedia(removed)
+            content.delete(removed.id)
+        }
+        drafts.forEach { draft ->
+            if (draft.id in existing) {
+                removeMissingItemMedia(existing.getValue(draft.id), draft.contentJson)
+                content.save(draft.id, draft.name, draft.contentJson, now)
+            } else {
+                content.add(
+                    owner = owner,
+                    type = draft.type,
+                    name = draft.name,
+                    contentJson = draft.contentJson,
+                    collapsed = draft.collapsed,
+                    now = now,
+                    id = draft.id,
+                )
+            }
+        }
+        drafts.forEachIndexed { index, draft -> content.move(draft.id, index, now) }
+        return content.list(owner)
     }
 
     private suspend fun mediaFor(
