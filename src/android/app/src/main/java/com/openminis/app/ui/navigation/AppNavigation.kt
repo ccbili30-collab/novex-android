@@ -783,6 +783,7 @@ fun AppNavigation(
                         }
                     }
                 },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
             )
         }
 

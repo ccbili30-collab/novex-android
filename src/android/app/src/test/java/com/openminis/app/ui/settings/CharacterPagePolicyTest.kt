@@ -3,6 +3,7 @@ package com.openminis.app.ui.settings
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleScope
+import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -64,5 +65,12 @@ class CharacterPagePolicyTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun versionSelectorStaysSecondaryButStillExplainsReusableVersions() {
+        assertEquals("本体 · 2 个分身", characterVersionSelectorLabel(CharacterVersionKind.ORIGINAL, "本体", 2))
+        assertEquals("赛博分身 · 2 个分身", characterVersionSelectorLabel(CharacterVersionKind.VARIANT, "赛博分身", 2))
+        assertEquals("本体", characterVersionSelectorLabel(CharacterVersionKind.ORIGINAL, "", 0))
     }
 }

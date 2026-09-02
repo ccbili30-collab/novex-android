@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,12 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -33,9 +29,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -54,12 +53,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
+import com.openminis.app.R
 import com.openminis.app.data.character.CharacterAggregate
 import com.openminis.app.data.character.CharacterCatalogRepository
 import com.openminis.app.data.character.CharacterCustomAttribute
@@ -71,6 +74,7 @@ import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
 import com.openminis.app.data.character.ContentModuleRepository
+import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ManagedMediaAssetStore
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetRepository
@@ -78,6 +82,13 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.SillyTavernCardParser
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.ui.novex.NovexArtwork
+import com.openminis.app.ui.novex.NovexArtworkKind
+import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexContentModuleBlock
+import com.openminis.app.ui.novex.NovexDetailScaffold
+import com.openminis.app.ui.novex.NovexTopAction
+import com.openminis.app.ui.novex.toNovexPresentation
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -95,6 +106,17 @@ private data class CharacterDetailData(
     val aggregate: CharacterAggregate,
     val worlds: Map<String, List<WorldEntity>>,
     val media: Map<String, Map<MediaAssetSlot, MediaAssetEntity>>,
+)
+
+private data class CharacterPageData(
+    val rootName: String,
+    val version: CharacterVersionEntity,
+    val profile: CharacterVersionProfile,
+    val worlds: List<WorldEntity>,
+    val media: Map<MediaAssetSlot, MediaAssetEntity>,
+    val modules: List<ContentModuleEntity>,
+    val moduleImages: Map<String, MediaAssetEntity>,
+    val variantCount: Int,
 )
 
 @Composable
@@ -225,6 +247,7 @@ fun CatalogCharacterLibraryScreen(
     error?.let { CharacterErrorDialog(it) { error = null } }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogCharacterDetailScreen(
     characterId: String,
@@ -243,6 +266,10 @@ fun CatalogCharacterDetailScreen(
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var data by remember { mutableStateOf<CharacterDetailData?>(null) }
+    var modulesByVersion by remember { mutableStateOf<Map<String, List<ContentModuleEntity>>>(emptyMap()) }
+    var moduleImagesByVersion by remember {
+        mutableStateOf<Map<String, Map<String, MediaAssetEntity>>>(emptyMap())
+    }
     var missing by remember { mutableStateOf(false) }
     var selectedVersionId by rememberSaveable(characterId) { mutableStateOf<String?>(null) }
     var confirmDeleteRoot by remember { mutableStateOf(false) }
@@ -272,120 +299,123 @@ fun CatalogCharacterDetailScreen(
             )
         }
     }
+    LaunchedEffect(selectedVersionId, refresh) {
+        val versionId = selectedVersionId ?: return@LaunchedEffect
+        val modules = moduleRepository.list(ModuleOwner.characterVersion(versionId))
+        modulesByVersion = modulesByVersion + (versionId to modules)
+        moduleImagesByVersion = moduleImagesByVersion + (versionId to modules.mapNotNull { module ->
+            mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
+                ?.let { module.id to it }
+        }.toMap())
+    }
     val current = data
     val selected = current?.aggregate?.allVersions?.firstOrNull { it.id == selectedVersionId }
     val profile = selected?.let { CharacterVersionProfile.fromJson(it.profileJson, current.aggregate.character.name) }
-    SettingsScaffold(
+    var versionSheet by remember { mutableStateOf(false) }
+    val page = if (current != null && selected != null && profile != null) CharacterPageData(
+        rootName = current.aggregate.character.name,
+        version = selected,
+        profile = profile,
+        worlds = current.worlds[selected.id].orEmpty(),
+        media = current.media[selected.id].orEmpty(),
+        modules = modulesByVersion[selected.id].orEmpty(),
+        moduleImages = moduleImagesByVersion[selected.id].orEmpty(),
+        variantCount = current.aggregate.variants.size,
+    ) else null
+    NovexDetailScaffold(
         title = current?.aggregate?.character?.name ?: "角色",
         onBack = onBack,
         actions = {
-            if (current != null) {
-                IconButton(onClick = { creatorNotice = true }) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = "帮我创作")
-                }
-                IconButton(onClick = {
-                    scope.launch {
-                        runCatching { service.exportDocument(characterId) }
-                            .onSuccess { shareCharacterDocument(context, it.name, CharacterLibraryDocumentCodec.encode(it).toString(2)) }
-                            .onFailure { error = it.message }
-                    }
-                }) { Icon(Icons.Default.Share, contentDescription = "导出结构化角色数据") }
-                IconButton(onClick = {
-                    scope.launch {
-                        runCatching { service.duplicateCharacter(characterId) }
-                            .onSuccess { onDuplicated(it.character.id) }
-                            .onFailure { error = it.message }
-                    }
-                }) { Icon(Icons.Default.ContentCopy, contentDescription = "复制角色") }
-                IconButton(onClick = { confirmDeleteRoot = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除角色")
-                }
+            if (page != null) {
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_sparkle,
+                    contentDescription = "帮我创作",
+                    label = "帮我创作",
+                    onClick = { creatorNotice = true },
+                )
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_pencil_simple,
+                    contentDescription = "编辑角色",
+                    label = "编辑",
+                    onClick = {
+                        if (page.worlds.isEmpty()) onEditVersion(page.version.id)
+                        else confirmSharedEdit = page.version
+                    },
+                )
             }
         },
     ) {
         when {
             missing -> Text("角色不存在或已删除", modifier = Modifier.padding(24.dp))
-            current == null || selected == null || profile == null -> Box(
+            page == null -> Box(
                 Modifier.fillMaxWidth().padding(48.dp),
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
             else -> {
-                CharacterHero(
-                    name = profile.name.ifBlank { current.aggregate.character.name },
-                    label = selected.label,
-                    avatarPath = current.media[selected.id]?.get(MediaAssetSlot.CHARACTER_AVATAR)?.managedPath,
-                    backgroundPath = current.media[selected.id]?.get(MediaAssetSlot.CHARACTER_PAGE_BACKGROUND)?.managedPath,
-                )
-                SettingsSection(header = "本体与分身") {
-                    current.aggregate.allVersions.forEach { version ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { selectedVersionId = version.id }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    if (version.kind == CharacterVersionKind.ORIGINAL) "本体" else version.label,
-                                    fontWeight = if (version.id == selected.id) FontWeight.Bold else FontWeight.Normal,
-                                )
-                                val usedWorlds = current.worlds[version.id].orEmpty()
-                                Text(
-                                    if (usedWorlds.isEmpty()) "尚未加入世界" else usedWorlds.joinToString(" · ") { it.name },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            if (version.id == selected.id) Text("当前", color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    TextButton(onClick = onCreateVariant, modifier = Modifier.padding(horizontal = 8.dp)) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text("创建分身")
-                    }
-                }
-                SettingsSection(header = "基本信息") {
-                    val facts = visibleCharacterFacts(profile)
-                    if (facts.isEmpty()) Text(
-                        "还没有补充可选信息。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp),
-                    ) else facts.forEach { fact -> CharacterInfoRow(fact.label, fact.value) }
-                    TextButton(
-                        onClick = {
-                            if (current.worlds[selected.id].orEmpty().isEmpty()) onEditVersion(selected.id)
-                            else confirmSharedEdit = selected
-                        },
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                        Text("编辑这个版本")
-                    }
-                }
-                if (profile.customAttributes.isNotEmpty()) SettingsSection(header = "自定义属性") {
-                    profile.customAttributes.forEach { CharacterInfoRow(it.name, it.value) }
-                }
-                if (profile.relationships.isNotEmpty()) SettingsSection(header = "原创角色关系") {
-                    profile.relationships.forEach { relation ->
-                        CharacterInfoRow(
-                            relation.characterName,
-                            listOf(relation.relationship, relation.description).filter(String::isNotBlank).joinToString(" · "),
-                        )
-                    }
-                }
-                SharedContentModuleEditor(
-                    owner = ModuleOwner.characterVersion(selected.id),
-                    header = "角色模块",
-                    footer = "模块在复制时复制一次，之后不会与来源持续同步。",
+                CharacterPrimaryContent(
+                    data = page,
+                    onChooseVersion = { versionSheet = true },
                     onOpenModule = onOpenModule,
                 )
-                if (selected.kind == CharacterVersionKind.VARIANT) {
-                    OutlinedButton(
-                        onClick = { confirmDeleteVariant = selected },
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    ) { Text("删除这个分身") }
-                }
+                CharacterManagementActions(
+                    isVariant = page.version.kind == CharacterVersionKind.VARIANT,
+                    onCreateVariant = onCreateVariant,
+                    onExport = {
+                        scope.launch {
+                            runCatching { service.exportDocument(characterId) }
+                                .onSuccess {
+                                    shareCharacterDocument(
+                                        context,
+                                        it.name,
+                                        CharacterLibraryDocumentCodec.encode(it).toString(2),
+                                    )
+                                }.onFailure { error = it.message }
+                        }
+                    },
+                    onDuplicate = {
+                        scope.launch {
+                            runCatching { service.duplicateCharacter(characterId) }
+                                .onSuccess { onDuplicated(it.character.id) }
+                                .onFailure { error = it.message }
+                        }
+                    },
+                    onDelete = {
+                        if (page.version.kind == CharacterVersionKind.VARIANT) confirmDeleteVariant = page.version
+                        else confirmDeleteRoot = true
+                    },
+                )
                 Spacer(Modifier.height(40.dp))
             }
         }
+    }
+    if (versionSheet && current != null && selected != null) ModalBottomSheet(
+        onDismissRequest = { versionSheet = false },
+    ) {
+        Text(
+            "选择角色版本",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        )
+        current.aggregate.allVersions.forEach { version ->
+            CharacterVersionChoice(
+                version = version,
+                selected = version.id == selected.id,
+                worlds = current.worlds[version.id].orEmpty(),
+                onClick = {
+                    selectedVersionId = version.id
+                    versionSheet = false
+                },
+            )
+        }
+        TextButton(onClick = {
+            versionSheet = false
+            onCreateVariant()
+        }, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Icon(painterResource(R.drawable.ic_phosphor_plus), contentDescription = null)
+            Text("创建分身", modifier = Modifier.padding(start = 6.dp))
+        }
+        Spacer(Modifier.height(20.dp))
     }
     if (confirmDeleteRoot && current != null) AlertDialog(
         onDismissRequest = { confirmDeleteRoot = false },
@@ -447,10 +477,12 @@ fun CatalogCharacterEditorScreen(
     createVariant: Boolean,
     onBack: () -> Unit,
     onSaved: (String) -> Unit,
+    onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
+    val moduleRepository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
     val mediaRepository = rememberMediaRepository(app)
     val mediaStore = rememberManagedMediaStore(context, mediaRepository)
     val scope = rememberCoroutineScope()
@@ -472,6 +504,7 @@ fun CatalogCharacterEditorScreen(
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
     var pendingSlot by remember { mutableStateOf<MediaAssetSlot?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var previewData by remember { mutableStateOf<CharacterPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val owner = sourceVersion?.id?.let { ModuleOwner.characterVersion(it) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
@@ -524,25 +557,59 @@ fun CatalogCharacterEditorScreen(
             loaded = true
         }
     }
+    fun draftProfile(): CharacterVersionProfile {
+        val base = sourceVersion?.let { CharacterVersionProfile.fromJson(it.profileJson, name) }
+            ?: sourceAggregate?.original?.let { CharacterVersionProfile.fromJson(it.profileJson, name) }
+            ?: CharacterVersionProfile(name)
+        return base.copy(
+            name = name,
+            tags = tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
+            gender = gender,
+            age = age,
+            race = race,
+            occupation = occupation,
+            summary = summary,
+            customAttributes = parseCharacterAttributes(attributes),
+            relationships = parseCharacterRelationships(relationships),
+        )
+    }
+    fun preview() {
+        if (!loaded || name.isBlank()) return
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val draftVersion = sourceVersion?.copy(label = label, profileJson = draftProfile().toJson())
+                ?: CharacterVersionEntity(
+                    id = "preview-version",
+                    characterId = sourceAggregate?.character?.id ?: "preview-character",
+                    kind = if (createVariant) CharacterVersionKind.VARIANT else CharacterVersionKind.ORIGINAL,
+                    label = label,
+                    profileJson = draftProfile().toJson(),
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            val draftOwner = sourceVersion?.id?.let { ModuleOwner.characterVersion(it) }
+            val modules = draftOwner?.let { moduleRepository.list(it) }.orEmpty()
+            previewData = CharacterPageData(
+                rootName = rootName.ifBlank { name },
+                version = draftVersion,
+                profile = draftProfile(),
+                worlds = sourceVersion?.id?.let { catalog.worldsForVersion(it) }.orEmpty(),
+                media = media,
+                modules = modules,
+                moduleImages = modules.mapNotNull { module ->
+                    mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
+                        ?.let { module.id to it }
+                }.toMap(),
+                variantCount = (sourceAggregate?.variants?.size ?: 0) + if (createVariant) 1 else 0,
+            )
+        }
+    }
     fun save() {
         if (saving || name.isBlank()) return
         saving = true
         scope.launch {
             runCatching {
-                val base = sourceVersion?.let { CharacterVersionProfile.fromJson(it.profileJson, name) }
-                    ?: sourceAggregate?.original?.let { CharacterVersionProfile.fromJson(it.profileJson, name) }
-                    ?: CharacterVersionProfile(name)
-                val profile = base.copy(
-                    name = name,
-                    tags = tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
-                    gender = gender,
-                    age = age,
-                    race = race,
-                    occupation = occupation,
-                    summary = summary,
-                    customAttributes = parseCharacterAttributes(attributes),
-                    relationships = parseCharacterRelationships(relationships),
-                )
+                val profile = draftProfile()
                 val saved = when {
                     sourceAggregate == null -> catalog.createCharacter(
                         name = rootName.ifBlank { name },
@@ -576,6 +643,23 @@ fun CatalogCharacterEditorScreen(
             }.onSuccess(onSaved).onFailure { error = it.message; saving = false }
         }
     }
+    previewData?.let { draft ->
+        NovexDetailScaffold(
+            title = "角色草稿预览",
+            onBack = { previewData = null },
+            actions = {
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_eye,
+                    contentDescription = "返回编辑",
+                    onClick = { previewData = null },
+                )
+            },
+        ) {
+            CharacterPrimaryContent(draft, onChooseVersion = null, onOpenModule = null)
+            Spacer(Modifier.height(32.dp))
+        }
+        return
+    }
     SettingsScaffold(
         title = when {
             characterId == null -> "创建角色"
@@ -583,9 +667,18 @@ fun CatalogCharacterEditorScreen(
             else -> "编辑角色版本"
         },
         onBack = onBack,
-        actions = { TextButton(onClick = ::save, enabled = loaded && name.isNotBlank() && !saving) {
-            Text(if (saving) "保存中" else "保存")
-        } },
+        centerTitle = true,
+        actions = {
+            IconButton(onClick = ::preview, enabled = loaded && name.isNotBlank()) {
+                Icon(
+                    painterResource(R.drawable.ic_phosphor_eye),
+                    contentDescription = "预览角色草稿",
+                )
+            }
+            TextButton(onClick = ::save, enabled = loaded && name.isNotBlank() && !saving) {
+                Text(if (saving) "保存中" else "保存")
+            }
+        },
     ) {
         if (!loaded) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -664,6 +757,14 @@ fun CatalogCharacterEditorScreen(
                     CharacterEditorField("原创角色关系", relationships, minLines = 5) { relationships = it }
                 }
             }
+            if (owner != null) {
+                SharedContentModuleEditor(
+                    owner = owner,
+                    header = "内容模块",
+                    footer = "模块可展开编辑并调整顺序；复制模块后不会与来源持续同步。",
+                    onOpenModule = onOpenModule,
+                )
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -671,41 +772,187 @@ fun CatalogCharacterEditorScreen(
 }
 
 @Composable
-private fun CharacterHero(name: String, label: String, avatarPath: String?, backgroundPath: String?) {
-    val avatarFile = avatarPath.existingMediaFile()
-    val backgroundFile = backgroundPath.existingMediaFile()
-    if (avatarFile == null && backgroundFile == null) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text(name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(label, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+private fun CharacterPrimaryContent(
+    data: CharacterPageData,
+    onChooseVersion: (() -> Unit)?,
+    onOpenModule: ((String) -> Unit)?,
+) {
+    CharacterHero(data, onChooseVersion)
+    CharacterFactsBlock(data.profile)
+    if (data.profile.customAttributes.isNotEmpty()) {
+        CharacterLabeledBlock("自定义属性") {
+            data.profile.customAttributes.forEach { CharacterInfoRow(it.name, it.value) }
+        }
+    }
+    if (data.profile.relationships.isNotEmpty()) {
+        CharacterLabeledBlock("原创角色关系") {
+            data.profile.relationships.forEach { relation ->
+                CharacterInfoRow(
+                    relation.characterName,
+                    listOf(relation.relationship, relation.description).filter(String::isNotBlank).joinToString(" · "),
+                )
+            }
+        }
+    }
+    data.modules.forEachIndexed { index, module ->
+        if (index > 0) HorizontalDivider(
+            color = NovexColors.Divider,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        NovexContentModuleBlock(
+            presentation = module.toNovexPresentation(),
+            imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
+            onClick = onOpenModule?.let { open -> { open(module.id) } },
+        )
+    }
+    if (data.worlds.isNotEmpty()) CharacterLabeledBlock("关联世界") {
+        Text(
+            data.worlds.joinToString(" · ") { it.name },
+            color = NovexColors.Text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun CharacterHero(data: CharacterPageData, onChooseVersion: (() -> Unit)?) {
+    val name = data.profile.name.ifBlank { data.rootName }
+    val avatarFile = data.media[MediaAssetSlot.CHARACTER_AVATAR]?.managedPath.existingMediaFile()
+    val backgroundFile = data.media[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]?.managedPath.existingMediaFile()
+    Box(Modifier.fillMaxWidth().height(270.dp)) {
+        NovexArtwork(
+            kind = NovexArtworkKind.CHARACTER,
+            seed = data.version.id,
+            imageModel = backgroundFile,
+            contentDescription = "$name 主页背景",
+            modifier = Modifier.fillMaxWidth().height(270.dp),
+        )
+        Box(
+            Modifier.fillMaxWidth().height(270.dp).background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = 0.48f),
+                ),
+            ),
+        )
+        Row(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (avatarFile != null) {
+                AsyncImage(
+                    model = avatarFile,
+                    contentDescription = "$name 头像",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(82.dp).clip(RoundedCornerShape(12.dp)),
+                )
+            }
+            Column(Modifier.weight(1f).padding(start = if (avatarFile == null) 0.dp else 12.dp)) {
+                Text(
+                    name,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Row(
+                    Modifier.padding(top = 5.dp)
+                        .then(if (onChooseVersion == null) Modifier else Modifier.clickable(onClick = onChooseVersion)),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        characterVersionSelectorLabel(data.version.kind, data.version.label, data.variantCount),
+                        color = Color.White.copy(alpha = 0.82f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (onChooseVersion != null) Icon(
+                        painterResource(R.drawable.ic_phosphor_caret_right),
+                        contentDescription = "选择角色版本",
+                        tint = Color.White.copy(alpha = 0.82f),
+                        modifier = Modifier.padding(start = 3.dp).size(14.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CharacterFactsBlock(profile: CharacterVersionProfile) {
+    CharacterLabeledBlock("基本信息") {
+        val facts = visibleCharacterFacts(profile)
+        if (facts.isEmpty()) {
             Text(
-                "头像和主页背景都可留空",
+                "还没有补充可选信息",
+                color = NovexColors.SecondaryText,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        } else {
+            facts.forEach { CharacterInfoRow(it.label, it.value) }
+        }
+    }
+}
+
+@Composable
+private fun CharacterLabeledBlock(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Text(
+            title,
+            color = NovexColors.Text,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        content()
+    }
+}
+
+@Composable
+private fun CharacterVersionChoice(
+    version: CharacterVersionEntity,
+    selected: Boolean,
+    worlds: List<WorldEntity>,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (version.kind == CharacterVersionKind.ORIGINAL) "本体" else version.label,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+            Text(
+                if (worlds.isEmpty()) "尚未加入世界" else worlds.joinToString(" · ") { it.name },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = 3.dp),
             )
         }
-        return
+        if (selected) Text("当前", color = MaterialTheme.colorScheme.primary)
     }
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        backgroundFile?.let { file ->
-            AsyncImage(
-                model = file,
-                contentDescription = "$name 主页背景",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().height(180.dp),
-            )
-        }
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            CharacterAvatar(avatarFile?.absolutePath, name)
-            Column(Modifier.padding(start = 12.dp)) {
-                Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(label, color = MaterialTheme.colorScheme.primary)
-            }
+}
+
+@Composable
+private fun CharacterManagementActions(
+    isVariant: Boolean,
+    onCreateVariant: () -> Unit,
+    onExport: () -> Unit,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    CharacterLabeledBlock("管理") {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
+        ) {
+            TextButton(onClick = onCreateVariant) { Text("创建分身") }
+            TextButton(onClick = onExport) { Text("导出") }
+            TextButton(onClick = onDuplicate) { Text("复制") }
+            TextButton(onClick = onDelete) { Text(if (isVariant) "删除分身" else "删除角色") }
         }
     }
 }

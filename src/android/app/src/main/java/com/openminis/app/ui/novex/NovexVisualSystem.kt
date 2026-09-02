@@ -106,25 +106,30 @@ private fun NovexDefaultCharacterArtwork(seed: String, modifier: Modifier) {
         Color(0xFFE7E1D8) to Color(0xFFB9A994),
     )
     val colors = palettes[novexArtworkVariant(seed, palettes.size)]
-    Canvas(modifier.background(colors.first)) {
+    Canvas(modifier.background(Brush.linearGradient(listOf(colors.first, Color.White)))) {
         drawCircle(
-            color = colors.second.copy(alpha = 0.78f),
-            radius = size.width * 0.22f,
-            center = Offset(size.width / 2f, size.height * 0.34f),
+            color = Color.White.copy(alpha = 0.34f),
+            radius = size.width * 0.34f,
+            center = Offset(size.width * 0.18f, size.height * 0.2f),
+        )
+        drawCircle(
+            color = colors.second.copy(alpha = 0.38f),
+            radius = size.width * 0.14f,
+            center = Offset(size.width * 0.74f, size.height * 0.34f),
         )
         drawOval(
-            color = colors.second.copy(alpha = 0.72f),
-            topLeft = Offset(size.width * 0.18f, size.height * 0.58f),
-            size = Size(size.width * 0.64f, size.height * 0.55f),
+            color = colors.second.copy(alpha = 0.3f),
+            topLeft = Offset(size.width * 0.5f, size.height * 0.56f),
+            size = Size(size.width * 0.48f, size.height * 0.5f),
         )
         drawCircle(
             brush = Brush.radialGradient(
-                listOf(Color.White.copy(alpha = 0.35f), Color.Transparent),
-                center = Offset(size.width * 0.25f, size.height * 0.2f),
-                radius = size.width * 0.55f,
+                listOf(colors.second.copy(alpha = 0.18f), Color.Transparent),
+                center = Offset(size.width * 0.76f, size.height * 0.34f),
+                radius = size.width * 0.48f,
             ),
-            radius = size.width * 0.55f,
-            center = Offset(size.width * 0.25f, size.height * 0.2f),
+            radius = size.width * 0.48f,
+            center = Offset(size.width * 0.76f, size.height * 0.34f),
         )
     }
 }
