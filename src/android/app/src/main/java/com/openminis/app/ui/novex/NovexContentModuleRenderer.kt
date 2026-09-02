@@ -1,6 +1,7 @@
 package com.openminis.app.ui.novex
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +27,32 @@ import com.openminis.app.R
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.ContentModuleType
+
+internal enum class NovexContentModuleLayout {
+    MAP,
+    TIMELINE,
+    COLLECTION,
+    ARTICLE,
+}
+
+internal fun ContentModuleType.novexContentLayout(): NovexContentModuleLayout = when (this) {
+    ContentModuleType.MAP -> NovexContentModuleLayout.MAP
+    ContentModuleType.TIMELINE,
+    ContentModuleType.ERA_EVENT,
+    ContentModuleType.WORLD_EXPERIENCE,
+    -> NovexContentModuleLayout.TIMELINE
+    ContentModuleType.REGION,
+    ContentModuleType.FACTION,
+    ContentModuleType.RACE,
+    ContentModuleType.QUOTES,
+    ContentModuleType.ATTRIBUTE_PANEL,
+    ContentModuleType.EQUIPMENT,
+    ContentModuleType.TALENT_SKILL,
+    ContentModuleType.APPEARANCE_PERSONALITY,
+    ContentModuleType.INTEREST,
+    -> NovexContentModuleLayout.COLLECTION
+    ContentModuleType.CUSTOM -> NovexContentModuleLayout.ARTICLE
+}
 
 internal data class NovexContentModulePresentation(
     val id: String,
@@ -126,26 +154,100 @@ internal fun NovexContentModuleBlock(
                 )
             }
         }
+        when (presentation.type.novexContentLayout()) {
+            NovexContentModuleLayout.MAP -> MapModuleBody(presentation, imageModel)
+            NovexContentModuleLayout.TIMELINE -> TimelineModuleBody(presentation, imageModel)
+            NovexContentModuleLayout.COLLECTION -> CollectionModuleBody(presentation, imageModel)
+            NovexContentModuleLayout.ARTICLE -> ArticleModuleBody(presentation, imageModel)
+        }
+    }
+}
+
+@Composable
+private fun MapModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
+    if (imageModel != null) {
+        AsyncImage(
+            model = imageModel,
+            contentDescription = "${presentation.title}地图",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(176.dp).clip(RoundedCornerShape(8.dp)),
+        )
+    } else {
+        Column(
+            Modifier.fillMaxWidth().padding(top = 10.dp).height(112.dp)
+                .clip(RoundedCornerShape(8.dp)).background(NovexColors.PrimarySoft),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(1f))
+            Text("尚未添加地图图片", color = NovexColors.SecondaryText, fontSize = 12.sp)
+            Spacer(Modifier.weight(1f))
+        }
+    }
+    ModuleText(presentation, maxLines = 4)
+}
+
+@Composable
+private fun TimelineModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(16.dp)) {
+            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.size(8.dp).clip(CircleShape).background(NovexColors.Primary))
+            Spacer(Modifier.width(2.dp).height(56.dp).background(NovexColors.Divider))
+        }
         if (imageModel != null) {
             AsyncImage(
                 model = imageModel,
                 contentDescription = "${presentation.title}图片",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .height(156.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier.padding(start = 8.dp).size(72.dp).clip(RoundedCornerShape(8.dp)),
             )
         }
-        Text(
-            if (presentation.hasText) presentation.body else "尚未填写内容",
-            color = if (presentation.hasText) NovexColors.Text else NovexColors.SecondaryText,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            maxLines = 7,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp),
+        ModuleText(presentation, maxLines = 5, modifier = Modifier.weight(1f).padding(start = 10.dp, top = 0.dp))
+    }
+}
+
+@Composable
+private fun CollectionModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.Top) {
+        if (imageModel != null) {
+            AsyncImage(
+                model = imageModel,
+                contentDescription = "${presentation.title}代表图",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(8.dp)),
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        ModuleText(presentation, maxLines = 5, modifier = Modifier.weight(1f).padding(top = 0.dp))
+    }
+}
+
+@Composable
+private fun ArticleModuleBody(presentation: NovexContentModulePresentation, imageModel: Any?) {
+    if (imageModel != null) {
+        AsyncImage(
+            model = imageModel,
+            contentDescription = "${presentation.title}图片",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(148.dp).clip(RoundedCornerShape(8.dp)),
         )
     }
+    ModuleText(presentation, maxLines = 7)
+}
+
+@Composable
+private fun ModuleText(
+    presentation: NovexContentModulePresentation,
+    maxLines: Int,
+    modifier: Modifier = Modifier.padding(top = 8.dp),
+) {
+    Text(
+        if (presentation.hasText) presentation.body else "尚未填写内容",
+        color = if (presentation.hasText) NovexColors.Text else NovexColors.SecondaryText,
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }

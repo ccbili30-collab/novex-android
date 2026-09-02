@@ -659,10 +659,23 @@ fun AppNavigation(
             arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
         ) { entry ->
             val worldId = entry.arguments?.getString("worldId") ?: return@composable
+            val context = LocalContext.current
+            com.openminis.app.data.character.CharacterCardStore.initialize(context)
+            val legacyWorlds by com.openminis.app.data.character.CharacterCardStore.worlds.collectAsState()
+            val legacyPersonas by com.openminis.app.data.character.CharacterCardStore.personas.collectAsState()
             val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
             com.openminis.app.ui.settings.CatalogWorldDetailScreen(
                 worldId = worldId,
                 sessions = sessions,
+                hasLegacyWorld = legacyWorlds.any { it.id == worldId },
+                personas = legacyPersonas.filter { it.worldId == worldId }.map { persona ->
+                    com.openminis.app.ui.settings.WorldPersonaSummary(
+                        id = persona.id,
+                        name = persona.name,
+                        description = persona.description,
+                        isDefault = persona.isDefault,
+                    )
+                },
                 onBack = { navController.safePopBackStack() },
                 onEditWorld = { navController.safeNavigate(Routes.storyWorldEdit(worldId)) },
                 onEditPersona = { navController.safeNavigate(Routes.personaEdit(worldId, it)) },

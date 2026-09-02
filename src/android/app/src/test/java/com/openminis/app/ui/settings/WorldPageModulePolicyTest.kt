@@ -4,6 +4,9 @@ import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.ContentModuleTextCodec
+import com.openminis.app.data.character.MediaAssetSlot
+import com.openminis.app.ui.novex.NovexContentModuleLayout
+import com.openminis.app.ui.novex.novexContentLayout
 import com.openminis.app.ui.novex.novexModuleSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,5 +46,29 @@ class WorldPageModulePolicyTest {
             "雾港在第一纪元建立，随后成为沿海势力争夺的中心…",
             novexModuleSummary("雾港在第一纪元建立，随后成为沿海势力争夺的中心。\n这一行不应在列表展开。", 24),
         )
+    }
+
+    @Test
+    fun everyWorldImageIsOptionalAndAvailableWhileCreatingADraft() {
+        assertEquals(
+            listOf(
+                MediaAssetSlot.WORLD_COVER,
+                MediaAssetSlot.WORLD_LOGO,
+                MediaAssetSlot.WORLD_BACKGROUND,
+            ),
+            worldImageSlots().map { it.slot },
+        )
+        assertEquals(true, worldImageSlots().all { !it.required })
+    }
+
+    @Test
+    fun worldModulesChooseAContentSpecificDisplayLayout() {
+        assertEquals(NovexContentModuleLayout.TIMELINE, ContentModuleType.TIMELINE.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.TIMELINE, ContentModuleType.ERA_EVENT.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.MAP, ContentModuleType.MAP.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.COLLECTION, ContentModuleType.REGION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.COLLECTION, ContentModuleType.FACTION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.COLLECTION, ContentModuleType.RACE.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.ARTICLE, ContentModuleType.CUSTOM.novexContentLayout())
     }
 }

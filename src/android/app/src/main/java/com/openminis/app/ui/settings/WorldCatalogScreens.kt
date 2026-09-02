@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +35,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,7 +51,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.MediaAssetEntity
@@ -80,6 +79,31 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private typealias WorldPageData = NovexWorldSnapshot
+
+internal data class WorldImageSlotSpec(
+    val slot: MediaAssetSlot,
+    val label: String,
+    val required: Boolean = false,
+)
+
+internal fun worldImageSlots(): List<WorldImageSlotSpec> = listOf(
+    WorldImageSlotSpec(MediaAssetSlot.WORLD_COVER, "世界封面"),
+    WorldImageSlotSpec(MediaAssetSlot.WORLD_LOGO, "世界标志"),
+    WorldImageSlotSpec(MediaAssetSlot.WORLD_BACKGROUND, "全屏背景"),
+)
+
+private data class PendingWorldImage(
+    val uri: Uri,
+    val bytes: ByteArray,
+    val mimeType: String,
+)
+
+data class WorldPersonaSummary(
+    val id: String,
+    val name: String,
+    val description: String,
+    val isDefault: Boolean,
+)
 
 @Composable
 fun CatalogWorldLibraryScreen(
@@ -159,6 +183,8 @@ fun CatalogWorldLibraryScreen(
 fun CatalogWorldDetailScreen(
     worldId: String,
     sessions: List<ChatSessionEntity>,
+    hasLegacyWorld: Boolean,
+    personas: List<WorldPersonaSummary>,
     onBack: () -> Unit,
     onEditWorld: () -> Unit,
     onEditPersona: (String?) -> Unit,
@@ -170,12 +196,6 @@ fun CatalogWorldDetailScreen(
     onStartCharacterChat: (String, String) -> Unit,
     onOpenModule: (String) -> Unit,
 ) {
-    val context = LocalContext.current
-    CharacterCardStore.initialize(context)
-    val legacyWorlds by CharacterCardStore.worlds.collectAsState()
-    val allPersonas by CharacterCardStore.personas.collectAsState()
-    val legacyWorld = legacyWorlds.firstOrNull { it.id == worldId }
-    val personas = allPersonas.filter { it.worldId == worldId }
     val novex = rememberNovexWorkspace()
     val owner = remember(worldId) { ModuleOwner.world(worldId) }
     val scope = rememberCoroutineScope()
@@ -301,7 +321,7 @@ fun CatalogWorldDetailScreen(
                         Text(if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份")
                     }
                 }
-                if (legacyWorld != null) {
+                if (hasLegacyWorld) {
                     SettingsSection(header = "Novax 世界助手") {
                         SettingsRow(
                             title = "与 Novax 讨论这个世界",
@@ -474,29 +494,35 @@ fun CatalogWorldEditorScreen(
     var tags by rememberSaveable(worldId) { mutableStateOf("") }
     var overview by rememberSaveable(worldId) { mutableStateOf("") }
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
+    var pendingImages by remember { mutableStateOf<Map<MediaAssetSlot, PendingWorldImage>>(emptyMap()) }
     var pendingSlot by remember { mutableStateOf<MediaAssetSlot?>(null) }
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<WorldPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    val owner = worldId?.let(ModuleOwner::world)
+    val owner = (source?.id ?: worldId)?.let(ModuleOwner::world)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val slot = pendingSlot
         pendingSlot = null
-        if (uri != null && slot != null && owner != null) scope.launch {
+        if (uri != null && slot != null) scope.launch {
             runCatching {
                 val bytes = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         ?: error("无法读取图片")
                 }
-                val asset = novex.apply(
-                    NovexCommand.AttachImage(
-                        owner = owner,
-                        slot = slot,
-                        bytes = bytes,
-                        mimeType = context.contentResolver.getType(uri) ?: "image/*",
-                    ),
-                ).requireMedia()
-                media = media + (slot to asset)
+                val image = PendingWorldImage(
+                    uri = uri,
+                    bytes = bytes,
+                    mimeType = context.contentResolver.getType(uri) ?: "image/*",
+                )
+                if (owner == null) {
+                    pendingImages = pendingImages + (slot to image)
+                } else {
+                    val asset = novex.apply(
+                        NovexCommand.AttachImage(owner, slot, image.bytes, image.mimeType),
+                    ).requireMedia()
+                    media = media + (slot to asset)
+                    pendingImages = pendingImages - slot
+                }
             }.onFailure { error = it.message }
         }
     }
@@ -522,13 +548,25 @@ fun CatalogWorldEditorScreen(
                 val tagsJson = JSONArray(
                     tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
                 ).toString()
-                if (source == null) {
+                val saved = if (source == null) {
                     novex.apply(NovexCommand.CreateWorld(name, overview, tagsJson)).requireWorld()
                 } else {
                     novex.apply(
                         NovexCommand.SaveWorld(source!!.copy(name = name, overview = overview, tagsJson = tagsJson)),
                     ).requireWorld()
                 }
+                source = saved
+                if (pendingImages.isNotEmpty()) {
+                    val savedOwner = ModuleOwner.world(saved.id)
+                    val attached = pendingImages.mapValues { (slot, image) ->
+                        novex.apply(
+                            NovexCommand.AttachImage(savedOwner, slot, image.bytes, image.mimeType),
+                        ).requireMedia()
+                    }
+                    media = media + attached
+                    pendingImages = emptyMap()
+                }
+                saved
             }.onSuccess { onSaved(it.id) }
                 .onFailure { error = it.message; saving = false }
         }
@@ -576,15 +614,18 @@ fun CatalogWorldEditorScreen(
                 )
             },
         ) {
-            WorldPrimaryContent(draft, onOpenModule = null)
+            WorldPrimaryContent(
+                data = draft,
+                onOpenModule = null,
+                mediaModels = pendingImages.mapValues { it.value.uri },
+            )
             Spacer(Modifier.height(32.dp))
         }
         return
     }
-    SettingsScaffold(
+    NovexDetailScaffold(
         title = if (worldId == null) "创建世界" else "编辑世界",
         onBack = onBack,
-        centerTitle = true,
         actions = {
             IconButton(onClick = ::preview, enabled = loaded && name.isNotBlank()) {
                 Icon(
@@ -600,49 +641,50 @@ fun CatalogWorldEditorScreen(
         if (!loaded) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         } else {
-            SettingsSection(header = "基础资料") {
+            WorldEditorSection(header = "基础资料") {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("世界名称") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 OutlinedTextField(
                     value = tags,
                     onValueChange = { tags = it },
                     label = { Text("标签（用顿号或逗号分隔）") },
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 OutlinedTextField(
                     value = overview,
                     onValueChange = { overview = it },
                     label = { Text("世界观概述") },
                     minLines = 7,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            SettingsSection(
+            WorldEditorSection(
                 header = "视觉资源",
-                footer = if (worldId == null) "保存世界后即可添加图片。" else "封面、标志与全屏背景可以复用同一受管资源。",
+                footer = "全部图片均可留空，也可以随时独立添加、更换或移除。",
             ) {
-                listOf(
-                    MediaAssetSlot.WORLD_COVER to "世界封面",
-                    MediaAssetSlot.WORLD_LOGO to "世界标志",
-                    MediaAssetSlot.WORLD_BACKGROUND to "全屏背景",
-                ).forEach { (slot, label) ->
+                worldImageSlots().forEach { imageSlot ->
+                    val slot = imageSlot.slot
+                    val pending = pendingImages[slot]
+                    val imageModel = pending?.uri ?: media[slot]?.managedPath.existingMediaFile()
                     WorldImageEditorRow(
-                        label = label,
-                        path = media[slot]?.managedPath,
-                        enabled = owner != null,
+                        label = imageSlot.label,
+                        imageModel = imageModel,
                         onPick = {
                             pendingSlot = slot
                             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         },
                         onRemove = {
-                            if (owner != null) scope.launch {
-                                novex.apply(NovexCommand.DetachImage(owner, slot))
-                                media = media - slot
+                            if (pending != null) {
+                                pendingImages = pendingImages - slot
+                            } else if (owner != null) scope.launch {
+                                runCatching { novex.apply(NovexCommand.DetachImage(owner, slot)) }
+                                    .onSuccess { media = media - slot }
+                                    .onFailure { error = it.message }
                             }
                         },
                     )
@@ -670,18 +712,23 @@ fun CatalogWorldEditorScreen(
 }
 
 @Composable
-private fun WorldHero(data: WorldPageData) {
+private fun WorldHero(
+    data: WorldPageData,
+    mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
+) {
     val background = data.media[MediaAssetSlot.WORLD_BACKGROUND]?.managedPath
         ?: data.media[MediaAssetSlot.WORLD_COVER]?.managedPath
         ?: data.world.legacyBackgroundPath()
     val logo = data.media[MediaAssetSlot.WORLD_LOGO]?.managedPath
-    val backgroundFile = background.existingMediaFile()
-    val logoFile = logo.existingMediaFile()
+    val backgroundModel = mediaModels[MediaAssetSlot.WORLD_BACKGROUND]
+        ?: mediaModels[MediaAssetSlot.WORLD_COVER]
+        ?: background.existingMediaFile()
+    val logoModel = mediaModels[MediaAssetSlot.WORLD_LOGO] ?: logo.existingMediaFile()
     Box(Modifier.fillMaxWidth().height(210.dp)) {
         NovexArtwork(
             kind = NovexArtworkKind.WORLD,
             seed = data.world.id,
-            imageModel = backgroundFile,
+            imageModel = backgroundModel,
             contentDescription = "${data.world.name}背景",
             modifier = Modifier.fillMaxWidth().height(210.dp),
         )
@@ -694,9 +741,9 @@ private fun WorldHero(data: WorldPageData) {
             ),
         )
         Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-            logoFile?.let { file ->
+            logoModel?.let { model ->
                 AsyncImage(
-                    model = file,
+                    model = model,
                     contentDescription = "${data.world.name}标志",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
@@ -707,7 +754,7 @@ private fun WorldHero(data: WorldPageData) {
                 color = androidx.compose.ui.graphics.Color.White,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = if (logoFile == null) 0.dp else 8.dp),
+                modifier = Modifier.padding(top = if (logoModel == null) 0.dp else 8.dp),
             )
             if (data.world.tags().isNotEmpty()) Text(
                 data.world.tags().joinToString(" · "),
@@ -723,8 +770,9 @@ private fun WorldHero(data: WorldPageData) {
 private fun WorldPrimaryContent(
     data: WorldPageData,
     onOpenModule: ((String) -> Unit)?,
+    mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
-    WorldHero(data)
+    WorldHero(data, mediaModels)
     WorldOverviewBlock(data.world)
     data.modules.forEachIndexed { index, module ->
         if (index > 0) androidx.compose.material3.HorizontalDivider(
@@ -755,30 +803,57 @@ private fun WorldOverviewBlock(world: WorldEntity) {
 @Composable
 private fun WorldImageEditorRow(
     label: String,
-    path: String?,
-    enabled: Boolean,
+    imageModel: Any?,
     onPick: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        path.existingMediaFile()?.let { file ->
+        imageModel?.let { model ->
             AsyncImage(
-                model = file,
+                model = model,
                 contentDescription = label,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)),
             )
         }
-        Column(Modifier.weight(1f).padding(start = if (path == null) 0.dp else 12.dp)) {
+        Column(Modifier.weight(1f).padding(start = if (imageModel == null) 0.dp else 12.dp)) {
             Text(label, fontWeight = FontWeight.Medium)
             Text(
-                if (path == null) "未设置" else "已设置",
+                if (imageModel == null) "未设置（可留空）" else "已设置",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        TextButton(onClick = onPick, enabled = enabled) { Text(if (path == null) "选择" else "更换") }
-        if (path != null) TextButton(onClick = onRemove) { Text("移除") }
+        TextButton(onClick = onPick) { Text(if (imageModel == null) "选择" else "更换") }
+        if (imageModel != null) TextButton(onClick = onRemove) { Text("移除") }
+    }
+}
+
+@Composable
+private fun WorldEditorSection(
+    header: String,
+    footer: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 20.dp)) {
+        Text(
+            header,
+            color = NovexColors.SecondaryText,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth().background(NovexColors.Surface),
+            content = content,
+        )
+        footer?.let {
+            Text(
+                it,
+                color = NovexColors.SecondaryText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
     }
 }
 
