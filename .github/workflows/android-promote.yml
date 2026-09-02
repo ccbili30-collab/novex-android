@@ -60,8 +60,12 @@ jobs:
           head_branch="$(printf '%s' "$run_json" | jq -r '.head_branch')"
           run_sha="$(printf '%s' "$run_json" | jq -r '.head_sha')"
           workflow_path="$(printf '%s' "$run_json" | jq -r '.path')"
-          if [ "$conclusion" != "success" ] || [ "$head_branch" != "next" ]; then
-            echo "Run $run_id is not a successful next-branch candidate." >&2
+          if [ "$conclusion" != "success" ]; then
+            echo "Run $run_id is not a successful candidate." >&2
+            exit 1
+          fi
+          if [ "$head_branch" != "next" ] && [[ "$head_branch" != release/* ]]; then
+            echo "Run $run_id did not come from next or a release branch." >&2
             exit 1
           fi
           if [[ "$workflow_path" != */android-preview.yml ]]; then
@@ -103,6 +107,7 @@ jobs:
 
           {
             echo "run_id=$run_id"
+            echo "branch=$head_branch"
             echo "source_sha=$source_sha"
             echo "version=$stable_version"
             echo "tag=v$stable_version"
@@ -113,33 +118,50 @@ jobs:
         id: source
         shell: bash
         env:
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.branch }}
           SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
           RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
         run: |
           git fetch origin main next --tags
-          git cat-file -e "$SOURCE_SHA^{commit}"
-          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/next; then
-            echo "Candidate is no longer part of next." >&2
-            exit 1
+          if [ "$CANDIDATE_BRANCH" != "next" ]; then
+            git fetch origin \
+              "+refs/heads/$CANDIDATE_BRANCH:refs/remotes/origin/$CANDIDATE_BRANCH"
           fi
-
+          git cat-file -e "$SOURCE_SHA^{commit}"
           promotion_sha="$SOURCE_SHA"
-          if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
-            next_sha="$(git rev-parse origin/next)"
-            if ! git merge-base --is-ancestor origin/main "$next_sha"; then
-              echo "Current next cannot fast-forward main." >&2
+          if [ "$CANDIDATE_BRANCH" = "next" ]; then
+            if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/next; then
+              echo "Candidate is no longer part of next." >&2
               exit 1
             fi
-            if ! git diff --quiet "$SOURCE_SHA" "$next_sha" -- \
-              src/android \
-              deps \
-              scripts/prepare_android_sandbox.sh \
-              .gitmodules; then
-              echo "Android product inputs changed after the candidate was built." >&2
+
+            if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
+              next_sha="$(git rev-parse origin/next)"
+              if ! git merge-base --is-ancestor origin/main "$next_sha"; then
+                echo "Current next cannot fast-forward main." >&2
+                exit 1
+              fi
+              if ! git diff --quiet "$SOURCE_SHA" "$next_sha" -- \
+                src/android \
+                deps \
+                scripts/prepare_android_sandbox.sh \
+                .gitmodules; then
+                echo "Android product inputs changed after the candidate was built." >&2
+                exit 1
+              fi
+              promotion_sha="$next_sha"
+              echo "Using product-equivalent next commit $promotion_sha as the promotion target."
+            fi
+          else
+            branch_sha="$(git rev-parse "origin/$CANDIDATE_BRANCH")"
+            if [ "$branch_sha" != "$SOURCE_SHA" ]; then
+              echo "Release branch moved after the candidate was built." >&2
               exit 1
             fi
-            promotion_sha="$next_sha"
-            echo "Using product-equivalent next commit $promotion_sha as the promotion target."
+            if ! git merge-base --is-ancestor origin/main "$SOURCE_SHA"; then
+              echo "Release branch cannot fast-forward main." >&2
+              exit 1
+            fi
           fi
 
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
@@ -236,7 +258,7 @@ jobs:
           retention-days: 30
 
       - name: Open the next preview version
-        if: ${{ inputs.publish }}
+        if: ${{ inputs.publish && steps.candidate.outputs.branch == 'next' }}
         continue-on-error: true
         shell: bash
         env:
@@ -264,6 +286,7 @@ jobs:
             echo "### Android stable candidate"
             echo
             echo "- Candidate run: ${{ steps.candidate.outputs.run_id }}"
+            echo "- Candidate branch: `${{ steps.candidate.outputs.branch }}`"
             echo "- Candidate source SHA: \`${{ steps.candidate.outputs.source_sha }}\`"
             echo "- Promotion target SHA: \`${{ steps.source.outputs.promotion_sha }}\`"
             echo "- Stable version: \`${{ steps.candidate.outputs.version }}\`"
