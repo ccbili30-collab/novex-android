@@ -2,6 +2,7 @@ package com.openminis.app.novex.domain
 
 import com.openminis.app.data.character.CharacterAggregate
 import com.openminis.app.data.character.ContentModuleEntity
+import com.openminis.app.data.character.ContentModuleReferenceEntity
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.CharacterLibraryDocument
@@ -10,6 +11,8 @@ import com.openminis.app.data.character.CharacterVersionDocument
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleOwnerType
+import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.character.WorldEntity
 
 /**
@@ -66,6 +69,14 @@ data class NovexModuleSnapshot(
 data class NovexModuleDetail(
     val module: ContentModuleEntity,
     val image: MediaAssetEntity?,
+    val references: List<ContentModuleReferenceEntity>,
+    val referenceOptions: List<NovexModuleReferenceOption>,
+)
+
+data class NovexModuleReferenceOption(
+    val target: ModuleReferenceTarget,
+    val label: String,
+    val kindLabel: String,
 )
 
 sealed interface NovexCommand {
@@ -163,6 +174,17 @@ sealed interface NovexCommand {
 
     data class DeleteModule(val moduleId: String) : NovexCommand
 
+    data class AddModuleReference(
+        val moduleId: String,
+        val target: ModuleReferenceTarget,
+        val position: Int,
+    ) : NovexCommand
+
+    data class RemoveModuleReference(
+        val moduleId: String,
+        val target: ModuleReferenceTarget,
+    ) : NovexCommand
+
     data class AttachImage(
         val owner: ModuleOwner,
         val slot: MediaAssetSlot,
@@ -239,6 +261,7 @@ internal interface NovexCatalogPort {
 
 internal interface NovexContentPort {
     suspend fun list(owner: ModuleOwner): List<ContentModuleEntity>
+    suspend fun all(): List<ContentModuleEntity>
     suspend fun add(
         owner: ModuleOwner,
         type: ContentModuleType,
@@ -252,6 +275,9 @@ internal interface NovexContentPort {
     suspend fun move(id: String, toIndex: Int, now: Long): ContentModuleEntity
     suspend fun delete(id: String)
     suspend fun copyAll(source: ModuleOwner, target: ModuleOwner, now: Long): List<ContentModuleEntity>
+    suspend fun references(moduleId: String): List<ContentModuleReferenceEntity>
+    suspend fun addReference(moduleId: String, target: ModuleReferenceTarget, position: Int)
+    suspend fun removeReference(moduleId: String, target: ModuleReferenceTarget)
 }
 
 internal interface NovexMediaPort {
@@ -336,6 +362,8 @@ internal class DefaultNovexWorkspace(
         return NovexModuleDetail(
             module = module,
             image = media.assetFor(ModuleOwner.contentModule(id), MediaAssetSlot.MODULE_IMAGE),
+            references = content.references(id),
+            referenceOptions = moduleReferenceOptions(module),
         )
     }
 
@@ -487,6 +515,14 @@ internal class DefaultNovexWorkspace(
             content.delete(command.moduleId)
             NovexChange.Completed
         }
+        is NovexCommand.AddModuleReference -> {
+            content.addReference(command.moduleId, command.target, command.position)
+            NovexChange.Completed
+        }
+        is NovexCommand.RemoveModuleReference -> {
+            content.removeReference(command.moduleId, command.target)
+            NovexChange.Completed
+        }
         is NovexCommand.AttachImage -> {
             val asset = media.import(command.bytes, command.mimeType, command.now)
             media.attach(command.owner, command.slot, asset.id)
@@ -511,6 +547,31 @@ internal class DefaultNovexWorkspace(
         media.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
             ?.let { module.id to it }
     }.toMap()
+
+    private suspend fun moduleReferenceOptions(module: ContentModuleEntity): List<NovexModuleReferenceOption> {
+        val ownerTarget = when (module.ownerType) {
+            ModuleOwnerType.WORLD -> ModuleReferenceTarget.world(module.ownerId)
+            ModuleOwnerType.CHARACTER_VERSION -> ModuleReferenceTarget.characterVersion(module.ownerId)
+            ModuleOwnerType.CONTENT_MODULE -> null
+        }
+        val worlds = catalog.listWorlds().map { world ->
+            NovexModuleReferenceOption(ModuleReferenceTarget.world(world.id), world.name, "世界")
+        }
+        val versions = catalog.listVersions().map { version ->
+            val name = runCatching {
+                org.json.JSONObject(version.profileJson).optString("name").trim().ifBlank { version.label }
+            }.getOrDefault(version.label)
+            NovexModuleReferenceOption(
+                ModuleReferenceTarget.characterVersion(version.id),
+                "$name · ${version.label}",
+                "角色版本",
+            )
+        }
+        val modules = content.all().filterNot { it.id == module.id }.map { candidate ->
+            NovexModuleReferenceOption(ModuleReferenceTarget.module(candidate.id), candidate.name, "内容模块")
+        }
+        return (worlds + versions + modules).filterNot { it.target == ownerTarget }
+    }
 
     private suspend fun copyVersionContents(sourceVersionId: String, targetVersionId: String, now: Long) {
         val sourceOwner = ModuleOwner.characterVersion(sourceVersionId)

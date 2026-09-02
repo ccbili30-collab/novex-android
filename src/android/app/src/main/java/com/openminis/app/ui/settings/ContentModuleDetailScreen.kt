@@ -6,12 +6,17 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,7 +44,9 @@ import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ContentModuleReferenceEntity
 import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexModuleReferenceOption
 import com.openminis.app.novex.domain.requireMedia
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +68,10 @@ fun CatalogContentModuleDetailScreen(
     var name by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var image by remember { mutableStateOf<MediaAssetEntity?>(null) }
+    var references by remember { mutableStateOf<List<ContentModuleReferenceEntity>>(emptyList()) }
+    var referenceOptions by remember { mutableStateOf<List<NovexModuleReferenceOption>>(emptyList()) }
+    var referenceRefresh by remember { mutableStateOf(0) }
+    var addReference by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -85,12 +96,14 @@ fun CatalogContentModuleDetailScreen(
         }
     }
 
-    LaunchedEffect(moduleId) {
+    LaunchedEffect(moduleId, referenceRefresh) {
         novex.module(moduleId)?.let { detail ->
             module = detail.module
             name = detail.module.name
             body = ContentModuleTextCodec.decode(detail.module.contentJson)
             image = detail.image
+            references = detail.references
+            referenceOptions = detail.referenceOptions
         }
         loaded = true
     }
@@ -173,8 +186,92 @@ fun CatalogContentModuleDetailScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 10.dp),
                 )
+                SettingsSection(
+                    header = "内容引用",
+                    footer = "引用世界、角色版本或其他内容模块，正文无需重复填写。",
+                ) {
+                    references.forEach { reference ->
+                        val target = reference.target
+                        val option = referenceOptions.firstOrNull { it.target == target }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+                        ) {
+                            Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                                Text(option?.label ?: target.id, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    option?.kindLabel ?: "引用目标",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        novex.apply(NovexCommand.RemoveModuleReference(moduleId, target))
+                                    }.onSuccess { referenceRefresh++ }
+                                        .onFailure { error = it.message }
+                                }
+                            }) { Text("移除") }
+                        }
+                    }
+                    TextButton(
+                        onClick = { addReference = true },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    ) {
+                        androidx.compose.material3.Icon(Icons.Default.Add, contentDescription = null)
+                        Text("添加引用", modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
             }
         }
+    }
+    if (addReference) {
+        val available = referenceOptions.filterNot { option ->
+            references.any { it.target == option.target }
+        }
+        AlertDialog(
+            onDismissRequest = { addReference = false },
+            title = { Text("添加内容引用") },
+            text = {
+                if (available.isEmpty()) {
+                    Text("没有可添加的世界、角色版本或内容模块")
+                } else {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                        items(available, key = { "${it.target.type}:${it.target.id}" }) { option ->
+                            TextButton(
+                                onClick = {
+                                    addReference = false
+                                    scope.launch {
+                                        runCatching {
+                                            novex.apply(
+                                                NovexCommand.AddModuleReference(
+                                                    moduleId,
+                                                    option.target,
+                                                    references.size,
+                                                ),
+                                            )
+                                        }.onSuccess { referenceRefresh++ }
+                                            .onFailure { error = it.message }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text(option.label)
+                                    Text(
+                                        option.kindLabel,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { addReference = false }) { Text("关闭") } },
+        )
     }
     if (creatorNotice) AlertDialog(
         onDismissRequest = { creatorNotice = false },

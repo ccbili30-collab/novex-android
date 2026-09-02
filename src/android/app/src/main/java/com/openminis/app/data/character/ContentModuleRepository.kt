@@ -42,6 +42,8 @@ class ContentModuleRepository(
     suspend fun list(owner: ModuleOwner): List<ContentModuleEntity> =
         dao.list(owner.type, owner.id)
 
+    suspend fun all(): List<ContentModuleEntity> = dao.all()
+
     suspend fun module(id: String): ContentModuleEntity? = dao.module(id)
 
     suspend fun rename(id: String, name: String, now: Long = System.currentTimeMillis()) {

@@ -80,6 +80,7 @@ private class RoomContentAdapter(
     private val repository: ContentModuleRepository,
 ) : NovexContentPort {
     override suspend fun list(owner: ModuleOwner) = repository.list(owner)
+    override suspend fun all() = repository.all()
     override suspend fun add(
         owner: ModuleOwner,
         type: com.openminis.app.data.character.ContentModuleType,
@@ -99,6 +100,16 @@ private class RoomContentAdapter(
     override suspend fun delete(id: String) = repository.delete(id)
     override suspend fun copyAll(source: ModuleOwner, target: ModuleOwner, now: Long) =
         repository.copyAll(source, target, now)
+    override suspend fun references(moduleId: String) = repository.references(moduleId)
+    override suspend fun addReference(
+        moduleId: String,
+        target: com.openminis.app.data.character.ModuleReferenceTarget,
+        position: Int,
+    ) = repository.addReference(moduleId, target, position)
+    override suspend fun removeReference(
+        moduleId: String,
+        target: com.openminis.app.data.character.ModuleReferenceTarget,
+    ) = repository.removeReference(moduleId, target)
 }
 
 private class ManagedMediaAdapter(

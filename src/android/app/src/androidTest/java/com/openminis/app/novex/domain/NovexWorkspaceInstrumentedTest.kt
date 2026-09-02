@@ -10,6 +10,7 @@ import com.openminis.app.data.character.CharacterVersionDocument
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.novex.adapter.NovexWorkspaceFactory
 import java.io.File
@@ -308,5 +309,45 @@ class NovexWorkspaceInstrumentedTest {
 
         workspace.apply(NovexCommand.DeleteVariant(variant.id))
         assertEquals(emptyList<String>(), workspace.character(root.character.id)!!.character.variants.map { it.id })
+    }
+
+    @Test
+    fun moduleReferencesRecoverAndCanBeRemovedThroughWorkspaceCommands() = runBlocking {
+        val sourceWorld = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val targetWorld = workspace.apply(NovexCommand.CreateWorld("雾港", now = 2)).requireWorld()
+        val map = workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.world(sourceWorld.id),
+                ContentModuleType.MAP,
+                "山海地图",
+                now = 3,
+            ),
+        ).requireModule()
+        val timeline = workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.world(sourceWorld.id),
+                ContentModuleType.TIMELINE,
+                "书院时间线",
+                now = 4,
+            ),
+        ).requireModule()
+        val worldTarget = ModuleReferenceTarget.world(targetWorld.id)
+        val moduleTarget = ModuleReferenceTarget.module(timeline.id)
+
+        workspace.apply(NovexCommand.AddModuleReference(map.id, worldTarget, position = 0))
+        workspace.apply(NovexCommand.AddModuleReference(map.id, moduleTarget, position = 1))
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+
+        assertEquals(
+            listOf(worldTarget, moduleTarget),
+            workspace.module(map.id)!!.references.map { it.target },
+        )
+        assertEquals(
+            setOf(worldTarget, moduleTarget),
+            workspace.module(map.id)!!.referenceOptions.map { it.target }.toSet(),
+        )
+
+        workspace.apply(NovexCommand.RemoveModuleReference(map.id, worldTarget))
+        assertEquals(listOf(moduleTarget), workspace.module(map.id)!!.references.map { it.target })
     }
 }

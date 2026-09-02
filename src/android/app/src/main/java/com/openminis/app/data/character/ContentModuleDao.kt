@@ -15,6 +15,9 @@ interface ContentModuleDao {
     )
     suspend fun list(ownerType: ModuleOwnerType, ownerId: String): List<ContentModuleEntity>
 
+    @Query("SELECT * FROM content_modules ORDER BY owner_type ASC, owner_id ASC, position ASC")
+    suspend fun all(): List<ContentModuleEntity>
+
     @Query("SELECT * FROM content_modules WHERE id = :id")
     suspend fun module(id: String): ContentModuleEntity?
 
