@@ -375,8 +375,6 @@ fun CatalogCharacterDetailScreen(
                     owner = ModuleOwner.characterVersion(selected.id),
                     header = "角色模块",
                     footer = "模块在复制时复制一次，之后不会与来源持续同步。",
-                    allowedTypes = CHARACTER_PAGE_MODULE_TYPES,
-                    typeName = ::characterModuleDisplayName,
                     onOpenModule = onOpenModule,
                 )
                 if (selected.kind == CharacterVersionKind.VARIANT) {

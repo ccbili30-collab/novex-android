@@ -262,8 +262,6 @@ fun CatalogWorldDetailScreen(
                     owner = owner,
                     header = "世界设定模块",
                     footer = "时间线、事件、地图、地区、势力、种族和自定义模块只在添加后出现。",
-                    allowedTypes = WORLD_PAGE_MODULE_TYPES,
-                    typeName = ::worldModuleDisplayName,
                     onOpenModule = onOpenModule,
                 )
                 SettingsSection(

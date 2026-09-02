@@ -16,19 +16,26 @@ class ContentModuleRepository(
         id: String = UUID.randomUUID().toString(),
     ): ContentModuleEntity {
         requireOwner(owner)
+        val scope = requireNotNull(ContentModuleCatalog.scopeFor(owner.type)) { "该对象不能拥有内容模块" }
+        val definition = ContentModuleCatalog.requireCanAdd(
+            scope = scope,
+            type = type,
+            existingTypes = list(owner).map(ContentModuleEntity::type),
+        )
         return dao.append(
             ContentModuleEntity(
                 id = id,
                 ownerType = owner.type,
                 ownerId = owner.id,
                 type = type,
-                name = name.trim().ifBlank { defaultName(type) },
+                name = name.trim().ifBlank { definition.displayName },
                 contentJson = contentJson,
                 position = -1,
                 collapsed = collapsed,
                 createdAt = now,
                 updatedAt = now,
             ),
+            repeatable = definition.repeatable,
         )
     }
 
@@ -80,7 +87,14 @@ class ContentModuleRepository(
     ): List<ContentModuleEntity> {
         requireOwner(source)
         requireOwner(target)
-        val sourceModules = list(source)
+        val occupiedBuiltIns = list(target)
+            .map(ContentModuleEntity::type)
+            .filter { it != ContentModuleType.CUSTOM }
+            .toMutableSet()
+        val sourceModules = list(source).filter { module ->
+            val definition = ContentModuleCatalog.definition(module.type)
+            definition.repeatable || occupiedBuiltIns.add(module.type)
+        }
         val copies = sourceModules.map { module ->
             add(
                 owner = target,
@@ -149,8 +163,4 @@ class ContentModuleRepository(
         require(exists) { "引用目标不存在" }
     }
 
-    private fun defaultName(type: ContentModuleType): String = when (type) {
-        ContentModuleType.CUSTOM -> "自定义模块"
-        else -> type.name
-    }
 }

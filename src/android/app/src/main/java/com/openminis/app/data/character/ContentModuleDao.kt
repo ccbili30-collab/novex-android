@@ -61,8 +61,15 @@ interface ContentModuleDao {
     suspend fun characterVersionExists(id: String): Boolean
 
     @Transaction
-    suspend fun append(module: ContentModuleEntity): ContentModuleEntity {
-        val position = list(module.ownerType, module.ownerId).size
+    suspend fun append(
+        module: ContentModuleEntity,
+        repeatable: Boolean,
+    ): ContentModuleEntity {
+        val existing = list(module.ownerType, module.ownerId)
+        require(repeatable || existing.none { it.type == module.type }) {
+            "同一对象不能重复添加${module.name}"
+        }
+        val position = existing.size
         val positioned = module.copy(position = position)
         insert(positioned)
         return positioned

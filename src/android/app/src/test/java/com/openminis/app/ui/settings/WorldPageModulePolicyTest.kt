@@ -1,6 +1,10 @@
 package com.openminis.app.ui.settings
 
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.ContentModuleCatalog
+import com.openminis.app.data.character.ContentModuleScope
+import com.openminis.app.data.character.ContentModuleTextCodec
+import com.openminis.app.ui.novex.novexModuleSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -18,23 +22,26 @@ class WorldPageModulePolicyTest {
                 ContentModuleType.RACE,
                 ContentModuleType.CUSTOM,
             ),
-            WORLD_PAGE_MODULE_TYPES,
+            ContentModuleCatalog.definitions(ContentModuleScope.WORLD).map { it.type },
         )
-        assertFalse(WORLD_PAGE_MODULE_TYPES.any { worldModuleDisplayName(it) == "世界观概述" })
+        assertFalse(
+            ContentModuleCatalog.definitions(ContentModuleScope.WORLD)
+                .any { it.displayName == "世界观概述" },
+        )
     }
 
     @Test
     fun moduleBodyRoundTripsAsStructuredContent() {
         val original = "第一纪元\n雾港建立"
-        assertEquals(original, decodeWorldModuleText(encodeWorldModuleText(original)))
+        assertEquals(original, ContentModuleTextCodec.decode(ContentModuleTextCodec.encode(original)))
     }
 
     @Test
     fun moduleSummarySupportsSparseAndRichContentWithoutRenderingTheWholeBody() {
-        assertEquals("尚未填写内容", moduleListSummary("  \n "))
+        assertEquals("尚未填写内容", novexModuleSummary("  \n "))
         assertEquals(
             "雾港在第一纪元建立，随后成为沿海势力争夺的中心…",
-            moduleListSummary("雾港在第一纪元建立，随后成为沿海势力争夺的中心。\n这一行不应在列表展开。", 24),
+            novexModuleSummary("雾港在第一纪元建立，随后成为沿海势力争夺的中心。\n这一行不应在列表展开。", 24),
         )
     }
 }

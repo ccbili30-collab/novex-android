@@ -1,6 +1,8 @@
 package com.openminis.app.ui.settings
 
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.ContentModuleCatalog
+import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.CharacterVersionProfile
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,7 +21,7 @@ class CharacterPagePolicyTest {
                 ContentModuleType.INTEREST,
                 ContentModuleType.CUSTOM,
             ),
-            CHARACTER_PAGE_MODULE_TYPES,
+            ContentModuleCatalog.definitions(ContentModuleScope.CHARACTER_VERSION).map { it.type },
         )
     }
 

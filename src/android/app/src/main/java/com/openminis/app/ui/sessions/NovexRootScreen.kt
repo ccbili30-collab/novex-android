@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -46,11 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -61,7 +58,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterCatalogRepository
@@ -73,20 +69,14 @@ import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.ui.novex.NovexArtwork
+import com.openminis.app.ui.novex.NovexArtworkKind
+import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.settings.existingMediaFile
 import com.openminis.app.ui.settings.rememberMediaRepository
 import kotlin.math.abs
-import kotlin.math.absoluteValue
 
-private object NovexRootColors {
-    val Background = Color(0xFFFBFBFC)
-    val Surface = Color(0xFFFFFFFF)
-    val Text = Color(0xFF17181C)
-    val SecondaryText = Color(0xFF686B73)
-    val Divider = Color(0xFFE7E8EC)
-    val Primary = Color(0xFF315F9F)
-    val PrimarySoft = Color(0xFFEEF3FA)
-}
+private val NovexRootColors = NovexColors
 
 private data class WorldRootRow(
     val world: WorldEntity,
@@ -537,17 +527,13 @@ private fun NovexWorldCard(row: WorldRootRow, onClick: () -> Unit) {
             .clip(RoundedCornerShape(9.dp))
             .clickable(onClick = onClick),
     ) {
-        val file = row.imagePath.existingMediaFile()
-        if (file != null) {
-            AsyncImage(
-                model = file,
-                contentDescription = "${row.world.name}封面",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            NovexDefaultWorldArtwork(seed = row.world.id)
-        }
+        NovexArtwork(
+            kind = NovexArtworkKind.WORLD,
+            seed = row.world.id,
+            imageModel = row.imagePath.existingMediaFile(),
+            contentDescription = "${row.world.name}封面",
+            modifier = Modifier.fillMaxSize(),
+        )
         Box(
             Modifier
                 .fillMaxSize()
@@ -605,17 +591,13 @@ private fun NovexCharacterRow(row: CharacterRootRow, onClick: () -> Unit) {
                 .size(width = 88.dp, height = 104.dp)
                 .clip(RoundedCornerShape(8.dp)),
         ) {
-            val file = row.imagePath.existingMediaFile()
-            if (file != null) {
-                AsyncImage(
-                    model = file,
-                    contentDescription = "${row.character.name}头像",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                NovexDefaultCharacterArtwork(seed = row.character.id)
-            }
+            NovexArtwork(
+                kind = NovexArtworkKind.CHARACTER,
+                seed = row.character.id,
+                imageModel = row.imagePath.existingMediaFile(),
+                contentDescription = "${row.character.name}头像",
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
             Text(
@@ -790,75 +772,22 @@ private fun NovexEmptyMessage(text: String) {
 
 @Composable
 private fun NovexDefaultWorldArtwork(seed: String) {
-    val variant = seed.hashCode().absoluteValue % 4
-    val palettes = listOf(
-        listOf(Color(0xFF5F7796), Color(0xFFB2C3D5), Color(0xFFE4D8C9)),
-        listOf(Color(0xFF6D617F), Color(0xFFB59EB5), Color(0xFFE0C5B9)),
-        listOf(Color(0xFF526F6A), Color(0xFF9DB7A7), Color(0xFFE0D7B7)),
-        listOf(Color(0xFF596579), Color(0xFF8DA2B8), Color(0xFFCFB7A7)),
+    NovexArtwork(
+        kind = NovexArtworkKind.WORLD,
+        seed = seed,
+        imageModel = null,
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
     )
-    val colors = palettes[variant]
-    Canvas(Modifier.fillMaxSize()) {
-        drawRect(Brush.linearGradient(colors))
-        drawCircle(
-            color = Color.White.copy(alpha = 0.2f),
-            radius = size.minDimension * 0.34f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.78f, size.height * 0.2f),
-        )
-        val back = Path().apply {
-            moveTo(0f, size.height * 0.72f)
-            lineTo(size.width * 0.24f, size.height * 0.38f)
-            lineTo(size.width * 0.48f, size.height * 0.68f)
-            lineTo(size.width * 0.7f, size.height * 0.3f)
-            lineTo(size.width, size.height * 0.66f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        drawPath(back, Color(0xFF26394E).copy(alpha = 0.34f))
-        val front = Path().apply {
-            moveTo(0f, size.height * 0.82f)
-            lineTo(size.width * 0.32f, size.height * 0.62f)
-            lineTo(size.width * 0.58f, size.height * 0.82f)
-            lineTo(size.width * 0.84f, size.height * 0.55f)
-            lineTo(size.width, size.height * 0.74f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
-        drawPath(front, Color(0xFF182B3D).copy(alpha = 0.48f))
-    }
 }
 
 @Composable
 private fun NovexDefaultCharacterArtwork(seed: String) {
-    val variant = seed.hashCode().absoluteValue % 4
-    val palettes = listOf(
-        Color(0xFFD9E1EA) to Color(0xFF9BAEC2),
-        Color(0xFFE7DDE5) to Color(0xFFB4A1B0),
-        Color(0xFFDDE7DF) to Color(0xFF9CB3A3),
-        Color(0xFFE7E1D8) to Color(0xFFB9A994),
+    NovexArtwork(
+        kind = NovexArtworkKind.CHARACTER,
+        seed = seed,
+        imageModel = null,
+        contentDescription = null,
+        modifier = Modifier.fillMaxSize(),
     )
-    val colors = palettes[variant]
-    Canvas(Modifier.fillMaxSize().background(colors.first)) {
-        drawCircle(
-            color = colors.second.copy(alpha = 0.78f),
-            radius = size.width * 0.22f,
-            center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * 0.34f),
-        )
-        drawOval(
-            color = colors.second.copy(alpha = 0.72f),
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.18f, size.height * 0.58f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.64f, size.height * 0.55f),
-        )
-        drawCircle(
-            brush = Brush.radialGradient(
-                listOf(Color.White.copy(alpha = 0.35f), Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(size.width * 0.25f, size.height * 0.2f),
-                radius = size.width * 0.55f,
-            ),
-            radius = size.width * 0.55f,
-            center = androidx.compose.ui.geometry.Offset(size.width * 0.25f, size.height * 0.2f),
-        )
-    }
 }

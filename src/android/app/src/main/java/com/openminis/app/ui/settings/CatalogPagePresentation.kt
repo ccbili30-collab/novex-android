@@ -16,11 +16,3 @@ internal fun visibleCharacterFacts(profile: CharacterVersionProfile): List<Chara
     profile.occupation.trim().takeIf(String::isNotEmpty)?.let { add(CharacterFact("职业", it)) }
     profile.summary.trim().takeIf(String::isNotEmpty)?.let { add(CharacterFact("简介", it)) }
 }
-
-/** One compact line is enough for a module list; the full body belongs to its detail page. */
-internal fun moduleListSummary(text: String, maxCharacters: Int = 48): String {
-    val normalized = text.lineSequence().map(String::trim).filter(String::isNotEmpty).joinToString(" ")
-    if (normalized.isBlank()) return "尚未填写内容"
-    if (normalized.length <= maxCharacters) return normalized
-    return normalized.take(maxCharacters).trimEnd('。', '，', '；', '、', ' ') + "…"
-}

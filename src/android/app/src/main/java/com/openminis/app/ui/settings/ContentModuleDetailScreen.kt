@@ -37,6 +37,7 @@ import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleRepository
+import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
@@ -84,7 +85,7 @@ fun CatalogContentModuleDetailScreen(
         moduleRepository.module(moduleId)?.let { found ->
             module = found
             name = found.name
-            body = decodeWorldModuleText(found.contentJson)
+            body = ContentModuleTextCodec.decode(found.contentJson)
             image = mediaRepository.assetFor(owner, MediaAssetSlot.MODULE_IMAGE)
         }
         loaded = true
@@ -96,7 +97,7 @@ fun CatalogContentModuleDetailScreen(
         scope.launch {
             runCatching {
                 moduleRepository.rename(moduleId, name)
-                moduleRepository.updateContent(moduleId, encodeWorldModuleText(body))
+                moduleRepository.updateContent(moduleId, ContentModuleTextCodec.encode(body))
             }.onSuccess { onBack() }.onFailure {
                 saving = false
                 error = it.message

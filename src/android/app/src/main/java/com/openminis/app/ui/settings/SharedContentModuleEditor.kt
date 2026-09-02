@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
@@ -17,7 +15,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,29 +27,23 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.ContentModuleEntity
+import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleRepository
-import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.ui.novex.NovexContentModuleSummary
+import com.openminis.app.ui.novex.toNovexPresentation
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 @Composable
 internal fun SharedContentModuleEditor(
     owner: ModuleOwner,
     header: String,
     footer: String,
-    allowedTypes: List<ContentModuleType>,
-    typeName: (ContentModuleType) -> String,
     onOpenModule: (String) -> Unit,
 ) {
     val app = LocalContext.current.applicationContext as MinisApp
@@ -65,6 +56,9 @@ internal fun SharedContentModuleEditor(
     var arranging by remember { mutableStateOf(false) }
     var deleteModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val moduleScope = remember(owner.type) {
+        requireNotNull(ContentModuleCatalog.scopeFor(owner.type)) { "该对象不能拥有内容模块" }
+    }
     val mediaRepository = rememberMediaRepository(app)
     LaunchedEffect(owner, refresh) {
         modules = repository.list(owner)
@@ -102,18 +96,23 @@ internal fun SharedContentModuleEditor(
     if (addModule) AlertDialog(
         onDismissRequest = { addModule = false },
         title = { Text("添加模块") },
-        text = { Column { allowedTypes.forEach { type ->
+        text = { Column { ContentModuleCatalog.availableToAdd(
+            scope = moduleScope,
+            existingTypes = modules.map(ContentModuleEntity::type),
+        ).forEach { definition ->
             TextButton(
                 onClick = {
                     addModule = false
                     scope.launch {
-                        runCatching { repository.add(owner, type, typeName(type)) }
+                        runCatching {
+                            repository.add(owner, definition.type, definition.displayName)
+                        }
                             .onSuccess { created -> onOpenModule(created.id) }
                             .onFailure { error = it.message }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(typeName(type)) }
+            ) { Text(definition.displayName) }
         } } },
         confirmButton = { TextButton(onClick = { addModule = false }) { Text("取消") } },
     )
@@ -161,25 +160,11 @@ private fun SharedModuleSummaryRow(
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        imagePath.existingMediaFile()?.let { file ->
-            AsyncImage(
-                model = file,
-                contentDescription = "${module.name}代表图",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
-            )
-        }
-        Column(Modifier.weight(1f).padding(start = if (imagePath == null) 0.dp else 12.dp)) {
-            Text(module.name, fontWeight = FontWeight.SemiBold)
-            Text(
-                moduleListSummary(decodeWorldModuleText(module.contentJson)),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-        }
+        NovexContentModuleSummary(
+            presentation = module.toNovexPresentation(),
+            imageModel = imagePath.existingMediaFile(),
+            modifier = Modifier.weight(1f),
+        )
         if (arranging) {
             IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移")
@@ -193,53 +178,3 @@ private fun SharedModuleSummaryRow(
         }
     }
 }
-
-internal val WORLD_PAGE_MODULE_TYPES = listOf(
-    ContentModuleType.TIMELINE,
-    ContentModuleType.ERA_EVENT,
-    ContentModuleType.MAP,
-    ContentModuleType.REGION,
-    ContentModuleType.FACTION,
-    ContentModuleType.RACE,
-    ContentModuleType.CUSTOM,
-)
-
-internal val CHARACTER_PAGE_MODULE_TYPES = listOf(
-    ContentModuleType.QUOTES,
-    ContentModuleType.WORLD_EXPERIENCE,
-    ContentModuleType.ATTRIBUTE_PANEL,
-    ContentModuleType.EQUIPMENT,
-    ContentModuleType.TALENT_SKILL,
-    ContentModuleType.APPEARANCE_PERSONALITY,
-    ContentModuleType.INTEREST,
-    ContentModuleType.CUSTOM,
-)
-
-internal fun worldModuleDisplayName(type: ContentModuleType): String = when (type) {
-    ContentModuleType.TIMELINE -> "时间线"
-    ContentModuleType.ERA_EVENT -> "时代与事件"
-    ContentModuleType.MAP -> "地图"
-    ContentModuleType.REGION -> "地区设定"
-    ContentModuleType.FACTION -> "势力设定"
-    ContentModuleType.RACE -> "种族设定"
-    ContentModuleType.CUSTOM -> "自定义模块"
-    else -> type.name
-}
-
-internal fun characterModuleDisplayName(type: ContentModuleType): String = when (type) {
-    ContentModuleType.QUOTES -> "多形态语录"
-    ContentModuleType.WORLD_EXPERIENCE -> "世界经历"
-    ContentModuleType.ATTRIBUTE_PANEL -> "属性面板"
-    ContentModuleType.EQUIPMENT -> "随身装备"
-    ContentModuleType.TALENT_SKILL -> "天赋技能"
-    ContentModuleType.APPEARANCE_PERSONALITY -> "外貌性格"
-    ContentModuleType.INTEREST -> "兴趣爱好"
-    ContentModuleType.CUSTOM -> "自定义模块"
-    else -> type.name
-}
-
-internal fun encodeWorldModuleText(text: String): String = JSONObject().put("text", text).toString()
-
-internal fun decodeWorldModuleText(contentJson: String): String = runCatching {
-    JSONObject(contentJson).optString("text")
-}.getOrElse { contentJson }

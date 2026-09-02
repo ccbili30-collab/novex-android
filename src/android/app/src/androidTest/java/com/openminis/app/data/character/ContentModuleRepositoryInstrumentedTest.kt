@@ -117,4 +117,40 @@ class ContentModuleRepositoryInstrumentedTest {
         modules.delete(region.id)
         assertFalse(modules.references(event.id).any { it.target.id == region.id })
     }
+
+    @Test
+    fun builtInModulesCannotRepeatButCustomModulesCan() = runBlocking {
+        val world = catalog.createWorld("蒸汽城", now = 10)
+        val owner = ModuleOwner.world(world.id)
+
+        modules.add(owner, ContentModuleType.MAP, "主地图", now = 20)
+        val duplicateFailure = runCatching {
+            modules.add(owner, ContentModuleType.MAP, "地下地图", now = 21)
+        }.exceptionOrNull()
+        modules.add(owner, ContentModuleType.CUSTOM, "航运规则", now = 22)
+        modules.add(owner, ContentModuleType.CUSTOM, "能源规则", now = 23)
+
+        assertTrue(duplicateFailure is IllegalArgumentException)
+        assertEquals(
+            listOf(ContentModuleType.MAP, ContentModuleType.CUSTOM, ContentModuleType.CUSTOM),
+            modules.list(owner).map { it.type },
+        )
+    }
+
+    @Test
+    fun copyingIntoAnExistingTargetSkipsOccupiedBuiltInsButKeepsCustomModules() = runBlocking {
+        val source = ModuleOwner.world(catalog.createWorld("源世界", now = 10).id)
+        val target = ModuleOwner.world(catalog.createWorld("目标世界", now = 11).id)
+        modules.add(source, ContentModuleType.MAP, "源地图", now = 20)
+        modules.add(source, ContentModuleType.CUSTOM, "航运规则", now = 21)
+        modules.add(target, ContentModuleType.MAP, "目标地图", now = 22)
+
+        val copied = modules.copyAll(source, target, now = 30)
+
+        assertEquals(listOf(ContentModuleType.CUSTOM), copied.map { it.type })
+        assertEquals(
+            listOf(ContentModuleType.MAP, ContentModuleType.CUSTOM),
+            modules.list(target).map { it.type },
+        )
+    }
 }
