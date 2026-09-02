@@ -60,10 +60,7 @@ class CharacterLibraryService(
         source.allVersions.zip(copy.allVersions).forEach { (sourceVersion, copiedVersion) ->
             val sourceOwner = ModuleOwner.characterVersion(sourceVersion.id)
             val copiedOwner = ModuleOwner.characterVersion(copiedVersion.id)
-            modules.copyAll(sourceOwner, copiedOwner, now)
-            listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
-                media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(copiedOwner, slot, asset.id) }
-            }
+            copyVersionContents(sourceOwner, copiedOwner, now)
         }
         return copy
     }
@@ -87,10 +84,7 @@ class CharacterLibraryService(
         )
         val sourceOwner = ModuleOwner.characterVersion(source.id)
         val variantOwner = ModuleOwner.characterVersion(variant.id)
-        modules.copyAll(sourceOwner, variantOwner, now)
-        listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
-            media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(variantOwner, slot, asset.id) }
-        }
+        copyVersionContents(sourceOwner, variantOwner, now)
         catalog.removeVersionFromWorld(worldId, source.id)
         catalog.addVersionToWorld(worldId, variant.id, position, now)
         return variant
@@ -100,7 +94,7 @@ class CharacterLibraryService(
         val version = requireNotNull(catalog.version(versionId)) { "角色版本不存在" }
         require(version.kind == CharacterVersionKind.VARIANT) { "不能删除角色本体" }
         val owner = ModuleOwner.characterVersion(version.id)
-        modules.list(owner).forEach { modules.delete(it.id) }
+        deleteModules(owner)
         media.removeAll(owner)
         catalog.deleteVersion(version.id)
     }
@@ -109,7 +103,7 @@ class CharacterLibraryService(
         val aggregate = requireNotNull(catalog.character(characterId)) { "角色不存在" }
         aggregate.allVersions.forEach { version ->
             val owner = ModuleOwner.characterVersion(version.id)
-            modules.list(owner).forEach { modules.delete(it.id) }
+            deleteModules(owner)
             media.removeAll(owner)
         }
         catalog.deleteCharacter(characterId)
@@ -130,6 +124,30 @@ class CharacterLibraryService(
                 collapsed = module.collapsed,
                 now = now,
             )
+        }
+    }
+
+    private suspend fun copyVersionContents(
+        sourceOwner: ModuleOwner,
+        targetOwner: ModuleOwner,
+        now: Long,
+    ) {
+        val sourceModules = modules.list(sourceOwner)
+        val copiedModules = modules.copyAll(sourceOwner, targetOwner, now)
+        sourceModules.zip(copiedModules).forEach { (sourceModule, copiedModule) ->
+            media.assetFor(ModuleOwner.contentModule(sourceModule.id), MediaAssetSlot.MODULE_IMAGE)?.let { asset ->
+                media.attach(ModuleOwner.contentModule(copiedModule.id), MediaAssetSlot.MODULE_IMAGE, asset.id)
+            }
+        }
+        listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
+            media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(targetOwner, slot, asset.id) }
+        }
+    }
+
+    private suspend fun deleteModules(owner: ModuleOwner) {
+        modules.list(owner).forEach { module ->
+            media.removeAll(ModuleOwner.contentModule(module.id))
+            modules.delete(module.id)
         }
     }
 }

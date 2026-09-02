@@ -72,6 +72,7 @@ class MediaAssetRepository(
         val exists = when (owner.type) {
             ModuleOwnerType.WORLD -> dao.worldExists(owner.id)
             ModuleOwnerType.CHARACTER_VERSION -> dao.characterVersionExists(owner.id)
+            ModuleOwnerType.CONTENT_MODULE -> dao.contentModuleExists(owner.id)
         }
         require(exists) { "资源所有者不存在" }
     }
@@ -87,6 +88,7 @@ class MediaAssetRepository(
                 MediaAssetSlot.CHARACTER_AVATAR,
                 MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
             )
+            ModuleOwnerType.CONTENT_MODULE -> slot == MediaAssetSlot.MODULE_IMAGE
         }
         require(valid) { "资源槽位与所有者类型不匹配" }
     }

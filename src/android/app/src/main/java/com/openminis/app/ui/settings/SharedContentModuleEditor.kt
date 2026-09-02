@@ -1,24 +1,23 @@
 package com.openminis.app.ui.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,13 +30,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleRepository
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -49,34 +53,46 @@ internal fun SharedContentModuleEditor(
     footer: String,
     allowedTypes: List<ContentModuleType>,
     typeName: (ContentModuleType) -> String,
+    onOpenModule: (String) -> Unit,
 ) {
     val app = LocalContext.current.applicationContext as MinisApp
     val repository = remember(app) { ContentModuleRepository(app.database.contentModuleDao()) }
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
     var modules by remember { mutableStateOf<List<ContentModuleEntity>>(emptyList()) }
+    var moduleImages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var addModule by remember { mutableStateOf(false) }
-    var renameModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    var editModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
-    var editText by remember { mutableStateOf("") }
+    var arranging by remember { mutableStateOf(false) }
+    var deleteModule by remember { mutableStateOf<ContentModuleEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(owner, refresh) { modules = repository.list(owner) }
+    val mediaRepository = rememberMediaRepository(app)
+    LaunchedEffect(owner, refresh) {
+        modules = repository.list(owner)
+        moduleImages = modules.mapNotNull { module ->
+            mediaRepository.assetFor(ModuleOwner.contentModule(module.id), MediaAssetSlot.MODULE_IMAGE)
+                ?.managedPath?.let { module.id to it }
+        }.toMap()
+    }
 
     SettingsSection(header = header, footer = footer) {
+        if (modules.isNotEmpty()) Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+        ) {
+            TextButton(onClick = { arranging = !arranging }) { Text(if (arranging) "完成排列" else "排列与删除") }
+        }
         modules.forEachIndexed { index, module ->
-            SharedModuleRow(
+            SharedModuleSummaryRow(
                 module = module,
+                imagePath = moduleImages[module.id],
                 canMoveUp = index > 0,
                 canMoveDown = index < modules.lastIndex,
-                onToggle = {
-                    scope.launch { repository.setCollapsed(module.id, !module.collapsed); refresh++ }
-                },
-                onEdit = { editModule = module; editText = decodeWorldModuleText(module.contentJson) },
-                onRename = { renameModule = module; renameText = module.name },
+                arranging = arranging,
+                onOpen = { onOpenModule(module.id) },
                 onMove = { delta -> scope.launch { repository.move(module.id, index + delta); refresh++ } },
-                onDelete = { scope.launch { repository.delete(module.id); refresh++ } },
+                onDelete = { deleteModule = module },
             )
+            if (index < modules.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 12.dp))
         }
         TextButton(onClick = { addModule = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
             Icon(Icons.Default.Add, contentDescription = null)
@@ -92,7 +108,7 @@ internal fun SharedContentModuleEditor(
                     addModule = false
                     scope.launch {
                         runCatching { repository.add(owner, type, typeName(type)) }
-                            .onSuccess { refresh++ }
+                            .onSuccess { created -> onOpenModule(created.id) }
                             .onFailure { error = it.message }
                     }
                 },
@@ -101,43 +117,22 @@ internal fun SharedContentModuleEditor(
         } } },
         confirmButton = { TextButton(onClick = { addModule = false }) { Text("取消") } },
     )
-    renameModule?.let { module ->
+    deleteModule?.let { module ->
         AlertDialog(
-            onDismissRequest = { renameModule = null },
-            title = { Text("重命名模块") },
-            text = { OutlinedTextField(renameText, { renameText = it }, singleLine = true) },
-            confirmButton = {
-                TextButton(
-                    enabled = renameText.isNotBlank(),
-                    onClick = {
-                        renameModule = null
-                        scope.launch { repository.rename(module.id, renameText); refresh++ }
-                    },
-                ) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { renameModule = null }) { Text("取消") } },
-        )
-    }
-    editModule?.let { module ->
-        AlertDialog(
-            onDismissRequest = { editModule = null },
-            title = { Text("编辑${module.name}") },
-            text = {
-                OutlinedTextField(
-                    value = editText,
-                    onValueChange = { editText = it },
-                    label = { Text("内容") },
-                    minLines = 8,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
+            onDismissRequest = { deleteModule = null },
+            title = { Text("删除${module.name}？") },
+            text = { Text("模块内容和它的代表图引用会被移除；仍被其他对象使用的图片文件不会误删。") },
             confirmButton = {
                 TextButton(onClick = {
-                    editModule = null
-                    scope.launch { repository.updateContent(module.id, encodeWorldModuleText(editText)); refresh++ }
-                }) { Text("保存") }
+                    deleteModule = null
+                    scope.launch {
+                        mediaRepository.removeAll(ModuleOwner.contentModule(module.id))
+                        repository.delete(module.id)
+                        refresh++
+                    }
+                }) { Text("删除") }
             },
-            dismissButton = { TextButton(onClick = { editModule = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { deleteModule = null }) { Text("取消") } },
         )
     }
     error?.let { message ->
@@ -151,44 +146,51 @@ internal fun SharedContentModuleEditor(
 }
 
 @Composable
-private fun SharedModuleRow(
+private fun SharedModuleSummaryRow(
     module: ContentModuleEntity,
+    imagePath: String?,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
-    onToggle: () -> Unit,
-    onEdit: () -> Unit,
-    onRename: () -> Unit,
+    arranging: Boolean,
+    onOpen: () -> Unit,
     onMove: (Int) -> Unit,
     onDelete: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(if (module.collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess, contentDescription = null)
-            Text(module.name, modifier = Modifier.weight(1f).padding(start = 8.dp), fontWeight = FontWeight.Medium)
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = !arranging, onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        imagePath.existingMediaFile()?.let { file ->
+            AsyncImage(
+                model = file,
+                contentDescription = "${module.name}代表图",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
+            )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column(Modifier.weight(1f).padding(start = if (imagePath == null) 0.dp else 12.dp)) {
+            Text(module.name, fontWeight = FontWeight.SemiBold)
+            Text(
+                moduleListSummary(decodeWorldModuleText(module.contentJson)),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp),
+            )
+        }
+        if (arranging) {
             IconButton(onClick = { onMove(-1) }, enabled = canMoveUp) {
                 Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移")
             }
             IconButton(onClick = { onMove(1) }, enabled = canMoveDown) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移")
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "编辑内容") }
-            TextButton(onClick = onRename) { Text("重命名") }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "删除模块") }
+        } else {
+            Icon(Icons.Default.ChevronRight, contentDescription = "打开模块")
         }
-        if (!module.collapsed) Text(
-            decodeWorldModuleText(module.contentJson).ifBlank { "尚未填写内容" },
-            modifier = Modifier.padding(start = 40.dp, end = 16.dp, bottom = 12.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

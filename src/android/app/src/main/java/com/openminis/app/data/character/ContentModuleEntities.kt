@@ -10,6 +10,7 @@ import androidx.room.TypeConverter
 enum class ModuleOwnerType {
     WORLD,
     CHARACTER_VERSION,
+    CONTENT_MODULE,
 }
 
 data class ModuleOwner(
@@ -19,6 +20,7 @@ data class ModuleOwner(
     companion object {
         fun world(id: String) = ModuleOwner(ModuleOwnerType.WORLD, id)
         fun characterVersion(id: String) = ModuleOwner(ModuleOwnerType.CHARACTER_VERSION, id)
+        fun contentModule(id: String) = ModuleOwner(ModuleOwnerType.CONTENT_MODULE, id)
     }
 }
 

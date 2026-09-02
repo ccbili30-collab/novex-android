@@ -99,4 +99,26 @@ class MediaAssetRepositoryInstrumentedTest {
         }
         Unit
     }
+
+    @Test
+    fun contentModuleCanOwnAnOptionalProtectedImage() = runBlocking {
+        val world = catalog.createWorld("群星纪", now = 10)
+        val module = ContentModuleRepository(database.contentModuleDao()).add(
+            owner = ModuleOwner.world(world.id),
+            type = ContentModuleType.MAP,
+            name = "苍穹大陆地图",
+            now = 11,
+        )
+        val file = File(mediaDirectory, "map.png").apply { writeBytes(byteArrayOf(4, 5, 6)) }
+        val asset = repository.register(file.absolutePath, "image/png", "hash-map", now = 20)
+        val moduleOwner = ModuleOwner.contentModule(module.id)
+
+        repository.attach(moduleOwner, MediaAssetSlot.MODULE_IMAGE, asset.id)
+
+        assertEquals(asset.id, repository.assetFor(moduleOwner, MediaAssetSlot.MODULE_IMAGE)?.id)
+        assertEquals(1, repository.referenceCount(asset.id))
+        repository.removeAll(moduleOwner)
+        assertNull(repository.asset(asset.id))
+        assertFalse(file.exists())
+    }
 }

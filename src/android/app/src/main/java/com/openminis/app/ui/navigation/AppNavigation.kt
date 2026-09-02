@@ -162,6 +162,7 @@ object Routes {
     const val STORY_WORLD = "characters/world/{worldId}"
     const val STORY_WORLD_EDIT = "characters/world/edit?worldId={worldId}"
     const val CHARACTER_DETAIL = "characters/card/{characterId}"
+    const val CONTENT_MODULE_DETAIL = "characters/module/{moduleId}"
     const val CHARACTER_EDIT = "characters/edit?worldId={worldId}&characterId={characterId}"
     const val PERSONA_EDIT = "characters/persona/edit?worldId={worldId}&personaId={personaId}"
     const val CHARACTER_START = "characters/start/{characterId}"
@@ -208,6 +209,7 @@ object Routes {
     fun storyWorldEdit(worldId: String? = null) =
         if (worldId == null) "characters/world/edit" else "characters/world/edit?worldId=${android.net.Uri.encode(worldId)}"
     fun characterDetail(characterId: String) = "characters/card/${android.net.Uri.encode(characterId)}"
+    fun contentModuleDetail(moduleId: String) = "characters/module/${android.net.Uri.encode(moduleId)}"
     fun characterEdit(worldId: String, characterId: String? = null) = buildString {
         append("characters/edit?worldId=").append(android.net.Uri.encode(worldId))
         characterId?.let { append("&characterId=").append(android.net.Uri.encode(it)) }
@@ -676,6 +678,7 @@ fun AppNavigation(
                     )
                     navController.safeNavigate(Routes.chat(draft))
                 },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
             )
         }
 
@@ -717,6 +720,18 @@ fun AppNavigation(
                     )
                 },
                 onDuplicated = { navController.safeNavigate(Routes.characterDetail(it)) },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
+            )
+        }
+
+        composable(
+            route = Routes.CONTENT_MODULE_DETAIL,
+            arguments = listOf(navArgument("moduleId") { type = NavType.StringType }),
+        ) { entry ->
+            val moduleId = entry.arguments?.getString("moduleId") ?: return@composable
+            com.openminis.app.ui.settings.CatalogContentModuleDetailScreen(
+                moduleId = moduleId,
+                onBack = { navController.safePopBackStack() },
             )
         }
 

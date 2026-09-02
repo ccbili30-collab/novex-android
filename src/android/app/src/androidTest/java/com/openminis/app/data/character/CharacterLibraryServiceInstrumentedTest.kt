@@ -73,6 +73,18 @@ class CharacterLibraryServiceInstrumentedTest {
             MediaAssetSlot.CHARACTER_AVATAR,
             avatar.id,
         )
+        val quoteImageFile = File(directory, "quote.png").apply { writeBytes(byteArrayOf(4, 5, 6)) }
+        val quoteImage = mediaRepository.register(
+            quoteImageFile.absolutePath,
+            "image/png",
+            "quote-image-hash",
+            now = 14,
+        )
+        mediaRepository.attach(
+            ModuleOwner.contentModule(quotes.id),
+            MediaAssetSlot.MODULE_IMAGE,
+            quoteImage.id,
+        )
 
         val copy = service.duplicateCharacter(source.character.id, now = 20)
         val copiedOwner = ModuleOwner.characterVersion(copy.original.id)
@@ -82,6 +94,11 @@ class CharacterLibraryServiceInstrumentedTest {
         assertEquals("晚上好", org.json.JSONObject(copiedQuotes.contentJson).getString("text"))
         assertEquals(copiedSkills.id, moduleRepository.references(copiedQuotes.id).single().targetId)
         assertEquals(2, mediaRepository.referenceCount(avatar.id))
+        assertEquals(
+            quoteImage.id,
+            mediaRepository.assetFor(ModuleOwner.contentModule(copiedQuotes.id), MediaAssetSlot.MODULE_IMAGE)?.id,
+        )
+        assertEquals(2, mediaRepository.referenceCount(quoteImage.id))
 
         moduleRepository.updateContent(
             copiedQuotes.id,
@@ -97,6 +114,8 @@ class CharacterLibraryServiceInstrumentedTest {
         assertNull(catalog.character(source.character.id))
         assertNotNull(mediaRepository.asset(avatar.id))
         assertTrue(avatarFile.exists())
+        assertNotNull(mediaRepository.asset(quoteImage.id))
+        assertTrue(quoteImageFile.exists())
 
         val exported = service.exportDocument(copy.character.id)
         assertEquals(1, exported.versions.size)
@@ -108,6 +127,8 @@ class CharacterLibraryServiceInstrumentedTest {
         service.deleteCharacter(copy.character.id)
         assertNull(mediaRepository.asset(avatar.id))
         assertFalse(avatarFile.exists())
+        assertNull(mediaRepository.asset(quoteImage.id))
+        assertFalse(quoteImageFile.exists())
     }
 
     @Test

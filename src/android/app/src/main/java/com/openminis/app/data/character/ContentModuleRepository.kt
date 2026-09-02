@@ -35,6 +35,8 @@ class ContentModuleRepository(
     suspend fun list(owner: ModuleOwner): List<ContentModuleEntity> =
         dao.list(owner.type, owner.id)
 
+    suspend fun module(id: String): ContentModuleEntity? = dao.module(id)
+
     suspend fun rename(id: String, name: String, now: Long = System.currentTimeMillis()) {
         val module = requireNotNull(dao.module(id)) { "模块不存在" }
         val normalized = name.trim()
@@ -133,6 +135,7 @@ class ContentModuleRepository(
         val exists = when (owner.type) {
             ModuleOwnerType.WORLD -> dao.worldExists(owner.id)
             ModuleOwnerType.CHARACTER_VERSION -> dao.characterVersionExists(owner.id)
+            ModuleOwnerType.CONTENT_MODULE -> false
         }
         require(exists) { "模块所有者不存在" }
     }

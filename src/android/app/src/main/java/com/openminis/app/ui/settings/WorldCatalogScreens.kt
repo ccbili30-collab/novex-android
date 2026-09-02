@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
@@ -172,6 +173,7 @@ fun CatalogWorldDetailScreen(
     onOpenSession: (String) -> Unit,
     onStartWorldNovax: (String?) -> Unit,
     onStartCharacterChat: (String, String) -> Unit,
+    onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     CharacterCardStore.initialize(context)
@@ -194,6 +196,7 @@ fun CatalogWorldDetailScreen(
     var selectedPersonaId by remember { mutableStateOf<String?>(null) }
     var selectedVersionId by remember { mutableStateOf<String?>(null) }
     var editVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
+    var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
         val world = catalog.world(worldId)
@@ -208,7 +211,11 @@ fun CatalogWorldDetailScreen(
                 versions = versions,
                 availableVersions = catalog.listVersions(),
                 versionWorlds = versions.associate { it.id to catalog.worldsForVersion(it.id) },
-                media = MediaAssetSlot.entries.mapNotNull { slot ->
+                media = listOf(
+                    MediaAssetSlot.WORLD_COVER,
+                    MediaAssetSlot.WORLD_LOGO,
+                    MediaAssetSlot.WORLD_BACKGROUND,
+                ).mapNotNull { slot ->
                     mediaRepo.assetFor(owner, slot)?.let { slot to it }
                 }.toMap(),
             )
@@ -219,8 +226,13 @@ fun CatalogWorldDetailScreen(
         title = current?.world?.name ?: "世界",
         onBack = onBack,
         actions = {
-            if (current != null) IconButton(onClick = onEditWorld) {
-                Icon(Icons.Default.Edit, contentDescription = "编辑世界")
+            if (current != null) {
+                IconButton(onClick = { creatorNotice = true }) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = "帮我创作")
+                }
+                IconButton(onClick = onEditWorld) {
+                    Icon(Icons.Default.Edit, contentDescription = "编辑世界")
+                }
             }
         },
     ) {
@@ -252,6 +264,7 @@ fun CatalogWorldDetailScreen(
                     footer = "时间线、事件、地图、地区、势力、种族和自定义模块只在添加后出现。",
                     allowedTypes = WORLD_PAGE_MODULE_TYPES,
                     typeName = ::worldModuleDisplayName,
+                    onOpenModule = onOpenModule,
                 )
                 SettingsSection(
                     header = "角色卡",
@@ -472,6 +485,12 @@ fun CatalogWorldDetailScreen(
             confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
         )
     }
+    if (creatorNotice) AlertDialog(
+        onDismissRequest = { creatorNotice = false },
+        title = { Text("帮我创作") },
+        text = { Text("入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改世界内容。") },
+        confirmButton = { TextButton(onClick = { creatorNotice = false }) { Text("知道了") } },
+    )
 }
 
 @Composable
@@ -522,7 +541,11 @@ fun CatalogWorldEditorScreen(
                 name = world.name
                 tags = world.tags().joinToString("、")
                 overview = world.overview
-                val loadedMedia = MediaAssetSlot.entries.mapNotNull { slot ->
+                val loadedMedia = listOf(
+                    MediaAssetSlot.WORLD_COVER,
+                    MediaAssetSlot.WORLD_LOGO,
+                    MediaAssetSlot.WORLD_BACKGROUND,
+                ).mapNotNull { slot ->
                     mediaRepo.assetFor(ModuleOwner.world(worldId), slot)?.let { slot to it }
                 }.toMap()
                 media = loadedMedia
@@ -624,21 +647,42 @@ private fun WorldHero(data: WorldPageData) {
         ?: data.media[MediaAssetSlot.WORLD_COVER]?.managedPath
         ?: data.world.legacyBackgroundPath()
     val logo = data.media[MediaAssetSlot.WORLD_LOGO]?.managedPath
+    val backgroundFile = background.existingMediaFile()
+    val logoFile = logo.existingMediaFile()
+    if (backgroundFile == null && logoFile == null) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Text(data.world.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            data.world.tags().takeIf(List<String>::isNotEmpty)?.let { tags ->
+                Text(
+                    tags.joinToString("  ·  "),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Text(
+                "封面、标志和背景都是可选内容",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        return
+    }
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
     ) {
         Box {
-            background.existingMediaFile()?.let { file ->
+            backgroundFile?.let { file ->
                 AsyncImage(
                     model = file,
                     contentDescription = "${data.world.name}背景",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().height(220.dp),
                 )
-            } ?: Spacer(Modifier.fillMaxWidth().height(120.dp))
+            } ?: Spacer(Modifier.fillMaxWidth().height(148.dp))
             Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-                logo.existingMediaFile()?.let { file ->
+                logoFile?.let { file ->
                     AsyncImage(
                         model = file,
                         contentDescription = "${data.world.name}标志",

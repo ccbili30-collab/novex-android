@@ -28,4 +28,13 @@ class WorldPageModulePolicyTest {
         val original = "第一纪元\n雾港建立"
         assertEquals(original, decodeWorldModuleText(encodeWorldModuleText(original)))
     }
+
+    @Test
+    fun moduleSummarySupportsSparseAndRichContentWithoutRenderingTheWholeBody() {
+        assertEquals("尚未填写内容", moduleListSummary("  \n "))
+        assertEquals(
+            "雾港在第一纪元建立，随后成为沿海势力争夺的中心…",
+            moduleListSummary("雾港在第一纪元建立，随后成为沿海势力争夺的中心。\n这一行不应在列表展开。", 24),
+        )
+    }
 }

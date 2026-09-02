@@ -28,6 +28,7 @@ enum class MediaAssetSlot {
     WORLD_BACKGROUND,
     CHARACTER_AVATAR,
     CHARACTER_PAGE_BACKGROUND,
+    MODULE_IMAGE,
 }
 
 @Entity(

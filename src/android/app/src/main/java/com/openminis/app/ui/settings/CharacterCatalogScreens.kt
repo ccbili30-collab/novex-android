@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -231,6 +232,7 @@ fun CatalogCharacterDetailScreen(
     onEditVersion: (String) -> Unit,
     onCreateVariant: () -> Unit,
     onDuplicated: (String) -> Unit,
+    onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as MinisApp
@@ -246,6 +248,7 @@ fun CatalogCharacterDetailScreen(
     var confirmDeleteRoot by remember { mutableStateOf(false) }
     var confirmDeleteVariant by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var confirmSharedEdit by remember { mutableStateOf<CharacterVersionEntity?>(null) }
+    var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(characterId, refresh) {
         val aggregate = catalog.character(characterId)
@@ -277,6 +280,9 @@ fun CatalogCharacterDetailScreen(
         onBack = onBack,
         actions = {
             if (current != null) {
+                IconButton(onClick = { creatorNotice = true }) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = "帮我创作")
+                }
                 IconButton(onClick = {
                     scope.launch {
                         runCatching { service.exportDocument(characterId) }
@@ -337,13 +343,12 @@ fun CatalogCharacterDetailScreen(
                     }
                 }
                 SettingsSection(header = "基本信息") {
-                    CharacterInfoRow("姓名", profile.name.ifBlank { current.aggregate.character.name })
-                    CharacterInfoRow("标签", profile.tags.joinToString(" · ").ifBlank { "未填写" })
-                    CharacterInfoRow("性别", profile.gender.ifBlank { "未填写" })
-                    CharacterInfoRow("年龄", profile.age.ifBlank { "未填写" })
-                    CharacterInfoRow("种族", profile.race.ifBlank { "未填写" })
-                    CharacterInfoRow("职业", profile.occupation.ifBlank { "未填写" })
-                    CharacterInfoRow("简介", profile.summary.ifBlank { "未填写" })
+                    val facts = visibleCharacterFacts(profile)
+                    if (facts.isEmpty()) Text(
+                        "还没有补充可选信息。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    ) else facts.forEach { fact -> CharacterInfoRow(fact.label, fact.value) }
                     TextButton(
                         onClick = {
                             if (current.worlds[selected.id].orEmpty().isEmpty()) onEditVersion(selected.id)
@@ -372,6 +377,7 @@ fun CatalogCharacterDetailScreen(
                     footer = "模块在复制时复制一次，之后不会与来源持续同步。",
                     allowedTypes = CHARACTER_PAGE_MODULE_TYPES,
                     typeName = ::characterModuleDisplayName,
+                    onOpenModule = onOpenModule,
                 )
                 if (selected.kind == CharacterVersionKind.VARIANT) {
                     OutlinedButton(
@@ -427,6 +433,12 @@ fun CatalogCharacterDetailScreen(
         )
     }
     error?.let { CharacterErrorDialog(it) { error = null } }
+    if (creatorNotice) AlertDialog(
+        onDismissRequest = { creatorNotice = false },
+        title = { Text("帮我创作") },
+        text = { Text("入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改角色内容。") },
+        confirmButton = { TextButton(onClick = { creatorNotice = false }) { Text("知道了") } },
+    )
 }
 
 @Composable
@@ -662,12 +674,27 @@ fun CatalogCharacterEditorScreen(
 
 @Composable
 private fun CharacterHero(name: String, label: String, avatarPath: String?, backgroundPath: String?) {
+    val avatarFile = avatarPath.existingMediaFile()
+    val backgroundFile = backgroundPath.existingMediaFile()
+    if (avatarFile == null && backgroundFile == null) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Text(name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(label, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                "头像和主页背景都可留空",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        return
+    }
     Card(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
-        backgroundPath.existingMediaFile()?.let { file ->
+        backgroundFile?.let { file ->
             AsyncImage(
                 model = file,
                 contentDescription = "$name 主页背景",
@@ -676,7 +703,7 @@ private fun CharacterHero(name: String, label: String, avatarPath: String?, back
             )
         }
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            CharacterAvatar(avatarPath, name)
+            CharacterAvatar(avatarFile?.absolutePath, name)
             Column(Modifier.padding(start = 12.dp)) {
                 Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(label, color = MaterialTheme.colorScheme.primary)
