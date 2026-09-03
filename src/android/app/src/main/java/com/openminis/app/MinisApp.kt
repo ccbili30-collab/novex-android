@@ -8,10 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
-import org.acra.ACRA
-import org.acra.ReportField
-import org.acra.config.CoreConfigurationBuilder
-import org.acra.data.StringFormat
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.openminis.app.browser.BrowserTabPool
@@ -56,6 +52,7 @@ import com.openminis.app.sandbox.offload.SpeechOffloadHandler
 import com.openminis.app.sandbox.offload.WeatherOffloadHandler
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.startup.NovexStartupCoordinator
+import com.openminis.app.startup.NovexCrashBootstrap
 import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.ui.MinisImageFetcher
 import kotlinx.coroutines.launch
@@ -198,7 +195,9 @@ class MinisApp : Application(), ImageLoaderFactory {
      * connectivity transitions, evicts shared OkHttp connection pools, and
      * refreshes the sandbox's /etc/resolv.conf when DNS servers change.
      */
-    val networkMonitor: NetworkMonitor = NetworkMonitor()
+    val networkMonitor: NetworkMonitor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        NetworkMonitor()
+    }
 
     /**
      * Application-scoped BrowserTabPool for shell-invoked `minis-browser-use`.
@@ -218,23 +217,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // writes filesDir/logs/crash-<stamp>.log — same dir + .log extension
         // that AppLogger.listLogFiles already filters for, so reports surface
         // in LogManagementScreen with no extra UI.
-        ACRA.init(
-            this,
-            CoreConfigurationBuilder()
-                .withBuildConfigClass(BuildConfig::class.java)
-                .withReportFormat(StringFormat.JSON)
-                .withLogcatArguments(listOf("-t", "200", "-v", "time"))
-                .withReportContent(
-                    ReportField.APP_VERSION_NAME,
-                    ReportField.APP_VERSION_CODE,
-                    ReportField.ANDROID_VERSION,
-                    ReportField.BUILD,
-                    ReportField.PHONE_MODEL,
-                    ReportField.BRAND,
-                    ReportField.STACK_TRACE,
-                    ReportField.LOGCAT,
-                ),
-        )
+        NovexCrashBootstrap.install(this)
     }
 
     override fun onCreate() {
@@ -252,7 +235,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // the splash screen. Skip everything except ACRA.init (already
         // done in attachBaseContext, which is what makes the :acra
         // process do its job).
-        if (ACRA.isACRASenderServiceProcess()) {
+        if (NovexCrashBootstrap.isReporterProcess()) {
             Log.i("MinisApp", "skipping app init in :acra reporter process")
             return
         }
@@ -268,8 +251,6 @@ class MinisApp : Application(), ImageLoaderFactory {
         // Scan filesDir/logs/ for crash-*.log + native-crash-*.log files
         // touched in the last hour; if THRESHOLD+ are present, stash the
         // list so MainActivity.onCreate can prompt to share them.
-        com.openminis.app.crash.CrashFrequencyDetector.checkAtLaunch(this)
-
         // Hard short-circuit: when checkAtLaunch flips safe-mode ON, skip
         // every heavy subsystem (DB, repositories, offload server, PRoot
         // bind mounts, network monitor, …). The only thing MainActivity
@@ -278,7 +259,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // onward is a potential re-crash trigger on a loop — the whole
         // point of safe-mode is to stop the bleeding before another
         // segfault rewrites the log files.
-        val safeMode = com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()
+        val safeMode = NovexCrashBootstrap.detectSafeMode(this)
         startupCoordinator = NovexStartupCoordinator(
             scope = startupScope,
             safeMode = safeMode,

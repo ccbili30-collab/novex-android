@@ -87,14 +87,17 @@ class NovexStartupCoordinator(
 
     private fun minimumTask(): Deferred<Result<Unit>> = synchronized(this) {
         minimumTask ?: scope.async {
+            NovexStartupMetrics.reportStage("minimum_start")
             runCatching { initializeMinimum() }
                 .onSuccess {
+                    NovexStartupMetrics.reportStage("minimum_ready")
                     mutableState.value = NovexStartupState(
                         phase = NovexStartupPhase.MINIMUM_READY,
                         minimumAvailable = true,
                     )
                 }
                 .onFailure { error ->
+                    NovexStartupMetrics.reportStage("minimum_failed")
                     mutableState.value = NovexStartupState(
                         phase = NovexStartupPhase.FAILED,
                         failure = NovexStartupFailure(

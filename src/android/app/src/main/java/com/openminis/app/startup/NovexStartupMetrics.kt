@@ -35,6 +35,9 @@ object NovexStartupMetrics {
         }
     }
 
+    /** Fine-grained diagnostics; the four public budget markers above remain stable. */
+    fun reportStage(marker: String) = report(marker, elapsed())
+
     private fun elapsed(): Long = SystemClock.elapsedRealtime() - processStartedAt
 
     private fun report(marker: String, elapsedMs: Long) {

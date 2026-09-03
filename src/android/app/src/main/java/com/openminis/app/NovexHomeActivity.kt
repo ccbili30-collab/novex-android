@@ -42,6 +42,7 @@ class NovexHomeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NovexStartupMetrics.reportStage("home_activity_create")
         val app = application as? MinisApp
         if (app == null || !app.startupCoordinator.state.value.minimumAvailable) {
             startActivity(Intent().setClassName(this, "com.openminis.app.NovexLaunchActivity").apply {
@@ -95,6 +96,7 @@ class NovexHomeActivity : ComponentActivity() {
                 )
             }
         }
+        NovexStartupMetrics.reportStage("home_content_set")
     }
 
     private fun openLegacy(route: String) {
