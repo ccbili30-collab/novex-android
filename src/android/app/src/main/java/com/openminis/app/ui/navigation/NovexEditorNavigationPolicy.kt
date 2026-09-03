@@ -15,6 +15,19 @@ internal fun novexEditorBackAction(
     else -> NovexEditorBackAction.LEAVE_EDITOR
 }
 
+/**
+ * Editor-facing seam: callers provide the loaded baseline and current draft,
+ * so an actual field change cannot be hidden behind an untested Boolean.
+ */
+internal fun <Draft> novexEditorBackAction(
+    previewVisible: Boolean,
+    baselineDraft: Draft?,
+    currentDraft: Draft,
+): NovexEditorBackAction = novexEditorBackAction(
+    previewVisible = previewVisible,
+    hasUnsavedChanges = baselineDraft != null && currentDraft != baselineDraft,
+)
+
 internal data class NovexSavedDetailNavigationPlan(
     val replaceCurrentEditor: Boolean,
     val launchSingleTop: Boolean,

@@ -92,10 +92,18 @@ internal fun isNovexRootDockHit(
 
 internal fun nextNovexRootDockVisibility(reportedVisible: Boolean): Boolean = reportedVisible
 
+internal enum class NovexRootNavigationEvent {
+    OUTSIDE_TAP,
+}
+
 internal data class NovexRootNavigationState(
     val selected: NovexRootSpace = NovexRootSpace.CONVERSATIONS,
     val expanded: Boolean = false,
 ) {
+    fun dispatch(event: NovexRootNavigationEvent): NovexRootNavigationState = when (event) {
+        NovexRootNavigationEvent.OUTSIDE_TAP -> collapse()
+    }
+
     fun select(destination: NovexRootSpace): NovexRootNavigationState = copy(
         selected = destination,
         expanded = true,

@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -70,6 +73,13 @@ fun NovexRootScreen(
     val headerHost = remember { NovexRootHeaderHost() }
     val selected = NovexRootSpace.entries[pagerState.currentPage]
 
+    fun collapseDock() {
+        dockExpanded = NovexRootNavigationState(
+            selected = selected,
+            expanded = dockExpanded,
+        ).dispatch(NovexRootNavigationEvent.OUTSIDE_TAP).expanded
+    }
+
     fun select(destination: NovexRootSpace, expand: Boolean = true) {
         showRootDock = true
         if (expand) dockExpanded = true
@@ -95,7 +105,22 @@ fun NovexRootScreen(
                     createItems = header.createItems,
                 )
             } ?: Box(Modifier.fillMaxWidth().height(64.dp))
-            Box(Modifier.fillMaxSize()) {
+            val outsideTapInteraction = remember { MutableInteractionSource() }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (dockExpanded) {
+                            Modifier.clickable(
+                                interactionSource = outsideTapInteraction,
+                                indication = null,
+                                onClick = ::collapseDock,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
                 HorizontalPager(
                     state = pagerState,
                     userScrollEnabled = showRootDock,
@@ -123,6 +148,19 @@ fun NovexRootScreen(
                     }
                 }
                 if (showRootDock) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(116.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.46f to NovexRootColors.Background.copy(alpha = 0.78f),
+                                    1f to NovexRootColors.Background,
+                                ),
+                            ),
+                    )
                     NovexRootDock(
                         selected = selected,
                         expanded = dockExpanded,

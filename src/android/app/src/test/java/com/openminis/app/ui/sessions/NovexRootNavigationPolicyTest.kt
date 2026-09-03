@@ -126,7 +126,7 @@ class NovexRootNavigationPolicyTest {
         val result = NovexRootNavigationState(
             selected = NovexRootSpace.CHARACTERS,
             expanded = true,
-        ).collapse()
+        ).dispatch(NovexRootNavigationEvent.OUTSIDE_TAP)
 
         assertEquals(NovexRootSpace.CHARACTERS, result.selected)
         assertFalse(result.expanded)

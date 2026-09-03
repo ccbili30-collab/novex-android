@@ -13,23 +13,26 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
+import com.openminis.app.ui.navigation.NovexEditorBackAction
+import com.openminis.app.ui.navigation.novexEditorBackAction
 
 /** Shared edit-page chrome. Domain forms remain supplied by each page. */
 @Composable
-internal fun NovexEditorScaffold(
+internal fun <Draft> NovexEditorScaffold(
     title: String,
     loaded: Boolean,
     canSave: Boolean,
     saving: Boolean,
-    hasUnsavedChanges: Boolean,
+    baselineDraft: Draft?,
+    currentDraft: Draft,
     onBack: () -> Unit,
     onPreview: () -> Unit,
     onSave: () -> Unit,
@@ -37,10 +40,20 @@ internal fun NovexEditorScaffold(
     saveContainerColor: Color = NovexColors.Primary,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var showExitPrompt by remember { mutableStateOf(false) }
+    var showExitPrompt by rememberSaveable { mutableStateOf(false) }
     fun requestBack() {
         if (saving) return
-        if (hasUnsavedChanges) showExitPrompt = true else onBack()
+        when (
+            novexEditorBackAction(
+                previewVisible = false,
+                baselineDraft = baselineDraft,
+                currentDraft = currentDraft,
+            )
+        ) {
+            NovexEditorBackAction.PROMPT_SAVE -> showExitPrompt = true
+            NovexEditorBackAction.LEAVE_EDITOR -> onBack()
+            NovexEditorBackAction.CLOSE_PREVIEW -> Unit
+        }
     }
     BackHandler(onBack = ::requestBack)
 
