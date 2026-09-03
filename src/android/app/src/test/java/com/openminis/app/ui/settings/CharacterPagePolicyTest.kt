@@ -5,6 +5,8 @@ import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
+import com.openminis.app.data.character.CharacterCustomAttribute
+import com.openminis.app.data.character.CharacterRelationship
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -72,5 +74,24 @@ class CharacterPagePolicyTest {
         assertEquals("本体 · 2 个分身", characterVersionSelectorLabel(CharacterVersionKind.ORIGINAL, "本体", 2))
         assertEquals("赛博分身 · 2 个分身", characterVersionSelectorLabel(CharacterVersionKind.VARIANT, "赛博分身", 2))
         assertEquals("本体", characterVersionSelectorLabel(CharacterVersionKind.ORIGINAL, "", 0))
+    }
+
+    @Test
+    fun displayPageCondensesProfileIntoSparseOrderedRows() {
+        assertEquals(
+            listOf("人物简介", "基本信息", "自定义属性", "角色关系"),
+            characterOverviewRows(
+                CharacterVersionProfile(
+                    name = "苏晚晴",
+                    tags = listOf("医者", "仁善"),
+                    race = "人类",
+                    occupation = "医师",
+                    summary = "江南医庐之女。",
+                    customAttributes = listOf(CharacterCustomAttribute("医术", "精通")),
+                    relationships = listOf(CharacterRelationship("林深", "故友", "")),
+                ),
+            ).map { it.title },
+        )
+        assertEquals(emptyList<CharacterOverviewRow>(), characterOverviewRows(CharacterVersionProfile(name = "留白")))
     }
 }

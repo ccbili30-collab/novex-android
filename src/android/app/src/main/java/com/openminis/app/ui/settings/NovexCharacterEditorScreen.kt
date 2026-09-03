@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,11 +36,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterVersionEntity
@@ -227,7 +234,14 @@ fun NovexCharacterEditorScreen(
             Button(
                 onClick = ::save,
                 enabled = loaded && !draft.isBlank && !saving,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NovexColors.Text,
+                    contentColor = Color.White,
+                    disabledContainerColor = NovexColors.Text.copy(alpha = 0.35f),
+                    disabledContentColor = Color.White.copy(alpha = 0.75f),
+                ),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 16.dp, vertical = 10.dp),
             ) { Text(if (saving) "保存中" else "保存") }
         },
     ) {
@@ -249,12 +263,11 @@ fun NovexCharacterEditorScreen(
                 }
                 val editingVariant = createVariant || sourceVersion?.kind == CharacterVersionKind.VARIANT
                 if (!editingVariant) {
-                    OutlinedTextField(
+                    CharacterDraftInlineField(
+                        label = "名称",
                         value = draft.rootName,
-                        onValueChange = { value -> draft = draft.copy(rootName = value, name = value) },
-                        label = { Text("名称") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = "角色名称",
+                        onChange = { value -> draft = draft.copy(rootName = value, name = value) },
                     )
                 } else {
                     Row(
@@ -264,26 +277,23 @@ fun NovexCharacterEditorScreen(
                         Text("所属角色", color = NovexColors.SecondaryText, modifier = Modifier.weight(1f))
                         Text(draft.rootName, color = NovexColors.Text)
                     }
-                    OutlinedTextField(
+                    CharacterDraftInlineField(
+                        label = "分身名称",
                         value = draft.label,
-                        onValueChange = { draft = draft.copy(label = it) },
-                        label = { Text("分身名称") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = "例如：医馆时期",
+                        onChange = { draft = draft.copy(label = it) },
                     )
-                    OutlinedTextField(
+                    CharacterDraftInlineField(
+                        label = "姓名",
                         value = draft.name,
-                        onValueChange = { draft = draft.copy(name = it) },
-                        label = { Text("分身中的姓名") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = "分身中的姓名",
+                        onChange = { draft = draft.copy(name = it) },
                     )
                 }
             }
 
             CharacterEditorSection(
-                header = "视觉资源",
-                footer = "头像和主页背景都可以留空；创建分身时默认沿用来源图片，保存后仍可独立更换。",
+                header = "头像与背景",
             ) {
                 CharacterEditorFoldRow(
                     title = "头像与主页背景",
@@ -368,12 +378,13 @@ private fun CharacterEditorSection(
     footer: String? = null,
     content: @Composable () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text(
             header,
-            color = NovexColors.SecondaryText,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            color = NovexColors.Text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
         )
         content()
         if (footer != null) Text(
@@ -393,6 +404,43 @@ private fun CharacterEditorFoldRow(title: String, expanded: Boolean, onToggle: (
     ) {
         Text(title, modifier = Modifier.weight(1f), color = NovexColors.Text)
         Text(if (expanded) "收起" else "展开", color = NovexColors.SecondaryText)
+    }
+}
+
+@Composable
+private fun CharacterDraftInlineField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onChange: (String) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(54.dp).padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = NovexColors.Text, modifier = Modifier.weight(0.34f))
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = TextStyle(
+                color = NovexColors.Text,
+                fontSize = 15.sp,
+                textAlign = TextAlign.End,
+            ),
+            cursorBrush = SolidColor(NovexColors.Primary),
+            decorationBox = { inner ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    if (value.isBlank()) Text(
+                        placeholder,
+                        color = NovexColors.SecondaryText,
+                        fontSize = 14.sp,
+                    )
+                    inner()
+                }
+            },
+            modifier = Modifier.weight(0.66f),
+        )
     }
 }
 

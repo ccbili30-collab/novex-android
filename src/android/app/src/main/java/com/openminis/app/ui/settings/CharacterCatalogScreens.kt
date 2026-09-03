@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,10 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterAggregate
@@ -86,7 +87,6 @@ import com.openminis.app.novex.domain.requireVersion
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexContentModuleBlock
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.toNovexPresentation
@@ -383,15 +383,6 @@ fun CatalogCharacterDetailScreen(
                     label = "帮我创作",
                     onClick = { creatorNotice = true },
                 )
-                NovexTopAction(
-                    icon = R.drawable.ic_phosphor_pencil_simple,
-                    contentDescription = "编辑角色",
-                    label = "编辑",
-                    onClick = {
-                        if (page.worlds.isEmpty()) onEditVersion(page.version.id)
-                        else confirmSharedEdit = page.version
-                    },
-                )
             }
         },
     ) {
@@ -406,6 +397,10 @@ fun CatalogCharacterDetailScreen(
                     data = page,
                     onChooseVersion = { versionSheet = true },
                     onOpenModule = onOpenModule,
+                    onEdit = {
+                        if (page.worlds.isEmpty()) onEditVersion(page.version.id)
+                        else confirmSharedEdit = page.version
+                    },
                 )
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
@@ -841,46 +836,28 @@ internal fun CharacterPrimaryContent(
     data: CharacterPageData,
     onChooseVersion: (() -> Unit)?,
     onOpenModule: ((String) -> Unit)?,
+    onEdit: (() -> Unit)? = null,
     mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
-    CharacterHero(data, onChooseVersion, mediaModels)
-    CharacterFactsBlock(data.profile)
-    if (data.profile.customAttributes.isNotEmpty()) {
-        CharacterLabeledBlock("自定义属性") {
-            data.profile.customAttributes.forEach { CharacterInfoRow(it.name, it.value) }
+    CharacterHero(data, onChooseVersion, onEdit, mediaModels)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+        characterOverviewRows(data.profile).forEach { row ->
+            CharacterCompactContentRow(row.title, row.summary)
         }
-    }
-    if (data.profile.relationships.isNotEmpty()) {
-        CharacterLabeledBlock("原创角色关系") {
-            data.profile.relationships.forEach { relation ->
-                CharacterInfoRow(
-                    relation.characterName,
-                    listOf(relation.relationship, relation.description).filter(String::isNotBlank).joinToString(" · "),
-                )
-            }
+        data.modules.forEach { module ->
+            val presentation = module.toNovexPresentation()
+            CharacterCompactContentRow(
+                title = presentation.title,
+                summary = presentation.summary,
+                onClick = onOpenModule?.let { open -> { open(module.id) } },
+            )
         }
-    }
-    data.modules.forEachIndexed { index, module ->
-        if (index > 0) HorizontalDivider(
-            color = NovexColors.Divider,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        NovexContentModuleBlock(
-            presentation = module.toNovexPresentation(),
-            imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
-            itemImageModels = data.moduleItemImages[module.id].orEmpty().mapValues {
-                it.value.managedPath.existingMediaFile()
-            },
-            onClick = onOpenModule?.let { open -> { open(module.id) } },
-        )
-    }
-    if (data.worlds.isNotEmpty()) CharacterLabeledBlock("关联世界") {
-        Text(
-            data.worlds.joinToString(" · ") { it.name },
-            color = NovexColors.Text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        if (data.worlds.isNotEmpty()) {
+            CharacterCompactContentRow(
+                title = "关联世界",
+                summary = data.worlds.joinToString(" · ") { it.name },
+            )
+        }
     }
 }
 
@@ -888,6 +865,7 @@ internal fun CharacterPrimaryContent(
 private fun CharacterHero(
     data: CharacterPageData,
     onChooseVersion: (() -> Unit)?,
+    onEdit: (() -> Unit)?,
     mediaModels: Map<MediaAssetSlot, Any?>,
 ) {
     val name = data.profile.name.ifBlank { data.rootName }
@@ -895,42 +873,29 @@ private fun CharacterHero(
         ?: data.media[MediaAssetSlot.CHARACTER_AVATAR]?.managedPath.existingMediaFile()
     val backgroundModel = mediaModels[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]
         ?: data.media[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]?.managedPath.existingMediaFile()
-    Column(Modifier.fillMaxWidth().background(NovexColors.Surface)) {
+    val representativeModel = backgroundModel ?: avatarModel
+    Column(Modifier.fillMaxWidth().background(NovexColors.Surface).padding(horizontal = 24.dp)) {
         Box(
-            Modifier.fillMaxWidth().height(238.dp)
-                .background(if (backgroundModel == null) NovexColors.PrimarySoft else Color.Transparent),
             contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
-            if (backgroundModel != null) {
-                AsyncImage(
-                    model = backgroundModel,
-                    contentDescription = "$name 主页背景",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().height(238.dp),
-                )
-                Box(
-                    Modifier.fillMaxWidth().height(238.dp)
-                        .background(Color.White.copy(alpha = 0.7f)),
-                )
-            }
             NovexArtwork(
                 kind = NovexArtworkKind.CHARACTER,
                 seed = data.version.id,
-                imageModel = avatarModel,
-                contentDescription = "$name 头像",
-                modifier = Modifier.size(width = 184.dp, height = 196.dp)
-                    .clip(RoundedCornerShape(16.dp)),
+                imageModel = representativeModel,
+                contentDescription = "$name 代表图",
+                modifier = Modifier.width(276.dp).height(216.dp).clip(RoundedCornerShape(10.dp)),
             )
         }
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().padding(top = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
                     name,
                     color = NovexColors.Text,
-                    style = MaterialTheme.typography.headlineSmall,
+                    fontSize = 27.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Row(
@@ -952,23 +917,63 @@ private fun CharacterHero(
                 }
             }
         }
+        if (onEdit != null) Row(
+            Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+        ) {
+            OutlinedButton(
+                onClick = onEdit,
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.width(144.dp).height(44.dp),
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_phosphor_pencil_simple),
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                )
+                Text("编辑", modifier = Modifier.padding(start = 8.dp))
+            }
+        } else {
+            Spacer(Modifier.height(12.dp))
+        }
     }
 }
 
 @Composable
-private fun CharacterFactsBlock(profile: CharacterVersionProfile) {
-    CharacterLabeledBlock("基本信息") {
-        val facts = visibleCharacterFacts(profile)
-        if (facts.isEmpty()) {
-            Text(
-                "还没有补充可选信息",
-                color = NovexColors.SecondaryText,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
-        } else {
-            facts.forEach { CharacterInfoRow(it.label, it.value) }
-        }
+private fun CharacterCompactContentRow(
+    title: String,
+    summary: String,
+    onClick: (() -> Unit)? = null,
+) {
+    val modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    Row(
+        modifier.fillMaxWidth().height(56.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            title,
+            color = NovexColors.Text,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.width(104.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            summary,
+            color = NovexColors.SecondaryText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (onClick != null) Icon(
+            painterResource(R.drawable.ic_phosphor_caret_right),
+            contentDescription = "打开$title",
+            tint = NovexColors.SecondaryText,
+            modifier = Modifier.padding(start = 8.dp).size(17.dp),
+        )
     }
+    HorizontalDivider(color = NovexColors.Divider)
 }
 
 @Composable

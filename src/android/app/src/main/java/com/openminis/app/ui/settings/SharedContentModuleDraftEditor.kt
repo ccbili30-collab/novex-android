@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,12 +57,12 @@ internal fun SharedContentModuleDraftEditor(
     onOpenDetails: (String) -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(top = 20.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text(
             "内容模块",
             color = NovexColors.SecondaryText,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
         )
         Column(Modifier.fillMaxWidth().background(NovexColors.Surface)) {
             modules.forEachIndexed { index, module ->
@@ -135,7 +134,7 @@ private fun ModuleDraftRow(
     val document = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -150,14 +149,14 @@ private fun ModuleDraftRow(
                     novexModuleSummary(document.toPlainText()),
                     color = NovexColors.SecondaryText,
                     style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
+                    maxLines = 1,
                 )
             }
             Icon(
-                painterResource(R.drawable.ic_phosphor_caret_right),
+                painterResource(R.drawable.ic_phosphor_more_vertical),
                 contentDescription = if (expanded) "收起${module.name}" else "展开${module.name}",
                 tint = NovexColors.SecondaryText,
-                modifier = Modifier.size(18.dp).rotate(if (expanded) 90f else 0f),
+                modifier = Modifier.size(18.dp),
             )
         }
         AnimatedVisibility(expanded) {
