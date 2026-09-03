@@ -717,6 +717,11 @@ fun AppNavigation(
             com.openminis.app.ui.settings.CatalogWorldEditorScreen(
                 worldId = entry.arguments?.getString("worldId"),
                 onBack = { navController.safePopBackStack() },
+                onDeleted = {
+                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
+                        (context as? android.app.Activity)?.finish()
+                    }
+                },
                 onSaved = { worldId ->
                     navController.safeNavigate(Routes.storyWorld(worldId)) {
                         popUpTo(entry.destination.id) {
@@ -796,6 +801,11 @@ fun AppNavigation(
                 worldId = editingWorldId,
                 createVariant = entry.arguments?.getBoolean("createVariant") ?: false,
                 onBack = { navController.safePopBackStack() },
+                onDeleted = {
+                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
+                        (context as? android.app.Activity)?.finish()
+                    }
+                },
                 onSaved = { characterId ->
                     navController.safeNavigate(Routes.characterDetail(characterId)) {
                         popUpTo(entry.destination.id) {
