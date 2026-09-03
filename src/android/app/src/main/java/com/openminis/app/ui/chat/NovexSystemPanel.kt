@@ -25,10 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,8 +35,18 @@ import com.mikepenz.markdown.m3.Markdown
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal fun panelInitiallyExpanded(argsJson: String): Boolean =
+    runCatching { JSONObject(argsJson) }.getOrNull()?.let { args ->
+        !args.optBoolean("collapsed", !args.optBoolean("expanded", false))
+    } ?: false
+
 @Composable
-internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
+internal fun NovexPanel(
+    argsJson: String,
+    panelKey: String,
+    expansionState: PanelExpansionState,
+    onButton: (String) -> Unit,
+) {
     val args = remember(argsJson) { runCatching { JSONObject(argsJson) }.getOrNull() } ?: return
     val title = args.optString("title").trim().ifEmpty { "资料" }
     val summary = args.optString("summary").trim()
@@ -54,9 +61,7 @@ internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
     }
     val legacyContent = args.optString("content").trim()
     if (blocks.isEmpty() && actions.isEmpty() && legacyContent.isEmpty()) return
-    var expanded by remember(argsJson) {
-        mutableStateOf(!args.optBoolean("collapsed", !args.optBoolean("expanded", false)))
-    }
+    val expanded = expansionState.value(panelKey, panelInitiallyExpanded(argsJson))
 
     Card(
         colors = CardDefaults.cardColors(
@@ -68,7 +73,7 @@ internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .clickable { expansionState.set(panelKey, !expanded) }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -98,7 +103,9 @@ internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (legacyContent.isNotEmpty()) Markdown(content = legacyContent)
-                    blocks.forEach { block -> PanelBlock(block) }
+                    blocks.forEachIndexed { index, block ->
+                        PanelBlock(block, "$panelKey:block:$index", expansionState)
+                    }
                     actions.forEach { action ->
                         OutlinedButton(
                             onClick = { onButton(action.prompt) },
@@ -112,7 +119,11 @@ internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
 }
 
 @Composable
-private fun PanelBlock(block: JSONObject) {
+private fun PanelBlock(
+    block: JSONObject,
+    blockKey: String,
+    expansionState: PanelExpansionState,
+) {
     when (block.optString("type")) {
         "markdown" -> Markdown(content = block.optString("content"))
         "image" -> {
@@ -160,7 +171,7 @@ private fun PanelBlock(block: JSONObject) {
                 Text(item.optString("description"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        "details" -> PanelDetails(block)
+        "details" -> PanelDetails(block, blockKey, expansionState)
         "divider" -> HorizontalDivider()
         "html" -> Text(
             Html.fromHtml(block.optString("content"), Html.FROM_HTML_MODE_COMPACT).toString(),
@@ -170,11 +181,17 @@ private fun PanelBlock(block: JSONObject) {
 }
 
 @Composable
-private fun PanelDetails(block: JSONObject) {
-    var open by remember(block.toString()) { mutableStateOf(!block.optBoolean("collapsed", true)) }
+private fun PanelDetails(
+    block: JSONObject,
+    blockKey: String,
+    expansionState: PanelExpansionState,
+) {
+    val open = expansionState.value(blockKey, !block.optBoolean("collapsed", true))
     Column {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth()
+                .clickable { expansionState.set(blockKey, !open) }
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(block.optString("title", "详细内容"), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

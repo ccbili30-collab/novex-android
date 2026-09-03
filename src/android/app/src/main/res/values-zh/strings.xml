@@ -1625,4 +1625,6 @@
     <string name="generated_image_open_save_hint">点击查看或保存</string>
     <string name="generated_image_unavailable">生成的图片文件不可用</string>
     <string name="chat_error_present_choices_missing">模型在自动重试一次后仍未返回结构化选项按钮。已保留现有文字并停止本轮，避免循环调用。</string>
+    <string name="chat_compacted_history_show">%1$s · 展开早期消息</string>
+    <string name="chat_compacted_history_hide">%1$s · 收起早期消息</string>
 </resources>

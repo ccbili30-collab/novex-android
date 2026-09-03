@@ -41,4 +41,26 @@ class TranscriptLayoutPolicyTest {
             assertEquals(reason.toString(), reason in allowed, allowsTranscriptViewportMove(reason))
         }
     }
+
+    @Test
+    fun `return to latest follows stream growth until user drags away`() {
+        var state = TranscriptFollowState()
+
+        state = state.after(TranscriptFollowEvent.UserRequestedLatest)
+        assertTrue(state.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+        assertTrue(state.shouldMoveFor(TranscriptViewportMove.ImageMeasured))
+        assertTrue(state.shouldMoveFor(TranscriptViewportMove.ToolCardMeasured))
+
+        state = state.after(TranscriptFollowEvent.UserDragStarted)
+        assertFalse(state.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+    }
+
+    @Test
+    fun `stream completion releases temporary follow after one final move`() {
+        val following = TranscriptFollowState().after(TranscriptFollowEvent.UserRequestedLatest)
+        val completed = following.after(TranscriptFollowEvent.StreamCompleted)
+
+        assertTrue(following.shouldMoveFor(TranscriptViewportMove.StreamCompleted))
+        assertFalse(completed.isFollowingLatest)
+    }
 }

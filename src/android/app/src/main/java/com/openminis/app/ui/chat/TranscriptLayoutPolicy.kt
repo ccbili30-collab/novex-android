@@ -42,3 +42,36 @@ internal fun allowsTranscriptViewportMove(reason: TranscriptViewportMove): Boole
     TranscriptViewportMove.ToolCardMeasured,
     TranscriptViewportMove.KeyboardInsetChanged -> false
 }
+
+internal enum class TranscriptFollowEvent {
+    UserRequestedLatest,
+    UserDragStarted,
+    StreamCompleted,
+}
+
+/**
+ * A tap on “latest” is a temporary follow request, not a distance threshold.
+ * It follows passive layout growth until the stream ends or the user drags.
+ */
+internal data class TranscriptFollowState(
+    val isFollowingLatest: Boolean = false,
+) {
+    fun after(event: TranscriptFollowEvent): TranscriptFollowState = when (event) {
+        TranscriptFollowEvent.UserRequestedLatest -> copy(isFollowingLatest = true)
+        TranscriptFollowEvent.UserDragStarted,
+        TranscriptFollowEvent.StreamCompleted -> copy(isFollowingLatest = false)
+    }
+
+    fun shouldMoveFor(reason: TranscriptViewportMove): Boolean =
+        allowsTranscriptViewportMove(reason) || isFollowingLatest && reason in followableGrowth
+
+    private companion object {
+        val followableGrowth = setOf(
+            TranscriptViewportMove.PassiveStreamGrowth,
+            TranscriptViewportMove.StreamCompleted,
+            TranscriptViewportMove.ImageMeasured,
+            TranscriptViewportMove.ToolCardMeasured,
+            TranscriptViewportMove.KeyboardInsetChanged,
+        )
+    }
+}

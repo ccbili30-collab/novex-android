@@ -1770,4 +1770,6 @@
     <string name="generated_image_open_save_hint">Tap to view or save</string>
     <string name="generated_image_unavailable">The generated image file is unavailable</string>
     <string name="chat_error_present_choices_missing">The model did not return structured choice buttons after one retry. Existing text was kept; this turn has stopped to prevent a loop.</string>
+    <string name="chat_compacted_history_show">%1$s · Show earlier messages</string>
+    <string name="chat_compacted_history_hide">%1$s · Hide earlier messages</string>
 </resources>

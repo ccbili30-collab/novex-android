@@ -433,6 +433,17 @@ fun ChatScreen(
     // Callers needing the full history (compact / fork / regenerate / send)
     // continue to read viewModel.messages directly inside the VM.
     val messages by viewModel.uiMessages.collectAsState()
+    val compactDividerId = remember(messages) {
+        messages.lastOrNull { message ->
+            message.toolBlocks.firstOrNull()?.toolName == "compact"
+        }?.id
+    }
+    var compactedHistoryExpanded by remember(sessionId, compactDividerId) {
+        mutableStateOf(false)
+    }
+    val transcriptMessages = remember(messages, compactedHistoryExpanded) {
+        conversationMessagesForDisplay(messages, compactedHistoryExpanded)
+    }
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val canResume by viewModel.canResume.collectAsState()
@@ -450,6 +461,7 @@ fun ChatScreen(
     val selectedGroupName by viewModel.selectedGroupName.collectAsState()
     val providerName by viewModel.providerName.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val panelExpansionState = remember(viewModel) { PanelExpansionState() }
 
     // [T-android-voice-panel] Shared 3-stage RECORD_AUDIO permission flow
     // (system dialog → post-DENY poll → in-app settings gate). Extracted from
@@ -955,10 +967,12 @@ fun ChatScreen(
         runCatching { listState.scrollToItem(idx, off) }
         Unit
     }
+    var transcriptFollowState by remember(sessionId) { mutableStateOf(TranscriptFollowState()) }
     val scrollToLatestOnce: suspend (TranscriptViewportMove) -> Unit = scroll@{ reason ->
-        if (!allowsTranscriptViewportMove(reason)) return@scroll
-        // One frame lets the explicit action's newly-added row enter the list.
-        // This is a one-shot navigation, never a persistent follow latch.
+        if (!transcriptFollowState.shouldMoveFor(reason)) return@scroll
+        // One frame lets a newly-added or newly-measured row enter the list.
+        // Explicit actions always pass; passive growth only passes while the
+        // temporary “follow latest” state is active.
         withFrameNanos { }
         latestTranscriptItemIndex(listState.layoutInfo.totalItemsCount)?.let { latest ->
             // A zero offset would place the beginning of a viewport-tall final
@@ -1043,7 +1057,7 @@ fun ChatScreen(
         if (visible.isEmpty()) return@scrollToPreviousUserTurn
         // Ordered oldest → newest list of user-message ids, matching the order
         // the user reads the conversation in.
-        val userIds = messages.filter { it.role == "user" }.map { it.id }
+        val userIds = transcriptMessages.filter { it.role == "user" }.map { it.id }
         if (userIds.isEmpty()) {
             // No user turns (rare) — index 0 is the chronological oldest row.
             tracedScrollToItem("FAB-UP/no-user-turns", 0, 0)
@@ -1068,12 +1082,12 @@ fun ChatScreen(
         // anchor on the oldest loaded message (index 0) and let the walk proceed
         // from there.
         val topMsgIdx = topMessageId
-            ?.let { id -> messages.indexOfFirst { it.id == id } }
+            ?.let { id -> transcriptMessages.indexOfFirst { it.id == id } }
             ?.takeIf { it >= 0 }
             ?: 0
         // The current turn's anchor = nearest user message AT OR ABOVE the top
         // row (searching backwards through the conversation).
-        val currentAnchor = messages.take(topMsgIdx + 1).lastOrNull { it.role == "user" }?.id
+        val currentAnchor = transcriptMessages.take(topMsgIdx + 1).lastOrNull { it.role == "user" }?.id
             ?: userIds.first()
         // Decide the target — the rule from iOS `scrollToPreviousUserTurn`: if
         // the viewport is already at the anchor we last jumped to (the user has
@@ -1273,6 +1287,9 @@ fun ChatScreen(
             when (interaction) {
                 is androidx.compose.foundation.interaction.DragInteraction.Start -> {
                     isUserDragging = true
+                    transcriptFollowState = transcriptFollowState.after(
+                        TranscriptFollowEvent.UserDragStarted,
+                    )
                     // [T-android-scrollbtn-turn-walk] A manual drag breaks the
                     // up-button's turn-walk chain: the next tap should re-anchor
                     // to wherever the user landed, not continue the old sequence.
@@ -2114,7 +2131,7 @@ fun ChatScreen(
                 // scope. The flatten still runs per token (cheap-ish; ran
                 // before too), but the rebuild stays off the main UI
                 // composable's invalidation list.
-                LaunchedEffect(messages, sessionId, showAssistantIdentity) {
+                LaunchedEffect(transcriptMessages, sessionId, showAssistantIdentity) {
                     // [T-android-stream-pipeline-incremental] Frozen/live split.
                     //
                     // `messages` is CONSTANT within this effect (the effect is
@@ -2155,7 +2172,7 @@ fun ChatScreen(
                     // [StreamPerf] summary is ever emitted.
                     try {
                     kotlinx.coroutines.flow.combine(
-                        kotlinx.coroutines.flow.flowOf(messages),
+                        kotlinx.coroutines.flow.flowOf(transcriptMessages),
                         viewModel.streamingById,
                     ) { msgs, stream -> msgs to stream }
                         .conflate()
@@ -2317,13 +2334,38 @@ fun ChatScreen(
                     }
                     if (flatItems.isNotEmpty()) transcriptViewportReady = true
                 }
+                LaunchedEffect(listState, transcriptFollowState.isFollowingLatest) {
+                    if (!transcriptFollowState.isFollowingLatest) return@LaunchedEffect
+                    snapshotFlow {
+                        val info = listState.layoutInfo
+                        val latest = latestTranscriptItemIndex(info.totalItemsCount)
+                        val latestSize = info.visibleItemsInfo
+                            .firstOrNull { it.index == latest }
+                            ?.size ?: -1
+                        Triple(info.totalItemsCount, latestSize, info.viewportEndOffset)
+                    }
+                        .distinctUntilChanged()
+                        .collect {
+                            scrollToLatestOnce(TranscriptViewportMove.PassiveStreamGrowth)
+                        }
+                }
+                var streamWasRunning by remember(sessionId) { mutableStateOf(isStreaming) }
+                LaunchedEffect(isStreaming) {
+                    if (streamWasRunning && !isStreaming && transcriptFollowState.isFollowingLatest) {
+                        scrollToLatestOnce(TranscriptViewportMove.StreamCompleted)
+                        transcriptFollowState = transcriptFollowState.after(
+                            TranscriptFollowEvent.StreamCompleted,
+                        )
+                    }
+                    streamWasRunning = isStreaming
+                }
                 // messageId → isCompactedHistory map. Used to fade entire
                 // assistant-row clusters (header + text + tool pills) at
                 // render time — mirrors iOS isCompactedHistory opacity(0.5).
                 // The lookup uses the underlying message id stripped of any
                 // dedupe suffix (`id#2`) added by buildFlatChatItems.
-                val grayedMap = remember(messages) {
-                    messages.associate { it.id to it.isCompactedHistory }
+                val grayedMap = remember(transcriptMessages) {
+                    transcriptMessages.associate { it.id to it.isCompactedHistory }
                 }
                 fun originalMessageId(id: String): String =
                     id.substringBefore('#')
@@ -2823,7 +2865,11 @@ fun ChatScreen(
                                         inputFocusRequester.requestFocus()
                                     }
                                 } else if (item.block.toolName in setOf("render_panel", "panel", "present_system_panel")) {
-                                    NovexPanel(item.block.toolArgs) { value ->
+                                    NovexPanel(
+                                        argsJson = item.block.toolArgs,
+                                        panelKey = "${item.messageId}:${item.block.id}",
+                                        expansionState = panelExpansionState,
+                                    ) { value ->
                                         viewModel.setInputText(value)
                                         inputFocusRequester.requestFocus()
                                     }
@@ -2888,6 +2934,12 @@ fun ChatScreen(
                                 onRevert = if (item.block.toolName == "compact") {
                                     { viewModel.revertCompact() }
                                 } else null,
+                                compactedHistoryExpanded = if (item.block.toolName == "compact") {
+                                    compactedHistoryExpanded
+                                } else null,
+                                onToggleCompactedHistory = if (item.block.toolName == "compact") ({
+                                    compactedHistoryExpanded = !compactedHistoryExpanded
+                                }) else null,
                             )
                             is FlatChatItem.AssistantTyping -> TypingIndicator()
                             is FlatChatItem.AssistantError -> InlineErrorBanner(
@@ -3252,6 +3304,17 @@ fun ChatScreen(
                             // bottom resets the up-button's turn-walk (iOS does
                             // the same in its forceScrollToBottom handler).
                             lastJumpedUserId = null
+                            // Outside a live turn this remains a one-shot jump.
+                            // During streaming it becomes a temporary latch so
+                            // newly measured text/tool/image rows cannot leave
+                            // the user one screen behind again.
+                            transcriptFollowState = if (isStreaming) {
+                                transcriptFollowState.after(
+                                    TranscriptFollowEvent.UserRequestedLatest,
+                                )
+                            } else {
+                                TranscriptFollowState()
+                            }
                             coroutineScope.launch {
                                 scrollToLatestOnce(TranscriptViewportMove.UserRequestedLatest)
                             }

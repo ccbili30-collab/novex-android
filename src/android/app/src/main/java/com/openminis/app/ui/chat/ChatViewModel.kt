@@ -2624,51 +2624,19 @@ class ChatViewModel(
         )
     }
 
-    /**
-     * Format the agent history as a plain-text transcript for the
-     * summarisation LLM. Keeps role prefixes and truncates long tool arg /
-     * output bodies so we stay well under any context window. Mirrors iOS
-     * `buildConversationTextForSummary`.
-     */
-    private fun buildConversationTextForSummary(history: List<LLMMessage>): String = buildString {
-        for (msg in history) {
-            val role = msg.role.name.lowercase()
-            val text = msg.content.take(500)
-            if (text.isNotEmpty()) {
-                append(role).append(": ").append(text).append('\n')
-            }
-            for (part in msg.contentParts) {
-                when (part) {
-                    is AgentContentPart.Text -> {
-                        append(role).append(": ").append(part.text.take(500)).append('\n')
-                    }
-                    is AgentContentPart.ToolUse -> {
-                        val preview = part.input.toString().take(200)
-                        append(role).append(" [tool:").append(part.name).append("]: ")
-                            .append(preview).append('\n')
-                    }
-                    is AgentContentPart.ToolResult -> {
-                        append(role).append(" [result:").append(part.name).append("]: ")
-                            .append(part.content.take(500)).append('\n')
-                    }
-                    is AgentContentPart.ImageData -> {
-                        append(role).append(" [image: ").append(part.mimeType).append("]\n")
-                    }
-                }
-            }
-        }
-    }
+    private fun buildConversationTextForSummary(history: List<LLMMessage>): String =
+        ConversationCompactionPolicy.transcript(history)
 
     /**
      * Summarize [messages], recursively halving and merging when the input
      * exceeds the model's context window. Mirrors iOS
      * `generateCompactSummaryWithSplitting` (AIChatViewModel+Compaction.swift:820).
      *
-     * Depth cap = 3 (matches iOS) so a pathologically large conversation
+     * Depth cap = 3 so a pathologically large conversation
      * still terminates instead of fanning out indefinitely. At each split we
-     * halve by message count, summarize each half independently, then ask the
-     * LLM to merge the two partial summaries into one — prioritizing Part 2
-     * (more recent) when space is tight, again matching iOS behavior.
+     * choose a safe turn boundary, summarize each half independently, then ask
+     * the LLM to merge the two partial summaries into one — prioritizing Part 2
+     * (more recent) when space is tight.
      */
     private suspend fun generateCompactSummaryWithSplitting(
         messages: List<LLMMessage>,
@@ -2690,9 +2658,9 @@ class ChatViewModel(
             if (!isSegmentRetryableError(e) || messages.size < 2 || depth >= 3) {
                 throw e
             }
-            val mid = messages.size / 2
-            val firstHalf = messages.subList(0, mid).toList()
-            val secondHalf = messages.subList(mid, messages.size).toList()
+            val (firstHalf, secondHalf) = ConversationCompactionPolicy
+                .splitBetweenTurns(messages)
+                ?: throw e
             AppLogger.info(
                 TAG,
                 "[Compact] Splitting ${messages.size} messages into ${firstHalf.size} + ${secondHalf.size} (depth=$depth)",
@@ -2700,18 +2668,16 @@ class ChatViewModel(
             val summary1 = generateCompactSummaryWithSplitting(firstHalf, null, depth + 1)
             val summary2 = generateCompactSummaryWithSplitting(secondHalf, null, depth + 1)
             val mergeInput = buildString {
-                append("Merge these partial summaries into a single cohesive context summary. ")
-                append("Frame everything as past events (what was asked, what was done) rather than as ")
-                append("ongoing goals or todos — the user's next message will set the current task.\n\n")
-                append("MUST PRESERVE:\n")
-                append("- What was done and what was tried, with outcomes (record as past events)\n")
-                append("- The last thing the user requested in this conversation, and how it was handled\n")
-                append("- All file paths, identifiers, URLs — copy verbatim\n")
-                append("- Decisions made and their rationale\n")
-                append("- Constraints, rules, and user preferences mentioned\n\n")
-                append("Do NOT carry forward \"pending\" or \"todo\" lists that imply standing work — if the user ")
-                append("still wants those, they will say so in their next message.\n\n")
+                append("Merge these partial summaries into one continuity checkpoint. ")
+                append("Preserve the latest user corrections, current relationships, time, scene and world state, ")
+                append("unresolved requests, tool effects, and exact technical details when relevant. ")
+                append("Completed events stay completed; unresolved matters stay unresolved; cancelled or ")
+                append("superseded matters must not be revived. Do not continue the conversation.\n\n")
                 append("PRIORITIZE Part 2 (more recent) over Part 1 (older) when space is tight.\n\n")
+                if (!previousSummary.isNullOrBlank()) {
+                    append("Existing earlier continuity summary (preserve relevant current state):\n")
+                    append(previousSummary).append("\n\n")
+                }
                 append("Part 1:\n").append(summary1).append("\n\n")
                 append("Part 2:\n").append(summary2)
             }
@@ -2736,12 +2702,9 @@ class ChatViewModel(
             append("Compact this conversation into a context summary:\n\n")
             append(conversationText)
             append("\n\n---\nEND OF CONVERSATION TO COMPACT.\n\n")
-            append(
-                "Now generate a structured context summary following the system prompt " +
-                    "instructions. Do NOT continue the conversation above — summarize it. " +
-                    "Write everything in past tense, framed as \"what was discussed / what " +
-                    "was done\", NOT as an ongoing goal or todo list."
-            )
+            append("Now generate the continuity checkpoint required by the system prompt. ")
+            append("Do not answer or continue the conversation. Keep current state in present tense, ")
+            append("completed events in past tense, and unresolved matters explicitly unresolved.")
         }
         val model = currentModel
         val contextWindow = model?.contextWindow ?: 128_000
@@ -3055,31 +3018,8 @@ class ChatViewModel(
             }
         }
 
-    /**
-     * System prompt for the single-shot summarisation call. Matches iOS
-     * wording so cross-device summaries stay stylistically aligned.
-     */
-    private val compactSummarySystemPrompt: String = """
-        You are a context compaction engine. Your summary will REPLACE the original messages in the conversation context window. The agent will read your summary as past context, then proceed based on the user's NEXT message — your summary is background, not a standing work order. Write the summary in the same language the user used in the conversation.
-
-        MUST PRESERVE (never omit or shorten):
-        - All file paths, directory names, URLs, UUIDs, and identifiers — copy verbatim
-        - Commands executed and their outcomes (success/failure/output)
-        - What was requested and what was done (record as past events, not as ongoing goals)
-        - Key decisions made and their rationale
-        - Errors encountered and how they were resolved
-        - Important constraints, rules, or user preferences mentioned
-        - Any tool calls and their results that affect current state
-
-        STRUCTURE:
-        1. Start with a one-line description of what the conversation was about (use past tense — "User asked X, agent did Y", NOT "Goal: X").
-        2. Then a concise narrative of what happened, preserving technical details.
-        3. End with a "What had been done so far" section listing completed work — NOT a "todo" or "pending" list. Do not invent ongoing objectives or carry-over tasks from old turns; if the user wants to continue, they will say so in their next message.
-
-        PRIORITIZE recent context over older history — recent decisions and recent file/path references are most useful for continuity.
-
-        Do NOT translate or alter code snippets, file paths, identifiers, or error messages. Be concise but never lose information the agent needs.
-    """.trimIndent()
+    /** System prompt shared by every Android conversation composition. */
+    private val compactSummarySystemPrompt: String = ConversationCompactionPolicy.systemPrompt
 
     // T203 part 2: these MUST be declared before `init { loadSession() }` below.
     // viewModelScope.launch defaults to Dispatchers.Main.immediate, which runs
