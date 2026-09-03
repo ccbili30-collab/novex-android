@@ -1,5 +1,6 @@
 package com.openminis.app.ui.sessions
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -36,9 +37,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -297,8 +300,14 @@ private fun NovexWorldLibraryRoot(
     var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
+    val searchState = rememberNovexLibrarySearchState()
+    val query by searchState.applied.collectAsState()
     val listState = rememberLazyListState()
+
+    BackHandler(enabled = searching) {
+        searching = false
+        searchState.clear()
+    }
 
     val importer = rememberNovexNativeCardImporter(NovexCardKind.WORLD) { importedId ->
         refresh++
@@ -326,13 +335,12 @@ private fun NovexWorldLibraryRoot(
     NovexLibraryFrame(
         title = "世界",
         searching = searching,
-        query = query,
+        searchState = searchState,
         searchDescription = "搜索世界",
         onSearchToggle = {
             searching = !searching
-            if (!searching) query = ""
+            if (!searching) searchState.clear()
         },
-        onQueryChange = { query = it },
     ) {
         when {
             !loaded || importer.importing -> NovexLoading()
@@ -368,8 +376,14 @@ private fun NovexCharacterLibraryRoot(
     var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
+    val searchState = rememberNovexLibrarySearchState()
+    val query by searchState.applied.collectAsState()
     val listState = rememberLazyListState()
+
+    BackHandler(enabled = searching) {
+        searching = false
+        searchState.clear()
+    }
 
     val importer = rememberNovexNativeCardImporter(NovexCardKind.CHARACTER) { importedId ->
         refresh++
@@ -395,13 +409,12 @@ private fun NovexCharacterLibraryRoot(
     NovexLibraryFrame(
         title = "角色",
         searching = searching,
-        query = query,
+        searchState = searchState,
         searchDescription = "搜索角色",
         onSearchToggle = {
             searching = !searching
-            if (!searching) query = ""
+            if (!searching) searchState.clear()
         },
-        onQueryChange = { query = it },
     ) {
         when {
             !loaded || importer.importing -> NovexLoading()
@@ -431,10 +444,9 @@ private fun NovexCharacterLibraryRoot(
 private fun NovexLibraryFrame(
     title: String,
     searching: Boolean,
-    query: String,
+    searchState: NovexLibrarySearchState,
     searchDescription: String,
     onSearchToggle: () -> Unit,
-    onQueryChange: (String) -> Unit,
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -460,8 +472,7 @@ private fun NovexLibraryFrame(
         }
         if (searching) {
             NovexSearchField(
-                value = query,
-                onValueChange = onQueryChange,
+                searchState = searchState,
                 placeholder = searchDescription,
             )
         }
@@ -471,10 +482,10 @@ private fun NovexLibraryFrame(
 
 @Composable
 private fun NovexSearchField(
-    value: String,
-    onValueChange: (String) -> Unit,
+    searchState: NovexLibrarySearchState,
     placeholder: String,
 ) {
+    val value by searchState.input.collectAsState()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -496,7 +507,7 @@ private fun NovexSearchField(
             if (value.isEmpty()) Text(placeholder, color = NovexRootColors.SecondaryText, fontSize = 14.sp)
             BasicTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = searchState::update,
                 singleLine = true,
                 textStyle = TextStyle(color = NovexRootColors.Text, fontSize = 14.sp),
                 cursorBrush = SolidColor(NovexRootColors.Primary),
@@ -504,6 +515,12 @@ private fun NovexSearchField(
             )
         }
     }
+}
+
+@Composable
+internal fun rememberNovexLibrarySearchState(): NovexLibrarySearchState {
+    val scope = rememberCoroutineScope()
+    return remember(scope) { NovexLibrarySearchState(scope) }
 }
 
 @Composable

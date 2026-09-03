@@ -1,11 +1,58 @@
 package com.openminis.app.ui.sessions
 
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NovexRootNavigationPolicyTest {
+    @Test
+    fun librarySearchKeepsEveryRapidKeystrokeButAppliesOnlyTheSettledQuery() = runTest {
+        val search = NovexLibrarySearchState(backgroundScope, debounceMs = 300L)
+
+        "abcdefghijklmnopqrstuvwxyz".forEach { search.update(search.input.value + it) }
+
+        assertEquals("abcdefghijklmnopqrstuvwxyz", search.input.value)
+        assertEquals("", search.applied.value)
+        advanceTimeBy(299L)
+        runCurrent()
+        assertEquals("", search.applied.value)
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals("abcdefghijklmnopqrstuvwxyz", search.applied.value)
+    }
+
+    @Test
+    fun closingSearchCancelsAFilterThatHasNotRunYet() = runTest {
+        val search = NovexLibrarySearchState(backgroundScope, debounceMs = 300L)
+
+        search.update("不会执行")
+        advanceTimeBy(299L)
+        search.clear()
+        advanceTimeBy(1L)
+        runCurrent()
+
+        assertEquals("", search.input.value)
+        assertEquals("", search.applied.value)
+    }
+
+    @Test
+    fun libraryRootConsumesBackToCloseSearchBeforeLeavingTheApplication() {
+        assertEquals(
+            NovexLibraryBackAction.CLOSE_SEARCH,
+            novexLibraryBackAction(searching = true),
+        )
+        assertEquals(
+            NovexLibraryBackAction.LEAVE_ROOT,
+            novexLibraryBackAction(searching = false),
+        )
+    }
+
     @Test
     fun selectingAnyDestinationExpandsTheDockAndKeepsTheNewSelection() {
         val result = NovexRootNavigationState().select(NovexRootSpace.WORLDS)

@@ -30,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -90,15 +91,15 @@ fun NovexConversationRoot(
     }
 
     var searching by rememberSaveable { mutableStateOf(false) }
-    var searchInput by rememberSaveable { mutableStateOf("") }
     var filterName by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT.name) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
-    val appliedQuery = searchInput
+    val searchState = rememberNovexLibrarySearchState()
+    val appliedQuery by searchState.applied.collectAsState()
     val selectedFilter = SessionHomeFilter.valueOf(filterName)
 
     BackHandler(enabled = searching) {
         searching = false
-        searchInput = ""
+        searchState.clear()
     }
 
     val sessions = sessionsOrNull.orEmpty()
@@ -153,7 +154,7 @@ fun NovexConversationRoot(
             )
             IconButton(onClick = {
                 searching = !searching
-                if (!searching) searchInput = ""
+                if (!searching) searchState.clear()
             }) {
                 Icon(
                     painterResource(R.drawable.ic_phosphor_search),
@@ -199,10 +200,7 @@ fun NovexConversationRoot(
         }
 
         if (searching) {
-            NovexConversationSearchField(
-                value = searchInput,
-                onValueChange = { searchInput = it },
-            )
+            NovexConversationSearchField(searchState)
         }
 
         Row(
@@ -318,9 +316,9 @@ fun NovexConversationRoot(
 
 @Composable
 private fun NovexConversationSearchField(
-    value: String,
-    onValueChange: (String) -> Unit,
+    searchState: NovexLibrarySearchState,
 ) {
+    val value by searchState.input.collectAsState()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -338,7 +336,7 @@ private fun NovexConversationSearchField(
         )
         BasicTextField(
             value = value,
-            onValueChange = onValueChange,
+            onValueChange = searchState::update,
             singleLine = true,
             cursorBrush = SolidColor(NovexColors.Primary),
             textStyle = TextStyle(color = NovexColors.Text, fontSize = 15.sp),

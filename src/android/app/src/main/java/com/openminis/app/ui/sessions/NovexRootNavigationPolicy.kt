@@ -1,9 +1,52 @@
 package com.openminis.app.ui.sessions
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
 internal enum class NovexRootSpace {
     CONVERSATIONS,
     WORLDS,
     CHARACTERS,
+}
+
+internal enum class NovexLibraryBackAction {
+    CLOSE_SEARCH,
+    LEAVE_ROOT,
+}
+
+internal fun novexLibraryBackAction(searching: Boolean): NovexLibraryBackAction =
+    if (searching) NovexLibraryBackAction.CLOSE_SEARCH else NovexLibraryBackAction.LEAVE_ROOT
+
+internal class NovexLibrarySearchState(
+    private val scope: CoroutineScope,
+    private val debounceMs: Long = 300L,
+) {
+    private val mutableInput = MutableStateFlow("")
+    private val mutableApplied = MutableStateFlow("")
+    private var applyJob: Job? = null
+
+    val input = mutableInput.asStateFlow()
+    val applied = mutableApplied.asStateFlow()
+
+    fun update(value: String) {
+        mutableInput.value = value
+        applyJob?.cancel()
+        applyJob = scope.launch {
+            delay(debounceMs)
+            mutableApplied.value = value
+        }
+    }
+
+    fun clear() {
+        applyJob?.cancel()
+        applyJob = null
+        mutableInput.value = ""
+        mutableApplied.value = ""
+    }
 }
 
 internal fun shouldShowNovexRootDock(
