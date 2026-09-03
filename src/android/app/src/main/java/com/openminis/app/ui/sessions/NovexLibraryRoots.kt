@@ -21,10 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,11 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +51,10 @@ import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexIconAction
+import com.openminis.app.ui.novex.NovexRootHeader
+import com.openminis.app.ui.novex.NovexSearchField
+import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.settings.existingMediaFile
 import com.openminis.app.ui.settings.rememberNovexNativeCardImporter
@@ -242,72 +240,38 @@ private fun NovexLibraryFrame(
             .background(NovexRootColors.Background)
             .statusBarsPadding(),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 8.dp),
-        ) {
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = NovexRootColors.Text)
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onSearchToggle) {
-                Icon(
-                    painterResource(R.drawable.ic_phosphor_search),
-                    contentDescription = searchDescription,
-                    tint = NovexRootColors.Text,
-                    modifier = Modifier.size(22.dp),
+        NovexRootHeader(
+            title = title,
+            actions = {
+                NovexIconAction(
+                    icon = R.drawable.ic_phosphor_search,
+                    contentDescription = if (searching) "关闭$searchDescription" else searchDescription,
+                    onClick = onSearchToggle,
                 )
-            }
-        }
+            },
+        )
         if (searching) {
-            NovexSearchField(
-                searchState = searchState,
-                placeholder = searchDescription,
-            )
+            NovexLibrarySearchInput(searchState, searchDescription)
         }
         Box(Modifier.fillMaxSize()) { content() }
     }
 }
 
 @Composable
-private fun NovexSearchField(
-    searchState: NovexLibrarySearchState,
-    placeholder: String,
-) {
-    val value by searchState.input.collectAsState()
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .height(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(NovexRootColors.Surface)
-            .padding(horizontal = 12.dp),
-    ) {
-        Icon(
-            painterResource(R.drawable.ic_phosphor_search),
-            contentDescription = null,
-            tint = NovexRootColors.SecondaryText,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f)) {
-            if (value.isEmpty()) Text(placeholder, color = NovexRootColors.SecondaryText, fontSize = 14.sp)
-            BasicTextField(
-                value = value,
-                onValueChange = searchState::update,
-                singleLine = true,
-                textStyle = TextStyle(color = NovexRootColors.Text, fontSize = 14.sp),
-                cursorBrush = SolidColor(NovexRootColors.Primary),
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
-            )
-        }
-    }
-}
-
-@Composable
 internal fun rememberNovexLibrarySearchState(): NovexLibrarySearchState {
     val scope = rememberCoroutineScope()
-    return remember(scope) { NovexLibrarySearchState(scope) }
+    return remember(scope) { NovexLibrarySearchState(scope = scope) }
+}
+
+/** Keeps per-keystroke state below the catalog frame so a long list is not recomposed for every character. */
+@Composable
+private fun NovexLibrarySearchInput(state: NovexLibrarySearchState, placeholder: String) {
+    val value by state.input.collectAsState()
+    NovexSearchField(
+        value = value,
+        onValueChange = state::update,
+        placeholder = placeholder,
+    )
 }
 
 @Composable
@@ -447,24 +411,7 @@ private fun NovexImportRow(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun NovexLibraryActionRow(label: String, iconRes: Int, onClick: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-    ) {
-        Icon(
-            painterResource(iconRes),
-            contentDescription = null,
-            tint = NovexRootColors.Text,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(label, color = NovexRootColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-    }
+    NovexTextActionRow(label = label, icon = iconRes, onClick = onClick)
 }
 
 @Composable

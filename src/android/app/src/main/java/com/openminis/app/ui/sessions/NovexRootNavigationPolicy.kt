@@ -13,6 +13,11 @@ internal enum class NovexRootSpace {
     CHARACTERS,
 }
 
+internal enum class NovexRootItemForm {
+    LABEL,
+    DOT,
+}
+
 internal enum class NovexLibraryBackAction {
     CLOSE_SEARCH,
     LEAVE_ROOT,
@@ -24,9 +29,10 @@ internal fun novexLibraryBackAction(searching: Boolean): NovexLibraryBackAction 
 internal class NovexLibrarySearchState(
     private val scope: CoroutineScope,
     private val debounceMs: Long = 300L,
+    initialValue: String = "",
 ) {
-    private val mutableInput = MutableStateFlow("")
-    private val mutableApplied = MutableStateFlow("")
+    private val mutableInput = MutableStateFlow(initialValue)
+    private val mutableApplied = MutableStateFlow(initialValue)
     private var applyJob: Job? = null
 
     val input = mutableInput.asStateFlow()
@@ -97,9 +103,25 @@ internal data class NovexRootNavigationState(
 
     fun collapse(): NovexRootNavigationState = copy(expanded = false)
 
+    fun quickSelect(destination: NovexRootSpace): NovexRootNavigationState = copy(
+        selected = destination,
+        expanded = false,
+    )
+
+    fun itemForm(destination: NovexRootSpace): NovexRootItemForm =
+        if (expanded || selected == destination) NovexRootItemForm.LABEL else NovexRootItemForm.DOT
+
+    fun itemForms(): List<NovexRootItemForm> = NovexRootSpace.entries.map(::itemForm)
+
     fun move(delta: Int): NovexRootNavigationState {
         val destinations = NovexRootSpace.entries
         val index = (destinations.indexOf(selected) + delta).coerceIn(destinations.indices)
         return select(destinations[index])
+    }
+
+    fun moveCompact(delta: Int): NovexRootNavigationState {
+        val destinations = NovexRootSpace.entries
+        val index = (destinations.indexOf(selected) + delta).coerceIn(destinations.indices)
+        return quickSelect(destinations[index])
     }
 }

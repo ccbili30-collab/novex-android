@@ -13,17 +13,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 
 internal object NovexColors {
     val Background = Color(0xFFFBFBFC)
     val Surface = Color(0xFFFFFFFF)
+    val SurfaceMuted = Color(0xFFF3F4F6)
     val Text = Color(0xFF17181C)
     val SecondaryText = Color(0xFF686B73)
+    val TertiaryText = Color(0xFF9699A1)
     val Divider = Color(0xFFE7E8EC)
     val Primary = Color(0xFF315F9F)
     val PrimarySoft = Color(0xFFEEF3FA)
+    val Danger = Color(0xFFB83D45)
+    val ImageScrim = Color(0xB8000000)
+}
+
+internal object NovexDimensions {
+    val PageHorizontal = 16.dp
+    val TopBarHeight = 56.dp
+    val MinimumTouch = 48.dp
+    val RootBottomInset = 104.dp
+    val SectionGap = 24.dp
+    val RowVertical = 10.dp
+    val SmallRadius = 8.dp
+    val MediaRadius = 9.dp
+    val SheetRadius = 24.dp
+}
+
+internal object NovexType {
+    val Brand = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+    val PageTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
+    val SectionTitle = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+    val ItemTitle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+    val Body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal)
+    val Metadata = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal)
 }
 
 internal enum class NovexArtworkKind {

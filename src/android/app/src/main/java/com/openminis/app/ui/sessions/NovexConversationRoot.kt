@@ -19,14 +19,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,9 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,11 +47,35 @@ import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.novex.domain.NovexWorkspace
+import com.openminis.app.ui.novex.NovexArtwork
+import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexFilterTabs
+import com.openminis.app.ui.novex.NovexIconAction
+import com.openminis.app.ui.novex.NovexRootHeader
+import com.openminis.app.ui.novex.NovexSearchField
+import com.openminis.app.ui.novex.NovexSectionTitle
+import com.openminis.app.ui.novex.NovexTextActionRow
+import com.openminis.app.ui.settings.existingMediaFile
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class ConversationWorldMeta(
+    val name: String,
+    val imagePath: String?,
+)
+
+private data class ConversationVersionMeta(
+    val characterName: String,
+    val versionLabel: String,
+)
+
+private data class ConversationHomeCatalog(
+    val worlds: Map<String, ConversationWorldMeta>,
+    val versions: Map<String, ConversationVersionMeta>,
+)
 
 /**
  * The launch-safe conversation home. It deliberately depends only on Room,
@@ -80,12 +99,23 @@ fun NovexConversationRoot(
     val sessionsOrNull by produceState<List<ChatSessionEntity>?>(initialValue = null, chatRepository) {
         chatRepository.observeSessions().collect { value = it }
     }
-    val worldNamesOrNull by produceState<Map<String, String>?>(initialValue = null, workspace) {
-        value = workspace.worlds().associate { it.world.id to it.world.name }
+    val catalogOrNull by produceState<ConversationHomeCatalog?>(initialValue = null, workspace) {
+        val worlds = workspace.worlds().associate { card ->
+            card.world.id to ConversationWorldMeta(card.world.name, card.image?.managedPath)
+        }
+        val versions = workspace.characters().flatMap { card ->
+            card.character.allVersions.map { version ->
+                version.id to ConversationVersionMeta(
+                    characterName = card.character.character.name,
+                    versionLabel = version.label,
+                )
+            }
+        }.toMap()
+        value = ConversationHomeCatalog(worlds = worlds, versions = versions)
     }
     val availability = sessionHomeAvailability(
         sessionsLoaded = sessionsOrNull != null,
-        worldNamesLoaded = worldNamesOrNull != null,
+        worldNamesLoaded = catalogOrNull != null,
     )
     LaunchedEffect(Unit) {
         onRootNavigationVisibilityChange(availability.controlsInteractive)
@@ -108,7 +138,7 @@ fun NovexConversationRoot(
     }
 
     val sessions = sessionsOrNull.orEmpty()
-    val worldNames = worldNamesOrNull.orEmpty()
+    val catalog = catalogOrNull ?: ConversationHomeCatalog(emptyMap(), emptyMap())
     val visibleSessions = remember(sessions, selectedFilter, appliedQuery) {
         sessions
             .forHomeFilter(selectedFilter)
@@ -136,112 +166,48 @@ fun NovexConversationRoot(
             .background(NovexColors.Background)
             .statusBarsPadding(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    painterResource(R.drawable.ic_phosphor_gear),
+        NovexRootHeader(
+            title = "Novex",
+            leading = {
+                NovexIconAction(
+                    icon = R.drawable.ic_phosphor_gear,
                     contentDescription = "设置",
-                    modifier = Modifier.size(23.dp),
+                    onClick = onOpenSettings,
                 )
-            }
-            Text(
-                "Novex",
-                color = NovexColors.Text,
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = {
-                searching = !searching
-                if (!searching) searchState.clear()
-            }) {
-                Icon(
-                    painterResource(R.drawable.ic_phosphor_search),
+            },
+            actions = {
+                NovexIconAction(
+                    icon = R.drawable.ic_phosphor_search,
                     contentDescription = if (searching) "关闭搜索" else "搜索对话",
-                    modifier = Modifier.size(22.dp),
+                    onClick = {
+                        searching = !searching
+                        if (!searching) searchState.clear()
+                    },
                 )
-            }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        painterResource(R.drawable.ic_phosphor_plus),
-                        contentDescription = "新建",
-                        modifier = Modifier.size(23.dp),
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("通用对话") },
-                        onClick = {
-                            menuExpanded = false
-                            onNewConversation()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("世界角色对话") },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenWorlds()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("创作模式（即将开放）") },
-                        onClick = {
-                            menuExpanded = false
-                            onCreationPlaceholder()
-                        },
-                    )
-                }
-            }
-        }
+                NovexIconAction(
+                    icon = R.drawable.ic_phosphor_sparkle,
+                    contentDescription = "帮我创作",
+                    onClick = onCreationPlaceholder,
+                )
+            },
+        )
 
         if (searching) {
-            NovexConversationSearchField(searchState)
+            NovexConversationSearchInput(searchState)
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-        ) {
-            SessionHomeFilter.entries.forEach { filter ->
-                val label = when (filter) {
+        NovexFilterTabs(
+            items = SessionHomeFilter.entries,
+            selected = selectedFilter,
+            label = { filter ->
+                when (filter) {
                     SessionHomeFilter.RECENT -> "最近"
                     SessionHomeFilter.GENERAL -> "通用"
                     SessionHomeFilter.CREATION -> "创作"
                 }
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .width(82.dp)
-                        .clickable { filterName = filter.name }
-                        .padding(top = 5.dp),
-                ) {
-                    Text(
-                        label,
-                        color = if (selectedFilter == filter) NovexColors.Text else NovexColors.SecondaryText,
-                        fontSize = 15.sp,
-                        fontWeight = if (selectedFilter == filter) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                    Box(
-                        Modifier
-                            .padding(top = 9.dp)
-                            .width(22.dp)
-                            .height(2.dp)
-                            .background(if (selectedFilter == filter) NovexColors.Primary else Color.Transparent),
-                    )
-                }
-            }
-        }
+            },
+            onSelect = { filterName = it.name },
+        )
         Spacer(Modifier.height(12.dp))
 
         when {
@@ -271,25 +237,49 @@ fun NovexConversationRoot(
                 fun section(label: String, rows: List<ChatSessionEntity>) {
                     if (rows.isEmpty()) return
                     item(key = "section_$label") {
-                        Text(
-                            label,
-                            color = NovexColors.Text,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(top = 15.dp, bottom = 8.dp),
-                        )
+                        NovexSectionTitle(label)
                     }
                     items(rows, key = ChatSessionEntity::id) { session ->
                         NovexConversationRow(
                             session = session,
-                            worldName = session.worldId?.let(worldNames::get)
-                                ?: worldNameFromSnapshot(session.worldSnapshotJson),
+                            world = session.worldId?.let(catalog.worlds::get)
+                                ?: worldNameFromSnapshot(session.worldSnapshotJson)?.let {
+                                    ConversationWorldMeta(name = it, imagePath = null)
+                                },
+                            version = session.characterVersionId?.let(catalog.versions::get),
                             onClick = { onOpenSession(session.id) },
                         )
                     }
                 }
                 section("今天", today)
                 section("更早", earlier)
+                item(key = "new_conversation") {
+                    Box {
+                        NovexTextActionRow(
+                            label = "新建对话",
+                            onClick = { menuExpanded = true },
+                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("通用对话") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNewConversation()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("世界角色对话") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onOpenWorlds()
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -319,72 +309,38 @@ fun NovexConversationRoot(
     }
 }
 
+/** Isolates immediate typing from the grouped conversation list. */
 @Composable
-private fun NovexConversationSearchField(
-    searchState: NovexLibrarySearchState,
-) {
-    val value by searchState.input.collectAsState()
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 5.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFF1F2F5))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Icon(
-            painterResource(R.drawable.ic_phosphor_search),
-            contentDescription = null,
-            tint = NovexColors.SecondaryText,
-            modifier = Modifier.size(18.dp),
-        )
-        BasicTextField(
-            value = value,
-            onValueChange = searchState::update,
-            singleLine = true,
-            cursorBrush = SolidColor(NovexColors.Primary),
-            textStyle = TextStyle(color = NovexColors.Text, fontSize = 15.sp),
-            decorationBox = { inner ->
-                Box {
-                    if (value.isEmpty()) Text("搜索对话", color = NovexColors.SecondaryText, fontSize = 15.sp)
-                    inner()
-                }
-            },
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp),
-        )
-    }
+private fun NovexConversationSearchInput(state: NovexLibrarySearchState) {
+    val value by state.input.collectAsState()
+    NovexSearchField(
+        value = value,
+        onValueChange = state::update,
+        placeholder = "搜索对话",
+    )
 }
 
 @Composable
 private fun NovexConversationRow(
     session: ChatSessionEntity,
-    worldName: String?,
+    world: ConversationWorldMeta?,
+    version: ConversationVersionMeta?,
     onClick: () -> Unit,
 ) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(54.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(if (worldName != null) Color(0xFFE9EFF7) else Color(0xFFEDE9DD)),
-        ) {
-            Text(
-                (session.assistantDisplayName ?: session.title ?: "会").take(1),
-                color = if (worldName != null) NovexColors.Primary else Color(0xFF76663B),
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
+        NovexArtwork(
+            kind = if (world != null) NovexArtworkKind.WORLD else NovexArtworkKind.CHARACTER,
+            seed = session.worldId ?: session.characterVersionId ?: session.id,
+            imageModel = (world?.imagePath ?: session.assistantAvatarPath).existingMediaFile(),
+            contentDescription = "${session.title ?: "对话"}缩略图",
+            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(8.dp)),
+        )
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -398,7 +354,13 @@ private fun NovexConversationRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            session.lastMessage?.takeIf(String::isNotBlank)?.let { preview ->
+            val worldLine = world?.name?.let { "世界：$it" }
+            val characterName = version?.characterName ?: session.assistantDisplayName
+            val versionLine = characterName?.takeIf(String::isNotBlank)?.let { name ->
+                val label = version?.versionLabel?.takeIf(String::isNotBlank)
+                "角色：$name${label?.let { " · $it" }.orEmpty()}"
+            }
+            (worldLine ?: session.lastMessage?.takeIf(String::isNotBlank))?.let { preview ->
                 Text(
                     preview,
                     color = NovexColors.SecondaryText,
@@ -408,10 +370,10 @@ private fun NovexConversationRow(
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
-            if (worldName != null || !session.assistantDisplayName.isNullOrBlank()) {
+            if (versionLine != null) {
                 Text(
-                    listOfNotNull(worldName, session.assistantDisplayName).joinToString(" · "),
-                    color = NovexColors.Primary,
+                    versionLine,
+                    color = NovexColors.SecondaryText,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -423,7 +385,7 @@ private fun NovexConversationRow(
             conversationTime(session.updatedAt),
             color = NovexColors.SecondaryText,
             fontSize = 12.sp,
-            modifier = Modifier.padding(start = 8.dp),
+            modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
     }
 }

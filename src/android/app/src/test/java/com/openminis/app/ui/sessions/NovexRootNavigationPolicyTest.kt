@@ -42,6 +42,18 @@ class NovexRootNavigationPolicyTest {
     }
 
     @Test
+    fun restoredLibrarySearchStartsWithThePreviouslyVisibleQueryApplied() = runTest {
+        val search = NovexLibrarySearchState(
+            scope = backgroundScope,
+            debounceMs = 300L,
+            initialValue = "云岚",
+        )
+
+        assertEquals("云岚", search.input.value)
+        assertEquals("云岚", search.applied.value)
+    }
+
+    @Test
     fun libraryRootConsumesBackToCloseSearchBeforeLeavingTheApplication() {
         assertEquals(
             NovexLibraryBackAction.CLOSE_SEARCH,
@@ -59,6 +71,54 @@ class NovexRootNavigationPolicyTest {
 
         assertEquals(NovexRootSpace.WORLDS, result.selected)
         assertTrue(result.expanded)
+    }
+
+    @Test
+    fun compactSwitcherExpandsOnlyTheSelectedDestinationInItsFixedOrder() {
+        val result = NovexRootNavigationState(
+            selected = NovexRootSpace.WORLDS,
+            expanded = false,
+        ).itemForms()
+
+        assertEquals(
+            listOf(
+                NovexRootItemForm.DOT,
+                NovexRootItemForm.LABEL,
+                NovexRootItemForm.DOT,
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun expandedSwitcherShowsAllThreeDestinationLabelsInFixedOrder() {
+        val result = NovexRootNavigationState(
+            selected = NovexRootSpace.CHARACTERS,
+            expanded = true,
+        ).itemForms()
+
+        assertEquals(
+            listOf(
+                NovexRootItemForm.LABEL,
+                NovexRootItemForm.LABEL,
+                NovexRootItemForm.LABEL,
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun quickDragAndPageSwipeSelectWithoutLeavingTheSwitcherExpanded() {
+        val dragged = NovexRootNavigationState(
+            selected = NovexRootSpace.CONVERSATIONS,
+            expanded = true,
+        ).quickSelect(NovexRootSpace.CHARACTERS)
+        val swiped = dragged.moveCompact(-1)
+
+        assertEquals(NovexRootSpace.CHARACTERS, dragged.selected)
+        assertFalse(dragged.expanded)
+        assertEquals(NovexRootSpace.WORLDS, swiped.selected)
+        assertFalse(swiped.expanded)
     }
 
     @Test
