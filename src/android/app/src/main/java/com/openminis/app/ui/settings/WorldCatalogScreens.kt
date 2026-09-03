@@ -1,6 +1,7 @@
 package com.openminis.app.ui.settings
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -84,6 +85,8 @@ import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.toNovexPresentation
 import com.openminis.app.ui.novex.rememberNovexWorkspace
+import com.openminis.app.ui.navigation.NovexEditorBackAction
+import com.openminis.app.ui.navigation.novexEditorBackAction
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -574,6 +577,12 @@ fun CatalogWorldEditorScreen(
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<WorldPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = previewData != null) {
+        when (novexEditorBackAction(previewVisible = previewData != null)) {
+            NovexEditorBackAction.CLOSE_PREVIEW -> previewData = null
+            NovexEditorBackAction.LEAVE_EDITOR -> onBack()
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val slot = pendingSlot
         pendingSlot = null

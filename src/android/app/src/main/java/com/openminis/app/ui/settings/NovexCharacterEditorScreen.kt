@@ -1,6 +1,7 @@
 package com.openminis.app.ui.settings
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,6 +51,8 @@ import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.novex.domain.requireCharacter
+import com.openminis.app.ui.navigation.NovexEditorBackAction
+import com.openminis.app.ui.navigation.novexEditorBackAction
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexTopAction
@@ -92,6 +95,13 @@ fun NovexCharacterEditorScreen(
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<CharacterPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = previewData != null) {
+        when (novexEditorBackAction(previewVisible = previewData != null)) {
+            NovexEditorBackAction.CLOSE_PREVIEW -> previewData = null
+            NovexEditorBackAction.LEAVE_EDITOR -> onBack()
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         val slot = pendingSlot

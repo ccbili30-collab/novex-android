@@ -1,6 +1,7 @@
 package com.openminis.app.ui.sessions
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -456,6 +457,11 @@ fun SessionListScreen(
     val worldNames = remember(worlds) { worlds.associate { it.id to it.name } }
     var homeFilter by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT) }
     var showNewConversationMenu by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = novexHomeBackAction(searchActive = isSearchActive) == NovexHomeBackAction.CLOSE_SEARCH) {
+        viewModel.searchQuery.value = ""
+        viewModel.isSearchActive.value = false
+    }
 
     // [T-android-search-focus-sticky] When the user opens search but types
     // nothing (or only whitespace) and then navigates into a chat, the

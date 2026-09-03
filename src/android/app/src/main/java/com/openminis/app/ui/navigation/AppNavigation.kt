@@ -720,12 +720,16 @@ fun AppNavigation(
                 defaultValue = null
             }),
         ) { entry ->
+            val savedNavigationPlan = novexSavedDetailNavigationPlan()
             com.openminis.app.ui.settings.CatalogWorldEditorScreen(
                 worldId = entry.arguments?.getString("worldId"),
                 onBack = { navController.safePopBackStack() },
                 onSaved = { worldId ->
                     navController.safeNavigate(Routes.storyWorld(worldId)) {
-                        popUpTo(Routes.CHARACTERS) { inclusive = false }
+                        popUpTo(entry.destination.id) {
+                            inclusive = savedNavigationPlan.replaceCurrentEditor
+                        }
+                        launchSingleTop = savedNavigationPlan.launchSingleTop
                     }
                 },
                 onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
@@ -792,6 +796,7 @@ fun AppNavigation(
         ) { entry ->
             val editingCharacterId = entry.arguments?.getString("characterId")
             val editingWorldId = entry.arguments?.getString("worldId")
+            val savedNavigationPlan = novexSavedDetailNavigationPlan()
             com.openminis.app.ui.settings.NovexCharacterEditorScreen(
                 characterId = editingCharacterId,
                 versionId = entry.arguments?.getString("versionId"),
@@ -800,11 +805,10 @@ fun AppNavigation(
                 onBack = { navController.safePopBackStack() },
                 onSaved = { characterId ->
                     navController.safeNavigate(Routes.characterDetail(characterId)) {
-                        when {
-                            editingCharacterId != null -> popUpTo(Routes.CHARACTER_DETAIL) { inclusive = true }
-                            editingWorldId != null -> popUpTo(Routes.storyWorld(editingWorldId)) { inclusive = false }
-                            else -> popUpTo(Routes.CHARACTER_LIBRARY) { inclusive = false }
+                        popUpTo(entry.destination.id) {
+                            inclusive = savedNavigationPlan.replaceCurrentEditor
                         }
+                        launchSingleTop = savedNavigationPlan.launchSingleTop
                     }
                 },
                 onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
