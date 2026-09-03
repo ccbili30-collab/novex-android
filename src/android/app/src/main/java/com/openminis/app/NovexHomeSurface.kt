@@ -9,7 +9,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,7 +20,7 @@ import com.openminis.app.ui.sessions.NovexConversationRoot
 import com.openminis.app.ui.sessions.NovexRootScreen
 import com.openminis.app.ui.navigation.NovexRouteEntryEdge
 import com.openminis.app.ui.navigation.novexRouteEntryEdge
-import com.openminis.app.ui.theme.MinisTheme
+import com.openminis.app.ui.theme.NovexAppTheme
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -36,7 +35,6 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
         navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
     )
     setContent {
-        val dark = isSystemInDarkTheme()
         val scope = rememberCoroutineScope()
         var preparingRuntime by remember { mutableStateOf(false) }
         var runtimeRequest by remember { mutableStateOf<Job?>(null) }
@@ -70,15 +68,15 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
             }
         }
 
-        SideEffect {
-            val style = if (dark) {
-                SystemBarStyle.dark(Color.TRANSPARENT)
-            } else {
-                SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+        NovexAppTheme { appearance ->
+            SideEffect {
+                val style = if (appearance.darkTheme) {
+                    SystemBarStyle.dark(Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+                }
+                activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-        }
-        MinisTheme(darkTheme = dark) {
             NovexRootScreen(
                 conversationContent = { onWorldsClick, onRootNavigationVisibilityChange ->
                     NovexConversationRoot(

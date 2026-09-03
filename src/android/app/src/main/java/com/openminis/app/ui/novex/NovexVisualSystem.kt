@@ -9,39 +9,38 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 
 internal object NovexColors {
     val Background: Color
-        @Composable get() = MaterialTheme.colorScheme.background
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.background
     val Surface: Color
-        @Composable get() = MaterialTheme.colorScheme.surface
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface
     val SurfaceMuted: Color
-        @Composable get() = MaterialTheme.colorScheme.surfaceContainerLow
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceContainerLow
     val Text: Color
-        @Composable get() = MaterialTheme.colorScheme.onBackground
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onBackground
     val SecondaryText: Color
-        @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant
     val TertiaryText: Color
-        @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
     val Divider: Color
-        @Composable get() = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
     val Primary: Color
-        @Composable get() = MaterialTheme.colorScheme.primary
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
     val PrimarySoft: Color
-        @Composable get() = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.56f)
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.56f)
     val Danger: Color
-        @Composable get() = MaterialTheme.colorScheme.error
+        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
     val ImageScrim = Color(0xB8000000)
 }
 
@@ -53,17 +52,45 @@ internal object NovexDimensions {
     val SectionGap = 24.dp
     val RowVertical = 10.dp
     val SmallRadius = 8.dp
+    val SectionRadius = 12.dp
     val MediaRadius = 9.dp
     val SheetRadius = 24.dp
+    val SettingsRowMinHeight = 56.dp
 }
 
+internal data class NovexTypography(
+    val brand: androidx.compose.ui.text.TextStyle,
+    val pageTitle: androidx.compose.ui.text.TextStyle,
+    val sectionTitle: androidx.compose.ui.text.TextStyle,
+    val itemTitle: androidx.compose.ui.text.TextStyle,
+    val body: androidx.compose.ui.text.TextStyle,
+    val metadata: androidx.compose.ui.text.TextStyle,
+)
+
+internal fun resolveNovexTypography(
+    applicationTypography: androidx.compose.material3.Typography,
+): NovexTypography = NovexTypography(
+    brand = applicationTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+    pageTitle = applicationTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
+    sectionTitle = applicationTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    itemTitle = applicationTypography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    body = applicationTypography.bodyMedium.copy(fontWeight = FontWeight.Normal),
+    metadata = applicationTypography.bodySmall.copy(fontWeight = FontWeight.Normal),
+)
+
 internal object NovexType {
-    val Brand = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
-    val PageTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
-    val SectionTitle = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
-    val ItemTitle = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-    val Body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal)
-    val Metadata = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal)
+    val Brand: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).brand
+    val PageTitle: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).pageTitle
+    val SectionTitle: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).sectionTitle
+    val ItemTitle: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).itemTitle
+    val Body: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).body
+    val Metadata: androidx.compose.ui.text.TextStyle
+        @Composable get() = resolveNovexTypography(MaterialTheme.typography).metadata
 }
 
 internal enum class NovexArtworkKind {

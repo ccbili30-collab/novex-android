@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -397,9 +398,12 @@ private fun themedChatPalette(
 }
 
 private fun TextStyle.scale(factor: Float): TextStyle =
-    if (factor == 1f) this else copy(fontSize = fontSize * factor)
+    if (factor == 1f) this else copy(
+        fontSize = fontSize * factor,
+        lineHeight = if (lineHeight == TextUnit.Unspecified) lineHeight else lineHeight * factor,
+    )
 
-private fun scaledTypography(factor: Float): Typography {
+internal fun scaledTypography(factor: Float): Typography {
     val base = Typography()
     return Typography(
         displayLarge = base.displayLarge.scale(factor),

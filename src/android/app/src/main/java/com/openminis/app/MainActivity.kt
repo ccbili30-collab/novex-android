@@ -23,14 +23,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import android.app.AlertDialog
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -47,17 +43,12 @@ import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
 import com.openminis.app.ui.navigation.safeNavigate
-import com.openminis.app.ui.settings.KEY_FONT_APP_BASE
 import com.openminis.app.ui.settings.KEY_KEEP_SCREEN_AWAKE
 import com.openminis.app.ui.settings.KEY_LANGUAGE
-import com.openminis.app.ui.settings.KEY_THEME_MODE
 import com.openminis.app.ui.settings.PREF_APPEARANCE
 import com.openminis.app.ui.settings.getAppearancePrefs
-import com.openminis.app.ui.settings.fontScaleForLevel
 import com.openminis.app.ui.settings.keepScreenAwakeEnabled
-import com.openminis.app.ui.theme.AppThemeColorPreferences
-import com.openminis.app.ui.theme.KEY_APP_THEME_COLORS
-import com.openminis.app.ui.theme.MinisTheme
+import com.openminis.app.ui.theme.NovexAppTheme
 import com.openminis.app.ui.theme.ThemeVariantMode
 import com.openminis.app.ui.theme.relativeLuminance
 
@@ -506,17 +497,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val prefs = remember { getAppearancePrefs(this) }
-            var themeMode by remember { mutableIntStateOf(prefs.getInt(KEY_THEME_MODE, 0)) }
-            var appBaseLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_APP_BASE, 0)) }
-            var themeColors by remember { mutableStateOf(AppThemeColorPreferences.read(prefs)) }
 
             DisposableEffect(prefs) {
-                val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
-                    when (key) {
-                        KEY_THEME_MODE -> themeMode = sp.getInt(KEY_THEME_MODE, 0)
-                        KEY_FONT_APP_BASE -> appBaseLevel = sp.getInt(KEY_FONT_APP_BASE, 0)
-                        KEY_APP_THEME_COLORS -> themeColors = AppThemeColorPreferences.read(sp)
-                        KEY_KEEP_SCREEN_AWAKE -> applyKeepScreenAwakeFlag(
+                val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == KEY_KEEP_SCREEN_AWAKE) {
+                        applyKeepScreenAwakeFlag(
                             SessionActivityTracker.activeSessions.value.isNotEmpty()
                         )
                     }
@@ -525,42 +510,20 @@ class MainActivity : ComponentActivity() {
                 onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
             }
 
-            val darkTheme = when (themeMode) {
-                1 -> false
-                2 -> true
-                else -> isSystemInDarkTheme()
-            }
-            val fontScale = fontScaleForLevel(appBaseLevel)
-            val activeThemeColors = themeColors.variant(
-                if (darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
-            )
-            val backgroundIsDark = relativeLuminance(activeThemeColors.background) < 0.5
+            NovexAppTheme { appearance ->
+                val activeThemeColors = appearance.themeColors.variant(
+                    if (appearance.darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
+                )
+                val backgroundIsDark = relativeLuminance(activeThemeColors.background) < 0.5
 
-            SideEffect {
-                val barStyle = if (backgroundIsDark) {
-                    SystemBarStyle.dark(Color.TRANSPARENT)
-                } else {
-                    // T205: SystemBarStyle.light(...) auto-applies a ~30% black
-                    // scrim behind the status bar on Android 13+ for icon
-                    // legibility, which leaks through as a grey strip even
-                    // when the activity paints its own surface color
-                    // edge-to-edge. SystemBarStyle.auto with both scrim args
-                    // TRANSPARENT lets the system pick light/dark icons by
-                    // luminance but suppresses the auto-scrim, so the screen's
-                    // own background color paints all the way to the top/bottom
-                    // edges. Per-screen `isAppearanceLightStatusBars` overrides
-                    // (e.g. FilePreviewScreen DisposableEffect) still control
-                    // icon contrast.
-                    SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+                SideEffect {
+                    val barStyle = if (backgroundIsDark) {
+                        SystemBarStyle.dark(Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
+                    }
+                    enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
                 }
-                enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
-            }
-
-            MinisTheme(
-                darkTheme = darkTheme,
-                fontScale = fontScale,
-                themeColors = themeColors,
-            ) {
                 val navController = rememberNavController().also { this.navController = it }
 
                 DisposableEffect(navController) {
