@@ -5,10 +5,8 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -19,6 +17,10 @@ import com.openminis.app.data.character.NovexCardPackagePreview
 import com.openminis.app.data.character.NovexCharacterImportDocument
 import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.NovexWorldImportDocument
+import com.openminis.app.ui.novex.NovexOutlineButton
+import com.openminis.app.ui.novex.NovexPrimaryButton
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import java.io.File
 
 @Composable
@@ -42,6 +44,7 @@ internal fun NovexCardImportPreviewDialog(
     }
     AlertDialog(
         onDismissRequest = { if (!importing) onDismiss() },
+        shape = RoundedCornerShape(20.dp),
         title = { Text("导入预览：${preview.displayName}") },
         text = {
             Column {
@@ -59,12 +62,15 @@ internal fun NovexCardImportPreviewDialog(
             }
         },
         confirmButton = {
-            Button(enabled = !importing, onClick = onConfirm) {
-                Text(if (importing) "导入中" else "确认导入")
-            }
+            NovexPrimaryButton(
+                label = if (importing) "导入中" else "确认导入",
+                enabled = !importing,
+                onClick = onConfirm,
+                modifier = Modifier.width(120.dp),
+            )
         },
         dismissButton = {
-            TextButton(enabled = !importing, onClick = onDismiss) { Text("取消") }
+            NovexOutlineButton(label = "取消", enabled = !importing, onClick = onDismiss)
         },
     )
 }

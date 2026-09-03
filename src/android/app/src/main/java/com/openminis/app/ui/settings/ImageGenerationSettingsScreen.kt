@@ -34,11 +34,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,6 +59,10 @@ import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.image.ImageModelCatalog
+import com.openminis.app.R
+import com.openminis.app.ui.novex.NovexTopAction
+import com.openminis.app.ui.novex.NovexTopTextAction
+import com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,25 +89,21 @@ fun ImageGenerationSettingsScreen(
         config.instances.firstOrNull { it.id == id }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("生图来源") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onAddSource) { Icon(Icons.Default.Add, "新增来源") }
-                },
+    SettingsScaffold(
+        title = "生图来源",
+        onBack = onBack,
+        actions = {
+            NovexTopAction(
+                icon = R.drawable.ic_phosphor_plus,
+                contentDescription = "新增来源",
+                onClick = onAddSource,
             )
         },
-    ) { padding ->
+        scrollable = false,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -297,26 +295,24 @@ fun ImageGenerationSourceScreen(
     val byId = entries.associateBy { it.id }
     val orderedEntries = selectedIds.mapNotNull(byId::get) + entries.filter { it.id !in selectedIds }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (currentId == null) "新增生图来源" else "编辑生图来源") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-                },
-                actions = {
-                    if (currentId != null) {
-                        IconButton(onClick = { deleteConfirm = true }) { Icon(Icons.Default.Delete, "删除来源") }
-                    }
-                    TextButton(onClick = { saveSource() }) { Text("保存") }
-                },
-            )
+    SettingsScaffold(
+        title = if (currentId == null) "新增生图来源" else "编辑生图来源",
+        onBack = onBack,
+        actions = {
+            if (currentId != null) {
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_trash,
+                    contentDescription = "删除来源",
+                    onClick = { deleteConfirm = true },
+                )
+            }
+            NovexTopTextAction(label = "保存", onClick = { saveSource() })
         },
-    ) { padding ->
+        scrollable = false,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -489,18 +485,16 @@ fun ImageGenerationSourceScreen(
     }
 
     if (deleteConfirm && currentId != null) {
-        AlertDialog(
-            onDismissRequest = { deleteConfirm = false },
-            title = { Text("删除这个生图来源？") },
-            text = { Text("来源、密钥和它的模型会被移除，其他来源不受影响。") },
-            confirmButton = {
-                TextButton(onClick = {
+        NovexDestructiveConfirmationDialog(
+            title = "删除这个生图来源？",
+            message = "来源、密钥和它的模型会被移除，其他来源不受影响。",
+            confirming = false,
+            onDismiss = { deleteConfirm = false },
+            onConfirm = {
                     providerRepository.removeInstance(currentId)
                     deleteConfirm = false
                     onBack()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { deleteConfirm = false }) { Text("取消") } },
         )
     }
 }

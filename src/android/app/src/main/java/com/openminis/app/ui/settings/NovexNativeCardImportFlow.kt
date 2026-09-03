@@ -3,9 +3,6 @@ package com.openminis.app.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +17,7 @@ import com.openminis.app.data.character.NovexCardTransferParser
 import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.requireNativeImport
+import com.openminis.app.ui.novex.NovexNoticeDialog
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -111,14 +109,7 @@ internal fun rememberNovexNativeCardImporter(
         )
     }
     error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("${spec.label}失败") },
-            text = { Text(message) },
-            confirmButton = {
-                TextButton(onClick = { error = null }) { Text("知道了") }
-            },
-        )
+        NovexNoticeDialog("${spec.label}失败", message) { error = null }
     }
 
     return NovexNativeCardImporter(

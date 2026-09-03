@@ -14,17 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,7 +40,17 @@ import com.openminis.app.data.character.ContentModuleReferenceEntity
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexModuleReferenceOption
 import com.openminis.app.novex.domain.requireMedia
+import com.openminis.app.ui.novex.NovexNoticeDialog
+import com.openminis.app.ui.novex.NovexOutlineButton
+import com.openminis.app.ui.novex.NovexPrimaryButton
+import com.openminis.app.ui.novex.NovexSelectionAction
+import com.openminis.app.ui.novex.NovexSelectionSheet
+import com.openminis.app.ui.novex.NovexSettingsCustomRow
+import com.openminis.app.ui.novex.NovexTextActionRow
+import com.openminis.app.ui.novex.NovexTextField
+import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.rememberNovexWorkspace
+import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -127,10 +129,12 @@ fun CatalogContentModuleDetailScreen(
         title = module?.name ?: "模块",
         onBack = onBack,
         actions = {
-            TextButton(onClick = { creatorNotice = true }) {
-                androidx.compose.material3.Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                Text("帮我创作", modifier = Modifier.padding(start = 4.dp))
-            }
+            NovexTopAction(
+                icon = R.drawable.ic_phosphor_sparkle,
+                contentDescription = "帮我创作",
+                label = "帮我创作",
+                onClick = { creatorNotice = true },
+            )
         },
     ) {
         when {
@@ -151,35 +155,44 @@ fun CatalogContentModuleDetailScreen(
                     Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 ) {
-                    OutlinedButton(onClick = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }) { Text(if (image == null) "添加代表图（可选）" else "更换代表图") }
-                    if (image != null) TextButton(onClick = {
-                        scope.launch {
-                            novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
-                            image = null
-                        }
-                    }) { Text("移除") }
+                    NovexOutlineButton(
+                        label = if (image == null) "添加代表图（可选）" else "更换代表图",
+                        onClick = {
+                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    )
+                    if (image != null) {
+                        NovexOutlineButton(
+                            label = "移除",
+                            danger = true,
+                            onClick = {
+                                scope.launch {
+                                    novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
+                                    image = null
+                                }
+                            },
+                        )
+                    }
                 }
-                OutlinedTextField(
+                NovexTextField(
+                    label = "模块名称",
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("模块名称") },
-                    singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
-                OutlinedTextField(
+                NovexTextField(
+                    label = "内容（可选）",
                     value = body,
                     onValueChange = { body = it },
-                    label = { Text("内容（可选）") },
                     minLines = 12,
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
-                Button(
+                NovexPrimaryButton(
+                    label = if (saving) "保存中" else "保存",
                     onClick = ::save,
                     enabled = name.isNotBlank() && !saving,
                     modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                ) { Text(if (saving) "保存中" else "保存") }
+                )
                 Text(
                     "代表图和内容都可留空；之后仍可随时补充。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -193,35 +206,27 @@ fun CatalogContentModuleDetailScreen(
                     references.forEach { reference ->
                         val target = reference.target
                         val option = referenceOptions.firstOrNull { it.target == target }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
-                        ) {
-                            Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                                Text(option?.label ?: target.id, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    option?.kindLabel ?: "引用目标",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            TextButton(onClick = {
+                        NovexSettingsCustomRow(
+                            title = option?.label ?: target.id,
+                            subtitle = option?.kindLabel ?: "引用目标",
+                            showChevron = false,
+                            trailing = {
+                                NovexOutlineButton(label = "移除", danger = true, onClick = {
                                 scope.launch {
                                     runCatching {
                                         novex.apply(NovexCommand.RemoveModuleReference(moduleId, target))
                                     }.onSuccess { referenceRefresh++ }
                                         .onFailure { error = it.message }
                                 }
-                            }) { Text("移除") }
-                        }
+                                })
+                            },
+                        )
                     }
-                    TextButton(
+                    NovexTextActionRow(
+                        label = "添加引用",
                         onClick = { addReference = true },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                    ) {
-                        androidx.compose.material3.Icon(Icons.Default.Add, contentDescription = null)
-                        Text("添加引用", modifier = Modifier.padding(start = 6.dp))
-                    }
+                    )
                 }
             }
         }
@@ -230,61 +235,39 @@ fun CatalogContentModuleDetailScreen(
         val available = referenceOptions.filterNot { option ->
             references.any { it.target == option.target }
         }
-        AlertDialog(
+        NovexSelectionSheet(
+            title = "添加内容引用",
             onDismissRequest = { addReference = false },
-            title = { Text("添加内容引用") },
-            text = {
-                if (available.isEmpty()) {
-                    Text("没有可添加的世界、角色版本或内容模块")
-                } else {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                        items(available, key = { "${it.target.type}:${it.target.id}" }) { option ->
-                            TextButton(
-                                onClick = {
-                                    addReference = false
-                                    scope.launch {
-                                        runCatching {
-                                            novex.apply(
-                                                NovexCommand.AddModuleReference(
-                                                    moduleId,
-                                                    option.target,
-                                                    references.size,
-                                                ),
-                                            )
-                                        }.onSuccess { referenceRefresh++ }
-                                            .onFailure { error = it.message }
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column(Modifier.fillMaxWidth()) {
-                                    Text(option.label)
-                                    Text(
-                                        option.kindLabel,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
+            actions = if (available.isEmpty()) {
+                listOf(NovexSelectionAction("没有可添加的引用", icon = R.drawable.ic_phosphor_info) {})
+            } else {
+                available.map { option ->
+                    NovexSelectionAction("${option.kindLabel} · ${option.label}") {
+                        scope.launch {
+                            runCatching {
+                                novex.apply(
+                                    NovexCommand.AddModuleReference(
+                                        moduleId,
+                                        option.target,
+                                        references.size,
+                                    ),
+                                )
+                            }.onSuccess { referenceRefresh++ }
+                                .onFailure { error = it.message }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { addReference = false }) { Text("关闭") } },
         )
     }
-    if (creatorNotice) AlertDialog(
-        onDismissRequest = { creatorNotice = false },
-        title = { Text("帮我创作") },
-        text = { Text("入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改任何内容。") },
-        confirmButton = { TextButton(onClick = { creatorNotice = false }) { Text("知道了") } },
-    )
-    error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("操作失败") },
-            text = { Text(message ?: "未知错误") },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
+    if (creatorNotice) {
+        NovexNoticeDialog(
+            title = "帮我创作",
+            message = "入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改任何内容。",
+            onDismiss = { creatorNotice = false },
         )
+    }
+    error?.let { message ->
+        NovexNoticeDialog("操作失败", message ?: "未知错误") { error = null }
     }
 }

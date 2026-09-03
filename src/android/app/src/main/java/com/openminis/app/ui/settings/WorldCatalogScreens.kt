@@ -64,6 +64,7 @@ import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexContentModuleList
 import com.openminis.app.ui.novex.NovexContentSection
+import com.openminis.app.ui.novex.NovexContentDialog
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
 import com.openminis.app.ui.novex.NovexEditorScaffold
@@ -71,6 +72,8 @@ import com.openminis.app.ui.novex.NovexEditorFoldRow
 import com.openminis.app.ui.novex.NovexEditorSection
 import com.openminis.app.ui.novex.NovexOptionalImageRow
 import com.openminis.app.ui.novex.NovexInlineField
+import com.openminis.app.ui.novex.NovexNoticeDialog
+import com.openminis.app.ui.novex.NovexOutlineButton
 import com.openminis.app.ui.novex.NovexPrimaryButton
 import com.openminis.app.ui.novex.NovexSummaryRow
 import com.openminis.app.ui.novex.NovexTextActionRow
@@ -274,58 +277,72 @@ fun CatalogWorldDetailScreen(
             }
         }
     }
-    if (addCharacter && current != null) AlertDialog(
-        onDismissRequest = { addCharacter = false },
-        title = { Text("从角色库添加") },
-        text = {
-            Column {
-                current.availableVersions.filterNot { candidate ->
-                    current.versions.any { it.id == candidate.id }
-                }.forEach { version ->
-                    TextButton(
-                        onClick = {
-                            addCharacter = false
-                            scope.launch {
-                                novex.apply(
-                                    NovexCommand.LinkCharacterVersion(
-                                        worldId,
-                                        version.id,
-                                        current.versions.size,
-                                    ),
-                                )
-                                refresh++
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("${version.profileName()} · ${version.label}") }
-                }
-            }
+    if (addCharacter && current != null) NovexContentDialog(
+        title = "从角色库添加",
+        onDismiss = { addCharacter = false },
+        confirmButton = {
+            NovexOutlineButton(label = "关闭", onClick = { addCharacter = false })
         },
-        confirmButton = { TextButton(onClick = { addCharacter = false }) { Text("关闭") } },
-    )
-    if (startCharacterChat && current != null) AlertDialog(
-        onDismissRequest = { startCharacterChat = false },
-        title = { Text("新建世界角色对话") },
-        text = {
-            Column {
+    ) {
+        current.availableVersions.filterNot { candidate ->
+            current.versions.any { it.id == candidate.id }
+        }.forEach { version ->
+            NovexTextActionRow(
+                label = "${version.profileName()} · ${version.label}",
+                onClick = {
+                    addCharacter = false
+                    scope.launch {
+                        novex.apply(
+                            NovexCommand.LinkCharacterVersion(
+                                worldId,
+                                version.id,
+                                current.versions.size,
+                            ),
+                        )
+                        refresh++
+                    }
+                },
+            )
+        }
+    }
+    if (startCharacterChat && current != null) NovexContentDialog(
+        title = "新建世界角色对话",
+        onDismiss = { startCharacterChat = false },
+        confirmButton = {
+            NovexPrimaryButton(
+                label = "开始对话",
+                enabled = selectedPersonaId != null && selectedVersionId != null,
+                onClick = start@{
+                    val personaId = selectedPersonaId ?: return@start
+                    val versionId = selectedVersionId ?: return@start
+                    startCharacterChat = false
+                    onStartCharacterChat(versionId, personaId)
+                },
+                modifier = Modifier.width(112.dp),
+            )
+        },
+        dismissButton = {
+            NovexOutlineButton(label = "取消", onClick = { startCharacterChat = false })
+        },
+    ) {
                 Text("玩家身份", fontWeight = FontWeight.Bold)
                 personas.forEach { persona ->
-                    TextButton(
+                    NovexTextActionRow(
+                        label = if (selectedPersonaId == persona.id) {
+                            "✓  ${persona.name.ifBlank { "玩家" }}"
+                        } else {
+                            persona.name.ifBlank { "玩家" }
+                        },
                         onClick = { selectedPersonaId = persona.id },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (selectedPersonaId == persona.id) "✓  ${persona.name.ifBlank { "玩家" }}" else persona.name.ifBlank { "玩家" })
-                    }
+                    )
                 }
                 Text("角色版本", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
                 current.versions.forEach { version ->
-                    TextButton(
+                    val label = "${version.profileName()} · ${version.label}"
+                    NovexTextActionRow(
+                        label = if (selectedVersionId == version.id) "✓  $label" else label,
                         onClick = { selectedVersionId = version.id },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        val label = "${version.profileName()} · ${version.label}"
-                        Text(if (selectedVersionId == version.id) "✓  $label" else label)
-                    }
+                    )
                 }
                 Text(
                     "当前只选择一个本体或分身，不会创建多角色共同对话。",
@@ -333,34 +350,48 @@ fun CatalogWorldDetailScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 12.dp),
                 )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = selectedPersonaId != null && selectedVersionId != null,
-                onClick = {
-                    val personaId = selectedPersonaId ?: return@TextButton
-                    val versionId = selectedVersionId ?: return@TextButton
-                    startCharacterChat = false
-                    onStartCharacterChat(versionId, personaId)
-                },
-            ) { Text("开始对话") }
-        },
-        dismissButton = { TextButton(onClick = { startCharacterChat = false }) { Text("取消") } },
-    )
+    }
     editVersion?.let { version ->
         val affectedWorlds = current?.worldsByVersion?.get(version.id).orEmpty()
-        AlertDialog(
-            onDismissRequest = { editVersion = null },
-            title = { Text("如何修改${version.profileName()}？") },
-            text = {
-                Column {
+        NovexContentDialog(
+            title = "如何修改${version.profileName()}？",
+            onDismiss = { editVersion = null },
+            confirmButton = {
+                NovexPrimaryButton(
+                    label = "编辑共享版本",
+                    onClick = {
+                        editVersion = null
+                        onEditCharacterVersion(version.characterId, version.id)
+                    },
+                    modifier = Modifier.width(132.dp),
+                )
+            },
+            dismissButton = {
+                NovexOutlineButton(
+                    label = "另存分身",
+                    onClick = {
+                        editVersion = null
+                        scope.launch {
+                            runCatching {
+                                novex.apply(NovexCommand.SaveAsWorldVariant(version.id, worldId)).requireVersion()
+                            }
+                                .onSuccess { created ->
+                                    onEditCharacterVersion(created.characterId, created.id)
+                                }
+                                .onFailure { error = it.message }
+                        }
+                    },
+                )
+            },
+        ) {
                     Text(
                         "编辑共享版本会同步影响：" +
                             affectedWorlds.joinToString("、") { it.name }.ifBlank { "当前角色库版本" } +
                             "。另存为新分身只替换当前世界的关联。",
                     )
-                    TextButton(
+                    NovexOutlineButton(
+                        label = "从当前世界移除",
+                        danger = true,
                         onClick = {
                             editVersion = null
                             scope.launch {
@@ -371,45 +402,19 @@ fun CatalogWorldDetailScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    ) { Text("从当前世界移除") }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    editVersion = null
-                    onEditCharacterVersion(version.characterId, version.id)
-                }) { Text("编辑共享版本") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    editVersion = null
-                    scope.launch {
-                        runCatching {
-                            novex.apply(NovexCommand.SaveAsWorldVariant(version.id, worldId)).requireVersion()
-                        }
-                            .onSuccess { created ->
-                                onEditCharacterVersion(created.characterId, created.id)
-                            }
-                            .onFailure { error = it.message }
-                    }
-                }) { Text("仅当前世界另存分身") }
-            },
-        )
+                    )
+        }
     }
     error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("操作失败") },
-            text = { Text(message ?: "未知错误") },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
+        NovexNoticeDialog("操作失败", message ?: "未知错误") { error = null }
+    }
+    if (creatorNotice) {
+        NovexNoticeDialog(
+            title = "帮我创作",
+            message = "入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改世界内容。",
+            onDismiss = { creatorNotice = false },
         )
     }
-    if (creatorNotice) AlertDialog(
-        onDismissRequest = { creatorNotice = false },
-        title = { Text("帮我创作") },
-        text = { Text("入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改世界内容。") },
-        confirmButton = { TextButton(onClick = { creatorNotice = false }) { Text("知道了") } },
-    )
 }
 
 @Composable
@@ -597,12 +602,7 @@ fun CatalogWorldEditorScreen(
         Spacer(Modifier.height(32.dp))
     }
     error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("保存失败") },
-            text = { Text(message ?: "未知错误") },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
-        )
+        NovexNoticeDialog("保存失败", message ?: "未知错误") { error = null }
     }
     if (confirmDelete && worldId != null) {
         com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog(

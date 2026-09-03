@@ -2,6 +2,7 @@ package com.openminis.app.ui.novex
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -42,36 +43,7 @@ internal fun NovexDetailScaffold(
     Scaffold(
         containerColor = NovexColors.Background,
         topBar = {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(NovexColors.Background)
-                    .statusBarsPadding()
-                    .height(56.dp),
-            ) {
-                IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
-                    Icon(
-                        painterResource(R.drawable.ic_phosphor_arrow_left),
-                        contentDescription = "返回",
-                        tint = NovexColors.Text,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Text(
-                    title,
-                    color = NovexColors.Text,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 104.dp),
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
-                ) { actions() }
-            }
+            NovexPageTopBar(title = title, onBack = onBack, actions = actions)
         },
         bottomBar = { Box(Modifier.navigationBarsPadding()) { bottomBar() } },
     ) { padding ->
@@ -80,6 +52,49 @@ internal fun NovexDetailScaffold(
             .padding(padding)
             .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
         Column(modifier = body, content = content)
+    }
+}
+
+/** One top bar implementation for detail, editor, preview and settings pages. */
+@Composable
+internal fun NovexPageTopBar(
+    title: String,
+    onBack: (() -> Unit)?,
+    navigation: (@Composable () -> Unit)? = null,
+    actions: @Composable () -> Unit = {},
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NovexColors.Background)
+            .statusBarsPadding()
+            .height(NovexDimensions.TopBarHeight),
+    ) {
+        when {
+            navigation != null -> Box(Modifier.align(Alignment.CenterStart)) { navigation() }
+            onBack != null -> IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
+                Icon(
+                    painterResource(R.drawable.ic_phosphor_arrow_left),
+                    contentDescription = "返回",
+                    tint = NovexColors.Text,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        Text(
+            title,
+            color = NovexColors.Text,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 104.dp),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
+        ) { actions() }
     }
 }
 
@@ -108,5 +123,27 @@ internal fun NovexTopAction(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun NovexTopTextAction(
+    label: String,
+    onClick: () -> Unit,
+    danger: Boolean = false,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(52.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (danger) NovexColors.Danger else NovexColors.Primary,
+            style = NovexType.Body,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }

@@ -12,9 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +45,7 @@ import com.openminis.app.ui.novex.NovexEditorFoldRow
 import com.openminis.app.ui.novex.NovexEditorSection
 import com.openminis.app.ui.novex.NovexOptionalImageRow
 import com.openminis.app.ui.novex.NovexInlineField
+import com.openminis.app.ui.novex.NovexNoticeDialog
 import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
@@ -328,12 +327,7 @@ fun NovexCharacterEditorScreen(
     }
 
     error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("保存失败") },
-            text = { Text(message ?: "未知错误") },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
-        )
+        NovexNoticeDialog("保存失败", message ?: "未知错误") { error = null }
     }
     if (confirmDelete && characterId != null) {
         val deletingVariant = sourceVersion?.kind == CharacterVersionKind.VARIANT

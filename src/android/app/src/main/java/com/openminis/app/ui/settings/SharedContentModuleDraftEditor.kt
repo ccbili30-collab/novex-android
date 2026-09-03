@@ -10,13 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +35,8 @@ import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.ui.novex.ContentModuleDraftList
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexOutlineButton
+import com.openminis.app.ui.novex.NovexSelectionAction
+import com.openminis.app.ui.novex.NovexSelectionSheet
 import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.NovexType
@@ -92,24 +92,19 @@ internal fun SharedContentModuleDraftEditor(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
         )
     }
-    if (showAdd) AlertDialog(
-        onDismissRequest = { showAdd = false },
-        title = { Text("添加模块") },
-        text = {
-            Column {
-                ContentModuleCatalog.availableToAdd(state.scope, state.modules.map { it.type }).forEach { definition ->
-                    TextButton(
-                        onClick = {
-                            showAdd = false
-                            onChange(state.add(definition.type))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(definition.displayName) }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { showAdd = false }) { Text("取消") } },
-    )
+    if (showAdd) {
+        NovexSelectionSheet(
+            title = "添加模块",
+            onDismissRequest = { showAdd = false },
+            actions = ContentModuleCatalog
+                .availableToAdd(state.scope, state.modules.map { it.type })
+                .map { definition ->
+                    NovexSelectionAction(definition.displayName) {
+                        onChange(state.add(definition.type))
+                    }
+                },
+        )
+    }
 }
 
 @Composable
@@ -232,9 +227,13 @@ private fun TimelineFields(
         Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("节点 ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                TextButton(onClick = {
-                    onChange(document.copy(nodes = document.nodes.filterIndexed { i, _ -> i != index }))
-                }) { Text("删除") }
+                NovexOutlineButton(
+                    label = "删除",
+                    danger = true,
+                    onClick = {
+                        onChange(document.copy(nodes = document.nodes.filterIndexed { i, _ -> i != index }))
+                    },
+                )
             }
             NovexTextField("时间", node.time, { value ->
                 onChange(document.copy(nodes = document.nodes.replaceAt(index, node.copy(time = value))))
@@ -247,9 +246,10 @@ private fun TimelineFields(
             }, minLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
     }
-    TextButton(onClick = {
-        onChange(document.copy(nodes = document.nodes + ContentModuleTimelineNode()))
-    }, modifier = Modifier.fillMaxWidth()) { Text("＋ 添加时间节点") }
+    NovexTextActionRow(
+        label = "添加时间节点",
+        onClick = { onChange(document.copy(nodes = document.nodes + ContentModuleTimelineNode())) },
+    )
 }
 
 @Composable
@@ -261,9 +261,13 @@ private fun CollectionFields(
         Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("条目 ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                TextButton(onClick = {
-                    onChange(document.copy(items = document.items.filterIndexed { i, _ -> i != index }))
-                }) { Text("删除") }
+                NovexOutlineButton(
+                    label = "删除",
+                    danger = true,
+                    onClick = {
+                        onChange(document.copy(items = document.items.filterIndexed { i, _ -> i != index }))
+                    },
+                )
             }
             NovexTextField("名称", item.name, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(name = value))))
@@ -276,13 +280,16 @@ private fun CollectionFields(
             }, minLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
     }
-    TextButton(onClick = {
-        onChange(
-            document.copy(
-                items = document.items + ContentModuleCollectionItem(id = UUID.randomUUID().toString()),
-            ),
-        )
-    }, modifier = Modifier.fillMaxWidth()) { Text("＋ 添加条目") }
+    NovexTextActionRow(
+        label = "添加条目",
+        onClick = {
+            onChange(
+                document.copy(
+                    items = document.items + ContentModuleCollectionItem(id = UUID.randomUUID().toString()),
+                ),
+            )
+        },
+    )
 }
 
 private fun <T> List<T>.replaceAt(index: Int, value: T): List<T> = mapIndexed { current, item ->
