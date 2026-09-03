@@ -5,24 +5,15 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,23 +26,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwnerType
@@ -61,8 +45,11 @@ import com.openminis.app.novex.domain.requireCharacter
 import com.openminis.app.ui.navigation.NovexEditorBackAction
 import com.openminis.app.ui.navigation.novexEditorBackAction
 import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDetailScaffold
-import com.openminis.app.ui.novex.NovexTopAction
+import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
+import com.openminis.app.ui.novex.NovexEditorScaffold
+import com.openminis.app.ui.novex.NovexEditorFoldRow
+import com.openminis.app.ui.novex.NovexEditorSection
+import com.openminis.app.ui.novex.NovexOptionalImageRow
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -196,16 +183,9 @@ fun NovexCharacterEditorScreen(
     }
 
     previewData?.let { preview ->
-        NovexDetailScaffold(
+        NovexDraftPreviewScaffold(
             title = "角色草稿预览",
             onBack = { previewData = null },
-            actions = {
-                NovexTopAction(
-                    icon = R.drawable.ic_phosphor_eye,
-                    contentDescription = "返回编辑",
-                    onClick = { previewData = null },
-                )
-            },
         ) {
             CharacterPrimaryContent(
                 data = preview,
@@ -218,39 +198,21 @@ fun NovexCharacterEditorScreen(
         return
     }
 
-    NovexDetailScaffold(
+    NovexEditorScaffold(
         title = when {
             characterId == null -> "创建角色"
             createVariant -> "创建分身"
             else -> "编辑角色"
         },
         onBack = onBack,
-        actions = {
-            IconButton(onClick = ::preview, enabled = loaded && !draft.isBlank) {
-                Icon(painterResource(R.drawable.ic_phosphor_eye), contentDescription = "预览角色草稿")
-            }
-        },
-        bottomBar = {
-            Button(
-                onClick = ::save,
-                enabled = loaded && !draft.isBlank && !saving,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NovexColors.Text,
-                    contentColor = Color.White,
-                    disabledContainerColor = NovexColors.Text.copy(alpha = 0.35f),
-                    disabledContentColor = Color.White.copy(alpha = 0.75f),
-                ),
-                shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 16.dp, vertical = 10.dp),
-            ) { Text(if (saving) "保存中" else "保存") }
-        },
+        loaded = loaded,
+        canSave = !draft.isBlank,
+        saving = saving,
+        onPreview = ::preview,
+        onSave = ::save,
+        saveContainerColor = NovexColors.Text,
     ) {
-        if (!loaded) {
-            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            CharacterEditorSection("角色身份") {
+        NovexEditorSection("角色身份") {
                 if (characterId != null) Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -292,10 +254,10 @@ fun NovexCharacterEditorScreen(
                 }
             }
 
-            CharacterEditorSection(
+            NovexEditorSection(
                 header = "头像与背景",
             ) {
-                CharacterEditorFoldRow(
+                NovexEditorFoldRow(
                     title = "头像与主页背景",
                     expanded = draft.visualExpanded,
                     onToggle = { draft = draft.copy(visualExpanded = !draft.visualExpanded) },
@@ -306,7 +268,7 @@ fun NovexCharacterEditorScreen(
                         is NovexImageChange.Replace -> pendingImages[slot]?.uri
                         null -> media[slot]?.managedPath.existingMediaFile()
                     }
-                    CharacterDraftImageRow(
+                    NovexOptionalImageRow(
                         label = label,
                         imageModel = model,
                         onPick = {
@@ -321,11 +283,11 @@ fun NovexCharacterEditorScreen(
                 }
             }
 
-            CharacterEditorSection(
+            NovexEditorSection(
                 header = "可选资料",
                 footer = "除名称外均可留空；收起只改变编辑界面，不影响最终展示。",
             ) {
-                CharacterEditorFoldRow("基本信息、自定义属性与关系", optionalExpanded) {
+                NovexEditorFoldRow("基本信息、自定义属性与关系", optionalExpanded) {
                     optionalExpanded = !optionalExpanded
                 }
                 if (optionalExpanded) {
@@ -345,21 +307,12 @@ fun NovexCharacterEditorScreen(
             }
 
             SharedContentModuleDraftEditor(
-                scope = ContentModuleScope.CHARACTER_VERSION,
-                modules = draft.modules,
-                expandedModuleIds = draft.expandedModuleIds,
+                state = draft.contentModules,
                 persistedModuleIds = persistedModuleIds,
-                onToggle = { draft = draft.toggleModule(it) },
-                onAdd = { draft = draft.addModule(it) },
-                onUpdate = { moduleId, moduleName, document ->
-                    draft = draft.updateModule(moduleId, moduleName, document)
-                },
-                onMove = { moduleId, target -> draft = draft.moveModule(moduleId, target) },
-                onDelete = { draft = draft.removeModule(it) },
+                onChange = { draft = draft.copy(contentModules = it) },
                 onOpenDetails = onOpenModule,
             )
-            Spacer(Modifier.height(32.dp))
-        }
+        Spacer(Modifier.height(32.dp))
     }
 
     error?.let { message ->
@@ -369,41 +322,6 @@ fun NovexCharacterEditorScreen(
             text = { Text(message ?: "未知错误") },
             confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
         )
-    }
-}
-
-@Composable
-private fun CharacterEditorSection(
-    header: String,
-    footer: String? = null,
-    content: @Composable () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-        Text(
-            header,
-            color = NovexColors.Text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
-        )
-        content()
-        if (footer != null) Text(
-            footer,
-            color = NovexColors.SecondaryText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-    }
-}
-
-@Composable
-private fun CharacterEditorFoldRow(title: String, expanded: Boolean, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, modifier = Modifier.weight(1f), color = NovexColors.Text)
-        Text(if (expanded) "收起" else "展开", color = NovexColors.SecondaryText)
     }
 }
 
@@ -441,29 +359,6 @@ private fun CharacterDraftInlineField(
             },
             modifier = Modifier.weight(0.66f),
         )
-    }
-}
-
-@Composable
-private fun CharacterDraftImageRow(
-    label: String,
-    imageModel: Any?,
-    onPick: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (imageModel != null) AsyncImage(
-            model = imageModel,
-            contentDescription = label,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(58.dp).clip(RoundedCornerShape(12.dp)),
-        )
-        Text(label, modifier = Modifier.weight(1f).padding(start = if (imageModel == null) 0.dp else 12.dp))
-        TextButton(onClick = onPick) { Text(if (imageModel == null) "选择" else "更换") }
-        if (imageModel != null) TextButton(onClick = onRemove) { Text("移除") }
     }
 }
 

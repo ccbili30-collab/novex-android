@@ -1,17 +1,14 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.data.character.ContentModuleCatalog
-import com.openminis.app.data.character.ContentModuleDocument
-import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleScope
-import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexModuleDraft
-import java.util.UUID
+import com.openminis.app.ui.novex.ContentModuleDraftList
+import com.openminis.app.ui.novex.NovexImageDraft
 import org.json.JSONArray
 
 internal data class WorldEditorDraftState(
@@ -20,85 +17,28 @@ internal data class WorldEditorDraftState(
     val name: String,
     val tagsText: String,
     val overview: String,
-    val modules: List<NovexModuleDraft>,
-    val expandedModuleIds: Set<String> = emptySet(),
-    val imageChanges: Map<MediaAssetSlot, NovexImageChange> = emptyMap(),
+    val contentModules: ContentModuleDraftList,
+    val images: NovexImageDraft = NovexImageDraft.empty(),
 ) {
     val isBlank: Boolean
         get() = name.isBlank()
 
-    fun toggleModule(moduleId: String): WorldEditorDraftState {
-        if (modules.none { it.id == moduleId }) return this
-        val expanded = expandedModuleIds.toMutableSet().apply {
-            if (!add(moduleId)) remove(moduleId)
-        }
-        return copy(expandedModuleIds = expanded)
-    }
+    val modules: List<NovexModuleDraft>
+        get() = contentModules.modules
 
-    fun addModule(
-        type: ContentModuleType,
-        name: String = ContentModuleCatalog.definition(type).displayName,
-        moduleId: String = UUID.randomUUID().toString(),
-    ): WorldEditorDraftState {
-        val definition = ContentModuleCatalog.definition(type)
-        require(definition in ContentModuleCatalog.definitions(ContentModuleScope.WORLD)) {
-            "世界不支持${definition.displayName}"
-        }
-        require(definition.repeatable || modules.none { it.type == type }) {
-            "${definition.displayName}已经存在"
-        }
-        val draft = NovexModuleDraft(
-            id = moduleId,
-            type = type,
-            name = name,
-            contentJson = ContentModuleDocumentCodec.encode(emptyDocument(type)),
-            collapsed = true,
-        )
-        return copy(
-            modules = modules + draft,
-            expandedModuleIds = expandedModuleIds + draft.id,
-        )
-    }
+    val imageChanges: Map<MediaAssetSlot, NovexImageChange>
+        get() = images.changes
 
-    fun updateModule(
-        moduleId: String,
-        name: String,
-        document: ContentModuleDocument,
-    ): WorldEditorDraftState = copy(
-        modules = modules.map { module ->
-            if (module.id == moduleId) {
-                module.copy(name = name, contentJson = ContentModuleDocumentCodec.encode(document))
-            } else {
-                module
-            }
-        },
-    )
-
-    fun moveModule(moduleId: String, toIndex: Int): WorldEditorDraftState {
-        val mutable = modules.toMutableList()
-        val from = mutable.indexOfFirst { it.id == moduleId }
-        if (from < 0) return this
-        val moved = mutable.removeAt(from)
-        mutable.add(toIndex.coerceIn(0, mutable.size), moved)
-        return copy(modules = mutable)
-    }
-
-    fun removeModule(moduleId: String): WorldEditorDraftState = copy(
-        modules = modules.filterNot { it.id == moduleId },
-        expandedModuleIds = expandedModuleIds - moduleId,
-    )
+    fun editModules(edit: ContentModuleDraftList.() -> ContentModuleDraftList): WorldEditorDraftState =
+        copy(contentModules = contentModules.edit())
 
     fun replaceImage(
         slot: MediaAssetSlot,
         bytes: ByteArray,
         mimeType: String,
-    ): WorldEditorDraftState = copy(
-        imageChanges = imageChanges + (slot to NovexImageChange.Replace(slot, bytes, mimeType)),
-    )
+    ): WorldEditorDraftState = copy(images = images.replace(slot, bytes, mimeType))
 
-    fun removeImage(slot: MediaAssetSlot): WorldEditorDraftState = copy(
-        imageChanges = imageChanges + (slot to NovexImageChange.Remove(slot)),
-    )
+    fun removeImage(slot: MediaAssetSlot): WorldEditorDraftState = copy(images = images.remove(slot))
 
     fun previewWorld(now: Long = System.currentTimeMillis()): WorldEntity = WorldEntity(
         id = worldId ?: "draft-world",
@@ -131,7 +71,7 @@ internal data class WorldEditorDraftState(
             name = "我的世界",
             tagsText = "",
             overview = "",
-            modules = emptyList(),
+            contentModules = ContentModuleDraftList.empty(ContentModuleScope.WORLD),
         )
 
         fun from(world: WorldEntity, modules: List<ContentModuleEntity>) = WorldEditorDraftState(
@@ -140,29 +80,8 @@ internal data class WorldEditorDraftState(
             name = world.name,
             tagsText = world.tagsForDraft().joinToString("、"),
             overview = world.overview,
-            modules = modules.sortedWith(
-                compareBy<ContentModuleEntity> { it.position }.thenBy { it.createdAt }.thenBy { it.id },
-            ).map(NovexModuleDraft::from),
+            contentModules = ContentModuleDraftList.fromSaved(ContentModuleScope.WORLD, modules),
         )
-
-        private fun emptyDocument(type: ContentModuleType): ContentModuleDocument = when (type) {
-            ContentModuleType.MAP -> ContentModuleDocument.SingleImage()
-            ContentModuleType.TIMELINE,
-            ContentModuleType.ERA_EVENT,
-            ContentModuleType.WORLD_EXPERIENCE,
-            -> ContentModuleDocument.Timeline()
-            ContentModuleType.REGION,
-            ContentModuleType.FACTION,
-            ContentModuleType.RACE,
-            ContentModuleType.QUOTES,
-            ContentModuleType.ATTRIBUTE_PANEL,
-            ContentModuleType.EQUIPMENT,
-            ContentModuleType.TALENT_SKILL,
-            ContentModuleType.APPEARANCE_PERSONALITY,
-            ContentModuleType.INTEREST,
-            -> ContentModuleDocument.Collection()
-            ContentModuleType.CUSTOM -> ContentModuleDocument.Article()
-        }
     }
 }
 

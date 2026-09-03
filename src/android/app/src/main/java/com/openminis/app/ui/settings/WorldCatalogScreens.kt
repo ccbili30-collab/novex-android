@@ -10,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,18 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,15 +50,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.openminis.app.data.character.CharacterVersionEntity
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
-import com.openminis.app.data.character.NovexCardKind
-import com.openminis.app.data.character.NovexCardPackageCodec
-import com.openminis.app.data.character.NovexCardTransferParser
-import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.novex.domain.NovexCommand
@@ -74,16 +61,19 @@ import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.novex.domain.NovexWorldSnapshot
 import com.openminis.app.novex.domain.requireNativeCard
-import com.openminis.app.novex.domain.requireNativeImport
 import com.openminis.app.novex.domain.requireVersion
 import com.openminis.app.novex.domain.requireWorld
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexContentModuleBlock
+import com.openminis.app.ui.novex.NovexContentModuleList
 import com.openminis.app.ui.novex.NovexDetailScaffold
+import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
+import com.openminis.app.ui.novex.NovexEditorScaffold
+import com.openminis.app.ui.novex.NovexEditorFoldRow
+import com.openminis.app.ui.novex.NovexEditorSection
+import com.openminis.app.ui.novex.NovexOptionalImageRow
 import com.openminis.app.ui.novex.NovexTopAction
-import com.openminis.app.ui.novex.toNovexPresentation
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.navigation.NovexEditorBackAction
 import com.openminis.app.ui.navigation.novexEditorBackAction
@@ -120,142 +110,6 @@ data class WorldPersonaSummary(
     val description: String,
     val isDefault: Boolean,
 )
-
-@Composable
-fun CatalogWorldLibraryScreen(
-    onBack: () -> Unit,
-    onOpenWorld: (String) -> Unit,
-    onCreateWorld: () -> Unit,
-    onOpenCharacterLibrary: () -> Unit,
-) {
-    val context = LocalContext.current
-    val novex = rememberNovexWorkspace()
-    val scope = rememberCoroutineScope()
-    var worlds by remember { mutableStateOf<List<Pair<com.openminis.app.data.character.WorldEntity, String?>>>(emptyList()) }
-    var refresh by remember { mutableIntStateOf(0) }
-    var loaded by remember { mutableStateOf(false) }
-    var importing by remember { mutableStateOf(false) }
-    var importPreview by remember { mutableStateOf<NovexValidatedCardImport?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(refresh) {
-        worlds = novex.worlds().map { card ->
-            card.world to (card.image?.managedPath ?: card.world.legacyBackgroundPath())
-        }
-        loaded = true
-    }
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) scope.launch {
-            importing = true
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("无法读取世界卡文件")
-                    val preview = NovexCardPackageCodec.decode(bytes)
-                    require(preview.kind == NovexCardKind.WORLD) { "请选择 .novexworld 世界卡" }
-                    NovexCardTransferParser.parse(preview)
-                }
-            }.onSuccess {
-                importPreview = it
-                importing = false
-            }.onFailure {
-                importing = false
-                error = it.message ?: "世界卡预览失败"
-            }
-        }
-    }
-    SettingsScaffold(
-        title = "我的世界",
-        onBack = onBack,
-        actions = {
-            IconButton(enabled = !importing, onClick = {
-                importer.launch(arrayOf("application/zip", "application/octet-stream"))
-            }) {
-                Icon(Icons.Default.Upload, contentDescription = "导入 Novex 世界卡")
-            }
-            IconButton(onClick = onOpenCharacterLibrary) {
-                Icon(Icons.Default.Person, contentDescription = "打开角色库")
-            }
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onCreateWorld,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("创建世界") },
-            )
-        },
-    ) {
-        when {
-            !loaded -> Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            worlds.isEmpty() -> WorldEmptyRow("还没有世界", "创建世界", onCreateWorld)
-            else -> worlds.forEach { (world, imagePath) ->
-                Card(
-                    onClick = { onOpenWorld(world.id) },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                ) {
-                    imagePath.existingMediaFile()?.let { file ->
-                        AsyncImage(
-                            model = file,
-                            contentDescription = "${world.name}封面",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().height(132.dp),
-                        )
-                    }
-                    Column(Modifier.padding(16.dp)) {
-                        Text(world.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        val tags = world.tags()
-                        if (tags.isNotEmpty()) Text(
-                            tags.joinToString(" · "),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            world.overview.ifBlank { "尚未填写世界观概述" },
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(96.dp))
-    }
-    importPreview?.let { preview ->
-        NovexCardImportPreviewDialog(
-            preview = preview,
-            importing = importing,
-            onDismiss = { importPreview = null },
-            onConfirm = {
-                scope.launch {
-                    importing = true
-                    runCatching {
-                        novex.apply(NovexCommand.ImportNativeCard(preview)).requireNativeImport()
-                    }.onSuccess { imported ->
-                        importPreview = null
-                        importing = false
-                        refresh++
-                        onOpenWorld(imported.localId)
-                    }.onFailure {
-                        importing = false
-                        error = it.message ?: "世界卡导入失败"
-                    }
-                }
-            },
-        )
-    }
-    error?.let { message ->
-        AlertDialog(
-            onDismissRequest = { error = null },
-            title = { Text("世界卡导入失败") },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
-        )
-    }
-}
 
 @Composable
 fun CatalogWorldDetailScreen(
@@ -644,16 +498,9 @@ fun CatalogWorldEditorScreen(
         }
     }
     previewData?.let { draft ->
-        NovexDetailScaffold(
+        NovexDraftPreviewScaffold(
             title = "世界草稿预览",
             onBack = { previewData = null },
-            actions = {
-                NovexTopAction(
-                    icon = com.openminis.app.R.drawable.ic_phosphor_eye,
-                    contentDescription = "返回编辑",
-                    onClick = { previewData = null },
-                )
-            },
         ) {
             WorldPrimaryContent(
                 data = draft,
@@ -664,31 +511,16 @@ fun CatalogWorldEditorScreen(
         }
         return
     }
-    NovexDetailScaffold(
+    NovexEditorScaffold(
         title = if (worldId == null) "创建世界" else "编辑世界",
         onBack = onBack,
-        actions = {
-            IconButton(onClick = ::preview, enabled = loaded && draft.name.isNotBlank()) {
-                Icon(
-                    androidx.compose.ui.res.painterResource(com.openminis.app.R.drawable.ic_phosphor_eye),
-                    contentDescription = "预览世界草稿",
-                )
-            }
-        },
-        bottomBar = {
-            Button(
-                onClick = ::save,
-                enabled = loaded && draft.name.isNotBlank() && !saving,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Text(if (saving) "保存中" else "保存")
-            }
-        },
+        loaded = loaded,
+        canSave = draft.name.isNotBlank(),
+        saving = saving,
+        onPreview = ::preview,
+        onSave = ::save,
     ) {
-        if (!loaded) Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        } else {
-            WorldEditorSection(header = "基础资料") {
+        NovexEditorSection(header = "基础资料") {
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it) },
@@ -711,21 +543,12 @@ fun CatalogWorldEditorScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            WorldEditorSection(
+            NovexEditorSection(
                 header = "视觉资源",
                 footer = "全部图片均可留空，也可以随时独立添加、更换或移除。",
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable { visualExpanded = !visualExpanded }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                ) {
-                    Text("封面、标志与全屏背景", modifier = Modifier.weight(1f))
-                    Text(
-                        if (visualExpanded) "收起" else "展开",
-                        color = NovexColors.SecondaryText,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                NovexEditorFoldRow("封面、标志与全屏背景", visualExpanded) {
+                    visualExpanded = !visualExpanded
                 }
                 if (visualExpanded) {
                     worldImageSlots().forEach { imageSlot ->
@@ -736,7 +559,7 @@ fun CatalogWorldEditorScreen(
                             is NovexImageChange.Replace -> pending?.uri
                             null -> media[slot]?.managedPath.existingMediaFile()
                         }
-                        WorldImageEditorRow(
+                        NovexOptionalImageRow(
                             label = imageSlot.label,
                             imageModel = imageModel,
                             onPick = {
@@ -752,21 +575,12 @@ fun CatalogWorldEditorScreen(
                 }
             }
             SharedContentModuleDraftEditor(
-                scope = ContentModuleScope.WORLD,
-                modules = draft.modules,
-                expandedModuleIds = draft.expandedModuleIds,
+                state = draft.contentModules,
                 persistedModuleIds = persistedModuleIds,
-                onToggle = { draft = draft.toggleModule(it) },
-                onAdd = { draft = draft.addModule(it) },
-                onUpdate = { moduleId, moduleName, document ->
-                    draft = draft.updateModule(moduleId, moduleName, document)
-                },
-                onMove = { moduleId, target -> draft = draft.moveModule(moduleId, target) },
-                onDelete = { draft = draft.removeModule(it) },
+                onChange = { draft = draft.copy(contentModules = it) },
                 onOpenDetails = onOpenModule,
             )
-            Spacer(Modifier.height(32.dp))
-        }
+        Spacer(Modifier.height(32.dp))
     }
     error?.let { message ->
         AlertDialog(
@@ -927,20 +741,14 @@ private fun WorldPrimaryContent(
         color = NovexColors.Divider,
         modifier = Modifier.padding(horizontal = 16.dp),
     )
-    data.modules.forEachIndexed { index, module ->
-        if (index > 0) androidx.compose.material3.HorizontalDivider(
-            color = NovexColors.Divider,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        NovexContentModuleBlock(
-            presentation = module.toNovexPresentation(),
-            imageModel = data.moduleImages[module.id]?.managedPath.existingMediaFile(),
-            itemImageModels = data.moduleItemImages[module.id].orEmpty().mapValues {
-                it.value.managedPath.existingMediaFile()
-            },
-            onClick = onOpenModule?.let { open -> { open(module.id) } },
-        )
-    }
+    NovexContentModuleList(
+        modules = data.modules,
+        moduleImages = data.moduleImages.mapValues { it.value.managedPath.existingMediaFile() },
+        moduleItemImages = data.moduleItemImages.mapValues { (_, images) ->
+            images.mapValues { it.value.managedPath.existingMediaFile() }
+        },
+        onOpenModule = onOpenModule,
+    )
 }
 
 @Composable
@@ -953,75 +761,6 @@ private fun WorldOverviewBlock(world: WorldEntity) {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp),
         )
-    }
-}
-
-@Composable
-private fun WorldImageEditorRow(
-    label: String,
-    imageModel: Any?,
-    onPick: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        imageModel?.let { model ->
-            AsyncImage(
-                model = model,
-                contentDescription = label,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)),
-            )
-        }
-        Column(Modifier.weight(1f).padding(start = if (imageModel == null) 0.dp else 12.dp)) {
-            Text(label, fontWeight = FontWeight.Medium)
-            Text(
-                if (imageModel == null) "未设置（可留空）" else "已设置",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        TextButton(onClick = onPick) { Text(if (imageModel == null) "选择" else "更换") }
-        if (imageModel != null) TextButton(onClick = onRemove) { Text("移除") }
-    }
-}
-
-@Composable
-private fun WorldEditorSection(
-    header: String,
-    footer: String? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(top = 20.dp)) {
-        Text(
-            header,
-            color = NovexColors.SecondaryText,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        Column(
-            modifier = Modifier.fillMaxWidth().background(NovexColors.Surface),
-            content = content,
-        )
-        footer?.let {
-            Text(
-                it,
-                color = NovexColors.SecondaryText,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun WorldEmptyRow(title: String, action: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(24.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = onClick) { Text(action) }
     }
 }
 

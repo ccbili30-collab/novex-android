@@ -34,9 +34,9 @@ import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleCollectionItem
 import com.openminis.app.data.character.ContentModuleDocument
 import com.openminis.app.data.character.ContentModuleDocumentCodec
-import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.ContentModuleTimelineNode
 import com.openminis.app.novex.domain.NovexModuleDraft
+import com.openminis.app.ui.novex.ContentModuleDraftList
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.novexModuleSummary
 import com.openminis.app.data.character.toPlainText
@@ -45,15 +45,9 @@ import java.util.UUID
 /** Controlled editor: every mutation stays in the page draft until its parent saves once. */
 @Composable
 internal fun SharedContentModuleDraftEditor(
-    scope: ContentModuleScope,
-    modules: List<NovexModuleDraft>,
-    expandedModuleIds: Set<String>,
+    state: ContentModuleDraftList,
     persistedModuleIds: Set<String>,
-    onToggle: (String) -> Unit,
-    onAdd: (com.openminis.app.data.character.ContentModuleType) -> Unit,
-    onUpdate: (String, String, ContentModuleDocument) -> Unit,
-    onMove: (String, Int) -> Unit,
-    onDelete: (String) -> Unit,
+    onChange: (ContentModuleDraftList) -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
@@ -65,20 +59,20 @@ internal fun SharedContentModuleDraftEditor(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
         )
         Column(Modifier.fillMaxWidth().background(NovexColors.Surface)) {
-            modules.forEachIndexed { index, module ->
+            state.modules.forEachIndexed { index, module ->
                 ModuleDraftRow(
                     module = module,
-                    expanded = module.id in expandedModuleIds,
+                    expanded = module.id in state.expandedModuleIds,
                     persisted = module.id in persistedModuleIds,
                     canMoveUp = index > 0,
-                    canMoveDown = index < modules.lastIndex,
-                    onToggle = { onToggle(module.id) },
-                    onUpdate = { name, document -> onUpdate(module.id, name, document) },
-                    onMove = { delta -> onMove(module.id, index + delta) },
-                    onDelete = { onDelete(module.id) },
+                    canMoveDown = index < state.modules.lastIndex,
+                    onToggle = { onChange(state.toggle(module.id)) },
+                    onUpdate = { name, document -> onChange(state.update(module.id, name, document)) },
+                    onMove = { delta -> onChange(state.move(module.id, index + delta)) },
+                    onDelete = { onChange(state.remove(module.id)) },
                     onOpenDetails = { onOpenDetails(module.id) },
                 )
-                if (index < modules.lastIndex) HorizontalDivider(
+                if (index < state.modules.lastIndex) HorizontalDivider(
                     color = NovexColors.Divider,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
@@ -103,11 +97,11 @@ internal fun SharedContentModuleDraftEditor(
         title = { Text("添加模块") },
         text = {
             Column {
-                ContentModuleCatalog.availableToAdd(scope, modules.map { it.type }).forEach { definition ->
+                ContentModuleCatalog.availableToAdd(state.scope, state.modules.map { it.type }).forEach { definition ->
                     TextButton(
                         onClick = {
                             showAdd = false
-                            onAdd(definition.type)
+                            onChange(state.add(definition.type))
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(definition.displayName) }

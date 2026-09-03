@@ -47,14 +47,15 @@ class WorldEditorDraftStateTest {
 
         val draft = WorldEditorDraftState.from(original, listOf(savedMap, savedFaction))
             .copy(name = "云岚书院·新章", overview = "新概述", tagsText = "仙侠、学院")
-            .updateModule(
-                moduleId = "faction",
-                name = "四方势力",
-                document = ContentModuleDocument.Collection(emptyList()),
-            )
-            .moveModule("faction", 0)
-            .removeModule("map")
-            .addModule(ContentModuleType.REGION, "地区", moduleId = "region")
+            .editModules {
+                update(
+                    moduleId = "faction",
+                    name = "四方势力",
+                    document = ContentModuleDocument.Collection(emptyList()),
+                ).move("faction", 0)
+                    .remove("map")
+                    .add(ContentModuleType.REGION, "地区", moduleId = "region")
+            }
 
         assertEquals("旧概述", original.overview)
         assertEquals(listOf("faction", "region"), draft.modules.map { it.id })

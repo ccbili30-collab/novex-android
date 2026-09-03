@@ -4,18 +4,15 @@ import com.openminis.app.data.character.CharacterAggregate
 import com.openminis.app.data.character.CharacterCustomAttribute
 import com.openminis.app.data.character.CharacterRelationship
 import com.openminis.app.data.character.CharacterVersionEntity
-import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
-import com.openminis.app.data.character.ContentModuleCatalog
-import com.openminis.app.data.character.ContentModuleDocument
-import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleScope
-import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexModuleDraft
+import com.openminis.app.ui.novex.ContentModuleDraftList
+import com.openminis.app.ui.novex.NovexImageDraft
 import java.util.UUID
 
 /** One character-version editor session. Nothing reaches storage before [toSaveCommand]. */
@@ -36,9 +33,8 @@ internal data class CharacterEditorDraftState(
     val attributesText: String,
     val relationshipsText: String,
     val baseProfile: CharacterVersionProfile,
-    val modules: List<NovexModuleDraft>,
-    val expandedModuleIds: Set<String> = emptySet(),
-    val imageChanges: Map<MediaAssetSlot, NovexImageChange> = emptyMap(),
+    val contentModules: ContentModuleDraftList,
+    val images: NovexImageDraft = NovexImageDraft.empty(),
     val visualExpanded: Boolean = false,
 ) {
     val isBlank: Boolean
@@ -56,75 +52,22 @@ internal data class CharacterEditorDraftState(
         relationships = parseCharacterRelationships(relationshipsText),
     )
 
-    fun toggleModule(moduleId: String): CharacterEditorDraftState {
-        if (modules.none { it.id == moduleId }) return this
-        val expanded = expandedModuleIds.toMutableSet().apply {
-            if (!add(moduleId)) remove(moduleId)
-        }
-        return copy(expandedModuleIds = expanded)
-    }
+    val modules: List<NovexModuleDraft>
+        get() = contentModules.modules
 
-    fun addModule(
-        type: ContentModuleType,
-        name: String = ContentModuleCatalog.definition(type).displayName,
-        moduleId: String = UUID.randomUUID().toString(),
-    ): CharacterEditorDraftState {
-        val definition = ContentModuleCatalog.definition(type)
-        require(definition in ContentModuleCatalog.definitions(ContentModuleScope.CHARACTER_VERSION)) {
-            "角色不支持${definition.displayName}"
-        }
-        require(definition.repeatable || modules.none { it.type == type }) {
-            "${definition.displayName}已经存在"
-        }
-        val draft = NovexModuleDraft(
-            id = moduleId,
-            type = type,
-            name = name,
-            contentJson = ContentModuleDocumentCodec.encode(emptyDocument(type)),
-            collapsed = true,
-        )
-        return copy(modules = modules + draft, expandedModuleIds = expandedModuleIds + draft.id)
-    }
+    val imageChanges: Map<MediaAssetSlot, NovexImageChange>
+        get() = images.changes
 
-    fun updateModule(
-        moduleId: String,
-        name: String,
-        document: ContentModuleDocument,
-    ): CharacterEditorDraftState = copy(
-        modules = modules.map { module ->
-            if (module.id == moduleId) {
-                module.copy(name = name, contentJson = ContentModuleDocumentCodec.encode(document))
-            } else {
-                module
-            }
-        },
-    )
-
-    fun moveModule(moduleId: String, toIndex: Int): CharacterEditorDraftState {
-        val mutable = modules.toMutableList()
-        val from = mutable.indexOfFirst { it.id == moduleId }
-        if (from < 0) return this
-        val moved = mutable.removeAt(from)
-        mutable.add(toIndex.coerceIn(0, mutable.size), moved)
-        return copy(modules = mutable)
-    }
-
-    fun removeModule(moduleId: String): CharacterEditorDraftState = copy(
-        modules = modules.filterNot { it.id == moduleId },
-        expandedModuleIds = expandedModuleIds - moduleId,
-    )
+    fun editModules(edit: ContentModuleDraftList.() -> ContentModuleDraftList): CharacterEditorDraftState =
+        copy(contentModules = contentModules.edit())
 
     fun replaceImage(
         slot: MediaAssetSlot,
         bytes: ByteArray,
         mimeType: String,
-    ): CharacterEditorDraftState = copy(
-        imageChanges = imageChanges + (slot to NovexImageChange.Replace(slot, bytes, mimeType)),
-    )
+    ): CharacterEditorDraftState = copy(images = images.replace(slot, bytes, mimeType))
 
-    fun removeImage(slot: MediaAssetSlot): CharacterEditorDraftState = copy(
-        imageChanges = imageChanges + (slot to NovexImageChange.Remove(slot)),
-    )
+    fun removeImage(slot: MediaAssetSlot): CharacterEditorDraftState = copy(images = images.remove(slot))
 
     fun toSaveCommand(
         worldId: String? = null,
@@ -161,7 +104,7 @@ internal data class CharacterEditorDraftState(
             attributesText = "",
             relationshipsText = "",
             baseProfile = CharacterVersionProfile(""),
-            modules = emptyList(),
+            contentModules = ContentModuleDraftList.empty(ContentModuleScope.CHARACTER_VERSION),
         )
 
         fun from(
@@ -189,27 +132,12 @@ internal data class CharacterEditorDraftState(
                 attributesText = profile.customAttributes.joinToString("\n", transform = CharacterCustomAttribute::asDraftLine),
                 relationshipsText = profile.relationships.joinToString("\n", transform = CharacterRelationship::asDraftLine),
                 baseProfile = profile,
-                modules = modules.sortedWith(
-                    compareBy<ContentModuleEntity> { it.position }.thenBy { it.createdAt }.thenBy { it.id },
-                ).map { module ->
-                    NovexModuleDraft.from(module).let { draft ->
-                        if (createVariant) draft.copy(id = moduleIdFactory()) else draft
-                    }
-                },
+                contentModules = ContentModuleDraftList.fromSaved(
+                    scope = ContentModuleScope.CHARACTER_VERSION,
+                    modules = modules,
+                    moduleId = { module -> if (createVariant) moduleIdFactory() else module.id },
+                ),
             )
-        }
-
-        private fun emptyDocument(type: ContentModuleType): ContentModuleDocument = when (type) {
-            ContentModuleType.WORLD_EXPERIENCE -> ContentModuleDocument.Timeline()
-            ContentModuleType.QUOTES,
-            ContentModuleType.ATTRIBUTE_PANEL,
-            ContentModuleType.EQUIPMENT,
-            ContentModuleType.TALENT_SKILL,
-            ContentModuleType.APPEARANCE_PERSONALITY,
-            ContentModuleType.INTEREST,
-            -> ContentModuleDocument.Collection()
-            ContentModuleType.CUSTOM -> ContentModuleDocument.Article()
-            else -> error("角色不支持${ContentModuleCatalog.definition(type).displayName}")
         }
     }
 }

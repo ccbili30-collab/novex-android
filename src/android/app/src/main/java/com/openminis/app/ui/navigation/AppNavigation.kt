@@ -158,8 +158,6 @@ object Routes {
     const val MCP = "mcp"
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
-    const val CHARACTERS = "characters"
-    const val CHARACTER_LIBRARY = "characters/library"
     const val STORY_WORLD = "characters/world/{worldId}"
     const val STORY_WORLD_EDIT = "characters/world/edit?worldId={worldId}"
     const val CHARACTER_DETAIL = "characters/card/{characterId}"
@@ -636,23 +634,6 @@ fun AppNavigation(
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
                 onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
-            )
-        }
-
-        composable(Routes.CHARACTERS) {
-            com.openminis.app.ui.settings.CatalogWorldLibraryScreen(
-                onBack = { navController.safePopBackStack() },
-                onOpenWorld = { navController.safeNavigate(Routes.storyWorld(it)) },
-                onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
-                onOpenCharacterLibrary = { navController.safeNavigate(Routes.CHARACTER_LIBRARY) },
-            )
-        }
-
-        composable(Routes.CHARACTER_LIBRARY) {
-            com.openminis.app.ui.settings.CatalogCharacterLibraryScreen(
-                onBack = { navController.safePopBackStack() },
-                onOpenCharacter = { navController.safeNavigate(Routes.characterDetail(it)) },
-                onCreateCharacter = { navController.safeNavigate(Routes.characterCatalogEdit()) },
             )
         }
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,48 +91,6 @@ internal fun novexModuleSummary(text: String, maxCharacters: Int = 48): String {
     return normalized.take(maxCharacters).trimEnd('。', '，', '；', '、', ' ') + "…"
 }
 
-/** Compact shared rendering used by editors and, later, the full display renderer. */
-@Composable
-internal fun NovexContentModuleSummary(
-    presentation: NovexContentModulePresentation,
-    imageModel: Any?,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        if (imageModel != null) {
-            AsyncImage(
-                model = imageModel,
-                contentDescription = "${presentation.title}代表图",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)),
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                presentation.title,
-                color = NovexColors.Text,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                presentation.summary,
-                color = NovexColors.SecondaryText,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-        }
-    }
-}
-
 /** Full-width display block shared by saved pages and draft previews. */
 @Composable
 internal fun NovexContentModuleBlock(
@@ -170,6 +129,28 @@ internal fun NovexContentModuleBlock(
             )
             NovexContentModuleLayout.ARTICLE -> ArticleModuleBody(presentation, imageModel)
         }
+    }
+}
+
+/** Ordered display list shared by world pages, character pages and draft previews. */
+@Composable
+internal fun NovexContentModuleList(
+    modules: List<ContentModuleEntity>,
+    moduleImages: Map<String, Any?>,
+    moduleItemImages: Map<String, Map<String, Any?>>,
+    onOpenModule: ((String) -> Unit)?,
+) {
+    modules.forEachIndexed { index, module ->
+        if (index > 0) HorizontalDivider(
+            color = NovexColors.Divider,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        NovexContentModuleBlock(
+            presentation = module.toNovexPresentation(),
+            imageModel = moduleImages[module.id],
+            itemImageModels = moduleItemImages[module.id].orEmpty(),
+            onClick = onOpenModule?.let { open -> { open(module.id) } },
+        )
     }
 }
 

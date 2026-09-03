@@ -17,7 +17,7 @@
 
 ### 内容模块编辑状态
 
-`ContentModuleWorkspaceState` 是世界和角色编辑器共同使用的纯状态接口，集中处理：
+`ContentModuleDraftList` 是世界和角色编辑器共同使用的纯状态接口，集中处理：
 
 - 多个模块同时展开；
 - 每次重新进入编辑器默认全部折叠；
@@ -25,6 +25,15 @@
 - 删除模块后同步清理展开状态并压紧位置。
 
 它不直接访问数据库，也不上传图片；持久化只发生在用户保存草稿时。
+
+### 内容页面编辑框架
+
+`NovexEditorScaffold`、`NovexEditorSection`、`NovexEditorFoldRow` 和
+`NovexOptionalImageRow` 共同承担世界与角色编辑页的固定结构。页面只提供自己的字段、
+图片槽位和保存命令，不再分别实现预览按钮、保存按钮、加载态、折叠区域与可选图片行。
+
+`NovexContentModuleList` 是正式展示与草稿预览唯一的模块渲染入口；世界和角色可以拥有
+不同模块类型，但同一种结构化文档不会因所在页面不同而出现两套渲染规则。
 
 ### Novex 视觉系统
 
