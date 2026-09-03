@@ -300,7 +300,7 @@ object UpdateChecker {
                     "<content\\b[^>]*>(.*?)</content>",
                     setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
                 ).find(entry)?.groupValues?.get(1)
-                    ?.let(::atomContentToPlainText)
+                    ?.let(::atomContentToMarkdown)
                     ?.takeIf { it.isNotBlank() }
                     ?: ATOM_CHANGELOG_FALLBACK
                 PublishedUpdate(
@@ -368,6 +368,51 @@ object UpdateChecker {
         return decodeXmlEntities(html)
             .replace('\u00a0', ' ')
             .replace(Regex("[ \\t]+\n"), "\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    /** Preserve GitHub release formatting when the REST API falls back to Atom HTML. */
+    private fun atomContentToMarkdown(raw: String): String {
+        val options = setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        var markdown = decodeXmlEntities(decodeXmlEntities(raw))
+            .replace(Regex("<!--.*?-->", options), "")
+            .replace(Regex("<(?:strong|b)\\b[^>]*>", RegexOption.IGNORE_CASE), "**")
+            .replace(Regex("</(?:strong|b)\\s*>", RegexOption.IGNORE_CASE), "**")
+            .replace(Regex("<(?:em|i)\\b[^>]*>", RegexOption.IGNORE_CASE), "*")
+            .replace(Regex("</(?:em|i)\\s*>", RegexOption.IGNORE_CASE), "*")
+            .replace(Regex("<(?:del|s)\\b[^>]*>", RegexOption.IGNORE_CASE), "~~")
+            .replace(Regex("</(?:del|s)\\s*>", RegexOption.IGNORE_CASE), "~~")
+            .replace(Regex("<code\\b[^>]*>", RegexOption.IGNORE_CASE), "`")
+            .replace(Regex("</code\\s*>", RegexOption.IGNORE_CASE), "`")
+
+        markdown = Regex(
+            "<a\\b[^>]*href=[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</a>",
+            options,
+        ).replace(markdown) { match ->
+            val label = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
+            "[$label](${decodeXmlEntities(match.groupValues[1])})"
+        }
+
+        for (level in 1..6) {
+            markdown = markdown
+                .replace(Regex("<h$level\\b[^>]*>", RegexOption.IGNORE_CASE), "\n${"#".repeat(level)} ")
+                .replace(Regex("</h$level\\s*>", RegexOption.IGNORE_CASE), "\n")
+        }
+
+        return markdown
+            .replace(Regex("<hr\\b[^>]*?/?>", RegexOption.IGNORE_CASE), "\n\n---\n\n")
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "\n- ")
+            .replace(Regex("</li\\s*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</?(?:ul|ol)\\b[^>]*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</(?:p|div|blockquote)\\s*>", RegexOption.IGNORE_CASE), "\n\n")
+            .replace(Regex("<(?:p|div|blockquote)\\b[^>]*>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<[^>]+>"), "")
+            .let(::decodeXmlEntities)
+            .replace('\u00a0', ' ')
+            .replace(Regex("[ \\t]+\n"), "\n")
+            .replace(Regex("\n[ \\t]+"), "\n")
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +53,7 @@ import com.openminis.app.R
 import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
+import com.openminis.app.ui.markdown.MarkdownText
 import kotlinx.coroutines.launch
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
@@ -83,6 +85,19 @@ internal object CurrentNovexAnnouncement {
         "愿逝者安息，愿伤者康复，愿失联者早日归来，愿所有受灾群众平安渡过难关，重建家园。",
     )
     const val closing = "愿山河无恙，愿人间皆安"
+    val markdown: String
+        get() = paragraphs.joinToString("\n\n") + "\n\n**$closing**"
+}
+
+internal enum class NovexHomeAction { ANNOUNCEMENT, UPDATE }
+
+internal fun resolveNovexHomeAction(
+    detectedVersion: String?,
+    dismissedVersion: String?,
+): NovexHomeAction = if (detectedVersion != null && detectedVersion != dismissedVersion) {
+    NovexHomeAction.UPDATE
+} else {
+    NovexHomeAction.ANNOUNCEMENT
 }
 
 /**
@@ -294,10 +309,12 @@ fun NovexUpdateAction() {
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
     var announcementOpen by remember { mutableStateOf(false) }
+    var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
 
     fun openDetectedUpdateOrCheck() {
         val available = detectedUpdate
         if (available != null) {
+            dismissedUpdateVersion = null
             dialogUpdate = available
             NovexUpdateAnnouncementStore.markShown(context, available)
             return
@@ -326,11 +343,8 @@ fun NovexUpdateAction() {
     }
 
     LaunchedEffect(detectedUpdate?.versionName) {
-        detectedUpdate?.let { available ->
-            if (NovexUpdateAnnouncementStore.shouldShow(context, available)) {
-                announcementOpen = true
-                NovexUpdateAnnouncementStore.markShown(context, available)
-            }
+        if (dismissedUpdateVersion != detectedUpdate?.versionName) {
+            dismissedUpdateVersion = null
         }
     }
 
@@ -351,23 +365,35 @@ fun NovexUpdateAction() {
         lifecycleOwner.lifecycle.addObserver(observer)
     }
 
+    val homeAction = resolveNovexHomeAction(
+        detectedVersion = detectedUpdate?.versionName,
+        dismissedVersion = dismissedUpdateVersion,
+    )
+
     Row(
         modifier = Modifier
-            .clickable(enabled = !checking) { announcementOpen = true }
+            .clickable(enabled = !checking) {
+                if (homeAction == NovexHomeAction.UPDATE) {
+                    dialogUpdate = detectedUpdate
+                } else {
+                    announcementOpen = true
+                }
+            }
             .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            if (detectedUpdate == null) "公告" else "公告 · 有新版本 ${detectedUpdate?.versionName.orEmpty()}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
         when {
-            checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            checking -> CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 2.dp)
+            homeAction == NovexHomeAction.UPDATE -> Icon(
+                Icons.Outlined.FileDownload,
+                contentDescription = "打开 Novex（诺文）更新",
+                modifier = Modifier.size(30.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
             else -> Icon(
                 Icons.Outlined.Campaign,
                 contentDescription = "打开 Novex（诺文）公告",
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
     }
@@ -420,6 +446,7 @@ fun NovexUpdateAction() {
             onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
             onDismiss = {
                 if (downloadProgress == null) {
+                    dismissedUpdateVersion = available.versionName
                     dialogUpdate = null
                     downloadError = null
                     awaitingInstallPermission = false
@@ -492,13 +519,14 @@ private fun UpdateDialog(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
-                    text = update.changelog.ifBlank {
+                MarkdownText(
+                    markdown = update.changelog.ifBlank {
                         "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 320.dp)
                         .verticalScroll(rememberScrollState())
                         .padding(vertical = 4.dp),
                 )
@@ -595,13 +623,9 @@ private fun AnnouncementDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                CurrentNovexAnnouncement.paragraphs.forEach { paragraph ->
-                    Text(paragraph, style = MaterialTheme.typography.bodyMedium)
-                }
-                Text(
-                    CurrentNovexAnnouncement.closing,
+                MarkdownText(
+                    markdown = CurrentNovexAnnouncement.markdown,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
                 )
             }
         },
