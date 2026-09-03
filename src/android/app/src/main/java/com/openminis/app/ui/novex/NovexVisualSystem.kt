@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -21,16 +22,26 @@ import coil.compose.AsyncImage
 import com.openminis.app.R
 
 internal object NovexColors {
-    val Background = Color(0xFFFBFBFC)
-    val Surface = Color(0xFFFFFFFF)
-    val SurfaceMuted = Color(0xFFF3F4F6)
-    val Text = Color(0xFF17181C)
-    val SecondaryText = Color(0xFF686B73)
-    val TertiaryText = Color(0xFF9699A1)
-    val Divider = Color(0xFFE7E8EC)
-    val Primary = Color(0xFF315F9F)
-    val PrimarySoft = Color(0xFFEEF3FA)
-    val Danger = Color(0xFFB83D45)
+    val Background: Color
+        @Composable get() = MaterialTheme.colorScheme.background
+    val Surface: Color
+        @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceMuted: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceContainerLow
+    val Text: Color
+        @Composable get() = MaterialTheme.colorScheme.onBackground
+    val SecondaryText: Color
+        @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+    val TertiaryText: Color
+        @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+    val Divider: Color
+        @Composable get() = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+    val Primary: Color
+        @Composable get() = MaterialTheme.colorScheme.primary
+    val PrimarySoft: Color
+        @Composable get() = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.56f)
+    val Danger: Color
+        @Composable get() = MaterialTheme.colorScheme.error
     val ImageScrim = Color(0xB8000000)
 }
 
@@ -190,17 +201,19 @@ private fun NovexDefaultWorldArtwork(id: String, modifier: Modifier) {
 
 @Composable
 private fun NovexNeutralArtwork(modifier: Modifier) {
+    val primarySoft = NovexColors.PrimarySoft
+    val primary = NovexColors.Primary
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawRect(NovexColors.PrimarySoft)
+            drawRect(primarySoft)
         }
         Icon(
             imageVector = Icons.Default.Person,
             contentDescription = null,
-            tint = NovexColors.Primary.copy(alpha = 0.46f),
+            tint = primary.copy(alpha = 0.46f),
             modifier = Modifier.fillMaxSize(0.38f),
         )
     }

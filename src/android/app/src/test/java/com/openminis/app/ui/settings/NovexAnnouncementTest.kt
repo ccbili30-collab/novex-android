@@ -22,8 +22,10 @@ class NovexAnnouncementTest {
     fun `home action opens announcement and announcement can check updates`() {
         val source = File("src/main/java/com/openminis/app/ui/settings/CheckUpdateSection.kt").readText()
 
-        assertTrue(source.contains("Icons.Outlined.Campaign"))
-        assertTrue(source.contains("Icons.Outlined.FileDownload"))
+        assertTrue(source.contains("R.drawable.ic_phosphor_megaphone"))
+        assertTrue(source.contains("R.drawable.ic_phosphor_download_simple"))
+        assertFalse(source.contains("Icons.Outlined.Campaign"))
+        assertFalse(source.contains("Icons.Outlined.FileDownload"))
         assertTrue(source.contains("AnnouncementDialog"))
         assertTrue(source.contains("onCheckUpdate"))
         assertTrue(source.contains("检查更新"))

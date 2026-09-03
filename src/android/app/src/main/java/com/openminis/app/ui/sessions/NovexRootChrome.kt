@@ -1,9 +1,6 @@
 package com.openminis.app.ui.sessions
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +8,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.openminis.app.R
 import com.openminis.app.ui.novex.NovexIconAction
+import com.openminis.app.ui.novex.NovexActionMenu
+import com.openminis.app.ui.novex.NovexMenuAction
 import com.openminis.app.ui.novex.NovexRootHeader
 import com.openminis.app.ui.settings.NovexUpdateAction
 
@@ -53,20 +52,21 @@ internal fun NovexRootPageHeader(
                     contentDescription = "新建",
                     onClick = { createMenuExpanded = true },
                 )
-                DropdownMenu(
+                NovexActionMenu(
                     expanded = createMenuExpanded,
                     onDismissRequest = { createMenuExpanded = false },
-                ) {
-                    createItems.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text(item.label) },
-                            onClick = {
-                                createMenuExpanded = false
-                                item.onClick()
+                    actions = createItems.map { item ->
+                        NovexMenuAction(
+                            label = item.label,
+                            icon = if (item.label.startsWith("导入")) {
+                                R.drawable.ic_phosphor_download_simple
+                            } else {
+                                R.drawable.ic_phosphor_plus
                             },
+                            onClick = item.onClick,
                         )
-                    }
-                }
+                    },
+                )
             }
         },
     )

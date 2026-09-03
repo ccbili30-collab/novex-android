@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Campaign
-import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -385,13 +384,13 @@ fun NovexUpdateAction() {
         when {
             checking -> CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 2.dp)
             homeAction == NovexHomeAction.UPDATE -> Icon(
-                Icons.Outlined.FileDownload,
+                painterResource(R.drawable.ic_phosphor_download_simple),
                 contentDescription = "打开 Novex（诺文）更新",
                 modifier = Modifier.size(30.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
             else -> Icon(
-                Icons.Outlined.Campaign,
+                painterResource(R.drawable.ic_phosphor_megaphone),
                 contentDescription = "打开 Novex（诺文）公告",
                 modifier = Modifier.size(30.dp),
             )

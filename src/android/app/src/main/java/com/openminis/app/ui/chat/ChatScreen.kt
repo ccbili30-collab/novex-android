@@ -143,6 +143,8 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
 import com.openminis.app.ui.components.MinisMenuDivider
+import com.openminis.app.ui.novex.NovexActionMenu
+import com.openminis.app.ui.novex.NovexMenuAction
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1868,51 +1870,38 @@ fun ChatScreen(
                     // iOS: "..." circle button → dropdown menu
                     Box {
                         IconButton(onClick = { showChatMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_more_vertical),
+                                contentDescription = "更多操作",
+                            )
                         }
-                        MinisMenu(
-                            expanded = showChatMenu,
-                            onDismissRequest = { showChatMenu = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("对话设置") },
-                                onClick = {
-                                    showChatMenu = false
+                        val chatActions = buildList {
+                            add(
+                                NovexMenuAction("对话设置", R.drawable.ic_phosphor_sliders_horizontal) {
                                     onSettings()
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Settings, contentDescription = null)
                                 },
                             )
                             if (immersiveProfile.usesRolePresentation) {
-                                DropdownMenuItem(
-                                    text = { Text("更换对话背景") },
-                                    onClick = {
-                                        showChatMenu = false
+                                add(
+                                    NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {
                                         immersiveBackgroundPickerLauncher.launch(
                                             androidx.activity.result.PickVisualMediaRequest(
                                                 ActivityResultContracts.PickVisualMedia.ImageOnly,
                                             ),
                                         )
                                     },
-                                    leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("恢复角色默认背景") },
-                                    onClick = {
-                                        showChatMenu = false
+                                add(
+                                    NovexMenuAction("恢复角色默认背景", R.drawable.ic_phosphor_arrow_clockwise) {
                                         viewModel.setImmersiveBackground(null)
                                     },
-                                    leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 )
                             }
-                            // [T-new-chat-menu-entry] New Chat — first item
-                            // (iOS parity: square.and.pencil at the top of the
-                            // "..." menu). Streaming sessions confirm first.
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_new_chat)) },
-                                onClick = {
-                                    showChatMenu = false
+                            add(
+                                NovexMenuAction(
+                                    stringResource(R.string.chat_menu_new_chat),
+                                    R.drawable.ic_phosphor_note_pencil,
+                                ) {
                                     if (isStreaming) {
                                         showNewChatStopDialog = true
                                     } else {
@@ -1926,23 +1915,20 @@ fun ChatScreen(
                                         )
                                     }
                                 },
-                                leadingIcon = {
-                                    Icon(Icons.Outlined.Forum, contentDescription = null)
-                                },
                             )
-                            MinisMenuDivider()
-                            // Clear Chat (iOS parity, red)
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.chat_menu_clear_chat), color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showChatMenu = false
-                                    showClearChatDialog = true
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                },
+                            add(
+                                NovexMenuAction(
+                                    stringResource(R.string.chat_menu_clear_chat),
+                                    R.drawable.ic_phosphor_trash,
+                                    destructive = true,
+                                ) { showClearChatDialog = true },
                             )
                         }
+                        NovexActionMenu(
+                            expanded = showChatMenu,
+                            onDismissRequest = { showChatMenu = false },
+                            actions = chatActions,
+                        )
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
