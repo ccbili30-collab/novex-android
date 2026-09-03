@@ -8,13 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -72,6 +73,16 @@ internal object NovexUpdateAnnouncementStore {
             .putString(LAST_SHOWN, releaseKey)
             .apply()
     }
+}
+
+internal object CurrentNovexAnnouncement {
+    const val title = "特别致哀"
+    val paragraphs = listOf(
+        "今年以来，台风、暴雨、洪涝与地质灾害侵袭祖国多地。每一则伤亡消息背后，都是一个家庭难以承受的离别。",
+        "在西藏吉隆泥石流灾害发生之际，我们也一并向今年所有灾害中的遇难者致以沉痛哀悼，向遇难者家属和受灾群众致以深切慰问，向所有奋战在抢险救援一线的人们致以崇高敬意。",
+        "愿逝者安息，愿伤者康复，愿失联者早日归来，愿所有受灾群众平安渡过难关，重建家园。",
+    )
+    const val closing = "愿山河无恙，愿人间皆安"
 }
 
 /**
@@ -282,6 +293,7 @@ fun NovexUpdateAction() {
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
+    var announcementOpen by remember { mutableStateOf(false) }
 
     fun openDetectedUpdateOrCheck() {
         val available = detectedUpdate
@@ -316,7 +328,7 @@ fun NovexUpdateAction() {
     LaunchedEffect(detectedUpdate?.versionName) {
         detectedUpdate?.let { available ->
             if (NovexUpdateAnnouncementStore.shouldShow(context, available)) {
-                dialogUpdate = available
+                announcementOpen = true
                 NovexUpdateAnnouncementStore.markShown(context, available)
             }
         }
@@ -341,37 +353,34 @@ fun NovexUpdateAction() {
 
     Row(
         modifier = Modifier
-            .clickable(enabled = !checking) { openDetectedUpdateOrCheck() }
+            .clickable(enabled = !checking) { announcementOpen = true }
             .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (detectedUpdate != null) {
-            Text(
-                stringResource(
-                    if (detectedUpdate?.channel == UpdateChannel.PREVIEW) {
-                        R.string.check_update_detected_preview
-                    } else {
-                        R.string.check_update_detected_stable
-                    },
-                    detectedUpdate?.versionName.orEmpty(),
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+        Text(
+            if (detectedUpdate == null) "公告" else "公告 · 有新版本 ${detectedUpdate?.versionName.orEmpty()}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
         when {
             checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            detectedUpdate != null -> Icon(
-                Icons.Outlined.FileDownload,
-                contentDescription = "下载 Novex（诺文）更新",
-                modifier = Modifier.size(24.dp),
-            )
             else -> Icon(
-                Icons.Outlined.SystemUpdate,
-                contentDescription = "检查 Novex（诺文）更新",
+                Icons.Outlined.Campaign,
+                contentDescription = "打开 Novex（诺文）公告",
                 modifier = Modifier.size(24.dp),
             )
         }
+    }
+
+    if (announcementOpen) {
+        AnnouncementDialog(
+            checking = checking,
+            onCheckUpdate = {
+                announcementOpen = false
+                openDetectedUpdateOrCheck()
+            },
+            onDismiss = { announcementOpen = false },
+        )
     }
 
     dialogUpdate?.let { available ->
@@ -477,22 +486,22 @@ private fun UpdateDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (update.changelog.isNotBlank()) {
-                    Text(
-                        stringResource(R.string.check_update_changelog_header).uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = update.changelog,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp),
-                    )
-                }
+                Text(
+                    stringResource(R.string.check_update_changelog_header).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = update.changelog.ifBlank {
+                        "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                )
                 Text(
                     stringResource(R.string.check_update_install_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -562,6 +571,48 @@ private fun UpdateDialog(
         dismissButton = {
             MinisTextButton(onClick = onDismiss, enabled = downloadProgress == null) {
                 Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AnnouncementDialog(
+    checking: Boolean,
+    onCheckUpdate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(CurrentNovexAnnouncement.title, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CurrentNovexAnnouncement.paragraphs.forEach { paragraph ->
+                    Text(paragraph, style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(
+                    CurrentNovexAnnouncement.closing,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        confirmButton = {
+            MinisButton(onClick = onCheckUpdate, enabled = !checking) {
+                Text("检查更新")
+            }
+        },
+        dismissButton = {
+            MinisTextButton(onClick = onDismiss, enabled = !checking) {
+                Text("关闭")
             }
         },
     )
