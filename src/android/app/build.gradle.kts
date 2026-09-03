@@ -154,6 +154,18 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+        create("benchmark") {
+            initWith(getByName("release"))
+            // Local startup evidence only: optimized like release, signed with
+            // the disposable debug key, and never used by a publishing task.
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
+            ndk {
+                abiFilters.clear()
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
     }
 
     compileOptions {

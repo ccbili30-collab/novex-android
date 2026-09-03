@@ -56,4 +56,10 @@ for profile_rule in ${required_profile_rules//|/ }; do
   fi
 done
 
+android_build="$project_root/src/android/app/build.gradle.kts"
+if ! rg -q 'create\("benchmark"\)' "$android_build"; then
+  echo "Novex has no optimized, non-publishing benchmark build type for startup verification." >&2
+  exit 1
+fi
+
 echo "Novex lightweight startup boundary is free of legacy runtime references."
