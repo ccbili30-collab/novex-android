@@ -62,6 +62,7 @@ import com.openminis.app.novex.domain.requireWorld
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
 import com.openminis.app.ui.novex.NovexContentModuleList
 import com.openminis.app.ui.novex.NovexContentSection
 import com.openminis.app.ui.novex.NovexContentDialog
@@ -193,7 +194,10 @@ fun CatalogWorldDetailScreen(
             if (current != null) NovexPrimaryButton(
                 label = "开始对话",
                 onClick = ::beginWorldConversation,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(
+                    horizontal = NovexDimensions.PageHorizontal,
+                    vertical = 10.dp,
+                ),
             )
         },
     ) {
@@ -636,7 +640,7 @@ private fun WorldCharacterStrip(
     Column(Modifier.fillMaxWidth().background(NovexColors.Surface).padding(vertical = 14.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = NovexDimensions.PageHorizontal),
         ) {
             Text("角色", color = NovexColors.Text, fontWeight = FontWeight.SemiBold)
             Text(
@@ -647,6 +651,9 @@ private fun WorldCharacterStrip(
             )
         }
         LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = NovexDimensions.PageHorizontal,
+            ),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
@@ -773,7 +780,7 @@ private fun WorldPrimaryContent(
     WorldOverviewBlock(data.world)
     if (data.modules.isNotEmpty()) androidx.compose.material3.HorizontalDivider(
         color = NovexColors.Divider,
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal),
     )
     NovexContentModuleList(
         modules = data.modules,
@@ -787,7 +794,12 @@ private fun WorldPrimaryContent(
 
 @Composable
 private fun WorldOverviewBlock(world: WorldEntity) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
+    Column(
+        Modifier.fillMaxWidth().padding(
+            horizontal = NovexDimensions.PageHorizontal,
+            vertical = 16.dp,
+        ),
+    ) {
         Text("世界观概述", color = NovexColors.Text, fontWeight = FontWeight.SemiBold)
         Text(
             world.overview.ifBlank { "尚未填写世界观概述" },

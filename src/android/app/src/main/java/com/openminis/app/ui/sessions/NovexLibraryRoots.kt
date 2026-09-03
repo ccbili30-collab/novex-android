@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +55,10 @@ import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
+import com.openminis.app.ui.novex.NovexPageTone
+import com.openminis.app.ui.novex.color
+import com.openminis.app.ui.novex.novexPagePadding
 import com.openminis.app.ui.novex.NovexSearchField
 import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.rememberNovexWorkspace
@@ -163,7 +166,7 @@ internal fun NovexWorldLibraryRoot(
             rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld, importer.launch)
             else -> LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
+                contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -268,7 +271,7 @@ internal fun NovexCharacterLibraryRoot(
             rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter, importer.launch)
             else -> LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
+                contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -317,7 +320,7 @@ private fun NovexLibraryFrame(
     Column(
         (if (headerHost == null) Modifier.statusBarsPadding() else Modifier)
             .fillMaxSize()
-            .background(NovexRootColors.Background),
+            .background(NovexPageTone.CATALOG.color),
     ) {
         if (headerHost == null) {
             NovexRootPageHeader(
@@ -519,7 +522,7 @@ private fun NovexLibraryActionRow(label: String, iconRes: Int, onClick: () -> Un
 @Composable
 private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit, onImportWorld: () -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
+        contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -570,7 +573,7 @@ private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit, onImportWorld: () 
 @Composable
 private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit, onImportCharacter: () -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
+        contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
         modifier = Modifier.fillMaxSize(),
     ) {
         item(key = "empty_character_visual") {

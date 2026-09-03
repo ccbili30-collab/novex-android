@@ -33,15 +33,22 @@ import com.openminis.app.R
 internal fun NovexDetailScaffold(
     title: String,
     onBack: () -> Unit,
+    pageTone: NovexPageTone = NovexPageTone.DISPLAY,
     actions: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
     scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val pageColor = pageTone.color
     Scaffold(
-        containerColor = NovexColors.Background,
+        containerColor = pageColor,
         topBar = {
-            NovexPageTopBar(title = title, onBack = onBack, actions = actions)
+            NovexPageTopBar(
+                title = title,
+                onBack = onBack,
+                actions = actions,
+                backgroundColor = pageColor,
+            )
         },
         bottomBar = { Box(Modifier.navigationBarsPadding()) { bottomBar() } },
     ) { padding ->
@@ -60,12 +67,13 @@ internal fun NovexPageTopBar(
     onBack: (() -> Unit)?,
     navigation: (@Composable () -> Unit)? = null,
     actions: @Composable () -> Unit = {},
+    backgroundColor: Color = NovexColors.Canvas,
 ) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .background(NovexColors.Background)
+            .background(backgroundColor)
             .statusBarsPadding()
             .height(NovexDimensions.TopBarHeight),
     ) {

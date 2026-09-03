@@ -56,6 +56,7 @@ internal fun NovexSettingsScaffold(
                 onBack = onBack,
                 navigation = navigation,
                 actions = actions,
+                backgroundColor = NovexPageTone.SETTINGS.color,
             )
         },
         floatingActionButton = { floatingActionButton?.invoke() },
@@ -85,13 +86,13 @@ internal fun NovexSettingsSection(
                 color = NovexColors.SecondaryText,
                 style = NovexType.Metadata,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 7.dp),
+                modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal, vertical = 7.dp),
             )
         }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = NovexDimensions.PageHorizontal)
                 .clip(sectionShape)
                 .background(NovexColors.Surface)
                 .border(NovexDimensions.Hairline, NovexColors.Divider, sectionShape),
@@ -102,7 +103,7 @@ internal fun NovexSettingsSection(
                 text = it,
                 color = NovexColors.TertiaryText,
                 style = NovexType.Metadata,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal, vertical = 8.dp),
             )
         }
     }

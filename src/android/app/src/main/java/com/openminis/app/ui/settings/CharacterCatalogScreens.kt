@@ -57,6 +57,7 @@ import com.openminis.app.novex.domain.requireNativeCard
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
 import com.openminis.app.ui.novex.NovexContentSection
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexContentModuleList
@@ -324,7 +325,7 @@ internal fun CharacterPrimaryContent(
     mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
     CharacterHero(data, onChooseVersion, mediaModels)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+    Column(Modifier.fillMaxWidth()) {
         characterOverviewRows(data.profile).forEach { row ->
             NovexSummaryRow(row.title, row.summary)
         }
@@ -357,7 +358,10 @@ private fun CharacterHero(
     val backgroundModel = mediaModels[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]
         ?: data.media[MediaAssetSlot.CHARACTER_PAGE_BACKGROUND]?.managedPath.existingMediaFile()
     val representativeModel = backgroundModel ?: avatarModel
-    Column(Modifier.fillMaxWidth().background(NovexColors.Surface).padding(horizontal = 24.dp)) {
+    Column(
+        Modifier.fillMaxWidth().background(NovexColors.Surface)
+            .padding(horizontal = NovexDimensions.PageHorizontal),
+    ) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),

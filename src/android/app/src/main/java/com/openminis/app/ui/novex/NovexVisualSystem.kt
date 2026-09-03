@@ -3,6 +3,7 @@ package com.openminis.app.ui.novex
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
@@ -16,17 +17,63 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 
+internal data class NovexSurfacePalette(
+    val canvas: Color,
+    val grouped: Color,
+    val section: Color,
+    val muted: Color,
+)
+
+/**
+ * A page chooses a semantic tone; it never chooses a raw theme surface.
+ * Reading surfaces stay quiet while catalog, editing and settings surfaces
+ * retain the grouped-background hierarchy used by the mature Minis layouts.
+ */
+internal enum class NovexPageTone {
+    CONVERSATION,
+    CATALOG,
+    DISPLAY,
+    EDITOR,
+    SETTINGS;
+
+    fun resolve(palette: NovexSurfacePalette): Color = when (this) {
+        CONVERSATION, DISPLAY -> palette.canvas
+        CATALOG, EDITOR, SETTINGS -> palette.grouped
+    }
+}
+
+internal data class NovexLayoutMetrics(
+    val pageHorizontal: Dp,
+    val overlayHorizontal: Dp,
+)
+
+internal val NovexLayout = NovexLayoutMetrics(
+    pageHorizontal = 16.dp,
+    overlayHorizontal = 24.dp,
+)
+
 internal object NovexColors {
+    private val palette: NovexSurfacePalette
+        @Composable @ReadOnlyComposable get() = NovexSurfacePalette(
+            canvas = MaterialTheme.colorScheme.surfaceContainerLow,
+            grouped = MaterialTheme.colorScheme.background,
+            section = MaterialTheme.colorScheme.surfaceContainerLow,
+            muted = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
+
     val Background: Color
-        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.background
+        @Composable @ReadOnlyComposable get() = palette.grouped
+    val Canvas: Color
+        @Composable @ReadOnlyComposable get() = palette.canvas
     val Surface: Color
-        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface
+        @Composable @ReadOnlyComposable get() = palette.section
     val SurfaceMuted: Color
-        @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceContainerLow
+        @Composable @ReadOnlyComposable get() = palette.muted
     val Text: Color
         @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onBackground
     val SecondaryText: Color
@@ -44,8 +91,19 @@ internal object NovexColors {
     val ImageScrim = Color(0xB8000000)
 }
 
+internal val NovexPageTone.color: Color
+    @Composable @ReadOnlyComposable get() = resolve(
+        NovexSurfacePalette(
+            canvas = NovexColors.Canvas,
+            grouped = NovexColors.Background,
+            section = NovexColors.Surface,
+            muted = NovexColors.SurfaceMuted,
+        ),
+    )
+
 internal object NovexDimensions {
-    val PageHorizontal = 16.dp
+    val PageHorizontal = NovexLayout.pageHorizontal
+    val OverlayHorizontal = NovexLayout.overlayHorizontal
     val TopBarHeight = 56.dp
     val MinimumTouch = 48.dp
     val RootBottomInset = 104.dp
@@ -61,6 +119,13 @@ internal object NovexDimensions {
     val Hairline = 0.75.dp
     val ActionIconTile = 30.dp
 }
+
+/** Shared outer rail for conversation, world and character page content. */
+internal fun novexPagePadding(bottom: Dp = 0.dp): PaddingValues = PaddingValues(
+    start = NovexDimensions.PageHorizontal,
+    end = NovexDimensions.PageHorizontal,
+    bottom = bottom,
+)
 
 internal data class NovexTypography(
     val brand: androidx.compose.ui.text.TextStyle,

@@ -59,7 +59,7 @@ internal fun NovexDecisionDialog(
             shadowElevation = 10.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = NovexDimensions.OverlayHorizontal)
                 .widthIn(max = 360.dp)
                 .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
         ) {

@@ -1,13 +1,47 @@
 package com.openminis.app.ui.novex
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.LayoutDirection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexVisualSystemTest {
+    @Test
+    fun readingAndManagementPagesResolveToDifferentSurfaceRoles() {
+        val palette = NovexSurfacePalette(
+            canvas = Color.White,
+            grouped = Color(0xFFF2F2F7),
+            section = Color.White,
+            muted = Color(0xFFF7F7FA),
+        )
+
+        assertEquals(Color.White, NovexPageTone.CONVERSATION.resolve(palette))
+        assertEquals(Color.White, NovexPageTone.DISPLAY.resolve(palette))
+        assertEquals(Color(0xFFF2F2F7), NovexPageTone.CATALOG.resolve(palette))
+        assertEquals(Color(0xFFF2F2F7), NovexPageTone.EDITOR.resolve(palette))
+        assertEquals(Color(0xFFF2F2F7), NovexPageTone.SETTINGS.resolve(palette))
+    }
+
+    @Test
+    fun everyPrimaryPageUsesTheSameContentRail() {
+        val metrics = NovexLayoutMetrics(
+            pageHorizontal = 16.dp,
+            overlayHorizontal = 24.dp,
+        )
+
+        val pageInsets = novexPagePadding(bottom = 104.dp)
+
+        assertEquals(metrics.pageHorizontal, pageInsets.calculateLeftPadding(LayoutDirection.Ltr))
+        assertEquals(metrics.pageHorizontal, pageInsets.calculateRightPadding(LayoutDirection.Ltr))
+        assertEquals(104.dp, pageInsets.calculateBottomPadding())
+        assertEquals(24.dp, metrics.overlayHorizontal)
+    }
+
     @Test
     fun novexTypographyInheritsTheApplicationTypographyScale() {
         val applicationTypography = Typography(

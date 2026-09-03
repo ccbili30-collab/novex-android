@@ -64,6 +64,7 @@ internal fun <Draft> NovexEditorScaffold(
     NovexDetailScaffold(
         title = title,
         onBack = ::requestBack,
+        pageTone = NovexPageTone.EDITOR,
         actions = {
             onDeleteRequest?.let { delete ->
                 NovexTopAction(
@@ -84,7 +85,10 @@ internal fun <Draft> NovexEditorScaffold(
                 onClick = onSave,
                 enabled = loaded && canSave && !saving,
                 containerColor = saveContainerColor,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(
+                    horizontal = NovexDimensions.PageHorizontal,
+                    vertical = 10.dp,
+                ),
             )
         },
     ) {
@@ -144,7 +148,7 @@ internal fun NovexEditorSection(
             color = NovexColors.Text,
             style = NovexType.SectionTitle,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal, vertical = 7.dp),
         )
         Column(
             modifier = Modifier
@@ -160,7 +164,7 @@ internal fun NovexEditorSection(
                 it,
                 color = NovexColors.SecondaryText,
                 style = NovexType.Metadata,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal, vertical = 8.dp),
             )
         }
     }
