@@ -40,7 +40,7 @@ object UpdateChecker {
     // published". The 0.1-preview release is published as a prerelease on
     // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
     private const val REPO = "novex-android"
-    private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
+    private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100"
     private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
@@ -63,6 +63,7 @@ object UpdateChecker {
             val apkSizeBytes: Long,
             val channel: UpdateChannel,
             val isPrerelease: Boolean,
+            val releaseNotes: List<ReleaseNote>,
         ) : CheckResult()
         data object UpToDate : CheckResult()
         // The repo has zero non-draft releases (or 404'd entirely).
@@ -79,6 +80,12 @@ object UpdateChecker {
         // user to check connectivity and retry.
         data object NetworkUnreachable : CheckResult()
     }
+
+    data class ReleaseNote(
+        val versionName: String,
+        val releaseName: String,
+        val changelog: String,
+    )
 
     sealed class DownloadResult {
         data class Success(val file: File) : DownloadResult()
@@ -193,6 +200,12 @@ object UpdateChecker {
 
                 if (upgradeCandidate != null) {
                     val asset = requireNotNull(upgradeCandidate.assets[channel.assetName])
+                    val releaseNotes = buildReleaseNotes(
+                        channel = channel,
+                        localVersion = localVer,
+                        targetVersion = upgradeCandidate.versionName,
+                        releases = candidates,
+                    )
                     AppLogger.info(
                         TAG,
                         "Update available: $localVer → ${upgradeCandidate.versionName} " +
@@ -207,6 +220,7 @@ object UpdateChecker {
                         apkSizeBytes = asset.sizeBytes,
                         channel = channel,
                         isPrerelease = upgradeCandidate.isPrerelease,
+                        releaseNotes = releaseNotes,
                     )
                 }
 
@@ -324,6 +338,12 @@ object UpdateChecker {
         val highest = UpdateReleasePolicy.selectUpgrade(channel, localVersion, eligible)
             ?: return CheckResult.UpToDate
         val asset = requireNotNull(highest.assets[channel.assetName])
+        val releaseNotes = buildReleaseNotes(
+            channel = channel,
+            localVersion = localVersion,
+            targetVersion = highest.versionName,
+            releases = entries,
+        )
         return CheckResult.UpdateAvailable(
             tagName = highest.tagName,
             versionName = highest.versionName,
@@ -333,6 +353,28 @@ object UpdateChecker {
             apkSizeBytes = 0,
             channel = channel,
             isPrerelease = highest.isPrerelease,
+            releaseNotes = releaseNotes,
+        )
+    }
+
+    private fun buildReleaseNotes(
+        channel: UpdateChannel,
+        localVersion: String,
+        targetVersion: String,
+        releases: List<PublishedUpdate>,
+    ): List<ReleaseNote> = UpdateReleasePolicy.releaseHistory(
+        channel = channel,
+        localVersion = localVersion,
+        targetVersion = targetVersion,
+        releases = releases,
+    ).map { release ->
+        ReleaseNote(
+            versionName = release.versionName,
+            releaseName = release.releaseName,
+            changelog = release.changelog
+                .substringBefore("\n## 包含的往期更新")
+                .trim()
+                .ifBlank { "该版本未提供更新说明。" },
         )
     }
 

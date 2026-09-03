@@ -16,6 +16,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -519,11 +522,18 @@ private fun UpdateDialog(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                MarkdownText(
-                    markdown = update.changelog.ifBlank {
-                        "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                ReleaseNotesList(
+                    notes = update.releaseNotes.ifEmpty {
+                        listOf(
+                            UpdateChecker.ReleaseNote(
+                                versionName = update.versionName,
+                                releaseName = update.releaseName,
+                                changelog = update.changelog.ifBlank {
+                                    "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                                },
+                            ),
+                        )
                     },
-                    style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 320.dp)
@@ -602,6 +612,70 @@ private fun UpdateDialog(
             }
         },
     )
+}
+
+@Composable
+private fun ReleaseNotesList(
+    notes: List<UpdateChecker.ReleaseNote>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        notes.forEachIndexed { index, note ->
+            if (index == 1) {
+                Text(
+                    "包含的往期更新",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            ReleaseNoteItem(
+                note = note,
+                latest = index == 0,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReleaseNoteItem(
+    note: UpdateChecker.ReleaseNote,
+    latest: Boolean,
+) {
+    var expanded by rememberSaveable(note.versionName) { mutableStateOf(latest) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (latest) "本次更新 · ${note.versionName}" else note.versionName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (latest) FontWeight.SemiBold else FontWeight.Medium,
+            )
+            Icon(
+                if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                contentDescription = if (expanded) "收起 ${note.versionName}" else "展开 ${note.versionName}",
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (expanded) {
+            MarkdownText(
+                markdown = note.changelog,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+            )
+        }
+    }
 }
 
 @Composable

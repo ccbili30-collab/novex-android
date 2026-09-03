@@ -54,6 +54,16 @@ internal object UpdateReleasePolicy {
     ): PublishedUpdate? = eligibleReleases(channel, releases)
         .maxWithOrNull { left, right -> compareVersions(left.versionName, right.versionName) }
 
+    fun releaseHistory(
+        channel: UpdateChannel,
+        localVersion: String,
+        targetVersion: String,
+        releases: List<PublishedUpdate>,
+    ): List<PublishedUpdate> = eligibleReleases(channel, releases)
+        .filter { compareVersions(it.versionName, localVersion) > 0 }
+        .filter { compareVersions(it.versionName, targetVersion) <= 0 }
+        .sortedWith { left, right -> compareVersions(right.versionName, left.versionName) }
+
     fun eligibleReleases(
         channel: UpdateChannel,
         releases: List<PublishedUpdate>,

@@ -28,6 +28,8 @@ class NovexAnnouncementTest {
         assertTrue(source.contains("onCheckUpdate"))
         assertTrue(source.contains("检查更新"))
         assertTrue(source.contains("MarkdownText("))
+        assertTrue(source.contains("ReleaseNotesList"))
+        assertTrue(source.contains("包含的往期更新"))
         assertFalse(source.contains("text = update.changelog.ifBlank"))
         assertFalse(source.contains("if (detectedUpdate == null) \"公告\""))
     }

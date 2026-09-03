@@ -109,6 +109,26 @@ class UpdateReleasePolicyTest {
         assertEquals(0, UpdateReleasePolicy.compareVersions("v0.3", "0.3.0"))
     }
 
+    @Test
+    fun `cross version history includes every missed release in current channel newest first`() {
+        val releases = listOf(
+            release("v0.2.11", prerelease = false, stableAsset),
+            release("v0.2.10", prerelease = false),
+            release("v0.2.9-preview.2", prerelease = true, previewAsset),
+            release("v0.2.9", prerelease = false, stableAsset),
+            release("v0.2.8", prerelease = false, stableAsset),
+        )
+
+        val history = UpdateReleasePolicy.releaseHistory(
+            channel = UpdateChannel.STABLE,
+            localVersion = "0.2.8",
+            targetVersion = "0.2.11",
+            releases = releases,
+        )
+
+        assertEquals(listOf("0.2.11", "0.2.10", "0.2.9"), history.map { it.versionName })
+    }
+
     private fun release(
         tag: String,
         prerelease: Boolean,

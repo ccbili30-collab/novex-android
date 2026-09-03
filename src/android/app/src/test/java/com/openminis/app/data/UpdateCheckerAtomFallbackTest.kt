@@ -72,4 +72,36 @@ class UpdateCheckerAtomFallbackTest {
         assertTrue(result.changelog.isNotBlank())
         assertTrue(result.changelog.contains("更新说明"))
     }
+
+    @Test
+    fun `Atom cross version update returns all missed release notes`() {
+        val crossVersionFeed = """
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <link rel="alternate" href="https://github.com/ccbili30-collab/novex-android/releases/tag/v0.2.11"/>
+                <title>Novex 0.2.11</title>
+                <content type="html">&lt;p&gt;最新版本说明&lt;/p&gt;&lt;h2&gt;包含的往期更新&lt;/h2&gt;&lt;p&gt;用于旧客户端的内嵌历史&lt;/p&gt;</content>
+              </entry>
+              <entry>
+                <link rel="alternate" href="https://github.com/ccbili30-collab/novex-android/releases/tag/v0.2.10"/>
+                <title>Novex 0.2.10</title>
+                <content type="html">&lt;p&gt;中间版本说明&lt;/p&gt;</content>
+              </entry>
+              <entry>
+                <link rel="alternate" href="https://github.com/ccbili30-collab/novex-android/releases/tag/v0.2.9"/>
+                <title>Novex 0.2.9</title>
+                <content type="html">&lt;p&gt;已安装版本说明&lt;/p&gt;</content>
+              </entry>
+            </feed>
+        """.trimIndent()
+
+        val result = UpdateChecker.parseAtomReleaseFeed(crossVersionFeed, "0.2.9", UpdateChannel.STABLE)
+
+        assertTrue(result is UpdateChecker.CheckResult.UpdateAvailable)
+        result as UpdateChecker.CheckResult.UpdateAvailable
+        assertEquals(listOf("0.2.11", "0.2.10"), result.releaseNotes.map { it.versionName })
+        assertEquals("最新版本说明", result.releaseNotes.first().changelog)
+        assertEquals("中间版本说明", result.releaseNotes.last().changelog)
+        assertTrue(result.releaseNotes.none { it.changelog.contains("内嵌历史") })
+    }
 }
