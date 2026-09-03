@@ -29,8 +29,8 @@ on:
           - rc
 
 concurrency:
-  group: android-preview-next
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.package_channel == 'stable' && 'android-stable-candidate' || 'android-preview-next' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || inputs.package_channel != 'stable' }}
 
 permissions:
   contents: write
