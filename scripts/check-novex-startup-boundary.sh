@@ -43,4 +43,17 @@ if rg -n 'NovexLaunchDestination\.HOME -> forwardTo' "$launch_activity"; then
   exit 1
 fi
 
+baseline_profile="$project_root/src/android/app/src/main/baseline-prof.txt"
+required_profile_rules='NovexLaunchActivity|NovexHomeSurfaceKt|NovexRootScreenKt|NovexConversationRootKt|AppDatabase_Impl'
+if [[ ! -f "$baseline_profile" ]]; then
+  echo "Novex startup Baseline Profile is missing required app-owned startup classes." >&2
+  exit 1
+fi
+for profile_rule in ${required_profile_rules//|/ }; do
+  if ! rg -q "$profile_rule" "$baseline_profile"; then
+    echo "Novex startup Baseline Profile is missing $profile_rule." >&2
+    exit 1
+  fi
+done
+
 echo "Novex lightweight startup boundary is free of legacy runtime references."
