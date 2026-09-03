@@ -811,4 +811,13 @@ class MainActivity : ComponentActivity() {
             else -> {}
         }
     }
+
+    override fun finish() {
+        val enteredFromNovexSettings = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE) == "settings"
+        super.finish()
+        if (enteredFromNovexSettings) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.novex_enter_from_right, R.anim.novex_exit_to_left)
+        }
+    }
 }

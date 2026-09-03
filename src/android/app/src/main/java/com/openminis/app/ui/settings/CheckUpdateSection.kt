@@ -252,7 +252,7 @@ fun CheckUpdateSection() {
 
 /** Compact home-toolbar variant used by Novex. */
 @Composable
-fun NovexUpdateAction() {
+fun NovexUpdateAction(showLabel: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -280,7 +280,7 @@ fun NovexUpdateAction() {
     }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (detectedUpdate != null) {
+        if (showLabel && detectedUpdate != null) {
             Text(
                 stringResource(
                     if (detectedUpdate?.channel == UpdateChannel.PREVIEW) {

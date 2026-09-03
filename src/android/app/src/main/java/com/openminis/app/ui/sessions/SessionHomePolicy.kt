@@ -6,8 +6,8 @@ import java.util.TimeZone
 
 internal enum class SessionHomeFilter {
     RECENT,
-    GENERAL,
-    CREATION,
+    CONTEXT_FREE,
+    WITH_CONTEXT,
 }
 
 internal enum class SessionHomeRecency {
@@ -31,11 +31,19 @@ internal fun sessionHomeAvailability(
 internal fun ChatSessionEntity.isWorldConversation(): Boolean =
     !worldId.isNullOrBlank() || !worldSnapshotJson.isNullOrBlank()
 
+internal fun ChatSessionEntity.hasNovexContext(): Boolean =
+    isWorldConversation() ||
+        !characterVersionId.isNullOrBlank() ||
+        !characterId.isNullOrBlank() ||
+        !characterSnapshotJson.isNullOrBlank() ||
+        !personaId.isNullOrBlank() ||
+        !personaSnapshotJson.isNullOrBlank()
+
 internal fun List<ChatSessionEntity>.forHomeFilter(filter: SessionHomeFilter): List<ChatSessionEntity> =
     when (filter) {
-        SessionHomeFilter.RECENT -> filter(ChatSessionEntity::isWorldConversation)
-        SessionHomeFilter.GENERAL -> filterNot(ChatSessionEntity::isWorldConversation)
-        SessionHomeFilter.CREATION -> emptyList()
+        SessionHomeFilter.RECENT -> this
+        SessionHomeFilter.CONTEXT_FREE -> filterNot(ChatSessionEntity::hasNovexContext)
+        SessionHomeFilter.WITH_CONTEXT -> filter(ChatSessionEntity::hasNovexContext)
     }
 
 internal fun sessionHomeRecency(

@@ -3097,10 +3097,6 @@ class ChatViewModel(
     private fun draftMarker(name: String): String? =
         sessionId.substringAfter("__${name}__", "").substringBefore("__").takeIf { it.isNotEmpty() }
 
-    /** Novex modes share one system prompt. Creation only adds hidden leading context. */
-    private val initialNovexMode: String =
-        if (sessionId.contains("__novex__creation")) "creation" else "play"
-
     /** Model group ID from long-press FAB, encoded in the draft session ID.
      *  substringBefore strips the folder marker in case both are present. */
     private val initialGroupId: String? =
@@ -3458,13 +3454,6 @@ class ChatViewModel(
             // re-enters the session and everything is resolved via the real
             // id. See debug report 2026-04-21 (TikTok Chinese filename).
             migrateDraftResources(fromDraft = sessionId, toReal = session.id)
-            runCatching {
-                val path = "/var/minis/workspace/novex/${session.id}/mode.txt"
-                com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(session.id, path, context)?.let { file ->
-                    file.parentFile?.mkdirs()
-                    file.writeText(initialNovexMode)
-                }
-            }
             // [T-android-session-skill-override-init-timing] Re-point any
             // session_skill_overrides / mcp_session_overrides rows written
             // pre-first-message (against `__new__<uuid>`) onto the real

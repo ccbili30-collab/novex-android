@@ -737,11 +737,11 @@ fun SessionListScreen(
                                     MinisMenuDivider()
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("通用对话") },
+                                    text = { Text("新建对话") },
                                     onClick = {
                                         showOverflowMenu = false
                                         scope.launch {
-                                            val sessionId = viewModel.createNewSession(novexMode = "play")
+                                            val sessionId = viewModel.createNewSession()
                                             if (sessionId != null) onNewChatGuarded(sessionId)
                                         }
                                     },
@@ -750,13 +750,28 @@ fun SessionListScreen(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("世界角色对话") },
+                                    text = { Text("从世界开始") },
                                     onClick = {
                                         showOverflowMenu = false
                                         onCharactersClick()
                                     },
                                     leadingIcon = {
                                         Icon(Icons.Outlined.Person, contentDescription = null)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("帮我创作") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        com.openminis.app.deeplink.DeepLinkCoordinator.setPendingChatAction(
+                                            com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL,
+                                        )
+                                        scope.launch {
+                                            viewModel.createNewSession()?.let(onNewChatGuarded)
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
                                     },
                                 )
                             }
@@ -853,31 +868,6 @@ fun SessionListScreen(
                                     selected = homeFilter,
                                     onSelect = { homeFilter = it },
                                 )
-                            }
-                        }
-                        if (showCard3Hierarchy && homeFilter == SessionHomeFilter.CREATION) {
-                            item(key = "creation_placeholder") {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 56.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Icon(
-                                        Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        "创作空间即将开放",
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(top = 12.dp),
-                                    )
-                                    Text(
-                                        "世界与角色页面已经预留“帮我创作”入口。",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(top = 6.dp),
-                                    )
-                                }
                             }
                         }
                         // T25: search-active path used to flatten the list and skip
@@ -1235,7 +1225,7 @@ fun SessionListScreen(
                     onClick = {
                         showNewConversationMenu = false
                         scope.launch {
-                            val sessionId = viewModel.createNewSession(novexMode = "play")
+                            val sessionId = viewModel.createNewSession()
                             if (sessionId != null) onNewChatGuarded(sessionId)
                         }
                     },
@@ -1243,7 +1233,7 @@ fun SessionListScreen(
                 ) {
                     Icon(Icons.Outlined.Forum, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("通用对话")
+                    Text("新建对话")
                 }
                 OutlinedButton(
                     onClick = {
@@ -1254,7 +1244,23 @@ fun SessionListScreen(
                 ) {
                     Icon(Icons.Outlined.Person, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("世界角色对话")
+                    Text("从世界开始")
+                }
+                OutlinedButton(
+                    onClick = {
+                        showNewConversationMenu = false
+                        com.openminis.app.deeplink.DeepLinkCoordinator.setPendingChatAction(
+                            com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL,
+                        )
+                        scope.launch {
+                            viewModel.createNewSession()?.let(onNewChatGuarded)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("帮我创作")
                 }
             }
         }
@@ -1760,8 +1766,8 @@ private fun SessionHomeFilterRow(
         SessionHomeFilter.entries.forEach { filter ->
             val label = when (filter) {
                 SessionHomeFilter.RECENT -> "最近"
-                SessionHomeFilter.GENERAL -> "通用"
-                SessionHomeFilter.CREATION -> "创作"
+                SessionHomeFilter.CONTEXT_FREE -> "通用"
+                SessionHomeFilter.WITH_CONTEXT -> "设定"
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

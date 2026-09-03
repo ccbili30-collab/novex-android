@@ -4,9 +4,8 @@ import android.content.Context
 import com.openminis.app.sandbox.PRootKernel
 
 /**
- * The single Novex system prompt shared by play and creation conversations.
- * Creation mode adds only a hidden leading context; it does not replace this
- * contract or create a second agent identity.
+ * The single Novex system prompt shared by every conversation. Creation is an
+ * invocation inside a conversation, never a persistent conversation mode.
  */
 object NovexSystemPrompt {
 
@@ -29,19 +28,6 @@ object NovexSystemPrompt {
         // but never pay to inject it into every model call.
         val core = read("core.md") ?: read("canon.md")
         val state = read("state.md")
-        val mode = read("mode.txt") ?: if (sessionId.contains("__novex__creation")) "creation" else "play"
-        val creationContext = if (mode == "creation") {
-            """
-
-<隐藏前沿上下文：创作模式>
-接下来的会话用于把用户投入的大量零散文件、角色设定、世界观和想法，整理成清晰可用的文游启动模板，而不是立即主持游玩。
-先完整吸收材料，识别已确认设定、候选方向、重复内容、内部矛盾、不合理之处与可安全补全的空白。先向用户说明真正值得修改的地方及理由；得到用户同意后，再执行精简、合并和重组。不要用长问卷消耗用户，也不要把创作责任全部退回用户。
-最低可玩结果应明确：世界名称与核心体验、世界基础、不可违背的运行规则、用户参与方式、角色确定方式、具体开局、叙事视角与文风、人工智能补全权限、需要注册的常用世界功能，以及一份可直接交给游玩会话的完整启动模板。
-常用功能只在这个世界确实需要时注册，例如查看状态、背包、角色、地图、关系、存档和读档；不要为了显得完整强加数值、战斗、地图或章节系统。
-整理完成后等待用户继续修改，或把完整启动模板分享／导入新的游玩会话。除非用户明确要求试玩，不要自动开始剧情正文。
-</隐藏前沿上下文：创作模式>
-""".trimIndent()
-        } else ""
         val persistentContext = buildString {
             core?.let { append("\n<世界核心规则>\n").append(it).append("\n</世界核心规则>\n") }
             state?.let { append("\n<当前世界状态>\n").append(it).append("\n</当前世界状态>\n") }
@@ -65,7 +51,6 @@ $personalitySection
 
 本区块在不可变的软件协议之后优先生效，用于决定你的身份、措辞、叙事质感、判断方式与默认文风。它覆盖模型的通用表达习惯，但不覆盖用户当前明确提出的要求、已经确认的世界事实，也不能改变工具结果与安全边界。每次回复都应遵守，不得因对话变长而逐渐稀释。
 </最高人格与文风>
-$creationContext
 $persistentContext
 
 <用户输入协议>

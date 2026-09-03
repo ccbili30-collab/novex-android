@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,12 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.novex.domain.NovexWorkspace
@@ -51,8 +49,6 @@ import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexFilterTabs
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexRootHeader
 import com.openminis.app.ui.novex.NovexSearchField
 import com.openminis.app.ui.novex.NovexSectionTitle
 import com.openminis.app.ui.novex.NovexTextActionRow
@@ -61,6 +57,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private data class ConversationWorldMeta(
     val name: String,
@@ -91,11 +89,16 @@ fun NovexConversationRoot(
     onNewConversation: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenWorlds: () -> Unit,
-    onCreationPlaceholder: () -> Unit,
+    onStartCreationTool: () -> Unit,
     onInteractive: () -> Unit,
     onContentLoaded: () -> Unit,
     onRootNavigationVisibilityChange: (Boolean) -> Unit,
 ) {
+    val context = LocalContext.current
+    val orderStore = remember(context) { NovexManualOrderStore(context) }
+    var manualOrderIds by remember {
+        mutableStateOf(orderStore.read(NovexManualOrderKind.CONVERSATIONS))
+    }
     val sessionsOrNull by produceState<List<ChatSessionEntity>?>(initialValue = null, chatRepository) {
         chatRepository.observeSessions().collect { value = it }
     }
@@ -139,8 +142,12 @@ fun NovexConversationRoot(
 
     val sessions = sessionsOrNull.orEmpty()
     val catalog = catalogOrNull ?: ConversationHomeCatalog(emptyMap(), emptyMap())
-    val visibleSessions = remember(sessions, selectedFilter, appliedQuery) {
-        sessions
+    val visibleSessions = remember(sessions, selectedFilter, appliedQuery, manualOrderIds) {
+        val byId = sessions.associateBy(ChatSessionEntity::id)
+        mergeNovexManualOrder(
+            sourceIds = sessions.map(ChatSessionEntity::id),
+            savedIds = manualOrderIds,
+        ).mapNotNull(byId::get)
             .forHomeFilter(selectedFilter)
             .filter { session ->
                 appliedQuery.isBlank() || listOfNotNull(
@@ -150,7 +157,6 @@ fun NovexConversationRoot(
                     session.playerDisplayName,
                 ).any { it.contains(appliedQuery, ignoreCase = true) }
             }
-            .sortedByDescending(ChatSessionEntity::updatedAt)
     }
     val today = remember(visibleSessions) {
         visibleSessions.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.TODAY }
@@ -159,6 +165,23 @@ fun NovexConversationRoot(
         visibleSessions.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.EARLIER }
     }
     val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromId = (from.key as? String)?.removePrefix("conversation:")
+            ?: return@rememberReorderableLazyListState
+        val toId = (to.key as? String)?.removePrefix("conversation:")
+            ?: return@rememberReorderableLazyListState
+        val completeIds = mergeNovexManualOrder(
+            sourceIds = sessions.map(ChatSessionEntity::id),
+            savedIds = manualOrderIds,
+        )
+        val fromIndex = completeIds.indexOf(fromId)
+        val toIndex = completeIds.indexOf(toId)
+        if (fromIndex !in completeIds.indices || toIndex !in completeIds.indices) {
+            return@rememberReorderableLazyListState
+        }
+        manualOrderIds = moveNovexOrderedId(completeIds, fromIndex, toIndex)
+        orderStore.write(NovexManualOrderKind.CONVERSATIONS, manualOrderIds)
+    }
 
     Column(
         modifier = Modifier
@@ -166,30 +189,25 @@ fun NovexConversationRoot(
             .background(NovexColors.Background)
             .statusBarsPadding(),
     ) {
-        NovexRootHeader(
-            title = "Novex",
-            leading = {
-                NovexIconAction(
-                    icon = R.drawable.ic_phosphor_gear,
-                    contentDescription = "设置",
-                    onClick = onOpenSettings,
-                )
+        val createItems = remember(onNewConversation, onOpenWorlds, onStartCreationTool) {
+            novexConversationCreateMenu().map { start ->
+                when (start) {
+                    NovexConversationStart.EMPTY -> NovexCreateMenuItem("新建对话", onNewConversation)
+                    NovexConversationStart.WORLD_CONTEXT -> NovexCreateMenuItem("从世界开始", onOpenWorlds)
+                    NovexConversationStart.CREATION_TOOL -> NovexCreateMenuItem("帮我创作", onStartCreationTool)
+                }
+            }
+        }
+        NovexRootPageHeader(
+            space = NovexRootSpace.CONVERSATIONS,
+            searching = searching,
+            searchDescription = "搜索对话",
+            onSettings = onOpenSettings,
+            onSearchToggle = {
+                searching = !searching
+                if (!searching) searchState.clear()
             },
-            actions = {
-                NovexIconAction(
-                    icon = R.drawable.ic_phosphor_search,
-                    contentDescription = if (searching) "关闭搜索" else "搜索对话",
-                    onClick = {
-                        searching = !searching
-                        if (!searching) searchState.clear()
-                    },
-                )
-                NovexIconAction(
-                    icon = R.drawable.ic_phosphor_sparkle,
-                    contentDescription = "帮我创作",
-                    onClick = onCreationPlaceholder,
-                )
-            },
+            createItems = createItems,
         )
 
         if (searching) {
@@ -202,8 +220,8 @@ fun NovexConversationRoot(
             label = { filter ->
                 when (filter) {
                     SessionHomeFilter.RECENT -> "最近"
-                    SessionHomeFilter.GENERAL -> "通用"
-                    SessionHomeFilter.CREATION -> "创作"
+                    SessionHomeFilter.CONTEXT_FREE -> "通用"
+                    SessionHomeFilter.WITH_CONTEXT -> "设定"
                 }
             },
             onSelect = { filterName = it.name },
@@ -219,11 +237,9 @@ fun NovexConversationRoot(
                 )
             }
 
-            selectedFilter == SessionHomeFilter.CREATION -> NovexCreationPlaceholder(onCreationPlaceholder)
-
             visibleSessions.isEmpty() -> NovexConversationEmptyState(
                 searching = appliedQuery.isNotBlank(),
-                world = selectedFilter == SessionHomeFilter.RECENT,
+                filter = selectedFilter,
                 onNewConversation = onNewConversation,
                 onOpenWorlds = onOpenWorlds,
             )
@@ -239,16 +255,19 @@ fun NovexConversationRoot(
                     item(key = "section_$label") {
                         NovexSectionTitle(label)
                     }
-                    items(rows, key = ChatSessionEntity::id) { session ->
-                        NovexConversationRow(
-                            session = session,
-                            world = session.worldId?.let(catalog.worlds::get)
-                                ?: worldNameFromSnapshot(session.worldSnapshotJson)?.let {
-                                    ConversationWorldMeta(name = it, imagePath = null)
-                                },
-                            version = session.characterVersionId?.let(catalog.versions::get),
-                            onClick = { onOpenSession(session.id) },
-                        )
+                    items(rows, key = { "conversation:${it.id}" }) { session ->
+                        ReorderableItem(reorderState, key = "conversation:${session.id}") { _ ->
+                            NovexConversationRow(
+                                session = session,
+                                world = session.worldId?.let(catalog.worlds::get)
+                                    ?: worldNameFromSnapshot(session.worldSnapshotJson)?.let {
+                                        ConversationWorldMeta(name = it, imagePath = null)
+                                    },
+                                version = session.characterVersionId?.let(catalog.versions::get),
+                                onClick = { onOpenSession(session.id) },
+                                modifier = Modifier.longPressDraggableHandle(),
+                            )
+                        }
                     }
                 }
                 section("今天", today)
@@ -264,17 +283,24 @@ fun NovexConversationRoot(
                             onDismissRequest = { menuExpanded = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("通用对话") },
+                                text = { Text("新建对话") },
                                 onClick = {
                                     menuExpanded = false
                                     onNewConversation()
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("世界角色对话") },
+                                text = { Text("从世界开始") },
                                 onClick = {
                                     menuExpanded = false
                                     onOpenWorlds()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("帮我创作") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onStartCreationTool()
                                 },
                             )
                         }
@@ -326,20 +352,23 @@ private fun NovexConversationRow(
     world: ConversationWorldMeta?,
     version: ConversationVersionMeta?,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
     ) {
-        NovexArtwork(
-            kind = if (world != null) NovexArtworkKind.WORLD else NovexArtworkKind.CHARACTER,
-            seed = session.worldId ?: session.characterVersionId ?: session.id,
-            imageModel = (world?.imagePath ?: session.assistantAvatarPath).existingMediaFile(),
-            contentDescription = "${session.title ?: "对话"}缩略图",
-            modifier = Modifier.size(54.dp).clip(RoundedCornerShape(8.dp)),
+        NovexConversationThumbnailView(
+            thumbnail = resolveConversationThumbnail(
+                conversationId = session.id,
+                title = session.title,
+                characterAvatarPath = session.assistantAvatarPath.existingMediaFile()?.absolutePath,
+                worldImagePath = world?.imagePath.existingMediaFile()?.absolutePath,
+            ),
+            title = session.title ?: "对话",
         )
         Column(
             modifier = Modifier
@@ -393,7 +422,7 @@ private fun NovexConversationRow(
 @Composable
 private fun NovexConversationEmptyState(
     searching: Boolean,
-    world: Boolean,
+    filter: SessionHomeFilter,
     onNewConversation: () -> Unit,
     onOpenWorlds: () -> Unit,
 ) {
@@ -407,8 +436,9 @@ private fun NovexConversationEmptyState(
         Text(
             when {
                 searching -> "没有找到匹配的对话"
-                world -> "还没有世界内会话"
-                else -> "还没有通用会话"
+                filter == SessionHomeFilter.RECENT -> "还没有对话"
+                filter == SessionHomeFilter.CONTEXT_FREE -> "还没有通用对话"
+                else -> "还没有带设定的对话"
             },
             color = NovexColors.Text,
             fontSize = 18.sp,
@@ -416,42 +446,71 @@ private fun NovexConversationEmptyState(
         )
         if (!searching) {
             Text(
-                if (world) "先选择一个世界和角色版本" else "从一个新的想法开始",
+                if (filter == SessionHomeFilter.WITH_CONTEXT) {
+                    "从世界、角色版本和玩家身份开始"
+                } else {
+                    "从一个新的想法开始"
+                },
                 color = NovexColors.SecondaryText,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(top = 7.dp),
             )
             Text(
-                if (world) "前往世界" else "新建通用对话",
+                if (filter == SessionHomeFilter.WITH_CONTEXT) "前往世界" else "新建对话",
                 color = NovexColors.Primary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .padding(top = 18.dp)
-                    .clickable(onClick = if (world) onOpenWorlds else onNewConversation)
+                    .clickable(
+                        onClick = if (filter == SessionHomeFilter.WITH_CONTEXT) onOpenWorlds else onNewConversation,
+                    )
                     .padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
     }
 }
 
+private val ConversationInitialColors = listOf(
+    Color(0xFFE86B7A),
+    Color(0xFFDA8B45),
+    Color(0xFFB29A42),
+    Color(0xFF52A875),
+    Color(0xFF4D9BB7),
+    Color(0xFF5D7FD1),
+    Color(0xFF8A70C8),
+    Color(0xFFB8679A),
+)
+
 @Composable
-private fun NovexCreationPlaceholder(onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 32.dp, vertical = 80.dp),
-    ) {
-        Text("创作空间即将开放", color = NovexColors.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            "首页入口已经预留，后续会与世界内的“帮我创作”统一。",
-            color = NovexColors.SecondaryText,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 8.dp),
+private fun NovexConversationThumbnailView(
+    thumbnail: NovexConversationThumbnail,
+    title: String,
+) {
+    val modifier = Modifier.size(54.dp).clip(RoundedCornerShape(8.dp))
+    when (thumbnail) {
+        is NovexConversationThumbnail.Image -> NovexArtwork(
+            kind = when (thumbnail.kind) {
+                NovexConversationImageKind.CHARACTER -> NovexArtworkKind.CHARACTER
+                NovexConversationImageKind.WORLD -> NovexArtworkKind.WORLD
+            },
+            seed = thumbnail.path,
+            imageModel = thumbnail.path.existingMediaFile(),
+            contentDescription = "$title 缩略图",
+            modifier = modifier,
         )
+
+        is NovexConversationThumbnail.Initial -> Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier.background(ConversationInitialColors[thumbnail.colorIndex]),
+        ) {
+            Text(
+                thumbnail.text,
+                color = Color.White,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 

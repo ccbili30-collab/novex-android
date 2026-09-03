@@ -497,6 +497,15 @@ fun ChatScreen(
     // pop back) doesn't wipe what the user has typed. Mirrors iOS
     // `AIChatView` which binds the composer against `vm.inputText`.
     val inputText by viewModel.inputText.collectAsState()
+    LaunchedEffect(sessionId) {
+        val pending = com.openminis.app.deeplink.DeepLinkCoordinator.pendingChatAction.value
+        if (pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL) {
+            com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingChatAction()
+            if (viewModel.inputText.value.isBlank()) {
+                viewModel.setInputText("【创作工具】帮我从当前对话出发进行创作。先理解已有内容，再和我一起整理目标与下一步。")
+            }
+        }
+    }
     val novexControls by viewModel.novexControls.collectAsState()
 
     // ─── T51: Share Injection + Move-to capsule ───────────────────────

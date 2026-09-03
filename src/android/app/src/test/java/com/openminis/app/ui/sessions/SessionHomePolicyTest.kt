@@ -19,16 +19,26 @@ class SessionHomePolicyTest {
     }
 
     @Test
-    fun filtersSeparateRecentWorldConversationsGeneralConversationsAndCreation() {
+    fun recentContainsEveryConversationWhileOtherFiltersDescribeCurrentContext() {
         val sessions = listOf(
             session("world-new", worldId = "world-a", updatedAt = 30),
+            session("character", characterVersionId = "version-a", updatedAt = 25),
             session("general", updatedAt = 20),
             session("world-old", worldSnapshotJson = "{}", updatedAt = 10),
         )
 
-        assertEquals(listOf("world-new", "world-old"), sessions.forHomeFilter(SessionHomeFilter.RECENT).map { it.id })
-        assertEquals(listOf("general"), sessions.forHomeFilter(SessionHomeFilter.GENERAL).map { it.id })
-        assertEquals(emptyList<String>(), sessions.forHomeFilter(SessionHomeFilter.CREATION).map { it.id })
+        assertEquals(
+            listOf("world-new", "character", "general", "world-old"),
+            sessions.forHomeFilter(SessionHomeFilter.RECENT).map { it.id },
+        )
+        assertEquals(
+            listOf("general"),
+            sessions.forHomeFilter(SessionHomeFilter.CONTEXT_FREE).map { it.id },
+        )
+        assertEquals(
+            listOf("world-new", "character", "world-old"),
+            sessions.forHomeFilter(SessionHomeFilter.WITH_CONTEXT).map { it.id },
+        )
     }
 
     @Test
@@ -74,6 +84,7 @@ class SessionHomePolicyTest {
         id: String,
         worldId: String? = null,
         worldSnapshotJson: String? = null,
+        characterVersionId: String? = null,
         updatedAt: Long = 0,
     ) = ChatSessionEntity(
         id = id,
@@ -82,5 +93,6 @@ class SessionHomePolicyTest {
         updatedAt = updatedAt,
         worldId = worldId,
         worldSnapshotJson = worldSnapshotJson,
+        characterVersionId = characterVersionId,
     )
 }

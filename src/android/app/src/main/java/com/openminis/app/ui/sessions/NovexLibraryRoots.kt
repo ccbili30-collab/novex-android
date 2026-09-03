@@ -33,11 +33,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,13 +56,13 @@ import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexRootHeader
 import com.openminis.app.ui.novex.NovexSearchField
 import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.settings.existingMediaFile
 import com.openminis.app.ui.settings.rememberNovexNativeCardImporter
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val NovexRootColors = NovexColors
 
@@ -79,8 +84,11 @@ private data class CharacterRootRow(
 internal fun NovexWorldLibraryRoot(
     onOpenWorld: (String) -> Unit,
     onCreateWorld: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
+    val context = LocalContext.current
+    val orderStore = remember(context) { NovexManualOrderStore(context) }
     var rows by remember { mutableStateOf<List<WorldRootRow>>(emptyList()) }
     var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
@@ -88,6 +96,17 @@ internal fun NovexWorldLibraryRoot(
     val searchState = rememberNovexLibrarySearchState()
     val query by searchState.applied.collectAsState()
     val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromId = (from.key as? String)?.removePrefix("world:")
+            ?: return@rememberReorderableLazyListState
+        val toId = (to.key as? String)?.removePrefix("world:")
+            ?: return@rememberReorderableLazyListState
+        val fromIndex = rows.indexOfFirst { it.world.id == fromId }
+        val toIndex = rows.indexOfFirst { it.world.id == toId }
+        if (fromIndex !in rows.indices || toIndex !in rows.indices) return@rememberReorderableLazyListState
+        rows = rows.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        orderStore.write(NovexManualOrderKind.WORLDS, rows.map { it.world.id })
+    }
 
     BackHandler(enabled = searching) {
         searching = false
@@ -98,9 +117,10 @@ internal fun NovexWorldLibraryRoot(
         refresh++
         onOpenWorld(importedId)
     }
+    val resumeRevision = rememberNovexCatalogResumeRevision()
 
-    LaunchedEffect(refresh) {
-        rows = novex.worlds().map { card ->
+    LaunchedEffect(refresh, resumeRevision) {
+        val loadedRows = novex.worlds().map { card ->
             WorldRootRow(
                 world = card.world,
                 imagePath = card.image?.managedPath,
@@ -108,6 +128,11 @@ internal fun NovexWorldLibraryRoot(
                 moduleCount = card.moduleCount,
             )
         }
+        val byId = loadedRows.associateBy { it.world.id }
+        rows = mergeNovexManualOrder(
+            sourceIds = loadedRows.map { it.world.id },
+            savedIds = orderStore.read(NovexManualOrderKind.WORLDS),
+        ).mapNotNull(byId::get)
         loaded = true
     }
     val filtered = remember(rows, query) {
@@ -118,7 +143,7 @@ internal fun NovexWorldLibraryRoot(
     }
 
     NovexLibraryFrame(
-        title = "世界",
+        space = NovexRootSpace.WORLDS,
         searching = searching,
         searchState = searchState,
         searchDescription = "搜索世界",
@@ -126,6 +151,11 @@ internal fun NovexWorldLibraryRoot(
             searching = !searching
             if (!searching) searchState.clear()
         },
+        onOpenSettings = onOpenSettings,
+        createItems = listOf(
+            NovexCreateMenuItem("新建世界", onCreateWorld),
+            NovexCreateMenuItem("导入世界卡", importer.launch),
+        ),
     ) {
         when {
             !loaded || importer.importing -> NovexLoading()
@@ -137,8 +167,14 @@ internal fun NovexWorldLibraryRoot(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(filtered, key = { it.world.id }) { row ->
-                    NovexWorldCard(row = row, onClick = { onOpenWorld(row.world.id) })
+                items(filtered, key = { "world:${it.world.id}" }) { row ->
+                    ReorderableItem(reorderState, key = "world:${row.world.id}") { _ ->
+                        NovexWorldCard(
+                            row = row,
+                            onClick = { onOpenWorld(row.world.id) },
+                            modifier = Modifier.longPressDraggableHandle(),
+                        )
+                    }
                 }
                 item(key = "create_world") {
                     NovexCreateRow(label = "新建世界", onClick = onCreateWorld)
@@ -155,8 +191,11 @@ internal fun NovexWorldLibraryRoot(
 internal fun NovexCharacterLibraryRoot(
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
+    val context = LocalContext.current
+    val orderStore = remember(context) { NovexManualOrderStore(context) }
     var rows by remember { mutableStateOf<List<CharacterRootRow>>(emptyList()) }
     var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
@@ -164,6 +203,17 @@ internal fun NovexCharacterLibraryRoot(
     val searchState = rememberNovexLibrarySearchState()
     val query by searchState.applied.collectAsState()
     val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromId = (from.key as? String)?.removePrefix("character:")
+            ?: return@rememberReorderableLazyListState
+        val toId = (to.key as? String)?.removePrefix("character:")
+            ?: return@rememberReorderableLazyListState
+        val fromIndex = rows.indexOfFirst { it.character.id == fromId }
+        val toIndex = rows.indexOfFirst { it.character.id == toId }
+        if (fromIndex !in rows.indices || toIndex !in rows.indices) return@rememberReorderableLazyListState
+        rows = rows.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        orderStore.write(NovexManualOrderKind.CHARACTERS, rows.map { it.character.id })
+    }
 
     BackHandler(enabled = searching) {
         searching = false
@@ -174,14 +224,20 @@ internal fun NovexCharacterLibraryRoot(
         refresh++
         onOpenCharacter(importedId)
     }
+    val resumeRevision = rememberNovexCatalogResumeRevision()
 
-    LaunchedEffect(refresh) {
-        rows = novex.characters().map { card ->
+    LaunchedEffect(refresh, resumeRevision) {
+        val loadedRows = novex.characters().map { card ->
             val aggregate = card.character
             val character = aggregate.character
             val profile = CharacterVersionProfile.fromJson(aggregate.original.profileJson, character.name)
             CharacterRootRow(character, profile, card.avatar?.managedPath, aggregate.variants.size)
         }
+        val byId = loadedRows.associateBy { it.character.id }
+        rows = mergeNovexManualOrder(
+            sourceIds = loadedRows.map { it.character.id },
+            savedIds = orderStore.read(NovexManualOrderKind.CHARACTERS),
+        ).mapNotNull(byId::get)
         loaded = true
     }
     val filtered = remember(rows, query) {
@@ -192,7 +248,7 @@ internal fun NovexCharacterLibraryRoot(
     }
 
     NovexLibraryFrame(
-        title = "角色",
+        space = NovexRootSpace.CHARACTERS,
         searching = searching,
         searchState = searchState,
         searchDescription = "搜索角色",
@@ -200,6 +256,11 @@ internal fun NovexCharacterLibraryRoot(
             searching = !searching
             if (!searching) searchState.clear()
         },
+        onOpenSettings = onOpenSettings,
+        createItems = listOf(
+            NovexCreateMenuItem("新建角色", onCreateCharacter),
+            NovexCreateMenuItem("导入角色卡", importer.launch),
+        ),
     ) {
         when {
             !loaded || importer.importing -> NovexLoading()
@@ -211,8 +272,14 @@ internal fun NovexCharacterLibraryRoot(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(filtered, key = { it.character.id }) { row ->
-                    NovexCharacterRow(row = row, onClick = { onOpenCharacter(row.character.id) })
+                items(filtered, key = { "character:${it.character.id}" }) { row ->
+                    ReorderableItem(reorderState, key = "character:${row.character.id}") { _ ->
+                        NovexCharacterRow(
+                            row = row,
+                            onClick = { onOpenCharacter(row.character.id) },
+                            modifier = Modifier.longPressDraggableHandle(),
+                        )
+                    }
                 }
                 item(key = "create_character") {
                     NovexCreateRow(label = "新建角色", onClick = onCreateCharacter)
@@ -227,11 +294,13 @@ internal fun NovexCharacterLibraryRoot(
 
 @Composable
 private fun NovexLibraryFrame(
-    title: String,
+    space: NovexRootSpace,
     searching: Boolean,
     searchState: NovexLibrarySearchState,
     searchDescription: String,
     onSearchToggle: () -> Unit,
+    onOpenSettings: () -> Unit,
+    createItems: List<NovexCreateMenuItem>,
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -240,21 +309,34 @@ private fun NovexLibraryFrame(
             .background(NovexRootColors.Background)
             .statusBarsPadding(),
     ) {
-        NovexRootHeader(
-            title = title,
-            actions = {
-                NovexIconAction(
-                    icon = R.drawable.ic_phosphor_search,
-                    contentDescription = if (searching) "关闭$searchDescription" else searchDescription,
-                    onClick = onSearchToggle,
-                )
-            },
+        NovexRootPageHeader(
+            space = space,
+            searching = searching,
+            searchDescription = searchDescription,
+            onSettings = onOpenSettings,
+            onSearchToggle = onSearchToggle,
+            createItems = createItems,
         )
         if (searching) {
             NovexLibrarySearchInput(searchState, searchDescription)
         }
         Box(Modifier.fillMaxSize()) { content() }
     }
+}
+
+/** Reloads both catalogs whenever a detail/editor Activity returns to the root Activity. */
+@Composable
+private fun rememberNovexCatalogResumeRevision(): Int {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var revision by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) revision++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return revision
 }
 
 @Composable
@@ -275,9 +357,13 @@ private fun NovexLibrarySearchInput(state: NovexLibrarySearchState, placeholder:
 }
 
 @Composable
-private fun NovexWorldCard(row: WorldRootRow, onClick: () -> Unit) {
+private fun NovexWorldCard(
+    row: WorldRootRow,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(154.dp)
             .clip(RoundedCornerShape(9.dp))
@@ -333,10 +419,14 @@ private fun NovexWorldCard(row: WorldRootRow, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NovexCharacterRow(row: CharacterRootRow, onClick: () -> Unit) {
+private fun NovexCharacterRow(
+    row: CharacterRootRow,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)

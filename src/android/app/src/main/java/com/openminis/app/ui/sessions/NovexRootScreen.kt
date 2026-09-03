@@ -6,6 +6,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +60,7 @@ fun NovexRootScreen(
     onCreateWorld: () -> Unit,
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var selectedName by rememberSaveable { mutableStateOf(NovexRootSpace.CONVERSATIONS.name) }
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
@@ -73,6 +77,13 @@ fun NovexRootScreen(
         selectedName = destination.name
         showRootDock = true
         if (expand) dockExpanded = true
+    }
+
+    val rootBackAction = novexRootBackAction(selected = selected, searchActive = false)
+    BackHandler(enabled = rootBackAction == NovexRootBackAction.SWITCH_TO_CONVERSATIONS) {
+        if (rootBackAction == NovexRootBackAction.SWITCH_TO_CONVERSATIONS) {
+            select(NovexRootSpace.CONVERSATIONS, expand = false)
+        }
     }
 
     Box(
@@ -154,9 +165,19 @@ fun NovexRootScreen(
                 }
             },
     ) {
-        Box(Modifier.fillMaxSize()) {
-            pageStateHolder.SaveableStateProvider(selected.name) {
-                when (selected) {
+        AnimatedContent(
+            targetState = selected,
+            transitionSpec = {
+                val forward = targetState.ordinal > initialState.ordinal
+                val enter = slideInHorizontally(tween(260)) { width -> if (forward) width else -width }
+                val exit = slideOutHorizontally(tween(260)) { width -> if (forward) -width else width }
+                enter togetherWith exit
+            },
+            label = "根页面横向切换",
+            modifier = Modifier.fillMaxSize(),
+        ) { destination ->
+            pageStateHolder.SaveableStateProvider(destination.name) {
+                when (destination) {
                     NovexRootSpace.CONVERSATIONS -> conversationContent(
                         { select(NovexRootSpace.WORLDS) },
                         { visible -> showRootDock = nextNovexRootDockVisibility(visible) },
@@ -165,11 +186,13 @@ fun NovexRootScreen(
                     NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
                         onOpenWorld = onOpenWorld,
                         onCreateWorld = onCreateWorld,
+                        onOpenSettings = onOpenSettings,
                     )
 
                     NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
                         onOpenCharacter = onOpenCharacter,
                         onCreateCharacter = onCreateCharacter,
+                        onOpenSettings = onOpenSettings,
                     )
                 }
             }

@@ -519,6 +519,9 @@ fun AppNavigation(
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit())
                 },
+                onOpenSettings = {
+                    navController.safeNavigate(Routes.SETTINGS)
+                },
             )
         }
 
@@ -614,7 +617,12 @@ fun AppNavigation(
 
         composable(Routes.SETTINGS) {
             SettingsScreen(
-                onBack = { navController.safePopBackStack() },
+                onBack = {
+                    val canPop = navController.safePopBackStack()
+                    if (novexInitialRouteBackAction(canPop) == NovexInitialRouteBackAction.FINISH_HOST) {
+                        (context as? android.app.Activity)?.finish()
+                    }
+                },
                 onProvidersClick = { navController.safeNavigate(Routes.PROVIDER_LIST) },
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
                 onImageGenerationClick = { navController.safeNavigate(Routes.IMAGE_GENERATION_SETTINGS) },

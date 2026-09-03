@@ -1,10 +1,10 @@
 package com.openminis.app
 
 import android.app.AlertDialog
+import android.app.ActivityOptions
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.ui.sessions.NovexConversationRoot
 import com.openminis.app.ui.sessions.NovexRootScreen
+import com.openminis.app.ui.navigation.NovexRouteEntryEdge
+import com.openminis.app.ui.navigation.novexRouteEntryEdge
 import com.openminis.app.ui.theme.MinisTheme
 import java.util.UUID
 import kotlinx.coroutines.Job
@@ -48,10 +50,20 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                 preparingRuntime = false
                 result.fold(
                     onSuccess = {
-                        activity.startActivity(
-                            Intent().setClassName(activity, "com.openminis.app.MainActivity")
-                                .putExtra(EXTRA_NOVEX_START_ROUTE, route),
-                        )
+                        val intent = Intent().setClassName(activity, "com.openminis.app.MainActivity")
+                            .putExtra(EXTRA_NOVEX_START_ROUTE, route)
+                        if (novexRouteEntryEdge(route) == NovexRouteEntryEdge.LEFT) {
+                            activity.startActivity(
+                                intent,
+                                ActivityOptions.makeCustomAnimation(
+                                    activity,
+                                    R.anim.novex_enter_from_left,
+                                    R.anim.novex_exit_to_right,
+                                ).toBundle(),
+                            )
+                        } else {
+                            activity.startActivity(intent)
+                        }
                     },
                     onFailure = activity::showNovexRuntimeFailure,
                 )
@@ -79,8 +91,11 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                         },
                         onOpenSettings = { openLegacy("settings") },
                         onOpenWorlds = onWorldsClick,
-                        onCreationPlaceholder = {
-                            Toast.makeText(activity, "创作模式将在后续版本开放", Toast.LENGTH_SHORT).show()
+                        onStartCreationTool = {
+                            com.openminis.app.deeplink.DeepLinkCoordinator.setPendingChatAction(
+                                com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL,
+                            )
+                            openLegacy("chat/__new__${UUID.randomUUID()}")
                         },
                         onInteractive = {
                             NovexStartupMetrics.reportHomeInteractive()
@@ -96,6 +111,7 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                 onCreateWorld = { openLegacy("characters/world/edit") },
                 onOpenCharacter = { id -> openLegacy("characters/card/${Uri.encode(id)}") },
                 onCreateCharacter = { openLegacy("characters/catalog/edit?createVariant=false") },
+                onOpenSettings = { openLegacy("settings") },
             )
         }
     }
