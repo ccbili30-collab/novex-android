@@ -644,9 +644,9 @@ class ToolOverlayController(private val context: Context) {
     private fun onTap() {
         try {
             val sid = pendingSessionId
-            val launchIntent = Intent(
+            val launchIntent = Intent().setClassName(
                 context,
-                Class.forName("com.openminis.app.MainActivity"),
+                "com.openminis.app.NovexLaunchActivity",
             ).apply {
                 // [T-android-overlay-reply-status-34599] When we have a
                 // tracked session, route the tap through the existing

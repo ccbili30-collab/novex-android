@@ -685,7 +685,7 @@ class AgentForegroundService : Service() {
         val seconds = elapsedSeconds % 60
         val timeString = String.format("%d:%02d", minutes, seconds)
 
-        val mainIntent = Intent(this, Class.forName("com.openminis.app.MainActivity")).apply {
+        val mainIntent = Intent().setClassName(this, "com.openminis.app.NovexLaunchActivity").apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(

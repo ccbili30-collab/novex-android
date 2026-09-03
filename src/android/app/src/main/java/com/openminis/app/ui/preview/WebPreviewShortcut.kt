@@ -7,7 +7,6 @@ import android.net.Uri
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import com.openminis.app.MainActivity
 import com.openminis.app.R
 import com.openminis.app.logging.AppLogger
 
@@ -69,7 +68,7 @@ object WebPreviewShortcut {
             .build()
 
         val launchIntent = Intent(Intent.ACTION_VIEW, deepLink).apply {
-            setClass(context, MainActivity::class.java)
+            setClassName(context, "com.openminis.app.NovexLaunchActivity")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 

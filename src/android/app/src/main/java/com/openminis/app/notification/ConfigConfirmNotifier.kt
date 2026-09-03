@@ -9,7 +9,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.openminis.app.MainActivity
 import com.openminis.app.R
 import com.openminis.app.config.confirm.PendingConfigChange
 import com.openminis.app.data.repository.BackgroundSettingsRepository
@@ -73,7 +72,7 @@ class ConfigConfirmNotifier(
         // Tapping just needs to bring MainActivity forward; the root-mounted
         // confirm dialog is still bound to the pending change. singleTask +
         // CLEAR_TOP reuses the existing instance rather than spawning a copy.
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
+        val launchIntent = Intent().setClassName(context, "com.openminis.app.NovexLaunchActivity").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         val pendingIntent = PendingIntent.getActivity(

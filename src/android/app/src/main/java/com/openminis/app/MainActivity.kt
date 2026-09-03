@@ -10,6 +10,12 @@ import android.os.LocaleList
 import android.provider.Settings
 import com.openminis.app.accessibility.AccessibilityRecoveryManager
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -220,6 +226,19 @@ class MainActivity : ComponentActivity() {
         // assigned, so it stays false for exactly as long as composing is
         // genuinely unsafe.
         val minisApp = application as? MinisApp
+        if (minisApp != null && !minisApp.subsystemsInitialized && !minisApp.startupCoordinator.safeMode) {
+            showLaunchSurfaceThen {
+                lifecycleScope.launch {
+                    val result = minisApp.startupCoordinator.ensureRuntime()
+                    if (result.isSuccess) {
+                        recreate()
+                    } else {
+                        showInitializationFailure(result.exceptionOrNull())
+                    }
+                }
+            }
+            return
+        }
         if (minisApp == null || !minisApp.subsystemsInitialized) {
             android.util.Log.w(
                 "MainActivity",
@@ -478,6 +497,7 @@ class MainActivity : ComponentActivity() {
                 ?.let { DeepLinkAction.OpenSession(it) }
                 ?: DeepLinkAction.Unknown
         }
+        val novexStartRoute = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE)
 
         setContent {
             val prefs = remember { getAppearancePrefs(this) }
@@ -557,6 +577,7 @@ class MainActivity : ComponentActivity() {
                     memoryRepository = app.memoryRepository,
                     navController = navController,
                     initialDeepLink = launchDeepLink,
+                    initialRoute = novexStartRoute,
                 )
 
                 // T-config: root-level minis-config confirm dialog.
@@ -569,6 +590,74 @@ class MainActivity : ComponentActivity() {
                 com.openminis.app.ui.settings.ConfigConfirmDialogHost()
             }
         }
+    }
+
+    /**
+     * Draw a tiny app-owned frame before constructing the legacy navigation
+     * graph. Android keeps the system splash visible until the Activity draws;
+     * previously the first draw waited for the entire Compose tree.
+     */
+    private fun showLaunchSurfaceThen(showContent: () -> Unit) {
+        var handedOff = false
+        val surface = object : FrameLayout(this) {
+            override fun dispatchDraw(canvas: Canvas) {
+                super.dispatchDraw(canvas)
+                if (!handedOff) {
+                    handedOff = true
+                    post {
+                        android.util.Log.i("MainActivity", "Novex launch surface drawn; composing app")
+                        showContent()
+                    }
+                }
+            }
+        }.apply {
+            setBackgroundColor(Color.rgb(250, 250, 252))
+        }
+
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(24.dpPx(), 72.dpPx(), 24.dpPx(), 24.dpPx())
+        }
+        column.addView(TextView(this).apply {
+            text = "Novex"
+            textSize = 28f
+            setTextColor(Color.rgb(22, 22, 26))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ))
+        repeat(3) { index ->
+            column.addView(FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = 12.dpPx().toFloat()
+                    setColor(if (index == 0) Color.rgb(237, 240, 246) else Color.rgb(243, 244, 247))
+                }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                if (index == 0) 54.dpPx() else 72.dpPx(),
+            ).apply {
+                topMargin = if (index == 0) 30.dpPx() else 14.dpPx()
+            })
+        }
+        surface.addView(column, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+        setContentView(surface)
+    }
+
+    private fun Int.dpPx(): Int = (this * resources.displayMetrics.density).toInt()
+
+    private fun showInitializationFailure(error: Throwable?) {
+        AlertDialog.Builder(this)
+            .setTitle("Novex 初始化失败")
+            .setMessage(error?.message ?: "无法准备应用数据，请重新启动后重试。")
+            .setCancelable(false)
+            .setPositiveButton("重新启动") { _, _ -> finishAndRestartProcess() }
+            .setNegativeButton("关闭") { _, _ -> finish() }
+            .show()
     }
 
     /**
@@ -637,7 +726,12 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra("shared_content", false)) {
             com.openminis.app.share.ShareCoordinator.processPendingShare(this)
         }
-        handleDeepLink(intent.data)
+        val route = intent.getStringExtra(EXTRA_NOVEX_START_ROUTE)
+        if (route != null) {
+            navController?.navigate(route) { launchSingleTop = true }
+        } else {
+            handleDeepLink(intent.data)
+        }
     }
 
     private fun handleDeepLink(uri: Uri?) {

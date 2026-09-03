@@ -267,6 +267,7 @@ fun AppNavigation(
     memoryRepository: MemoryRepository? = null,
     navController: NavHostController = rememberNavController(),
     initialDeepLink: DeepLinkAction? = null,
+    initialRoute: String? = null,
 ) {
     val context = LocalContext.current
 
@@ -412,6 +413,7 @@ fun AppNavigation(
             Routes.chat(htmlShortcut.sessionId)
         }
         quickActionStart != null -> quickActionStart
+        initialRoute != null -> initialRoute
         else -> Routes.SESSION_LIST
     }
     NavHost(

@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import com.openminis.app.MainActivity
 import com.openminis.app.R
 import com.openminis.app.logging.AppLogger
 
@@ -61,7 +60,7 @@ class ScheduledNotificationReceiver : BroadcastReceiver() {
          * that would then be sent AS Minis.
          */
         fun contentIntentFor(context: Context, notifId: Int): PendingIntent {
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
+            val launchIntent = Intent().setClassName(context, "com.openminis.app.NovexLaunchActivity").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             return PendingIntent.getActivity(

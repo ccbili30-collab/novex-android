@@ -181,6 +181,12 @@
                  calls keep working because MainActivity is always enabled.
                  The minis:// deep-link filter stays on MainActivity since
                  deep-links never go through the LAUNCHER category. -->
+        </activity>
+
+        <activity
+            android:name=".NovexLaunchActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Minis">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -189,16 +195,24 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".NovexHomeActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Minis"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- T-android-dynamic-app-icon: launcher-icon aliases. Exactly
              ONE of these three is enabled at any time; AppIconRepository
              flips the enabled state in response to a Settings → App Icon
-             tap. All three target MainActivity, so the user-visible
-             launcher entry just swaps icon + label, no actual activity
-             change. Pre-install state: "auto" is enabled in the manifest
-             (android:enabled="true"), the other two are disabled. -->
+             tap. All three target the lightweight NovexLaunchActivity,
+             which draws the app-owned first frame before choosing the Novex
+             home or an on-demand legacy destination.
+             Pre-install state: "auto" is enabled in the manifest; the other
+             two are disabled. -->
         <activity-alias
             android:name=".MainActivityIconAuto"
-            android:targetActivity=".MainActivity"
+            android:targetActivity=".NovexLaunchActivity"
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
@@ -220,7 +234,7 @@
 
         <activity-alias
             android:name=".MainActivityIconLight"
-            android:targetActivity=".MainActivity"
+            android:targetActivity=".NovexLaunchActivity"
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_classic_light"
@@ -236,7 +250,7 @@
 
         <activity-alias
             android:name=".MainActivityIconDark"
-            android:targetActivity=".MainActivity"
+            android:targetActivity=".NovexLaunchActivity"
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_classic_dark"
