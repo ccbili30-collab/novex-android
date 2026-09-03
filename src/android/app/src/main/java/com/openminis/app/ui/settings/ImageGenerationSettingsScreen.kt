@@ -300,12 +300,12 @@ fun ImageGenerationSourceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (initial == null) "新增生图来源" else "编辑生图来源") },
+                title = { Text(if (currentId == null) "新增生图来源" else "编辑生图来源") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
-                    if (initial != null) {
+                    if (currentId != null) {
                         IconButton(onClick = { deleteConfirm = true }) { Icon(Icons.Default.Delete, "删除来源") }
                     }
                     TextButton(onClick = { saveSource() }) { Text("保存") }
