@@ -74,6 +74,7 @@ fun NovexConversationRoot(
     onOpenWorlds: () -> Unit,
     onCreationPlaceholder: () -> Unit,
     onInteractive: () -> Unit,
+    onContentLoaded: () -> Unit,
     onRootNavigationVisibilityChange: (Boolean) -> Unit,
 ) {
     val sessionsOrNull by produceState<List<ChatSessionEntity>?>(initialValue = null, chatRepository) {
@@ -82,12 +83,16 @@ fun NovexConversationRoot(
     val worldNamesOrNull by produceState<Map<String, String>?>(initialValue = null, workspace) {
         value = workspace.worlds().associate { it.world.id to it.world.name }
     }
-    val ready = sessionsOrNull != null && worldNamesOrNull != null
-    LaunchedEffect(ready) {
-        if (ready) {
-            onRootNavigationVisibilityChange(true)
-            onInteractive()
-        }
+    val availability = sessionHomeAvailability(
+        sessionsLoaded = sessionsOrNull != null,
+        worldNamesLoaded = worldNamesOrNull != null,
+    )
+    LaunchedEffect(Unit) {
+        onRootNavigationVisibilityChange(availability.controlsInteractive)
+        onInteractive()
+    }
+    LaunchedEffect(availability.contentReady) {
+        if (availability.contentReady) onContentLoaded()
     }
 
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -240,7 +245,7 @@ fun NovexConversationRoot(
         Spacer(Modifier.height(12.dp))
 
         when {
-            !ready -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            !availability.contentReady -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(
                     color = NovexColors.Primary,
                     strokeWidth = 2.dp,

@@ -15,6 +15,19 @@ internal enum class SessionHomeRecency {
     EARLIER,
 }
 
+internal data class SessionHomeAvailability(
+    val controlsInteractive: Boolean,
+    val contentReady: Boolean,
+)
+
+internal fun sessionHomeAvailability(
+    sessionsLoaded: Boolean,
+    worldNamesLoaded: Boolean,
+): SessionHomeAvailability = SessionHomeAvailability(
+    controlsInteractive = true,
+    contentReady = sessionsLoaded && worldNamesLoaded,
+)
+
 internal fun ChatSessionEntity.isWorldConversation(): Boolean =
     !worldId.isNullOrBlank() || !worldSnapshotJson.isNullOrBlank()
 

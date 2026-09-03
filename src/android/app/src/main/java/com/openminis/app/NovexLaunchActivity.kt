@@ -1,6 +1,5 @@
 package com.openminis.app
 
-import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -11,6 +10,7 @@ import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.ComponentActivity
 import com.openminis.app.startup.NovexLaunchDestination
 import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.startup.novexLaunchDestination
@@ -20,7 +20,7 @@ import com.openminis.app.startup.novexLaunchDestination
  * the large legacy activity while application repositories initialize off the
  * main thread.
  */
-class NovexLaunchActivity : Activity() {
+class NovexLaunchActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var forwarded = false
 
@@ -34,7 +34,7 @@ class NovexLaunchActivity : Activity() {
             val plainLauncherStart = intent?.action == Intent.ACTION_MAIN && intent?.data == null
             when (novexLaunchDestination(app.startupCoordinator.state.value, app.startupCoordinator.safeMode, plainLauncherStart)) {
                 NovexLaunchDestination.WAIT -> handler.postDelayed(this, 50L)
-                NovexLaunchDestination.HOME -> forwardTo("com.openminis.app.NovexHomeActivity")
+                NovexLaunchDestination.HOME -> installHome(app)
                 NovexLaunchDestination.LEGACY -> forwardToMain()
             }
         }
@@ -51,6 +51,13 @@ class NovexLaunchActivity : Activity() {
     }
 
     private fun forwardToMain() = forwardTo("com.openminis.app.MainActivity")
+
+    private fun installHome(app: MinisApp) {
+        if (forwarded || isFinishing) return
+        forwarded = true
+        handler.removeCallbacks(readinessCheck)
+        installNovexHomeSurface(app)
+    }
 
     private fun forwardTo(targetClassName: String) {
         if (forwarded || isFinishing) return

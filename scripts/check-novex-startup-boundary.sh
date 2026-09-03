@@ -5,6 +5,7 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 entry_files=(
   "$project_root/src/android/app/src/main/java/com/openminis/app/NovexLaunchActivity.kt"
   "$project_root/src/android/app/src/main/java/com/openminis/app/NovexHomeActivity.kt"
+  "$project_root/src/android/app/src/main/java/com/openminis/app/NovexHomeSurface.kt"
   "$project_root/src/android/app/src/main/java/com/openminis/app/ui/sessions/NovexConversationRoot.kt"
   "$project_root/src/android/app/src/main/java/com/openminis/app/ui/sessions/NovexRootScreen.kt"
 )
@@ -33,6 +34,12 @@ fi
 
 if rg -n 'val networkMonitor[^=]*= NetworkMonitor\(' "$application_shell"; then
   echo "MinisApp eagerly creates the legacy network monitor during process startup." >&2
+  exit 1
+fi
+
+launch_activity="$project_root/src/android/app/src/main/java/com/openminis/app/NovexLaunchActivity.kt"
+if rg -n 'NovexLaunchDestination\.HOME -> forwardTo' "$launch_activity"; then
+  echo "Novex home still pays for a second Activity hand-off after minimum startup." >&2
   exit 1
 fi
 

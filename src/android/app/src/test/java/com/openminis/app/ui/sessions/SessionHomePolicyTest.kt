@@ -41,6 +41,29 @@ class SessionHomePolicyTest {
         assertEquals(SessionHomeRecency.EARLIER, sessionHomeRecency(yesterday, now, timeZone))
     }
 
+    @Test
+    fun rootControlsAreInteractiveBeforeConversationContentFinishesLoading() {
+        val cold = sessionHomeAvailability(
+            sessionsLoaded = false,
+            worldNamesLoaded = false,
+        )
+        val partial = sessionHomeAvailability(
+            sessionsLoaded = true,
+            worldNamesLoaded = false,
+        )
+        val loaded = sessionHomeAvailability(
+            sessionsLoaded = true,
+            worldNamesLoaded = true,
+        )
+
+        assertTrue(cold.controlsInteractive)
+        assertFalse(cold.contentReady)
+        assertTrue(partial.controlsInteractive)
+        assertFalse(partial.contentReady)
+        assertTrue(loaded.controlsInteractive)
+        assertTrue(loaded.contentReady)
+    }
+
     private fun localTime(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
         Calendar.getInstance(timeZone).apply {
             clear()
