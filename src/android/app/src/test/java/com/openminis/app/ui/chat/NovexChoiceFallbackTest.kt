@@ -1,5 +1,6 @@
 package com.openminis.app.ui.chat
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,5 +50,76 @@ class NovexChoiceFallbackTest {
             3. 身份：伯爵长女
         """.trimIndent()
         assertTrue(NovexChoiceFallback.extract(text).isEmpty())
+    }
+
+    @Test
+    fun `explicit choice-tool request gets one forced structured retry`() {
+        val source = File("src/main/java/com/openminis/app/ui/chat/ChatViewModel.kt").readText()
+
+        assertTrue(source.contains("MissingChoiceToolRecoveryPolicy"))
+        assertTrue(source.contains("choiceRepairAttempted"))
+        assertTrue(source.contains("forcedChoiceToolOnly"))
+    }
+
+    @Test
+    fun `plain promise to add choices is not mistaken for a rendered menu`() {
+        assertTrue(
+            NovexChoiceFallback.extract(
+                "对，我该在这给选项。抱歉，又说忘了。补上。饭吃得差不多了，这个节点——",
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `explicit choice tool request retries once and only once`() {
+        val first = MissingChoiceToolRecoveryPolicy.decide(
+            userRequest = "选项工具？",
+            assistantText = "对，我该在这给选项。补上。",
+            hasAnyToolCall = false,
+            hasPresentChoicesCall = false,
+            finishReason = "stop",
+            presentChoicesAvailable = true,
+            forcedAttempt = false,
+        )
+        val second = MissingChoiceToolRecoveryPolicy.decide(
+            userRequest = "选项工具？",
+            assistantText = "还是没有调用工具",
+            hasAnyToolCall = false,
+            hasPresentChoicesCall = false,
+            finishReason = "stop",
+            presentChoicesAvailable = true,
+            forcedAttempt = true,
+        )
+
+        assertEquals(MissingChoiceToolRecoveryAction.RETRY_PRESENT_CHOICES, first)
+        assertEquals(MissingChoiceToolRecoveryAction.FAIL_AFTER_RETRY, second)
+    }
+
+    @Test
+    fun `ordinary story and existing numbered choices do not force a retry`() {
+        assertEquals(
+            MissingChoiceToolRecoveryAction.NONE,
+            MissingChoiceToolRecoveryPolicy.decide(
+                userRequest = "继续故事",
+                assistantText = "她推开门，走入雨夜。",
+                hasAnyToolCall = false,
+                hasPresentChoicesCall = false,
+                finishReason = "stop",
+                presentChoicesAvailable = true,
+                forcedAttempt = false,
+            ),
+        )
+        assertEquals(
+            MissingChoiceToolRecoveryAction.NONE,
+            MissingChoiceToolRecoveryPolicy.decide(
+                userRequest = "给我三个选项",
+                assistantText = "请选择：\n1. 留下\n2. 离开\n3. 等待",
+                hasAnyToolCall = false,
+                hasPresentChoicesCall = false,
+                finishReason = "stop",
+                presentChoicesAvailable = true,
+                forcedAttempt = false,
+            ),
+        )
     }
 }

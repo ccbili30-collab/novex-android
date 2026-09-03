@@ -11,10 +11,10 @@ internal fun novexErrorMessage(raw: String): String {
         "invalid gemini function call history" in lower ||
             ("function call history" in lower && "does not match" in lower) ->
             "模型返回的工具调用记录不一致。本轮已停止以避免误操作，请重试；如果仍然出现，请新建一轮对话继续。"
-        "401" in text || "unauthorized" in lower || "invalid api key" in lower ->
-            "身份验证失败。请检查 API 密钥是否正确、是否已经失效。"
         "403" in text || "forbidden" in lower ->
             "当前密钥没有访问这个模型或接口的权限，请检查套餐、模型名和中转站权限。"
+        "401" in text || "unauthorized" in lower || "invalid api key" in lower ->
+            "身份验证失败。请检查 API 密钥是否正确、是否已经失效。"
         "404" in text || "model_not_found" in lower || "not found" in lower ->
             "没有找到请求的模型或接口。请检查接口地址和模型名称。"
         "408" in text || "timeout" in lower || "timed out" in lower ->
@@ -48,7 +48,7 @@ private fun appendOriginalHttpDetail(summary: String, raw: String): String {
             "\$1<已隐藏>",
         )
         .replace(
-            Regex("(?i)(api[-_ ]?key\\s*[:=]\\s*)[^\\s,;]+"),
+            Regex("(?i)(api[-_ ]?key\\s*[:=]\\s*)(?!HTTP\\b)[^\\s,;]+"),
             "\$1<已隐藏>",
         )
         .take(1_500)

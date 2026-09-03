@@ -1733,4 +1733,5 @@
     <string name="provider_no_key_required">No key required</string>
     <string name="generated_image_open_save_hint">Tap to view or save</string>
     <string name="generated_image_unavailable">The generated image file is unavailable</string>
+    <string name="chat_error_present_choices_missing">The model did not return structured choice buttons after one retry. Existing text was kept; this turn has stopped to prevent a loop.</string>
 </resources>

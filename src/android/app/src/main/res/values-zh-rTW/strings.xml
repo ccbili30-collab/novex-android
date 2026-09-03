@@ -827,4 +827,5 @@
     <string name="provider_no_key_required">無需金鑰</string>
     <string name="generated_image_open_save_hint">點擊查看或儲存</string>
     <string name="generated_image_unavailable">生成的圖片檔案不可用</string>
+    <string name="chat_error_present_choices_missing">模型在自動重試一次後仍未回傳結構化選項按鈕。已保留現有文字並停止本輪，避免循環呼叫。</string>
 </resources>
