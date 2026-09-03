@@ -303,20 +303,32 @@ private fun NovexLibraryFrame(
     createItems: List<NovexCreateMenuItem>,
     content: @Composable () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(NovexRootColors.Background)
-            .statusBarsPadding(),
-    ) {
-        NovexRootPageHeader(
-            space = space,
+    val headerHost = LocalNovexRootHeaderHost.current
+    RegisterNovexRootHeader(
+        space,
+        NovexRootHeaderConfig(
             searching = searching,
             searchDescription = searchDescription,
             onSettings = onOpenSettings,
             onSearchToggle = onSearchToggle,
             createItems = createItems,
-        )
+        ),
+    )
+    Column(
+        (if (headerHost == null) Modifier.statusBarsPadding() else Modifier)
+            .fillMaxSize()
+            .background(NovexRootColors.Background),
+    ) {
+        if (headerHost == null) {
+            NovexRootPageHeader(
+                space = space,
+                searching = searching,
+                searchDescription = searchDescription,
+                onSettings = onOpenSettings,
+                onSearchToggle = onSearchToggle,
+                createItems = createItems,
+            )
+        }
         if (searching) {
             NovexLibrarySearchInput(searchState, searchDescription)
         }

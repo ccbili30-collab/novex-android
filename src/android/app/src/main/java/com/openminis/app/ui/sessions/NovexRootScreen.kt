@@ -6,47 +6,47 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.ui.novex.NovexColors
-import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 private val NovexRootColors = NovexColors
 
@@ -62,21 +62,18 @@ fun NovexRootScreen(
     onCreateCharacter: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var selectedName by rememberSaveable { mutableStateOf(NovexRootSpace.CONVERSATIONS.name) }
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
     var showRootDock by rememberSaveable { mutableStateOf(false) }
     val pageStateHolder = rememberSaveableStateHolder()
-    val selected = NovexRootSpace.valueOf(selectedName)
-    val currentSelected by rememberUpdatedState(selected)
-    val density = LocalDensity.current
-    val swipeThreshold = with(density) { 72.dp.toPx() }
-    val dockGestureWidth = with(density) { 244.dp.toPx() }
-    val dockGestureHeight = with(density) { 96.dp.toPx() }
+    val pagerState = rememberPagerState(initialPage = 0) { NovexRootSpace.entries.size }
+    val scope = rememberCoroutineScope()
+    val headerHost = remember { NovexRootHeaderHost() }
+    val selected = NovexRootSpace.entries[pagerState.currentPage]
 
     fun select(destination: NovexRootSpace, expand: Boolean = true) {
-        selectedName = destination.name
         showRootDock = true
         if (expand) dockExpanded = true
+        scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
     }
 
     val rootBackAction = novexRootBackAction(selected = selected, searchActive = false)
@@ -86,125 +83,55 @@ fun NovexRootScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NovexRootColors.Background)
-            .pointerInput(
-                showRootDock,
-                dockExpanded,
-                swipeThreshold,
-                dockGestureWidth,
-                dockGestureHeight,
-            ) {
-                if (showRootDock) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(
-                            requireUnconsumed = false,
-                            pass = PointerEventPass.Initial,
-                        )
-                        val startedOnDock = isNovexRootDockHit(
-                            x = down.position.x,
-                            y = down.position.y,
-                            pageWidth = size.width.toFloat(),
-                            pageHeight = size.height.toFloat(),
-                            dockWidth = dockGestureWidth,
-                            dockHeight = dockGestureHeight,
-                        )
-                        var totalX = 0f
-                        var totalY = 0f
-                        var event: androidx.compose.ui.input.pointer.PointerEvent
-                        do {
-                            event = awaitPointerEvent(PointerEventPass.Final)
-                            event.changes.forEach { change ->
-                                totalX += change.position.x - change.previousPosition.x
-                                totalY += change.position.y - change.previousPosition.y
-                            }
-                            if (
-                                startedOnDock &&
-                                abs(totalX) > viewConfiguration.touchSlop &&
-                                abs(totalX) > abs(totalY)
-                            ) {
-                                select(
-                                    novexRootSpaceAtPageX(
-                                        x = down.position.x + totalX,
-                                        pageWidth = size.width.toFloat(),
-                                        dockWidth = dockGestureWidth,
-                                    ),
-                                    expand = false,
-                                )
-                            }
-                        } while (event.changes.any { it.pressed })
-
-                        val horizontalSwipe = abs(totalX) >= swipeThreshold && abs(totalX) > abs(totalY)
-                        if (startedOnDock && horizontalSwipe) {
-                                select(
-                                    novexRootSpaceAtPageX(
-                                        x = down.position.x + totalX,
-                                        pageWidth = size.width.toFloat(),
-                                        dockWidth = dockGestureWidth,
-                                    ),
-                                    expand = false,
-                                )
-                        } else if (!startedOnDock) {
-                            if (horizontalSwipe) {
-                                val delta = if (totalX < 0f) 1 else -1
-                                select(
-                                    NovexRootNavigationState(currentSelected).moveCompact(delta).selected,
-                                    expand = false,
-                                )
-                            } else if (
-                                dockExpanded &&
-                                abs(totalX) < viewConfiguration.touchSlop &&
-                                abs(totalY) < viewConfiguration.touchSlop
-                            ) {
-                                dockExpanded = false
-                            }
+    androidx.compose.runtime.CompositionLocalProvider(LocalNovexRootHeaderHost provides headerHost) {
+        Column(Modifier.fillMaxSize().background(NovexRootColors.Background).statusBarsPadding()) {
+            headerHost.current(selected)?.let { header ->
+                NovexRootPageHeader(
+                    space = selected,
+                    searching = header.searching,
+                    searchDescription = header.searchDescription,
+                    onSettings = header.onSettings,
+                    onSearchToggle = header.onSearchToggle,
+                    createItems = header.createItems,
+                )
+            } ?: Box(Modifier.fillMaxWidth().height(64.dp))
+            Box(Modifier.fillMaxSize()) {
+                HorizontalPager(
+                    state = pagerState,
+                    userScrollEnabled = showRootDock,
+                    key = { NovexRootSpace.entries[it].name },
+                    modifier = Modifier.fillMaxSize(),
+                ) { page ->
+                    val destination = NovexRootSpace.entries[page]
+                    pageStateHolder.SaveableStateProvider(destination.name) {
+                        when (destination) {
+                            NovexRootSpace.CONVERSATIONS -> conversationContent(
+                                { select(NovexRootSpace.WORLDS) },
+                                { visible -> showRootDock = nextNovexRootDockVisibility(visible) },
+                            )
+                            NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
+                                onOpenWorld = onOpenWorld,
+                                onCreateWorld = onCreateWorld,
+                                onOpenSettings = onOpenSettings,
+                            )
+                            NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
+                                onOpenCharacter = onOpenCharacter,
+                                onCreateCharacter = onCreateCharacter,
+                                onOpenSettings = onOpenSettings,
+                            )
                         }
                     }
                 }
-            },
-    ) {
-        AnimatedContent(
-            targetState = selected,
-            transitionSpec = {
-                val forward = targetState.ordinal > initialState.ordinal
-                val enter = slideInHorizontally(tween(260)) { width -> if (forward) width else -width }
-                val exit = slideOutHorizontally(tween(260)) { width -> if (forward) -width else width }
-                enter togetherWith exit
-            },
-            label = "根页面横向切换",
-            modifier = Modifier.fillMaxSize(),
-        ) { destination ->
-            pageStateHolder.SaveableStateProvider(destination.name) {
-                when (destination) {
-                    NovexRootSpace.CONVERSATIONS -> conversationContent(
-                        { select(NovexRootSpace.WORLDS) },
-                        { visible -> showRootDock = nextNovexRootDockVisibility(visible) },
-                    )
-
-                    NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
-                        onOpenWorld = onOpenWorld,
-                        onCreateWorld = onCreateWorld,
-                        onOpenSettings = onOpenSettings,
-                    )
-
-                    NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
-                        onOpenCharacter = onOpenCharacter,
-                        onCreateCharacter = onCreateCharacter,
-                        onOpenSettings = onOpenSettings,
+                if (showRootDock) {
+                    NovexRootDock(
+                        selected = selected,
+                        expanded = dockExpanded,
+                        onSelect =(::select),
+                        onDragSelect = { select(it, expand = false) },
+                        modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
             }
-        }
-
-        if (showRootDock) {
-            NovexRootDock(
-                selected = selected,
-                expanded = dockExpanded,
-                onSelect =(::select),
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
         }
     }
 }
@@ -214,6 +141,7 @@ private fun NovexRootDock(
     selected: NovexRootSpace,
     expanded: Boolean,
     onSelect: (NovexRootSpace) -> Unit,
+    onDragSelect: (NovexRootSpace) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val horizontalPadding by animateDpAsState(
@@ -221,6 +149,7 @@ private fun NovexRootDock(
         animationSpec = tween(240),
         label = "根导航水平边距",
     )
+    var dragX by remember { mutableStateOf(0f) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(
             if (expanded) 4.dp else 12.dp,
@@ -231,6 +160,16 @@ private fun NovexRootDock(
             .navigationBarsPadding()
             .padding(bottom = 8.dp)
             .animateContentSize(tween(240))
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { dragX = it.x },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dragX = (dragX + amount.x).coerceIn(0f, size.width.toFloat())
+                        onDragSelect(novexRootSpaceAtOffset(dragX, size.width.toFloat()))
+                    },
+                )
+            }
             .padding(horizontal = horizontalPadding, vertical = 6.dp),
     ) {
         NovexRootSpace.entries.forEach { destination ->

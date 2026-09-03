@@ -183,13 +183,8 @@ fun NovexConversationRoot(
         orderStore.write(NovexManualOrderKind.CONVERSATIONS, manualOrderIds)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NovexColors.Background)
-            .statusBarsPadding(),
-    ) {
-        val createItems = remember(onNewConversation, onOpenWorlds, onStartCreationTool) {
+    val headerHost = LocalNovexRootHeaderHost.current
+    val createItems = remember(onNewConversation, onOpenWorlds, onStartCreationTool) {
             novexConversationCreateMenu().map { start ->
                 when (start) {
                     NovexConversationStart.EMPTY -> NovexCreateMenuItem("新建对话", onNewConversation)
@@ -198,7 +193,25 @@ fun NovexConversationRoot(
                 }
             }
         }
-        NovexRootPageHeader(
+    RegisterNovexRootHeader(
+        NovexRootSpace.CONVERSATIONS,
+        NovexRootHeaderConfig(
+            searching = searching,
+            searchDescription = "搜索对话",
+            onSettings = onOpenSettings,
+            onSearchToggle = {
+                searching = !searching
+                if (!searching) searchState.clear()
+            },
+            createItems = createItems,
+        ),
+    )
+    Column(
+        modifier = (if (headerHost == null) Modifier.statusBarsPadding() else Modifier)
+            .fillMaxSize()
+            .background(NovexColors.Background),
+    ) {
+        if (headerHost == null) NovexRootPageHeader(
             space = NovexRootSpace.CONVERSATIONS,
             searching = searching,
             searchDescription = "搜索对话",
