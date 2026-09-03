@@ -38,7 +38,11 @@ permissions:
 jobs:
   candidate:
     name: Test and build preview candidate
-    if: ${{ github.ref == 'refs/heads/next' }}
+    if: >-
+      ${{ github.ref == 'refs/heads/next' ||
+          (github.event_name == 'workflow_dispatch' &&
+           inputs.package_channel == 'stable' &&
+           startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 

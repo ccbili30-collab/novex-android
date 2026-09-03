@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Key
@@ -105,6 +106,28 @@ internal fun novexChatInputModalities(
     return if (explicitlyVisual) listOf("text", "image") else listOf("text")
 }
 
+internal fun novexCanonicalBase(base: String, appendV1Suffix: Boolean): String {
+    val normalized = base.trim().trimEnd('/')
+    return if (appendV1Suffix && !normalized.endsWith("/v1")) "$normalized/v1" else normalized
+}
+
+internal fun novexProviderInstanceForSave(
+    existing: ProviderInstance?,
+    label: String,
+    base: String,
+    appendV1Suffix: Boolean,
+): ProviderInstance = (existing ?: ProviderInstance(
+    id = UUID.randomUUID().toString(),
+    label = label.ifBlank { "OpenAI 兼容接口" },
+    providerType = ProviderType.openAI,
+    credentialType = ProviderCredential.apiKey,
+)).copy(
+    label = label.ifBlank { "OpenAI 兼容接口" },
+    customBaseURL = base.trim().trimEnd('/'),
+    appendV1Suffix = appendV1Suffix,
+    isEnabled = true,
+)
+
 /** Novex 的单一 OpenAI（开放人工智能）兼容接口设置页。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,6 +143,10 @@ fun NovexProviderSetupScreen(
     var label by remember { mutableStateOf(existing?.label ?: "DeepSeek") }
     var apiBase by remember { mutableStateOf(existing?.customBaseURL ?: "https://api.deepseek.com") }
     var apiKey by remember { mutableStateOf(existing?.id?.let(providerRepository::loadApiKey) ?: "") }
+    var appendV1Suffix by remember(instanceId) {
+        mutableStateOf(existing?.appendV1Suffix ?: true)
+    }
+    var deleteConfirm by remember(instanceId) { mutableStateOf(false) }
     val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
     val initialModels = remember(instanceId) {
         existingEntries.filterNot { it.model.outputModalities.orEmpty().contains("image") }
@@ -180,6 +207,7 @@ fun NovexProviderSetupScreen(
                 val verification = verifyConnection(
                     values.base,
                     values.key,
+                    appendV1Suffix,
                     listOf(modelId),
                     toolEnabledByModel = { toolsEnabled(it) },
                 )
@@ -225,6 +253,13 @@ fun NovexProviderSetupScreen(
     Scaffold(topBar = { TopAppBar(
         title = { Text(if (existing == null) "连接模型" else "模型连接") },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
+        actions = {
+            if (existing != null) {
+                IconButton(onClick = { deleteConfirm = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除 AI 服务商")
+                }
+            }
+        },
     ) }) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -234,6 +269,30 @@ fun NovexProviderSetupScreen(
             Text("支持 DeepSeek（深度求索）与常见中转站。可直接保存启用，也可以按需检测当前模型或全部模型。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; invalidateVerification() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("自动补全 /v1")
+                    Text(
+                        if (appendV1Suffix) {
+                            "填写域名即可；请求时自动补上 /v1"
+                        } else {
+                            "关闭后完全按填写的接口地址请求"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = appendV1Suffix,
+                    onCheckedChange = {
+                        appendV1Suffix = it
+                        invalidateVerification()
+                    },
+                )
+            }
             OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             Text(
                 "滑到最下方获取密钥",
@@ -256,7 +315,7 @@ fun NovexProviderSetupScreen(
                     val values = validate(requireModels = false) ?: return@OutlinedButton
                     fetchingModels = true
                     scope.launch {
-                        val models = fetchModels(values.base, values.key)
+                        val models = fetchModels(values.base, values.key, appendV1Suffix)
                             .filterNot(::looksLikeImageGenerationModel)
                         fetchedModels.clear(); fetchedModels.addAll(models)
                         if (models.isEmpty()) error = "没有拉取到模型，请检查地址和密钥，或继续手动填写模型名称。"
@@ -403,6 +462,7 @@ fun NovexProviderSetupScreen(
                         existing = existing,
                         label = label,
                         base = values.base,
+                        appendV1Suffix = appendV1Suffix,
                         key = values.key,
                         modelIds = values.models,
                         modelToolsEnabled = values.models.associateWith(::toolsEnabled),
@@ -417,21 +477,48 @@ fun NovexProviderSetupScreen(
             Spacer(Modifier.height(24.dp))
         }
     }
+
+    if (deleteConfirm && existing != null) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirm = false },
+            title = { Text("删除这个 AI 服务商？") },
+            text = {
+                Text("服务商、密钥及其 ${existingEntries.size} 个模型会被移除，历史对话不会删除。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        providerRepository.removeInstance(existing.id)
+                        deleteConfirm = false
+                        onBack()
+                    },
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirm = false }) { Text("取消") }
+            },
+        )
+    }
 }
 
-private suspend fun fetchModels(base: String, key: String): List<String> = runCatching {
-    OpenAIModelsApi.fetchModels(key, canonicalBase(base), forceRefresh = true).map { it.id }.distinct()
+private suspend fun fetchModels(base: String, key: String, appendV1Suffix: Boolean): List<String> = runCatching {
+    OpenAIModelsApi.fetchModels(
+        key,
+        novexCanonicalBase(base, appendV1Suffix),
+        forceRefresh = true,
+    ).map { it.id }.distinct()
 }.getOrDefault(emptyList())
-
-private fun canonicalBase(base: String): String = base.trimEnd('/').let { if (it.endsWith("/v1")) it else "$it/v1" }
 
 private suspend fun verifyConnection(
     base: String,
     key: String,
+    appendV1Suffix: Boolean,
     modelIds: List<String>,
     toolEnabledByModel: (String) -> Boolean,
 ): ConnectionVerification = withContext(Dispatchers.IO) {
-    val canonical = canonicalBase(base); val client = OkHttpClient()
+    val canonical = novexCanonicalBase(base, appendV1Suffix); val client = OkHttpClient()
     fun fatal(message: String): ConnectionVerification {
         return ConnectionVerification(NovexModelVerification(emptyList(), emptyList()), message)
     }
@@ -440,7 +527,7 @@ private suspend fun verifyConnection(
     val authCode = runCatching { client.newCall(Request.Builder().url("$canonical/models").header("Authorization", "Bearer $key").build()).execute().use { it.code } }.getOrDefault(0)
     if (authCode == 401 || authCode == 403) return@withContext fatal("密钥无效或访问被拒绝（HTTP $authCode）")
 
-    val instance = ProviderInstance(id = "novex-check", label = "连接检测", providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"))
+    val instance = ProviderInstance(id = "novex-check", label = "连接检测", providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey, customBaseURL = base, appendV1Suffix = appendV1Suffix)
     val providerResults = mutableMapOf<String, Result<LLMProvider>>()
     fun providerFor(modelId: String): Result<LLMProvider> = providerResults.getOrPut(modelId) {
         val model = LLMModel(modelId, novexModelDisplayName(modelId), "OpenAI（开放人工智能）兼容接口")
@@ -530,11 +617,12 @@ private fun saveConnections(
     existing: ProviderInstance?,
     label: String,
     base: String,
+    appendV1Suffix: Boolean,
     key: String,
     modelIds: List<String>,
     modelToolsEnabled: Map<String, Boolean>,
 ) {
-    val instance = (existing ?: ProviderInstance(id = UUID.randomUUID().toString(), label = label.ifBlank { "OpenAI 兼容接口" }, providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey)).copy(label = label.ifBlank { "OpenAI 兼容接口" }, customBaseURL = base, appendV1Suffix = !base.trimEnd('/').endsWith("/v1"), isEnabled = true)
+    val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)
