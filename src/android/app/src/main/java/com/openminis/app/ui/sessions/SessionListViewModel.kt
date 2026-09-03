@@ -144,6 +144,14 @@ class SessionListViewModel(
     val searchResults = MutableStateFlow<List<ChatSessionEntity>>(emptyList())
 
     /**
+     * Query that produced the currently displayed result set. Unlike the text
+     * field value, this changes only after the debounced database search and
+     * snippet pass finish, so typing does not recompose every visible row for
+     * each key stroke.
+     */
+    val appliedSearchQuery = MutableStateFlow("")
+
+    /**
      * True while the user has typed something but the debounced search query
      * has not yet finalised + run. Drives the trailing CircularProgressIndicator
      * in the search field so a slow query (or fast typing) shows visible
@@ -162,7 +170,7 @@ class SessionListViewModel(
 
     // The list to actually show: search results when searching, otherwise all sessions
     val displayedSessions: StateFlow<List<ChatSessionEntity>> = combine(
-        _allSessions, searchResults, searchQuery, isSearchActive
+        _allSessions, searchResults, appliedSearchQuery, isSearchActive
     ) { all, results, q, active ->
         if (active && q.isNotBlank()) results else all
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -331,9 +339,11 @@ class SessionListViewModel(
                             buildContentSnippets(results, q)
                         }
                         searchSnippets.value = snips
+                        appliedSearchQuery.value = q
                     } else {
                         searchResults.value = emptyList()
                         searchSnippets.value = emptyMap()
+                        appliedSearchQuery.value = ""
                     }
                     isSearching.value = false
                 }

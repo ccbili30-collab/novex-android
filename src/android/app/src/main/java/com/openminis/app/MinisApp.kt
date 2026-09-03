@@ -388,7 +388,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // first Compose frame forever.
         try {
         database = AppDatabase.getInstance(this)
-        novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.create(
+        novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.createDeferred(
             database,
             java.io.File(filesDir, "novex-media"),
         )

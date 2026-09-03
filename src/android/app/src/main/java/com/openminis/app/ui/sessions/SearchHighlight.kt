@@ -2,6 +2,8 @@ package com.openminis.app.ui.sessions
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -18,9 +20,21 @@ import androidx.compose.ui.text.withStyle
  */
 @Composable
 fun highlightedAnnotatedString(text: String, query: String): AnnotatedString {
-    if (query.isBlank() || text.isEmpty()) return AnnotatedString(text)
     val highlightBg = MaterialTheme.colorScheme.tertiaryContainer
     val highlightFg = MaterialTheme.colorScheme.onTertiaryContainer
+    return remember(text, query, highlightBg, highlightFg) {
+        buildHighlightedAnnotatedString(text, query, highlightBg, highlightFg)
+    }
+}
+
+/** Pure builder kept outside composition so matching behavior is testable. */
+internal fun buildHighlightedAnnotatedString(
+    text: String,
+    query: String,
+    highlightBg: Color,
+    highlightFg: Color,
+): AnnotatedString {
+    if (query.isBlank() || text.isEmpty()) return AnnotatedString(text)
     val lower = text.lowercase()
     val q = query.lowercase()
     return buildAnnotatedString {

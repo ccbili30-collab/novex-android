@@ -192,6 +192,7 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Date
@@ -409,8 +410,11 @@ fun SessionListScreen(
     val hasSessions by viewModel.hasSessions.collectAsState()
     val isInitialLoadComplete by viewModel.isInitialLoadComplete.collectAsState()
     val isSearchActive by viewModel.isSearchActive.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val isSearching by viewModel.isSearching.collectAsState()
+    // Only the debounced query that produced the visible result set reaches
+    // this large composition scope. Raw keystrokes are collected inside the
+    // small search controls below, preventing a full page recomposition per
+    // character.
+    val searchQuery by viewModel.appliedSearchQuery.collectAsState()
     val searchSnippets by viewModel.searchSnippets.collectAsState()
     val isSelecting by viewModel.isSelecting.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
@@ -777,8 +781,8 @@ fun SessionListScreen(
             if (isInitialLoadComplete && worldsLoaded) Column(modifier = Modifier.fillMaxSize()) {
                 if (isSearchActive && showBottomActions.not()) {
                     SessionInlineSearchField(
-                        value = searchQuery,
-                        searching = isSearching,
+                        valueFlow = viewModel.searchQuery,
+                        searchingFlow = viewModel.isSearching,
                         onValueChange = { viewModel.searchQuery.value = it },
                         onDismiss = {
                             viewModel.searchQuery.value = ""
@@ -1186,8 +1190,8 @@ fun SessionListScreen(
                 DualFabRow(
                     isDark = isDark,
                     isSearchActive = isSearchActive,
-                    searchQuery = searchQuery,
-                    isSearching = isSearching,
+                    searchQueryFlow = viewModel.searchQuery,
+                    isSearchingFlow = viewModel.isSearching,
                     hasSessions = sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive,
                     onNewChat = { showNewConversationMenu = true },
                     onNewChatWithGroup = { groupId ->
@@ -1444,8 +1448,8 @@ private const val PREF_FAB_SWAPPED = "fab_swapped"
 private fun DualFabRow(
     isDark: Boolean,
     isSearchActive: Boolean,
-    searchQuery: String,
-    isSearching: Boolean,
+    searchQueryFlow: StateFlow<String>,
+    isSearchingFlow: StateFlow<Boolean>,
     hasSessions: Boolean,
     onNewChat: () -> Unit,
     onNewChatWithGroup: (String) -> Unit,
@@ -1455,6 +1459,8 @@ private fun DualFabRow(
     onSearchDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val searchQuery by searchQueryFlow.collectAsState()
+    val isSearching by isSearchingFlow.collectAsState()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE) }
     var isSwapped by remember { mutableStateOf(prefs.getBoolean(PREF_FAB_SWAPPED, false)) }
@@ -1788,11 +1794,13 @@ private fun SessionHomeFilterRow(
 
 @Composable
 private fun SessionInlineSearchField(
-    value: String,
-    searching: Boolean,
+    valueFlow: StateFlow<String>,
+    searchingFlow: StateFlow<Boolean>,
     onValueChange: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val value by valueFlow.collectAsState()
+    val searching by searchingFlow.collectAsState()
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {

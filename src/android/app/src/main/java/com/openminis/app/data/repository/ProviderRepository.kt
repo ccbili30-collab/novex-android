@@ -94,8 +94,12 @@ class ProviderRepository(private val context: Context) {
     // still written on every save so older builds keep reading current
     // config — losing nothing on downgrade. See [loadConfig] for the
     // downgrade-and-back-up reconciliation logic.
-    private val providerDao: ProviderConfigDao =
+    // Opening provider.db is not a first-frame dependency. The initial config
+    // loader already runs on Dispatchers.IO, so defer Room construction until
+    // that loader first touches the DAO instead of blocking Application.onCreate.
+    private val providerDao: ProviderConfigDao by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ProviderDatabase.getInstance(context).providerConfigDao()
+    }
 
     companion object {
         /**

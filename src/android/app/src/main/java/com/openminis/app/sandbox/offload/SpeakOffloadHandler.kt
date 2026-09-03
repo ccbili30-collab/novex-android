@@ -41,7 +41,15 @@ import java.util.Locale
  * try to match an exact voice identifier when `voices` enumeration finds one.
  */
 class SpeakOffloadHandler(private val context: Context) : NativeOffloadHandler {
-    private val tts = TextToSpeechManager().also { it.init(context) }
+    // Binding Android's TTS service can take seconds on a cold process. This
+    // handler is registered during Application.onCreate, but speech is not a
+    // first-screen dependency, so bind only when a speech command is actually
+    // used. Help output remains completely side-effect free.
+    private val deferredTts = DeferredInitializer {
+        TextToSpeechManager().also { it.init(context) }
+    }
+    private val tts: TextToSpeechManager
+        get() = deferredTts.value
 
     override fun handle(request: NativeOffloadRequest): NativeOffloadResult {
         val args = OffloadArgs(request.argv.drop(1))

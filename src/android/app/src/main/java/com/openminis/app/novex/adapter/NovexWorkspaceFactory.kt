@@ -15,8 +15,11 @@ import com.openminis.app.novex.domain.NovexContentPort
 import com.openminis.app.novex.domain.NovexMediaPort
 import com.openminis.app.novex.domain.NovexWorkspace
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 object NovexWorkspaceFactory {
     fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace {
@@ -48,6 +51,36 @@ object NovexWorkspaceFactory {
             },
         )
     }
+
+    /**
+     * Application-startup variant: Room DAO acquisition is deferred to the
+     * first suspend call and performed on an I/O dispatcher. Instrumented
+     * repository tests keep using [create] when they need an eager workspace.
+     */
+    fun createDeferred(database: AppDatabase, mediaRoot: File): NovexWorkspace =
+        DeferredNovexWorkspace { create(database, mediaRoot) }
+}
+
+internal class DeferredNovexWorkspace(
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val factory: () -> NovexWorkspace,
+) : NovexWorkspace {
+    @Volatile
+    private var initialized: NovexWorkspace? = null
+    private val initializationMutex = Mutex()
+
+    private suspend fun workspace(): NovexWorkspace = initialized ?: initializationMutex.withLock {
+        initialized ?: withContext(dispatcher) { factory() }.also { initialized = it }
+    }
+
+    override suspend fun worlds() = workspace().worlds()
+    override suspend fun characters() = workspace().characters()
+    override suspend fun world(id: String) = workspace().world(id)
+    override suspend fun character(id: String) = workspace().character(id)
+    override suspend fun modules(owner: ModuleOwner) = workspace().modules(owner)
+    override suspend fun module(id: String) = workspace().module(id)
+    override suspend fun apply(command: com.openminis.app.novex.domain.NovexCommand) =
+        workspace().apply(command)
 }
 
 /** Keeps managed-file side effects aligned with the surrounding Room transaction. */
