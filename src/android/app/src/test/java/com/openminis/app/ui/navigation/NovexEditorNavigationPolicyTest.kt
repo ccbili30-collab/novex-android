@@ -9,11 +9,19 @@ class NovexEditorNavigationPolicyTest {
     fun systemBackFromDraftPreviewReturnsToTheEditorBeforeLeavingTheRoute() {
         assertEquals(
             NovexEditorBackAction.CLOSE_PREVIEW,
-            novexEditorBackAction(previewVisible = true),
+            novexEditorBackAction(previewVisible = true, hasUnsavedChanges = true),
         )
         assertEquals(
             NovexEditorBackAction.LEAVE_EDITOR,
-            novexEditorBackAction(previewVisible = false),
+            novexEditorBackAction(previewVisible = false, hasUnsavedChanges = false),
+        )
+    }
+
+    @Test
+    fun leavingAnEditedDraftRequiresAnExplicitSaveOrDiscardDecision() {
+        assertEquals(
+            NovexEditorBackAction.PROMPT_SAVE,
+            novexEditorBackAction(previewVisible = false, hasUnsavedChanges = true),
         )
     }
 

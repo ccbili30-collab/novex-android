@@ -34,12 +34,14 @@ import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.novex.domain.NovexImageChange
+import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.novex.domain.requireCharacter
 import com.openminis.app.ui.navigation.NovexEditorBackAction
 import com.openminis.app.ui.navigation.novexEditorBackAction
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
+import com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog
 import com.openminis.app.ui.novex.NovexEditorScaffold
 import com.openminis.app.ui.novex.NovexEditorFoldRow
 import com.openminis.app.ui.novex.NovexEditorSection
@@ -65,17 +67,21 @@ fun NovexCharacterEditorScreen(
     worldId: String?,
     createVariant: Boolean,
     onBack: () -> Unit,
+    onDeleted: () -> Unit,
     onSaved: (String) -> Unit,
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
-    var loaded by remember { mutableStateOf(characterId == null) }
+    var loaded by remember { mutableStateOf(false) }
     var draft by remember(characterId, versionId, createVariant) {
         mutableStateOf(CharacterEditorDraftState.create())
     }
     var sourceVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
+    var baselineDraft by remember(characterId, versionId, createVariant) {
+        mutableStateOf<CharacterEditorDraftState?>(null)
+    }
     var variantCount by remember { mutableStateOf(0) }
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
     var persistedModuleIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -85,10 +91,13 @@ fun NovexCharacterEditorScreen(
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<CharacterPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
 
     BackHandler(enabled = previewData != null) {
         when (novexEditorBackAction(previewVisible = previewData != null)) {
             NovexEditorBackAction.CLOSE_PREVIEW -> previewData = null
+            NovexEditorBackAction.PROMPT_SAVE -> Unit
             NovexEditorBackAction.LEAVE_EDITOR -> onBack()
         }
     }
@@ -115,7 +124,9 @@ fun NovexCharacterEditorScreen(
 
     LaunchedEffect(characterId, versionId, createVariant) {
         if (characterId == null) {
-            draft = CharacterEditorDraftState.create()
+            val initial = CharacterEditorDraftState.create()
+            draft = initial
+            baselineDraft = initial
             loaded = true
         } else {
             val snapshot = novex.character(characterId)
@@ -126,7 +137,9 @@ fun NovexCharacterEditorScreen(
             }
             if (aggregate != null && version != null) {
                 val modules = snapshot.modulesByVersion[version.id].orEmpty()
-                draft = CharacterEditorDraftState.from(aggregate, version, modules, createVariant)
+                val initial = CharacterEditorDraftState.from(aggregate, version, modules, createVariant)
+                draft = initial
+                baselineDraft = initial
                 sourceVersion = version
                 variantCount = aggregate.variants.size
                 media = snapshot.mediaByVersion[version.id].orEmpty()
@@ -204,8 +217,10 @@ fun NovexCharacterEditorScreen(
         loaded = loaded,
         canSave = !draft.isBlank,
         saving = saving,
+        hasUnsavedChanges = baselineDraft != null && draft != baselineDraft,
         onPreview = ::preview,
         onSave = ::save,
+        onDeleteRequest = if (characterId != null && !createVariant) ({ confirmDelete = true }) else null,
         saveContainerColor = NovexColors.Text,
     ) {
         NovexEditorSection("角色身份") {
@@ -317,6 +332,36 @@ fun NovexCharacterEditorScreen(
             title = { Text("保存失败") },
             text = { Text(message ?: "未知错误") },
             confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
+        )
+    }
+    if (confirmDelete && characterId != null) {
+        val deletingVariant = sourceVersion?.kind == CharacterVersionKind.VARIANT
+        NovexDestructiveConfirmationDialog(
+            title = if (deletingVariant) "删除分身？" else "删除角色？",
+            message = if (deletingVariant) {
+                "将删除这个分身及其世界关联；角色本体和其他分身不会受影响。此操作无法撤销。"
+            } else {
+                "将删除这个角色、本体及全部分身，并解除世界关联。共享图片仍受引用保护。此操作无法撤销。"
+            },
+            confirming = deleting,
+            onDismiss = { confirmDelete = false },
+            onConfirm = {
+                deleting = true
+                scope.launch {
+                    val command = if (deletingVariant) {
+                        NovexCommand.DeleteVariant(requireNotNull(sourceVersion).id)
+                    } else {
+                        NovexCommand.DeleteCharacter(characterId)
+                    }
+                    runCatching { novex.apply(command) }
+                        .onSuccess { onDeleted() }
+                        .onFailure {
+                            deleting = false
+                            confirmDelete = false
+                            error = it.message
+                        }
+                }
+            },
         )
     }
 }

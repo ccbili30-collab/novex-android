@@ -11,6 +11,14 @@ import com.openminis.app.ui.novex.ContentModuleDraftList
 import com.openminis.app.ui.novex.NovexImageDraft
 import org.json.JSONArray
 
+internal fun nextDefaultWorldName(existingNames: Collection<String>): String {
+    val names = existingNames.toHashSet()
+    if ("我的世界" !in names) return "我的世界"
+    var suffix = 1
+    while ("我的世界（$suffix）" in names) suffix++
+    return "我的世界（$suffix）"
+}
+
 internal data class WorldEditorDraftState(
     val worldId: String?,
     val createdAt: Long,
@@ -65,10 +73,13 @@ internal data class WorldEditorDraftState(
     ).toString()
 
     companion object {
-        fun create(now: Long = System.currentTimeMillis()) = WorldEditorDraftState(
+        fun create(
+            now: Long = System.currentTimeMillis(),
+            name: String = "我的世界",
+        ) = WorldEditorDraftState(
             worldId = null,
             createdAt = now,
-            name = "我的世界",
+            name = name,
             tagsText = "",
             overview = "",
             contentModules = ContentModuleDraftList.empty(ContentModuleScope.WORLD),

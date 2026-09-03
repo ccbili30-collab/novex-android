@@ -1,5 +1,6 @@
 package com.openminis.app.ui.novex
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,16 +29,32 @@ internal fun NovexEditorScaffold(
     loaded: Boolean,
     canSave: Boolean,
     saving: Boolean,
+    hasUnsavedChanges: Boolean,
     onBack: () -> Unit,
     onPreview: () -> Unit,
     onSave: () -> Unit,
+    onDeleteRequest: (() -> Unit)? = null,
     saveContainerColor: Color = NovexColors.Primary,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var showExitPrompt by remember { mutableStateOf(false) }
+    fun requestBack() {
+        if (saving) return
+        if (hasUnsavedChanges) showExitPrompt = true else onBack()
+    }
+    BackHandler(onBack = ::requestBack)
+
     NovexDetailScaffold(
         title = title,
-        onBack = onBack,
+        onBack = ::requestBack,
         actions = {
+            onDeleteRequest?.let { delete ->
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_trash,
+                    contentDescription = "删除",
+                    onClick = delete,
+                )
+            }
             NovexTopAction(
                 icon = R.drawable.ic_phosphor_eye,
                 contentDescription = "预览草稿",
@@ -57,6 +78,18 @@ internal fun NovexEditorScaffold(
         } else {
             content()
         }
+    }
+
+    if (showExitPrompt) {
+        NovexUnsavedChangesDialog(
+            saving = saving,
+            onSaveAndExit = onSave,
+            onDiscard = {
+                showExitPrompt = false
+                onBack()
+            },
+            onContinueEditing = { showExitPrompt = false },
+        )
     }
 }
 

@@ -416,14 +416,16 @@ fun CatalogWorldDetailScreen(
 fun CatalogWorldEditorScreen(
     worldId: String?,
     onBack: () -> Unit,
+    onDeleted: () -> Unit,
     onSaved: (String) -> Unit,
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
-    var loaded by remember { mutableStateOf(worldId == null) }
+    var loaded by remember { mutableStateOf(false) }
     var draft by remember(worldId) { mutableStateOf(WorldEditorDraftState.create()) }
+    var baselineDraft by remember(worldId) { mutableStateOf<WorldEditorDraftState?>(null) }
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
     var persistedModuleIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var pendingImages by remember { mutableStateOf<Map<MediaAssetSlot, PendingWorldImage>>(emptyMap()) }
@@ -432,9 +434,12 @@ fun CatalogWorldEditorScreen(
     var saving by remember { mutableStateOf(false) }
     var previewData by remember { mutableStateOf<WorldPageData?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     BackHandler(enabled = previewData != null) {
         when (novexEditorBackAction(previewVisible = previewData != null)) {
             NovexEditorBackAction.CLOSE_PREVIEW -> previewData = null
+            NovexEditorBackAction.PROMPT_SAVE -> Unit
             NovexEditorBackAction.LEAVE_EDITOR -> onBack()
         }
     }
@@ -458,15 +463,23 @@ fun CatalogWorldEditorScreen(
         }
     }
     LaunchedEffect(worldId) {
-        if (worldId != null) {
+        if (worldId == null) {
+            val initial = WorldEditorDraftState.create(
+                name = nextDefaultWorldName(novex.worlds().map { it.world.name }),
+            )
+            draft = initial
+            baselineDraft = initial
+        } else {
             val snapshot = novex.world(worldId)
             if (snapshot != null) {
-                draft = WorldEditorDraftState.from(snapshot.world, snapshot.modules)
+                val initial = WorldEditorDraftState.from(snapshot.world, snapshot.modules)
+                draft = initial
+                baselineDraft = initial
                 media = snapshot.media
                 persistedModuleIds = snapshot.modules.mapTo(mutableSetOf()) { it.id }
             }
-            loaded = true
         }
+        loaded = true
     }
     fun save() {
         if (saving) return
@@ -518,8 +531,10 @@ fun CatalogWorldEditorScreen(
         loaded = loaded,
         canSave = draft.name.isNotBlank(),
         saving = saving,
+        hasUnsavedChanges = baselineDraft != null && draft != baselineDraft,
         onPreview = ::preview,
         onSave = ::save,
+        onDeleteRequest = worldId?.let { { confirmDelete = true } },
     ) {
         NovexEditorSection(header = "基础资料") {
                 NovexInlineField(
@@ -586,6 +601,26 @@ fun CatalogWorldEditorScreen(
             title = { Text("保存失败") },
             text = { Text(message ?: "未知错误") },
             confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } },
+        )
+    }
+    if (confirmDelete && worldId != null) {
+        com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog(
+            title = "删除世界？",
+            message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。",
+            confirming = deleting,
+            onDismiss = { confirmDelete = false },
+            onConfirm = {
+                deleting = true
+                scope.launch {
+                    runCatching { novex.apply(NovexCommand.DeleteWorld(worldId)) }
+                        .onSuccess { onDeleted() }
+                        .onFailure {
+                            deleting = false
+                            confirmDelete = false
+                            error = it.message
+                        }
+                }
+            },
         )
     }
 }

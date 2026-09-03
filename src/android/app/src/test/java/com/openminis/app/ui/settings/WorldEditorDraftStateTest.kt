@@ -13,6 +13,20 @@ import org.junit.Test
 
 class WorldEditorDraftStateTest {
     @Test
+    fun newWorldUsesTheFirstAvailableDefaultName() {
+        assertEquals("我的世界", nextDefaultWorldName(emptyList()))
+        assertEquals("我的世界（1）", nextDefaultWorldName(listOf("我的世界")))
+        assertEquals(
+            "我的世界（2）",
+            nextDefaultWorldName(listOf("我的世界", "我的世界（1）", "云岚书院")),
+        )
+        assertEquals(
+            "我的世界（1）",
+            nextDefaultWorldName(listOf("我的世界", "我的世界（2）")),
+        )
+    }
+
+    @Test
     fun draftKeepsRichModuleContentInMemoryAndBuildsOneOrderedSaveCommand() {
         val savedMap = ContentModuleEntity(
             id = "map",
