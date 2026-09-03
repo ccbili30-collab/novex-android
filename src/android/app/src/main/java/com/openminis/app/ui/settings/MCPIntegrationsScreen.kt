@@ -31,7 +31,7 @@ import com.openminis.app.ui.novex.ModalBottomSheet
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -146,7 +146,7 @@ fun MCPIntegrationsScreen(
                                     modifier = Modifier.size(14.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Switch(
+                                NovexCheckToggle(
                                     checked = server.enabled,
                                     onCheckedChange = { mcpRepository.setEnabled(server.id, it) },
                                 )

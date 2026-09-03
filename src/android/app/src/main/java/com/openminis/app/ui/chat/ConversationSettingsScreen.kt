@@ -24,24 +24,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.openminis.app.ui.novex.AlertDialog
+import com.openminis.app.ui.novex.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import com.openminis.app.ui.novex.OutlinedButton
+import com.openminis.app.ui.novex.OutlinedTextField
+import com.openminis.app.ui.novex.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.openminis.app.ui.novex.TextButton
+import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -266,7 +266,7 @@ fun ConversationSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = roleDisplay, onCheckedChange = { roleDisplay = it })
+                NovexCheckToggle(checked = roleDisplay, onCheckedChange = { roleDisplay = it })
             }
             if (roleDisplay) {
                 IdentityEditor(

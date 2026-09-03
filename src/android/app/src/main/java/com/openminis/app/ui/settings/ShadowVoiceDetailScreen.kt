@@ -15,7 +15,7 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -99,7 +99,7 @@ fun ShadowVoiceDetailScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(
+                NovexCheckToggle(
                     checked = !shadowDisabled,
                     onCheckedChange = { shown ->
                         providerRepository.setVoiceShadowDisabled(instanceId, !shown)

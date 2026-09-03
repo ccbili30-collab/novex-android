@@ -61,7 +61,7 @@ import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.ModalBottomSheet
 import com.openminis.app.ui.components.DialogTextField
 import com.openminis.app.ui.novex.Scaffold
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -299,7 +299,7 @@ fun SkillsManagementScreen(
                                     modifier = Modifier.size(14.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Switch(
+                                NovexCheckToggle(
                                     checked = skill.isEnabled,
                                     onCheckedChange = { skillRepository.setEnabled(skill.id, it) },
                                 )

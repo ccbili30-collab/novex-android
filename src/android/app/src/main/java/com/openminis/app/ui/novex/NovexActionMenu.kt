@@ -1,6 +1,7 @@
 package com.openminis.app.ui.novex
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -40,7 +42,7 @@ internal fun NovexActionMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(NovexDimensions.PopupRadius),
         containerColor = NovexColors.Surface,
         tonalElevation = 2.dp,
         shadowElevation = 12.dp,
@@ -62,7 +64,7 @@ internal fun NovexActionMenu(
 
 @Composable
 private fun NovexActionMenuRow(action: NovexMenuAction, onClick: () -> Unit) {
-    val tint = if (action.destructive) NovexColors.Danger else NovexColors.Text
+    val tint = if (action.destructive) NovexColors.Danger else NovexColors.Primary
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -71,18 +73,30 @@ private fun NovexActionMenuRow(action: NovexMenuAction, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp)) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(NovexDimensions.ActionIconTile)
+                .clip(RoundedCornerShape(NovexDimensions.SmallRadius))
+                .background(
+                    if (action.destructive) {
+                        NovexColors.Danger.copy(alpha = 0.12f)
+                    } else {
+                        NovexColors.PrimarySoft
+                    },
+                ),
+        ) {
             Icon(
                 painter = painterResource(action.icon),
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
             )
         }
         Spacer(Modifier.width(12.dp))
         Text(
             text = action.label,
-            color = tint,
+            color = if (action.destructive) NovexColors.Danger else NovexColors.Text,
             style = NovexType.Body,
             modifier = Modifier.padding(end = 12.dp),
         )

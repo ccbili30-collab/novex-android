@@ -20,7 +20,7 @@ import androidx.compose.material.icons.filled.Warning
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -149,7 +149,7 @@ private fun ConfirmRow(item: PendingConfigChangeItem, onToggle: (Boolean) -> Uni
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.weight(1f))
-            Switch(
+            NovexCheckToggle(
                 checked = item.isApproved,
                 onCheckedChange = onToggle,
             )

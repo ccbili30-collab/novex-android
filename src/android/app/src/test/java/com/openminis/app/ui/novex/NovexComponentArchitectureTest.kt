@@ -7,10 +7,7 @@ import org.junit.Test
 class NovexComponentArchitectureTest {
     @Test
     fun businessPagesUseTheNovexVisualModuleInsteadOfMaterialPageComponentsDirectly() {
-        val roots = listOf(
-            File("src/main/java/com/openminis/app/ui/settings"),
-            File("src/main/java/com/openminis/app/ui/novex"),
-        )
+        val roots = listOf(File("src/main/java/com/openminis/app/ui"))
         val forbiddenImports = listOf(
             "androidx.compose.material3.AlertDialog",
             "androidx.compose.material3.Button",
@@ -19,6 +16,7 @@ class NovexComponentArchitectureTest {
             "androidx.compose.material3.OutlinedButton",
             "androidx.compose.material3.OutlinedTextField",
             "androidx.compose.material3.Scaffold",
+            "androidx.compose.material3.Switch",
             "androidx.compose.material3.TextButton",
             "androidx.compose.material3.TopAppBar",
         )
@@ -27,8 +25,13 @@ class NovexComponentArchitectureTest {
             .filterNot { it.name == "NovexMaterialControls.kt" }
             .flatMap { file ->
                 file.readLines().mapIndexedNotNull { index, line ->
-                    forbiddenImports.firstOrNull { line.trim() == "import $it" }
-                        ?.let { "${file.name}:${index + 1}: $it" }
+                    val direct = forbiddenImports.firstOrNull { line.trim() == "import $it" }
+                    when {
+                        direct != null -> "${file.name}:${index + 1}: $direct"
+                        line.trim() == "import androidx.compose.material3.*" ->
+                            "${file.name}:${index + 1}: Material3（材料设计 3）通配导入"
+                        else -> null
+                    }
                 }
             }
             .toList()

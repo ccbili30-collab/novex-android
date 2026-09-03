@@ -31,8 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.collectAsState
@@ -341,11 +340,10 @@ private fun BgToggleRow(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = rowAlpha),
             modifier = Modifier.weight(1f),
         )
-        Switch(
+        NovexCheckToggle(
             checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled,
-            colors = SwitchDefaults.colors(),
         )
     }
 }

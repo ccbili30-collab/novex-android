@@ -39,10 +39,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.Scaffold
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -651,7 +651,7 @@ fun MirrorCategoryDetailScreen(
             ListItem(
                 headlineContent = { Text(stringResource(R.string.mirror_use_mirror_toggle)) },
                 trailingContent = {
-                    Switch(
+                    NovexCheckToggle(
                         checked = vm.useCustomMirror[category] == true,
                         onCheckedChange = { checked ->
                             vm.setUseCustom(context, category, checked)

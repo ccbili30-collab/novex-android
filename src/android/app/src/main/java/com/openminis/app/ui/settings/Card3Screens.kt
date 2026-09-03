@@ -41,7 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
 import androidx.compose.runtime.Composable
@@ -642,7 +642,7 @@ private fun Card3EditorField(label: String, value: String, onChange: (String) ->
 private fun Card3SwitchRow(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChecked(!checked) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChecked)
+        NovexCheckToggle(checked = checked, onCheckedChange = onChecked)
     }
 }
 

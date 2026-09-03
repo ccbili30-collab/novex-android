@@ -32,10 +32,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.Scaffold
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -241,7 +241,7 @@ private fun ScheduledTaskRow(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = task.enabled, onCheckedChange = onToggle)
+            NovexCheckToggle(checked = task.enabled, onCheckedChange = onToggle)
         }
 
         // [T-android-scheduled-tasks-run-records] Long-press menu: Edit / Run

@@ -2,6 +2,7 @@ package com.openminis.app.ui.novex
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -202,17 +203,28 @@ internal fun NovexContentModuleList(
     moduleItemImages: Map<String, Map<String, Any?>>,
     onOpenModule: ((String) -> Unit)?,
 ) {
-    modules.forEachIndexed { index, module ->
-        if (index > 0) HorizontalDivider(
-            color = NovexColors.Divider,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        NovexContentModuleBlock(
-            presentation = module.toNovexPresentation(),
-            imageModel = moduleImages[module.id],
-            itemImageModels = moduleItemImages[module.id].orEmpty(),
-            onClick = onOpenModule?.let { open -> { open(module.id) } },
-        )
+    if (modules.isEmpty()) return
+    val shape = RoundedCornerShape(NovexDimensions.SectionRadius)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = NovexDimensions.PageHorizontal, vertical = 8.dp)
+            .clip(shape)
+            .background(NovexColors.Surface)
+            .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
+    ) {
+        modules.forEachIndexed { index, module ->
+            if (index > 0) HorizontalDivider(
+                color = NovexColors.Divider,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            NovexContentModuleBlock(
+                presentation = module.toNovexPresentation(),
+                imageModel = moduleImages[module.id],
+                itemImageModels = moduleItemImages[module.id].orEmpty(),
+                onClick = onOpenModule?.let { open -> { open(module.id) } },
+            )
+        }
     }
 }
 

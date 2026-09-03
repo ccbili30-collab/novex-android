@@ -53,9 +53,13 @@ internal object NovexDimensions {
     val RowVertical = 10.dp
     val SmallRadius = 8.dp
     val SectionRadius = 12.dp
+    val PopupRadius = 16.dp
+    val DialogRadius = 20.dp
     val MediaRadius = 9.dp
     val SheetRadius = 24.dp
     val SettingsRowMinHeight = 56.dp
+    val Hairline = 0.75.dp
+    val ActionIconTile = 30.dp
 }
 
 internal data class NovexTypography(

@@ -38,7 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.ModalBottomSheet
 import com.openminis.app.ui.novex.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -666,7 +666,7 @@ private fun AddMountSheet(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Switch(checked = allowWrite, onCheckedChange = { allowWrite = it })
+                NovexCheckToggle(checked = allowWrite, onCheckedChange = { allowWrite = it })
             }
 
             Spacer(Modifier.height(20.dp))

@@ -390,7 +390,7 @@ fun NovexUpdateAction() {
                 tint = MaterialTheme.colorScheme.primary,
             )
             else -> Icon(
-                painterResource(R.drawable.ic_phosphor_megaphone),
+                painterResource(R.drawable.ic_phosphor_bell),
                 contentDescription = "打开 Novex（诺文）公告",
                 modifier = Modifier.size(30.dp),
             )

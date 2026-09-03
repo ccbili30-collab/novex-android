@@ -27,7 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.Composable
@@ -178,7 +178,7 @@ fun MountDetailScreen(
                         )
                     }
                     Spacer(Modifier.width(12.dp))
-                    Switch(
+                    NovexCheckToggle(
                         checked = allowWrite,
                         onCheckedChange = { allowWrite = it },
                         // Disable when the OS-level grant itself isn't writable.

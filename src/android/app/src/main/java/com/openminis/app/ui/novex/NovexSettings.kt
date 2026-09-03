@@ -2,7 +2,10 @@ package com.openminis.app.ui.novex
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -73,6 +77,7 @@ internal fun NovexSettingsSection(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val sectionShape = RoundedCornerShape(NovexDimensions.SectionRadius)
     Column(modifier.fillMaxWidth().padding(top = 22.dp)) {
         title?.let {
             Text(
@@ -87,8 +92,9 @@ internal fun NovexSettingsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(NovexColors.Surface),
+                .clip(sectionShape)
+                .background(NovexColors.Surface)
+                .border(NovexDimensions.Hairline, NovexColors.Divider, sectionShape),
             content = content,
         )
         footer?.let {
@@ -100,6 +106,97 @@ internal fun NovexSettingsSection(
             )
         }
     }
+}
+
+/** Shared check/no-check control used by every binary setting. */
+@Composable
+internal fun NovexCheckIndicator(
+    checked: Boolean,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(NovexDimensions.SmallRadius)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(28.dp)
+            .clip(shape)
+            .background(
+                if (checked) NovexColors.Primary else NovexColors.SurfaceMuted,
+                shape,
+            )
+            .border(
+                NovexDimensions.Hairline,
+                if (checked) NovexColors.Primary else NovexColors.Divider,
+                shape,
+            ),
+    ) {
+        if (checked) {
+            Icon(
+                painter = painterResource(com.openminis.app.R.drawable.ic_phosphor_check),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.5f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** Standalone touch target for binary settings outside a settings row. */
+@Composable
+internal fun NovexCheckToggle(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(NovexDimensions.MinimumTouch)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onValueChange = { onCheckedChange?.invoke(it) },
+            ),
+    ) {
+        NovexCheckIndicator(checked = checked, enabled = enabled)
+    }
+}
+
+@Composable
+internal fun NovexSettingsVectorToggleRow(
+    title: String,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    iconColor: Color = NovexColors.Primary,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    showDivider: Boolean = true,
+) {
+    NovexSettingsRowFrame(
+        icon = icon?.let { vector ->
+            {
+                Icon(
+                    imageVector = vector,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(21.dp),
+                )
+            }
+        },
+        title = title,
+        subtitle = subtitle,
+        showChevron = false,
+        showDivider = showDivider,
+        trailing = { NovexCheckIndicator(checked = checked, enabled = enabled) },
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = onCheckedChange,
+        onClick = null,
+    )
 }
 
 @Composable
@@ -197,6 +294,9 @@ private fun NovexSettingsRowFrame(
     trailing: (@Composable () -> Unit)? = null,
     minHeight: Dp = 60.dp,
     onClick: (() -> Unit)?,
+    checked: Boolean? = null,
+    enabled: Boolean = true,
+    onCheckedChange: ((Boolean) -> Unit)? = null,
 ) {
     Column {
         Row(
@@ -204,7 +304,18 @@ private fun NovexSettingsRowFrame(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = minHeight)
-                .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
+                .then(
+                    when {
+                        checked != null && onCheckedChange != null -> Modifier.toggleable(
+                            value = checked,
+                            enabled = enabled,
+                            role = Role.Checkbox,
+                            onValueChange = onCheckedChange,
+                        )
+                        onClick != null -> Modifier.clickable(enabled = enabled, onClick = onClick)
+                        else -> Modifier
+                    },
+                )
                 .padding(horizontal = 14.dp, vertical = 9.dp),
         ) {
             icon?.invoke()

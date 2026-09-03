@@ -14,7 +14,7 @@ import com.openminis.app.ui.novex.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
 import androidx.compose.runtime.Composable
@@ -128,7 +128,7 @@ fun ThinkingRuleEditorDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(stringResource(R.string.thinking_rules_all_models))
-                    Switch(checked = allModels, onCheckedChange = { allModels = it })
+                    NovexCheckToggle(checked = allModels, onCheckedChange = { allModels = it })
                 }
                 if (!allModels) {
                     OutlinedTextField(
@@ -180,7 +180,7 @@ fun ThinkingRuleEditorDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(stringResource(R.string.thinking_rules_send_off_value))
-                            Switch(checked = sendOffValue, onCheckedChange = { sendOffValue = it })
+                            NovexCheckToggle(checked = sendOffValue, onCheckedChange = { sendOffValue = it })
                         }
                         if (sendOffValue) {
                             OutlinedTextField(

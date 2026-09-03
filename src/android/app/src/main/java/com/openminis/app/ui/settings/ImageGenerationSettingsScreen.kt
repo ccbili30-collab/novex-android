@@ -21,9 +21,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import com.openminis.app.ui.novex.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,7 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
 import androidx.compose.runtime.Composable
@@ -137,7 +135,7 @@ fun ImageGenerationSettingsScreen(
                         .padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(
+                    NovexCheckToggle(
                         checked = enabled,
                         enabled = selectedCount > 0,
                         onCheckedChange = { checked ->
@@ -369,7 +367,7 @@ fun ImageGenerationSourceScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(
+                    NovexCheckToggle(
                         checked = appendV1Suffix,
                         onCheckedChange = { appendV1Suffix = it; status = null },
                     )
@@ -514,7 +512,7 @@ private fun ImageModelRow(
         modifier = Modifier.fillMaxWidth().clickable { onSelected(!selected) }.padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = selected, onCheckedChange = onSelected)
+        NovexCheckToggle(checked = selected, onCheckedChange = onSelected)
         Column(modifier = Modifier.weight(1f)) {
             Text(entry.model.displayName, style = MaterialTheme.typography.bodyMedium)
             Text(entry.model.id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -1,18 +1,19 @@
 package com.openminis.app.ui.novex
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog as MaterialAlertDialog
-import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button as MaterialButton
 import androidx.compose.material3.ButtonColors
@@ -64,18 +65,20 @@ internal fun AlertDialog(
     icon: @Composable (() -> Unit)? = null,
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = RoundedCornerShape(NovexDimensions.DialogRadius),
     containerColor: Color = NovexColors.Surface,
     iconContentColor: Color = NovexColors.Primary,
     titleContentColor: Color = NovexColors.Text,
     textContentColor: Color = NovexColors.SecondaryText,
-    tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
+    tonalElevation: Dp = 0.dp,
     properties: DialogProperties = DialogProperties(),
 ) {
     MaterialAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,
-        modifier = modifier,
+        modifier = modifier
+            .widthIn(max = 360.dp)
+            .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
         dismissButton = dismissButton,
         icon = icon,
         title = title,
@@ -304,11 +307,12 @@ internal fun ModalBottomSheet(
     tonalElevation: Dp = 0.dp,
     scrimColor: Color = BottomSheetDefaults.ScrimColor,
     dragHandle: @Composable (() -> Unit)? = { BottomSheetDefaults.DragHandle() },
+    contentWindowInsets: @Composable () -> WindowInsets = { BottomSheetDefaults.windowInsets },
     content: @Composable ColumnScope.() -> Unit,
 ) {
     MaterialModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
+        modifier = modifier.border(NovexDimensions.Hairline, NovexColors.Divider, shape),
         sheetState = sheetState,
         shape = shape,
         containerColor = containerColor,
@@ -316,6 +320,7 @@ internal fun ModalBottomSheet(
         tonalElevation = tonalElevation,
         scrimColor = scrimColor,
         dragHandle = dragHandle,
+        contentWindowInsets = contentWindowInsets,
         content = content,
     )
 }
@@ -328,11 +333,11 @@ internal fun DropdownMenu(
     offset: DpOffset = DpOffset.Zero,
     scrollState: ScrollState = rememberScrollState(),
     properties: PopupProperties = PopupProperties(focusable = true),
-    shape: Shape = RoundedCornerShape(12.dp),
+    shape: Shape = RoundedCornerShape(NovexDimensions.PopupRadius),
     containerColor: Color = NovexColors.Surface,
     tonalElevation: Dp = MenuDefaults.TonalElevation,
     shadowElevation: Dp = MenuDefaults.ShadowElevation,
-    border: BorderStroke? = null,
+    border: BorderStroke? = BorderStroke(NovexDimensions.Hairline, NovexColors.Divider),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     MaterialDropdownMenu(

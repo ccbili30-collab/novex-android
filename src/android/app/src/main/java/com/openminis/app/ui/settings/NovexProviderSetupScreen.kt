@@ -17,7 +17,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +38,14 @@ import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.tools.AgentTools
+import com.openminis.app.ui.novex.AlertDialog
+import com.openminis.app.ui.novex.Button
+import com.openminis.app.ui.novex.NovexCheckToggle
+import com.openminis.app.ui.novex.OutlinedButton
+import com.openminis.app.ui.novex.OutlinedTextField
+import com.openminis.app.ui.novex.Scaffold
+import com.openminis.app.ui.novex.TextButton
+import com.openminis.app.ui.novex.TopAppBar
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -285,7 +298,7 @@ fun NovexProviderSetupScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(
+                NovexCheckToggle(
                     checked = appendV1Suffix,
                     onCheckedChange = {
                         appendV1Suffix = it
@@ -344,7 +357,7 @@ fun NovexProviderSetupScreen(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(
+                        NovexCheckToggle(
                             checked = modelId in selectedModels,
                             onCheckedChange = { checked ->
                                 setSelectedModels(

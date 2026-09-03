@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -87,7 +87,7 @@ fun SessionMcpsSheet(
                             showChevron = false,
                             showDivider = index < servers.size - 1,
                             trailing = {
-                                Switch(
+                                NovexCheckToggle(
                                     checked = overrides[server.id] ?: server.enabled,
                                     onCheckedChange = { enabled ->
                                         overrides[server.id] = enabled

@@ -30,7 +30,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.VpnKey
 import com.openminis.app.ui.novex.AlertDialog
-import androidx.compose.material3.Checkbox
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -496,7 +496,7 @@ private fun OpenCodeFreeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Checkbox(
+                NovexCheckToggle(
                     checked = !entry.isHidden,
                     onCheckedChange = { onCheckedChange(entry.id, it) },
                 )

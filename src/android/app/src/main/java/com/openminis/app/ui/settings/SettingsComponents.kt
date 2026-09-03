@@ -7,8 +7,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -22,6 +20,7 @@ import com.openminis.app.ui.novex.NovexSettingsCustomRow
 import com.openminis.app.ui.novex.NovexSettingsScaffold
 import com.openminis.app.ui.novex.NovexSettingsSection
 import com.openminis.app.ui.novex.NovexSettingsVectorRow
+import com.openminis.app.ui.novex.NovexSettingsVectorToggleRow
 
 /**
  * Compatibility adapter for existing settings pages.
@@ -105,25 +104,15 @@ fun SettingsSwitchRow(
     enabled: Boolean = true,
     showDivider: Boolean = true,
 ) {
-    SettingsRow(
+    NovexSettingsVectorToggleRow(
         title = title,
         subtitle = subtitle,
         icon = icon,
         iconColor = iconColor,
-        onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
-        showChevron = false,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
         showDivider = showDivider,
-        trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = NovexColors.Surface,
-                    checkedTrackColor = NovexColors.Primary,
-                ),
-            )
-        },
     )
 }
 

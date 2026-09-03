@@ -45,7 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
+import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
 import androidx.compose.runtime.Composable
@@ -593,7 +593,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onSaved: () -> U
                     Text("设为默认身份", fontWeight = FontWeight.Medium)
                     Text("新建角色对话时优先选择", style = MaterialTheme.typography.bodySmall)
                 }
-                Switch(checked = isDefault, onCheckedChange = { isDefault = it })
+                NovexCheckToggle(checked = isDefault, onCheckedChange = { isDefault = it })
             }
         }
         Button(
