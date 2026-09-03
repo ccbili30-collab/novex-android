@@ -5,24 +5,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 
 /** Shared edit-page chrome. Domain forms remain supplied by each page. */
@@ -42,28 +34,25 @@ internal fun NovexEditorScaffold(
         title = title,
         onBack = onBack,
         actions = {
-            IconButton(onClick = onPreview, enabled = loaded && canSave) {
-                Icon(painterResource(R.drawable.ic_phosphor_eye), contentDescription = "预览草稿")
-            }
+            NovexTopAction(
+                icon = R.drawable.ic_phosphor_eye,
+                contentDescription = "预览草稿",
+                onClick = { if (loaded && canSave) onPreview() },
+            )
         },
         bottomBar = {
-            Button(
+            NovexPrimaryButton(
+                label = if (saving) "保存中" else "保存",
                 onClick = onSave,
                 enabled = loaded && canSave && !saving,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = saveContainerColor,
-                    contentColor = Color.White,
-                    disabledContainerColor = saveContainerColor.copy(alpha = 0.35f),
-                    disabledContentColor = Color.White.copy(alpha = 0.75f),
-                ),
-                shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.fillMaxWidth().height(68.dp).padding(horizontal = 16.dp, vertical = 10.dp),
-            ) { Text(if (saving) "保存中" else "保存") }
+                containerColor = saveContainerColor,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            )
         },
     ) {
         if (!loaded) {
             Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp)
             }
         } else {
             content()
@@ -102,7 +91,7 @@ internal fun NovexEditorSection(
         Text(
             header,
             color = NovexColors.Text,
-            fontSize = 14.sp,
+            style = NovexType.SectionTitle,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
         )
@@ -111,7 +100,7 @@ internal fun NovexEditorSection(
             Text(
                 it,
                 color = NovexColors.SecondaryText,
-                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                style = NovexType.Metadata,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }

@@ -12,6 +12,13 @@ import org.junit.Test
 
 class NovexContentModulePresentationTest {
     @Test
+    fun visualWorldCollectionsUseGalleryWhileCharacterCollectionsRemainReadableLists() {
+        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.FACTION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.REGION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.COLLECTION, ContentModuleType.TALENT_SKILL.novexContentLayout())
+    }
+
+    @Test
     fun timelinePresentationContainsEverySavedNodeInOrder() {
         val document = ContentModuleDocument.Timeline(
             listOf(

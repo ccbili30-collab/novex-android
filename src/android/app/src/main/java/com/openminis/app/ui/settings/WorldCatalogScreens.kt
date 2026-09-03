@@ -21,14 +21,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,12 +63,18 @@ import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexContentModuleList
+import com.openminis.app.ui.novex.NovexContentSection
 import com.openminis.app.ui.novex.NovexDetailScaffold
 import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
 import com.openminis.app.ui.novex.NovexEditorScaffold
 import com.openminis.app.ui.novex.NovexEditorFoldRow
 import com.openminis.app.ui.novex.NovexEditorSection
 import com.openminis.app.ui.novex.NovexOptionalImageRow
+import com.openminis.app.ui.novex.NovexInlineField
+import com.openminis.app.ui.novex.NovexPrimaryButton
+import com.openminis.app.ui.novex.NovexSummaryRow
+import com.openminis.app.ui.novex.NovexTextActionRow
+import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.navigation.NovexEditorBackAction
@@ -185,10 +187,11 @@ fun CatalogWorldDetailScreen(
             }
         },
         bottomBar = {
-            if (current != null) Button(
+            if (current != null) NovexPrimaryButton(
+                label = "开始对话",
                 onClick = ::beginWorldConversation,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            ) { Text("开始对话") }
+            )
         },
     ) {
         when {
@@ -206,32 +209,29 @@ fun CatalogWorldDetailScreen(
                         if (current.availableVersions.isEmpty()) onCreateCharacter() else addCharacter = true
                     },
                 )
-                SettingsSection(
-                    header = "玩家身份",
-                    footer = "一段世界角色对话选择一个玩家身份和一个本体或分身。",
+                NovexContentSection(
+                    title = "玩家身份",
+                    subtitle = "对话时选择",
                 ) {
                     personas.forEach { persona ->
-                        SettingsRow(
+                        NovexSummaryRow(
                             title = persona.name.ifBlank { "玩家" },
-                            subtitle = persona.description.ifBlank {
+                            summary = persona.description.ifBlank {
                                 if (persona.isDefault) "默认身份" else "未填写身份说明"
                             },
                             onClick = { onEditPersona(persona.id) },
                         )
                     }
-                    TextButton(
+                    NovexTextActionRow(
+                        label = if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份",
                         onClick = { onEditPersona(null) },
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text(if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份")
-                    }
+                    )
                 }
                 if (hasLegacyWorld) {
-                    SettingsSection(header = "Nova 世界助手") {
-                        SettingsRow(
+                    NovexContentSection(title = "Nova 世界助手") {
+                        NovexSummaryRow(
                             title = "与 Nova 讨论这个世界",
-                            subtitle = "沿用升级前的世界观和玩家身份，不扮演角色卡。",
+                            summary = "沿用升级前的世界观和玩家身份，不扮演角色卡。",
                             onClick = {
                                 onStartWorldNovax(
                                     personas.firstOrNull { it.isDefault }?.id ?: personas.firstOrNull()?.id,
@@ -243,21 +243,23 @@ fun CatalogWorldDetailScreen(
                 val worldSessions = sessions.filter { session ->
                     session.worldId == worldId || session.worldSnapshotJson.worldIdFromSnapshot() == worldId
                 }
-                SettingsSection(header = "最近对话") {
+                NovexContentSection(title = "最近对话") {
                     if (worldSessions.isEmpty()) Text(
                         "还没有对话",
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     ) else worldSessions.take(20).forEach { session ->
-                        SettingsRow(
+                        NovexSummaryRow(
                             title = session.title?.ifBlank { null } ?: "新对话",
-                            subtitle = session.lastMessage?.ifBlank { null } ?: "暂无消息",
+                            summary = session.lastMessage?.ifBlank { null } ?: "暂无消息",
                             onClick = { onOpenSession(session.id) },
                         )
                     }
                 }
-                SettingsSection(header = "世界管理") {
-                    TextButton(
+                NovexContentSection(title = "世界管理") {
+                    NovexTextActionRow(
+                        label = "导出 Novex 世界卡",
+                        icon = com.openminis.app.R.drawable.ic_phosphor_arrow_up,
                         onClick = {
                             scope.launch {
                                 runCatching {
@@ -266,8 +268,7 @@ fun CatalogWorldDetailScreen(
                                     .onFailure { error = it.message ?: "世界卡导出失败" }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("导出 Novex 世界卡") }
+                    )
                 }
                 Spacer(Modifier.height(40.dp))
             }
@@ -521,26 +522,23 @@ fun CatalogWorldEditorScreen(
         onSave = ::save,
     ) {
         NovexEditorSection(header = "基础资料") {
-                OutlinedTextField(
+                NovexInlineField(
+                    label = "名称",
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it) },
-                    label = { Text("世界名称") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = "世界名称",
                 )
-                OutlinedTextField(
+                NovexInlineField(
+                    label = "标签",
                     value = draft.tagsText,
                     onValueChange = { draft = draft.copy(tagsText = it) },
-                    label = { Text("标签（用顿号或逗号分隔）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = "用顿号或逗号分隔",
                 )
-                OutlinedTextField(
+                NovexTextField(
+                    label = "世界观概述",
                     value = draft.overview,
                     onValueChange = { draft = draft.copy(overview = it) },
-                    label = { Text("世界观概述") },
                     minLines = 4,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
             NovexEditorSection(

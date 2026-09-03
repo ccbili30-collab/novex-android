@@ -15,8 +15,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +36,10 @@ import com.openminis.app.data.character.ContentModuleTimelineNode
 import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.ui.novex.ContentModuleDraftList
 import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexOutlineButton
+import com.openminis.app.ui.novex.NovexTextActionRow
+import com.openminis.app.ui.novex.NovexTextField
+import com.openminis.app.ui.novex.NovexType
 import com.openminis.app.ui.novex.novexModuleSummary
 import com.openminis.app.data.character.toPlainText
 import java.util.UUID
@@ -54,8 +56,8 @@ internal fun SharedContentModuleDraftEditor(
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text(
             "内容模块",
-            color = NovexColors.SecondaryText,
-            style = MaterialTheme.typography.labelMedium,
+            color = NovexColors.Text,
+            style = NovexType.SectionTitle,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
         )
         Column(Modifier.fillMaxWidth().background(NovexColors.Surface)) {
@@ -77,13 +79,11 @@ internal fun SharedContentModuleDraftEditor(
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
-            TextButton(
+            NovexTextActionRow(
+                label = "添加模块",
                 onClick = { showAdd = true },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Icon(painterResource(R.drawable.ic_phosphor_plus), contentDescription = null)
-                Text("添加模块", modifier = Modifier.padding(start = 6.dp))
-            }
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
         Text(
             "点击模块展开编辑；拖动排序将在保存后成为实际展示顺序。",
@@ -155,12 +155,10 @@ private fun ModuleDraftRow(
         }
         AnimatedVisibility(expanded) {
             Column(Modifier.fillMaxWidth().padding(start = 44.dp, end = 16.dp, bottom = 16.dp)) {
-                OutlinedTextField(
+                NovexTextField(
+                    label = "模块名称",
                     value = module.name,
                     onValueChange = { onUpdate(it, document) },
-                    label = { Text("模块名称") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
                 )
                 ModuleDocumentFields(
                     document = document,
@@ -183,9 +181,11 @@ private fun ModuleDraftRow(
                             Icon(painterResource(R.drawable.ic_phosphor_trash), "删除${module.name}")
                         }
                     }
-                    OutlinedButton(onClick = onOpenDetails, enabled = persisted) {
-                        Text(if (persisted) "图片与引用" else "保存后添加图片")
-                    }
+                    NovexOutlineButton(
+                        label = if (persisted) "图片与引用" else "保存后添加图片",
+                        onClick = onOpenDetails,
+                        enabled = persisted,
+                    )
                 }
             }
         }
@@ -200,19 +200,17 @@ private fun ModuleDocumentFields(
 ) {
     Column(modifier.fillMaxWidth()) {
         when (document) {
-            is ContentModuleDocument.Article -> OutlinedTextField(
+            is ContentModuleDocument.Article -> NovexTextField(
+                label = "内容（可留空）",
                 value = document.text,
                 onValueChange = { onChange(document.copy(text = it)) },
-                label = { Text("内容（可留空）") },
                 minLines = 5,
-                modifier = Modifier.fillMaxWidth(),
             )
-            is ContentModuleDocument.SingleImage -> OutlinedTextField(
+            is ContentModuleDocument.SingleImage -> NovexTextField(
+                label = "图片说明（可留空）",
                 value = document.description,
                 onValueChange = { onChange(document.copy(description = it)) },
-                label = { Text("图片说明（可留空）") },
                 minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
             )
             is ContentModuleDocument.Timeline -> TimelineFields(document, onChange)
             is ContentModuleDocument.Collection -> CollectionFields(document, onChange)
@@ -238,15 +236,15 @@ private fun TimelineFields(
                     onChange(document.copy(nodes = document.nodes.filterIndexed { i, _ -> i != index }))
                 }) { Text("删除") }
             }
-            OutlinedTextField(node.time, { value ->
+            NovexTextField("时间", node.time, { value ->
                 onChange(document.copy(nodes = document.nodes.replaceAt(index, node.copy(time = value))))
-            }, label = { Text("时间") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(node.title, { value ->
+            })
+            NovexTextField("标题", node.title, { value ->
                 onChange(document.copy(nodes = document.nodes.replaceAt(index, node.copy(title = value))))
-            }, label = { Text("标题") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            OutlinedTextField(node.description, { value ->
+            }, modifier = Modifier.padding(top = 2.dp))
+            NovexTextField("说明", node.description, { value ->
                 onChange(document.copy(nodes = document.nodes.replaceAt(index, node.copy(description = value))))
-            }, label = { Text("说明") }, minLines = 2, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }, minLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
     }
     TextButton(onClick = {
@@ -267,15 +265,15 @@ private fun CollectionFields(
                     onChange(document.copy(items = document.items.filterIndexed { i, _ -> i != index }))
                 }) { Text("删除") }
             }
-            OutlinedTextField(item.name, { value ->
+            NovexTextField("名称", item.name, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(name = value))))
-            }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(item.summary, { value ->
+            })
+            NovexTextField("摘要", item.summary, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(summary = value))))
-            }, label = { Text("摘要") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            OutlinedTextField(item.description, { value ->
+            }, modifier = Modifier.padding(top = 2.dp))
+            NovexTextField("详细说明", item.description, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(description = value))))
-            }, label = { Text("详细说明") }, minLines = 2, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }, minLines = 2, modifier = Modifier.padding(top = 2.dp))
         }
     }
     TextButton(onClick = {

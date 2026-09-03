@@ -5,10 +5,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,10 +41,16 @@ internal fun NovexOptionalImageRow(
             Text(
                 if (imageModel == null) "未设置（可留空）" else "已设置",
                 color = NovexColors.SecondaryText,
-                style = MaterialTheme.typography.bodySmall,
+                style = NovexType.Metadata,
             )
         }
-        TextButton(onClick = onPick) { Text(if (imageModel == null) "选择" else "更换") }
-        if (imageModel != null) TextButton(onClick = onRemove) { Text("移除") }
+        NovexOutlineButton(
+            label = if (imageModel == null) "选择" else "更换",
+            onClick = onPick,
+        )
+        if (imageModel != null) {
+            androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
+            NovexOutlineButton(label = "移除", onClick = onRemove, danger = true)
+        }
     }
 }

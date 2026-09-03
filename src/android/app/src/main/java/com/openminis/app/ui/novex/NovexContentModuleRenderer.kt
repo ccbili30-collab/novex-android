@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
@@ -34,6 +37,7 @@ import com.openminis.app.data.character.toPlainText
 internal enum class NovexContentModuleLayout {
     MAP,
     TIMELINE,
+    GALLERY,
     COLLECTION,
     ARTICLE,
 }
@@ -44,9 +48,10 @@ internal fun ContentModuleType.novexContentLayout(): NovexContentModuleLayout = 
     ContentModuleType.ERA_EVENT,
     ContentModuleType.WORLD_EXPERIENCE,
     -> NovexContentModuleLayout.TIMELINE
-    ContentModuleType.REGION,
     ContentModuleType.FACTION,
     ContentModuleType.RACE,
+    ContentModuleType.REGION,
+    -> NovexContentModuleLayout.GALLERY
     ContentModuleType.QUOTES,
     ContentModuleType.ATTRIBUTE_PANEL,
     ContentModuleType.EQUIPMENT,
@@ -122,12 +127,69 @@ internal fun NovexContentModuleBlock(
         when (presentation.type.novexContentLayout()) {
             NovexContentModuleLayout.MAP -> MapModuleBody(presentation, imageModel)
             NovexContentModuleLayout.TIMELINE -> TimelineModuleBody(presentation, imageModel)
+            NovexContentModuleLayout.GALLERY -> GalleryModuleBody(
+                presentation,
+                imageModel,
+                itemImageModels,
+            )
             NovexContentModuleLayout.COLLECTION -> CollectionModuleBody(
                 presentation,
                 imageModel,
                 itemImageModels,
             )
             NovexContentModuleLayout.ARTICLE -> ArticleModuleBody(presentation, imageModel)
+        }
+    }
+}
+
+@Composable
+private fun GalleryModuleBody(
+    presentation: NovexContentModulePresentation,
+    imageModel: Any?,
+    itemImageModels: Map<String, Any?>,
+) {
+    val entries = (presentation.document as? ContentModuleDocument.Collection)?.items.orEmpty()
+    if (entries.isEmpty()) {
+        ModuleText(presentation, maxLines = 5)
+        return
+    }
+    LazyRow(
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    ) {
+        items(entries.take(8), key = { it.id }) { item ->
+            val itemImage = item.visualKey?.let(itemImageModels::get)
+                ?: imageModel.takeIf { entries.firstOrNull()?.id == item.id }
+            Column(Modifier.width(132.dp)) {
+                if (itemImage != null) {
+                    AsyncImage(
+                        model = itemImage,
+                        contentDescription = "${item.name.ifBlank { presentation.title }}代表图",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(8.dp)),
+                    )
+                }
+                Text(
+                    item.name.ifBlank { "未命名条目" },
+                    color = NovexColors.Text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = if (itemImage == null) 2.dp else 7.dp),
+                )
+                if (item.summary.isNotBlank()) {
+                    Text(
+                        item.summary,
+                        color = NovexColors.SecondaryText,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -194,52 +256,45 @@ private fun TimelineModuleBody(presentation: NovexContentModulePresentation, ima
         ModuleText(presentation, maxLines = 5)
         return
     }
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-        nodes.take(6).forEachIndexed { index, node ->
-            TimelineNodeRow(
-                time = node.time,
-                title = node.title,
-                description = node.description,
-                drawTail = index < nodes.lastIndex && index < 5,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TimelineNodeRow(
-    time: String,
-    title: String,
-    description: String,
-    drawTail: Boolean,
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(16.dp)) {
-            Spacer(Modifier.height(5.dp))
-            Spacer(Modifier.size(8.dp).clip(CircleShape).background(NovexColors.Primary))
-            if (drawTail) Spacer(Modifier.width(2.dp).height(52.dp).background(NovexColors.Divider))
-        }
-        Column(Modifier.weight(1f).padding(start = 10.dp, bottom = if (drawTail) 10.dp else 0.dp)) {
-            val heading = listOf(time, title).filter(String::isNotBlank).joinToString(" · ")
-            if (heading.isNotBlank()) {
+    val visibleNodes = nodes.take(8)
+    LazyRow(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        itemsIndexed(visibleNodes) { index, node ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(112.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(
+                        Modifier.weight(1f).height(1.dp).background(
+                            if (index == 0) androidx.compose.ui.graphics.Color.Transparent else NovexColors.Divider,
+                        ),
+                    )
+                    Spacer(Modifier.size(8.dp).clip(CircleShape).background(NovexColors.Text))
+                    Spacer(
+                        Modifier.weight(1f).height(1.dp).background(
+                            if (index == visibleNodes.lastIndex) {
+                                androidx.compose.ui.graphics.Color.Transparent
+                            } else {
+                                NovexColors.Divider
+                            },
+                        ),
+                    )
+                }
+                if (node.time.isNotBlank()) {
+                    Text(
+                        node.time,
+                        color = NovexColors.SecondaryText,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 7.dp),
+                    )
+                }
                 Text(
-                    heading,
+                    node.title.ifBlank { node.description.ifBlank { "未命名节点" } },
                     color = NovexColors.Text,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (description.isNotBlank()) {
-                Text(
-                    description,
-                    color = NovexColors.SecondaryText,
                     fontSize = 12.sp,
-                    lineHeight = 17.sp,
+                    lineHeight = 16.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = if (heading.isBlank()) 0.dp else 2.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
