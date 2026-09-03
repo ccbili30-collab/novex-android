@@ -3209,17 +3209,27 @@ class OpenAIProvider private constructor(
     }
 
     private fun mapHttpError(statusCode: Int, body: String): LLMError {
-        if (statusCode == 401 || statusCode == 403) return LLMError.InvalidApiKey()
-        if (statusCode == 429) return LLMError.RateLimited()
-
         val message = try {
             val json = JSONObject(body)
             val error = json.optJSONObject("error")
             val errorMessage = error?.safeOptString("message", "") ?: body
-            "[$statusCode] $errorMessage"
+            val requestId = error?.safeOptString("request_id", "")
+                ?.takeIf(String::isNotBlank)
+                ?: json.safeOptString("request_id", "").takeIf(String::isNotBlank)
+            buildString {
+                append("HTTP $statusCode: ")
+                append(errorMessage.take(1_200))
+                if (requestId != null && requestId !in errorMessage) {
+                    append("; request_id=")
+                    append(requestId.take(200))
+                }
+            }
         } catch (_: Exception) {
-            "HTTP $statusCode: ${body.take(500)}"
+            "HTTP $statusCode: ${body.take(1_500)}"
         }
+
+        if (statusCode == 401 || statusCode == 403) return LLMError.InvalidApiKey(message)
+        if (statusCode == 429) return LLMError.RateLimited(message)
 
         val transientCodes = setOf(500, 502, 503, 504, 529)
         if (statusCode in transientCodes) {

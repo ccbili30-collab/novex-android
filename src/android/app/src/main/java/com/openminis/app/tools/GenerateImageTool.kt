@@ -9,12 +9,44 @@ import com.openminis.app.data.model.LLMMediaAttachment
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMResponse
 import com.openminis.app.data.model.ModelEntry
+import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.logging.AppLogger
 import com.openminis.app.sandbox.PRootKernel
 import java.io.File
+import java.security.MessageDigest
 import org.json.JSONObject
+
+internal fun imageCredentialFingerprint(credential: String): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(credential.toByteArray(Charsets.UTF_8))
+        .take(6)
+        .joinToString("") { "%02x".format(it) }
+
+internal fun sanitizedImageEndpoint(value: String): String = value
+    .replace(Regex("(?i)(://)[^/@\\s]+@"), "$1<已隐藏>@")
+    .replace(
+        Regex("(?i)([?&](?:api[-_]?key|key|token|access_token)=)[^&\\s]+"),
+        "$1<已隐藏>",
+    )
+
+internal fun sanitizedImageFailure(value: String): String = value
+    .replace(
+        Regex("(?i)(authorization\\s*[:=]\\s*bearer\\s+)[^\\s,;]+"),
+        "$1<已隐藏>",
+    )
+    .replace(
+        Regex("(?i)(api[-_ ]?key\\s*[:=]\\s*)(?!HTTP\\b)[^\\s,;]+"),
+        "$1<已隐藏>",
+    )
+
+internal fun imageGenerationAttemptDiagnostic(
+    sourceLabel: String,
+    modelId: String,
+    endpoint: String,
+): String = "生图来源=$sourceLabel；模型=$modelId；实际端点=${sanitizedImageEndpoint(endpoint)}"
 
 object GenerateImageTool {
     const val NAME = "generate_image"
@@ -127,8 +159,6 @@ object GenerateImageTool {
             ?: error("提供商不存在")
         val credential = repository.usableApiKey(instance)
             ?: error("密钥不可用")
-        val provider = ProviderFactory.create(instance, credential, entry.model, context)
-        val openAI = provider as? OpenAIProvider
         val configuredEndpointMode = entry.overrides.imageEndpointMode ?: instance.imageEndpointMode
         val cachedEndpointMode = entry.overrides.imageEndpointResolved
             ?: entry.overrides.imageEndpointMode?.let { null }
@@ -136,37 +166,65 @@ object GenerateImageTool {
         val effectiveEndpointMode = if (configuredEndpointMode == ImageEndpointMode.auto) {
             cachedEndpointMode ?: ImageEndpointMode.auto
         } else configuredEndpointMode
-        if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
-            try {
-                val response = if (reference == null) {
-                    openAI.generateImage(prompt, count, size, quality)
-                } else {
-                    openAI.editImage(prompt, listOf(reference), count, size, quality)
-                }
-                if (configuredEndpointMode == ImageEndpointMode.auto) {
-                    repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.imagesGenerations)
-                }
-                return response
-            } catch (failure: Throwable) {
-                if (configuredEndpointMode != ImageEndpointMode.auto || !looksLikeMissingImageEndpoint(failure.message)) {
-                    throw failure
-                }
-                Log.i("GenerateImageTool", "${entry.model.id} images endpoint unavailable; using chat route")
-                repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.chatCompletions)
-            }
+        val base = instance.effectiveBaseURL ?: when (instance.providerType) {
+            ProviderType.gemini ->
+                "https://generativelanguage.googleapis.com/v1beta"
+            else -> "https://api.openai.com/v1"
         }
-        return provider.sendMessage(
-            messages = listOf(
-                LLMMessage(
-                    role = LLMMessage.Role.USER,
-                    content = prompt,
-                    imageParts = listOfNotNull(reference),
-                ),
-            ),
-            systemPrompt = "Generate the requested image. Return actual image data, not a textual description.",
-            maxTokens = entry.model.maxOutputTokens ?: 4096,
-            imageParts = listOfNotNull(reference),
+        var activeEndpoint = when {
+            instance.providerType == ProviderType.gemini ->
+                "$base/models/${entry.model.id}:generateContent"
+            effectiveEndpointMode == ImageEndpointMode.chatCompletions -> "$base/chat/completions"
+            reference != null -> "$base/images/edits"
+            else -> "$base/images/generations"
+        }
+        AppLogger.info(
+            "GenerateImageTool",
+            "${imageGenerationAttemptDiagnostic(instance.label, entry.model.id, activeEndpoint)}；" +
+                "来源ID=${instance.id}；密钥指纹=${imageCredentialFingerprint(credential)}",
         )
+        try {
+            val provider = ProviderFactory.create(instance, credential, entry.model, context)
+            val openAI = provider as? OpenAIProvider
+            if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
+                try {
+                    val response = if (reference == null) {
+                        openAI.generateImage(prompt, count, size, quality)
+                    } else {
+                        openAI.editImage(prompt, listOf(reference), count, size, quality)
+                    }
+                    if (configuredEndpointMode == ImageEndpointMode.auto) {
+                        repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.imagesGenerations)
+                    }
+                    return response
+                } catch (failure: Throwable) {
+                    if (configuredEndpointMode != ImageEndpointMode.auto || !looksLikeMissingImageEndpoint(failure.message)) {
+                        throw failure
+                    }
+                    Log.i("GenerateImageTool", "${entry.model.id} images endpoint unavailable; using chat route")
+                    repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.chatCompletions)
+                    activeEndpoint = "$base/chat/completions"
+                }
+            }
+            return provider.sendMessage(
+                messages = listOf(
+                    LLMMessage(
+                        role = LLMMessage.Role.USER,
+                        content = prompt,
+                        imageParts = listOfNotNull(reference),
+                    ),
+                ),
+                systemPrompt = "Generate the requested image. Return actual image data, not a textual description.",
+                maxTokens = entry.model.maxOutputTokens ?: 4096,
+                imageParts = listOfNotNull(reference),
+            )
+        } catch (failure: Throwable) {
+            val raw = sanitizedImageFailure(failure.message ?: failure::class.java.simpleName)
+            val diagnostic = "${imageGenerationAttemptDiagnostic(instance.label, entry.model.id, activeEndpoint)}；" +
+                "原始错误=${raw.take(1_500)}"
+            AppLogger.error("GenerateImageTool", diagnostic)
+            throw IllegalStateException(diagnostic, failure)
+        }
     }
 
     private fun resolveReferenceImage(

@@ -59,3 +59,45 @@ internal class EmptyResponseRetryState {
         return action
     }
 }
+
+internal enum class MissingChoiceToolRecoveryAction {
+    NONE,
+    RETRY_PRESENT_CHOICES,
+    FAIL_AFTER_RETRY,
+}
+
+/**
+ * One-shot recovery for relays that occasionally turn an explicit request for
+ * native choice buttons into prose. This is deliberately narrower than the
+ * ordinary choice fallback: normal storytelling is never forced into a tool.
+ */
+internal object MissingChoiceToolRecoveryPolicy {
+    private val explicitChoiceRequestPatterns = listOf(
+        Regex("(选项|选择).{0,8}(工具|按钮|菜单)"),
+        Regex("(给|提供|列出|展示|生成).{0,8}(选项|选择)"),
+        Regex("(选项|选择).{0,8}(给我|提供|列出|展示|生成)"),
+    )
+
+    fun decide(
+        userRequest: String,
+        assistantText: String,
+        hasAnyToolCall: Boolean,
+        hasPresentChoicesCall: Boolean,
+        finishReason: String?,
+        presentChoicesAvailable: Boolean,
+        forcedAttempt: Boolean,
+    ): MissingChoiceToolRecoveryAction {
+        if (hasPresentChoicesCall) return MissingChoiceToolRecoveryAction.NONE
+        if (forcedAttempt) return MissingChoiceToolRecoveryAction.FAIL_AFTER_RETRY
+        if (!presentChoicesAvailable || finishReason == null || hasAnyToolCall) {
+            return MissingChoiceToolRecoveryAction.NONE
+        }
+        if (explicitChoiceRequestPatterns.none { it.containsMatchIn(userRequest) }) {
+            return MissingChoiceToolRecoveryAction.NONE
+        }
+        if (NovexChoiceFallback.extract(assistantText).size >= 2) {
+            return MissingChoiceToolRecoveryAction.NONE
+        }
+        return MissingChoiceToolRecoveryAction.RETRY_PRESENT_CHOICES
+    }
+}

@@ -6663,6 +6663,11 @@ class ChatViewModel(
         // independent one-shot budgets for the initial response and the
         // response after a tool result; neither path can loop indefinitely.
         val emptyResponseRetryState = EmptyResponseRetryState()
+        // Some OpenAI-compatible relays intermittently flatten an explicitly
+        // requested present_choices call into prose. Allow exactly one repair
+        // request, restricted to that single tool, then stop visibly.
+        var choiceRepairAttempted = false
+        var forcedChoiceToolOnly = false
         // Keep the request context explicit. The retry reminder mutates the
         // last history message by adding a Text part, so re-inferring this from
         // contentParts would incorrectly turn the second post-tool attempt
@@ -6830,6 +6835,8 @@ class ChatViewModel(
             // [T-android-gemini3-thoughtsig / #179] toolCallId -> Gemini 3.x
             // thoughtSignature for this turn's calls (null for other providers).
             val toolCallSignatures = mutableMapOf<String, String>()
+            val thisTurnIsForcedChoiceRepair = forcedChoiceToolOnly
+            forcedChoiceToolOnly = false
 
             // [T-dedupe-toolcallid 03fbcbfd] Per-turn dedupe of tool_call_id.
             // Some upstream OpenAI-compatible gateways occasionally emit
@@ -6890,7 +6897,11 @@ class ChatViewModel(
                     // [_compactSummary] is prepended as a `<context-summary>`
                     // user message. Falls through to the raw agentHistory when
                     // no compact has happened, so the common path stays zero-copy.
-                    val conversationTools = agentTools
+                    val conversationTools = if (thisTurnIsForcedChoiceRepair) {
+                        agentTools.filter { it.name == "present_choices" }
+                    } else {
+                        agentTools
+                    }
                     val requestToolsEnabled = conversationTools.isNotEmpty()
                     val requestHistory = effectiveAgentHistory().let { history ->
                         if (requestToolsEnabled) history else pureChatHistory(history)
@@ -7466,6 +7477,72 @@ class ChatViewModel(
             // semantics — `turnText` participates in cross-turn accumulation
             // and gets persisted into agentHistory below.
             val turnText = turnTextSb.toString()
+            val latestVisibleUserRequest = agentHistory.asReversed()
+                .firstOrNull { message ->
+                    message.role == LLMMessage.Role.USER &&
+                        (message.content.isNotBlank() || message.contentParts.any {
+                            it is AgentContentPart.Text && it.text.isNotBlank() &&
+                                !it.text.startsWith("<system-reminder>")
+                        })
+                }
+                ?.let { message ->
+                    message.content.takeIf(String::isNotBlank)
+                        ?: message.contentParts.filterIsInstance<AgentContentPart.Text>()
+                            .firstOrNull { !it.text.startsWith("<system-reminder>") }
+                            ?.text
+                }
+                .orEmpty()
+            val choiceRecoveryAction = MissingChoiceToolRecoveryPolicy.decide(
+                userRequest = latestVisibleUserRequest,
+                assistantText = turnText,
+                hasAnyToolCall = toolCalls.isNotEmpty(),
+                hasPresentChoicesCall = toolCalls.any { (_, name, _) -> name == "present_choices" },
+                finishReason = turnFinishReason,
+                presentChoicesAvailable = agentTools.any { it.name == "present_choices" },
+                forcedAttempt = thisTurnIsForcedChoiceRepair,
+            )
+            if (choiceRecoveryAction == MissingChoiceToolRecoveryAction.RETRY_PRESENT_CHOICES) {
+                while (allToolBlocks.size > turnStartBlockIndex) {
+                    allToolBlocks.removeAt(allToolBlocks.lastIndex)
+                }
+                val requestIndex = agentHistory.indexOfLast { message ->
+                    message.role == LLMMessage.Role.USER &&
+                        (message.content.isNotBlank() || message.contentParts.any {
+                            it is AgentContentPart.Text && !it.text.startsWith("<system-reminder>")
+                        })
+                }
+                if (requestIndex >= 0) {
+                    val request = agentHistory[requestIndex]
+                    val originalParts = request.contentParts.toMutableList().apply {
+                        if (none { it is AgentContentPart.Text && !it.text.startsWith("<system-reminder>") } &&
+                            request.content.isNotBlank()
+                        ) {
+                            add(0, AgentContentPart.Text(request.content))
+                        }
+                    }
+                    agentHistory[requestIndex] = request.copy(
+                        contentParts = originalParts + AgentContentPart.Text(
+                            "<system-reminder>The user explicitly requested native choice buttons. " +
+                                "Retry once and respond only with one present_choices tool call containing " +
+                                "2 to 12 concise choices. Do not write prose.</system-reminder>",
+                        ),
+                    )
+                }
+                choiceRepairAttempted = true
+                forcedChoiceToolOnly = true
+                AppLogger.warning(
+                    TAG_STREAM,
+                    "missing present_choices retry 1/1: model=${currentProvider.model.id} " +
+                        "finishReason=$turnFinishReason textLen=${turnText.length}",
+                )
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, true, allToolBlocks,
+                        isAwaitingModelResponse = true,
+                    )
+                }
+                continue
+            }
             // Accumulate text across turns
             accumulatedText += turnText
 
@@ -7490,6 +7567,37 @@ class ChatViewModel(
             // an empty buffer becomes null (no field to round-trip).
             val turnReasoningContent: String? = turnReasoningBlob
                 ?: turnThinking.toString().takeIf { it.isNotEmpty() }
+
+            if (choiceRecoveryAction == MissingChoiceToolRecoveryAction.FAIL_AFTER_RETRY) {
+                AppLogger.error(
+                    TAG_STREAM,
+                    "missing present_choices after retry: model=${currentProvider.model.id} " +
+                        "finishReason=$turnFinishReason textLen=${turnText.length} attempted=$choiceRepairAttempted",
+                )
+                if (assistantParts.isNotEmpty()) {
+                    agentHistory.add(
+                        LLMMessage(
+                            role = LLMMessage.Role.ASSISTANT,
+                            content = turnText,
+                            contentParts = assistantParts,
+                            reasoningContent = turnReasoningContent,
+                        ),
+                    )
+                    val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
+                    val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                    persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta)
+                }
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, false, allToolBlocks,
+                        isAwaitingModelResponse = false,
+                    )
+                    setInlineError(context.getString(R.string.chat_error_present_choices_missing))
+                }
+                if (turn == 0) generateSessionTitleIfNeeded()
+                loopExitedNormally = true
+                break
+            }
 
             val emptyContext = emptyResponseContext
             val completionAction = emptyResponseRetryState.decide(

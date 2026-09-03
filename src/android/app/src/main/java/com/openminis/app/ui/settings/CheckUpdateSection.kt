@@ -1,18 +1,22 @@
 package com.openminis.app.ui.settings
 
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,9 +53,52 @@ import com.openminis.app.R
 import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
+import com.openminis.app.ui.markdown.MarkdownText
 import kotlinx.coroutines.launch
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
+
+internal object NovexUpdateAnnouncementStore {
+    private const val PREFS = "novex_update_announcement"
+    private const val LAST_SHOWN = "last_shown_release"
+
+    fun shouldShow(context: Context, update: UpdateChecker.CheckResult.UpdateAvailable): Boolean {
+        val releaseKey = "${update.channel.name}:${update.versionName}"
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(LAST_SHOWN, null) != releaseKey
+    }
+
+    fun markShown(context: Context, update: UpdateChecker.CheckResult.UpdateAvailable) {
+        val releaseKey = "${update.channel.name}:${update.versionName}"
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(LAST_SHOWN, releaseKey)
+            .apply()
+    }
+}
+
+internal object CurrentNovexAnnouncement {
+    const val title = "特别致哀"
+    val paragraphs = listOf(
+        "今年以来，台风、暴雨、洪涝与地质灾害侵袭祖国多地。每一则伤亡消息背后，都是一个家庭难以承受的离别。",
+        "在西藏吉隆泥石流灾害发生之际，我们也一并向今年所有灾害中的遇难者致以沉痛哀悼，向遇难者家属和受灾群众致以深切慰问，向所有奋战在抢险救援一线的人们致以崇高敬意。",
+        "愿逝者安息，愿伤者康复，愿失联者早日归来，愿所有受灾群众平安渡过难关，重建家园。",
+    )
+    const val closing = "愿山河无恙，愿人间皆安"
+    val markdown: String
+        get() = paragraphs.joinToString("\n\n") + "\n\n**$closing**"
+}
+
+internal enum class NovexHomeAction { ANNOUNCEMENT, UPDATE }
+
+internal fun resolveNovexHomeAction(
+    detectedVersion: String?,
+    dismissedVersion: String?,
+): NovexHomeAction = if (detectedVersion != null && detectedVersion != dismissedVersion) {
+    NovexHomeAction.UPDATE
+} else {
+    NovexHomeAction.ANNOUNCEMENT
+}
 
 /**
  * Settings section that talks to [UpdateChecker] to surface a "Check for
@@ -252,7 +299,7 @@ fun CheckUpdateSection() {
 
 /** Compact home-toolbar variant used by Novex. */
 @Composable
-fun NovexUpdateAction(showLabel: Boolean = true) {
+fun NovexUpdateAction() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -261,6 +308,45 @@ fun NovexUpdateAction(showLabel: Boolean = true) {
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
+    var announcementOpen by remember { mutableStateOf(false) }
+    var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+
+    fun openDetectedUpdateOrCheck() {
+        val available = detectedUpdate
+        if (available != null) {
+            dismissedUpdateVersion = null
+            dialogUpdate = available
+            NovexUpdateAnnouncementStore.markShown(context, available)
+            return
+        }
+        checking = true
+        scope.launch {
+            when (val result = NovexUpdateMonitor.refresh()) {
+                is UpdateChecker.CheckResult.UpdateAvailable -> {
+                    dialogUpdate = result
+                    NovexUpdateAnnouncementStore.markShown(context, result)
+                }
+                UpdateChecker.CheckResult.UpToDate ->
+                    android.widget.Toast.makeText(context, "Novex（诺文）已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                UpdateChecker.CheckResult.NoReleaseAvailable ->
+                    android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
+                is UpdateChecker.CheckResult.NoApkAsset ->
+                    android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
+                UpdateChecker.CheckResult.Forbidden,
+                UpdateChecker.CheckResult.NetworkUnreachable ->
+                    android.widget.Toast.makeText(context, "无法连接 GitHub（代码托管平台），请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
+                is UpdateChecker.CheckResult.Error ->
+                    android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+            checking = false
+        }
+    }
+
+    LaunchedEffect(detectedUpdate?.versionName) {
+        if (dismissedUpdateVersion != detectedUpdate?.versionName) {
+            dismissedUpdateVersion = null
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -279,54 +365,48 @@ fun NovexUpdateAction(showLabel: Boolean = true) {
         lifecycleOwner.lifecycle.addObserver(observer)
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (showLabel && detectedUpdate != null) {
-            Text(
-                stringResource(
-                    if (detectedUpdate?.channel == UpdateChannel.PREVIEW) {
-                        R.string.check_update_detected_preview
-                    } else {
-                        R.string.check_update_detected_stable
-                    },
-                    detectedUpdate?.versionName.orEmpty(),
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+    val homeAction = resolveNovexHomeAction(
+        detectedVersion = detectedUpdate?.versionName,
+        dismissedVersion = dismissedUpdateVersion,
+    )
+
+    Row(
+        modifier = Modifier
+            .clickable(enabled = !checking) {
+                if (homeAction == NovexHomeAction.UPDATE) {
+                    dialogUpdate = detectedUpdate
+                } else {
+                    announcementOpen = true
+                }
+            }
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when {
+            checking -> CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 2.dp)
+            homeAction == NovexHomeAction.UPDATE -> Icon(
+                Icons.Outlined.FileDownload,
+                contentDescription = "打开 Novex（诺文）更新",
+                modifier = Modifier.size(30.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            else -> Icon(
+                Icons.Outlined.Campaign,
+                contentDescription = "打开 Novex（诺文）公告",
+                modifier = Modifier.size(30.dp),
             )
         }
-        IconButton(
-            enabled = !checking,
-            onClick = {
-                detectedUpdate?.let {
-                    dialogUpdate = it
-                    return@IconButton
-                }
-                checking = true
-                scope.launch {
-                    when (val result = NovexUpdateMonitor.refresh()) {
-                        is UpdateChecker.CheckResult.UpdateAvailable -> dialogUpdate = result
-                        UpdateChecker.CheckResult.UpToDate ->
-                            android.widget.Toast.makeText(context, "Novex（诺文）已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
-                        UpdateChecker.CheckResult.NoReleaseAvailable ->
-                            android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
-                        is UpdateChecker.CheckResult.NoApkAsset ->
-                            android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
-                        UpdateChecker.CheckResult.Forbidden,
-                        UpdateChecker.CheckResult.NetworkUnreachable ->
-                            android.widget.Toast.makeText(context, "无法连接 GitHub（代码托管平台），请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
-                        is UpdateChecker.CheckResult.Error ->
-                            android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
-                    }
-                    checking = false
-                }
+    }
+
+    if (announcementOpen) {
+        AnnouncementDialog(
+            checking = checking,
+            onCheckUpdate = {
+                announcementOpen = false
+                openDetectedUpdateOrCheck()
             },
-        ) {
-            when {
-                checking -> CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                detectedUpdate != null -> Icon(Icons.Outlined.FileDownload, contentDescription = "下载 Novex（诺文）更新")
-                else -> Icon(Icons.Outlined.SystemUpdate, contentDescription = "检查 Novex（诺文）更新")
-            }
-        }
+            onDismiss = { announcementOpen = false },
+        )
     }
 
     dialogUpdate?.let { available ->
@@ -366,6 +446,7 @@ fun NovexUpdateAction(showLabel: Boolean = true) {
             onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
             onDismiss = {
                 if (downloadProgress == null) {
+                    dismissedUpdateVersion = available.versionName
                     dialogUpdate = null
                     downloadError = null
                     awaitingInstallPermission = false
@@ -432,22 +513,23 @@ private fun UpdateDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (update.changelog.isNotBlank()) {
-                    Text(
-                        stringResource(R.string.check_update_changelog_header).uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = update.changelog,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = 4.dp),
-                    )
-                }
+                Text(
+                    stringResource(R.string.check_update_changelog_header).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                MarkdownText(
+                    markdown = update.changelog.ifBlank {
+                        "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                )
                 Text(
                     stringResource(R.string.check_update_install_hint),
                     style = MaterialTheme.typography.bodySmall,
@@ -517,6 +599,44 @@ private fun UpdateDialog(
         dismissButton = {
             MinisTextButton(onClick = onDismiss, enabled = downloadProgress == null) {
                 Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AnnouncementDialog(
+    checking: Boolean,
+    onCheckUpdate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(CurrentNovexAnnouncement.title, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MarkdownText(
+                    markdown = CurrentNovexAnnouncement.markdown,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = {
+            MinisButton(onClick = onCheckUpdate, enabled = !checking) {
+                Text("检查更新")
+            }
+        },
+        dismissButton = {
+            MinisTextButton(onClick = onDismiss, enabled = !checking) {
+                Text("关闭")
             }
         },
     )

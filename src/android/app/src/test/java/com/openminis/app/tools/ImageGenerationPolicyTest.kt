@@ -103,6 +103,25 @@ class ImageGenerationPolicyTest {
     }
 
     @Test
+    fun `attempt diagnostics bind source model endpoint and irreversible key identity`() {
+        val firstFingerprint = imageCredentialFingerprint("first-secret")
+        val secondFingerprint = imageCredentialFingerprint("second-secret")
+        val detail = imageGenerationAttemptDiagnostic(
+            sourceLabel = "JMR",
+            modelId = "gpt-image-2",
+            endpoint = "https://jmrai.net/v1/images/generations?api_key=secret",
+        )
+
+        assertEquals(12, firstFingerprint.length)
+        assertFalse(firstFingerprint == secondFingerprint)
+        assertFalse(detail.contains("secret"))
+        assertTrue(detail.contains("JMR"))
+        assertTrue(detail.contains("gpt-image-2"))
+        assertTrue(detail.contains("/v1/images/generations"))
+        assertTrue(detail.contains("<已隐藏>"))
+    }
+
+    @Test
     fun `content policy rejection stops without forwarding prompt to another source`() = runBlocking {
         val attempted = mutableListOf<String>()
 

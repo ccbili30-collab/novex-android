@@ -295,12 +295,19 @@ object UpdateChecker {
                 ).find(entry) ?: return@mapNotNull null
                 val tag = href.groupValues[2]
                 val title = Regex("<title>(.*?)</title>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-                    .find(entry)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "")?.trim().orEmpty()
+                    .find(entry)?.groupValues?.get(1)?.let(::atomContentToPlainText).orEmpty()
+                val changelog = Regex(
+                    "<content\\b[^>]*>(.*?)</content>",
+                    setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+                ).find(entry)?.groupValues?.get(1)
+                    ?.let(::atomContentToMarkdown)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: ATOM_CHANGELOG_FALLBACK
                 PublishedUpdate(
                     tagName = tag,
                     versionName = normalizeTag(tag),
                     releaseName = title.ifEmpty { tag },
-                    changelog = "",
+                    changelog = changelog,
                     isPrerelease = UpdateReleasePolicy.isPrereleaseVersion(tag),
                     assets = mapOf(
                         channel.assetName to PublishedAsset(
@@ -321,7 +328,7 @@ object UpdateChecker {
             tagName = highest.tagName,
             versionName = highest.versionName,
             releaseName = highest.releaseName,
-            changelog = "",
+            changelog = highest.changelog.ifBlank { ATOM_CHANGELOG_FALLBACK },
             apkUrl = asset.url,
             apkSizeBytes = 0,
             channel = channel,
@@ -350,6 +357,76 @@ object UpdateChecker {
 
     /** Strip only the conventional tag prefix; prerelease identity is significant. */
     private fun normalizeTag(tag: String): String = UpdateReleasePolicy.normalizeTag(tag)
+
+    /** Convert GitHub Atom's entity-escaped HTML release body to readable text. */
+    private fun atomContentToPlainText(raw: String): String {
+        val html = decodeXmlEntities(raw)
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</(?:p|div|h[1-6]|li)\\s*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "• ")
+            .replace(Regex("<[^>]+>"), "")
+        return decodeXmlEntities(html)
+            .replace('\u00a0', ' ')
+            .replace(Regex("[ \\t]+\n"), "\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    /** Preserve GitHub release formatting when the REST API falls back to Atom HTML. */
+    private fun atomContentToMarkdown(raw: String): String {
+        val options = setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        var markdown = decodeXmlEntities(decodeXmlEntities(raw))
+            .replace(Regex("<!--.*?-->", options), "")
+            .replace(Regex("<(?:strong|b)\\b[^>]*>", RegexOption.IGNORE_CASE), "**")
+            .replace(Regex("</(?:strong|b)\\s*>", RegexOption.IGNORE_CASE), "**")
+            .replace(Regex("<(?:em|i)\\b[^>]*>", RegexOption.IGNORE_CASE), "*")
+            .replace(Regex("</(?:em|i)\\s*>", RegexOption.IGNORE_CASE), "*")
+            .replace(Regex("<(?:del|s)\\b[^>]*>", RegexOption.IGNORE_CASE), "~~")
+            .replace(Regex("</(?:del|s)\\s*>", RegexOption.IGNORE_CASE), "~~")
+            .replace(Regex("<code\\b[^>]*>", RegexOption.IGNORE_CASE), "`")
+            .replace(Regex("</code\\s*>", RegexOption.IGNORE_CASE), "`")
+
+        markdown = Regex(
+            "<a\\b[^>]*href=[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</a>",
+            options,
+        ).replace(markdown) { match ->
+            val label = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
+            "[$label](${decodeXmlEntities(match.groupValues[1])})"
+        }
+
+        for (level in 1..6) {
+            markdown = markdown
+                .replace(Regex("<h$level\\b[^>]*>", RegexOption.IGNORE_CASE), "\n${"#".repeat(level)} ")
+                .replace(Regex("</h$level\\s*>", RegexOption.IGNORE_CASE), "\n")
+        }
+
+        return markdown
+            .replace(Regex("<hr\\b[^>]*?/?>", RegexOption.IGNORE_CASE), "\n\n---\n\n")
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "\n- ")
+            .replace(Regex("</li\\s*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</?(?:ul|ol)\\b[^>]*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</(?:p|div|blockquote)\\s*>", RegexOption.IGNORE_CASE), "\n\n")
+            .replace(Regex("<(?:p|div|blockquote)\\b[^>]*>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<[^>]+>"), "")
+            .let(::decodeXmlEntities)
+            .replace('\u00a0', ' ')
+            .replace(Regex("[ \\t]+\n"), "\n")
+            .replace(Regex("\n[ \\t]+"), "\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
+    private fun decodeXmlEntities(value: String): String = value
+        .replace("&lt;", "<", ignoreCase = true)
+        .replace("&gt;", ">", ignoreCase = true)
+        .replace("&quot;", "\"", ignoreCase = true)
+        .replace("&#39;", "'", ignoreCase = true)
+        .replace("&apos;", "'", ignoreCase = true)
+        .replace("&amp;", "&", ignoreCase = true)
+
+    private const val ATOM_CHANGELOG_FALLBACK =
+        "更新说明暂未加载。请在网络恢复后重新检查，或前往发布页查看完整公告。"
 
     /**
      * Stream the APK from [url] into `${cacheDir}/shared/minis-update.apk`,

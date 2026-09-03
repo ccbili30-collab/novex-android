@@ -41,7 +41,7 @@ internal fun NovexRootPageHeader(
             )
         },
         actions = {
-            NovexUpdateAction(showLabel = false)
+            NovexUpdateAction()
             NovexIconAction(
                 icon = R.drawable.ic_phosphor_search,
                 contentDescription = if (searching) "关闭$searchDescription" else searchDescription,
