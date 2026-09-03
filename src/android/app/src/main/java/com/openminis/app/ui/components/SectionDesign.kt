@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
 
 /**
  * Single source of truth for Settings section-card visual rhythm.
@@ -28,10 +30,10 @@ import androidx.compose.ui.unit.dp
  */
 object SectionDesign {
     /** Outer column padding from screen edge. iOS UIKit insets.left/.right = 16. */
-    val ScreenHorizontalPadding = 16.dp
+    val ScreenHorizontalPadding = NovexDimensions.PageHorizontal
 
     /** Card corner radius. iOS UITableViewCell rounded section uses ~10pt. */
-    val CardShape = RoundedCornerShape(12.dp)
+    val CardShape = RoundedCornerShape(NovexDimensions.SectionRadius)
 
     /** Distance from screen top → first section header. */
     val FirstSectionTopGap = 16.dp
@@ -52,14 +54,14 @@ object SectionDesign {
     val InterRowGap = 8.dp
 
     /** Standard row height inside a card. iOS row ≈ 44pt. */
-    val RowMinHeight = 44.dp
+    val RowMinHeight = NovexDimensions.SettingsRowMinHeight
 
     /** [T-android-settings-ui-md3] #3 Single-line text-field min height. MD3
      *  text fields are 56dp; the section rows were normalized to the same 56dp
      *  so an input field lines up with the toggle/value rows around it instead
      *  of reading as the old ~44/24dp mix. Kept separate from [RowMinHeight] so
      *  dropdowns / plain rows that intentionally sit tighter are unaffected. */
-    val TextFieldMinHeight = 56.dp
+    val TextFieldMinHeight = NovexDimensions.SettingsRowMinHeight
 
     /** Horizontal padding inside the card (from card-inner-edge to row content). */
     val RowHorizontalPadding = 16.dp
@@ -86,7 +88,7 @@ object SectionDesign {
      *  `surfaceContainerLow` here gives us the card color iOS Settings expects. */
     @Composable
     @ReadOnlyComposable
-    fun cardColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
+    fun cardColor(): Color = NovexColors.Surface
 
     /** Section background (the gray behind the cards) — match iOS systemGroupedBackground.
      *  Pairs with [cardColor]: this token is the dimmer page-level surface
@@ -94,17 +96,17 @@ object SectionDesign {
      *  `surfaceContainerLow` stand out against it. */
     @Composable
     @ReadOnlyComposable
-    fun screenBackgroundColor(): Color = MaterialTheme.colorScheme.background
+    fun screenBackgroundColor(): Color = NovexColors.Background
 
     /** Inner-card divider color — match iOS systemFill α 0.3. */
     @Composable
     @ReadOnlyComposable
-    fun dividerColor(): Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    fun dividerColor(): Color = NovexColors.Divider
 
     /** Footer caption color (gray text below cards). */
     @Composable
     @ReadOnlyComposable
-    fun footerColor(): Color = MaterialTheme.colorScheme.onSurfaceVariant
+    fun footerColor(): Color = NovexColors.SecondaryText
 }
 
 /**

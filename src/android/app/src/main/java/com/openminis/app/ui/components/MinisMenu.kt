@@ -9,7 +9,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -43,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
 
 /**
  * App-wide popup menu with a unified look: softer rounded corners, a lifted
@@ -63,7 +64,7 @@ fun MinisMenu(
     // Launcher shortcut popup's plumper corner language the user asked us to
     // mirror (the launcher itself sits near 28dp, but that reads bloated on a
     // dense 8-item list menu).
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = RoundedCornerShape(NovexDimensions.SectionRadius),
     // [T-android-popup-dark-bg] In dark mode bare `surface` is nearly the same
     // as the chat/list background, so these popups (session-row long-press menu,
     // top-bar tools menu, message-bubble menu) read as near-invisible light
@@ -71,7 +72,7 @@ fun MinisMenu(
     // in dark, a subtle shade in light) so the menu pops out — same fix already
     // validated on the text-selection toolbar (T-android-text-toolbar-dark-
     // visibility). The dark-mode `border` below adds the extra edge definition.
-    containerColor: Color = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White,
+    containerColor: Color = NovexColors.Surface,
     tonalElevation: Dp = 3.dp,
     // [T-android-menu-launcher-shadow] Analyzed against the Pixel Launcher
     // long-press popup (screenshot sample): its shadow is a WIDE, very
@@ -86,11 +87,7 @@ fun MinisMenu(
     // Light mode now also gets a hairline (was null): with the launcher-style
     // soft halo replacing the old tight shadow, the popup's edge needs a
     // subtle line of its own to stay crisply bounded on light surfaces.
-    border: BorderStroke? = if (isSystemInDarkTheme()) {
-        BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
-    } else {
-        BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.05f))
-    },
+    border: BorderStroke? = BorderStroke(0.5.dp, NovexColors.Divider),
     minWidth: Dp = 180.dp,
     // T238: when true, anchor the menu's RIGHT edge to the anchor box's
     // right edge instead of Material3 DropdownMenu's default left-anchor
@@ -213,11 +210,10 @@ fun MinisMenu(
  */
 @Composable
 fun MinisMenuDivider(modifier: Modifier = Modifier) {
-    val tint = if (isSystemInDarkTheme()) Color.White else Color.Black
     HorizontalDivider(
         modifier = modifier.padding(horizontal = 14.dp, vertical = 4.dp),
         thickness = 1.dp,
-        color = tint.copy(alpha = 0.12f),
+        color = NovexColors.Divider,
     )
 }
 

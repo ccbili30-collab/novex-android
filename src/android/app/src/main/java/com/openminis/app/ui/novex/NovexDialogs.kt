@@ -1,6 +1,5 @@
 package com.openminis.app.ui.novex
 
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.ColumnScope

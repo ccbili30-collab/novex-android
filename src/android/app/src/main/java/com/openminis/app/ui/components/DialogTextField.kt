@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.openminis.app.ui.novex.NovexColors
+import com.openminis.app.ui.novex.NovexDimensions
 
 /**
  * Outlined text input for use inside a Dialog / ModalBottomSheet /
@@ -52,7 +54,13 @@ fun DialogTextField(
     fieldModifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val colors = OutlinedTextFieldDefaults.colors()
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = NovexColors.Surface,
+        unfocusedContainerColor = NovexColors.Surface,
+        disabledContainerColor = NovexColors.SurfaceMuted,
+        focusedBorderColor = NovexColors.Primary,
+        unfocusedBorderColor = NovexColors.Divider,
+    )
     // Tighten Material's default 16dp/16dp contentPadding so the min-height
     // comfortably fits a single line of text + cursor.
     // [T-android-search-height] 8.dp of vertical padding plus the text's own
@@ -93,6 +101,17 @@ fun DialogTextField(
                 interactionSource = interactionSource,
                 colors = colors,
                 contentPadding = contentPadding,
+                container = {
+                    OutlinedTextFieldDefaults.ContainerBox(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                            NovexDimensions.SmallRadius,
+                        ),
+                    )
+                },
             )
         },
     )

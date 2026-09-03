@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +27,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 
 @Composable
@@ -85,8 +83,7 @@ internal fun NovexPageTopBar(
         Text(
             title,
             color = NovexColors.Text,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = NovexType.SectionTitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 104.dp),
@@ -117,8 +114,7 @@ internal fun NovexTopAction(
                 Text(
                     it,
                     color = NovexColors.SecondaryText,
-                    fontSize = 9.sp,
-                    lineHeight = 11.sp,
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                 )
             }
