@@ -9,6 +9,7 @@ PLANNER="$SCRIPT_DIR/android_fast_check_plan.sh"
 
 host="${NOVEX_WINDOWS_HOST:-win-zhz}"
 remote_dir="${NOVEX_WINDOWS_BUILD_DIR:-/c/Users/16014/CodexBuild/novex-fast}"
+remote_parent="${remote_dir%/*}"
 seed_dir="${NOVEX_WINDOWS_SEED_DIR:-/c/Users/16014/CodexBuild/novex-preview-home}"
 mode="auto"
 dry_run=false
@@ -81,6 +82,9 @@ case "$plan" in
     first_gradle_args=(
       "${common_gradle_args[@]}"
       :app:testStableDebugUnitTest
+    )
+    second_gradle_args=(
+      "${common_gradle_args[@]}"
       :app:compilePreviewDebugKotlin
     )
     ;;
@@ -127,8 +131,9 @@ manifest="$(mktemp)"
 hash_manifest="$(mktemp)"
 changed_manifest="$(mktemp)"
 archive="$(mktemp)"
+shared_archive="$(mktemp)"
 cleanup() {
-  rm -f "$manifest" "$hash_manifest" "$changed_manifest" "$archive"
+  rm -f "$manifest" "$hash_manifest" "$changed_manifest" "$archive" "$shared_archive"
 }
 trap cleanup EXIT
 
@@ -159,6 +164,10 @@ mkdir -p "$report_dir"
   COPYFILE_DISABLE=1 tar --no-xattrs -cf "$archive" -T "$changed_manifest"
 )
 
+# Android tests and packaging consume the shared shell-compatibility tables from
+# ../shared. Keep that small cross-platform dependency beside the fast mirror.
+COPYFILE_DISABLE=1 tar --no-xattrs -C "$REPO_ROOT/src" -cf "$shared_archive" shared/bashism
+
 sync_files="$(wc -l < "$changed_manifest" | tr -d ' ')"
 printf 'sync_files=%s\n' "$sync_files"
 
@@ -169,10 +178,12 @@ if ! git -C "$REPO_ROOT" diff --quiet -- src/android || \
 fi
 run_id="${source_sha}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 remote_archive="$remote_dir/.novex-upload-$run_id.tar"
+remote_shared_archive="$remote_dir/.novex-shared-$run_id.tar"
 remote_manifest="$remote_dir/.novex-files-$run_id"
 report_path="$report_dir/$run_id-$plan.log"
 
 ssh "$host" "mkdir -p '$remote_dir' && tee '$remote_archive' >/dev/null" < "$archive"
+ssh "$host" "tee '$remote_shared_archive' >/dev/null" < "$shared_archive"
 ssh "$host" "tee '$remote_manifest' >/dev/null" < "$manifest"
 
 quoted_first_gradle=""
@@ -192,7 +203,7 @@ ssh "$host" "
     exit 75
   fi
   cleanup_fast_check() {
-    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_manifest'
+    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest'
   }
   trap cleanup_fast_check EXIT
   if [[ ! -f local.properties && -f '$seed_dir/local.properties' ]]; then
@@ -204,8 +215,10 @@ ssh "$host" "
     done
   fi
   tar -xf '$remote_archive'
+  mkdir -p '$remote_parent'
+  tar -xf '$remote_shared_archive' -C '$remote_parent'
   mv '$remote_manifest' .novex-fast-files
-  rm -f '$remote_archive'
+  rm -f '$remote_archive' '$remote_shared_archive'
   export NOVEX_PREFER_CANONICAL_REPOSITORIES=true
   $quoted_first_gradle
   $quoted_second_gradle
