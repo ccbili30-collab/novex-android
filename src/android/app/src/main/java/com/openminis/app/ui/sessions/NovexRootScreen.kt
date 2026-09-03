@@ -62,12 +62,14 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionProfile
+import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.settings.existingMediaFile
+import com.openminis.app.ui.settings.rememberNovexNativeCardImporter
 import kotlin.math.abs
 
 private val NovexRootColors = NovexColors
@@ -292,12 +294,18 @@ private fun NovexWorldLibraryRoot(
 ) {
     val novex = rememberNovexWorkspace()
     var rows by remember { mutableStateOf<List<WorldRootRow>>(emptyList()) }
+    var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
+    val importer = rememberNovexNativeCardImporter(NovexCardKind.WORLD) { importedId ->
+        refresh++
+        onOpenWorld(importedId)
+    }
+
+    LaunchedEffect(refresh) {
         rows = novex.worlds().map { card ->
             WorldRootRow(
                 world = card.world,
@@ -327,9 +335,9 @@ private fun NovexWorldLibraryRoot(
         onQueryChange = { query = it },
     ) {
         when {
-            !loaded -> NovexLoading()
+            !loaded || importer.importing -> NovexLoading()
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的世界")
-            rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld)
+            rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld, importer.launch)
             else -> LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
@@ -341,6 +349,9 @@ private fun NovexWorldLibraryRoot(
                 }
                 item(key = "create_world") {
                     NovexCreateRow(label = "新建世界", onClick = onCreateWorld)
+                }
+                item(key = "import_world") {
+                    NovexImportRow(label = "导入世界卡", onClick = importer.launch)
                 }
             }
         }
@@ -354,12 +365,18 @@ private fun NovexCharacterLibraryRoot(
 ) {
     val novex = rememberNovexWorkspace()
     var rows by remember { mutableStateOf<List<CharacterRootRow>>(emptyList()) }
+    var refresh by remember { mutableStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
+    val importer = rememberNovexNativeCardImporter(NovexCardKind.CHARACTER) { importedId ->
+        refresh++
+        onOpenCharacter(importedId)
+    }
+
+    LaunchedEffect(refresh) {
         rows = novex.characters().map { card ->
             val aggregate = card.character
             val character = aggregate.character
@@ -387,9 +404,9 @@ private fun NovexCharacterLibraryRoot(
         onQueryChange = { query = it },
     ) {
         when {
-            !loaded -> NovexLoading()
+            !loaded || importer.importing -> NovexLoading()
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的角色")
-            rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter)
+            rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter, importer.launch)
             else -> LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
@@ -401,6 +418,9 @@ private fun NovexCharacterLibraryRoot(
                 }
                 item(key = "create_character") {
                     NovexCreateRow(label = "新建角色", onClick = onCreateCharacter)
+                }
+                item(key = "import_character") {
+                    NovexImportRow(label = "导入角色卡", onClick = importer.launch)
                 }
             }
         }
@@ -605,6 +625,24 @@ private fun NovexCharacterRow(row: CharacterRootRow, onClick: () -> Unit) {
 
 @Composable
 private fun NovexCreateRow(label: String, onClick: () -> Unit) {
+    NovexLibraryActionRow(
+        label = label,
+        iconRes = R.drawable.ic_phosphor_plus,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun NovexImportRow(label: String, onClick: () -> Unit) {
+    NovexLibraryActionRow(
+        label = label,
+        iconRes = R.drawable.ic_phosphor_arrow_up,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun NovexLibraryActionRow(label: String, iconRes: Int, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -615,7 +653,7 @@ private fun NovexCreateRow(label: String, onClick: () -> Unit) {
             .padding(horizontal = 8.dp),
     ) {
         Icon(
-            painterResource(R.drawable.ic_phosphor_plus),
+            painterResource(iconRes),
             contentDescription = null,
             tint = NovexRootColors.Text,
             modifier = Modifier.size(20.dp),
@@ -626,7 +664,7 @@ private fun NovexCreateRow(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit) {
+private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit, onImportWorld: () -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -670,11 +708,14 @@ private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit) {
         item(key = "create_world") {
             NovexCreateRow(label = "新建世界", onClick = onCreateWorld)
         }
+        item(key = "import_world") {
+            NovexImportRow(label = "导入世界卡", onClick = onImportWorld)
+        }
     }
 }
 
 @Composable
-private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit) {
+private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit, onImportCharacter: () -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 108.dp),
         modifier = Modifier.fillMaxSize(),
@@ -720,6 +761,9 @@ private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit) {
         }
         item(key = "create_character") {
             NovexCreateRow(label = "新建角色", onClick = onCreateCharacter)
+        }
+        item(key = "import_character") {
+            NovexImportRow(label = "导入角色卡", onClick = onImportCharacter)
         }
     }
 }

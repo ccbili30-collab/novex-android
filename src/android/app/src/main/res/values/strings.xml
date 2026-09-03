@@ -93,8 +93,8 @@
     <string name="resume_action">Resume</string>
 
     <!-- T46: Session-list search bar -->
-    <string name="search_chats_placeholder">Search chats…</string>
-    <string name="search_no_results">No results for \"%1$s\"</string>
+    <string name="search_chats_placeholder">搜索对话…</string>
+    <string name="search_no_results">未找到“%1$s”的相关对话</string>
 
     <!-- T14: Per-tool stop button (rendered on RUNNING/STREAMING tool cards) -->
     <string name="stop_tool">Stop tool</string>

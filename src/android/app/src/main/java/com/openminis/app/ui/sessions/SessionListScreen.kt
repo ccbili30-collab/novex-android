@@ -681,27 +681,6 @@ fun SessionListScreen(
                             )
                         }
                     } else {
-                        if (!showBottomActions) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier
-                                    .width(52.dp)
-                                    .height(48.dp)
-                                    .clickable { homeFilter = SessionHomeFilter.CREATION },
-                            ) {
-                                Icon(
-                                    painterResource(R.drawable.ic_phosphor_sparkle),
-                                    contentDescription = "帮我创作",
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Text(
-                                    "帮我创作",
-                                    fontSize = 9.sp,
-                                    lineHeight = 10.sp,
-                                )
-                            }
-                        }
                         IconButton(onClick = {
                             if (isSearchActive) {
                                 viewModel.searchQuery.value = ""
