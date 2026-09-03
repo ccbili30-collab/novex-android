@@ -54,6 +54,7 @@ import com.openminis.app.ui.sandbox.FilePreviewScreen
 import com.openminis.app.ui.sandbox.RootfsManagementScreen
 import com.openminis.app.ui.settings.EnvironmentVariablesScreen
 import com.openminis.app.ui.settings.AppearanceScreen
+import com.openminis.app.ui.settings.ThemeColorScreen
 import com.openminis.app.ui.settings.SettingsScreen
 import com.openminis.app.ui.settings.SystemPermissionsScreen
 import com.openminis.app.ui.settings.SessionStorageDetailScreen
@@ -182,6 +183,7 @@ object Routes {
     const val LOGS = "logs"
     const val LOG_DETAIL = "log_detail/{fileName}"
     const val APPEARANCE = "appearance"
+    const val THEME_COLORS = "appearance/theme_colors"
     const val BACKGROUND = "background"
     const val ABOUT = "about"
     const val ONBOARDING_MODELS = "onboarding_models"
@@ -1458,6 +1460,13 @@ fun AppNavigation(
 
         composable(Routes.APPEARANCE) {
             AppearanceScreen(
+                onBack = { navController.safePopBackStack() },
+                onColorThemeClick = { navController.safeNavigate(Routes.THEME_COLORS) },
+            )
+        }
+
+        composable(Routes.THEME_COLORS) {
+            ThemeColorScreen(
                 onBack = { navController.safePopBackStack() },
             )
         }

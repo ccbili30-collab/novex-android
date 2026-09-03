@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Launch
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.ScreenLockPortrait
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -173,6 +174,7 @@ fun fontScaleForLevel(level: Int): Float {
 fun AppearanceScreen(
     onBack: () -> Unit,
     onThemeChanged: (Int) -> Unit = {},
+    onColorThemeClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val prefs = remember { getAppearancePrefs(context) }
@@ -232,9 +234,17 @@ fun AppearanceScreen(
                             tint = row.tint,
                         )
                     },
-                    showDivider = idx < themeRows.size - 1,
+                    showDivider = true,
                 )
             }
+            SettingsRow(
+                icon = Icons.Outlined.Palette,
+                iconColor = tileBlue,
+                title = stringResource(R.string.appearance_color_theme_title),
+                subtitle = stringResource(R.string.appearance_color_theme_subtitle),
+                onClick = onColorThemeClick,
+                showDivider = false,
+            )
         }
 
         // -- Return Key (mirrors iOS AppearanceSettingsView stringResource(R.string.appearance_section_return_key) section) --

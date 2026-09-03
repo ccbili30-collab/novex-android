@@ -154,11 +154,24 @@ private val MinisShapes = Shapes(
 fun MinisTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     fontScale: Float = 1f,
+    themeColors: AppThemeColors = ThemeColorPresets.default.colors,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val variant = themeColors.variant(
+        if (darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
+    )
+    val usesNovexDefaults = themeColors == ThemeColorPresets.default.colors
+    val colorScheme = if (usesNovexDefaults) {
+        if (darkTheme) DarkColorScheme else LightColorScheme
+    } else {
+        themedColorScheme(variant)
+    }
     val typography = scaledTypography(fontScale)
-    val chatPalette = if (darkTheme) DarkChatPalette else LightChatPalette
+    val chatPalette = if (usesNovexDefaults) {
+        if (darkTheme) DarkChatPalette else LightChatPalette
+    } else {
+        themedChatPalette(variant)
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,
@@ -167,6 +180,220 @@ fun MinisTheme(
     ) {
         CompositionLocalProvider(LocalChatPalette provides chatPalette, content = content)
     }
+}
+
+/** Applies draft colors without replacing the caller's typography or shapes. */
+@Composable
+fun MinisThemePreview(
+    darkTheme: Boolean,
+    themeColors: AppThemeColors,
+    content: @Composable () -> Unit,
+) {
+    val variant = themeColors.variant(
+        if (darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
+    )
+    val usesNovexDefaults = themeColors == ThemeColorPresets.default.colors
+    val parentTypography = MaterialTheme.typography
+    val parentShapes = MaterialTheme.shapes
+    MaterialTheme(
+        colorScheme = if (usesNovexDefaults) {
+            if (darkTheme) DarkColorScheme else LightColorScheme
+        } else {
+            themedColorScheme(variant)
+        },
+        typography = parentTypography,
+        shapes = parentShapes,
+    ) {
+        CompositionLocalProvider(
+            LocalChatPalette provides if (usesNovexDefaults) {
+                if (darkTheme) DarkChatPalette else LightChatPalette
+            } else {
+                themedChatPalette(variant)
+            },
+            content = content,
+        )
+    }
+}
+
+private fun themedColorScheme(
+    colors: ThemeVariantColors,
+) = run {
+    val darkSurface = relativeLuminance(colors.background) < 0.35
+    val accent = Color(colors.accent)
+    val background = Color(colors.background)
+    val foreground = Color(colors.foreground)
+    val onAccent = Color(bestOnColor(colors.accent))
+    val primaryContainerInt = blendOpaqueColors(
+        colors.accent,
+        colors.background,
+        if (darkSurface) 0.30f else 0.16f,
+    )
+    val secondaryInt = blendOpaqueColors(colors.accent, colors.foreground, 0.68f)
+    val secondaryContainerInt = blendOpaqueColors(
+        colors.accent,
+        colors.background,
+        if (darkSurface) 0.22f else 0.11f,
+    )
+    val surfaceLowInt = blendOpaqueColors(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.10f else 0.025f,
+    )
+    val surfaceInt = blendOpaqueColors(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.14f else 0.045f,
+    )
+    val surfaceHighInt = blendOpaqueColors(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.19f else 0.075f,
+    )
+    val onSurfaceVariantInt = blendOpaqueColors(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.76f else 0.72f,
+    )
+    val outlineInt = blendOpaqueColors(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.38f else 0.22f,
+    )
+
+    val commonPrimaryContainer = Color(primaryContainerInt)
+    val commonSecondary = Color(secondaryInt)
+    val commonSecondaryContainer = Color(secondaryContainerInt)
+    val commonSurfaceLow = Color(surfaceLowInt)
+    val commonSurface = Color(surfaceInt)
+    val commonSurfaceHigh = Color(surfaceHighInt)
+    val commonOnSurfaceVariant = Color(onSurfaceVariantInt)
+    val commonOutline = Color(outlineInt)
+
+    if (darkSurface) {
+        darkColorScheme(
+            primary = accent,
+            onPrimary = onAccent,
+            primaryContainer = commonPrimaryContainer,
+            onPrimaryContainer = Color(bestOnColor(primaryContainerInt)),
+            secondary = commonSecondary,
+            onSecondary = Color(bestOnColor(secondaryInt)),
+            secondaryContainer = commonSecondaryContainer,
+            onSecondaryContainer = Color(bestOnColor(secondaryContainerInt)),
+            tertiary = commonSecondary,
+            onTertiary = Color(bestOnColor(secondaryInt)),
+            tertiaryContainer = commonSecondaryContainer,
+            onTertiaryContainer = Color(bestOnColor(secondaryContainerInt)),
+            background = background,
+            onBackground = foreground,
+            surface = background,
+            onSurface = foreground,
+            surfaceVariant = commonSurface,
+            onSurfaceVariant = commonOnSurfaceVariant,
+            surfaceContainerLowest = background,
+            surfaceContainerLow = commonSurfaceLow,
+            surfaceContainer = commonSurface,
+            surfaceContainerHigh = commonSurfaceHigh,
+            surfaceContainerHighest = commonSurfaceHigh,
+            outline = commonOutline,
+            outlineVariant = commonOutline,
+            error = DarkColorScheme.error,
+            onError = DarkColorScheme.onError,
+            errorContainer = DarkColorScheme.errorContainer,
+            onErrorContainer = DarkColorScheme.onErrorContainer,
+        )
+    } else {
+        lightColorScheme(
+            primary = accent,
+            onPrimary = onAccent,
+            primaryContainer = commonPrimaryContainer,
+            onPrimaryContainer = Color(bestOnColor(primaryContainerInt)),
+            secondary = commonSecondary,
+            onSecondary = Color(bestOnColor(secondaryInt)),
+            secondaryContainer = commonSecondaryContainer,
+            onSecondaryContainer = Color(bestOnColor(secondaryContainerInt)),
+            tertiary = commonSecondary,
+            onTertiary = Color(bestOnColor(secondaryInt)),
+            tertiaryContainer = commonSecondaryContainer,
+            onTertiaryContainer = Color(bestOnColor(secondaryContainerInt)),
+            background = background,
+            onBackground = foreground,
+            surface = background,
+            onSurface = foreground,
+            surfaceVariant = commonSurface,
+            onSurfaceVariant = commonOnSurfaceVariant,
+            surfaceContainerLowest = background,
+            surfaceContainerLow = commonSurfaceLow,
+            surfaceContainer = commonSurface,
+            surfaceContainerHigh = commonSurfaceHigh,
+            surfaceContainerHighest = commonSurfaceHigh,
+            outline = commonOutline,
+            outlineVariant = commonOutline,
+            error = LightColorScheme.error,
+            onError = LightColorScheme.onError,
+            errorContainer = LightColorScheme.errorContainer,
+            onErrorContainer = LightColorScheme.onErrorContainer,
+        )
+    }
+}
+
+private fun themedChatPalette(
+    colors: ThemeVariantColors,
+): ChatPalette {
+    val darkSurface = relativeLuminance(colors.background) < 0.35
+    val base = if (darkSurface) DarkChatPalette else LightChatPalette
+    fun themedColor(foreground: Int, background: Int, fraction: Float): Color =
+        Color(blendOpaqueColors(foreground, background, fraction))
+
+    val background = Color(colors.background)
+    val foreground = Color(colors.foreground)
+    val accent = Color(colors.accent)
+    val secondary = themedColor(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.14f else 0.045f,
+    )
+    val elevated = themedColor(
+        colors.foreground,
+        colors.background,
+        if (darkSurface) 0.20f else 0.08f,
+    )
+    val subtle = themedColor(colors.foreground, colors.background, if (darkSurface) 0.76f else 0.68f)
+    val faint = themedColor(colors.foreground, colors.background, if (darkSurface) 0.42f else 0.34f)
+    val border = themedColor(colors.foreground, colors.background, if (darkSurface) 0.35f else 0.20f)
+    val userBubble = themedColor(
+        colors.accent,
+        colors.background,
+        if (darkSurface) 0.34f else 0.14f,
+    )
+
+    return base.copy(
+        background = background,
+        secondaryBg = secondary,
+        inputBg = elevated,
+        inputIconBg = secondary,
+        inputIconBorder = border,
+        inputBorder = border,
+        primaryText = foreground,
+        secondaryText = subtle,
+        tertiaryText = faint,
+        disabledText = faint.copy(alpha = 0.55f),
+        userBubble = userBubble,
+        toolBg = secondary,
+        toolBorder = border,
+        toolCapsuleBg = elevated,
+        separator = border,
+        sendButton = accent,
+        sendButtonDisabled = faint,
+        inlineCodeBg = elevated,
+        link = accent,
+        thinking = accent,
+        tableBorder = border,
+        toastBg = userBubble,
+        thumbnailBorder = border,
+        sheetHeaderBg = elevated,
+        sheetHeaderBorder = border,
+        fabAccent = themedColor(colors.accent, colors.background, if (darkSurface) 0.30f else 0.18f),
+    )
 }
 
 private fun TextStyle.scale(factor: Float): TextStyle =

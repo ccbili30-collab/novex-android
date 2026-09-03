@@ -22,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
@@ -48,7 +49,11 @@ import com.openminis.app.ui.settings.PREF_APPEARANCE
 import com.openminis.app.ui.settings.getAppearancePrefs
 import com.openminis.app.ui.settings.fontScaleForLevel
 import com.openminis.app.ui.settings.keepScreenAwakeEnabled
+import com.openminis.app.ui.theme.AppThemeColorPreferences
+import com.openminis.app.ui.theme.KEY_APP_THEME_COLORS
 import com.openminis.app.ui.theme.MinisTheme
+import com.openminis.app.ui.theme.ThemeVariantMode
+import com.openminis.app.ui.theme.relativeLuminance
 
 private const val KEY_CURRENT_CHAT_SESSION_ID = "minis.current_chat_session_id"
 
@@ -483,12 +488,14 @@ class MainActivity : ComponentActivity() {
             val prefs = remember { getAppearancePrefs(this) }
             var themeMode by remember { mutableIntStateOf(prefs.getInt(KEY_THEME_MODE, 0)) }
             var appBaseLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_APP_BASE, 0)) }
+            var themeColors by remember { mutableStateOf(AppThemeColorPreferences.read(prefs)) }
 
             DisposableEffect(prefs) {
                 val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
                     when (key) {
                         KEY_THEME_MODE -> themeMode = sp.getInt(KEY_THEME_MODE, 0)
                         KEY_FONT_APP_BASE -> appBaseLevel = sp.getInt(KEY_FONT_APP_BASE, 0)
+                        KEY_APP_THEME_COLORS -> themeColors = AppThemeColorPreferences.read(sp)
                         KEY_KEEP_SCREEN_AWAKE -> applyKeepScreenAwakeFlag(
                             SessionActivityTracker.activeSessions.value.isNotEmpty()
                         )
@@ -504,9 +511,13 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemInDarkTheme()
             }
             val fontScale = fontScaleForLevel(appBaseLevel)
+            val activeThemeColors = themeColors.variant(
+                if (darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
+            )
+            val backgroundIsDark = relativeLuminance(activeThemeColors.background) < 0.5
 
             SideEffect {
-                val barStyle = if (darkTheme) {
+                val barStyle = if (backgroundIsDark) {
                     SystemBarStyle.dark(Color.TRANSPARENT)
                 } else {
                     // T205: SystemBarStyle.light(...) auto-applies a ~30% black
@@ -525,7 +536,11 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
             }
 
-            MinisTheme(darkTheme = darkTheme, fontScale = fontScale) {
+            MinisTheme(
+                darkTheme = darkTheme,
+                fontScale = fontScale,
+                themeColors = themeColors,
+            ) {
                 val navController = rememberNavController().also { this.navController = it }
 
                 DisposableEffect(navController) {
