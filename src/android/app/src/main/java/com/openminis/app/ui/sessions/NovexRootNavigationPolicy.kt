@@ -11,6 +11,14 @@ internal enum class NovexRootSpace {
     CONVERSATIONS,
     WORLDS,
     CHARACTERS,
+    INTERACTIVE_FICTION,
+}
+
+internal fun novexRootSpaceLabel(space: NovexRootSpace): String = when (space) {
+    NovexRootSpace.CONVERSATIONS -> "会话"
+    NovexRootSpace.WORLDS -> "世界"
+    NovexRootSpace.CHARACTERS -> "角色"
+    NovexRootSpace.INTERACTIVE_FICTION -> "文游"
 }
 
 internal enum class NovexRootItemForm {

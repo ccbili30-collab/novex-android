@@ -74,6 +74,14 @@ class NovexRootNavigationPolicyTest {
     }
 
     @Test
+    fun everyRootDestinationOwnsOneStableUserFacingLabel() {
+        assertEquals(
+            listOf("会话", "世界", "角色", "文游"),
+            NovexRootSpace.entries.map(::novexRootSpaceLabel),
+        )
+    }
+
+    @Test
     fun compactSwitcherExpandsOnlyTheSelectedDestinationInItsFixedOrder() {
         val result = NovexRootNavigationState(
             selected = NovexRootSpace.WORLDS,
@@ -85,13 +93,14 @@ class NovexRootNavigationPolicyTest {
                 NovexRootItemForm.DOT,
                 NovexRootItemForm.LABEL,
                 NovexRootItemForm.DOT,
+                NovexRootItemForm.DOT,
             ),
             result,
         )
     }
 
     @Test
-    fun expandedSwitcherShowsAllThreeDestinationLabelsInFixedOrder() {
+    fun expandedSwitcherShowsAllFourDestinationLabelsInFixedOrder() {
         val result = NovexRootNavigationState(
             selected = NovexRootSpace.CHARACTERS,
             expanded = true,
@@ -99,6 +108,7 @@ class NovexRootNavigationPolicyTest {
 
         assertEquals(
             listOf(
+                NovexRootItemForm.LABEL,
                 NovexRootItemForm.LABEL,
                 NovexRootItemForm.LABEL,
                 NovexRootItemForm.LABEL,
@@ -139,8 +149,8 @@ class NovexRootNavigationPolicyTest {
             NovexRootNavigationState().move(-1).selected,
         )
         assertEquals(
-            NovexRootSpace.CHARACTERS,
-            NovexRootNavigationState(NovexRootSpace.CHARACTERS).move(1).selected,
+            NovexRootSpace.INTERACTIVE_FICTION,
+            NovexRootNavigationState(NovexRootSpace.INTERACTIVE_FICTION).move(1).selected,
         )
         assertEquals(
             NovexRootSpace.WORLDS,
@@ -189,12 +199,13 @@ class NovexRootNavigationPolicyTest {
     }
 
     @Test
-    fun dockDragMapsTheWholeWidthToThreeDestinations() {
+    fun dockDragMapsTheWholeWidthToFourDestinations() {
         assertEquals(NovexRootSpace.CONVERSATIONS, novexRootSpaceAtOffset(-20f, 240f))
         assertEquals(NovexRootSpace.CONVERSATIONS, novexRootSpaceAtOffset(20f, 240f))
-        assertEquals(NovexRootSpace.WORLDS, novexRootSpaceAtOffset(120f, 240f))
-        assertEquals(NovexRootSpace.CHARACTERS, novexRootSpaceAtOffset(220f, 240f))
-        assertEquals(NovexRootSpace.CHARACTERS, novexRootSpaceAtOffset(280f, 240f))
+        assertEquals(NovexRootSpace.WORLDS, novexRootSpaceAtOffset(75f, 240f))
+        assertEquals(NovexRootSpace.CHARACTERS, novexRootSpaceAtOffset(135f, 240f))
+        assertEquals(NovexRootSpace.INTERACTIVE_FICTION, novexRootSpaceAtOffset(220f, 240f))
+        assertEquals(NovexRootSpace.INTERACTIVE_FICTION, novexRootSpaceAtOffset(280f, 240f))
     }
 
     @Test
@@ -205,10 +216,14 @@ class NovexRootNavigationPolicyTest {
         )
         assertEquals(
             NovexRootSpace.WORLDS,
-            novexRootSpaceAtPageX(x = 450f, pageWidth = 900f, dockWidth = 600f),
+            novexRootSpaceAtPageX(x = 380f, pageWidth = 900f, dockWidth = 600f),
         )
         assertEquals(
             NovexRootSpace.CHARACTERS,
+            novexRootSpaceAtPageX(x = 560f, pageWidth = 900f, dockWidth = 600f),
+        )
+        assertEquals(
+            NovexRootSpace.INTERACTIVE_FICTION,
             novexRootSpaceAtPageX(x = 680f, pageWidth = 900f, dockWidth = 600f),
         )
     }

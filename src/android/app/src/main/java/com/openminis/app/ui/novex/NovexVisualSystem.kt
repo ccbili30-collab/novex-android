@@ -122,7 +122,7 @@ internal object NovexDimensions {
     val ActionIconTile = 30.dp
 }
 
-/** Shared outer rail for conversation, world and character page content. */
+/** Shared outer rail for conversation, world, character and interactive-fiction page content. */
 internal fun novexPagePadding(bottom: Dp = 0.dp): PaddingValues = PaddingValues(
     start = NovexDimensions.PageHorizontal,
     end = NovexDimensions.PageHorizontal,

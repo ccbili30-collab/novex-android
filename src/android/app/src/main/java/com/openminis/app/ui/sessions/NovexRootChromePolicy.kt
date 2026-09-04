@@ -25,11 +25,7 @@ internal enum class NovexRootBackAction {
 }
 
 internal fun novexRootChrome(space: NovexRootSpace): NovexRootChrome = NovexRootChrome(
-    title = when (space) {
-        NovexRootSpace.CONVERSATIONS -> "Novex"
-        NovexRootSpace.WORLDS -> "世界"
-        NovexRootSpace.CHARACTERS -> "角色"
-    },
+    title = if (space == NovexRootSpace.CONVERSATIONS) "Novex" else novexRootSpaceLabel(space),
     actions = listOf(
         NovexRootTopAction.SETTINGS,
         NovexRootTopAction.UPDATE,

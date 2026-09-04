@@ -144,6 +144,9 @@ fun NovexRootScreen(
                                 onCreateCharacter = onCreateCharacter,
                                 onOpenSettings = onOpenSettings,
                             )
+                            NovexRootSpace.INTERACTIVE_FICTION -> NovexInteractiveFictionLibraryRoot(
+                                onOpenSettings = onOpenSettings,
+                            )
                         }
                     }
                 }
@@ -217,11 +220,6 @@ private fun NovexRootDock(
                 label = "根导航形态",
             ) { form ->
                 if (form == NovexRootItemForm.LABEL) {
-                    val label = when (destination) {
-                        NovexRootSpace.CONVERSATIONS -> "会话"
-                        NovexRootSpace.WORLDS -> "世界"
-                        NovexRootSpace.CHARACTERS -> "角色"
-                    }
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -230,7 +228,7 @@ private fun NovexRootDock(
                             .padding(horizontal = 14.dp),
                     ) {
                         Text(
-                            label,
+                            novexRootSpaceLabel(destination),
                             color = NovexRootColors.Text,
                             fontSize = 15.sp,
                             fontWeight = if (selected == destination) FontWeight.SemiBold else FontWeight.Medium,
@@ -242,11 +240,7 @@ private fun NovexRootDock(
                         modifier = Modifier
                             .size(48.dp)
                             .semantics {
-                                contentDescription = when (destination) {
-                                    NovexRootSpace.CONVERSATIONS -> "切换到会话"
-                                    NovexRootSpace.WORLDS -> "切换到世界"
-                                    NovexRootSpace.CHARACTERS -> "切换到角色"
-                                }
+                                contentDescription = "切换到${novexRootSpaceLabel(destination)}"
                             }
                             .clickable { onSelect(destination) },
                     ) {

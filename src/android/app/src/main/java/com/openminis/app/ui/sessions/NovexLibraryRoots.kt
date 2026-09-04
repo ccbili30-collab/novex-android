@@ -296,6 +296,34 @@ internal fun NovexCharacterLibraryRoot(
 }
 
 @Composable
+internal fun NovexInteractiveFictionLibraryRoot(
+    onOpenSettings: () -> Unit,
+) {
+    var searching by rememberSaveable { mutableStateOf(false) }
+    val searchState = rememberNovexLibrarySearchState()
+
+    BackHandler(enabled = searching) {
+        searching = false
+        searchState.clear()
+    }
+
+    NovexLibraryFrame(
+        space = NovexRootSpace.INTERACTIVE_FICTION,
+        searching = searching,
+        searchState = searchState,
+        searchDescription = "搜索文游",
+        onSearchToggle = {
+            searching = !searching
+            if (!searching) searchState.clear()
+        },
+        onOpenSettings = onOpenSettings,
+        createItems = emptyList(),
+    ) {
+        NovexEmptyMessage("文游项目将在下一检查点接入")
+    }
+}
+
+@Composable
 private fun NovexLibraryFrame(
     space: NovexRootSpace,
     searching: Boolean,

@@ -21,6 +21,7 @@ class NovexRootChromePolicyTest {
         assertEquals("Novex", novexRootChrome(NovexRootSpace.CONVERSATIONS).title)
         assertEquals("世界", novexRootChrome(NovexRootSpace.WORLDS).title)
         assertEquals("角色", novexRootChrome(NovexRootSpace.CHARACTERS).title)
+        assertEquals("文游", novexRootChrome(NovexRootSpace.INTERACTIVE_FICTION).title)
     }
 
     @Test
@@ -36,7 +37,7 @@ class NovexRootChromePolicyTest {
     }
 
     @Test
-    fun backFromWorldOrCharacterReturnsToConversationsBeforeLeavingRoot() {
+    fun backFromAnyLibraryReturnsToConversationsBeforeLeavingRoot() {
         assertEquals(
             NovexRootBackAction.SWITCH_TO_CONVERSATIONS,
             novexRootBackAction(NovexRootSpace.WORLDS, searchActive = false),
@@ -44,6 +45,10 @@ class NovexRootChromePolicyTest {
         assertEquals(
             NovexRootBackAction.SWITCH_TO_CONVERSATIONS,
             novexRootBackAction(NovexRootSpace.CHARACTERS, searchActive = false),
+        )
+        assertEquals(
+            NovexRootBackAction.SWITCH_TO_CONVERSATIONS,
+            novexRootBackAction(NovexRootSpace.INTERACTIVE_FICTION, searchActive = false),
         )
         assertEquals(
             NovexRootBackAction.LEAVE_APPLICATION,

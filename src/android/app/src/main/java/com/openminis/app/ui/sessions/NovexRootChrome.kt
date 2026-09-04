@@ -1,11 +1,14 @@
 package com.openminis.app.ui.sessions
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 import com.openminis.app.ui.novex.NovexIconAction
 import com.openminis.app.ui.novex.NovexActionMenu
@@ -18,7 +21,7 @@ internal data class NovexCreateMenuItem(
     val onClick: () -> Unit,
 )
 
-/** One root toolbar shared by conversation, world and character directories. */
+/** One root toolbar shared by conversation, world, character and interactive-fiction directories. */
 @Composable
 internal fun NovexRootPageHeader(
     space: NovexRootSpace,
@@ -46,27 +49,29 @@ internal fun NovexRootPageHeader(
                 contentDescription = if (searching) "关闭$searchDescription" else searchDescription,
                 onClick = onSearchToggle,
             )
-            Box {
-                NovexIconAction(
-                    icon = R.drawable.ic_phosphor_plus,
-                    contentDescription = "新建",
-                    onClick = { createMenuExpanded = true },
-                )
-                NovexActionMenu(
-                    expanded = createMenuExpanded,
-                    onDismissRequest = { createMenuExpanded = false },
-                    actions = createItems.map { item ->
-                        NovexMenuAction(
-                            label = item.label,
-                            icon = if (item.label.startsWith("导入")) {
-                                R.drawable.ic_phosphor_download_simple
-                            } else {
-                                R.drawable.ic_phosphor_plus
-                            },
-                            onClick = item.onClick,
-                        )
-                    },
-                )
+            Box(Modifier.size(48.dp)) {
+                if (createItems.isNotEmpty()) {
+                    NovexIconAction(
+                        icon = R.drawable.ic_phosphor_plus,
+                        contentDescription = "新建",
+                        onClick = { createMenuExpanded = true },
+                    )
+                    NovexActionMenu(
+                        expanded = createMenuExpanded,
+                        onDismissRequest = { createMenuExpanded = false },
+                        actions = createItems.map { item ->
+                            NovexMenuAction(
+                                label = item.label,
+                                icon = if (item.label.startsWith("导入")) {
+                                    R.drawable.ic_phosphor_download_simple
+                                } else {
+                                    R.drawable.ic_phosphor_plus
+                                },
+                                onClick = item.onClick,
+                            )
+                        },
+                    )
+                }
             }
         },
     )
