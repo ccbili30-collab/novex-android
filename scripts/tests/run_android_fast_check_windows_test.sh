@@ -29,3 +29,25 @@ if [[ "$output" == *":app:testStableDebugUnitTest"* ]]; then
 fi
 
 echo "android Windows fast-check runner tests passed"
+
+domain_output="$($RUNNER \
+  --dry-run \
+  --mode auto \
+  --changed-file src/android/app/src/main/java/com/openminis/app/novex/domain/NovexConversationConfiguration.kt)"
+
+for expected in \
+  "plan=novex-domain" \
+  "coverage=preview-domain-tests" \
+  "com.openminis.app.novex.domain.*"; do
+  if [[ "$domain_output" != *"$expected"* ]]; then
+    echo "missing domain dry-run output: $expected" >&2
+    exit 1
+  fi
+done
+
+if [[ "$domain_output" == *":app:testStableDebugUnitTest"* ]]; then
+  echo "Novex domain fast checks must not run stable tests" >&2
+  exit 1
+fi
+
+echo "android Windows domain fast-check runner tests passed"

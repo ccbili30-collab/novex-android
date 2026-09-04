@@ -20,6 +20,10 @@ assert_plan novex-ui auto \
   src/android/app/src/main/java/com/openminis/app/ui/novex/NovexContentPage.kt \
   src/android/app/src/test/java/com/openminis/app/ui/novex/NovexVisualSystemTest.kt
 
+assert_plan novex-domain auto \
+  src/android/app/src/main/java/com/openminis/app/novex/domain/NovexConversationConfiguration.kt \
+  src/android/app/src/test/java/com/openminis/app/novex/domain/NovexConversationConfigurationTest.kt
+
 assert_plan novex-ui auto \
   src/android/app/src/main/java/com/openminis/app/ui/sessions/NovexRootScreen.kt \
   src/android/app/src/main/java/com/openminis/app/ui/settings/WorldCatalogScreens.kt \
@@ -32,5 +36,6 @@ assert_plan skip auto CONTEXT.md .github/release-notes/v0.2.8.md
 
 assert_plan full full src/android/app/src/main/java/com/openminis/app/ui/novex/NovexContentPage.kt
 assert_plan novex-ui novex-ui src/android/app/build.gradle.kts
+assert_plan novex-domain novex-domain src/android/app/build.gradle.kts
 
 echo "android fast-check planner tests passed"

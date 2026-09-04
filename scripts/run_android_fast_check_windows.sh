@@ -16,7 +16,7 @@ dry_run=false
 declare -a changed_files=()
 
 usage() {
-  echo "Usage: $0 [--mode auto|novex-ui|full|skip] [--changed-file PATH] [--dry-run]"
+  echo "Usage: $0 [--mode auto|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--dry-run]"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -99,6 +99,14 @@ case "$plan" in
       --tests 'com.openminis.app.ui.settings.World*'
       --tests 'com.openminis.app.ui.settings.Character*'
       --tests 'com.openminis.app.ui.settings.NovexNativeCard*'
+    )
+    ;;
+  novex-domain)
+    coverage="preview-domain-tests"
+    first_gradle_args=(
+      "${common_gradle_args[@]}"
+      :app:testPreviewDebugUnitTest
+      --tests 'com.openminis.app.novex.domain.*'
     )
     ;;
   *)

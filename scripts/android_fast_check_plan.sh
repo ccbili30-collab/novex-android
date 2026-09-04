@@ -6,7 +6,7 @@ mode="${1:-auto}"
 shift || true
 
 case "$mode" in
-  full | novex-ui | skip)
+  full | novex-ui | novex-domain | skip)
     printf '%s\n' "$mode"
     exit 0
     ;;
@@ -21,6 +21,32 @@ esac
 if [[ "$#" -eq 0 ]]; then
   printf '%s\n' "full"
   exit 0
+fi
+
+domain_only=true
+for path in "$@"; do
+  case "$path" in
+    AGENTS.md | CONTEXT.md | README.md | docs/* | .github/release-notes/* | \
+    src/android/app/src/main/java/com/openminis/app/novex/domain/* | \
+    src/android/app/src/test/java/com/openminis/app/novex/domain/*)
+      ;;
+    *)
+      domain_only=false
+      break
+      ;;
+  esac
+done
+
+if $domain_only; then
+  for path in "$@"; do
+    case "$path" in
+      src/android/app/src/main/java/com/openminis/app/novex/domain/* | \
+      src/android/app/src/test/java/com/openminis/app/novex/domain/*)
+        printf '%s\n' "novex-domain"
+        exit 0
+        ;;
+    esac
+  done
 fi
 
 for path in "$@"; do
