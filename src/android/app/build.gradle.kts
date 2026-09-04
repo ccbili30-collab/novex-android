@@ -39,7 +39,7 @@ val hasReleaseSigningEnvironment = listOf(
 val novexVersionName = System.getenv("NOVEX_VERSION_NAME")
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
-    ?: "0.2.14"
+    ?: "0.2.15"
 
 fun versionCodeFor(versionName: String): Int {
     val match = Regex("""^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$""")
