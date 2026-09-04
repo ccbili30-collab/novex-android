@@ -846,6 +846,13 @@ fun AppNavigation(
                     navController.safeNavigate(Routes.interactiveFictionEdit(projectId))
                 },
                 onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
+                onStartConversation = {
+                    navController.safeNavigate(
+                        Routes.chat("__new__game__${projectId}__${java.util.UUID.randomUUID()}"),
+                    ) {
+                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
+                    }
+                },
                 onShareToConversation = { fullText ->
                     val share = com.openminis.app.share.PendingShare(
                         items = listOf(

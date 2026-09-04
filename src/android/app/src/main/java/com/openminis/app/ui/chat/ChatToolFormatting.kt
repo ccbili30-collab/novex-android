@@ -87,7 +87,8 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "present_choices" -> "提供选项"
     "render_panel", "panel", "present_system_panel" -> "显示资料面板"
     "save_checkpoint" -> "保存进度"
-    "register_controls" -> "更新世界功能"
+    "register_controls" -> "更新快捷操作"
+    "update_playthrough_state" -> "更新本局状态"
     else -> "处理内容"
 }
 

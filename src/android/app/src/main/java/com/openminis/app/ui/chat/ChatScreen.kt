@@ -51,6 +51,11 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.openminis.app.novex.domain.ConversationControlBehavior
+import com.openminis.app.novex.domain.PlaythroughValue
+import com.openminis.app.ui.novex.NovexNoticeDialog
+import com.openminis.app.ui.novex.NovexSelectionAction
+import com.openminis.app.ui.novex.NovexSelectionSheet
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -506,6 +511,7 @@ fun ChatScreen(
         }
     }
     val novexControls by viewModel.novexControls.collectAsState()
+    val novexControlView by viewModel.novexControlView.collectAsState()
 
     // ─── T51: Share Injection + Move-to capsule ───────────────────────
     // Drain any pending share buffered by ShareCoordinator (cold start =
@@ -4507,32 +4513,17 @@ fun ChatScreen(
 
                         if (novexControls.isNotEmpty()) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            Box {
-                                InputCircleButton(onClick = { showNovexControls = true }) {
-                                    Text(
-                                        "^",
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                MinisMenu(
-                                    expanded = showNovexControls,
-                                    onDismissRequest = { showNovexControls = false },
-                                ) {
-                                    novexControls.forEach { control ->
-                                        DropdownMenuItem(
-                                            text = { Text(control.label) },
-                                            onClick = {
-                                                showNovexControls = false
-                                                viewModel.runNovexControl(control)
-                                            },
-                                        )
-                                    }
-                                }
+                            InputCircleButton(onClick = { showNovexControls = true }) {
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(
+                                        R.drawable.ic_phosphor_chart_bar,
+                                    ),
+                                    contentDescription = "文游快捷操作",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
                             }
                         }
-
                         // T187: Exit Edit Mode pill, only while editingMessageId
                         // is non-null. Tap clears the edit flag + composer text
                         // without truncating history. iOS parity:
@@ -5085,6 +5076,39 @@ fun ChatScreen(
                 )
             }
 
+            if (showNovexControls) {
+                NovexSelectionSheet(
+                    title = "文游快捷操作",
+                    onDismissRequest = { showNovexControls = false },
+                    actions = novexControls.map { control ->
+                        NovexSelectionAction(
+                            label = control.label + if (
+                                control.behavior == ConversationControlBehavior.VIEW
+                            ) " · 查看" else " · 动作",
+                            icon = if (control.behavior == ConversationControlBehavior.VIEW) {
+                                R.drawable.ic_phosphor_eye
+                            } else {
+                                R.drawable.ic_phosphor_caret_right
+                            },
+                            onClick = { viewModel.runNovexControl(control) },
+                        )
+                    },
+                )
+            }
+            novexControlView?.let { view ->
+                NovexNoticeDialog(
+                    title = view.title,
+                    message = if (view.values.isEmpty()) {
+                        "当前分支还没有记录该状态。"
+                    } else {
+                        view.values.entries.joinToString("\n") { (key, value) ->
+                            "$key：${value.novexDisplayValue()}"
+                        }
+                    },
+                    onDismiss = viewModel::dismissNovexControlView,
+                )
+            }
+
             // Pre-send context gate (iOS "Context Near Capacity" alert).
             // Raised when the compact threshold is crossed and auto-compact is
             // OFF; with it on the ViewModel compacts silently and never gets
@@ -5470,6 +5494,12 @@ fun ChatScreen(
         )
     }
     } // CompositionLocalProvider
+}
+
+private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
+    is PlaythroughValue.Text -> value
+    is PlaythroughValue.Number -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+    is PlaythroughValue.Flag -> if (value) "是" else "否"
 }
 
 // [T-android-split-chat] UserMessageBubble / UserAttachmentList /

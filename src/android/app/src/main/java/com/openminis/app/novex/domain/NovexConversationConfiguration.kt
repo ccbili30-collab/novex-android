@@ -58,11 +58,17 @@ data class ActiveInteractiveFictionSnapshot(
     val projectId: String,
     val snapshotId: String,
     val title: String,
+    /** Complete immutable project payload used by the conversation runtime. */
+    val contentJson: String = "{}",
+    val presetControls: List<ConversationControlDefinition> = emptyList(),
 ) {
     init {
         require(projectId.isNotBlank()) { "文游项目编号不能为空" }
         require(snapshotId.isNotBlank()) { "文游快照编号不能为空" }
         require(title.isNotBlank()) { "文游名称不能为空" }
+        require(presetControls.all { it.source == ConversationControlSource.PROJECT_PRESET }) {
+            "文游快照只能携带文游预设操作"
+        }
     }
 }
 
@@ -161,6 +167,9 @@ class NovexConversationConfiguration private constructor(
 
         is NovexConversationCommand.ActivateInteractiveFiction -> {
             val keepsCurrentPlaythrough = snapshot.activeInteractiveFiction == command.snapshot
+            val localControls = snapshot.controls.filterNot {
+                it.source == ConversationControlSource.PROJECT_PRESET
+            }
             withSnapshot(
                 snapshot.copy(
                     activeInteractiveFiction = command.snapshot,
@@ -169,12 +178,18 @@ class NovexConversationConfiguration private constructor(
                     } else {
                         emptyMap()
                     },
+                    controls = localControls + command.snapshot.presetControls,
                 ),
             )
         }
 
         NovexConversationCommand.DeactivateInteractiveFiction -> withSnapshot(
-            snapshot.copy(activeInteractiveFiction = null),
+            snapshot.copy(
+                activeInteractiveFiction = null,
+                controls = snapshot.controls.filterNot {
+                    it.source == ConversationControlSource.PROJECT_PRESET
+                },
+            ),
         )
 
         is NovexConversationCommand.SetPlaythroughValue -> {

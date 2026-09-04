@@ -28,6 +28,7 @@ object AgentTools {
         // AIChatViewModel.makeAgentTools(memoryEnabled:).
         memoryEnabled: Boolean = true,
         imageGenerationConfigured: Boolean = false,
+        interactiveFictionActive: Boolean = false,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
@@ -37,6 +38,9 @@ object AgentTools {
         add(renderPanelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
+        if (interactiveFictionActive) {
+            add(updatePlaythroughStateDefinition())
+        }
         if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
         }
@@ -100,18 +104,34 @@ object AgentTools {
 
     private fun registerControlsDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = "register_controls",
-        description = "Register stable world-specific system actions in the composer's ^ menu. " +
-            "Only register actions that the current world's own rules support, such as save, load, character sheet, " +
-            "world state or inventory. Do not register ordinary narrative choices here.",
+        description = "Register persistent Novex conversation controls. View controls reveal branch-local state without " +
+            "creating a turn; action controls create an explicit user turn. These controls belong to this conversation " +
+            "and never modify the shared interactive-fiction project.",
         parameters = mapOf(
             "controls" to AgentToolParam(
                 "string",
-                "A JSON array of 1 to 6 objects. Each object has a short label and an instruction. " +
-                    "Example: [{\"label\":\"存档\",\"instruction\":\"保存当前完整世界状态\"}].",
+                "A JSON array of 1 to 12 objects. Each has label, behavior (view or action), actionKey, and optional " +
+                    "stateKeys, prompt and enabled. Legacy instruction is accepted as an action prompt.",
             ),
         ),
         required = listOf("controls"),
         propertyOrdering = listOf("controls"),
+    )
+
+    private fun updatePlaythroughStateDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "update_playthrough_state",
+        description = "Update typed state for the active Novex interactive-fiction playthrough on the current message " +
+            "branch. Use this after the story changes location, health, inventory, quests or other tracked facts. " +
+            "This never writes back to the shared project.",
+        parameters = mapOf(
+            "updates" to AgentToolParam(
+                "string",
+                "A JSON array of {key,value}; value must be a string, number or boolean. " +
+                    "Example: [{\"key\":\"health\",\"value\":72},{\"key\":\"location\",\"value\":\"山门\"}].",
+            ),
+        ),
+        required = listOf("updates"),
+        propertyOrdering = listOf("updates"),
     )
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993

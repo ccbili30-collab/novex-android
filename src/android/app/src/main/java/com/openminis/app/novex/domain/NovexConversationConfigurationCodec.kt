@@ -19,7 +19,9 @@ object NovexConversationConfigurationCodec {
                 JSONObject()
                     .put("projectId", active.projectId)
                     .put("snapshotId", active.snapshotId)
-                    .put("title", active.title),
+                    .put("title", active.title)
+                    .put("contentJson", active.contentJson)
+                    .put("presetControls", JSONArray(active.presetControls.map(ConversationControlDefinition::toJson))),
             )
         }
         put("playthroughStates", JSONArray(snapshot.playthroughStates.values.map(PlaythroughState::toJson)))
@@ -48,6 +50,10 @@ object NovexConversationConfigurationCodec {
                         projectId = value.getString("projectId"),
                         snapshotId = value.getString("snapshotId"),
                         title = value.getString("title"),
+                        contentJson = value.optString("contentJson", "{}"),
+                        presetControls = value.optJSONArray("presetControls").objects()
+                            .map(JSONObject::toControl)
+                            .map { it.copy(source = ConversationControlSource.PROJECT_PRESET) },
                     )
                 },
                 playthroughStates = root.optJSONArray("playthroughStates").objects()

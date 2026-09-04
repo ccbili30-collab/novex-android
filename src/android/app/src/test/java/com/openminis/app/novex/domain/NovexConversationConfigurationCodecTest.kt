@@ -12,7 +12,21 @@ class NovexConversationConfigurationCodecTest {
             answerIdentity = AnswerIdentity.CharacterVersion("version-1"),
             backgroundSettings = listOf(BackgroundSetting(sharedWorld)),
             managedSubjects = listOf(ManagedSubject(sharedWorld, ManagedAccess.EDIT)),
-            activeInteractiveFiction = ActiveInteractiveFictionSnapshot("game-1", "snapshot-1", "云岚问道"),
+            activeInteractiveFiction = ActiveInteractiveFictionSnapshot(
+                "game-1",
+                "snapshot-1",
+                "云岚问道",
+                contentJson = """{"summary":"修行冒险"}""",
+                presetControls = listOf(
+                    ConversationControlDefinition(
+                        id = "project-status",
+                        label = "文游状态",
+                        behavior = ConversationControlBehavior.VIEW,
+                        source = ConversationControlSource.PROJECT_PRESET,
+                        actionKey = "project.status",
+                    ),
+                ),
+            ),
             playthroughStates = mapOf(
                 "branch-1" to PlaythroughState(
                     "branch-1",
@@ -24,6 +38,13 @@ class NovexConversationConfigurationCodecTest {
                 ),
             ),
             controls = listOf(
+                ConversationControlDefinition(
+                    id = "project-status",
+                    label = "文游状态",
+                    behavior = ConversationControlBehavior.VIEW,
+                    source = ConversationControlSource.PROJECT_PRESET,
+                    actionKey = "project.status",
+                ),
                 ConversationControlDefinition(
                     id = "status",
                     label = "角色档案",

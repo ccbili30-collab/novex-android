@@ -47,6 +47,7 @@ import com.openminis.app.novex.domain.AnswerIdentity
 import com.openminis.app.novex.domain.ConversationControlBehavior
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlSource
+import com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory
 import com.openminis.app.novex.domain.ManagedAccess
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
@@ -117,8 +118,10 @@ fun ConversationSettingsScreen(
     var picker by remember { mutableStateOf<ConversationPicker?>(null) }
     var managedAction by remember { mutableStateOf<NovexContentAddress?>(null) }
     var addingControl by remember { mutableStateOf(false) }
+    var editingControlId by remember { mutableStateOf<String?>(null) }
     var controlLabel by remember { mutableStateOf("") }
     var controlBehavior by remember { mutableStateOf(ConversationControlBehavior.VIEW) }
+    var controlPrompt by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -156,7 +159,8 @@ fun ConversationSettingsScreen(
                     )
                 }
             }
-            val games = workspace.interactiveFictions().map { card ->
+            val gameCards = workspace.interactiveFictions()
+            val games = gameCards.map { card ->
                 ConversationContentOption(
                     NovexContentAddress.interactiveFiction(card.project.id),
                     card.project.name,
@@ -164,13 +168,11 @@ fun ConversationSettingsScreen(
                 )
             }
             options = worlds + characters + games
-            gameSnapshots = workspace.interactiveFictions().associate { card ->
-                card.project.id to ActiveInteractiveFictionSnapshot(
-                    card.project.id,
-                    "project:${card.project.id}:${card.project.updatedAt}",
-                    card.project.name,
-                )
-            }
+            gameSnapshots = gameCards.mapNotNull { card ->
+                workspace.interactiveFiction(card.project.id)?.let { snapshot ->
+                    card.project.id to InteractiveFictionRuntimeSnapshotFactory.create(snapshot)
+                }
+            }.toMap()
         }.onFailure { error = "读取内容库失败：${it.message ?: "未知错误"}" }
     }
 
@@ -316,6 +318,15 @@ fun ConversationSettingsScreen(
                     onMoveUp = { draft = draft.moveControl(control.id, index - 1) },
                     onMoveDown = { draft = draft.moveControl(control.id, index + 1) },
                     onRemove = { draft = draft.removeControl(control.id) },
+                    onEdit = {
+                        editingControlId = control.id
+                        controlLabel = control.label
+                        controlBehavior = control.behavior
+                        controlPrompt = runCatching {
+                            org.json.JSONObject(control.payloadJson).optString("prompt")
+                        }.getOrDefault("")
+                        addingControl = true
+                    },
                 )
                 if (index < draft.configuration.controls.lastIndex) {
                     NovexDivider(Modifier.padding(horizontal = 16.dp))
@@ -340,29 +351,63 @@ fun ConversationSettingsScreen(
                         }
                     },
                 )
+                if (controlBehavior == ConversationControlBehavior.ACTION) {
+                    NovexTextField(
+                        "发送内容",
+                        controlPrompt,
+                        onValueChange = { controlPrompt = it.take(2_000) },
+                        placeholder = "留空时发送操作名称",
+                        minLines = 3,
+                    )
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                 ) {
-                    NovexOutlineButton("取消", { addingControl = false }, Modifier.weight(1f))
                     NovexOutlineButton(
-                        "添加",
+                        "取消",
+                        {
+                            addingControl = false
+                            editingControlId = null
+                            controlLabel = ""
+                            controlPrompt = ""
+                        },
+                        Modifier.weight(1f),
+                    )
+                    NovexOutlineButton(
+                        if (editingControlId == null) "添加" else "完成",
                         onClick = {
-                            val id = "user-${System.currentTimeMillis()}"
+                            val existing = editingControlId?.let { id ->
+                                draft.configuration.controls.firstOrNull { it.id == id }
+                            }
+                            val id = existing?.id ?: "user-${System.currentTimeMillis()}"
+                            val payload = runCatching {
+                                org.json.JSONObject(existing?.payloadJson ?: "{}")
+                            }.getOrDefault(org.json.JSONObject()).apply {
+                                if (controlBehavior == ConversationControlBehavior.ACTION && controlPrompt.isNotBlank()) {
+                                    put("prompt", controlPrompt.trim())
+                                } else {
+                                    remove("prompt")
+                                }
+                            }.toString()
                             draft = draft.upsertControl(
                                 ConversationControlDefinition(
                                     id = id,
                                     label = controlLabel.trim(),
                                     behavior = controlBehavior,
-                                    source = ConversationControlSource.USER,
-                                    actionKey = if (controlBehavior == ConversationControlBehavior.VIEW) {
+                                    source = existing?.source ?: ConversationControlSource.USER,
+                                    actionKey = existing?.actionKey ?: if (controlBehavior == ConversationControlBehavior.VIEW) {
                                         "user.view.$id"
                                     } else {
                                         "user.action.$id"
                                     },
+                                    payloadJson = payload,
+                                    enabled = existing?.enabled ?: true,
                                 ),
                             )
                             controlLabel = ""
+                            controlPrompt = ""
+                            editingControlId = null
                             addingControl = false
                         },
                         modifier = Modifier.weight(1f),
@@ -370,7 +415,16 @@ fun ConversationSettingsScreen(
                     )
                 }
             } else {
-                NovexTextActionRow("添加快捷操作", onClick = { addingControl = true })
+                NovexTextActionRow(
+                    "添加快捷操作",
+                    onClick = {
+                        editingControlId = null
+                        controlLabel = ""
+                        controlPrompt = ""
+                        controlBehavior = ConversationControlBehavior.VIEW
+                        addingControl = true
+                    },
+                )
             }
         }
 
@@ -569,12 +623,13 @@ private fun ConversationControlRow(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onRemove: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 7.dp, bottom = 7.dp),
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).clickable(onClick = onEdit).padding(vertical = 7.dp)) {
             Text(control.label, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium)
             Text(
                 control.source.sourceLabel() + " · " +

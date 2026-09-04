@@ -62,6 +62,15 @@ import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
+import com.openminis.app.novex.domain.ConversationControlDefinition
+import com.openminis.app.novex.domain.ConversationControlOutcome
+import com.openminis.app.novex.domain.ConversationControlRegistration
+import com.openminis.app.novex.domain.InteractiveFictionRuntime
+import com.openminis.app.novex.domain.NovexConversationConfiguration
+import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
+import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
+import com.openminis.app.novex.domain.PlaythroughState
+import com.openminis.app.novex.domain.PlaythroughStateRegistration
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
@@ -639,11 +648,27 @@ class ChatViewModel(
         _inputText.value = value
     }
 
-    private val _novexControls = MutableStateFlow<List<NovexControl>>(emptyList())
-    val novexControls: StateFlow<List<NovexControl>> = _novexControls.asStateFlow()
+    private val _novexControls = MutableStateFlow<List<ConversationControlDefinition>>(emptyList())
+    val novexControls: StateFlow<List<ConversationControlDefinition>> = _novexControls.asStateFlow()
+    private val _activePlaythroughState = MutableStateFlow<PlaythroughState?>(null)
+    val activePlaythroughState: StateFlow<PlaythroughState?> = _activePlaythroughState.asStateFlow()
+    private val _novexControlView = MutableStateFlow<ConversationControlOutcome.View?>(null)
+    val novexControlView: StateFlow<ConversationControlOutcome.View?> = _novexControlView.asStateFlow()
 
-    fun runNovexControl(control: NovexControl) {
-        sendMessage("\u2063NOVEX_CONTROL:${control.label}\n${control.instruction}")
+    fun dismissNovexControlView() {
+        _novexControlView.value = null
+    }
+
+    fun runNovexControl(control: ConversationControlDefinition) {
+        when (
+            val outcome = InteractiveFictionRuntime.invoke(
+                control,
+                _activePlaythroughState.value ?: PlaythroughState(activeBranchPathIds.lastOrNull() ?: "unstarted"),
+            )
+        ) {
+            is ConversationControlOutcome.View -> _novexControlView.value = outcome
+            is ConversationControlOutcome.Action -> sendMessage(outcome.userTurn)
+        }
     }
 
     /**
@@ -860,6 +885,7 @@ class ChatViewModel(
             ),
             memoryEnabled = _memoryEnabled.value,
             imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
+            interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null,
         )
 
     /** Role chats start with no tools and expose only the role card's explicit allow-list. */
@@ -882,6 +908,7 @@ class ChatViewModel(
     private val toolLoopDetector = ToolLoopDetector()
     private val conversationBranchMutex = kotlinx.coroutines.sync.Mutex()
     private var activeBranchMessageIds: Set<String> = emptySet()
+    private var activeBranchPathIds: List<String> = emptyList()
     private var excludedBranchMemoryWrites: Map<String, Int> = emptyMap()
 
     /**
@@ -3113,6 +3140,7 @@ class ChatViewModel(
     private val initialCharacterVersionId: String? = draftMarker("version")
     private val initialPersonaId: String? = draftMarker("persona")
     private val initialWorldId: String? = draftMarker("world")
+    private val initialInteractiveFictionId: String? = draftMarker("game")
 
     private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
     val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
@@ -3127,6 +3155,43 @@ class ChatViewModel(
         ),
     )
     val novexConfigurationJson: StateFlow<String> = _novexConfigurationJson.asStateFlow()
+
+    private fun currentNovexConfiguration(): NovexConversationConfigurationSnapshot =
+        NovexConversationConfigurationCodec.decode(_novexConfigurationJson.value, activeSessionId)
+
+    /** Rebuilds branch-sensitive UI state without executing a control or tool. */
+    private fun refreshNovexRuntimeProjection() {
+        val configuration = currentNovexConfiguration()
+        _novexControls.value = configuration.controls.filter(ConversationControlDefinition::enabled)
+        _activePlaythroughState.value = configuration.activeInteractiveFiction?.let {
+            InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
+        }
+        _novexControlView.value = null
+    }
+
+    private fun installNovexConfiguration(configuration: NovexConversationConfigurationSnapshot) {
+        _novexConfigurationJson.value = NovexConversationConfigurationCodec.encode(
+            configuration.copy(conversationId = activeSessionId),
+        )
+        refreshNovexRuntimeProjection()
+    }
+
+    private fun recordActiveBranchMessage(messageId: String) {
+        if (messageId.isBlank() || messageId in activeBranchMessageIds) return
+        activeBranchPathIds = activeBranchPathIds + messageId
+        activeBranchMessageIds = activeBranchMessageIds + messageId
+        refreshNovexRuntimeProjection()
+    }
+
+    private suspend fun persistNovexConfiguration(configuration: NovexConversationConfigurationSnapshot) {
+        installNovexConfiguration(configuration)
+        val sid = realSessionId
+        if (sid.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot())
+            }
+        }
+    }
 
     private fun legacyNovexConfiguration(
         conversationId: String,
@@ -3215,6 +3280,7 @@ class ChatViewModel(
         _conversationPrompt.value = value.conversationPrompt
         _imageStylePrompt.value = value.imageStylePrompt
         _novexConfigurationJson.value = value.novexConfigurationJson
+        refreshNovexRuntimeProjection()
         _immersiveProfile.value = _immersiveProfile.value.copy(
             rolePresentationEnabled = value.rolePresentationEnabled,
             assistantDisplayName = value.assistantDisplayName.ifBlank { null },
@@ -3688,13 +3754,27 @@ class ChatViewModel(
                         rolePresentationEnabled = draftCharacter != null,
                     )
                 }
-                _novexConfigurationJson.value = com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
-                    legacyNovexConfiguration(
-                        conversationId = sessionId,
-                        worldId = _immersiveProfile.value.worldId,
-                        characterVersionId = _immersiveProfile.value.characterVersionId,
-                    ),
+                val draftConfiguration = initialInteractiveFictionId?.let { projectId ->
+                    val application = context.applicationContext as? com.openminis.app.MinisApp
+                    application?.novexWorkspace?.interactiveFiction(projectId)?.let { project ->
+                        NovexConversationConfiguration.open(
+                            legacyNovexConfiguration(
+                                conversationId = sessionId,
+                                worldId = _immersiveProfile.value.worldId,
+                                characterVersionId = _immersiveProfile.value.characterVersionId,
+                            ),
+                        ).apply(
+                            com.openminis.app.novex.domain.NovexConversationCommand.ActivateInteractiveFiction(
+                                com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory.create(project),
+                            ),
+                        ).snapshot
+                    }
+                } ?: legacyNovexConfiguration(
+                    conversationId = sessionId,
+                    worldId = _immersiveProfile.value.worldId,
+                    characterVersionId = _immersiveProfile.value.characterVersionId,
                 )
+                installNovexConfiguration(draftConfiguration)
                 _conversationPrompt.value = inheritedEditablePrompt()
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
@@ -3761,6 +3841,7 @@ class ChatViewModel(
                         characterVersionId = session.characterVersionId,
                     ),
                 )
+            refreshNovexRuntimeProjection()
             _memoryEnabled.value = session.memoryEnabled != 0
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user
@@ -3886,6 +3967,8 @@ class ChatViewModel(
             }
             val messages = loaded.messages
             activeBranchMessageIds = messages.mapTo(hashSetOf()) { it.id }
+            activeBranchPathIds = messages.map { it.id }
+            refreshNovexRuntimeProjection()
             excludedBranchMemoryWrites = loaded.excludedMemoryWrites
             val ordered = loaded.ordered
             val tHangDiagAfterLoad = tHangDiagBeforeLoad + loaded.loadMs
@@ -4993,6 +5076,7 @@ class ChatViewModel(
             val llmHistory: List<LLMMessage>,
             val marker: com.openminis.app.data.db.CompactMarkerEntity?,
             val activeIds: Set<String>,
+            val activePathIds: List<String>,
             val excludedMemoryWrites: Map<String, Int>,
         )
         val projection = withContext(Dispatchers.IO) {
@@ -5003,6 +5087,7 @@ class ChatViewModel(
                 llmHistory = rows.map { it.toLLMMessage() },
                 marker = chatRepository.latestActiveCompactMarker(sid, rows),
                 activeIds = activeIds,
+                activePathIds = rows.map { it.id },
                 excludedMemoryWrites = com.openminis.app.data.ConversationBranchMemory
                     .excludedWriteCounts(conversation.allMessages, activeIds),
             )
@@ -5011,6 +5096,8 @@ class ChatViewModel(
         val llmHistory = projection.llmHistory
         val marker = projection.marker
         activeBranchMessageIds = projection.activeIds
+        activeBranchPathIds = projection.activePathIds
+        refreshNovexRuntimeProjection()
         excludedBranchMemoryWrites = projection.excludedMemoryWrites
         agentHistory.clear()
         agentHistory.addAll(llmHistory)
@@ -5394,6 +5481,7 @@ class ChatViewModel(
         val userText = combinedText.toString()
         val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
         val userEntity = chatRepository.appendMessage(sid, "user", userPartsJson)
+        recordActiveBranchMessage(userEntity.id)
         agentHistory.add(
             LLMMessage(
                 role = LLMMessage.Role.USER,
@@ -5679,6 +5767,7 @@ class ChatViewModel(
             // their name (rendered as a file tile) and are not persisted.
             val userPartsJson = buildUserPartsJson(trimmed, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
             val persistedUser = chatRepository.appendMessage(activeSessionId, "user", userPartsJson)
+            recordActiveBranchMessage(persistedUser.id)
 
             val userMsg = ChatMessage(
                 id = persistedUser.id,
@@ -6741,6 +6830,9 @@ class ChatViewModel(
         // back into an INITIAL request and grant it another retry budget.
         var emptyResponseContext = EmptyResponseContext.INITIAL
         for (turn in 0 until MAX_AGENT_TURNS) {
+            // Pre-allocate the persisted assistant-row identity so branch-local
+            // state tools can bind to this exact turn before the row is written.
+            val turnMessageId = java.util.UUID.randomUUID().toString()
             // Sanitize history before each API call (mirrors iOS pre-API validation)
             sanitizeAgentHistory()
 
@@ -7652,7 +7744,7 @@ class ChatViewModel(
                     )
                     val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
                     val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
-                    persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta)
+                    persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 }
                 withContext(Dispatchers.Main) {
                     updateAssistantMessage(
@@ -7697,6 +7789,7 @@ class ChatViewModel(
                         safeParts,
                         lastUsage,
                         turnReasoningContent,
+                        messageId = turnMessageId,
                     )
                     agentHistory.add(
                         LLMMessage(
@@ -7803,7 +7896,7 @@ class ChatViewModel(
                 }
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
                 val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
-                persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta)
+                persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
                 break
@@ -8015,7 +8108,15 @@ class ChatViewModel(
                 }
 
                 android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool START name=$name args=${argsStr.take(200)}")
-                val result = executeTool(name, argsStr, id, allToolBlocks, assistantId, accumulatedText)
+                val result = executeTool(
+                    name,
+                    argsStr,
+                    id,
+                    allToolBlocks,
+                    assistantId,
+                    accumulatedText,
+                    turnMessageId,
+                )
                 android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool END name=$name success=${result.success} title=${result.toolTitle} outputLen=${result.output.length} output=${result.output.take(200)}")
 
                 // Record post-execution. WARNING text is appended to the tool
@@ -8159,6 +8260,7 @@ class ChatViewModel(
                     lastUsage,
                     turnReasoningContent,
                     blockMeta,
+                    turnMessageId,
                 )
                 if (assistantDbId != null) {
                     val historyIndex = agentHistory.indexOfLast {
@@ -8206,7 +8308,13 @@ class ChatViewModel(
             // assistant entry — compact-marker boundary resolution depends on it.
             val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
             val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
-            val assistantDbId = persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta)
+            val assistantDbId = persistAssistantTurn(
+                turnParts,
+                lastUsage,
+                turnReasoningContent,
+                blockMeta,
+                turnMessageId,
+            )
             if (assistantDbId != null) {
                 val lastIdx = agentHistory.indexOfLast { it.role == LLMMessage.Role.ASSISTANT && it.dbMessageId == null }
                 if (lastIdx >= 0) {
@@ -8384,6 +8492,7 @@ class ChatViewModel(
         toolBlocks: MutableList<AssistantBlock>,
         assistantId: String,
         currentText: String,
+        turnMessageId: String,
     ): ToolExecutionResult {
         // T330: tri-state permission gating moved into the offload IPC
         // handler (OffloadGate). The CLIs land there whether the LLM
@@ -8440,6 +8549,7 @@ class ChatViewModel(
             "present_system_panel" -> executePanelTool(argsJson)
             "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
             "register_controls" -> executeRegisterControlsTool(argsJson)
+            "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -8522,30 +8632,63 @@ class ChatViewModel(
         }
     }
 
-    private fun executeRegisterControlsTool(argsJson: String): ToolExecutionResult {
+    private suspend fun executeRegisterControlsTool(argsJson: String): ToolExecutionResult {
         return runCatching {
-            val values = org.json.JSONArray(JSONObject(argsJson).getString("controls"))
-            val controls = (0 until values.length()).mapNotNull { index ->
-                val item = values.optJSONObject(index) ?: return@mapNotNull null
-                val label = item.optString("label").trim()
-                val instruction = item.optString("instruction").trim()
-                if (label.isEmpty() || instruction.isEmpty()) null
-                else NovexControl(label.take(12), instruction)
-            }.distinctBy { it.label }.take(6)
-            require(controls.isNotEmpty()) { "至少需要一个有效功能" }
-            _novexControls.value = controls
+            val args = JSONObject(argsJson)
+            val controlsJson = args.jsonArrayText("controls")
+            val updated = ConversationControlRegistration.registerAiControls(
+                currentNovexConfiguration(),
+                controlsJson,
+            )
+            persistNovexConfiguration(updated)
+            val count = updated.controls.count {
+                it.source == com.openminis.app.novex.domain.ConversationControlSource.AI
+            }
             ToolExecutionResult(
-                output = "已在输入框旁注册 ${controls.size} 个世界功能。",
+                output = "已在当前对话注册 $count 个快捷操作；未修改共享文游。",
                 success = true,
-                toolTitle = "更新世界功能",
+                toolTitle = "更新快捷操作",
             )
         }.getOrElse { error ->
             ToolExecutionResult(
-                output = "世界功能注册失败：${error.message ?: "格式无效"}",
+                output = "快捷操作注册失败：${error.message ?: "格式无效"}",
                 success = false,
-                toolTitle = "更新世界功能",
+                toolTitle = "更新快捷操作",
             )
         }
+    }
+
+    private suspend fun executeUpdatePlaythroughStateTool(
+        argsJson: String,
+        turnMessageId: String,
+    ): ToolExecutionResult {
+        return runCatching {
+            val configuration = currentNovexConfiguration()
+            require(configuration.activeInteractiveFiction != null) { "当前对话没有活动文游" }
+            val updated = PlaythroughStateRegistration.applyUpdates(
+                configuration = configuration,
+                branchId = turnMessageId,
+                updatesJson = JSONObject(argsJson).jsonArrayText("updates"),
+            )
+            persistNovexConfiguration(updated)
+            ToolExecutionResult(
+                output = "已更新当前消息分支的本局状态；切换分支时会恢复对应状态。",
+                success = true,
+                toolTitle = "更新本局状态",
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(
+                output = "本局状态更新失败：${error.message ?: "格式无效"}",
+                success = false,
+                toolTitle = "更新本局状态",
+            )
+        }
+    }
+
+    private fun JSONObject.jsonArrayText(key: String): String = when (val value = opt(key)) {
+        is org.json.JSONArray -> value.toString()
+        is String -> value
+        else -> error("缺少 $key 数组")
     }
 
     /**
@@ -9341,6 +9484,7 @@ class ChatViewModel(
         usage: LLMUsage?,
         reasoningContent: String? = null,
         toolBlockMeta: Map<String, AssistantBlock> = emptyMap(),
+        messageId: String = java.util.UUID.randomUUID().toString(),
     ): String? {
         if (parts.isEmpty()) return null
         val partsJson = buildAssistantPartsJson(parts, toolBlockMeta)
@@ -9350,7 +9494,9 @@ class ChatViewModel(
         val entity = chatRepository.appendMessage(
             realSessionId.ifEmpty { sessionId }, "assistant", partsJson, tokenJson,
             reasoningContent = reasoningContent,
+            messageId = messageId,
         )
+        recordActiveBranchMessage(entity.id)
         return entity.id
     }
 
@@ -11614,7 +11760,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "present_choices" -> "提供行动选项"
         "render_panel", "panel", "present_system_panel" -> "显示资料面板"
         "save_checkpoint" -> "保存文游进度"
-        "register_controls" -> "更新世界功能"
+        "register_controls" -> "更新快捷操作"
+        "update_playthrough_state" -> "更新本局状态"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

@@ -92,6 +92,7 @@ fun CatalogInteractiveFictionDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onOpenModule: (String) -> Unit,
+    onStartConversation: () -> Unit,
     onShareToConversation: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -141,7 +142,7 @@ fun CatalogInteractiveFictionDetailScreen(
         bottomBar = {
             if (current != null) NovexPrimaryButton(
                 label = "开始文游",
-                onClick = { withFullText(onShareToConversation) },
+                onClick = onStartConversation,
                 modifier = Modifier.fillMaxWidth().padding(
                     horizontal = NovexDimensions.PageHorizontal,
                     vertical = 10.dp,
