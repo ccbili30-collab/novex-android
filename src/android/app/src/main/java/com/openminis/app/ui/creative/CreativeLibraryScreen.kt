@@ -39,7 +39,10 @@ import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 import com.openminis.app.data.creative.CreativeArtifactQuery
 import com.openminis.app.data.creative.CreativeArtifactRecord
+import com.openminis.app.data.creative.CreativeArtifactDeviceDirectory
+import com.openminis.app.data.creative.CreativeArtifactDeviceDirectorySettings
 import com.openminis.app.data.creative.CreativeArtifactRepository
+import com.openminis.app.data.creative.creativeArtifactExportName
 import com.openminis.app.novex.domain.CreativeArtifactKind
 import com.openminis.app.novex.domain.NovexContentKind
 import com.openminis.app.ui.novex.NovexActionMenu
@@ -96,6 +99,7 @@ private val artifactKindFilters = listOf(
 @Composable
 fun CreativeLibraryScreen(
     repository: CreativeArtifactRepository,
+    deviceDirectory: CreativeArtifactDeviceDirectory,
     conversationId: String?,
     onBack: () -> Unit,
     onOpenArtifact: (CreativeArtifactRecord, File) -> Unit,
@@ -110,6 +114,10 @@ fun CreativeLibraryScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var showKindMenu by remember { mutableStateOf(false) }
+    var showDirectoryMenu by remember { mutableStateOf(false) }
+    var directorySettings by remember {
+        mutableStateOf<CreativeArtifactDeviceDirectorySettings>(deviceDirectory.settings())
+    }
     var pendingDelete by remember { mutableStateOf<CreativeArtifactRecord?>(null) }
     var pendingExport by remember { mutableStateOf<CreativeArtifactRecord?>(null) }
 
@@ -125,6 +133,33 @@ fun CreativeLibraryScreen(
                     Toast.makeText(context, throwable.message ?: "操作失败", Toast.LENGTH_SHORT).show()
                 }
         }
+    }
+
+    fun copyToCreativeDirectory(record: CreativeArtifactRecord) {
+        scope.launch {
+            runCatching {
+                val bytes = withContext(Dispatchers.IO) { repository.bytes(record.artifact.id) }
+                deviceDirectory.export(record, bytes)
+            }.onSuccess {
+                Toast.makeText(context, "已复制到创作目录", Toast.LENGTH_SHORT).show()
+            }.onFailure { throwable ->
+                Toast.makeText(context, throwable.message ?: "复制失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val directoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching { deviceDirectory.select(uri) }
+            .onSuccess {
+                directorySettings = deviceDirectory.settings()
+                Toast.makeText(context, "创作目录已保存", Toast.LENGTH_SHORT).show()
+            }
+            .onFailure { throwable ->
+                Toast.makeText(context, throwable.message ?: "无法使用该目录", Toast.LENGTH_SHORT).show()
+            }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -171,6 +206,64 @@ fun CreativeLibraryScreen(
         onBack = onBack,
         scrollable = false,
         actions = {
+            Box {
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_download_simple,
+                    contentDescription = "创作目录",
+                    onClick = { showDirectoryMenu = true },
+                )
+                NovexActionMenu(
+                    expanded = showDirectoryMenu,
+                    onDismissRequest = { showDirectoryMenu = false },
+                    actions = buildList {
+                        add(
+                            NovexMenuAction(
+                                label = if (directorySettings.configured) {
+                                    "更换创作目录 · ${deviceDirectory.displayName().orEmpty()}"
+                                } else {
+                                    "选择创作目录"
+                                },
+                                icon = R.drawable.ic_phosphor_download_simple,
+                                onClick = {
+                                    showDirectoryMenu = false
+                                    directoryLauncher.launch(null)
+                                },
+                            ),
+                        )
+                        if (directorySettings.configured) {
+                            add(
+                                NovexMenuAction(
+                                    label = if (directorySettings.autoCopyEnabled) {
+                                        "自动复制新成果 · 已开启"
+                                    } else {
+                                        "自动复制新成果 · 已关闭"
+                                    },
+                                    icon = if (directorySettings.autoCopyEnabled) {
+                                        R.drawable.ic_phosphor_check
+                                    } else {
+                                        R.drawable.ic_phosphor_sliders_horizontal
+                                    },
+                                    onClick = {
+                                        deviceDirectory.setAutoCopyEnabled(!directorySettings.autoCopyEnabled)
+                                        directorySettings = deviceDirectory.settings()
+                                    },
+                                ),
+                            )
+                            add(
+                                NovexMenuAction(
+                                    label = "清除创作目录",
+                                    icon = R.drawable.ic_phosphor_trash,
+                                    destructive = true,
+                                    onClick = {
+                                        deviceDirectory.clear()
+                                        directorySettings = deviceDirectory.settings()
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                )
+            }
             Box {
                 NovexTopAction(
                     icon = R.drawable.ic_phosphor_sliders_horizontal,
@@ -280,7 +373,12 @@ fun CreativeLibraryScreen(
                             },
                             onExport = {
                                 pendingExport = record
-                                exportLauncher.launch(exportName(record))
+                                exportLauncher.launch(creativeArtifactExportName(record))
+                            },
+                            onExportToDirectory = if (directorySettings.configured) {
+                                { copyToCreativeDirectory(record) }
+                            } else {
+                                null
                             },
                             onTrash = { mutate { repository.moveToTrash(record.artifact.id) } },
                             onRestore = { mutate { repository.restore(record.artifact.id) } },
@@ -324,6 +422,7 @@ private fun ArtifactRow(
     onOpen: () -> Unit,
     onFavorite: () -> Unit,
     onExport: () -> Unit,
+    onExportToDirectory: (() -> Unit)?,
     onTrash: () -> Unit,
     onRestore: () -> Unit,
     onDelete: () -> Unit,
@@ -385,6 +484,15 @@ private fun ArtifactRow(
                                 ),
                             )
                             add(NovexMenuAction("导出副本", R.drawable.ic_phosphor_download_simple, onClick = onExport))
+                            onExportToDirectory?.let { export ->
+                                add(
+                                    NovexMenuAction(
+                                        "复制到创作目录",
+                                        R.drawable.ic_phosphor_arrow_up,
+                                        onClick = export,
+                                    ),
+                                )
+                            }
                             add(
                                 NovexMenuAction(
                                     "移到回收站",
@@ -454,10 +562,4 @@ private fun kindLabel(kind: CreativeArtifactKind): String = when (kind) {
     CreativeArtifactKind.MAP -> "地图"
     CreativeArtifactKind.CARD_ARCHIVE -> "卡片归档"
     CreativeArtifactKind.OTHER -> "其他"
-}
-
-private fun exportName(record: CreativeArtifactRecord): String {
-    val extension = record.artifact.storageKey.substringAfterLast('.', "bin")
-    val title = record.artifact.title.substringBeforeLast('.').ifBlank { "未命名成果" }
-    return "$title.$extension"
 }

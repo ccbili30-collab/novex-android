@@ -145,6 +145,8 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var creativeArtifactRepository: com.openminis.app.data.creative.CreativeArtifactRepository
         private set
+    lateinit var creativeArtifactDeviceDirectory: com.openminis.app.data.creative.CreativeArtifactDeviceDirectory
+        private set
     lateinit var chatRepository: ChatRepository
         private set
     lateinit var providerRepository: ProviderRepository
@@ -286,6 +288,7 @@ class MinisApp : Application(), ImageLoaderFactory {
                 java.io.File(filesDir, "novex-artifacts"),
             ),
         )
+        creativeArtifactDeviceDirectory = com.openminis.app.data.creative.CreativeArtifactDeviceDirectory(this)
         chatRepository = ChatRepository(database.chatDao())
     }
 

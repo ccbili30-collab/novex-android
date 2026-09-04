@@ -4,6 +4,7 @@ import com.openminis.app.novex.domain.CreativeArtifact
 import com.openminis.app.novex.domain.CreativeArtifactAttachment
 import com.openminis.app.novex.domain.CreativeArtifactKind
 import com.openminis.app.novex.domain.CreativeArtifactOrigin
+import com.openminis.app.novex.domain.CreativeArtifactRevision
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
 import org.junit.Assert.assertEquals
@@ -99,6 +100,39 @@ class CreativeArtifactQueryTest {
         assertEquals(
             mapOf("map-module" to "latest-map"),
             selectAttachedModuleImageIds(listOf(oldMap, latestMap, document, otherWorld), owner),
+        )
+    }
+
+    @Test
+    fun exportNameUsesRevisionMimeTypeInsteadOfContentAddressedStorageKey() {
+        val image = record("map-image", CreativeArtifactKind.IMAGE).let { record ->
+            record.copy(
+                artifact = record.artifact.copy(title = "云岚地图"),
+                revisions = listOf(
+                    CreativeArtifactRevision(
+                        id = "revision-1",
+                        artifactId = record.artifact.id,
+                        number = 1,
+                        storageKey = "sha256/abcdef",
+                        contentHash = "abcdef",
+                        mimeType = "image/png",
+                        sizeBytes = 3,
+                    ),
+                ),
+            )
+        }
+
+        assertEquals("云岚地图.png", creativeArtifactExportName(image))
+    }
+
+    @Test
+    fun deviceDirectoryKeepsExistingFilesAndAddsANumberedCopy() {
+        assertEquals(
+            "云岚地图 (3).png",
+            nextAvailableCreativeArtifactName(
+                requested = "云岚地图.png",
+                existingNames = setOf("云岚地图.png", "云岚地图 (2).png"),
+            ),
         )
     }
 

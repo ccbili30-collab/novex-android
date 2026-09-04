@@ -8687,7 +8687,7 @@ class ChatViewModel(
                     )?.takeIf { file -> file.isFile }?.readBytes()
                 } ?: return@withContext null
                 val mimeType = capture.mimeType ?: mimeTypeForArtifactPath(capture.sourcePath)
-                application.creativeArtifactRepository.capture(
+                val record = application.creativeArtifactRepository.capture(
                     title = capture.title,
                     kind = capture.kind,
                     bytes = bytes,
@@ -8699,7 +8699,17 @@ class ChatViewModel(
                         toolCallId = toolCallId,
                     ),
                     sourcePath = capture.sourcePath,
-                ).let { record -> record.artifact.id to record.artifact.title }
+                )
+                runCatching {
+                    application.creativeArtifactDeviceDirectory.autoCopy(record, bytes)
+                }.onFailure { mirrorError ->
+                    AppLogger.warning(
+                        "CreativeArtifact",
+                        "device mirror failed artifact=${record.artifact.id} " +
+                            "type=${mirrorError::class.java.simpleName} message=${mirrorError.message}",
+                    )
+                }
+                record.artifact.id to record.artifact.title
             }
         }.onFailure { error ->
             AppLogger.warning(

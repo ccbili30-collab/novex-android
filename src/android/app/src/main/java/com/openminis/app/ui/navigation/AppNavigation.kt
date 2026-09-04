@@ -693,6 +693,7 @@ fun AppNavigation(
             val app = LocalContext.current.applicationContext as com.openminis.app.MinisApp
             CreativeLibraryScreen(
                 repository = app.creativeArtifactRepository,
+                deviceDirectory = app.creativeArtifactDeviceDirectory,
                 conversationId = entry.arguments?.getString("sessionId"),
                 onBack = { navController.safePopBackStack() },
                 onOpenArtifact = { record, file ->
