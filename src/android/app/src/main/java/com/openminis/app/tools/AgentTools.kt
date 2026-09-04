@@ -38,6 +38,7 @@ object AgentTools {
         add(renderPanelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
+        addAll(NovexManagementTools.definitions())
         if (interactiveFictionActive) {
             add(updatePlaythroughStateDefinition())
         }

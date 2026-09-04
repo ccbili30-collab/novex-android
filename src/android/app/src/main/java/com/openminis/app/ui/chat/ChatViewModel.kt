@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import androidx.room.withTransaction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -60,6 +61,7 @@ import com.openminis.app.tools.FileReadTool
 import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
+import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
 import com.openminis.app.novex.domain.ConversationControlDefinition
@@ -83,6 +85,13 @@ import com.openminis.app.novex.domain.NovexContextPromptFormatter
 import com.openminis.app.novex.domain.NovexCreativeDistillationPolicy
 import com.openminis.app.novex.domain.NovexContextUsageLedger
 import com.openminis.app.novex.domain.NovexContextUsageLedgerSnapshot
+import com.openminis.app.novex.domain.ManagedAccess
+import com.openminis.app.novex.domain.NovexContentAddress
+import com.openminis.app.novex.domain.NovexContentKind
+import com.openminis.app.novex.domain.NovexConversationCommand
+import com.openminis.app.novex.domain.NovexManagementInspection
+import com.openminis.app.novex.domain.NovexManagementPlan
+import com.openminis.app.novex.domain.NovexManagementService
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
@@ -102,6 +111,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.json.JSONObject
@@ -871,6 +881,8 @@ class ChatViewModel(
 
     /** Structured agent history for the agent loop (contentParts-based). */
     private val agentHistory = mutableListOf<LLMMessage>()
+    private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
+    private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
 
     /**
      * All agent tool definitions, recomputed on each read so the memory
@@ -8767,8 +8779,210 @@ class ChatViewModel(
             "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
             "register_controls" -> executeRegisterControlsTool(argsJson)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
+            NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
+            NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
+            NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
+    }
+
+    private suspend fun executeNovexInspectTool(argsJson: String): ToolExecutionResult = runCatching {
+        val args = JSONObject(argsJson.ifBlank { "{}" })
+        val inspection = novexManagementService().inspect(
+            configuration = currentNovexConfiguration(),
+            subject = args.managementSubjectOrNull(),
+            moduleId = args.optString("module_id").trim().ifBlank { null },
+        )
+        ToolExecutionResult(
+            output = inspection.toToolJson().toString(2),
+            success = true,
+            toolTitle = "查看挂载内容",
+        )
+    }.getOrElse { error ->
+        ToolExecutionResult(
+            output = "无法查看内容：${error.message ?: "请求无效"}",
+            success = false,
+            toolTitle = "查看挂载内容",
+        )
+    }
+
+    private suspend fun executeNovexProposeTool(argsJson: String): ToolExecutionResult =
+        novexManagementMutex.withLock {
+            runCatching {
+                val plan = novexManagementService().propose(
+                    configuration = currentNovexConfiguration(),
+                    changesJson = JSONObject(argsJson).jsonArrayText("changes"),
+                    latestUserRequest = latestExplicitUserText(),
+                    planId = java.util.UUID.randomUUID().toString(),
+                )
+                pendingNovexManagementPlans[plan.id] = plan
+                while (pendingNovexManagementPlans.size > 20) {
+                    pendingNovexManagementPlans.remove(pendingNovexManagementPlans.keys.first())
+                }
+                ToolExecutionResult(
+                    output = buildString {
+                        appendLine("变更计划：${plan.id}")
+                        appendLine("风险：${plan.risk.name}")
+                        appendLine("内容：${plan.summary}")
+                        if (plan.impact.isNotEmpty()) appendLine("影响：${plan.impact.joinToString("；")}")
+                        appendLine("尚未执行。请停止本轮工具调用并等待用户确认。")
+                        append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
+                    },
+                    success = true,
+                    toolTitle = "提出内容变更",
+                )
+            }.getOrElse { error ->
+                ToolExecutionResult(
+                    output = "无法生成变更计划：${error.message ?: "请求无效"}",
+                    success = false,
+                    toolTitle = "提出内容变更",
+                )
+            }
+        }
+
+    private suspend fun executeNovexApplyTool(argsJson: String): ToolExecutionResult =
+        novexManagementMutex.withLock {
+            runCatching {
+                val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
+                val plan = requireNotNull(pendingNovexManagementPlans[proposalId]) {
+                    "变更计划不存在或已失效，请重新提出变更"
+                }
+                val application = novexApplication()
+                val configuration = currentNovexConfiguration()
+                val confirmation = latestExplicitUserText()
+                val (result, updated) = application.database.withTransaction {
+                    val applied = NovexManagementService(
+                        workspace = application.novexWorkspace,
+                        artifacts = application.creativeArtifactRepository,
+                    ).apply(configuration, plan, confirmation)
+                    val nextConfiguration = applied.createdSubjects.fold(configuration) { value, subject ->
+                        NovexConversationConfiguration.open(value).apply(
+                            NovexConversationCommand.MountSubject(subject, ManagedAccess.EDIT),
+                        ).snapshot
+                    }
+                    val sid = realSessionId
+                    if (sid.isNotEmpty() && nextConfiguration != configuration) {
+                        chatRepository.updateConversationSettings(
+                            sid,
+                            conversationSettingsSnapshot().copy(
+                                novexConfigurationJson = NovexConversationConfigurationCodec.encode(nextConfiguration),
+                            ),
+                        )
+                    }
+                    applied to nextConfiguration
+                }
+                installNovexConfiguration(updated)
+                pendingNovexManagementPlans.remove(proposalId)
+                ToolExecutionResult(
+                    output = JSONObject().apply {
+                        put("proposal_id", proposalId)
+                        put("applied_changes", result.changes.size)
+                        put("created_subjects", org.json.JSONArray().apply {
+                            result.createdSubjects.forEach { subject ->
+                                put(JSONObject().put("kind", subject.kind.toolValue()).put("id", subject.id))
+                            }
+                        })
+                    }.toString(2),
+                    success = true,
+                    toolTitle = "执行内容变更",
+                )
+            }.getOrElse { error ->
+                ToolExecutionResult(
+                    output = "内容没有修改：${error.message ?: "执行失败"}",
+                    success = false,
+                    toolTitle = "执行内容变更",
+                )
+            }
+        }
+
+    private fun novexApplication(): com.openminis.app.MinisApp {
+        val application = context.applicationContext as? com.openminis.app.MinisApp
+            ?: error("Novex 应用环境不可用")
+        require(application.subsystemsReady()) { "Novex 数据服务尚未就绪" }
+        return application
+    }
+
+    private fun novexManagementService(): NovexManagementService {
+        val application = novexApplication()
+        return NovexManagementService(
+            workspace = application.novexWorkspace,
+            artifacts = application.creativeArtifactRepository,
+        )
+    }
+
+    private fun latestExplicitUserText(): String = agentHistory.asReversed().firstNotNullOfOrNull { message ->
+        if (message.role != LLMMessage.Role.USER ||
+            message.contentParts.any { it is AgentContentPart.ToolResult }
+        ) return@firstNotNullOfOrNull null
+        message.content.trim().ifBlank {
+            message.contentParts.filterIsInstance<AgentContentPart.Text>()
+                .joinToString("\n") { it.text }
+                .trim()
+        }.takeIf(String::isNotEmpty)
+    }.orEmpty()
+
+    private fun JSONObject.managementSubjectOrNull(): NovexContentAddress? {
+        val kind = optString("subject_kind").trim()
+        val id = optString("subject_id").trim()
+        require(kind.isBlank() == id.isBlank()) { "subject_kind 和 subject_id 必须同时提供" }
+        if (kind.isBlank()) return null
+        return NovexContentAddress(
+            kind = when (kind) {
+                "world" -> NovexContentKind.WORLD
+                "character_version" -> NovexContentKind.CHARACTER_VERSION
+                "game" -> NovexContentKind.INTERACTIVE_FICTION
+                else -> error("未知管理对象类型：$kind")
+            },
+            id = id,
+        )
+    }
+
+    private fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
+        put("mounted_subjects", org.json.JSONArray().apply {
+            subjects.forEach { value ->
+                put(JSONObject().apply {
+                    put("kind", value.subject.kind.toolValue())
+                    put("id", value.subject.id)
+                    put("label", value.label)
+                    put("access", value.access.name.lowercase())
+                })
+            }
+        })
+        selectedSubject?.let {
+            put("selected_subject", JSONObject().put("kind", it.kind.toolValue()).put("id", it.id))
+        }
+        selectedSubjectJson?.let { subjectJson ->
+            put("subject", runCatching { JSONObject(subjectJson) }.getOrElse { subjectJson })
+        }
+        put("modules", org.json.JSONArray().apply {
+            modules.forEach { module ->
+                put(JSONObject().apply {
+                    put("id", module.id)
+                    put("type", module.type.name)
+                    put("name", module.name)
+                    put("position", module.position)
+                    put("content", runCatching { JSONObject(module.contentJson) }.getOrElse { module.contentJson })
+                })
+            }
+        })
+        selectedModule?.let { detail ->
+            put("references", org.json.JSONArray().apply {
+                detail.references.forEach { reference ->
+                    put(JSONObject().apply {
+                        put("kind", reference.targetType.name.lowercase())
+                        put("id", reference.targetId)
+                        put("position", reference.position)
+                    })
+                }
+            })
+        }
+    }
+
+    private fun NovexContentKind.toolValue(): String = when (this) {
+        NovexContentKind.WORLD -> "world"
+        NovexContentKind.CHARACTER_VERSION -> "character_version"
+        NovexContentKind.INTERACTIVE_FICTION -> "game"
+        NovexContentKind.CREATIVE_ARTIFACT -> "artifact"
     }
 
     private fun executePresentChoicesTool(argsJson: String): ToolExecutionResult {
@@ -11981,6 +12195,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "save_checkpoint" -> "保存文游进度"
         "register_controls" -> "更新快捷操作"
         "update_playthrough_state" -> "更新本局状态"
+        "novex_inspect_content" -> "查看挂载内容"
+        "novex_propose_content_changes" -> "提出内容变更"
+        "novex_apply_content_changes" -> "执行内容变更"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

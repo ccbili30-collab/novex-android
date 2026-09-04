@@ -9,6 +9,7 @@ import com.openminis.app.novex.domain.CreativeArtifactOrigin
 import com.openminis.app.novex.domain.CreativeArtifactRevision
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
+import com.openminis.app.novex.domain.NovexManagementArtifactPort
 import java.io.File
 import java.util.UUID
 
@@ -32,7 +33,7 @@ data class CreativeArtifactRecord(
 class CreativeArtifactRepository(
     private val database: AppDatabase,
     private val files: CreativeArtifactFileStore,
-) {
+) : NovexManagementArtifactPort {
     private val dao get() = database.creativeArtifactDao()
 
     suspend fun capture(
@@ -113,12 +114,14 @@ class CreativeArtifactRepository(
                 (query.owner == null || record.attachments.any { it.owner == query.owner })
         }.toList()
 
-    suspend fun attach(attachment: CreativeArtifactAttachment) {
+    override suspend fun exists(artifactId: String): Boolean = dao.artifact(artifactId) != null
+
+    override suspend fun attach(attachment: CreativeArtifactAttachment) {
         requireNotNull(dao.artifact(attachment.artifactId)) { "创作成果不存在" }
         dao.attach(attachment.toEntity())
     }
 
-    suspend fun detach(attachment: CreativeArtifactAttachment) {
+    override suspend fun detach(attachment: CreativeArtifactAttachment) {
         val value = attachment.toEntity()
         dao.detach(value.artifactId, value.ownerKind, value.ownerId, value.moduleId, value.slot)
     }

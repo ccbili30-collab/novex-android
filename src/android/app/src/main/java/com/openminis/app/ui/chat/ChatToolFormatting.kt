@@ -89,6 +89,9 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "save_checkpoint" -> "保存进度"
     "register_controls" -> "更新快捷操作"
     "update_playthrough_state" -> "更新本局状态"
+    "novex_inspect_content" -> "查看挂载内容"
+    "novex_propose_content_changes" -> "提出内容变更"
+    "novex_apply_content_changes" -> "执行内容变更"
     else -> "处理内容"
 }
 

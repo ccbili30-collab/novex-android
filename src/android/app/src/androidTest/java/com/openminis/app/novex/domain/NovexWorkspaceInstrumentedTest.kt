@@ -1,6 +1,7 @@
 package com.openminis.app.novex.domain
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.character.CharacterLibraryDocument
@@ -17,6 +18,8 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.db.AppDatabase
+import com.openminis.app.data.creative.CreativeArtifactFileStore
+import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import com.openminis.app.novex.adapter.NovexWorkspaceFactory
 import java.io.File
@@ -159,6 +162,40 @@ class NovexWorkspaceInstrumentedTest {
         assertEquals(listOf("势力", "王朝时间线"), restored.map { it.name })
         assertEquals(listOf(0, 1), restored.map { it.position })
         assertEquals("新内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(restored.last().contentJson))
+    }
+
+    @Test
+    fun confirmedManagementBatchRollsBackEveryChangeWhenOneOperationFails() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("事务世界", now = 1)).requireWorld()
+        val artifacts = CreativeArtifactRepository(
+            database,
+            CreativeArtifactFileStore(File(mediaRoot, "artifacts")),
+        )
+        val service = NovexManagementService(workspace, artifacts)
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-transaction",
+            managedSubjects = listOf(
+                ManagedSubject(NovexContentAddress.world(world.id), ManagedAccess.EDIT),
+            ),
+        )
+        val proposal = service.propose(
+            configuration = configuration,
+            changesJson = """[
+              {"operation":"add_module","subject_kind":"world","subject_id":"${world.id}","module_type":"MAP","name":"第一张地图","content_json":{}},
+              {"operation":"add_module","subject_kind":"world","subject_id":"${world.id}","module_type":"MAP","name":"重复地图","content_json":{}}
+            ]""".trimIndent(),
+            latestUserRequest = "添加地图模块",
+            planId = "transaction-proposal",
+        )
+
+        val failed = runCatching {
+            database.withTransaction {
+                service.apply(configuration, proposal, proposal.confirmationPhrase)
+            }
+        }
+
+        assertTrue(failed.isFailure)
+        assertTrue(workspace.modules(ModuleOwner.world(world.id)).modules.isEmpty())
     }
 
     @Test
