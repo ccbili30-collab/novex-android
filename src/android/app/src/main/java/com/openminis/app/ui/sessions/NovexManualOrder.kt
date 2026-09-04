@@ -28,6 +28,7 @@ internal enum class NovexManualOrderKind(val preferenceKey: String) {
     CONVERSATIONS("conversations"),
     WORLDS("worlds"),
     CHARACTERS("characters"),
+    INTERACTIVE_FICTION("interactive_fiction"),
 }
 
 internal class NovexManualOrderStore(context: Context) {

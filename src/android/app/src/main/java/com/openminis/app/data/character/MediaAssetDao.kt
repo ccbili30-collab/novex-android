@@ -73,6 +73,9 @@ interface MediaAssetDao {
     @Query("SELECT EXISTS(SELECT 1 FROM character_versions WHERE id = :id)")
     suspend fun characterVersionExists(id: String): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM interactive_fiction_projects WHERE id = :id)")
+    suspend fun interactiveFictionExists(id: String): Boolean
+
     @Query("SELECT EXISTS(SELECT 1 FROM content_modules WHERE id = :id)")
     suspend fun contentModuleExists(id: String): Boolean
 

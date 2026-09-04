@@ -9,10 +9,13 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.AppDatabase
+import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
+import com.openminis.app.data.interactivefiction.InteractiveFictionRepository
 import com.openminis.app.novex.domain.DefaultNovexWorkspace
 import com.openminis.app.novex.domain.NovexCatalogPort
 import com.openminis.app.novex.domain.NovexContentPort
 import com.openminis.app.novex.domain.NovexMediaPort
+import com.openminis.app.novex.domain.NovexInteractiveFictionPort
 import com.openminis.app.novex.domain.NovexWorkspace
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,6 +28,7 @@ object NovexWorkspaceFactory {
     fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace {
         val catalog = CharacterCatalogRepository(database.characterCatalogDao())
         val content = ContentModuleRepository(database.contentModuleDao())
+        val interactiveFiction = InteractiveFictionRepository(database.interactiveFictionDao())
         val canonicalMediaRoot = mediaRoot.canonicalFile
         val fileTransaction = ManagedMediaFileTransaction(canonicalMediaRoot)
         val commandMutex = Mutex()
@@ -33,6 +37,7 @@ object NovexWorkspaceFactory {
         }
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
+            interactiveFiction = RoomInteractiveFictionAdapter(interactiveFiction),
             content = RoomContentAdapter(content),
             media = ManagedMediaAdapter(
                 mediaRepository,
@@ -75,12 +80,41 @@ internal class DeferredNovexWorkspace(
 
     override suspend fun worlds() = workspace().worlds()
     override suspend fun characters() = workspace().characters()
+    override suspend fun interactiveFictions() = workspace().interactiveFictions()
     override suspend fun world(id: String) = workspace().world(id)
     override suspend fun character(id: String) = workspace().character(id)
+    override suspend fun interactiveFiction(id: String) = workspace().interactiveFiction(id)
     override suspend fun modules(owner: ModuleOwner) = workspace().modules(owner)
     override suspend fun module(id: String) = workspace().module(id)
     override suspend fun apply(command: com.openminis.app.novex.domain.NovexCommand) =
         workspace().apply(command)
+}
+
+private class RoomInteractiveFictionAdapter(
+    private val repository: InteractiveFictionRepository,
+) : NovexInteractiveFictionPort {
+    override suspend fun create(
+        name: String,
+        summary: String,
+        launchMode: com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode,
+        playerIdentity: String,
+        now: Long,
+        sourceId: String?,
+        sourceDocumentJson: String?,
+    ) = repository.create(
+        name = name,
+        summary = summary,
+        launchMode = launchMode,
+        playerIdentity = playerIdentity,
+        now = now,
+        sourceId = sourceId,
+        sourceDocumentJson = sourceDocumentJson,
+    )
+
+    override suspend fun save(project: InteractiveFictionProjectEntity, now: Long) = repository.save(project, now)
+    override suspend fun project(id: String) = repository.project(id)
+    override suspend fun list() = repository.list()
+    override suspend fun delete(id: String) = repository.delete(id)
 }
 
 /** Keeps managed-file side effects aligned with the surrounding Room transaction. */

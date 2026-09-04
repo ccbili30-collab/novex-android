@@ -168,6 +168,8 @@ object Routes {
     const val CHARACTER_START = "characters/start/{characterId}"
     const val CHARACTER_CATALOG_EDIT =
         "characters/catalog/edit?characterId={characterId}&versionId={versionId}&worldId={worldId}&createVariant={createVariant}"
+    const val INTERACTIVE_FICTION_DETAIL = "interactive-fiction/card/{projectId}"
+    const val INTERACTIVE_FICTION_EDIT = "interactive-fiction/edit?projectId={projectId}"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
     /**
@@ -231,6 +233,14 @@ object Routes {
         versionId?.let { append("&versionId=").append(android.net.Uri.encode(it)) }
         worldId?.let { append("&worldId=").append(android.net.Uri.encode(it)) }
     }
+    fun interactiveFiction(projectId: String) =
+        "interactive-fiction/card/${android.net.Uri.encode(projectId)}"
+    fun interactiveFictionEdit(projectId: String? = null) =
+        if (projectId == null) {
+            "interactive-fiction/edit"
+        } else {
+            "interactive-fiction/edit?projectId=${android.net.Uri.encode(projectId)}"
+        }
     fun chat(sessionId: String) = "chat/$sessionId"
     fun conversationSettings(sessionId: String) =
         "conversation_settings/${android.net.Uri.encode(sessionId)}"
@@ -521,6 +531,12 @@ fun AppNavigation(
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit())
                 },
+                onOpenInteractiveFiction = { projectId ->
+                    navController.safeNavigate(Routes.interactiveFiction(projectId))
+                },
+                onCreateInteractiveFiction = {
+                    navController.safeNavigate(Routes.interactiveFictionEdit())
+                },
                 onOpenSettings = {
                     navController.safeNavigate(Routes.SETTINGS)
                 },
@@ -808,6 +824,68 @@ fun AppNavigation(
                 },
                 onSaved = { characterId ->
                     navController.safeNavigate(Routes.characterDetail(characterId)) {
+                        popUpTo(entry.destination.id) {
+                            inclusive = savedNavigationPlan.replaceCurrentEditor
+                        }
+                        launchSingleTop = savedNavigationPlan.launchSingleTop
+                    }
+                },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
+            )
+        }
+
+        composable(
+            route = Routes.INTERACTIVE_FICTION_DETAIL,
+            arguments = listOf(navArgument("projectId") { type = NavType.StringType }),
+        ) { entry ->
+            val projectId = entry.arguments?.getString("projectId") ?: return@composable
+            com.openminis.app.ui.settings.CatalogInteractiveFictionDetailScreen(
+                projectId = projectId,
+                onBack = { navController.safePopBackStack() },
+                onEdit = {
+                    navController.safeNavigate(Routes.interactiveFictionEdit(projectId))
+                },
+                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
+                onShareToConversation = { fullText ->
+                    val share = com.openminis.app.share.PendingShare(
+                        items = listOf(
+                            com.openminis.app.share.PendingShare.Item(
+                                com.openminis.app.share.PendingShare.Item.Kind.INLINE_TEXT,
+                                fullText,
+                            ),
+                        ),
+                        timestampMs = System.currentTimeMillis(),
+                    )
+                    com.openminis.app.share.SharedShareStore.savePendingShare(context, share)
+                    com.openminis.app.share.ShareCoordinator.processPendingShare(context)
+                    navController.safeNavigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
+                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
+                    }
+                },
+            )
+        }
+
+        composable(
+            route = Routes.INTERACTIVE_FICTION_EDIT,
+            arguments = listOf(
+                navArgument("projectId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            val savedNavigationPlan = novexSavedDetailNavigationPlan()
+            com.openminis.app.ui.settings.CatalogInteractiveFictionEditorScreen(
+                projectId = entry.arguments?.getString("projectId"),
+                onBack = { navController.safePopBackStack() },
+                onDeleted = {
+                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
+                        (context as? android.app.Activity)?.finish()
+                    }
+                },
+                onSaved = { projectId ->
+                    navController.safeNavigate(Routes.interactiveFiction(projectId)) {
                         popUpTo(entry.destination.id) {
                             inclusive = savedNavigationPlan.replaceCurrentEditor
                         }

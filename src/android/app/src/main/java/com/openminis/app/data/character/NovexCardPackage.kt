@@ -16,6 +16,7 @@ enum class NovexCardKind(
 ) {
     WORLD("novex.world.package", "world.json", "novexworld"),
     CHARACTER("novex.character.package", "character.json", "novexcharacter"),
+    GAME("novex.game.package", "game.json", "novexgame"),
 }
 
 data class NovexCardMedia(
@@ -54,7 +55,7 @@ object NovexCardPackageCodec {
         require(manifest.optInt("schemaVersion") == SCHEMA_VERSION) { "不支持的卡包版本" }
         val kind = NovexCardKind.entries.firstOrNull {
             it.packageType == manifest.optString("packageType")
-        } ?: error("不是 Novex 世界卡或角色卡")
+        } ?: error("不是 Novex 世界卡、角色卡或文游卡")
         require(manifest.optString("entry") == kind.entryName) { "卡包主文档路径无效" }
         val documentBytes = requireNotNull(entries[kind.entryName]) { "卡包缺少 ${kind.entryName}" }
         JSONObject(documentBytes.toString(Charsets.UTF_8))

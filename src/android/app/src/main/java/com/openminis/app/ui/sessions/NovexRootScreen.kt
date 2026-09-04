@@ -63,6 +63,8 @@ fun NovexRootScreen(
     onCreateWorld: () -> Unit,
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
+    onOpenInteractiveFiction: (String) -> Unit,
+    onCreateInteractiveFiction: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
@@ -145,6 +147,8 @@ fun NovexRootScreen(
                                 onOpenSettings = onOpenSettings,
                             )
                             NovexRootSpace.INTERACTIVE_FICTION -> NovexInteractiveFictionLibraryRoot(
+                                onOpenInteractiveFiction = onOpenInteractiveFiction,
+                                onCreateInteractiveFiction = onCreateInteractiveFiction,
                                 onOpenSettings = onOpenSettings,
                             )
                         }

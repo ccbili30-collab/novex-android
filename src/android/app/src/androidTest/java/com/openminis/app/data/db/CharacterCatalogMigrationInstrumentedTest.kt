@@ -188,6 +188,25 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration22AddsInteractiveFictionProjectsWithoutChangingExistingCatalogRows() {
+        val db = helper.writableDatabase
+        db.execSQL(
+            "CREATE TABLE worlds (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+        )
+        db.execSQL("INSERT INTO worlds VALUES ('w1', '云岚书院')")
+
+        AppDatabase.MIGRATION_21_22.migrate(db)
+
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'interactive_fiction_projects'",
+        ).use { cursor -> assertEquals(true, cursor.moveToFirst()) }
+        db.query("SELECT name FROM worlds WHERE id = 'w1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("云岚书院", cursor.getString(0))
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

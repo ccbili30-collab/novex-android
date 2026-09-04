@@ -63,6 +63,9 @@ interface ContentModuleDao {
     @Query("SELECT EXISTS(SELECT 1 FROM character_versions WHERE id = :id)")
     suspend fun characterVersionExists(id: String): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM interactive_fiction_projects WHERE id = :id)")
+    suspend fun interactiveFictionExists(id: String): Boolean
+
     @Transaction
     suspend fun append(
         module: ContentModuleEntity,

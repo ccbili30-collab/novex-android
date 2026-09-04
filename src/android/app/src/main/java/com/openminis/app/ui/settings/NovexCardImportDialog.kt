@@ -15,6 +15,7 @@ import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardPackagePreview
 import com.openminis.app.data.character.NovexCharacterImportDocument
+import com.openminis.app.data.character.NovexInteractiveFictionImportDocument
 import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.NovexWorldImportDocument
 import com.openminis.app.ui.novex.NovexOutlineButton
@@ -41,6 +42,11 @@ internal fun NovexCardImportPreviewDialog(
             "${document.versions.sumOf { it.modules.size }} 个内容模块",
             "${preview.media.size} 张图片",
         )
+        is NovexInteractiveFictionImportDocument -> listOf(
+            "${document.modules.size} 个内容模块",
+            document.launchMode.displayName,
+            "${preview.media.size} 张图片",
+        )
     }
     AlertDialog(
         onDismissRequest = { if (!importing) onDismiss() },
@@ -49,7 +55,11 @@ internal fun NovexCardImportPreviewDialog(
         text = {
             Column {
                 Text(
-                    if (preview.document is NovexWorldImportDocument) "世界卡" else "角色卡",
+                    when (preview.document) {
+                        is NovexWorldImportDocument -> "世界卡"
+                        is NovexCharacterImportDocument -> "角色卡"
+                        is NovexInteractiveFictionImportDocument -> "文游卡"
+                    },
                     color = MaterialTheme.colorScheme.primary,
                 )
                 summary.forEach { line -> Text(line, modifier = Modifier.padding(top = 8.dp)) }
@@ -78,7 +88,13 @@ internal fun NovexCardImportPreviewDialog(
 internal fun shareNovexCardPackage(context: Context, card: NovexCardPackagePreview) {
     val safeName = card.displayName.replace(Regex("[^A-Za-z0-9\\u4e00-\\u9fff._-]+"), "-")
         .trim('-')
-        .ifBlank { if (card.kind == NovexCardKind.WORLD) "world" else "character" }
+        .ifBlank {
+            when (card.kind) {
+                NovexCardKind.WORLD -> "world"
+                NovexCardKind.CHARACTER -> "character"
+                NovexCardKind.GAME -> "game"
+            }
+        }
     val directory = File(context.cacheDir, "share").apply { mkdirs() }
     val file = File(directory, "$safeName.${card.kind.extension}")
     file.writeBytes(NovexCardPackageCodec.encode(card))

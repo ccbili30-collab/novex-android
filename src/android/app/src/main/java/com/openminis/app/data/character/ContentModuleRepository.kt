@@ -151,6 +151,7 @@ class ContentModuleRepository(
         val exists = when (owner.type) {
             ModuleOwnerType.WORLD -> dao.worldExists(owner.id)
             ModuleOwnerType.CHARACTER_VERSION -> dao.characterVersionExists(owner.id)
+            ModuleOwnerType.INTERACTIVE_FICTION -> dao.interactiveFictionExists(owner.id)
             ModuleOwnerType.CONTENT_MODULE -> false
         }
         require(exists) { "模块所有者不存在" }

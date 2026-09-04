@@ -167,6 +167,7 @@ internal object NovexType {
 internal enum class NovexArtworkKind {
     WORLD,
     CHARACTER,
+    INTERACTIVE_FICTION,
 }
 
 internal data class NovexBuiltInArtwork(
@@ -245,6 +246,9 @@ internal fun novexArtworkFallback(kind: NovexArtworkKind, seed: String): NovexAr
             NovexBuiltInWorldArtwork.stableCoverId(seed),
         )
         NovexArtworkKind.CHARACTER -> NovexArtworkFallback.NeutralEmpty
+        NovexArtworkKind.INTERACTIVE_FICTION -> NovexArtworkFallback.BuiltInWorldCover(
+            NovexBuiltInWorldArtwork.stableCoverId(seed),
+        )
     }
 
 /** Shared media surface for root cards, detail heroes and previews. */

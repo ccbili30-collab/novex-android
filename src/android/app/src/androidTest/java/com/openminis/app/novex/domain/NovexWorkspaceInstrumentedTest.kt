@@ -17,6 +17,7 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.db.AppDatabase
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import com.openminis.app.novex.adapter.NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -272,6 +273,62 @@ class NovexWorkspaceInstrumentedTest {
         assertEquals(4, worldRoundTrip.modules.single { it.type == ContentModuleType.FACTION }.itemImagePaths.size)
         assertEquals(listOf("本体", "医馆时期", "云岚分身"), characterRoundTrip.versions.map { it.label })
         assertEquals(3, characterRoundTrip.versions.first().modules.size)
+    }
+
+    @Test
+    fun interactiveFictionSavesImportsExportsAndCopiesInVisibleModuleOrder() = runBlocking {
+        val saved = workspace.apply(
+            NovexCommand.SaveInteractiveFictionPage(
+                projectId = null,
+                name = "云岚问道",
+                summary = "一段可共创世界后开始的文游",
+                launchMode = InteractiveFictionLaunchMode.CO_CREATE_WORLD,
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "rules",
+                        type = ContentModuleType.GAME_NARRATIVE_RULES,
+                        name = "叙事规则",
+                        contentJson = "{\"version\":1,\"kind\":\"article\",\"text\":\"不替玩家做决定\"}",
+                    ),
+                    NovexModuleDraft(
+                        id = "opening",
+                        type = ContentModuleType.GAME_OPENING,
+                        name = "开局说明",
+                        contentJson = "{\"version\":1,\"kind\":\"article\",\"text\":\"山门初开\"}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        MediaAssetSlot.INTERACTIVE_FICTION_COVER,
+                        byteArrayOf(2, 3, 5, 7),
+                        "image/png",
+                    ),
+                ),
+                now = 100,
+            ),
+        ).requireInteractiveFiction()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val snapshot = requireNotNull(workspace.interactiveFiction(saved.id))
+        assertEquals(listOf("rules", "opening"), snapshot.modules.map { it.id })
+        assertEquals(
+            byteArrayOf(2, 3, 5, 7).toList(),
+            File(snapshot.media.getValue(MediaAssetSlot.INTERACTIVE_FICTION_COVER).managedPath).readBytes().toList(),
+        )
+
+        val fullText = workspace.apply(NovexCommand.ExportInteractiveFictionText(saved.id)).requireText()
+        assertTrue(fullText.indexOf("## 叙事规则") < fullText.indexOf("## 开局说明"))
+
+        val exported = workspace.apply(NovexCommand.ExportNativeInteractiveFiction(saved.id)).requireNativeCard()
+        assertEquals(NovexCardKind.GAME, exported.kind)
+        val parsed = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)),
+        )
+        val imported = workspace.apply(NovexCommand.ImportNativeCard(parsed)).requireNativeImport()
+        val importedSnapshot = requireNotNull(workspace.interactiveFiction(imported.localId))
+        assertNotEquals(saved.id, imported.localId)
+        assertEquals("云岚问道", importedSnapshot.project.name)
+        assertEquals(listOf("rules", "opening"), importedSnapshot.modules.map { it.id })
     }
 
     @Test

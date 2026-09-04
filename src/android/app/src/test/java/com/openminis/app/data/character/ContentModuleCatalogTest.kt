@@ -35,6 +35,25 @@ class ContentModuleCatalogTest {
         )
         assertEquals("时代与事件", ContentModuleCatalog.definition(ContentModuleType.ERA_EVENT).displayName)
         assertEquals("世界经历", ContentModuleCatalog.definition(ContentModuleType.WORLD_EXPERIENCE).displayName)
+        assertEquals(
+            listOf(
+                ContentModuleType.GAME_PLAYER_IDENTITY,
+                ContentModuleType.GAME_OPENING,
+                ContentModuleType.GAME_NARRATIVE_RULES,
+                ContentModuleType.GAME_POWER_SYSTEM,
+                ContentModuleType.GAME_ATTRIBUTES,
+                ContentModuleType.GAME_SKILLS,
+                ContentModuleType.GAME_EQUIPMENT,
+                ContentModuleType.GAME_ITEMS,
+                ContentModuleType.GAME_QUESTS,
+                ContentModuleType.GAME_CHECKS,
+                ContentModuleType.GAME_ENDINGS,
+                ContentModuleType.GAME_CHARACTER_STATUS,
+                ContentModuleType.GAME_QUICK_ACTIONS,
+                ContentModuleType.CUSTOM,
+            ),
+            ContentModuleCatalog.definitions(ContentModuleScope.INTERACTIVE_FICTION).map { it.type },
+        )
     }
 
     @Test
@@ -58,6 +77,10 @@ class ContentModuleCatalogTest {
         assertEquals(
             ContentModuleScope.CHARACTER_VERSION,
             ContentModuleCatalog.scopeFor(ModuleOwnerType.CHARACTER_VERSION),
+        )
+        assertEquals(
+            ContentModuleScope.INTERACTIVE_FICTION,
+            ContentModuleCatalog.scopeFor(ModuleOwnerType.INTERACTIVE_FICTION),
         )
         assertEquals(null, ContentModuleCatalog.scopeFor(ModuleOwnerType.CONTENT_MODULE))
     }

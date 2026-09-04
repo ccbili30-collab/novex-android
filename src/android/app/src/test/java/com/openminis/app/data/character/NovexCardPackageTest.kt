@@ -13,6 +13,13 @@ import org.junit.Test
 
 class NovexCardPackageTest {
     @Test
+    fun interactiveFictionUsesItsStableNativePackageIdentity() {
+        assertEquals("novex.game.package", NovexCardKind.GAME.packageType)
+        assertEquals("game.json", NovexCardKind.GAME.entryName)
+        assertEquals("novexgame", NovexCardKind.GAME.extension)
+    }
+
+    @Test
     fun validatedPreviewCanBeRepackedWithoutChangingItsDocumentOrMedia() {
         val image = pngBytes()
         val packageBytes = NovexCardPackageCodec.encode(

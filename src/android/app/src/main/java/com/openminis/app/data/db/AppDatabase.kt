@@ -22,6 +22,9 @@ import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetReferenceEntity
 import com.openminis.app.data.character.WorldCharacterVersionEntity
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.data.interactivefiction.InteractiveFictionConverters
+import com.openminis.app.data.interactivefiction.InteractiveFictionDao
+import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 
 @Database(
     entities = [
@@ -39,14 +42,16 @@ import com.openminis.app.data.character.WorldEntity
         ContentModuleReferenceEntity::class,
         MediaAssetEntity::class,
         MediaAssetReferenceEntity::class,
+        InteractiveFictionProjectEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = false,
 )
 @TypeConverters(
     CharacterCatalogConverters::class,
     ContentModuleConverters::class,
     MediaAssetConverters::class,
+    InteractiveFictionConverters::class,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
@@ -54,6 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun characterCatalogDao(): CharacterCatalogDao
     abstract fun contentModuleDao(): ContentModuleDao
     abstract fun mediaAssetDao(): MediaAssetDao
+    abstract fun interactiveFictionDao(): InteractiveFictionDao
 
     companion object {
         @Volatile
@@ -549,6 +555,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds reusable interactive-fiction projects without rewriting existing product data. */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS interactive_fiction_projects (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        launch_mode TEXT NOT NULL,
+                        player_identity TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        source_id TEXT,
+                        source_document_json TEXT
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -586,7 +613,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                     .build()
                     .also { INSTANCE = it }
             }

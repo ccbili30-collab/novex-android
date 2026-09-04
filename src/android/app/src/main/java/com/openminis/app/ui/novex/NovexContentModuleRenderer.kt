@@ -43,6 +43,7 @@ internal enum class NovexContentModuleLayout {
     CHARACTER_QUOTES,
     CHARACTER_FACTS,
     CHARACTER_COLLECTION,
+    GAME_COLLECTION,
     ARTICLE,
 }
 
@@ -63,7 +64,22 @@ internal fun ContentModuleType.novexContentLayout(): NovexContentModuleLayout = 
     ContentModuleType.APPEARANCE_PERSONALITY,
     ContentModuleType.INTEREST,
     -> NovexContentModuleLayout.CHARACTER_COLLECTION
-    ContentModuleType.CUSTOM -> NovexContentModuleLayout.ARTICLE
+    ContentModuleType.GAME_ATTRIBUTES,
+    ContentModuleType.GAME_SKILLS,
+    ContentModuleType.GAME_EQUIPMENT,
+    ContentModuleType.GAME_ITEMS,
+    ContentModuleType.GAME_QUESTS,
+    ContentModuleType.GAME_CHECKS,
+    ContentModuleType.GAME_ENDINGS,
+    ContentModuleType.GAME_CHARACTER_STATUS,
+    ContentModuleType.GAME_QUICK_ACTIONS,
+    -> NovexContentModuleLayout.GAME_COLLECTION
+    ContentModuleType.GAME_PLAYER_IDENTITY,
+    ContentModuleType.GAME_OPENING,
+    ContentModuleType.GAME_NARRATIVE_RULES,
+    ContentModuleType.GAME_POWER_SYSTEM,
+    ContentModuleType.CUSTOM,
+    -> NovexContentModuleLayout.ARTICLE
 }
 
 internal data class NovexContentModulePresentation(
@@ -142,7 +158,12 @@ internal fun NovexContentModuleBlock(
                 imageModel,
                 itemImageModels,
             )
-            NovexContentModuleLayout.CHARACTER_COLLECTION -> CharacterCollectionModuleBody(
+            NovexContentModuleLayout.CHARACTER_COLLECTION -> CollectionModuleBody(
+                presentation,
+                imageModel,
+                itemImageModels,
+            )
+            NovexContentModuleLayout.GAME_COLLECTION -> CollectionModuleBody(
                 presentation,
                 imageModel,
                 itemImageModels,
@@ -434,7 +455,7 @@ private fun CharacterFactsModuleBody(
 }
 
 @Composable
-private fun CharacterCollectionModuleBody(
+private fun CollectionModuleBody(
     presentation: NovexContentModulePresentation,
     imageModel: Any?,
     itemImageModels: Map<String, Any?>,

@@ -30,6 +30,10 @@ import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.NovexWorldImportDocument
 import com.openminis.app.data.character.NovexWorldImportLink
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.data.character.NovexInteractiveFictionImportDocument
+import com.openminis.app.data.interactivefiction.InteractiveFictionDocumentComposer
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
+import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
@@ -43,8 +47,10 @@ import org.json.JSONObject
 interface NovexWorkspace {
     suspend fun worlds(): List<NovexWorldCard>
     suspend fun characters(): List<NovexCharacterCard>
+    suspend fun interactiveFictions(): List<NovexInteractiveFictionCard>
     suspend fun world(id: String): NovexWorldSnapshot?
     suspend fun character(id: String): NovexCharacterSnapshot?
+    suspend fun interactiveFiction(id: String): NovexInteractiveFictionSnapshot?
     suspend fun modules(owner: ModuleOwner): NovexModuleSnapshot
     suspend fun module(id: String): NovexModuleDetail?
     suspend fun apply(command: NovexCommand): NovexChange
@@ -60,6 +66,12 @@ data class NovexWorldCard(
 data class NovexCharacterCard(
     val character: CharacterAggregate,
     val avatar: MediaAssetEntity?,
+)
+
+data class NovexInteractiveFictionCard(
+    val project: InteractiveFictionProjectEntity,
+    val image: MediaAssetEntity?,
+    val moduleCount: Int,
 )
 
 data class NovexWorldSnapshot(
@@ -79,6 +91,14 @@ data class NovexCharacterSnapshot(
     val worldsByVersion: Map<String, List<WorldEntity>>,
     val mediaByVersion: Map<String, Map<MediaAssetSlot, MediaAssetEntity>>,
     val modulesByVersion: Map<String, List<ContentModuleEntity>>,
+    val moduleImages: Map<String, MediaAssetEntity>,
+    val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
+)
+
+data class NovexInteractiveFictionSnapshot(
+    val project: InteractiveFictionProjectEntity,
+    val media: Map<MediaAssetSlot, MediaAssetEntity>,
+    val modules: List<ContentModuleEntity>,
     val moduleImages: Map<String, MediaAssetEntity>,
     val moduleItemImages: Map<String, Map<String, MediaAssetEntity>>,
 )
@@ -188,6 +208,24 @@ sealed interface NovexCommand {
     data class ExportNativeCharacter(val characterId: String) : NovexCommand
 
     data class DeleteCharacter(val characterId: String) : NovexCommand
+
+    /** Saves one interactive-fiction editor draft at a single transaction boundary. */
+    data class SaveInteractiveFictionPage(
+        val projectId: String?,
+        val name: String,
+        val summary: String = "",
+        val launchMode: InteractiveFictionLaunchMode = InteractiveFictionLaunchMode.FREE_SANDBOX,
+        val playerIdentity: String = "",
+        val modules: List<NovexModuleDraft> = emptyList(),
+        val imageChanges: List<NovexImageChange> = emptyList(),
+        val now: Long = System.currentTimeMillis(),
+    ) : NovexCommand
+
+    data class DeleteInteractiveFiction(val projectId: String) : NovexCommand
+
+    data class ExportNativeInteractiveFiction(val projectId: String) : NovexCommand
+
+    data class ExportInteractiveFictionText(val projectId: String) : NovexCommand
 
     data class CreateVariant(
         val characterId: String,
@@ -300,6 +338,7 @@ sealed interface NovexCommand {
 sealed interface NovexChange {
     data class WorldSaved(val world: WorldEntity) : NovexChange
     data class CharacterSaved(val character: CharacterAggregate) : NovexChange
+    data class InteractiveFictionSaved(val project: InteractiveFictionProjectEntity) : NovexChange
     data class VersionSaved(val version: CharacterVersionEntity) : NovexChange
     data class ModuleSaved(val module: ContentModuleEntity) : NovexChange
     data class ModulesSaved(val modules: List<ContentModuleEntity>) : NovexChange
@@ -307,6 +346,7 @@ sealed interface NovexChange {
     data class CharacterExported(val document: CharacterLibraryDocument) : NovexChange
     data class NativeCardImported(val kind: NovexCardKind, val localId: String) : NovexChange
     data class NativeCardExported(val card: NovexCardPackagePreview) : NovexChange
+    data class TextExported(val text: String) : NovexChange
     data object Completed : NovexChange
 }
 
@@ -314,6 +354,11 @@ fun NovexChange.requireWorld(): WorldEntity = (this as NovexChange.WorldSaved).w
 
 fun NovexChange.requireCharacter(): CharacterAggregate =
     (this as NovexChange.CharacterSaved).character
+
+fun NovexChange.requireInteractiveFiction(): InteractiveFictionProjectEntity =
+    (this as NovexChange.InteractiveFictionSaved).project
+
+fun NovexChange.requireText(): String = (this as NovexChange.TextExported).text
 
 fun NovexChange.requireVersion(): CharacterVersionEntity = (this as NovexChange.VersionSaved).version
 
@@ -397,6 +442,22 @@ internal interface NovexContentPort {
     suspend fun removeReference(moduleId: String, target: ModuleReferenceTarget)
 }
 
+internal interface NovexInteractiveFictionPort {
+    suspend fun create(
+        name: String,
+        summary: String,
+        launchMode: InteractiveFictionLaunchMode,
+        playerIdentity: String,
+        now: Long,
+        sourceId: String? = null,
+        sourceDocumentJson: String? = null,
+    ): InteractiveFictionProjectEntity
+    suspend fun save(project: InteractiveFictionProjectEntity, now: Long): InteractiveFictionProjectEntity
+    suspend fun project(id: String): InteractiveFictionProjectEntity?
+    suspend fun list(): List<InteractiveFictionProjectEntity>
+    suspend fun delete(id: String)
+}
+
 internal interface NovexMediaPort {
     suspend fun import(bytes: ByteArray, mimeType: String, now: Long): MediaAssetEntity
     suspend fun attach(owner: ModuleOwner, slot: MediaAssetSlot, assetId: String)
@@ -408,6 +469,7 @@ internal interface NovexMediaPort {
 
 internal class DefaultNovexWorkspace(
     private val catalog: NovexCatalogPort,
+    private val interactiveFiction: NovexInteractiveFictionPort,
     private val content: NovexContentPort,
     private val media: NovexMediaPort,
     private val transaction: suspend (suspend () -> NovexChange) -> NovexChange,
@@ -433,6 +495,17 @@ internal class DefaultNovexWorkspace(
             ),
         )
     }
+
+    override suspend fun interactiveFictions(): List<NovexInteractiveFictionCard> =
+        interactiveFiction.list().map { project ->
+            val owner = ModuleOwner.interactiveFiction(project.id)
+            NovexInteractiveFictionCard(
+                project = project,
+                image = media.assetFor(owner, MediaAssetSlot.INTERACTIVE_FICTION_COVER)
+                    ?: media.assetFor(owner, MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND),
+                moduleCount = content.list(owner).size,
+            )
+        }
 
     override suspend fun world(id: String): NovexWorldSnapshot? {
         val world = catalog.world(id) ?: return null
@@ -476,6 +549,25 @@ internal class DefaultNovexWorkspace(
             modulesByVersion = modulesByVersion,
             moduleImages = moduleImages(modulesByVersion.values.flatten()),
             moduleItemImages = moduleItemImages(modulesByVersion.values.flatten()),
+        )
+    }
+
+    override suspend fun interactiveFiction(id: String): NovexInteractiveFictionSnapshot? {
+        val project = interactiveFiction.project(id) ?: return null
+        val owner = ModuleOwner.interactiveFiction(id)
+        val modules = content.list(owner)
+        return NovexInteractiveFictionSnapshot(
+            project = project,
+            media = mediaFor(
+                owner,
+                listOf(
+                    MediaAssetSlot.INTERACTIVE_FICTION_COVER,
+                    MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND,
+                ),
+            ),
+            modules = modules,
+            moduleImages = moduleImages(modules),
+            moduleItemImages = moduleItemImages(modules),
         )
     }
 
@@ -614,6 +706,8 @@ internal class DefaultNovexWorkspace(
             val localId = when (val document = command.card.document) {
                 is NovexWorldImportDocument -> importWorldCard(document, command.card, command.now)
                 is NovexCharacterImportDocument -> importCharacterCard(document, command.card, command.now)
+                is NovexInteractiveFictionImportDocument ->
+                    importInteractiveFictionCard(document, command.card, command.now)
             }
             NovexChange.NativeCardImported(command.card.document.kind(), localId)
         }
@@ -623,10 +717,71 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.ExportNativeCharacter -> NovexChange.NativeCardExported(
             exportCharacterCard(command.characterId),
         )
+        is NovexCommand.ExportNativeInteractiveFiction -> NovexChange.NativeCardExported(
+            exportInteractiveFictionCard(command.projectId),
+        )
+        is NovexCommand.ExportInteractiveFictionText -> {
+            val snapshot = requireNotNull(interactiveFiction(command.projectId)) { "文游不存在" }
+            NovexChange.TextExported(
+                InteractiveFictionDocumentComposer.fullText(snapshot.project, snapshot.modules),
+            )
+        }
         is NovexCommand.DeleteCharacter -> {
             val aggregate = requireNotNull(catalog.character(command.characterId)) { "角色不存在" }
             aggregate.allVersions.forEach { version -> deleteVersionContents(version.id) }
             catalog.deleteCharacter(command.characterId)
+            NovexChange.Completed
+        }
+        is NovexCommand.SaveInteractiveFictionPage -> {
+            require(command.name.isNotBlank()) { "文游名称不能为空" }
+            val duplicateSlots = command.imageChanges.groupingBy(NovexImageChange::slot)
+                .eachCount()
+                .filterValues { it > 1 }
+            require(duplicateSlots.isEmpty()) { "同一图片位置不能重复修改" }
+            val project = command.projectId?.let { projectId ->
+                val existing = requireNotNull(interactiveFiction.project(projectId)) { "文游不存在" }
+                interactiveFiction.save(
+                    existing.copy(
+                        name = command.name.trim(),
+                        summary = command.summary,
+                        launchMode = command.launchMode,
+                        playerIdentity = command.playerIdentity,
+                    ),
+                    command.now,
+                )
+            } ?: interactiveFiction.create(
+                name = command.name.trim(),
+                summary = command.summary,
+                launchMode = command.launchMode,
+                playerIdentity = command.playerIdentity,
+                now = command.now,
+            )
+            val owner = ModuleOwner.interactiveFiction(project.id)
+            saveModules(owner, command.modules, command.now)
+            command.imageChanges.forEach { change ->
+                require(
+                    change.slot == MediaAssetSlot.INTERACTIVE_FICTION_COVER ||
+                        change.slot == MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND,
+                ) { "文游页面不支持该图片位置" }
+                when (change) {
+                    is NovexImageChange.Replace -> {
+                        require(change.bytes.isNotEmpty()) { "图片内容不能为空" }
+                        val asset = media.import(change.bytes, change.mimeType, command.now)
+                        media.attach(owner, change.slot, asset.id)
+                    }
+                    is NovexImageChange.Remove -> media.detach(owner, change.slot)
+                }
+            }
+            NovexChange.InteractiveFictionSaved(project)
+        }
+        is NovexCommand.DeleteInteractiveFiction -> {
+            val owner = ModuleOwner.interactiveFiction(command.projectId)
+            content.list(owner).forEach { module ->
+                removeModuleMedia(module)
+                content.delete(module.id)
+            }
+            media.removeAll(owner)
+            interactiveFiction.delete(command.projectId)
             NovexChange.Completed
         }
         is NovexCommand.CreateVariant -> NovexChange.VersionSaved(
@@ -901,6 +1056,7 @@ internal class DefaultNovexWorkspace(
         val ownerTarget = when (module.ownerType) {
             ModuleOwnerType.WORLD -> ModuleReferenceTarget.world(module.ownerId)
             ModuleOwnerType.CHARACTER_VERSION -> ModuleReferenceTarget.characterVersion(module.ownerId)
+            ModuleOwnerType.INTERACTIVE_FICTION -> null
             ModuleOwnerType.CONTENT_MODULE -> null
         }
         val worlds = catalog.listWorlds().map { world ->
@@ -1070,6 +1226,33 @@ internal class DefaultNovexWorkspace(
         }
         reconcileImportedCharacterLinks(importedVersions, now)
         return aggregate.character.id
+    }
+
+    private suspend fun importInteractiveFictionCard(
+        document: NovexInteractiveFictionImportDocument,
+        card: NovexValidatedCardImport,
+        now: Long,
+    ): String {
+        val project = interactiveFiction.create(
+            name = document.name,
+            summary = document.summary,
+            launchMode = document.launchMode,
+            playerIdentity = document.playerIdentity,
+            now = now,
+            sourceId = document.sourceId,
+            sourceDocumentJson = document.originalJson,
+        )
+        val owner = ModuleOwner.interactiveFiction(project.id)
+        val assets = mutableMapOf<String, MediaAssetEntity>()
+        suspend fun attach(path: String?, slot: MediaAssetSlot) {
+            if (path == null) return
+            val asset = importCardMedia(path, card, assets, now)
+            media.attach(owner, slot, asset.id)
+        }
+        attach(document.coverPath, MediaAssetSlot.INTERACTIVE_FICTION_COVER)
+        attach(document.backgroundPath, MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND)
+        importCardModules(owner, document.modules, card, assets, now)
+        return project.id
     }
 
     private suspend fun importCardModules(
@@ -1303,6 +1486,56 @@ internal class DefaultNovexWorkspace(
         )
     }
 
+    private suspend fun exportInteractiveFictionCard(projectId: String): NovexCardPackagePreview {
+        val snapshot = requireNotNull(interactiveFiction(projectId)) { "文游不存在" }
+        val sourceId = snapshot.project.sourceId ?: snapshot.project.id
+        val source = runCatching { JSONObject(snapshot.project.sourceDocumentJson ?: "{}") }
+            .getOrDefault(JSONObject())
+        val mediaFiles = mutableListOf<NovexCardMedia>()
+        suspend fun exportAsset(basePath: String, asset: MediaAssetEntity?): String? {
+            asset ?: return null
+            val path = "$basePath.${asset.extension()}"
+            mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
+            return path
+        }
+        val rootMedia = JSONObject()
+        rootMedia.putMedia(
+            "cover",
+            exportAsset("media/cover", snapshot.media[MediaAssetSlot.INTERACTIVE_FICTION_COVER]),
+        )
+        rootMedia.putMedia(
+            "background",
+            exportAsset("media/background", snapshot.media[MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND]),
+        )
+        val modules = snapshot.modules.map { module ->
+            exportModule(
+                module = module,
+                mainImage = snapshot.moduleImages[module.id],
+                itemImages = snapshot.moduleItemImages[module.id].orEmpty(),
+                mediaFiles = mediaFiles,
+            )
+        }
+        val document = source.apply {
+            put("documentType", "novex.game")
+            put("schemaVersion", 1)
+            put("sourceId", sourceId)
+            put("name", snapshot.project.name)
+            put("summary", snapshot.project.summary)
+            put("launchMode", snapshot.project.launchMode.transferName())
+            put("playerIdentity", snapshot.project.playerIdentity)
+            put("media", rootMedia)
+            put("modules", JSONArray(modules))
+            put("moduleOrder", JSONArray(modules.map { it.getString("id") }))
+        }
+        return NovexCardPackagePreview(
+            kind = NovexCardKind.GAME,
+            packageId = sourceId,
+            displayName = snapshot.project.name,
+            documentJson = document.toString(2),
+            media = mediaFiles.distinctBy(NovexCardMedia::path),
+        )
+    }
+
     private suspend fun exportModule(
         module: ContentModuleEntity,
         mainImage: MediaAssetEntity?,
@@ -1367,6 +1600,7 @@ internal class DefaultNovexWorkspace(
     private fun NovexCardImportDocument.kind(): NovexCardKind = when (this) {
         is NovexWorldImportDocument -> NovexCardKind.WORLD
         is NovexCharacterImportDocument -> NovexCardKind.CHARACTER
+        is NovexInteractiveFictionImportDocument -> NovexCardKind.GAME
     }
 
     private fun CharacterVersionEntity.sourceId(): String? = runCatching {
@@ -1414,7 +1648,27 @@ internal class DefaultNovexWorkspace(
         ContentModuleType.TALENT_SKILL -> "skills"
         ContentModuleType.APPEARANCE_PERSONALITY -> "appearancePersonality"
         ContentModuleType.INTEREST -> "interests"
+        ContentModuleType.GAME_PLAYER_IDENTITY -> "gamePlayerIdentity"
+        ContentModuleType.GAME_OPENING -> "gameOpening"
+        ContentModuleType.GAME_NARRATIVE_RULES -> "gameNarrativeRules"
+        ContentModuleType.GAME_POWER_SYSTEM -> "gamePowerSystem"
+        ContentModuleType.GAME_ATTRIBUTES -> "gameAttributes"
+        ContentModuleType.GAME_SKILLS -> "gameSkills"
+        ContentModuleType.GAME_EQUIPMENT -> "gameEquipment"
+        ContentModuleType.GAME_ITEMS -> "gameItems"
+        ContentModuleType.GAME_QUESTS -> "gameQuests"
+        ContentModuleType.GAME_CHECKS -> "gameChecks"
+        ContentModuleType.GAME_ENDINGS -> "gameEndings"
+        ContentModuleType.GAME_CHARACTER_STATUS -> "gameCharacterStatus"
+        ContentModuleType.GAME_QUICK_ACTIONS -> "gameQuickActions"
         ContentModuleType.CUSTOM -> "custom"
+    }
+
+    private fun InteractiveFictionLaunchMode.transferName(): String = when (this) {
+        InteractiveFictionLaunchMode.FIXED_IDENTITY -> "fixedIdentity"
+        InteractiveFictionLaunchMode.USER_CREATED_IDENTITY -> "userCreatedIdentity"
+        InteractiveFictionLaunchMode.CO_CREATE_WORLD -> "coCreateWorld"
+        InteractiveFictionLaunchMode.FREE_SANDBOX -> "freeSandbox"
     }
 
     private fun ContentModuleType.defaultPresentation(document: ContentModuleDocument): String = when (document) {

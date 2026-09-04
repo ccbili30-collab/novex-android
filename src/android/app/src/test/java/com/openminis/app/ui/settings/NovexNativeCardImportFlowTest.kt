@@ -23,4 +23,13 @@ class NovexNativeCardImportFlowTest {
         assertEquals(".novexcharacter", spec.extensionLabel)
         assertTrue("application/octet-stream" in spec.mimeTypes)
     }
+
+    @Test
+    fun interactiveFictionRootOffersOnlyTheNativeGameCardContract() {
+        val spec = novexNativeCardImportSpec(NovexCardKind.GAME)
+
+        assertEquals("导入文游卡", spec.label)
+        assertEquals(".novexgame", spec.extensionLabel)
+        assertTrue("application/zip" in spec.mimeTypes)
+    }
 }

@@ -10,6 +10,7 @@ import androidx.room.TypeConverter
 enum class ModuleOwnerType {
     WORLD,
     CHARACTER_VERSION,
+    INTERACTIVE_FICTION,
     CONTENT_MODULE,
 }
 
@@ -22,6 +23,7 @@ data class ModuleOwner(
 
         fun world(id: String) = ModuleOwner(ModuleOwnerType.WORLD, id)
         fun characterVersion(id: String) = ModuleOwner(ModuleOwnerType.CHARACTER_VERSION, id)
+        fun interactiveFiction(id: String) = ModuleOwner(ModuleOwnerType.INTERACTIVE_FICTION, id)
         fun contentModule(id: String) = ModuleOwner(ModuleOwnerType.CONTENT_MODULE, id)
         fun contentModuleItem(moduleId: String, itemId: String) =
             ModuleOwner(ModuleOwnerType.CONTENT_MODULE, "$moduleId$ITEM_SEPARATOR$itemId")
@@ -44,6 +46,19 @@ enum class ContentModuleType {
     TALENT_SKILL,
     APPEARANCE_PERSONALITY,
     INTEREST,
+    GAME_PLAYER_IDENTITY,
+    GAME_OPENING,
+    GAME_NARRATIVE_RULES,
+    GAME_POWER_SYSTEM,
+    GAME_ATTRIBUTES,
+    GAME_SKILLS,
+    GAME_EQUIPMENT,
+    GAME_ITEMS,
+    GAME_QUESTS,
+    GAME_CHECKS,
+    GAME_ENDINGS,
+    GAME_CHARACTER_STATUS,
+    GAME_QUICK_ACTIONS,
     CUSTOM,
 }
 

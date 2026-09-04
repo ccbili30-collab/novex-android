@@ -1,5 +1,6 @@
 package com.openminis.app.data.character
 
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,6 +28,18 @@ data class NovexCharacterImportDocument(
     override val name: String,
     val summary: String,
     val versions: List<NovexCharacterVersionImportDocument>,
+    override val originalJson: String,
+) : NovexCardImportDocument
+
+data class NovexInteractiveFictionImportDocument(
+    override val sourceId: String,
+    override val name: String,
+    val summary: String,
+    val launchMode: InteractiveFictionLaunchMode,
+    val playerIdentity: String,
+    val coverPath: String?,
+    val backgroundPath: String?,
+    val modules: List<NovexModuleImportDocument>,
     override val originalJson: String,
 ) : NovexCardImportDocument
 
@@ -80,11 +93,34 @@ object NovexCardTransferParser {
         val document = when (preview.kind) {
             NovexCardKind.WORLD -> parseWorld(root, preview.documentJson)
             NovexCardKind.CHARACTER -> parseCharacter(root, preview.documentJson)
+            NovexCardKind.GAME -> parseInteractiveFiction(root, preview.documentJson)
         }
         val media = preview.media.associateBy(NovexCardMedia::path)
         require(media.size == preview.media.size) { "卡包媒体路径不能重复" }
         referencedMedia(document).forEach { path -> require(path in media) { "主文档引用了未声明媒体：$path" } }
         return NovexValidatedCardImport(preview.packageId, preview.displayName, document, media)
+    }
+
+    private fun parseInteractiveFiction(root: JSONObject, raw: String): NovexInteractiveFictionImportDocument {
+        require(root.optString("documentType") == "novex.game") { "文游卡主文档类型无效" }
+        val launchMode = when (root.optString("launchMode")) {
+            "fixedIdentity" -> InteractiveFictionLaunchMode.FIXED_IDENTITY
+            "userCreatedIdentity" -> InteractiveFictionLaunchMode.USER_CREATED_IDENTITY
+            "coCreateWorld" -> InteractiveFictionLaunchMode.CO_CREATE_WORLD
+            "freeSandbox" -> InteractiveFictionLaunchMode.FREE_SANDBOX
+            else -> error("文游启动方式无效")
+        }
+        return NovexInteractiveFictionImportDocument(
+            sourceId = root.requireSourceId(),
+            name = root.optString("name").trim().also { require(it.isNotBlank()) { "文游名称不能为空" } },
+            summary = root.optString("summary"),
+            launchMode = launchMode,
+            playerIdentity = root.optString("playerIdentity"),
+            coverPath = root.mediaPath("media", "cover"),
+            backgroundPath = root.mediaPath("media", "background"),
+            modules = orderedObjects(root, "modules", "moduleOrder").map(::parseModule),
+            originalJson = raw,
+        )
     }
 
     private fun parseWorld(root: JSONObject, raw: String): NovexWorldImportDocument {
@@ -210,6 +246,19 @@ object NovexCardTransferParser {
             "skills" -> ContentModuleType.TALENT_SKILL
             "appearancePersonality" -> ContentModuleType.APPEARANCE_PERSONALITY
             "interests" -> ContentModuleType.INTEREST
+            "gamePlayerIdentity" -> ContentModuleType.GAME_PLAYER_IDENTITY
+            "gameOpening" -> ContentModuleType.GAME_OPENING
+            "gameNarrativeRules" -> ContentModuleType.GAME_NARRATIVE_RULES
+            "gamePowerSystem" -> ContentModuleType.GAME_POWER_SYSTEM
+            "gameAttributes" -> ContentModuleType.GAME_ATTRIBUTES
+            "gameSkills" -> ContentModuleType.GAME_SKILLS
+            "gameEquipment" -> ContentModuleType.GAME_EQUIPMENT
+            "gameItems" -> ContentModuleType.GAME_ITEMS
+            "gameQuests" -> ContentModuleType.GAME_QUESTS
+            "gameChecks" -> ContentModuleType.GAME_CHECKS
+            "gameEndings" -> ContentModuleType.GAME_ENDINGS
+            "gameCharacterStatus" -> ContentModuleType.GAME_CHARACTER_STATUS
+            "gameQuickActions" -> ContentModuleType.GAME_QUICK_ACTIONS
             else -> ContentModuleType.CUSTOM
         }
         val presentation = module.optString("presentation")
@@ -276,6 +325,11 @@ object NovexCardTransferParser {
                 version.avatarPath?.let(::add)
                 version.pageBackgroundPath?.let(::add)
                 addModules(version.modules)
+            }
+            is NovexInteractiveFictionImportDocument -> {
+                document.coverPath?.let(::add)
+                document.backgroundPath?.let(::add)
+                addModules(document.modules)
             }
         }
     }

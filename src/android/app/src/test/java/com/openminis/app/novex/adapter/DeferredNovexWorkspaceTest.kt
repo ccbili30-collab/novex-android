@@ -7,6 +7,8 @@ import com.openminis.app.novex.domain.NovexCharacterSnapshot
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexModuleDetail
 import com.openminis.app.novex.domain.NovexModuleSnapshot
+import com.openminis.app.novex.domain.NovexInteractiveFictionCard
+import com.openminis.app.novex.domain.NovexInteractiveFictionSnapshot
 import com.openminis.app.novex.domain.NovexWorldCard
 import com.openminis.app.novex.domain.NovexWorldSnapshot
 import com.openminis.app.novex.domain.NovexWorkspace
@@ -37,8 +39,10 @@ class DeferredNovexWorkspaceTest {
     private object EmptyWorkspace : NovexWorkspace {
         override suspend fun worlds(): List<NovexWorldCard> = emptyList()
         override suspend fun characters(): List<NovexCharacterCard> = emptyList()
+        override suspend fun interactiveFictions(): List<NovexInteractiveFictionCard> = emptyList()
         override suspend fun world(id: String): NovexWorldSnapshot? = null
         override suspend fun character(id: String): NovexCharacterSnapshot? = null
+        override suspend fun interactiveFiction(id: String): NovexInteractiveFictionSnapshot? = null
         override suspend fun modules(owner: ModuleOwner): NovexModuleSnapshot =
             NovexModuleSnapshot(emptyList(), emptyMap(), emptyMap())
         override suspend fun module(id: String): NovexModuleDetail? = null

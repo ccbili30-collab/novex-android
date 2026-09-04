@@ -185,13 +185,27 @@ object ContentModuleDocumentCodec {
         ContentModuleType.TALENT_SKILL,
         ContentModuleType.APPEARANCE_PERSONALITY,
         ContentModuleType.INTEREST,
+        ContentModuleType.GAME_ATTRIBUTES,
+        ContentModuleType.GAME_SKILLS,
+        ContentModuleType.GAME_EQUIPMENT,
+        ContentModuleType.GAME_ITEMS,
+        ContentModuleType.GAME_QUESTS,
+        ContentModuleType.GAME_CHECKS,
+        ContentModuleType.GAME_ENDINGS,
+        ContentModuleType.GAME_CHARACTER_STATUS,
+        ContentModuleType.GAME_QUICK_ACTIONS,
         -> ContentModuleDocument.Collection(
             text.takeIf(String::isNotBlank)
                 ?.let { listOf(ContentModuleCollectionItem(summary = it)) }
                 .orEmpty(),
         )
 
-        ContentModuleType.CUSTOM -> ContentModuleDocument.Article(text)
+        ContentModuleType.GAME_PLAYER_IDENTITY,
+        ContentModuleType.GAME_OPENING,
+        ContentModuleType.GAME_NARRATIVE_RULES,
+        ContentModuleType.GAME_POWER_SYSTEM,
+        ContentModuleType.CUSTOM,
+        -> ContentModuleDocument.Article(text)
     }
 
     private fun legacyText(contentJson: String): String = runCatching {

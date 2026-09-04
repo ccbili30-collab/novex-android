@@ -72,6 +72,7 @@ class MediaAssetRepository(
         val exists = when (owner.type) {
             ModuleOwnerType.WORLD -> dao.worldExists(owner.id)
             ModuleOwnerType.CHARACTER_VERSION -> dao.characterVersionExists(owner.id)
+            ModuleOwnerType.INTERACTIVE_FICTION -> dao.interactiveFictionExists(owner.id)
             ModuleOwnerType.CONTENT_MODULE -> dao.contentModuleExists(ModuleOwner.contentModuleId(owner.id))
         }
         require(exists) { "资源所有者不存在" }
@@ -87,6 +88,10 @@ class MediaAssetRepository(
             ModuleOwnerType.CHARACTER_VERSION -> slot in setOf(
                 MediaAssetSlot.CHARACTER_AVATAR,
                 MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
+            )
+            ModuleOwnerType.INTERACTIVE_FICTION -> slot in setOf(
+                MediaAssetSlot.INTERACTIVE_FICTION_COVER,
+                MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND,
             )
             ModuleOwnerType.CONTENT_MODULE -> slot == MediaAssetSlot.MODULE_IMAGE
         }

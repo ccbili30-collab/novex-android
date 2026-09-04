@@ -33,7 +33,11 @@ internal data class NovexNativeCardImportSpec(
 internal fun novexNativeCardImportSpec(kind: NovexCardKind): NovexNativeCardImportSpec =
     NovexNativeCardImportSpec(
         kind = kind,
-        label = if (kind == NovexCardKind.WORLD) "导入世界卡" else "导入角色卡",
+        label = when (kind) {
+            NovexCardKind.WORLD -> "导入世界卡"
+            NovexCardKind.CHARACTER -> "导入角色卡"
+            NovexCardKind.GAME -> "导入文游卡"
+        },
         extensionLabel = ".${kind.extension}",
         mimeTypes = listOf("application/zip", "application/octet-stream"),
     )

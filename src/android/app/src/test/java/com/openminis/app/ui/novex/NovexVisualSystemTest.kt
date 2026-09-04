@@ -111,5 +111,9 @@ class NovexVisualSystemTest {
             novexArtworkFallback(NovexArtworkKind.WORLD, "world-42") is
                 NovexArtworkFallback.BuiltInWorldCover,
         )
+        assertTrue(
+            novexArtworkFallback(NovexArtworkKind.INTERACTIVE_FICTION, "game-42") is
+                NovexArtworkFallback.BuiltInWorldCover,
+        )
     }
 }

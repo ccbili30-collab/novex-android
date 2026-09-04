@@ -52,6 +52,7 @@ import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionProfile
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 import com.openminis.app.ui.novex.NovexArtwork
 import com.openminis.app.ui.novex.NovexArtworkKind
 import com.openminis.app.ui.novex.NovexColors
@@ -81,6 +82,12 @@ private data class CharacterRootRow(
     val profile: CharacterVersionProfile,
     val imagePath: String?,
     val variantCount: Int,
+)
+
+private data class InteractiveFictionRootRow(
+    val project: InteractiveFictionProjectEntity,
+    val imagePath: String?,
+    val moduleCount: Int,
 )
 
 @Composable
@@ -297,14 +304,62 @@ internal fun NovexCharacterLibraryRoot(
 
 @Composable
 internal fun NovexInteractiveFictionLibraryRoot(
+    onOpenInteractiveFiction: (String) -> Unit,
+    onCreateInteractiveFiction: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val novex = rememberNovexWorkspace()
+    val context = LocalContext.current
+    val orderStore = remember(context) { NovexManualOrderStore(context) }
+    var rows by remember { mutableStateOf<List<InteractiveFictionRootRow>>(emptyList()) }
+    var refresh by remember { mutableStateOf(0) }
+    var loaded by remember { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val searchState = rememberNovexLibrarySearchState()
+    val query by searchState.applied.collectAsState()
+    val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromId = (from.key as? String)?.removePrefix("game:")
+            ?: return@rememberReorderableLazyListState
+        val toId = (to.key as? String)?.removePrefix("game:")
+            ?: return@rememberReorderableLazyListState
+        val fromIndex = rows.indexOfFirst { it.project.id == fromId }
+        val toIndex = rows.indexOfFirst { it.project.id == toId }
+        if (fromIndex !in rows.indices || toIndex !in rows.indices) return@rememberReorderableLazyListState
+        rows = rows.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        orderStore.write(NovexManualOrderKind.INTERACTIVE_FICTION, rows.map { it.project.id })
+    }
 
     BackHandler(enabled = searching) {
         searching = false
         searchState.clear()
+    }
+
+    val importer = rememberNovexNativeCardImporter(NovexCardKind.GAME) { importedId ->
+        refresh++
+        onOpenInteractiveFiction(importedId)
+    }
+    val resumeRevision = rememberNovexCatalogResumeRevision()
+    LaunchedEffect(refresh, resumeRevision) {
+        val loadedRows = novex.interactiveFictions().map { card ->
+            InteractiveFictionRootRow(
+                project = card.project,
+                imagePath = card.image?.managedPath,
+                moduleCount = card.moduleCount,
+            )
+        }
+        val byId = loadedRows.associateBy { it.project.id }
+        rows = mergeNovexManualOrder(
+            sourceIds = loadedRows.map { it.project.id },
+            savedIds = orderStore.read(NovexManualOrderKind.INTERACTIVE_FICTION),
+        ).mapNotNull(byId::get)
+        loaded = true
+    }
+    val filtered = remember(rows, query) {
+        rows.filter { row ->
+            query.isBlank() || row.project.name.contains(query, ignoreCase = true) ||
+                row.project.summary.contains(query, ignoreCase = true)
+        }
     }
 
     NovexLibraryFrame(
@@ -317,9 +372,47 @@ internal fun NovexInteractiveFictionLibraryRoot(
             if (!searching) searchState.clear()
         },
         onOpenSettings = onOpenSettings,
-        createItems = emptyList(),
+        createItems = listOf(
+            NovexCreateMenuItem("新建文游", onCreateInteractiveFiction),
+            NovexCreateMenuItem("导入文游卡", importer.launch),
+        ),
     ) {
-        NovexEmptyMessage("文游项目将在下一检查点接入")
+        when {
+            !loaded || importer.importing -> NovexLoading()
+            filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的文游")
+            rows.isEmpty() -> NovexEmptyInteractiveFictionLibrary(
+                onCreateInteractiveFiction,
+                importer.launch,
+            )
+            else -> LazyColumn(
+                state = listState,
+                contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(filtered, key = { "game:${it.project.id}" }) { row ->
+                    ReorderableItem(reorderState, key = "game:${row.project.id}") { _ ->
+                        NovexVisualCatalogCard(
+                            title = row.project.name,
+                            summary = row.project.summary,
+                            metadata = "${row.project.launchMode.displayName}  ·  模块 ${row.moduleCount}",
+                            artworkKind = NovexArtworkKind.INTERACTIVE_FICTION,
+                            seed = row.project.id,
+                            imagePath = row.imagePath,
+                            contentDescription = "${row.project.name}封面",
+                            onClick = { onOpenInteractiveFiction(row.project.id) },
+                            modifier = Modifier.longPressDraggableHandle(),
+                        )
+                    }
+                }
+                item(key = "create_game") {
+                    NovexCreateRow("新建文游", onCreateInteractiveFiction)
+                }
+                item(key = "import_game") {
+                    NovexImportRow("导入文游卡", importer.launch)
+                }
+            }
+        }
     }
 }
 
@@ -405,6 +498,31 @@ private fun NovexWorldCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    NovexVisualCatalogCard(
+        title = row.world.name,
+        summary = row.world.overview,
+        metadata = "角色 ${row.characterCount}  ·  模块 ${row.moduleCount}",
+        artworkKind = NovexArtworkKind.WORLD,
+        seed = row.world.id,
+        imagePath = row.imagePath,
+        contentDescription = "${row.world.name}封面",
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun NovexVisualCatalogCard(
+    title: String,
+    summary: String,
+    metadata: String,
+    artworkKind: NovexArtworkKind,
+    seed: String,
+    imagePath: String?,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -413,10 +531,10 @@ private fun NovexWorldCard(
             .clickable(onClick = onClick),
     ) {
         NovexArtwork(
-            kind = NovexArtworkKind.WORLD,
-            seed = row.world.id,
-            imageModel = row.imagePath.existingMediaFile(),
-            contentDescription = "${row.world.name}封面",
+            kind = artworkKind,
+            seed = seed,
+            imageModel = imagePath.existingMediaFile(),
+            contentDescription = contentDescription,
             modifier = Modifier.fillMaxSize(),
         )
         Box(
@@ -434,16 +552,16 @@ private fun NovexWorldCard(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
         ) {
             Text(
-                row.world.name,
+                title,
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (row.world.overview.isNotBlank()) {
+            if (summary.isNotBlank()) {
                 Text(
-                    row.world.overview,
+                    summary,
                     color = Color.White.copy(alpha = 0.88f),
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -452,12 +570,39 @@ private fun NovexWorldCard(
                 )
             }
             Text(
-                "角色 ${row.characterCount}  ·  模块 ${row.moduleCount}",
+                metadata,
                 color = Color.White.copy(alpha = 0.9f),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 5.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun NovexEmptyInteractiveFictionLibrary(
+    onCreate: () -> Unit,
+    onImport: () -> Unit,
+) {
+    LazyColumn(
+        contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item(key = "empty_game_visual") {
+            NovexVisualCatalogCard(
+                title = "创建第一个文游",
+                summary = "用模块组合身份、规则、状态与快捷操作",
+                metadata = "名称之外均可留空",
+                artworkKind = NovexArtworkKind.INTERACTIVE_FICTION,
+                seed = "novex-empty-game",
+                imagePath = null,
+                contentDescription = "文游封面占位",
+                onClick = onCreate,
+            )
+        }
+        item(key = "create_game") { NovexCreateRow("新建文游", onCreate) }
+        item(key = "import_game") { NovexImportRow("导入文游卡", onImport) }
     }
 }
 

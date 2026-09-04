@@ -1,11 +1,50 @@
 package com.openminis.app.data.character
 
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexCardTransferParserTest {
+    @Test
+    fun parsesOneInteractiveFictionProjectWithOrderedModulesAndOptionalArtwork() {
+        val preview = NovexCardPackagePreview(
+            kind = NovexCardKind.GAME,
+            packageId = "game.demo",
+            displayName = "云岚试炼",
+            documentJson = """
+                {
+                  "documentType":"novex.game",
+                  "sourceId":"game.demo",
+                  "name":"云岚试炼",
+                  "summary":"在书院中完成试炼。",
+                  "launchMode":"fixedIdentity",
+                  "playerIdentity":"新入门弟子",
+                  "media":{},
+                  "moduleOrder":["opening","rules"],
+                  "modules":[
+                    {"id":"rules","type":"gameNarrativeRules","title":"叙事规则","presentation":"article","content":{"text":"尊重玩家选择。"}},
+                    {"id":"opening","type":"gameOpening","title":"开局说明","presentation":"article","content":{"text":"从山门开始。"}}
+                  ]
+                }
+            """.trimIndent(),
+            media = emptyList(),
+        )
+
+        val document = NovexCardTransferParser.parse(preview).document as NovexInteractiveFictionImportDocument
+
+        assertEquals("云岚试炼", document.name)
+        assertEquals(InteractiveFictionLaunchMode.FIXED_IDENTITY, document.launchMode)
+        assertEquals("新入门弟子", document.playerIdentity)
+        assertEquals(
+            listOf(ContentModuleType.GAME_OPENING, ContentModuleType.GAME_NARRATIVE_RULES),
+            document.modules.map { it.type },
+        )
+        assertEquals(null, document.coverPath)
+        assertEquals(null, document.backgroundPath)
+    }
+
     @Test
     fun cloudAcademyMapsToRenderableWorldDocumentsInDeclaredOrder() {
         val raw = resource("novex/cards/cloud-academy-world.json")

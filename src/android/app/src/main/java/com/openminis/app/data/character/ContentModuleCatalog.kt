@@ -3,6 +3,7 @@ package com.openminis.app.data.character
 enum class ContentModuleScope {
     WORLD,
     CHARACTER_VERSION,
+    INTERACTIVE_FICTION,
 }
 
 data class ContentModuleDefinition(
@@ -38,12 +39,30 @@ object ContentModuleCatalog {
         ContentModuleDefinition(ContentModuleType.CUSTOM, "自定义模块", repeatable = true),
     )
 
-    private val definitionsByType = (worldDefinitions + characterDefinitions)
+    private val interactiveFictionDefinitions = listOf(
+        ContentModuleDefinition(ContentModuleType.GAME_PLAYER_IDENTITY, "玩家身份"),
+        ContentModuleDefinition(ContentModuleType.GAME_OPENING, "开局说明"),
+        ContentModuleDefinition(ContentModuleType.GAME_NARRATIVE_RULES, "叙事规则"),
+        ContentModuleDefinition(ContentModuleType.GAME_POWER_SYSTEM, "力量体系"),
+        ContentModuleDefinition(ContentModuleType.GAME_ATTRIBUTES, "属性面板"),
+        ContentModuleDefinition(ContentModuleType.GAME_SKILLS, "技能"),
+        ContentModuleDefinition(ContentModuleType.GAME_EQUIPMENT, "装备"),
+        ContentModuleDefinition(ContentModuleType.GAME_ITEMS, "物品"),
+        ContentModuleDefinition(ContentModuleType.GAME_QUESTS, "任务"),
+        ContentModuleDefinition(ContentModuleType.GAME_CHECKS, "检定规则"),
+        ContentModuleDefinition(ContentModuleType.GAME_ENDINGS, "结局"),
+        ContentModuleDefinition(ContentModuleType.GAME_CHARACTER_STATUS, "角色档案"),
+        ContentModuleDefinition(ContentModuleType.GAME_QUICK_ACTIONS, "快捷操作"),
+        ContentModuleDefinition(ContentModuleType.CUSTOM, "自定义模块", repeatable = true),
+    )
+
+    private val definitionsByType = (worldDefinitions + characterDefinitions + interactiveFictionDefinitions)
         .associateBy(ContentModuleDefinition::type)
 
     fun definitions(scope: ContentModuleScope): List<ContentModuleDefinition> = when (scope) {
         ContentModuleScope.WORLD -> worldDefinitions
         ContentModuleScope.CHARACTER_VERSION -> characterDefinitions
+        ContentModuleScope.INTERACTIVE_FICTION -> interactiveFictionDefinitions
     }
 
     fun definition(type: ContentModuleType): ContentModuleDefinition =
@@ -52,6 +71,7 @@ object ContentModuleCatalog {
     fun scopeFor(ownerType: ModuleOwnerType): ContentModuleScope? = when (ownerType) {
         ModuleOwnerType.WORLD -> ContentModuleScope.WORLD
         ModuleOwnerType.CHARACTER_VERSION -> ContentModuleScope.CHARACTER_VERSION
+        ModuleOwnerType.INTERACTIVE_FICTION -> ContentModuleScope.INTERACTIVE_FICTION
         ModuleOwnerType.CONTENT_MODULE -> null
     }
 

@@ -118,13 +118,28 @@ internal class ContentModuleDraftList private constructor(
             ContentModuleType.TALENT_SKILL,
             ContentModuleType.APPEARANCE_PERSONALITY,
             ContentModuleType.INTEREST,
+            ContentModuleType.GAME_ATTRIBUTES,
+            ContentModuleType.GAME_SKILLS,
+            ContentModuleType.GAME_EQUIPMENT,
+            ContentModuleType.GAME_ITEMS,
+            ContentModuleType.GAME_QUESTS,
+            ContentModuleType.GAME_CHECKS,
+            ContentModuleType.GAME_ENDINGS,
+            ContentModuleType.GAME_CHARACTER_STATUS,
+            ContentModuleType.GAME_QUICK_ACTIONS,
             -> ContentModuleDocument.Collection()
-            ContentModuleType.CUSTOM -> ContentModuleDocument.Article()
+            ContentModuleType.GAME_PLAYER_IDENTITY,
+            ContentModuleType.GAME_OPENING,
+            ContentModuleType.GAME_NARRATIVE_RULES,
+            ContentModuleType.GAME_POWER_SYSTEM,
+            ContentModuleType.CUSTOM,
+            -> ContentModuleDocument.Article()
         }
 
         private fun ContentModuleScope.displayName(): String = when (this) {
             ContentModuleScope.WORLD -> "世界"
             ContentModuleScope.CHARACTER_VERSION -> "角色"
+            ContentModuleScope.INTERACTIVE_FICTION -> "文游"
         }
     }
 }
