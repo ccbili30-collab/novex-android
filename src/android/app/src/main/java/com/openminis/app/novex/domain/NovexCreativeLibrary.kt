@@ -1,11 +1,25 @@
 package com.openminis.app.novex.domain
 
+import java.io.File
+
 enum class CreativeArtifactKind {
     DOCUMENT,
     IMAGE,
     MAP,
     CARD_ARCHIVE,
     OTHER,
+}
+
+data class NovexCreativeArtifactSummary(
+    val address: NovexContentAddress,
+    val title: String,
+    val kind: CreativeArtifactKind,
+)
+
+/** Read-only seam shared by conversation configuration and all content-page renderers. */
+interface NovexCreativeArtifactReader {
+    suspend fun availableArtifacts(): List<NovexCreativeArtifactSummary>
+    suspend fun attachedModuleImageFiles(owner: NovexContentAddress): Map<String, File>
 }
 
 data class CreativeArtifactOrigin(

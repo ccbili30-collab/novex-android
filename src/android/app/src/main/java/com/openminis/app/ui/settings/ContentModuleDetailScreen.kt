@@ -36,7 +36,9 @@ import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ContentModuleReferenceEntity
+import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexModuleReferenceOption
 import com.openminis.app.novex.domain.requireMedia
@@ -49,6 +51,7 @@ import com.openminis.app.ui.novex.NovexSettingsCustomRow
 import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.NovexTopAction
+import com.openminis.app.ui.novex.rememberNovexAttachedModuleImages
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +63,7 @@ import kotlinx.coroutines.withContext
 fun CatalogContentModuleDetailScreen(
     moduleId: String,
     onBack: () -> Unit,
+    onHelpCreate: (NovexContentAddress) -> Unit,
 ) {
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
@@ -75,8 +79,8 @@ fun CatalogContentModuleDetailScreen(
     var referenceRefresh by remember { mutableStateOf(0) }
     var addReference by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
-    var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val attachedArtifactImages = rememberNovexAttachedModuleImages(module?.managementOwnerAddress())
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) scope.launch {
@@ -133,7 +137,9 @@ fun CatalogContentModuleDetailScreen(
                 icon = R.drawable.ic_phosphor_sparkle,
                 contentDescription = "帮我创作",
                 label = "帮我创作",
-                onClick = { creatorNotice = true },
+                onClick = {
+                    module?.managementOwnerAddress()?.let(onHelpCreate)
+                },
             )
         },
     ) {
@@ -143,7 +149,9 @@ fun CatalogContentModuleDetailScreen(
             }
             module == null -> Text("模块不存在或已删除", modifier = Modifier.padding(24.dp))
             else -> Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                image?.managedPath.existingMediaFile()?.let { file ->
+                val artifactImage = attachedArtifactImages[moduleId]
+                val displayedImage = image?.managedPath.existingMediaFile() ?: artifactImage
+                displayedImage?.let { file ->
                     AsyncImage(
                         model = file,
                         contentDescription = "${name}代表图",
@@ -156,7 +164,11 @@ fun CatalogContentModuleDetailScreen(
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
                 ) {
                     NovexOutlineButton(
-                        label = if (image == null) "添加代表图（可选）" else "更换代表图",
+                        label = when {
+                            image != null -> "更换代表图"
+                            artifactImage != null -> "添加本地代表图（覆盖）"
+                            else -> "添加代表图（可选）"
+                        },
                         onClick = {
                             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         },
@@ -173,6 +185,13 @@ fun CatalogContentModuleDetailScreen(
                             },
                         )
                     }
+                }
+                if (image == null && artifactImage != null) {
+                    Text(
+                        "当前代表图来自创作成果库。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 NovexTextField(
                     label = "模块名称",
@@ -260,14 +279,14 @@ fun CatalogContentModuleDetailScreen(
             },
         )
     }
-    if (creatorNotice) {
-        NovexNoticeDialog(
-            title = "帮我创作",
-            message = "入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改任何内容。",
-            onDismiss = { creatorNotice = false },
-        )
-    }
     error?.let { message ->
         NovexNoticeDialog("操作失败", message ?: "未知错误") { error = null }
     }
+}
+
+private fun ContentModuleEntity.managementOwnerAddress(): NovexContentAddress = when (owner.type) {
+    ModuleOwnerType.WORLD -> NovexContentAddress.world(owner.id)
+    ModuleOwnerType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(owner.id)
+    ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(owner.id)
+    ModuleOwnerType.CONTENT_MODULE -> error("内容模块没有独立管理根对象")
 }

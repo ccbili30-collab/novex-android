@@ -44,6 +44,7 @@ import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexInteractiveFictionSnapshot
 import com.openminis.app.novex.domain.NovexModuleDraft
@@ -91,6 +92,7 @@ fun CatalogInteractiveFictionDetailScreen(
     projectId: String,
     onBack: () -> Unit,
     onEdit: () -> Unit,
+    onHelpCreate: () -> Unit,
     onOpenModule: (String) -> Unit,
     onStartConversation: () -> Unit,
     onShareToConversation: (String) -> Unit,
@@ -101,7 +103,6 @@ fun CatalogInteractiveFictionDetailScreen(
     val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf<NovexInteractiveFictionSnapshot?>(null) }
     var missing by remember { mutableStateOf(false) }
-    var creatorNotice by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     LaunchedEffect(projectId) {
@@ -129,7 +130,7 @@ fun CatalogInteractiveFictionDetailScreen(
                     icon = R.drawable.ic_phosphor_sparkle,
                     contentDescription = "帮我创作",
                     label = "帮我创作",
-                    onClick = { creatorNotice = true },
+                    onClick = onHelpCreate,
                 )
                 NovexTopAction(
                     icon = R.drawable.ic_phosphor_pencil_simple,
@@ -195,11 +196,6 @@ fun CatalogInteractiveFictionDetailScreen(
         }
     }
 
-    if (creatorNotice) NovexNoticeDialog(
-        title = "帮我创作",
-        message = "入口已保留。人工智能管理文游模块会在后续检查点接入，本次点击不会改写内容。",
-        onDismiss = { creatorNotice = false },
-    )
     notice?.let { (title, message) ->
         NovexNoticeDialog(title, message) { notice = null }
     }
@@ -522,6 +518,7 @@ private fun InteractiveFictionPrimaryContent(
             images.mapValues { it.value.managedPath.existingMediaFile() }
         },
         onOpenModule = onOpenModule,
+        owner = NovexContentAddress.interactiveFiction(data.project.id),
     )
 }
 

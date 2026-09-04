@@ -53,6 +53,7 @@ import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexImageChange
 import com.openminis.app.novex.domain.NovexModuleDraft
 import com.openminis.app.novex.domain.NovexWorldSnapshot
@@ -125,6 +126,7 @@ fun CatalogWorldDetailScreen(
     personas: List<WorldPersonaSummary>,
     onBack: () -> Unit,
     onEditWorld: () -> Unit,
+    onHelpCreate: () -> Unit,
     onEditPersona: (String?) -> Unit,
     onCreateCharacter: () -> Unit,
     onOpenCharacter: (String) -> Unit,
@@ -146,7 +148,6 @@ fun CatalogWorldDetailScreen(
     var selectedPersonaId by remember { mutableStateOf<String?>(null) }
     var selectedVersionId by remember { mutableStateOf<String?>(null) }
     var editVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
-    var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
         val snapshot = novex.world(worldId)
@@ -180,7 +181,7 @@ fun CatalogWorldDetailScreen(
                     icon = com.openminis.app.R.drawable.ic_phosphor_sparkle,
                     contentDescription = "帮我创作",
                     label = "帮我创作",
-                    onClick = { creatorNotice = true },
+                    onClick = onHelpCreate,
                 )
                 NovexTopAction(
                     icon = com.openminis.app.R.drawable.ic_phosphor_pencil_simple,
@@ -411,13 +412,6 @@ fun CatalogWorldDetailScreen(
     }
     error?.let { message ->
         NovexNoticeDialog("操作失败", message ?: "未知错误") { error = null }
-    }
-    if (creatorNotice) {
-        NovexNoticeDialog(
-            title = "帮我创作",
-            message = "入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改世界内容。",
-            onDismiss = { creatorNotice = false },
-        )
     }
 }
 
@@ -789,6 +783,7 @@ private fun WorldPrimaryContent(
             images.mapValues { it.value.managedPath.existingMediaFile() }
         },
         onOpenModule = onOpenModule,
+        owner = NovexContentAddress.world(data.world.id),
     )
 }
 

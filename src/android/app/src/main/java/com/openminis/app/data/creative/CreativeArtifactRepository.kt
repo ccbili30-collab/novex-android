@@ -9,13 +9,18 @@ import com.openminis.app.novex.domain.CreativeArtifactOrigin
 import com.openminis.app.novex.domain.CreativeArtifactRevision
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
+import com.openminis.app.novex.domain.NovexCreativeArtifactReader
+import com.openminis.app.novex.domain.NovexCreativeArtifactSummary
 import com.openminis.app.novex.domain.NovexManagementArtifactPort
+import com.openminis.app.novex.domain.NovexManagedArtifactDescription
 import java.io.File
 import java.util.UUID
 
 data class CreativeArtifactQuery(
     val conversationId: String? = null,
     val owner: NovexContentAddress? = null,
+    val ownerKinds: Set<NovexContentKind> = emptySet(),
+    val unattachedOnly: Boolean = false,
     val kinds: Set<CreativeArtifactKind> = emptySet(),
     val favoritesOnly: Boolean = false,
     val includeTrashed: Boolean = false,
@@ -33,7 +38,7 @@ data class CreativeArtifactRecord(
 class CreativeArtifactRepository(
     private val database: AppDatabase,
     private val files: CreativeArtifactFileStore,
-) : NovexManagementArtifactPort {
+) : NovexManagementArtifactPort, NovexCreativeArtifactReader {
     private val dao get() = database.creativeArtifactDao()
 
     suspend fun capture(
@@ -101,20 +106,43 @@ class CreativeArtifactRepository(
     suspend fun artifact(id: String): CreativeArtifactRecord? = dao.artifact(id)?.toDomain()
 
     suspend fun list(query: CreativeArtifactQuery = CreativeArtifactQuery()): List<CreativeArtifactRecord> =
-        dao.all().asSequence().map { value -> value.toDomain() }.filter { record ->
-            val value = record.artifact
-            (query.conversationId == null || value.origin.conversationId == query.conversationId) &&
-                (query.kinds.isEmpty() || value.kind in query.kinds) &&
-                (!query.favoritesOnly || value.favorite) &&
-                when {
-                    query.trashOnly -> value.isTrashed
-                    query.includeTrashed -> true
-                    else -> !value.isTrashed
-                } &&
-                (query.owner == null || record.attachments.any { it.owner == query.owner })
-        }.toList()
+        filterCreativeArtifactRecords(dao.all().map { value -> value.toDomain() }, query)
+
+    /** Resolves the current image attached to each module of one world, role version or game. */
+    override suspend fun availableArtifacts(): List<NovexCreativeArtifactSummary> = list().map { record ->
+        NovexCreativeArtifactSummary(
+            address = NovexContentAddress.creativeArtifact(record.artifact.id),
+            title = record.artifact.title,
+            kind = record.artifact.kind,
+        )
+    }
+
+    override suspend fun attachedModuleImageFiles(owner: NovexContentAddress): Map<String, File> {
+        val records = list(
+            CreativeArtifactQuery(
+                owner = owner,
+                kinds = setOf(CreativeArtifactKind.IMAGE, CreativeArtifactKind.MAP),
+            ),
+        )
+        return selectAttachedModuleImageIds(records, owner).mapNotNull { (moduleId, artifactId) ->
+            runCatching { moduleId to file(artifactId) }.getOrNull()
+        }.toMap()
+    }
 
     override suspend fun exists(artifactId: String): Boolean = dao.artifact(artifactId) != null
+
+    override suspend fun describe(artifactId: String): NovexManagedArtifactDescription? {
+        val record = artifact(artifactId) ?: return null
+        val revision = record.revisions.maxByOrNull { it.number }
+        return NovexManagedArtifactDescription(
+            id = record.artifact.id,
+            title = record.artifact.title,
+            kind = record.artifact.kind,
+            mimeType = revision?.mimeType ?: "application/octet-stream",
+            sizeBytes = revision?.sizeBytes ?: 0L,
+            sourcePath = record.sourcePath,
+        )
+    }
 
     override suspend fun attach(attachment: CreativeArtifactAttachment) {
         requireNotNull(dao.artifact(attachment.artifactId)) { "创作成果不存在" }
@@ -207,3 +235,41 @@ class CreativeArtifactRepository(
         slot = slot.ifBlank { null },
     )
 }
+
+internal fun filterCreativeArtifactRecords(
+    records: List<CreativeArtifactRecord>,
+    query: CreativeArtifactQuery,
+): List<CreativeArtifactRecord> = records.filter { record ->
+    val value = record.artifact
+    (query.conversationId == null || value.origin.conversationId == query.conversationId) &&
+        (query.kinds.isEmpty() || value.kind in query.kinds) &&
+        (!query.favoritesOnly || value.favorite) &&
+        when {
+            query.trashOnly -> value.isTrashed
+            query.includeTrashed -> true
+            else -> !value.isTrashed
+        } &&
+        (query.owner == null || record.attachments.any { it.owner == query.owner }) &&
+        (query.ownerKinds.isEmpty() || record.attachments.any { it.owner.kind in query.ownerKinds }) &&
+        (!query.unattachedOnly || record.attachments.isEmpty())
+}
+
+/**
+ * Shared deterministic projection used by every Novex content page. When a module has several
+ * generated images, the newest live image wins instead of leaving each page to invent a rule.
+ */
+internal fun selectAttachedModuleImageIds(
+    records: List<CreativeArtifactRecord>,
+    owner: NovexContentAddress,
+): Map<String, String> = records.asSequence()
+    .filter { record ->
+        !record.artifact.isTrashed &&
+            record.artifact.kind in setOf(CreativeArtifactKind.IMAGE, CreativeArtifactKind.MAP)
+    }
+    .sortedWith(compareBy<CreativeArtifactRecord>({ it.artifact.updatedAt }, { it.artifact.id }))
+    .flatMap { record ->
+        record.attachments.asSequence()
+            .filter { attachment -> attachment.owner == owner && !attachment.moduleId.isNullOrBlank() }
+            .map { attachment -> requireNotNull(attachment.moduleId) to record.artifact.id }
+    }
+    .toMap()

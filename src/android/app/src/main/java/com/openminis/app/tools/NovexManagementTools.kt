@@ -25,7 +25,7 @@ object NovexManagementTools {
                 "subject_kind" to AgentToolParam(
                     type = "string",
                     description = "Mounted subject kind.",
-                    enumValues = listOf("world", "character_version", "game"),
+                    enumValues = listOf("world", "character_version", "game", "artifact"),
                 ),
                 "subject_id" to AgentToolParam("string", "Mounted subject id; required with subject_kind."),
                 "module_id" to AgentToolParam("string", "Optional module id owned by the selected mounted subject."),

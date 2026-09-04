@@ -54,6 +54,34 @@ class NovexManagementServiceTest {
     }
 
     @Test
+    fun `mounted creative artifact exposes durable metadata without becoming background context`() = runBlocking {
+        val artifacts = FakeArtifactPort().apply {
+            descriptions["artifact-1"] = NovexManagedArtifactDescription(
+                id = "artifact-1",
+                title = "第一章",
+                kind = CreativeArtifactKind.DOCUMENT,
+                mimeType = "text/markdown",
+                sizeBytes = 42L,
+                sourcePath = "/var/minis/workspace/novel/chapter-1.md",
+            )
+        }
+        val service = NovexManagementService(FakeManagementWorkspace(), artifacts)
+        val address = NovexContentAddress.creativeArtifact("artifact-1")
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(ManagedSubject(address, ManagedAccess.EDIT)),
+        )
+
+        val inspection = service.inspect(configuration, address, null)
+        val payload = org.json.JSONObject(inspection.selectedSubjectJson!!)
+
+        assertEquals("第一章", inspection.subjects.single().label)
+        assertEquals("/var/minis/workspace/novel/chapter-1.md", payload.getString("source_path"))
+        assertTrue(inspection.modules.isEmpty())
+        assertTrue(configuration.backgroundSettings.isEmpty())
+    }
+
+    @Test
     fun `a proposal is inert until the real user confirms it`() = runBlocking {
         val workspace = FakeManagementWorkspace()
         val owner = ModuleOwner.world("w1")
@@ -135,7 +163,9 @@ class NovexManagementServiceTest {
 }
 
 private class FakeArtifactPort : NovexManagementArtifactPort {
+    val descriptions = mutableMapOf<String, NovexManagedArtifactDescription>()
     override suspend fun exists(artifactId: String) = false
+    override suspend fun describe(artifactId: String) = descriptions[artifactId]
     override suspend fun attach(attachment: CreativeArtifactAttachment) = Unit
     override suspend fun detach(attachment: CreativeArtifactAttachment) = Unit
 }

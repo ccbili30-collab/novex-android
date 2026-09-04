@@ -189,9 +189,19 @@ object NovexManagementPolicy {
 
 interface NovexManagementArtifactPort {
     suspend fun exists(artifactId: String): Boolean
+    suspend fun describe(artifactId: String): NovexManagedArtifactDescription?
     suspend fun attach(attachment: CreativeArtifactAttachment)
     suspend fun detach(attachment: CreativeArtifactAttachment)
 }
+
+data class NovexManagedArtifactDescription(
+    val id: String,
+    val title: String,
+    val kind: CreativeArtifactKind,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val sourcePath: String?,
+)
 
 fun interface NovexManagementTransaction {
     suspend fun run(block: suspend () -> Unit)
@@ -245,7 +255,8 @@ class NovexManagementService(
         }
         val modules = when {
             selectedModule != null -> listOf(selectedModule.module)
-            subject != null -> workspace.modules(subject.toModuleOwner()).modules
+            subject != null && subject.kind != NovexContentKind.CREATIVE_ARTIFACT ->
+                workspace.modules(subject.toModuleOwner()).modules
             else -> emptyList()
         }
         return NovexManagementInspection(
@@ -391,7 +402,7 @@ class NovexManagementService(
             }
         } ?: "已删除角色版本"
         NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(subject.id)?.project?.name ?: "已删除文游"
-        NovexContentKind.CREATIVE_ARTIFACT -> "创作成果 ${subject.id}"
+        NovexContentKind.CREATIVE_ARTIFACT -> artifacts.describe(subject.id)?.title ?: "已删除创作成果"
     }
 
     private suspend fun subjectContentJson(subject: NovexContentAddress): String = when (subject.kind) {
@@ -430,7 +441,19 @@ class NovexManagementService(
                 put("player_identity", project.playerIdentity)
             }.toString()
         }
-        NovexContentKind.CREATIVE_ARTIFACT -> error("创作成果不是可检查的管理根对象")
+        NovexContentKind.CREATIVE_ARTIFACT -> {
+            val artifact = requireNotNull(artifacts.describe(subject.id)) {
+                "创作成果不存在：${subject.id}"
+            }
+            JSONObject().apply {
+                put("id", artifact.id)
+                put("title", artifact.title)
+                put("kind", artifact.kind.name)
+                put("mime_type", artifact.mimeType)
+                put("size_bytes", artifact.sizeBytes)
+                artifact.sourcePath?.let { put("source_path", it) }
+            }.toString()
+        }
     }
 }
 

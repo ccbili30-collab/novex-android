@@ -1,9 +1,12 @@
 package com.openminis.app.ui.navigation
 
+import com.openminis.app.novex.domain.NovexContentAddress
+import com.openminis.app.novex.domain.NovexConversationConfiguration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ChatDraftRouteTest {
+class NovexChatDraftRouteTest {
     @Test
     fun normalizedWorldRoleDraftKeepsConcreteVersionAndPersona() {
         assertEquals(
@@ -48,5 +51,65 @@ class ChatDraftRouteTest {
     @Test
     fun generalNovaxDraftStaysGeneral() {
         assertEquals("__new__draft-3", buildChatDraftId("draft-3"))
+    }
+
+    @Test
+    fun creationDraftCarriesEditableWorldMountWithoutTurningItIntoBackground() {
+        val route = buildChatDraftId(
+            draftId = "draft-world",
+            context = ChatDraftContext(
+                managedSubjects = listOf(NovexContentAddress.world("world-7")),
+            ),
+        )
+
+        assertEquals("__new__draft-world__managedWorld__world-7", route)
+        assertEquals(
+            listOf(NovexContentAddress.world("world-7")),
+            managedSubjectsFromChatDraftId(route),
+        )
+    }
+
+    @Test
+    fun creationDraftCanTargetConcreteCharacterVersionOrInteractiveFiction() {
+        val route = buildChatDraftId(
+            draftId = "draft-managed",
+            context = ChatDraftContext(
+                managedSubjects = listOf(
+                    NovexContentAddress.characterVersion("version-3"),
+                    NovexContentAddress.interactiveFiction("game-2"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "__new__draft-managed__managedVersion__version-3__managedGame__game-2",
+            route,
+        )
+        assertEquals(
+            listOf(
+                NovexContentAddress.characterVersion("version-3"),
+                NovexContentAddress.interactiveFiction("game-2"),
+            ),
+            managedSubjectsFromChatDraftId(route),
+        )
+    }
+
+    @Test
+    fun creationDraftMountsTargetsForEditingButDoesNotInjectThemAsBackground() {
+        val route = buildChatDraftId(
+            draftId = "draft-create",
+            context = ChatDraftContext(
+                managedSubjects = listOf(NovexContentAddress.world("world-9")),
+            ),
+        )
+
+        val configured = applyDraftManagedSubjects(
+            draftId = route,
+            configuration = NovexConversationConfiguration.empty(route).snapshot,
+        )
+
+        assertTrue(configured.backgroundSettings.isEmpty())
+        assertEquals(NovexContentAddress.world("world-9"), configured.managedSubjects.single().subject)
+        assertEquals(com.openminis.app.novex.domain.ManagedAccess.EDIT, configured.managedSubjects.single().access)
     }
 }

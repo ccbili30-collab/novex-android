@@ -35,6 +35,7 @@ import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.toPlainText
+import com.openminis.app.novex.domain.NovexContentAddress
 
 internal enum class NovexContentModuleLayout {
     MAP,
@@ -248,8 +249,10 @@ internal fun NovexContentModuleList(
     moduleImages: Map<String, Any?>,
     moduleItemImages: Map<String, Map<String, Any?>>,
     onOpenModule: ((String) -> Unit)?,
+    owner: NovexContentAddress? = null,
 ) {
     if (modules.isEmpty()) return
+    val attachedArtifactImages = rememberNovexAttachedModuleImages(owner)
     val shape = RoundedCornerShape(NovexDimensions.SectionRadius)
     Column(
         Modifier
@@ -266,7 +269,7 @@ internal fun NovexContentModuleList(
             )
             NovexContentModuleBlock(
                 presentation = module.toNovexPresentation(),
-                imageModel = moduleImages[module.id],
+                imageModel = moduleImages[module.id] ?: attachedArtifactImages[module.id],
                 itemImageModels = moduleItemImages[module.id].orEmpty(),
                 onClick = onOpenModule?.let { open -> { open(module.id) } },
             )

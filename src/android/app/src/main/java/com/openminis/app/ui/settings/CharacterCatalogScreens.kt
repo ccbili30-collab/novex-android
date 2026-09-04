@@ -52,6 +52,7 @@ import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.novex.domain.NovexCommand
+import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.requireCharacter
 import com.openminis.app.novex.domain.requireNativeCard
 import com.openminis.app.ui.novex.NovexArtwork
@@ -92,6 +93,7 @@ fun CatalogCharacterDetailScreen(
     characterId: String,
     onBack: () -> Unit,
     onEditVersion: (String) -> Unit,
+    onHelpCreate: (String) -> Unit,
     onCreateVariant: () -> Unit,
     onDuplicated: (String) -> Unit,
     onOpenModule: (String) -> Unit,
@@ -113,7 +115,6 @@ fun CatalogCharacterDetailScreen(
     var confirmDeleteRoot by remember { mutableStateOf(false) }
     var confirmDeleteVariant by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var confirmSharedEdit by remember { mutableStateOf<CharacterVersionEntity?>(null) }
-    var creatorNotice by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(characterId, refresh) {
         val snapshot = novex.character(characterId)
@@ -165,7 +166,7 @@ fun CatalogCharacterDetailScreen(
                     icon = R.drawable.ic_phosphor_sparkle,
                     contentDescription = "帮我创作",
                     label = "帮我创作",
-                    onClick = { creatorNotice = true },
+                    onClick = { onHelpCreate(page.version.id) },
                 )
                 NovexTopAction(
                     icon = R.drawable.ic_phosphor_pencil_simple,
@@ -309,12 +310,6 @@ fun CatalogCharacterDetailScreen(
         )
     }
     error?.let { CharacterErrorDialog(it) { error = null } }
-    if (creatorNotice) AlertDialog(
-        onDismissRequest = { creatorNotice = false },
-        title = { Text("帮我创作") },
-        text = { Text("入口已保留，人工智能管理与写入本轮暂不开放，点击不会修改角色内容。") },
-        confirmButton = { TextButton(onClick = { creatorNotice = false }) { Text("知道了") } },
-    )
 }
 
 @Composable
@@ -343,6 +338,7 @@ internal fun CharacterPrimaryContent(
             images.mapValues { it.value.managedPath.existingMediaFile() }
         },
         onOpenModule = onOpenModule,
+        owner = NovexContentAddress.characterVersion(data.version.id),
     )
 }
 

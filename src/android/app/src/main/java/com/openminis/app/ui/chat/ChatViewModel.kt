@@ -92,6 +92,7 @@ import com.openminis.app.novex.domain.NovexConversationCommand
 import com.openminis.app.novex.domain.NovexManagementInspection
 import com.openminis.app.novex.domain.NovexManagementPlan
 import com.openminis.app.novex.domain.NovexManagementService
+import com.openminis.app.ui.navigation.applyDraftManagedSubjects
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
@@ -3858,7 +3859,7 @@ class ChatViewModel(
                         rolePresentationEnabled = draftCharacter != null,
                     )
                 }
-                val draftConfiguration = initialInteractiveFictionId?.let { projectId ->
+                val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
                     val application = context.applicationContext as? com.openminis.app.MinisApp
                     application?.novexWorkspace?.interactiveFiction(projectId)?.let { project ->
                         NovexConversationConfiguration.open(
@@ -3877,6 +3878,10 @@ class ChatViewModel(
                     conversationId = sessionId,
                     worldId = _immersiveProfile.value.worldId,
                     characterVersionId = _immersiveProfile.value.characterVersionId,
+                )
+                val draftConfiguration = applyDraftManagedSubjects(
+                    draftId = sessionId,
+                    configuration = baseDraftConfiguration,
                 )
                 installNovexConfiguration(draftConfiguration)
                 _conversationPrompt.value = inheritedEditablePrompt()
@@ -8272,13 +8277,20 @@ class ChatViewModel(
                     accumulatedText,
                     turnMessageId,
                 )
-                captureCreativeArtifact(
+                val capturedArtifact = captureCreativeArtifact(
                     toolName = name,
                     argsJson = argsStr,
                     toolCallId = id,
                     branchMessageId = turnMessageId,
                     result = result,
                 )
+                val modelToolOutput = capturedArtifact?.let { (artifactId, title) ->
+                    com.openminis.app.novex.domain.CreativeArtifactCapturePolicy.appendModelReceipt(
+                        toolOutput = result.output,
+                        artifactId = artifactId,
+                        title = title,
+                    )
+                } ?: result.output
                 android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool END name=$name success=${result.success} title=${result.toolTitle} outputLen=${result.output.length} output=${result.output.take(200)}")
 
                 // Record post-execution. WARNING text is appended to the tool
@@ -8288,16 +8300,16 @@ class ChatViewModel(
                 val postRecord = toolLoopDetector.record(
                     toolName = name,
                     params = paramsMap,
-                    result = if (result.success) result.output else null,
+                    result = if (result.success) modelToolOutput else null,
                     errorMessage = errMsgForDetector,
                     toolCallId = id,
                 )
                 val outputForLLM = if (postRecord.level == Level.WARNING && postRecord.message != null) {
                     AppLogger.debug("ChatViewModel",
                         "appending loop-warning to tool result name=$name key=${postRecord.warningKey}")
-                    "${result.output}\n\n${postRecord.message}"
+                    "${modelToolOutput}\n\n${postRecord.message}"
                 } else {
-                    result.output
+                    modelToolOutput
                 }
 
                 val blockIdx = allToolBlocks.indexOfFirst { it.id == id }
@@ -8653,7 +8665,7 @@ class ChatViewModel(
         toolCallId: String,
         branchMessageId: String,
         result: ToolExecutionResult,
-    ) {
+    ): Pair<String, String>? {
         val capture = com.openminis.app.novex.domain.CreativeArtifactCapturePolicy.fromToolResult(
             toolName = toolName,
             argsJson = argsJson,
@@ -8661,11 +8673,11 @@ class ChatViewModel(
             imageBytes = result.imageData,
             imageMimeType = result.imageMimeType,
             imageHostPath = result.imageFilePath,
-        ) ?: return
-        val application = context.applicationContext as? com.openminis.app.MinisApp ?: return
-        if (!application.subsystemsReady()) return
+        ) ?: return null
+        val application = context.applicationContext as? com.openminis.app.MinisApp ?: return null
+        if (!application.subsystemsReady()) return null
         val conversationId = realSessionId.ifBlank { activeSessionId }
-        runCatching {
+        return runCatching {
             withContext(Dispatchers.IO) {
                 val bytes = capture.imageBytes ?: capture.sourcePath?.let { path ->
                     com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(
@@ -8673,7 +8685,7 @@ class ChatViewModel(
                         path,
                         context,
                     )?.takeIf { file -> file.isFile }?.readBytes()
-                } ?: return@withContext
+                } ?: return@withContext null
                 val mimeType = capture.mimeType ?: mimeTypeForArtifactPath(capture.sourcePath)
                 application.creativeArtifactRepository.capture(
                     title = capture.title,
@@ -8687,14 +8699,14 @@ class ChatViewModel(
                         toolCallId = toolCallId,
                     ),
                     sourcePath = capture.sourcePath,
-                )
+                ).let { record -> record.artifact.id to record.artifact.title }
             }
         }.onFailure { error ->
             AppLogger.warning(
                 "CreativeArtifact",
                 "capture failed tool=$toolName type=${error::class.java.simpleName} message=${error.message}",
             )
-        }
+        }.getOrNull()
     }
 
     private fun mimeTypeForArtifactPath(path: String?): String = when (
@@ -8931,6 +8943,7 @@ class ChatViewModel(
                 "world" -> NovexContentKind.WORLD
                 "character_version" -> NovexContentKind.CHARACTER_VERSION
                 "game" -> NovexContentKind.INTERACTIVE_FICTION
+                "artifact" -> NovexContentKind.CREATIVE_ARTIFACT
                 else -> error("未知管理对象类型：$kind")
             },
             id = id,

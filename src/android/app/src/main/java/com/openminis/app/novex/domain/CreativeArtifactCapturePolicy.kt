@@ -47,6 +47,25 @@ object CreativeArtifactCapturePolicy {
         }
     }
 
+    fun appendModelReceipt(
+        toolOutput: String,
+        artifactId: String,
+        title: String,
+    ): String = buildString {
+        append(toolOutput.trimEnd())
+        append("\n\n<novex-artifact>")
+        append(
+            JSONObject()
+                .put("artifact_id", artifactId)
+                .put("title", title)
+                .put(
+                    "next_step",
+                    "需要放入已挂载内容时，使用 novex_propose_content_changes 提出 attach_artifact 变更。",
+                ),
+        )
+        append("</novex-artifact>")
+    }
+
     private fun kindForPath(path: String): CreativeArtifactKind = when (File(path).extension.lowercase()) {
         "png", "jpg", "jpeg", "webp", "gif", "svg" -> CreativeArtifactKind.IMAGE
         "novexworld", "novexcharacter", "novexgame" -> CreativeArtifactKind.CARD_ARCHIVE

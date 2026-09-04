@@ -68,6 +68,7 @@ import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.NovexType
 import com.openminis.app.ui.novex.rememberNovexWorkspace
+import com.openminis.app.ui.novex.rememberNovexCreativeArtifacts
 
 private data class ImageStylePreset(val name: String, val prompt: String)
 
@@ -94,6 +95,7 @@ fun ConversationSettingsScreen(
 ) {
     val context = LocalContext.current
     val workspace = rememberNovexWorkspace()
+    val artifacts = rememberNovexCreativeArtifacts()
     val viewModel: ChatViewModel = viewModel(
         viewModelStoreOwner = ChatViewModelStore.ownerFor(sessionId),
         factory = ChatViewModel.factory(
@@ -136,7 +138,7 @@ fun ConversationSettingsScreen(
             hydrated = true
         }
     }
-    LaunchedEffect(workspace) {
+    LaunchedEffect(workspace, artifacts) {
         runCatching {
             val worlds = workspace.worlds().map { card ->
                 ConversationContentOption(NovexContentAddress.world(card.world.id), card.world.name, "世界")
@@ -167,7 +169,14 @@ fun ConversationSettingsScreen(
                     "文游",
                 )
             }
-            options = worlds + characters + games
+            val artifactOptions = artifacts.availableArtifacts().map { artifact ->
+                ConversationContentOption(
+                    artifact.address,
+                    artifact.title,
+                    "创作成果",
+                )
+            }
+            options = worlds + characters + games + artifactOptions
             gameSnapshots = gameCards.mapNotNull { card ->
                 workspace.interactiveFiction(card.project.id)?.let { snapshot ->
                     card.project.id to InteractiveFictionRuntimeSnapshotFactory.create(snapshot)
@@ -302,7 +311,7 @@ fun ConversationSettingsScreen(
                     NovexDivider(Modifier.padding(horizontal = 16.dp))
                 }
             }
-            NovexTextActionRow("挂载世界、角色或文游", onClick = { picker = ConversationPicker.MANAGED })
+            NovexTextActionRow("挂载世界、角色、文游或文档", onClick = { picker = ConversationPicker.MANAGED })
         }
 
         NovexEditorSection(

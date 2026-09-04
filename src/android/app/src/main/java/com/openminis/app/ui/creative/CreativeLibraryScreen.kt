@@ -41,6 +41,7 @@ import com.openminis.app.data.creative.CreativeArtifactQuery
 import com.openminis.app.data.creative.CreativeArtifactRecord
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.novex.domain.CreativeArtifactKind
+import com.openminis.app.novex.domain.NovexContentKind
 import com.openminis.app.ui.novex.NovexActionMenu
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexDecisionAction
@@ -71,6 +72,18 @@ private data class ArtifactKindFilter(
     val label: String,
 )
 
+private enum class ArtifactAssociationFilter(
+    val label: String,
+    val ownerKind: NovexContentKind? = null,
+    val unattachedOnly: Boolean = false,
+) {
+    ALL("全部归属"),
+    WORLDS("世界成果", NovexContentKind.WORLD),
+    CHARACTERS("角色成果", NovexContentKind.CHARACTER_VERSION),
+    GAMES("文游成果", NovexContentKind.INTERACTIVE_FICTION),
+    CONVERSATION_ONLY("仅对话文件", unattachedOnly = true),
+}
+
 private val artifactKindFilters = listOf(
     ArtifactKindFilter(null, "全部类型"),
     ArtifactKindFilter(CreativeArtifactKind.DOCUMENT, "文档"),
@@ -91,6 +104,7 @@ fun CreativeLibraryScreen(
     val scope = rememberCoroutineScope()
     var libraryScope by remember { mutableStateOf(LibraryScope.ALL) }
     var kindFilter by remember { mutableStateOf(artifactKindFilters.first()) }
+    var associationFilter by remember { mutableStateOf(ArtifactAssociationFilter.ALL) }
     var records by remember { mutableStateOf<List<CreativeArtifactRecord>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -131,7 +145,7 @@ fun CreativeLibraryScreen(
         }
     }
 
-    LaunchedEffect(conversationId, libraryScope, kindFilter, refreshKey) {
+    LaunchedEffect(conversationId, libraryScope, kindFilter, associationFilter, refreshKey) {
         loading = true
         error = null
         runCatching {
@@ -140,6 +154,8 @@ fun CreativeLibraryScreen(
                     CreativeArtifactQuery(
                         conversationId = conversationId,
                         kinds = kindFilter.kind?.let(::setOf).orEmpty(),
+                        ownerKinds = associationFilter.ownerKind?.let(::setOf).orEmpty(),
+                        unattachedOnly = associationFilter.unattachedOnly,
                         favoritesOnly = libraryScope == LibraryScope.FAVORITES,
                         trashOnly = libraryScope == LibraryScope.TRASH,
                     ),
@@ -164,12 +180,33 @@ fun CreativeLibraryScreen(
                 NovexActionMenu(
                     expanded = showKindMenu,
                     onDismissRequest = { showKindMenu = false },
-                    actions = artifactKindFilters.map { filter ->
-                        NovexMenuAction(
-                            label = if (filter == kindFilter) "${filter.label} · 已选" else filter.label,
-                            icon = kindIcon(filter.kind),
-                            onClick = { kindFilter = filter },
-                        )
+                    actions = buildList {
+                        ArtifactAssociationFilter.entries.forEach { filter ->
+                            add(
+                                NovexMenuAction(
+                                    label = if (filter == associationFilter) {
+                                        "${filter.label} · 已选"
+                                    } else {
+                                        filter.label
+                                    },
+                                    icon = associationIcon(filter),
+                                    onClick = { associationFilter = filter },
+                                ),
+                            )
+                        }
+                        artifactKindFilters.forEach { filter ->
+                            add(
+                                NovexMenuAction(
+                                    label = if (filter == kindFilter) {
+                                        "类型：${filter.label} · 已选"
+                                    } else {
+                                        "类型：${filter.label}"
+                                    },
+                                    icon = kindIcon(filter.kind),
+                                    onClick = { kindFilter = filter },
+                                ),
+                            )
+                        }
                     },
                 )
             }
@@ -295,6 +332,8 @@ private fun ArtifactRow(
     val revision = record.revisions.lastOrNull()
     val metadata = buildList {
         add(kindLabel(record.artifact.kind))
+        val ownerKinds = record.attachments.map { it.owner.kind }.distinct()
+        if (ownerKinds.isEmpty()) add("仅对话") else add(ownerKinds.joinToString("+") { it.ownerLabel() })
         add("v${record.revisions.size.coerceAtLeast(1)}")
         revision?.let { add(Formatter.formatShortFileSize(LocalContext.current, it.sizeBytes)) }
         add(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(record.artifact.updatedAt)))
@@ -392,6 +431,21 @@ private fun kindIcon(kind: CreativeArtifactKind?): Int = when (kind) {
     CreativeArtifactKind.DOCUMENT -> R.drawable.ic_phosphor_note_pencil
     CreativeArtifactKind.CARD_ARCHIVE -> R.drawable.ic_phosphor_download_simple
     CreativeArtifactKind.OTHER, null -> R.drawable.ic_phosphor_sliders_horizontal
+}
+
+private fun associationIcon(filter: ArtifactAssociationFilter): Int = when (filter) {
+    ArtifactAssociationFilter.ALL -> R.drawable.ic_phosphor_sliders_horizontal
+    ArtifactAssociationFilter.WORLDS -> R.drawable.ic_phosphor_image
+    ArtifactAssociationFilter.CHARACTERS -> R.drawable.ic_phosphor_sparkle
+    ArtifactAssociationFilter.GAMES -> R.drawable.ic_phosphor_puzzle_piece
+    ArtifactAssociationFilter.CONVERSATION_ONLY -> R.drawable.ic_phosphor_chats
+}
+
+private fun NovexContentKind.ownerLabel(): String = when (this) {
+    NovexContentKind.WORLD -> "世界"
+    NovexContentKind.CHARACTER_VERSION -> "角色"
+    NovexContentKind.INTERACTIVE_FICTION -> "文游"
+    NovexContentKind.CREATIVE_ARTIFACT -> "成果"
 }
 
 private fun kindLabel(kind: CreativeArtifactKind): String = when (kind) {

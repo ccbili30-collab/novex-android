@@ -2,6 +2,7 @@ package com.openminis.app.novex.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CreativeArtifactCapturePolicyTest {
@@ -54,5 +55,18 @@ class CreativeArtifactCapturePolicyTest {
                 success = true,
             ),
         )
+    }
+
+    @Test
+    fun `capture receipt gives the model the durable id needed for a later module attachment`() {
+        val receipt = CreativeArtifactCapturePolicy.appendModelReceipt(
+            toolOutput = "Saved image to /tmp/map.png",
+            artifactId = "artifact-7",
+            title = "云岚地图",
+        )
+
+        assertTrue(receipt.contains("\"artifact_id\":\"artifact-7\""))
+        assertTrue(receipt.contains("novex_propose_content_changes"))
+        assertTrue(receipt.startsWith("Saved image to /tmp/map.png"))
     }
 }

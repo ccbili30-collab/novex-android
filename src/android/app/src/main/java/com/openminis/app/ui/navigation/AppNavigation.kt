@@ -28,6 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.ui.chat.ChatScreen
 import com.openminis.app.ui.chat.ConversationSettingsScreen
 import com.openminis.app.ui.creative.CreativeLibraryScreen
@@ -284,6 +285,17 @@ fun AppNavigation(
     initialRoute: String? = null,
 ) {
     val context = LocalContext.current
+
+    fun openCreationWorkspace(subject: NovexContentAddress) {
+        DeepLinkCoordinator.setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL)
+        val draftId = buildChatDraftId(
+            draftId = java.util.UUID.randomUUID().toString(),
+            context = ChatDraftContext(managedSubjects = listOf(subject)),
+        )
+        navController.safeNavigate(Routes.chat(draftId)) {
+            popUpTo(Routes.SESSION_LIST) { inclusive = false }
+        }
+    }
 
     // T219-5: use the application-scoped singleton from MinisApp so UI
     // add/remove shares state with PRootKernel and the lifecycle re-probe
@@ -721,6 +733,7 @@ fun AppNavigation(
                 },
                 onBack = { navController.safePopBackStack() },
                 onEditWorld = { navController.safeNavigate(Routes.storyWorldEdit(worldId)) },
+                onHelpCreate = { openCreationWorkspace(NovexContentAddress.world(worldId)) },
                 onEditPersona = { navController.safeNavigate(Routes.personaEdit(worldId, it)) },
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit(worldId = worldId))
@@ -797,6 +810,9 @@ fun AppNavigation(
                         Routes.characterCatalogEdit(characterId = characterId, versionId = versionId),
                     )
                 },
+                onHelpCreate = { versionId ->
+                    openCreationWorkspace(NovexContentAddress.characterVersion(versionId))
+                },
                 onCreateVariant = {
                     navController.safeNavigate(
                         Routes.characterCatalogEdit(characterId = characterId, createVariant = true),
@@ -815,6 +831,7 @@ fun AppNavigation(
             com.openminis.app.ui.settings.CatalogContentModuleDetailScreen(
                 moduleId = moduleId,
                 onBack = { navController.safePopBackStack() },
+                onHelpCreate = ::openCreationWorkspace,
             )
         }
 
@@ -878,6 +895,9 @@ fun AppNavigation(
                 onBack = { navController.safePopBackStack() },
                 onEdit = {
                     navController.safeNavigate(Routes.interactiveFictionEdit(projectId))
+                },
+                onHelpCreate = {
+                    openCreationWorkspace(NovexContentAddress.interactiveFiction(projectId))
                 },
                 onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
                 onStartConversation = {
