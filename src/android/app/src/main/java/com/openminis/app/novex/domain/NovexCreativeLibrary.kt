@@ -16,6 +16,52 @@ data class NovexCreativeArtifactSummary(
     val kind: CreativeArtifactKind,
 )
 
+/** One concrete world, character version or game that can own creative artifacts. */
+data class NovexCreativeArtifactOwnerOption(
+    val address: NovexContentAddress,
+    val label: String,
+)
+
+fun creativeArtifactOwnerOptions(
+    worlds: List<NovexWorldCard>,
+    characters: List<NovexCharacterCard>,
+    games: List<NovexInteractiveFictionCard>,
+): List<NovexCreativeArtifactOwnerOption> = buildList {
+    worlds.forEach { card ->
+        add(
+            NovexCreativeArtifactOwnerOption(
+                address = NovexContentAddress.world(card.world.id),
+                label = "世界 · ${card.world.name}",
+            ),
+        )
+    }
+    characters.forEach { card ->
+        card.character.allVersions.forEach { version ->
+            add(
+                NovexCreativeArtifactOwnerOption(
+                    address = NovexContentAddress.characterVersion(version.id),
+                    label = "角色 · ${card.character.character.name} · ${version.label}",
+                ),
+            )
+        }
+    }
+    games.forEach { card ->
+        add(
+            NovexCreativeArtifactOwnerOption(
+                address = NovexContentAddress.interactiveFiction(card.project.id),
+                label = "文游 · ${card.project.name}",
+            ),
+        )
+    }
+}
+
+suspend fun NovexWorkspace.creativeArtifactOwnerOptions(): List<NovexCreativeArtifactOwnerOption> =
+    creativeArtifactOwnerOptions(
+        worlds = worlds(),
+        characters = characters(),
+        games = interactiveFictions(),
+    )
+
 /** Read-only seam shared by conversation configuration and all content-page renderers. */
 interface NovexCreativeArtifactReader {
     suspend fun availableArtifacts(): List<NovexCreativeArtifactSummary>

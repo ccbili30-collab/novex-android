@@ -694,6 +694,7 @@ fun AppNavigation(
             CreativeLibraryScreen(
                 repository = app.creativeArtifactRepository,
                 deviceDirectory = app.creativeArtifactDeviceDirectory,
+                workspace = app.novexWorkspace,
                 conversationId = entry.arguments?.getString("sessionId"),
                 onBack = { navController.safePopBackStack() },
                 onOpenArtifact = { record, file ->

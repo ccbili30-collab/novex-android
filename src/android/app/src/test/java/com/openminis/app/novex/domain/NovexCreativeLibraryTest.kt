@@ -1,5 +1,12 @@
 package com.openminis.app.novex.domain
 
+import com.openminis.app.data.character.CharacterAggregate
+import com.openminis.app.data.character.CharacterEntity
+import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.CharacterVersionKind
+import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
+import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -7,6 +14,80 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexCreativeLibraryTest {
+    @Test
+    fun `specific project filters include worlds every character version and games`() {
+        val original = CharacterVersionEntity(
+            id = "character-original",
+            characterId = "character-root",
+            kind = CharacterVersionKind.ORIGINAL,
+            label = "本体",
+            position = 0,
+            createdAt = 1L,
+            updatedAt = 1L,
+        )
+        val variant = original.copy(
+            id = "character-variant",
+            kind = CharacterVersionKind.VARIANT,
+            label = "云岚分身",
+            position = 1,
+        )
+
+        val options = creativeArtifactOwnerOptions(
+            worlds = listOf(
+                NovexWorldCard(
+                    world = WorldEntity("world-1", "云岚书院", createdAt = 1L, updatedAt = 1L),
+                    image = null,
+                    characterCount = 0,
+                    moduleCount = 0,
+                ),
+            ),
+            characters = listOf(
+                NovexCharacterCard(
+                    character = CharacterAggregate(
+                        character = CharacterEntity("character-root", "苏晚晴", original.id, 1L, 1L),
+                        original = original,
+                        variants = listOf(variant),
+                    ),
+                    avatar = null,
+                ),
+            ),
+            games = listOf(
+                NovexInteractiveFictionCard(
+                    project = InteractiveFictionProjectEntity(
+                        id = "game-1",
+                        name = "云岚试炼",
+                        summary = "",
+                        launchMode = InteractiveFictionLaunchMode.FREE_SANDBOX,
+                        playerIdentity = "",
+                        createdAt = 1L,
+                        updatedAt = 1L,
+                    ),
+                    image = null,
+                    moduleCount = 0,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                NovexCreativeArtifactOwnerOption(NovexContentAddress.world("world-1"), "世界 · 云岚书院"),
+                NovexCreativeArtifactOwnerOption(
+                    NovexContentAddress.characterVersion("character-original"),
+                    "角色 · 苏晚晴 · 本体",
+                ),
+                NovexCreativeArtifactOwnerOption(
+                    NovexContentAddress.characterVersion("character-variant"),
+                    "角色 · 苏晚晴 · 云岚分身",
+                ),
+                NovexCreativeArtifactOwnerOption(
+                    NovexContentAddress.interactiveFiction("game-1"),
+                    "文游 · 云岚试炼",
+                ),
+            ),
+            options,
+        )
+    }
+
     @Test
     fun `an artifact keeps its origin and cannot be deleted while content still references it`() {
         val artifact = CreativeArtifact(

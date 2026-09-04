@@ -3,11 +3,18 @@ package com.openminis.app.ui.novex
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
@@ -58,6 +65,64 @@ internal fun NovexSelectionSheet(
                     },
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
+            }
+        }
+    }
+}
+
+/** Shared searchable picker for project libraries that may grow beyond a short action list. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun NovexSearchableSelectionSheet(
+    title: String,
+    actions: List<NovexSelectionAction>,
+    searchPlaceholder: String,
+    onDismissRequest: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val visibleActions = remember(actions, query) {
+        val normalized = query.trim()
+        if (normalized.isEmpty()) actions else actions.filter { it.label.contains(normalized, ignoreCase = true) }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        containerColor = NovexColors.Surface,
+        contentColor = NovexColors.Text,
+        tonalElevation = 0.dp,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(
+            topStart = NovexDimensions.SheetRadius,
+            topEnd = NovexDimensions.SheetRadius,
+        ),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 12.dp),
+        ) {
+            Text(
+                text = title,
+                color = NovexColors.Text,
+                style = NovexType.SectionTitle,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            )
+            NovexSearchField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = searchPlaceholder,
+            )
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                items(visibleActions) { action ->
+                    NovexTextActionRow(
+                        label = action.label,
+                        icon = action.icon,
+                        onClick = {
+                            onDismissRequest()
+                            action.onClick()
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
             }
         }
     }

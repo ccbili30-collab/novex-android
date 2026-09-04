@@ -45,6 +45,9 @@ import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.creative.creativeArtifactExportName
 import com.openminis.app.novex.domain.CreativeArtifactKind
 import com.openminis.app.novex.domain.NovexContentKind
+import com.openminis.app.novex.domain.NovexCreativeArtifactOwnerOption
+import com.openminis.app.novex.domain.NovexWorkspace
+import com.openminis.app.novex.domain.creativeArtifactOwnerOptions
 import com.openminis.app.ui.novex.NovexActionMenu
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexDecisionAction
@@ -55,6 +58,8 @@ import com.openminis.app.ui.novex.NovexFilterTabs
 import com.openminis.app.ui.novex.NovexMenuAction
 import com.openminis.app.ui.novex.NovexSettingsCustomRow
 import com.openminis.app.ui.novex.NovexSettingsScaffold
+import com.openminis.app.ui.novex.NovexSelectionAction
+import com.openminis.app.ui.novex.NovexSearchableSelectionSheet
 import com.openminis.app.ui.novex.NovexTopAction
 import com.openminis.app.ui.novex.NovexType
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +105,7 @@ private val artifactKindFilters = listOf(
 fun CreativeLibraryScreen(
     repository: CreativeArtifactRepository,
     deviceDirectory: CreativeArtifactDeviceDirectory,
+    workspace: NovexWorkspace,
     conversationId: String?,
     onBack: () -> Unit,
     onOpenArtifact: (CreativeArtifactRecord, File) -> Unit,
@@ -109,11 +115,14 @@ fun CreativeLibraryScreen(
     var libraryScope by remember { mutableStateOf(LibraryScope.ALL) }
     var kindFilter by remember { mutableStateOf(artifactKindFilters.first()) }
     var associationFilter by remember { mutableStateOf(ArtifactAssociationFilter.ALL) }
+    var ownerFilter by remember { mutableStateOf<NovexCreativeArtifactOwnerOption?>(null) }
+    var ownerOptions by remember { mutableStateOf<List<NovexCreativeArtifactOwnerOption>>(emptyList()) }
     var records by remember { mutableStateOf<List<CreativeArtifactRecord>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var showKindMenu by remember { mutableStateOf(false) }
+    var showOwnerSheet by remember { mutableStateOf(false) }
     var showDirectoryMenu by remember { mutableStateOf(false) }
     var directorySettings by remember {
         mutableStateOf<CreativeArtifactDeviceDirectorySettings>(deviceDirectory.settings())
@@ -180,7 +189,12 @@ fun CreativeLibraryScreen(
         }
     }
 
-    LaunchedEffect(conversationId, libraryScope, kindFilter, associationFilter, refreshKey) {
+    LaunchedEffect(workspace) {
+        runCatching { withContext(Dispatchers.IO) { workspace.creativeArtifactOwnerOptions() } }
+            .onSuccess { ownerOptions = it }
+    }
+
+    LaunchedEffect(conversationId, libraryScope, kindFilter, associationFilter, ownerFilter, refreshKey) {
         loading = true
         error = null
         runCatching {
@@ -188,9 +202,14 @@ fun CreativeLibraryScreen(
                 repository.list(
                     CreativeArtifactQuery(
                         conversationId = conversationId,
+                        owner = ownerFilter?.address,
                         kinds = kindFilter.kind?.let(::setOf).orEmpty(),
-                        ownerKinds = associationFilter.ownerKind?.let(::setOf).orEmpty(),
-                        unattachedOnly = associationFilter.unattachedOnly,
+                        ownerKinds = if (ownerFilter == null) {
+                            associationFilter.ownerKind?.let(::setOf).orEmpty()
+                        } else {
+                            emptySet()
+                        },
+                        unattachedOnly = ownerFilter == null && associationFilter.unattachedOnly,
                         favoritesOnly = libraryScope == LibraryScope.FAVORITES,
                         trashOnly = libraryScope == LibraryScope.TRASH,
                     ),
@@ -277,16 +296,28 @@ fun CreativeLibraryScreen(
                         ArtifactAssociationFilter.entries.forEach { filter ->
                             add(
                                 NovexMenuAction(
-                                    label = if (filter == associationFilter) {
+                                    label = if (ownerFilter == null && filter == associationFilter) {
                                         "${filter.label} · 已选"
                                     } else {
                                         filter.label
                                     },
                                     icon = associationIcon(filter),
-                                    onClick = { associationFilter = filter },
+                                    onClick = {
+                                        ownerFilter = null
+                                        associationFilter = filter
+                                    },
                                 ),
                             )
                         }
+                        add(
+                            NovexMenuAction(
+                                label = ownerFilter?.let { "具体项目：${it.label} · 已选" }
+                                    ?: "选择具体项目",
+                                icon = ownerFilter?.address?.kind?.let(::ownerKindIcon)
+                                    ?: R.drawable.ic_phosphor_search,
+                                onClick = { showOwnerSheet = true },
+                            ),
+                        )
                         artifactKindFilters.forEach { filter ->
                             add(
                                 NovexMenuAction(
@@ -411,6 +442,35 @@ fun CreativeLibraryScreen(
                     onClick = { pendingDelete = null },
                 ),
             ),
+        )
+    }
+
+    if (showOwnerSheet) {
+        NovexSearchableSelectionSheet(
+            title = "按具体项目筛选",
+            actions = buildList {
+                add(
+                    NovexSelectionAction(
+                        label = if (ownerFilter == null) "不限具体项目 · 已选" else "不限具体项目",
+                        icon = R.drawable.ic_phosphor_sliders_horizontal,
+                        onClick = { ownerFilter = null },
+                    ),
+                )
+                ownerOptions.forEach { option ->
+                    add(
+                        NovexSelectionAction(
+                            label = if (option == ownerFilter) "${option.label} · 已选" else option.label,
+                            icon = ownerKindIcon(option.address.kind),
+                            onClick = {
+                                associationFilter = ArtifactAssociationFilter.ALL
+                                ownerFilter = option
+                            },
+                        ),
+                    )
+                }
+            },
+            searchPlaceholder = "搜索世界、角色版本或文游",
+            onDismissRequest = { showOwnerSheet = false },
         )
     }
 }
@@ -547,6 +607,13 @@ private fun associationIcon(filter: ArtifactAssociationFilter): Int = when (filt
     ArtifactAssociationFilter.CHARACTERS -> R.drawable.ic_phosphor_sparkle
     ArtifactAssociationFilter.GAMES -> R.drawable.ic_phosphor_puzzle_piece
     ArtifactAssociationFilter.CONVERSATION_ONLY -> R.drawable.ic_phosphor_chats
+}
+
+private fun ownerKindIcon(kind: NovexContentKind): Int = when (kind) {
+    NovexContentKind.WORLD -> R.drawable.ic_phosphor_image
+    NovexContentKind.CHARACTER_VERSION -> R.drawable.ic_phosphor_sparkle
+    NovexContentKind.INTERACTIVE_FICTION -> R.drawable.ic_phosphor_puzzle_piece
+    NovexContentKind.CREATIVE_ARTIFACT -> R.drawable.ic_phosphor_note_pencil
 }
 
 private fun NovexContentKind.ownerLabel(): String = when (this) {
