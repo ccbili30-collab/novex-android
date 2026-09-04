@@ -8260,6 +8260,13 @@ class ChatViewModel(
                     accumulatedText,
                     turnMessageId,
                 )
+                captureCreativeArtifact(
+                    toolName = name,
+                    argsJson = argsStr,
+                    toolCallId = id,
+                    branchMessageId = turnMessageId,
+                    result = result,
+                )
                 android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool END name=$name success=${result.success} title=${result.toolTitle} outputLen=${result.output.length} output=${result.output.take(200)}")
 
                 // Record post-execution. WARNING text is appended to the tool
@@ -8627,6 +8634,73 @@ class ChatViewModel(
         args: JSONObject,
         tools: List<AgentToolDefinition>,
     ): String? = preflightValidateToolCallImpl(name, args, tools)
+
+    private suspend fun captureCreativeArtifact(
+        toolName: String,
+        argsJson: String,
+        toolCallId: String,
+        branchMessageId: String,
+        result: ToolExecutionResult,
+    ) {
+        val capture = com.openminis.app.novex.domain.CreativeArtifactCapturePolicy.fromToolResult(
+            toolName = toolName,
+            argsJson = argsJson,
+            success = result.success,
+            imageBytes = result.imageData,
+            imageMimeType = result.imageMimeType,
+            imageHostPath = result.imageFilePath,
+        ) ?: return
+        val application = context.applicationContext as? com.openminis.app.MinisApp ?: return
+        if (!application.subsystemsReady()) return
+        val conversationId = realSessionId.ifBlank { activeSessionId }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val bytes = capture.imageBytes ?: capture.sourcePath?.let { path ->
+                    com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(
+                        conversationId,
+                        path,
+                        context,
+                    )?.takeIf { file -> file.isFile }?.readBytes()
+                } ?: return@withContext
+                val mimeType = capture.mimeType ?: mimeTypeForArtifactPath(capture.sourcePath)
+                application.creativeArtifactRepository.capture(
+                    title = capture.title,
+                    kind = capture.kind,
+                    bytes = bytes,
+                    mimeType = mimeType,
+                    origin = com.openminis.app.novex.domain.CreativeArtifactOrigin(
+                        conversationId = conversationId,
+                        branchId = branchMessageId,
+                        messageId = branchMessageId,
+                        toolCallId = toolCallId,
+                    ),
+                    sourcePath = capture.sourcePath,
+                )
+            }
+        }.onFailure { error ->
+            AppLogger.warning(
+                "CreativeArtifact",
+                "capture failed tool=$toolName type=${error::class.java.simpleName} message=${error.message}",
+            )
+        }
+    }
+
+    private fun mimeTypeForArtifactPath(path: String?): String = when (
+        path?.substringAfterLast('.', missingDelimiterValue = "")?.lowercase()
+    ) {
+        "md", "markdown" -> "text/markdown"
+        "txt" -> "text/plain"
+        "html", "htm" -> "text/html"
+        "json" -> "application/json"
+        "pdf" -> "application/pdf"
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "svg" -> "image/svg+xml"
+        "novexworld", "novexcharacter", "novexgame", "zip" -> "application/zip"
+        else -> "application/octet-stream"
+    }
 
     private suspend fun executeTool(
         name: String,

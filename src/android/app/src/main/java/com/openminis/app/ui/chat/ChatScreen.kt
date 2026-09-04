@@ -1898,6 +1898,11 @@ fun ChatScreen(
                                     onSettings()
                                 },
                             )
+                            add(
+                                NovexMenuAction("本对话文件", R.drawable.ic_phosphor_note_pencil) {
+                                    onBrowseChatFiles()
+                                },
+                            )
                             if (immersiveProfile.usesRolePresentation) {
                                 add(
                                     NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {

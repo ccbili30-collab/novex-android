@@ -25,6 +25,10 @@ import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.interactivefiction.InteractiveFictionConverters
 import com.openminis.app.data.interactivefiction.InteractiveFictionDao
 import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
+import com.openminis.app.data.creative.CreativeArtifactAttachmentEntity
+import com.openminis.app.data.creative.CreativeArtifactDao
+import com.openminis.app.data.creative.CreativeArtifactEntity
+import com.openminis.app.data.creative.CreativeArtifactRevisionEntity
 
 @Database(
     entities = [
@@ -44,8 +48,11 @@ import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
         MediaAssetReferenceEntity::class,
         InteractiveFictionProjectEntity::class,
         NovexContextUsageRecordEntity::class,
+        CreativeArtifactEntity::class,
+        CreativeArtifactRevisionEntity::class,
+        CreativeArtifactAttachmentEntity::class,
     ],
-    version = 24,
+    version = 25,
     exportSchema = false,
 )
 @TypeConverters(
@@ -61,6 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun contentModuleDao(): ContentModuleDao
     abstract fun mediaAssetDao(): MediaAssetDao
     abstract fun interactiveFictionDao(): InteractiveFictionDao
+    abstract fun creativeArtifactDao(): CreativeArtifactDao
 
     companion object {
         @Volatile
@@ -612,6 +620,92 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds the durable creative library; source conversations are intentionally not foreign keys. */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS creative_artifacts (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        kind TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        origin_conversation_id TEXT NOT NULL,
+                        origin_branch_id TEXT NOT NULL,
+                        origin_message_id TEXT,
+                        origin_tool_call_id TEXT,
+                        source_path TEXT,
+                        current_revision_id TEXT NOT NULL,
+                        current_storage_key TEXT NOT NULL,
+                        favorite INTEGER NOT NULL,
+                        trashed_at INTEGER,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_creative_artifacts_origin " +
+                        "ON creative_artifacts(origin_conversation_id, updated_at)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_creative_artifacts_source " +
+                        "ON creative_artifacts(origin_conversation_id, source_path)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_creative_artifacts_trash " +
+                        "ON creative_artifacts(trashed_at, updated_at)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS creative_artifact_revisions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        artifact_id TEXT NOT NULL,
+                        revision_number INTEGER NOT NULL,
+                        storage_key TEXT NOT NULL,
+                        content_hash TEXT NOT NULL,
+                        mime_type TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        FOREIGN KEY (artifact_id) REFERENCES creative_artifacts(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_artifact_revision_number " +
+                        "ON creative_artifact_revisions(artifact_id, revision_number)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_artifact_revision_storage " +
+                        "ON creative_artifact_revisions(storage_key)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_artifact_revision_hash " +
+                        "ON creative_artifact_revisions(content_hash)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS creative_artifact_attachments (
+                        artifact_id TEXT NOT NULL,
+                        owner_kind TEXT NOT NULL,
+                        owner_id TEXT NOT NULL,
+                        module_id TEXT NOT NULL,
+                        slot TEXT NOT NULL,
+                        PRIMARY KEY (artifact_id, owner_kind, owner_id, module_id, slot),
+                        FOREIGN KEY (artifact_id) REFERENCES creative_artifacts(id) ON DELETE RESTRICT
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_artifact_attachment_owner " +
+                        "ON creative_artifact_attachments(owner_kind, owner_id)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_artifact_attachment_artifact " +
+                        "ON creative_artifact_attachments(artifact_id)",
+                )
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -649,7 +743,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                     .build()
                     .also { INSTANCE = it }
             }

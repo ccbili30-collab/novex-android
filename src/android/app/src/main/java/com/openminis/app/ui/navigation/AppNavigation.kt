@@ -30,6 +30,7 @@ import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.chat.ChatScreen
 import com.openminis.app.ui.chat.ConversationSettingsScreen
+import com.openminis.app.ui.creative.CreativeLibraryScreen
 import com.openminis.app.ui.sessions.NovexRootScreen
 import com.openminis.app.ui.sessions.SessionListScreen
 import com.openminis.app.ui.settings.AboutScreen
@@ -154,6 +155,9 @@ object Routes {
     /** Chat-files browser: opens FileBrowser rooted at /var/minis for the session. */
     const val CHAT_FILES = "chat_files/{sessionId}"
     fun chatFiles(sessionId: String) = "chat_files/$sessionId"
+    const val CREATIVE_LIBRARY = "creative_library?sessionId={sessionId}"
+    fun creativeLibrary(sessionId: String? = null): String =
+        if (sessionId == null) "creative_library" else "creative_library?sessionId=${android.net.Uri.encode(sessionId)}"
     const val MEMORY = "memory"
     /** [T-mcp-integration-android] MCP Integrations management screen. */
     const val MCP = "mcp"
@@ -607,7 +611,7 @@ fun AppNavigation(
                     }
                 },
                 onBrowseChatFiles = {
-                    navController.safeNavigate(Routes.chatFiles(sessionId))
+                    navController.safeNavigate(Routes.creativeLibrary(sessionId))
                 },
                 onPreviewAttachment = { item ->
                     FilePreviewHolder.currentItem = item
@@ -660,6 +664,36 @@ fun AppNavigation(
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
                 onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
+                onCreativeLibraryClick = { navController.safeNavigate(Routes.creativeLibrary()) },
+            )
+        }
+
+        composable(
+            route = Routes.CREATIVE_LIBRARY,
+            arguments = listOf(
+                navArgument("sessionId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            val app = LocalContext.current.applicationContext as com.openminis.app.MinisApp
+            CreativeLibraryScreen(
+                repository = app.creativeArtifactRepository,
+                conversationId = entry.arguments?.getString("sessionId"),
+                onBack = { navController.safePopBackStack() },
+                onOpenArtifact = { record, file ->
+                    FilePreviewHolder.currentItem = FileItem(
+                        file = file,
+                        name = record.artifact.title,
+                        isDirectory = false,
+                        isSymlink = false,
+                        size = file.length(),
+                        modifiedMs = record.artifact.updatedAt,
+                    )
+                    navController.safeNavigate(Routes.FILE_PREVIEW)
+                },
             )
         }
 

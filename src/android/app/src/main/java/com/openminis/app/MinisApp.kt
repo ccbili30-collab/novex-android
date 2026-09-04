@@ -143,6 +143,8 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
         private set
+    lateinit var creativeArtifactRepository: com.openminis.app.data.creative.CreativeArtifactRepository
+        private set
     lateinit var chatRepository: ChatRepository
         private set
     lateinit var providerRepository: ProviderRepository
@@ -277,6 +279,12 @@ class MinisApp : Application(), ImageLoaderFactory {
         novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.createDeferred(
             database,
             java.io.File(filesDir, "novex-media"),
+        )
+        creativeArtifactRepository = com.openminis.app.data.creative.CreativeArtifactRepository(
+            database,
+            com.openminis.app.data.creative.CreativeArtifactFileStore(
+                java.io.File(filesDir, "novex-artifacts"),
+            ),
         )
         chatRepository = ChatRepository(database.chatDao())
     }

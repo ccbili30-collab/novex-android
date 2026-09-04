@@ -110,6 +110,7 @@ fun SettingsScreen(
     // work will wire this through.
     onAboutClick: () -> Unit = {},
     onFeedbackClick: () -> Unit = {},
+    onCreativeLibraryClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     NovexSettingsScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
@@ -120,6 +121,15 @@ fun SettingsScreen(
                 subtitle = "加入 QQ 群反馈问题、建议新功能",
                 showDivider = false,
                 onClick = onFeedbackClick,
+            )
+        }
+        NovexSettingsSection(title = "创作与内容") {
+            NovexSettingsRow(
+                icon = R.drawable.ic_phosphor_note_pencil,
+                title = "创作库",
+                subtitle = "集中查看对话生成的文档、图片、地图和卡片",
+                showDivider = false,
+                onClick = onCreativeLibraryClick,
             )
         }
         NovexSettingsSection(

@@ -250,6 +250,41 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration25AddsVersionedCreativeLibraryWithoutConversationCascade() {
+        val db = helper.writableDatabase
+        AppDatabase.MIGRATION_24_25.migrate(db)
+
+        val tables = db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN " +
+                "('creative_artifacts','creative_artifact_revisions','creative_artifact_attachments') " +
+                "ORDER BY name",
+        ).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        assertEquals(
+            listOf(
+                "creative_artifact_attachments",
+                "creative_artifact_revisions",
+                "creative_artifacts",
+            ),
+            tables,
+        )
+        db.execSQL(
+            "INSERT INTO creative_artifacts VALUES " +
+                "('a1','DOCUMENT','第一章','deleted-chat','branch-1',NULL,NULL,'/chapter.md'," +
+                "'r1','hash.md',0,NULL,1,1)",
+        )
+        db.execSQL(
+            "INSERT INTO creative_artifact_revisions VALUES " +
+                "('r1','a1',1,'hash.md','hash','text/markdown',12,1)",
+        )
+        db.query("SELECT origin_conversation_id FROM creative_artifacts WHERE id = 'a1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("deleted-chat", cursor.getString(0))
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }
