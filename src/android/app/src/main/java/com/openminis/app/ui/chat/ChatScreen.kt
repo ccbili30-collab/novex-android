@@ -1899,6 +1899,11 @@ fun ChatScreen(
                                 },
                             )
                             add(
+                                NovexMenuAction("上下文与用量", R.drawable.ic_phosphor_chart_bar) {
+                                    showTokenUsageSheet = true
+                                },
+                            )
+                            add(
                                 NovexMenuAction("本对话文件", R.drawable.ic_phosphor_note_pencil) {
                                     onBrowseChatFiles()
                                 },

@@ -27,6 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
+import com.openminis.app.novex.domain.NovexLongformModelPolicy
+import com.openminis.app.novex.domain.NovexLongformModelTier
 
 /**
  * Session Token Usage bottom sheet — mirrors iOS `TokenUsageSheet` and uses
@@ -84,6 +86,25 @@ fun TokenUsageSheet(
                 StatRow(stringResource(R.string.token_usage_context_used), formatTokens(s?.context ?: 0))
                 contextWindow?.let { StatRow(stringResource(R.string.token_usage_context_window), formatTokens(it)) }
                 maxOutput?.let { StatRow(stringResource(R.string.token_usage_max_output), formatTokens(it)) }
+            }
+
+            val longform = NovexLongformModelPolicy.evaluate(
+                effectiveWindowTokens = contextWindow,
+                occupiedTokens = s?.context ?: 0,
+                reservedOutputTokens = minOf(maxOutput ?: 16_000, 32_000),
+            )
+            StatSection(title = "长篇创作") {
+                StatRow("当前能力", longform.label)
+                StatRow("本轮资料预算", formatTokens(longform.moduleBudgetTokens))
+                if (longform.tier == NovexLongformModelTier.UNKNOWN || !longform.meetsMinimum) {
+                    Text(
+                        text = longform.guidance,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
 
             thinking?.let { t ->

@@ -5,6 +5,8 @@ import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.character.CharacterLibraryDocument
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
@@ -22,10 +24,12 @@ import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
 import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -104,6 +108,112 @@ class NovexWorkspaceInstrumentedTest {
         assertEquals(listOf(map.id, timeline.id), restored.modules.map { it.id })
         assertEquals("山海地图", restored.modules.first().name)
         assertEquals("{\"text\":\"九峰环湖\"}", restored.modules.first().contentJson)
+    }
+
+    @Test
+    fun longformWorkspaceLoadsMoreThanOneHundredModulesAcrossWorldCharacterAndGameWithoutLoadingManagedOnlyContent() = runBlocking {
+        val worlds = (0 until 3).map { worldIndex ->
+            workspace.apply(
+                NovexCommand.CreateWorld(
+                    name = "压力世界 $worldIndex",
+                    overview = "第 $worldIndex 个世界的核心规则",
+                    now = worldIndex.toLong() + 1,
+                ),
+            ).requireWorld().also { world ->
+                workspace.apply(
+                    NovexCommand.SaveModules(
+                        owner = ModuleOwner.world(world.id),
+                        modules = (0 until 40).map { moduleIndex ->
+                            NovexModuleDraft(
+                                id = "world-$worldIndex-module-$moduleIndex",
+                                type = ContentModuleType.CUSTOM,
+                                name = "世界 $worldIndex 设定 $moduleIndex",
+                                contentJson = ContentModuleDocumentCodec.encode(
+                                    ContentModuleDocument.Article(
+                                        if (worldIndex == 2 && moduleIndex == 39) {
+                                            "白塔盟约由沈砚见证，第七枚印章藏在北塔钟后。"
+                                        } else {
+                                            "结构化长篇资料 $worldIndex-$moduleIndex"
+                                        },
+                                    ),
+                                ),
+                            )
+                        },
+                        now = 100,
+                    ),
+                )
+            }
+        }
+        val character = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = null,
+                versionId = null,
+                sourceVersionId = null,
+                createVariant = false,
+                rootName = "苏晚晴",
+                label = "本体",
+                profileJson = "{\"name\":\"苏晚晴\",\"summary\":\"白塔盟约相关人物\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "character-history",
+                        type = ContentModuleType.WORLD_EXPERIENCE,
+                        name = "世界经历",
+                        contentJson = ContentModuleDocumentCodec.encode(
+                            ContentModuleDocument.Article("曾在雾港追查第七枚印章。"),
+                        ),
+                    ),
+                ),
+                now = 200,
+            ),
+        ).requireCharacter()
+        val game = workspace.apply(
+            NovexCommand.SaveInteractiveFictionPage(
+                projectId = null,
+                name = "雾港漫游",
+                summary = "跨世界长篇文游",
+                launchMode = InteractiveFictionLaunchMode.FIXED_IDENTITY,
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "game-rules",
+                        type = ContentModuleType.GAME_NARRATIVE_RULES,
+                        name = "叙事规则",
+                        contentJson = ContentModuleDocumentCodec.encode(
+                            ContentModuleDocument.Article("不替玩家做决定。"),
+                        ),
+                    ),
+                ),
+                now = 300,
+            ),
+        ).requireInteractiveFiction()
+        val activeGame = InteractiveFictionRuntimeSnapshotFactory.create(
+            requireNotNull(workspace.interactiveFiction(game.id)),
+        )
+        val managedOnly = NovexContentAddress.creativeArtifact("artifact-not-background")
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "pressure-chat",
+            answerIdentity = AnswerIdentity.CharacterVersion(character.original.id),
+            backgroundSettings = worlds.map { BackgroundSetting(NovexContentAddress.world(it.id)) } +
+                BackgroundSetting(NovexContentAddress.characterVersion(character.original.id)),
+            managedSubjects = worlds.map {
+                ManagedSubject(NovexContentAddress.world(it.id), ManagedAccess.EDIT)
+            } + ManagedSubject(managedOnly, ManagedAccess.EDIT) +
+                ManagedSubject(NovexContentAddress.interactiveFiction(game.id), ManagedAccess.EDIT),
+            activeInteractiveFiction = activeGame,
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val candidates = WorkspaceNovexContextLoader(workspace).load(configuration)
+        val composition = NovexContextComposer.compose(
+            query = "谁见证白塔盟约，第七枚印章在哪里？",
+            tokenBudget = 8_000,
+            candidates = candidates,
+        )
+
+        assertTrue(candidates.size >= 126)
+        assertTrue(composition.fragments.any { it.sourceId == "world-2-module-39" })
+        assertTrue(composition.fragments.any { it.kind == ContextSourceKind.ANSWER_IDENTITY })
+        assertTrue(composition.fragments.any { it.sourceId.startsWith("game:${activeGame.snapshotId}") })
+        assertFalse(candidates.any { it.sourceId.contains("artifact-not-background") })
     }
 
     @Test
