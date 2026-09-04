@@ -49,6 +49,7 @@ class ChatRepository(internal val dao: ChatDao) {
         assistantAvatarPath: String? = null,
         playerDisplayName: String? = null,
         playerAvatarPath: String? = null,
+        novexConfigurationJson: String? = null,
     ): ChatSessionEntity {
         val now = System.currentTimeMillis()
         val session = ChatSessionEntity(
@@ -73,6 +74,7 @@ class ChatRepository(internal val dao: ChatDao) {
             assistantAvatarPath = assistantAvatarPath,
             playerDisplayName = playerDisplayName,
             playerAvatarPath = playerAvatarPath,
+            novexConfigurationJson = novexConfigurationJson,
         )
         dao.insertSession(session)
         return session
@@ -155,6 +157,7 @@ class ChatRepository(internal val dao: ChatDao) {
             assistantAvatarPath = value.assistantAvatarPath,
             playerDisplayName = value.playerDisplayName.ifBlank { null },
             playerAvatarPath = value.playerAvatarPath,
+            novexConfigurationJson = value.novexConfigurationJson.ifBlank { null },
         )
     }
 

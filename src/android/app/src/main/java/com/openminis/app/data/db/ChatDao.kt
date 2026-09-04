@@ -373,6 +373,7 @@ interface ChatDao {
             assistant_avatar_path = :assistantAvatarPath,
             player_display_name = :playerDisplayName,
             player_avatar_path = :playerAvatarPath,
+            novex_configuration_json = :novexConfigurationJson,
             updated_at = :updatedAt
         WHERE id = :id
     """)
@@ -385,6 +386,7 @@ interface ChatDao {
         assistantAvatarPath: String?,
         playerDisplayName: String?,
         playerAvatarPath: String?,
+        novexConfigurationJson: String?,
         updatedAt: Long = System.currentTimeMillis(),
     )
 

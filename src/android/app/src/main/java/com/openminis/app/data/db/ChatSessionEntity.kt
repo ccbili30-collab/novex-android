@@ -74,6 +74,8 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "assistant_avatar_path") val assistantAvatarPath: String? = null,
     @ColumnInfo(name = "player_display_name") val playerDisplayName: String? = null,
     @ColumnInfo(name = "player_avatar_path") val playerAvatarPath: String? = null,
+    /** Typed Novex conversation configuration, serialized only at the persistence boundary. */
+    @ColumnInfo(name = "novex_configuration_json") val novexConfigurationJson: String? = null,
     /** Root and leaf of the activity path restored after process death. */
     @ColumnInfo(name = "active_root_message_id") val activeRootMessageId: String? = null,
     @ColumnInfo(name = "active_leaf_message_id") val activeLeafMessageId: String? = null,

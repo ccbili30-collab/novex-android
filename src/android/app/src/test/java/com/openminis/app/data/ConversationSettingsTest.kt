@@ -45,4 +45,18 @@ class ConversationSettingsTest {
         assertEquals(MAX_IMAGE_STYLE_PROMPT_CHARS, value.imageStylePrompt.length)
         assertTrue(value.conversationPrompt.all { it == '甲' })
     }
+
+    @Test
+    fun structuredNovexConfigurationIsPersistedIndependentlyFromPrompts() {
+        val raw = "  {\"answerIdentity\":{\"kind\":\"nova\"}}  "
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "提示词",
+                novexConfigurationJson = raw,
+            ),
+        )
+
+        assertEquals("{\"answerIdentity\":{\"kind\":\"nova\"}}", value.novexConfigurationJson)
+        assertEquals("提示词", value.conversationPrompt)
+    }
 }

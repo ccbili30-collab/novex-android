@@ -3121,6 +3121,44 @@ class ChatViewModel(
     val conversationPrompt: StateFlow<String?> = _conversationPrompt.asStateFlow()
     private val _imageStylePrompt = MutableStateFlow("")
     val imageStylePrompt: StateFlow<String> = _imageStylePrompt.asStateFlow()
+    private val _novexConfigurationJson = MutableStateFlow(
+        com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
+            com.openminis.app.novex.domain.NovexConversationConfiguration.empty(sessionId).snapshot,
+        ),
+    )
+    val novexConfigurationJson: StateFlow<String> = _novexConfigurationJson.asStateFlow()
+
+    private fun legacyNovexConfiguration(
+        conversationId: String,
+        worldId: String?,
+        characterVersionId: String?,
+    ): com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot {
+        val backgrounds = buildList {
+            worldId?.takeIf(String::isNotBlank)?.let {
+                add(
+                    com.openminis.app.novex.domain.BackgroundSetting(
+                        com.openminis.app.novex.domain.NovexContentAddress.world(it),
+                    ),
+                )
+            }
+            characterVersionId?.takeIf(String::isNotBlank)?.let {
+                add(
+                    com.openminis.app.novex.domain.BackgroundSetting(
+                        com.openminis.app.novex.domain.NovexContentAddress.characterVersion(it),
+                    ),
+                )
+            }
+        }
+        return com.openminis.app.novex.domain.NovexConversationConfiguration.open(
+            com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot(
+                conversationId = conversationId,
+                answerIdentity = characterVersionId?.takeIf(String::isNotBlank)?.let {
+                    com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion(it)
+                } ?: com.openminis.app.novex.domain.AnswerIdentity.Nova,
+                backgroundSettings = backgrounds,
+            ),
+        ).snapshot
+    }
 
     private fun inheritedEditablePrompt(): String {
         val profile = _immersiveProfile.value
@@ -3154,6 +3192,7 @@ class ChatViewModel(
             assistantAvatarPath = profile.assistantAvatarPath,
             playerDisplayName = profile.playerDisplayName.orEmpty(),
             playerAvatarPath = profile.playerAvatarPath,
+            novexConfigurationJson = _novexConfigurationJson.value,
         )
     }
 
@@ -3161,9 +3200,21 @@ class ChatViewModel(
         settings: com.openminis.app.data.ConversationSettingsSnapshot,
         onComplete: (Result<Unit>) -> Unit = {},
     ) {
-        val value = com.openminis.app.data.normalizeConversationSettings(settings)
+        val normalized = com.openminis.app.data.normalizeConversationSettings(settings)
+        val value = normalized.copy(
+            novexConfigurationJson = normalized.novexConfigurationJson.ifBlank {
+                com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
+                    legacyNovexConfiguration(
+                        conversationId = activeSessionId,
+                        worldId = _immersiveProfile.value.worldId,
+                        characterVersionId = _immersiveProfile.value.characterVersionId,
+                    ),
+                )
+            },
+        )
         _conversationPrompt.value = value.conversationPrompt
         _imageStylePrompt.value = value.imageStylePrompt
+        _novexConfigurationJson.value = value.novexConfigurationJson
         _immersiveProfile.value = _immersiveProfile.value.copy(
             rolePresentationEnabled = value.rolePresentationEnabled,
             assistantDisplayName = value.assistantDisplayName.ifBlank { null },
@@ -3436,6 +3487,7 @@ class ChatViewModel(
             assistantAvatarPath = _immersiveProfile.value.assistantAvatarPath,
             playerDisplayName = _immersiveProfile.value.playerDisplayName,
             playerAvatarPath = _immersiveProfile.value.playerAvatarPath,
+            novexConfigurationJson = _novexConfigurationJson.value,
         )
         realSessionId = session.id
         // "New Chat in Group": file the just-promoted draft into its folder.
@@ -3636,6 +3688,13 @@ class ChatViewModel(
                         rolePresentationEnabled = draftCharacter != null,
                     )
                 }
+                _novexConfigurationJson.value = com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
+                    legacyNovexConfiguration(
+                        conversationId = sessionId,
+                        worldId = _immersiveProfile.value.worldId,
+                        characterVersionId = _immersiveProfile.value.characterVersionId,
+                    ),
+                )
                 _conversationPrompt.value = inheritedEditablePrompt()
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
@@ -3694,6 +3753,14 @@ class ChatViewModel(
             )
             _conversationPrompt.value = session.conversationPrompt
             _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
+            _novexConfigurationJson.value = session.novexConfigurationJson?.takeIf(String::isNotBlank)
+                ?: com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
+                    legacyNovexConfiguration(
+                        conversationId = session.id,
+                        worldId = session.worldId ?: sessionWorld?.id,
+                        characterVersionId = session.characterVersionId,
+                    ),
+                )
             _memoryEnabled.value = session.memoryEnabled != 0
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user

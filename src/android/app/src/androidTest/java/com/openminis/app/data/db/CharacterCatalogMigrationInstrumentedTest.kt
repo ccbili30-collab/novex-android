@@ -207,6 +207,27 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration23AddsOneStructuredNovexConfigurationSnapshotToEveryConversation() {
+        val db = helper.writableDatabase
+        db.execSQL("CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY)")
+        db.execSQL("INSERT INTO sessions VALUES ('chat-1')")
+
+        AppDatabase.MIGRATION_22_23.migrate(db)
+
+        val columns = db.query("PRAGMA table_info(sessions)").use { cursor ->
+            buildSet {
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) add(cursor.getString(nameIndex))
+            }
+        }
+        assertEquals(true, "novex_configuration_json" in columns)
+        db.query("SELECT novex_configuration_json FROM sessions WHERE id = 'chat-1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals(null, cursor.getString(0))
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

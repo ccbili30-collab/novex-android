@@ -38,7 +38,7 @@ internal fun <Draft> NovexEditorScaffold(
     baselineDraft: Draft?,
     currentDraft: Draft,
     onBack: () -> Unit,
-    onPreview: () -> Unit,
+    onPreview: (() -> Unit)? = null,
     onSave: () -> Unit,
     onDeleteRequest: (() -> Unit)? = null,
     saveContainerColor: Color = NovexColors.Primary,
@@ -73,11 +73,13 @@ internal fun <Draft> NovexEditorScaffold(
                     onClick = delete,
                 )
             }
-            NovexTopAction(
-                icon = R.drawable.ic_phosphor_eye,
-                contentDescription = "预览草稿",
-                onClick = { if (loaded && canSave) onPreview() },
-            )
+            onPreview?.let { preview ->
+                NovexTopAction(
+                    icon = R.drawable.ic_phosphor_eye,
+                    contentDescription = "预览草稿",
+                    onClick = { if (loaded && canSave) preview() },
+                )
+            }
         },
         bottomBar = {
             NovexPrimaryButton(
