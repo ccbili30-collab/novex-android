@@ -27,4 +27,19 @@ class NovexManagementToolDefinitionsTest {
         assertFalse("confirmed" in apply.parameters)
         assertTrue(apply.description.contains("real user"))
     }
+
+    @Test
+    fun `proposal contract tells the model the required fields for structured changes`() {
+        val proposal = AgentTools.makeAgentTools().single { it.name == "novex_propose_content_changes" }
+        val contract = requireNotNull(proposal.parameters["changes"]).description
+
+        assertTrue(contract.contains("add_module"))
+        assertTrue(contract.contains("module_type"))
+        assertTrue(contract.contains("content_json"))
+        assertTrue(contract.contains("create_character_version"))
+        assertTrue(contract.contains("source_version_id"))
+        assertTrue(contract.contains("attach_artifact"))
+        assertTrue(contract.contains("artifact_id"))
+        assertTrue(contract.contains("module_id"))
+    }
 }

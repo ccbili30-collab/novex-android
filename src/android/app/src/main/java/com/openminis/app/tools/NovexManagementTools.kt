@@ -41,10 +41,20 @@ object NovexManagementTools {
             parameters = mapOf(
                 "changes" to AgentToolParam(
                     type = "string",
-                    description = "JSON array (maximum 20) of changes. Operations: add_module, update_module, " +
-                        "move_module, delete_module, add_reference, remove_reference, create_world, " +
-                        "create_character, create_character_version, create_game, link_character_version, " +
-                        "unlink_character_version, attach_artifact, detach_artifact. Use inspect first to obtain ids.",
+                    description = "JSON array (maximum 20) of change objects. Use inspect first to obtain ids. " +
+                        "Module operations: add_module requires {operation, subject_kind, subject_id, " +
+                        "module_type, name, content_json}; update_module requires {operation, module_id, name?, " +
+                        "content_json?}; move_module requires {operation, module_id, to_index}; delete_module " +
+                        "requires {operation, module_id}. Reference operations add_reference and remove_reference " +
+                        "require {operation, module_id, target_kind, target_id, position?}. Create operations: " +
+                        "create_world requires {operation, name, overview?}; create_character requires {operation, " +
+                        "name, profile_json}; create_character_version requires {operation, source_version_id, " +
+                        "label, profile_json}; create_game requires {operation, name, summary?, launch_mode?, " +
+                        "player_identity?}. World links link_character_version and unlink_character_version require " +
+                        "{operation, world_id, version_id, position?}. Artifact operations attach_artifact and " +
+                        "detach_artifact require {operation, artifact_id, subject_kind, subject_id, module_id?, " +
+                        "slot?}. subject_kind is world, character_version, or game. content_json and profile_json " +
+                        "accept a JSON object or its serialized JSON string.",
                 ),
             ),
             required = listOf("changes"),
