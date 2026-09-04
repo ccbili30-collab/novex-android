@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,8 +39,10 @@ import com.openminis.app.data.character.toPlainText
 internal enum class NovexContentModuleLayout {
     MAP,
     TIMELINE,
-    GALLERY,
-    COLLECTION,
+    WORLD_GALLERY,
+    CHARACTER_QUOTES,
+    CHARACTER_FACTS,
+    CHARACTER_COLLECTION,
     ARTICLE,
 }
 
@@ -52,14 +55,14 @@ internal fun ContentModuleType.novexContentLayout(): NovexContentModuleLayout = 
     ContentModuleType.FACTION,
     ContentModuleType.RACE,
     ContentModuleType.REGION,
-    -> NovexContentModuleLayout.GALLERY
-    ContentModuleType.QUOTES,
-    ContentModuleType.ATTRIBUTE_PANEL,
+    -> NovexContentModuleLayout.WORLD_GALLERY
+    ContentModuleType.QUOTES -> NovexContentModuleLayout.CHARACTER_QUOTES
+    ContentModuleType.ATTRIBUTE_PANEL -> NovexContentModuleLayout.CHARACTER_FACTS
     ContentModuleType.EQUIPMENT,
     ContentModuleType.TALENT_SKILL,
     ContentModuleType.APPEARANCE_PERSONALITY,
     ContentModuleType.INTEREST,
-    -> NovexContentModuleLayout.COLLECTION
+    -> NovexContentModuleLayout.CHARACTER_COLLECTION
     ContentModuleType.CUSTOM -> NovexContentModuleLayout.ARTICLE
 }
 
@@ -128,12 +131,18 @@ internal fun NovexContentModuleBlock(
         when (presentation.type.novexContentLayout()) {
             NovexContentModuleLayout.MAP -> MapModuleBody(presentation, imageModel)
             NovexContentModuleLayout.TIMELINE -> TimelineModuleBody(presentation, imageModel)
-            NovexContentModuleLayout.GALLERY -> GalleryModuleBody(
+            NovexContentModuleLayout.WORLD_GALLERY -> WorldGalleryModuleBody(
                 presentation,
                 imageModel,
                 itemImageModels,
             )
-            NovexContentModuleLayout.COLLECTION -> CollectionModuleBody(
+            NovexContentModuleLayout.CHARACTER_QUOTES -> CharacterQuotesModuleBody(presentation)
+            NovexContentModuleLayout.CHARACTER_FACTS -> CharacterFactsModuleBody(
+                presentation,
+                imageModel,
+                itemImageModels,
+            )
+            NovexContentModuleLayout.CHARACTER_COLLECTION -> CharacterCollectionModuleBody(
                 presentation,
                 imageModel,
                 itemImageModels,
@@ -144,7 +153,7 @@ internal fun NovexContentModuleBlock(
 }
 
 @Composable
-private fun GalleryModuleBody(
+private fun WorldGalleryModuleBody(
     presentation: NovexContentModulePresentation,
     imageModel: Any?,
     itemImageModels: Map<String, Any?>,
@@ -169,6 +178,22 @@ private fun GalleryModuleBody(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(8.dp)),
                     )
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(92.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(NovexColors.SurfaceMuted),
+                    ) {
+                        androidx.compose.material3.Icon(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_image),
+                            contentDescription = null,
+                            tint = NovexColors.TertiaryText,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
                 Text(
                     item.name.ifBlank { "未命名条目" },
@@ -177,7 +202,7 @@ private fun GalleryModuleBody(
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = if (itemImage == null) 2.dp else 7.dp),
+                    modifier = Modifier.padding(top = 7.dp),
                 )
                 if (item.summary.isNotBlank()) {
                     Text(
@@ -314,7 +339,102 @@ private fun TimelineModuleBody(presentation: NovexContentModulePresentation, ima
 }
 
 @Composable
-private fun CollectionModuleBody(
+private fun CharacterQuotesModuleBody(presentation: NovexContentModulePresentation) {
+    val items = (presentation.document as? ContentModuleDocument.Collection)?.items.orEmpty()
+    if (items.isEmpty()) {
+        ModuleText(presentation, maxLines = 6)
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        items.take(4).forEachIndexed { index, item ->
+            if (index > 0) {
+                HorizontalDivider(
+                    color = NovexColors.Divider,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Text(
+                    "“",
+                    color = NovexColors.Primary,
+                    fontSize = 26.sp,
+                    lineHeight = 28.sp,
+                    modifier = Modifier.width(24.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        item.summary.ifBlank { item.name.ifBlank { "尚未填写语录" } },
+                        color = NovexColors.Text,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (item.name.isNotBlank() && item.summary.isNotBlank()) {
+                        Text(
+                            item.name,
+                            color = NovexColors.SecondaryText,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CharacterFactsModuleBody(
+    presentation: NovexContentModulePresentation,
+    imageModel: Any?,
+    itemImageModels: Map<String, Any?>,
+) {
+    val items = (presentation.document as? ContentModuleDocument.Collection)?.items.orEmpty()
+    if (items.isEmpty()) {
+        ModuleText(presentation, maxLines = 6)
+        return
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        items.take(8).forEachIndexed { index, item ->
+            if (index > 0) HorizontalDivider(color = NovexColors.Divider)
+            val itemImage = item.visualKey?.let(itemImageModels::get)
+                ?: imageModel.takeIf { index == 0 }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (itemImage != null) {
+                    AsyncImage(
+                        model = itemImage,
+                        contentDescription = "${item.name.ifBlank { presentation.title }}代表图",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    item.name.ifBlank { "未命名属性" },
+                    color = NovexColors.SecondaryText,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(0.38f),
+                )
+                Text(
+                    item.summary.ifBlank { "未填写" },
+                    color = NovexColors.Text,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(0.62f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CharacterCollectionModuleBody(
     presentation: NovexContentModulePresentation,
     imageModel: Any?,
     itemImageModels: Map<String, Any?>,

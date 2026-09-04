@@ -12,7 +12,7 @@ import org.junit.Test
 
 class NovexVisualSystemTest {
     @Test
-    fun readingAndManagementPagesResolveToDifferentSurfaceRoles() {
+    fun rootAndDisplayPagesStayWhiteWhileManagementPagesStayGrouped() {
         val palette = NovexSurfacePalette(
             canvas = Color.White,
             grouped = Color(0xFFF2F2F7),
@@ -21,10 +21,16 @@ class NovexVisualSystemTest {
         )
 
         assertEquals(Color.White, NovexPageTone.CONVERSATION.resolve(palette))
+        assertEquals(Color.White, NovexPageTone.CATALOG.resolve(palette))
         assertEquals(Color.White, NovexPageTone.DISPLAY.resolve(palette))
-        assertEquals(Color(0xFFF2F2F7), NovexPageTone.CATALOG.resolve(palette))
         assertEquals(Color(0xFFF2F2F7), NovexPageTone.EDITOR.resolve(palette))
         assertEquals(Color(0xFFF2F2F7), NovexPageTone.SETTINGS.resolve(palette))
+    }
+
+    @Test
+    fun everyTopBarActionUsesOneSharedSquareMetric() {
+        assertEquals(48.dp, NovexDimensions.HeaderActionSize)
+        assertEquals(22.dp, NovexDimensions.HeaderActionIconSize)
     }
 
     @Test

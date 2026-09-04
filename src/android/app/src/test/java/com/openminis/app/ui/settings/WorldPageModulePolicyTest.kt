@@ -66,9 +66,9 @@ class WorldPageModulePolicyTest {
         assertEquals(NovexContentModuleLayout.TIMELINE, ContentModuleType.TIMELINE.novexContentLayout())
         assertEquals(NovexContentModuleLayout.TIMELINE, ContentModuleType.ERA_EVENT.novexContentLayout())
         assertEquals(NovexContentModuleLayout.MAP, ContentModuleType.MAP.novexContentLayout())
-        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.REGION.novexContentLayout())
-        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.FACTION.novexContentLayout())
-        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.RACE.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.WORLD_GALLERY, ContentModuleType.REGION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.WORLD_GALLERY, ContentModuleType.FACTION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.WORLD_GALLERY, ContentModuleType.RACE.novexContentLayout())
         assertEquals(NovexContentModuleLayout.ARTICLE, ContentModuleType.CUSTOM.novexContentLayout())
     }
 }

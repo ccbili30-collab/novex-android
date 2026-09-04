@@ -17,7 +17,8 @@ class UpdateAnnouncementRegressionTest {
     }
 
     @Test
-    fun `detected update label and icon share one click target`() {
-        assertTrue(source.contains(".clickable(enabled = !checking)"))
+    fun `detected update uses the shared header action target`() {
+        assertTrue(source.contains("NovexIconAction("))
+        assertTrue(source.contains("onClick = openHomeAction"))
     }
 }

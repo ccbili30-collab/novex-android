@@ -68,7 +68,7 @@ internal fun NovexIconAction(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(NovexDimensions.MinimumTouch)
+            .size(NovexDimensions.HeaderActionSize)
             .semantics { this.contentDescription = contentDescription }
             .clickable(onClick = onClick),
     ) {
@@ -76,7 +76,7 @@ internal fun NovexIconAction(
             painter = painterResource(icon),
             contentDescription = null,
             tint = NovexColors.Text,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(NovexDimensions.HeaderActionIconSize),
         )
     }
 }

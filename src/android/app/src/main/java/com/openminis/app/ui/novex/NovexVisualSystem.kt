@@ -31,8 +31,8 @@ internal data class NovexSurfacePalette(
 
 /**
  * A page chooses a semantic tone; it never chooses a raw theme surface.
- * Reading surfaces stay quiet while catalog, editing and settings surfaces
- * retain the grouped-background hierarchy used by the mature Minis layouts.
+ * Root and reading surfaces stay quiet while editing and settings surfaces
+ * retain a grouped-background hierarchy.
  */
 internal enum class NovexPageTone {
     CONVERSATION,
@@ -42,8 +42,8 @@ internal enum class NovexPageTone {
     SETTINGS;
 
     fun resolve(palette: NovexSurfacePalette): Color = when (this) {
-        CONVERSATION, DISPLAY -> palette.canvas
-        CATALOG, EDITOR, SETTINGS -> palette.grouped
+        CONVERSATION, CATALOG, DISPLAY -> palette.canvas
+        EDITOR, SETTINGS -> palette.grouped
     }
 }
 
@@ -106,6 +106,8 @@ internal object NovexDimensions {
     val OverlayHorizontal = NovexLayout.overlayHorizontal
     val TopBarHeight = 56.dp
     val MinimumTouch = 48.dp
+    val HeaderActionSize = MinimumTouch
+    val HeaderActionIconSize = 22.dp
     val RootBottomInset = 104.dp
     val SectionGap = 24.dp
     val RowVertical = 10.dp

@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SystemUpdate
 import com.openminis.app.ui.novex.AlertDialog
+import com.openminis.app.ui.novex.NovexDimensions
+import com.openminis.app.ui.novex.NovexIconAction
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -369,32 +372,37 @@ fun NovexUpdateAction() {
         dismissedVersion = dismissedUpdateVersion,
     )
 
-    Row(
-        modifier = Modifier
-            .clickable(enabled = !checking) {
-                if (homeAction == NovexHomeAction.UPDATE) {
-                    dialogUpdate = detectedUpdate
-                } else {
-                    announcementOpen = true
-                }
-            }
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when {
-            checking -> CircularProgressIndicator(modifier = Modifier.size(30.dp), strokeWidth = 2.dp)
-            homeAction == NovexHomeAction.UPDATE -> Icon(
-                painterResource(R.drawable.ic_phosphor_download_simple),
-                contentDescription = "打开 Novex（诺文）更新",
-                modifier = Modifier.size(30.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            else -> Icon(
-                painterResource(R.drawable.ic_phosphor_bell),
-                contentDescription = "打开 Novex（诺文）公告",
-                modifier = Modifier.size(30.dp),
+    val openHomeAction = {
+        if (homeAction == NovexHomeAction.UPDATE) {
+            dialogUpdate = detectedUpdate
+        } else {
+            announcementOpen = true
+        }
+    }
+    if (checking) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(NovexDimensions.HeaderActionSize),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(NovexDimensions.HeaderActionIconSize),
+                strokeWidth = 2.dp,
             )
         }
+    } else {
+        NovexIconAction(
+            icon = if (homeAction == NovexHomeAction.UPDATE) {
+                R.drawable.ic_phosphor_download_simple
+            } else {
+                R.drawable.ic_phosphor_bell
+            },
+            contentDescription = if (homeAction == NovexHomeAction.UPDATE) {
+                "打开 Novex（诺文）更新"
+            } else {
+                "打开 Novex（诺文）公告"
+            },
+            onClick = openHomeAction,
+        )
     }
 
     if (announcementOpen) {

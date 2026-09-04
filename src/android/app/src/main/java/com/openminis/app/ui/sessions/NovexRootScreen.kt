@@ -1,7 +1,6 @@
 package com.openminis.app.ui.sessions
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -50,8 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexPageTone
-import com.openminis.app.ui.novex.color
 import kotlinx.coroutines.launch
 
 private val NovexRootColors = NovexColors
@@ -75,14 +72,6 @@ fun NovexRootScreen(
     val scope = rememberCoroutineScope()
     val headerHost = remember { NovexRootHeaderHost() }
     val selected = NovexRootSpace.entries[pagerState.currentPage]
-    val pageBackground by animateColorAsState(
-        targetValue = when (selected) {
-            NovexRootSpace.CONVERSATIONS -> NovexPageTone.CONVERSATION.color
-            NovexRootSpace.WORLDS, NovexRootSpace.CHARACTERS -> NovexPageTone.CATALOG.color
-        },
-        animationSpec = tween(220),
-        label = "根页面背景",
-    )
 
     fun collapseDock() {
         dockExpanded = NovexRootNavigationState(
@@ -167,8 +156,8 @@ fun NovexRootScreen(
                             .background(
                                 Brush.verticalGradient(
                                     0f to Color.Transparent,
-                                    0.46f to pageBackground.copy(alpha = 0.78f),
-                                    1f to pageBackground,
+                                    0.46f to NovexRootColors.Canvas.copy(alpha = 0.78f),
+                                    1f to NovexRootColors.Canvas,
                                 ),
                             ),
                     )

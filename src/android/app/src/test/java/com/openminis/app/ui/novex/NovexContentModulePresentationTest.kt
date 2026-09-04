@@ -12,10 +12,15 @@ import org.junit.Test
 
 class NovexContentModulePresentationTest {
     @Test
-    fun visualWorldCollectionsUseGalleryWhileCharacterCollectionsRemainReadableLists() {
-        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.FACTION.novexContentLayout())
-        assertEquals(NovexContentModuleLayout.GALLERY, ContentModuleType.REGION.novexContentLayout())
-        assertEquals(NovexContentModuleLayout.COLLECTION, ContentModuleType.TALENT_SKILL.novexContentLayout())
+    fun worldAndCharacterContentSelectPurposeBuiltRenderers() {
+        assertEquals(NovexContentModuleLayout.WORLD_GALLERY, ContentModuleType.FACTION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.WORLD_GALLERY, ContentModuleType.REGION.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.CHARACTER_QUOTES, ContentModuleType.QUOTES.novexContentLayout())
+        assertEquals(NovexContentModuleLayout.CHARACTER_FACTS, ContentModuleType.ATTRIBUTE_PANEL.novexContentLayout())
+        assertEquals(
+            NovexContentModuleLayout.CHARACTER_COLLECTION,
+            ContentModuleType.TALENT_SKILL.novexContentLayout(),
+        )
     }
 
     @Test
