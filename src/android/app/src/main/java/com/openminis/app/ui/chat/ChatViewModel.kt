@@ -763,6 +763,15 @@ class ChatViewModel(
     private val _forceScrollToBottom = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val forceScrollToBottom: SharedFlow<Unit> = _forceScrollToBottom.asSharedFlow()
 
+    /**
+     * Identity of the user row that was just accepted into the visible
+     * transcript. The screen waits for this exact row to be flattened before
+     * revealing it; a timer must never guess that the old final row is the new
+     * turn.
+     */
+    private val _submittedUserMessageId = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val submittedUserMessageId: SharedFlow<String> = _submittedUserMessageId.asSharedFlow()
+
     private val _availableGroups = MutableStateFlow<List<ModelGroup>>(emptyList())
     val availableGroups: StateFlow<List<ModelGroup>> = _availableGroups.asStateFlow()
 
@@ -5158,6 +5167,7 @@ class ChatViewModel(
             queuedPromptId = prompt.id,
         )
         _messages.value = _messages.value + chatMsg
+        _submittedUserMessageId.tryEmit(chatMsg.id)
         clearAttachments()
         Log.i(TAG, "Enqueued prompt (${trimmed.length}ch, ${pendingAttachments.size} attachments), queue=${_promptQueue.value.size}")
     }
@@ -5573,6 +5583,7 @@ class ChatViewModel(
                 attachmentUris = prepared.nonImageUris,
             )
             _messages.value = _messages.value + userMsg
+            _submittedUserMessageId.tryEmit(userMsg.id)
             val imageParts = prepared.imageParts
 
             // T132: build the user contentParts in iOS order — caption first

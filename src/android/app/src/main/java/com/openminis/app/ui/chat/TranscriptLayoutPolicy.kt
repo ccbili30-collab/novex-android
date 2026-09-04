@@ -18,6 +18,29 @@ internal fun isAtTranscriptLatest(canScrollForward: Boolean): Boolean = !canScro
 internal fun latestTranscriptItemIndex(totalItemsCount: Int): Int? =
     (totalItemsCount - 1).takeIf { it >= 0 }
 
+internal data class SubmittedTurnNavigation(
+    val pendingMessageId: String? = null,
+) {
+    fun awaiting(messageId: String): SubmittedTurnNavigation =
+        copy(pendingMessageId = messageId)
+
+    fun resolve(rowKeys: List<String>): SubmittedTurnNavigationResolution {
+        val messageId = pendingMessageId
+            ?: return SubmittedTurnNavigationResolution(targetIndex = null, nextState = this)
+        val targetIndex = rowKeys.indexOf("user:$messageId").takeIf { it >= 0 }
+            ?: return SubmittedTurnNavigationResolution(targetIndex = null, nextState = this)
+        return SubmittedTurnNavigationResolution(
+            targetIndex = targetIndex,
+            nextState = copy(pendingMessageId = null),
+        )
+    }
+}
+
+internal data class SubmittedTurnNavigationResolution(
+    val targetIndex: Int?,
+    val nextState: SubmittedTurnNavigation,
+)
+
 internal enum class TranscriptViewportMove {
     SessionOpened,
     UserSentMessage,

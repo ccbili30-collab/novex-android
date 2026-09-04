@@ -63,4 +63,35 @@ class TranscriptLayoutPolicyTest {
         assertTrue(following.shouldMoveFor(TranscriptViewportMove.StreamCompleted))
         assertFalse(completed.isFollowingLatest)
     }
+
+    @Test
+    fun `submitted turn waits for its own row and never targets the previous turn`() {
+        val awaiting = SubmittedTurnNavigation().awaiting(messageId = "current-user")
+
+        val beforePublish = awaiting.resolve(
+            rowKeys = listOf("user:previous-user", "assistant:previous-assistant:text:0"),
+        )
+        assertNull("旧列表尚未出现本轮消息时不得跳到上一轮", beforePublish.targetIndex)
+        assertEquals(awaiting, beforePublish.nextState)
+
+        val afterPublish = beforePublish.nextState.resolve(
+            rowKeys = listOf(
+                "user:previous-user",
+                "assistant:previous-assistant:text:0",
+                "user:current-user",
+            ),
+        )
+        assertEquals(2, afterPublish.targetIndex)
+        assertNull(afterPublish.nextState.pendingMessageId)
+
+        val afterStreamCompleted = afterPublish.nextState.resolve(
+            rowKeys = listOf(
+                "user:previous-user",
+                "assistant:previous-assistant:text:0",
+                "user:current-user",
+                "assistant:current-assistant:text:0",
+            ),
+        )
+        assertNull("流开始、增长和结束都不得产生第二次定位", afterStreamCompleted.targetIndex)
+    }
 }

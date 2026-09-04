@@ -968,6 +968,7 @@ fun ChatScreen(
         Unit
     }
     var transcriptFollowState by remember(sessionId) { mutableStateOf(TranscriptFollowState()) }
+    var submittedTurnNavigation by remember(sessionId) { mutableStateOf(SubmittedTurnNavigation()) }
     val scrollToLatestOnce: suspend (TranscriptViewportMove) -> Unit = scroll@{ reason ->
         if (!transcriptFollowState.shouldMoveFor(reason)) return@scroll
         // One frame lets a newly-added or newly-measured row enter the list.
@@ -980,6 +981,11 @@ fun ChatScreen(
             // LazyColumn to the real content end, so "return to latest" means
             // the final line rather than merely the final row.
             tracedScrollToItem(reason.name, latest, Int.MAX_VALUE / 4)
+        }
+    }
+    LaunchedEffect(viewModel, sessionId) {
+        viewModel.submittedUserMessageId.collect { messageId ->
+            submittedTurnNavigation = submittedTurnNavigation.awaiting(messageId)
         }
     }
     // T-android-jank-profile: gate verbose scroll telemetry behind a constant
@@ -1262,12 +1268,6 @@ fun ChatScreen(
         focusManager.clearFocus()
         viewModel.sendMessage(rawText)
         noteSendForInputModePref()
-        coroutineScope.launch {
-            // Sending is explicit navigation intent: reveal the submitted turn
-            // once, then leave the viewport detached while the reply grows.
-            kotlinx.coroutines.delay(80)
-            scrollToLatestOnce(TranscriptViewportMove.UserSentMessage)
-        }
     }
     // [T-android-composer-input-blocked-while-streaming] True only while the
     // user's FINGER is actively dragging the message list. Explicit navigation
@@ -2333,6 +2333,27 @@ fun ChatScreen(
                         scrollToLatestOnce(TranscriptViewportMove.SessionOpened)
                     }
                     if (flatItems.isNotEmpty()) transcriptViewportReady = true
+                }
+                LaunchedEffect(
+                    flatItems,
+                    hasOlderMessages,
+                    submittedTurnNavigation.pendingMessageId,
+                ) {
+                    val rowKeys = buildList {
+                        if (hasOlderMessages) add("__load_older_messages__")
+                        addAll(transcriptRowsForLayout(flatItems).map { it.key })
+                    }
+                    val resolution = submittedTurnNavigation.resolve(rowKeys)
+                    val targetIndex = resolution.targetIndex ?: return@LaunchedEffect
+                    // Consume before moving so stream-start / stream-end
+                    // recompositions cannot repeat this navigation.
+                    submittedTurnNavigation = resolution.nextState
+                    withFrameNanos { }
+                    tracedScrollToItem(
+                        TranscriptViewportMove.UserSentMessage.name,
+                        targetIndex,
+                        Int.MAX_VALUE / 4,
+                    )
                 }
                 LaunchedEffect(listState, transcriptFollowState.isFollowingLatest) {
                     if (!transcriptFollowState.isFollowingLatest) return@LaunchedEffect
@@ -4241,10 +4262,6 @@ fun ChatScreen(
                             focusManager.clearFocus()
                             viewModel.sendMessage(toSend)
                             noteSendForInputModePref()
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(80)
-                                scrollToLatestOnce(TranscriptViewportMove.UserSentMessage)
-                            }
                             true
                         }
                         BasicTextField(
