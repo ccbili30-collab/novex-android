@@ -212,6 +212,22 @@ interface ChatDao {
     @Query("DELETE FROM messages WHERE session_id = :sessionId AND id IN (:messageIds)")
     suspend fun deleteMessageBranches(sessionId: String, messageIds: List<String>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNovexContextUsage(record: NovexContextUsageRecordEntity)
+
+    @Query(
+        "SELECT * FROM novex_context_usage_records WHERE session_id = :sessionId " +
+            "ORDER BY created_at ASC",
+    )
+    suspend fun listNovexContextUsage(sessionId: String): List<NovexContextUsageRecordEntity>
+
+    @Query(
+        "DELETE FROM novex_context_usage_records WHERE session_id = :sessionId AND (" +
+            "request_message_id IN (:messageIds) OR response_message_id IN (:messageIds) OR " +
+            "branch_id IN (:messageIds))",
+    )
+    suspend fun deleteNovexContextUsageAnchoredTo(sessionId: String, messageIds: List<String>)
+
     @Query(
         "DELETE FROM compact_markers WHERE session_id = :sessionId AND (" +
             "last_compacted_message_id IN (:messageIds) OR " +
@@ -262,6 +278,7 @@ interface ChatDao {
         }
         if (deletedMessageIds.isNotEmpty()) {
             deleteCompactMarkersAnchoredTo(sessionId, deletedMessageIds.toList())
+            deleteNovexContextUsageAnchoredTo(sessionId, deletedMessageIds.toList())
             deleteMessageBranches(sessionId, deletedMessageIds.toList())
         }
         updateActiveConversationPath(sessionId, rootId, leafId, preview, updatedAt)

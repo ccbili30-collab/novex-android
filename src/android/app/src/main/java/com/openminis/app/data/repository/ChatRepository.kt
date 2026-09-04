@@ -7,6 +7,9 @@ import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.CompactMarkerEntity
 import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.db.MessageEntity
+import com.openminis.app.data.db.NovexContextUsageRecordEntity
+import com.openminis.app.novex.domain.ContextUsageRecord
+import com.openminis.app.novex.domain.NovexContextUsageCodec
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -84,6 +87,25 @@ class ChatRepository(internal val dao: ChatDao) {
 
     /** All persisted token_usage JSON strings for a session (one per LLM call). */
     suspend fun sessionTokenUsages(sessionId: String): List<String> = dao.tokenUsages(sessionId)
+
+    suspend fun recordNovexContextUsage(sessionId: String, record: ContextUsageRecord) {
+        dao.insertNovexContextUsage(
+            NovexContextUsageRecordEntity(
+                id = record.id,
+                sessionId = sessionId,
+                requestMessageId = record.requestMessageId,
+                responseMessageId = record.responseMessageId,
+                branchId = record.branchId,
+                payloadJson = NovexContextUsageCodec.encode(record),
+                createdAt = record.createdAt,
+            ),
+        )
+    }
+
+    suspend fun novexContextUsage(sessionId: String): List<ContextUsageRecord> =
+        dao.listNovexContextUsage(sessionId).mapNotNull { row ->
+            runCatching { NovexContextUsageCodec.decode(row.payloadJson) }.getOrNull()
+        }
 
     /**
      * [T-android-session-paused-badge-hardkill] Session ids whose agent loop was

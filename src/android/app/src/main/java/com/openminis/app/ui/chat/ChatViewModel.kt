@@ -71,6 +71,18 @@ import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
 import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
 import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.novex.domain.PlaythroughStateRegistration
+import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
+import com.openminis.app.novex.domain.AnswerIdentity
+import com.openminis.app.novex.domain.ContextSourceKind
+import com.openminis.app.novex.domain.ContextUsageRecord
+import com.openminis.app.novex.domain.NovexContextBudgetPolicy
+import com.openminis.app.novex.domain.NovexContextCandidate
+import com.openminis.app.novex.domain.NovexContextComposer
+import com.openminis.app.novex.domain.NovexContextComposition
+import com.openminis.app.novex.domain.NovexContextPromptFormatter
+import com.openminis.app.novex.domain.NovexCreativeDistillationPolicy
+import com.openminis.app.novex.domain.NovexContextUsageLedger
+import com.openminis.app.novex.domain.NovexContextUsageLedgerSnapshot
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
@@ -3106,6 +3118,8 @@ class ChatViewModel(
         PRIORITIZE recent context over older history — recent decisions and recent file/path references are most useful for continuity.
 
         Do NOT translate or alter code snippets, file paths, identifiers, or error messages. Be concise but never lose information the agent needs.
+
+        ${NovexCreativeDistillationPolicy.systemPrompt}
     """.trimIndent()
 
     // T203 part 2: these MUST be declared before `init { loadSession() }` below.
@@ -3158,6 +3172,84 @@ class ChatViewModel(
 
     private fun currentNovexConfiguration(): NovexConversationConfigurationSnapshot =
         NovexConversationConfigurationCodec.decode(_novexConfigurationJson.value, activeSessionId)
+
+    private data class PreparedNovexRequestContext(
+        val composition: NovexContextComposition,
+        val record: ContextUsageRecord,
+        val systemPrompt: String,
+    )
+
+    /**
+     * Builds one immutable context selection for an entire user request. Tool iterations reuse it;
+     * they do not re-query cards, so a branch switch or tool result cannot repeat external effects.
+     */
+    private suspend fun prepareNovexRequestContext(
+        baseSystemPrompt: String?,
+        requestMessageId: String,
+        query: String,
+    ): PreparedNovexRequestContext? {
+        val application = context.applicationContext as? com.openminis.app.MinisApp ?: return null
+        if (!application.subsystemsReady()) return null
+        val configuration = currentNovexConfiguration()
+        val candidates = WorkspaceNovexContextLoader(application.novexWorkspace)
+            .load(configuration)
+            .toMutableList()
+        if (configuration.answerIdentity == AnswerIdentity.Nova) {
+            candidates += NovexContextCandidate(
+                sourceId = "answer-identity:nova",
+                label = "回答人格 · Nova",
+                content = "你是 Nova，一名通用、可靠且适合交流、游玩与共同创作的助手。",
+                kind = ContextSourceKind.ANSWER_IDENTITY,
+                aliases = setOf("Nova"),
+                alwaysInclude = true,
+                position = Int.MIN_VALUE,
+            )
+        }
+        configuration.activeInteractiveFiction?.let {
+            val state = InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
+            if (state.values.isNotEmpty()) {
+                candidates += NovexContextCandidate(
+                    sourceId = "playthrough:${state.branchId}",
+                    label = "文游 · 本局状态",
+                    content = state.values.entries.joinToString("\n") { (key, value) ->
+                        "$key：${when (value) {
+                            is com.openminis.app.novex.domain.PlaythroughValue.Text -> value.value
+                            is com.openminis.app.novex.domain.PlaythroughValue.Number -> value.value
+                            is com.openminis.app.novex.domain.PlaythroughValue.Flag -> value.value
+                        }}"
+                    },
+                    kind = ContextSourceKind.PLAYTHROUGH_STATE,
+                    alwaysInclude = true,
+                    position = Int.MIN_VALUE + 1,
+                )
+            }
+        }
+        if (candidates.isEmpty()) return null
+
+        val window = effectiveContextWindowTokens() ?: 128_000
+        val occupied = maxOf(_lastTurnContextTokens.value, estimateContextTokens())
+        val outputReserve = (currentModel?.maxOutputTokens ?: 8_192).coerceIn(1_024, 32_000)
+        val budget = NovexContextBudgetPolicy.moduleBudget(window, occupied, outputReserve)
+        val composition = NovexContextComposer.compose(
+            query = query,
+            tokenBudget = budget,
+            candidates = candidates,
+            estimateTokens = BPETokenizer::countTokens,
+        )
+        val record = composition.toUsageRecord(
+            id = java.util.UUID.randomUUID().toString(),
+            requestMessageId = requestMessageId,
+            branchId = requestMessageId,
+            answerIdentity = configuration.answerIdentity,
+            effectiveWindowTokens = window,
+            createdAt = System.currentTimeMillis(),
+        )
+        return PreparedNovexRequestContext(
+            composition = composition,
+            record = record,
+            systemPrompt = NovexContextPromptFormatter.appendTo(baseSystemPrompt, composition.fragments),
+        )
+    }
 
     /** Rebuilds branch-sensitive UI state without executing a control or tool. */
     private fun refreshNovexRuntimeProjection() {
@@ -3922,13 +4014,18 @@ class ChatViewModel(
                 val tIoBeforeLoad = System.currentTimeMillis()
                 val conversation = chatRepository.loadActiveConversation(sessionId)
                 val rows = conversation.activeMessages
+                val activeRowIds = rows.mapTo(hashSetOf()) { it.id }
+                val usageRecords = chatRepository.novexContextUsage(sessionId)
+                val usageByRequest = NovexContextUsageLedger.open(
+                    NovexContextUsageLedgerSnapshot(sessionId, usageRecords),
+                ).latestByRequestForActivePath(activeRowIds)
                 val tIoAfterLoad = System.currentTimeMillis()
                 com.openminis.app.diagnostics.PerfLongCtx.step(
                     sessionId,
                     "db.query.end",
                     "count=${rows.size}",
                 )
-                val chatUi = rows.toChatMessages(conversation.graph)
+                val chatUi = rows.toChatMessages(conversation.graph, usageByRequest)
                 val tIoAfterTransform = System.currentTimeMillis()
                 com.openminis.app.diagnostics.PerfLongCtx.step(
                     sessionId,
@@ -5082,8 +5179,12 @@ class ChatViewModel(
         val projection = withContext(Dispatchers.IO) {
             val rows = conversation.activeMessages
             val activeIds = rows.mapTo(hashSetOf()) { it.id }
+            val usageRecords = chatRepository.novexContextUsage(sid)
+            val usageByRequest = NovexContextUsageLedger.open(
+                NovexContextUsageLedgerSnapshot(sid, usageRecords),
+            ).latestByRequestForActivePath(activeIds)
             ActiveProjection(
-                ordered = rows.toChatMessages(conversation.graph),
+                ordered = rows.toChatMessages(conversation.graph, usageByRequest),
                 llmHistory = rows.map { it.toLLMMessage() },
                 marker = chatRepository.latestActiveCompactMarker(sid, rows),
                 activeIds = activeIds,
@@ -6665,6 +6766,22 @@ class ChatViewModel(
         recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
+        val novexRequestMessage = agentHistory.asReversed().firstOrNull { message ->
+            message.role == LLMMessage.Role.USER && message.dbMessageId != null &&
+                (message.content.isNotBlank() || message.imageParts.isNotEmpty())
+        }
+        val preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
+            try {
+                prepareNovexRequestContext(systemPrompt, requestId, novexRequestMessage.content)
+            } catch (error: Throwable) {
+                AppLogger.error(
+                    TAG_STREAM,
+                    "Novex context preparation failed ${error::class.java.simpleName}: ${error.message}",
+                )
+                null
+            }
+        }
+        val requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt
         // [T-android-mem-probe-trust] Send-path context shape. The existing
         // `messages-shape` probe only runs on session LOAD, so the 2026-08-15
         // log described the session as it was opened, never as it was sent —
@@ -6833,6 +6950,32 @@ class ChatViewModel(
             // Pre-allocate the persisted assistant-row identity so branch-local
             // state tools can bind to this exact turn before the row is written.
             val turnMessageId = java.util.UUID.randomUUID().toString()
+            if (turn == 0 && preparedNovexContext != null) {
+                val persistedRecord = preparedNovexContext.record.copy(
+                    responseMessageId = turnMessageId,
+                    branchId = turnMessageId,
+                )
+                try {
+                    chatRepository.recordNovexContextUsage(
+                        realSessionId.ifEmpty { sessionId },
+                        persistedRecord,
+                    )
+                    withContext(Dispatchers.Main) {
+                        _messages.value = _messages.value.map { message ->
+                            if (message.id == persistedRecord.requestMessageId) {
+                                message.copy(novexContextUsage = persistedRecord)
+                            } else {
+                                message
+                            }
+                        }
+                    }
+                } catch (error: Throwable) {
+                    AppLogger.error(
+                        TAG_STREAM,
+                        "Novex context usage persistence failed ${error::class.java.simpleName}: ${error.message}",
+                    )
+                }
+            }
             // Sanitize history before each API call (mirrors iOS pre-API validation)
             sanitizeAgentHistory()
 
@@ -7067,7 +7210,7 @@ class ChatViewModel(
                     }
                     currentProvider.streamMessage(
                         applyRequestImageBudget(requestHistory),
-                        systemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
+                        requestSystemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
                         tools = if (requestToolsEnabled) conversationTools else emptyList(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
@@ -11352,6 +11495,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
     private fun List<MessageEntity>.toChatMessages(
         branchGraph: com.openminis.app.data.ConversationBranchGraph? = null,
+        contextUsageByRequest: Map<String, ContextUsageRecord> = emptyMap(),
     ): List<ChatMessage> {
         // First pass: extract all toolResult data keyed by toolUseId
         val toolResultMap = mutableMapOf<String, ToolResultData>()
@@ -11526,6 +11670,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 id = entity.id,
                 role = entity.role,
                 content = text,
+                novexContextUsage = contextUsageByRequest[entity.id],
                 imageUris = restoredImageUris,
                 attachmentNames = restoredAttachmentNames,
                 attachmentUris = restoredAttachmentUris,

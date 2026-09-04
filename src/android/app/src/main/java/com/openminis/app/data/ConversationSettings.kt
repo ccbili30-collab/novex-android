@@ -23,7 +23,9 @@ fun normalizeConversationSettings(value: ConversationSettingsSnapshot): Conversa
         assistantAvatarPath = value.assistantAvatarPath?.trim()?.ifBlank { null },
         playerDisplayName = value.playerDisplayName.trim().take(80),
         playerAvatarPath = value.playerAvatarPath?.trim()?.ifBlank { null },
-        novexConfigurationJson = value.novexConfigurationJson.trim().take(MAX_NOVEX_CONFIGURATION_CHARS),
+        // Structured snapshots must stay valid JSON. Silently slicing at a character boundary
+        // corrupted large games and made the next decode fall back to an empty configuration.
+        novexConfigurationJson = value.novexConfigurationJson.trim(),
     )
 
 fun mergeImageStylePrompt(requestPrompt: String, imageStylePrompt: String?): String {

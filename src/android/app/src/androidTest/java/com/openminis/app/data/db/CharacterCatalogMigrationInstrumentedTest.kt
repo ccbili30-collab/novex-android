@@ -228,6 +228,28 @@ class CharacterCatalogMigrationInstrumentedTest {
         }
     }
 
+    @Test
+    fun migration24AddsBranchLocalContextUsageWithoutTouchingMessages() {
+        val db = helper.writableDatabase
+        db.execSQL("CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY)")
+        db.execSQL("INSERT INTO sessions VALUES ('chat-1')")
+
+        AppDatabase.MIGRATION_23_24.migrate(db)
+
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' " +
+                "AND name = 'novex_context_usage_records'",
+        ).use { cursor -> assertEquals(true, cursor.moveToFirst()) }
+        db.execSQL(
+            "INSERT INTO novex_context_usage_records VALUES " +
+                "('u1', 'chat-1', 'm1', NULL, 'm1', '{}', 1)",
+        )
+        db.query("SELECT request_message_id FROM novex_context_usage_records WHERE id = 'u1'").use { cursor ->
+            cursor.moveToFirst()
+            assertEquals("m1", cursor.getString(0))
+        }
+    }
+
     companion object {
         private const val DB_NAME = "character-catalog-migration-test.db"
     }

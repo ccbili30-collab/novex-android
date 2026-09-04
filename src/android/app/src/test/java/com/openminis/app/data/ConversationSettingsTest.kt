@@ -59,4 +59,19 @@ class ConversationSettingsTest {
         assertEquals("{\"answerIdentity\":{\"kind\":\"nova\"}}", value.novexConfigurationJson)
         assertEquals("提示词", value.conversationPrompt)
     }
+
+    @Test
+    fun largeStructuredNovexConfigurationIsNeverSilentlyCutIntoInvalidJson() {
+        val raw = "{\"content\":\"${"界".repeat(MAX_NOVEX_CONFIGURATION_CHARS + 1)}\"}"
+
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "提示词",
+                novexConfigurationJson = raw,
+            ),
+        )
+
+        assertEquals(raw, value.novexConfigurationJson)
+        org.json.JSONObject(value.novexConfigurationJson)
+    }
 }

@@ -53,6 +53,20 @@ class NovexContextUsageLedgerTest {
         }
     }
 
+    @Test
+    fun `active reply sibling selects only the usage record that produced that branch`() {
+        val first = record("usage-1").copy(responseMessageId = "assistant-1", branchId = "assistant-1")
+        val second = record("usage-2").copy(responseMessageId = "assistant-2", branchId = "assistant-2")
+        val ledger = NovexContextUsageLedger.open(
+            NovexContextUsageLedgerSnapshot("conversation-1", listOf(first, second)),
+        )
+
+        assertEquals(
+            mapOf("message-1" to second),
+            ledger.latestByRequestForActivePath(setOf("message-1", "assistant-2")),
+        )
+    }
+
     private fun record(id: String) = ContextUsageRecord(
         id = id,
         requestMessageId = "message-1",

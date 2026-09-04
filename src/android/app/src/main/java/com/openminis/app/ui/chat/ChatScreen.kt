@@ -1389,6 +1389,11 @@ fun ChatScreen(
     var messageFontLevel by remember { mutableStateOf(appearancePrefs.getInt(com.openminis.app.ui.settings.KEY_FONT_MESSAGE, 0)) }
     var chatInputLevel by remember { mutableStateOf(appearancePrefs.getInt(com.openminis.app.ui.settings.KEY_FONT_CHAT_INPUT, 0)) }
     var toolPreviewEnabled by remember { mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_TOOL_PREVIEW, true)) }
+    var showContextMeter by remember {
+        mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER, false))
+    }
+    var contextMeterMode by rememberSaveable { mutableIntStateOf(0) }
+    val lastTurnContextTokens by viewModel.lastTurnContextTokens.collectAsState()
     // T-chat-title-pill: live-toggled by Settings → Appearance and by
     // `minis-config set appearance.show_chat_title …`. Default ON.
     var showChatTitlePill by remember { mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CHAT_TITLE, true)) }
@@ -1403,6 +1408,7 @@ fun ChatScreen(
                 com.openminis.app.ui.settings.KEY_FONT_MESSAGE -> messageFontLevel = sp.getInt(key, 0)
                 com.openminis.app.ui.settings.KEY_FONT_CHAT_INPUT -> chatInputLevel = sp.getInt(key, 0)
                 com.openminis.app.ui.settings.KEY_TOOL_PREVIEW -> toolPreviewEnabled = sp.getBoolean(key, true)
+                com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER -> showContextMeter = sp.getBoolean(key, false)
                 com.openminis.app.ui.settings.KEY_SHOW_CHAT_TITLE -> showChatTitlePill = sp.getBoolean(key, true)
             }
         }
@@ -1870,6 +1876,14 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    if (showContextMeter) {
+                        NovexContextMeter(
+                            usedTokens = lastTurnContextTokens,
+                            windowTokens = viewModel.currentModelContextWindow,
+                            mode = contextMeterMode,
+                            onClick = { contextMeterMode = (contextMeterMode + 1) % 3 },
+                        )
+                    }
                     // iOS: "..." circle button → dropdown menu
                     Box {
                         IconButton(onClick = { showChatMenu = true }) {
@@ -5645,6 +5659,62 @@ private fun ConversationBranchSwitcher(
             )
         }
     }
+}
+
+@Composable
+private fun NovexContextMeter(
+    usedTokens: Int,
+    windowTokens: Int?,
+    mode: Int,
+    onClick: () -> Unit,
+) {
+    val window = windowTokens?.takeIf { it > 0 } ?: 1
+    val progress = (usedTokens.toFloat() / window.toFloat()).coerceIn(0f, 1f)
+    val percent = (progress * 100).toInt()
+    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+        when (mode) {
+            0 -> Box(
+                Modifier
+                    .size(9.dp)
+                    .background(ChatColors.secondaryText, CircleShape),
+            )
+            1 -> Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(ChatColors.inputBg, CircleShape)
+                    .border(1.dp, ChatColors.toolBorder, CircleShape),
+            ) {
+                Text(
+                    "$percent%",
+                    color = ChatColors.primaryText,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            else -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+                CircularProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = ChatColors.sendButton,
+                    trackColor = ChatColors.toolBorder,
+                    strokeWidth = 2.5.dp,
+                )
+                Text(
+                    compactContextTokens(usedTokens),
+                    color = ChatColors.primaryText,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+private fun compactContextTokens(value: Int): String = when {
+    value >= 1_000_000 -> "${value / 100_000 / 10f}M"
+    value >= 1_000 -> "${value / 1_000}K"
+    else -> value.toString()
 }
 
 /**

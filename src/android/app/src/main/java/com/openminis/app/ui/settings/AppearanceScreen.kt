@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Launch
@@ -80,6 +81,7 @@ const val KEY_THEME_MODE = "theme_mode"            // 0=System, 1=Light, 2=Dark
 const val KEY_RETURN_KEY_BEHAVIOR = "returnKeyBehavior"  // Int 0=Newline (default), 1=Send
 const val KEY_KEEP_SCREEN_AWAKE = "keepScreenAwakeDuringTasks"  // Boolean, default false
 const val KEY_TOOL_PREVIEW = "tool_preview"        // Boolean, default true
+const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // Boolean, default false
 // [T-keyboard-auto-pop default flip] Default ON — most users want the
 // composer ready for a follow-up immediately after the model finishes.
 // Key name mirrors iOS `@AppStorage("chat.autoFocusAfterReply")` so a
@@ -135,6 +137,9 @@ fun showChatTitleEnabled(context: Context): Boolean =
 fun autoExpandThinkingEnabled(context: Context): Boolean =
     getAppearancePrefs(context).getBoolean(KEY_AUTO_EXPAND_THINKING, true)
 
+fun showContextMeterEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_SHOW_CONTEXT_METER, false)
+
 /** Font scale levels matching iOS: XS(-2) Small(-1) Default(0) Medium(1) Large(2) XL(3) */
 private val fontScaleLabels = listOf("XS", "Small", "Default", "Medium", "Large", "XL")
 private val fontScaleValues = listOf(-2, -1, 0, 1, 2, 3)
@@ -183,6 +188,7 @@ fun AppearanceScreen(
     var returnKeyBehavior by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
     var keepScreenAwake by remember { mutableStateOf(prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, false)) }
     var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
+    var showContextMeter by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CONTEXT_METER, false)) }
     var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
     var autoExpandThinking by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_EXPAND_THINKING, true)) }
     var showChatTitle by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CHAT_TITLE, true)) }
@@ -323,6 +329,24 @@ fun AppearanceScreen(
                 onCheckedChange = {
                     toolPreview = it
                     prefs.edit().putBoolean(KEY_TOOL_PREVIEW, it).apply()
+                },
+                showDivider = false,
+            )
+        }
+
+        SettingsSection(
+            header = "上下文用量",
+            footer = "在对话顶部显示当前模型实际上下文窗口的使用进度。",
+        ) {
+            SettingsSwitchRow(
+                icon = Icons.Outlined.DataUsage,
+                iconColor = tileBlue,
+                title = "显示上下文用量",
+                subtitle = "点击圆圈可切换百分比与进度视图",
+                checked = showContextMeter,
+                onCheckedChange = {
+                    showContextMeter = it
+                    prefs.edit().putBoolean(KEY_SHOW_CONTEXT_METER, it).apply()
                 },
                 showDivider = false,
             )

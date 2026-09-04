@@ -274,6 +274,8 @@ import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
+import com.openminis.app.ui.novex.NovexContentDialog
+import com.openminis.app.ui.novex.TextButton as NovexTextButton
 
 // ─── User Message (right-aligned, iOS: tertiarySystemFill bubble, 18dp radius) ─
 
@@ -296,6 +298,7 @@ internal fun UserMessageBubble(
     onPreviewFile: (Uri, String) -> Unit = { _, _ -> },
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showContextUsage by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
     val haptics = LocalHapticFeedback.current
     val immersiveProfile = LocalImmersiveChatProfile.current
@@ -461,6 +464,27 @@ internal fun UserMessageBubble(
                         }
                     }
                 }
+                val visibleContextSources = message.novexContextUsage?.includedSources.orEmpty()
+                    .filterNot { it.sourceId == "answer-identity:nova" }
+                if (visibleContextSources.isNotEmpty()) {
+                    val preview = visibleContextSources.take(2).joinToString("、") { it.label }
+                    val remaining = (visibleContextSources.size - 2).coerceAtLeast(0)
+                    Text(
+                        text = buildString {
+                            append("引用：").append(preview)
+                            if (remaining > 0) append(" 等 ").append(visibleContextSources.size).append(" 项")
+                        },
+                        color = ChatColors.tertiaryText,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { showContextUsage = true }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
             }
 
             // Long-press context menu — anchored to the bubble itself.
@@ -556,6 +580,41 @@ internal fun UserMessageBubble(
             }
         }
     }
+    }
+    val usage = message.novexContextUsage
+    if (showContextUsage && usage != null) {
+        NovexContentDialog(
+            title = "本轮上下文",
+            onDismiss = { showContextUsage = false },
+            confirmButton = {
+                NovexTextButton(onClick = { showContextUsage = false }) { Text("完成") }
+            },
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "已引用 ${usage.includedSources.size} 项 · ${usage.usedTokens} 词元",
+                    color = ChatColors.secondaryText,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                usage.includedSources.forEach { source ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(source.label, color = ChatColors.primaryText, fontWeight = FontWeight.Medium)
+                        Text("${source.tokenCount} 词元", color = ChatColors.tertiaryText, fontSize = 12.sp)
+                    }
+                }
+                if (usage.omittedSources.isNotEmpty()) {
+                    Text("本轮未引用", color = ChatColors.primaryText, fontWeight = FontWeight.SemiBold)
+                    usage.omittedSources.forEach { source ->
+                        Text("${source.label} · ${source.reason}", color = ChatColors.secondaryText)
+                    }
+                }
+            }
+        }
     }
 }
 

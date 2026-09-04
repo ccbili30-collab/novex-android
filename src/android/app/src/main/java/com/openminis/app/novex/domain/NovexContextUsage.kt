@@ -80,6 +80,12 @@ class NovexContextUsageLedger private constructor(
         return snapshot.records.filter { it.branchId == branchId }
     }
 
+    fun latestByRequestForActivePath(activeMessageIds: Set<String>): Map<String, ContextUsageRecord> =
+        snapshot.records.filter { record ->
+            record.responseMessageId?.let { it in activeMessageIds }
+                ?: (record.branchId in activeMessageIds || record.requestMessageId in activeMessageIds)
+        }.associateBy(ContextUsageRecord::requestMessageId)
+
     companion object {
         fun empty(conversationId: String): NovexContextUsageLedger {
             return open(

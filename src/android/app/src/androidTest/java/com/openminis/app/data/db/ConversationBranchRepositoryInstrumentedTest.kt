@@ -6,6 +6,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.ConversationBranchGraph
 import com.openminis.app.data.SessionForkManager
 import com.openminis.app.data.repository.ChatRepository
+import com.openminis.app.novex.domain.AnswerIdentity
+import com.openminis.app.novex.domain.ContextUsageRecord
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -47,6 +49,14 @@ class ConversationBranchRepositoryInstrumentedTest {
         assertTrue(fork.allMessages.map { it.id }.containsAll(listOf(a1.id, u2.id, a2.id)))
 
         val a3 = repository.appendMessage(session.id, "assistant", textParts("new answer"))
+        repository.recordNovexContextUsage(
+            session.id,
+            usageRecord("old-context", u1.id, a1.id),
+        )
+        repository.recordNovexContextUsage(
+            session.id,
+            usageRecord("new-context", u1.id, a3.id),
+        )
         val newPath = repository.loadActiveConversation(session.id)
         assertEquals(listOf(u1.id, a3.id), newPath.activeMessages.map { it.id })
         assertEquals(
@@ -79,6 +89,10 @@ class ConversationBranchRepositoryInstrumentedTest {
         assertEquals(setOf(u1.id, a3.id), afterDelete.allMessages.map { it.id }.toSet())
         assertEquals(setOf(a1.id, u2.id, a2.id), deletion.deletedMessages.map { it.id }.toSet())
         assertEquals(listOf("new-summary"), database.chatDao().listCompactMarkers(session.id).map { it.summary })
+        assertEquals(
+            listOf("new-context"),
+            repository.novexContextUsage(session.id).map { it.id },
+        )
     }
 
     @Test
@@ -142,5 +156,21 @@ class ConversationBranchRepositoryInstrumentedTest {
         createdAt = createdAt,
         lastCompactedMessageId = anchorId,
         version = 2,
+    )
+
+    private fun usageRecord(
+        id: String,
+        requestMessageId: String,
+        responseMessageId: String,
+    ) = ContextUsageRecord(
+        id = id,
+        requestMessageId = requestMessageId,
+        responseMessageId = responseMessageId,
+        branchId = responseMessageId,
+        answerIdentity = AnswerIdentity.Nova,
+        includedSources = emptyList(),
+        usedTokens = 0,
+        effectiveWindowTokens = 200_000,
+        createdAt = 1L,
     )
 }
