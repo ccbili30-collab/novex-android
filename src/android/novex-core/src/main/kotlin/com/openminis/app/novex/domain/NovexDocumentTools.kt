@@ -20,6 +20,7 @@ enum class NovexDocumentFormat(val wireName: String) {
     TEXT("text"),
     MARKDOWN("markdown"),
     HTML("html"),
+    WIKITEXT("wikitext"),
     UNKNOWN("unknown"),
 }
 
@@ -101,6 +102,33 @@ data class NovexDocumentWarning(
     val blockId: String? = null,
 )
 
+data class NovexDocumentProvenance(
+    val sourceKind: String,
+    val sourceUrl: String,
+    val siteName: String? = null,
+    val pageId: String? = null,
+    val revisionId: String? = null,
+    val revisionTimestamp: String? = null,
+    val licenseTitle: String? = null,
+    val licenseUrl: String? = null,
+    val retrievedAtMillis: Long,
+) {
+    init {
+        require(sourceKind.isNotBlank()) { "文档来源类型不能为空" }
+        require(sourceUrl.startsWith("https://") || sourceUrl.startsWith("http://")) {
+            "文档来源网址必须使用 HTTP 或 HTTPS"
+        }
+        require(retrievedAtMillis >= 0) { "文档获取时间不能为负数" }
+        require(siteName == null || siteName.isNotBlank()) { "来源站点名称不能为空" }
+        require(pageId == null || pageId.isNotBlank()) { "来源页面编号不能为空" }
+        require(revisionId == null || revisionId.isNotBlank()) { "来源修订编号不能为空" }
+        require(licenseTitle == null || licenseTitle.isNotBlank()) { "来源许可名称不能为空" }
+        require(licenseUrl == null || licenseUrl.startsWith("https://") || licenseUrl.startsWith("http://")) {
+            "来源许可网址必须使用 HTTP 或 HTTPS"
+        }
+    }
+}
+
 data class NovexDocumentSnapshot(
     val ref: NovexResourceRef,
     val sha256: String,
@@ -110,6 +138,7 @@ data class NovexDocumentSnapshot(
     val status: NovexDocumentStatus,
     val blocks: List<NovexDocumentBlock>,
     val warnings: List<NovexDocumentWarning> = emptyList(),
+    val provenance: NovexDocumentProvenance? = null,
 ) {
     init {
         require(ref.value.startsWith("novex://documents/")) { "文档快照必须使用文档引用" }

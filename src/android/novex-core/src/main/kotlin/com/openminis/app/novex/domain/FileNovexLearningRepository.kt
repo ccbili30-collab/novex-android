@@ -48,7 +48,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 3
+    private const val VERSION = 4
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -231,6 +231,7 @@ object NovexLearningStateJsonCodec {
         })
         .put("task_status", preflight.taskStatus.name)
         .put("prohibited_outcomes", JSONArray(preflight.prohibitedOutcomes.toList().sorted()))
+        .put("source_plan_fingerprint", preflight.sourcePlanFingerprint)
 
     private fun decodePreflight(json: JSONObject): NovexLearningPreflightSnapshot {
         val budget = json.getJSONObject("confirmed_budget")
@@ -293,6 +294,7 @@ object NovexLearningStateJsonCodec {
             },
             taskStatus = NovexLearningTaskStatus.valueOf(json.getString("task_status")),
             prohibitedOutcomes = json.getJSONArray("prohibited_outcomes").strings().toSet(),
+            sourcePlanFingerprint = json.optionalString("source_plan_fingerprint"),
         )
     }
 

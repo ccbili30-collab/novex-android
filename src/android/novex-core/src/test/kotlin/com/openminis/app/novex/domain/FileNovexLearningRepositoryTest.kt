@@ -24,6 +24,7 @@ class FileNovexLearningRepositoryTest {
 
             assertEquals(preflight.id, restored?.preflight?.id)
             assertEquals(NovexLearningTaskStatus.NOT_STARTED, restored?.preflight?.taskStatus)
+            assertEquals(preflight.sourcePlanFingerprint, restored?.preflight?.sourcePlanFingerprint)
             assertEquals(null, restored?.task)
         } finally {
             directory.deleteRecursively()
@@ -106,6 +107,7 @@ class FileNovexLearningRepositoryTest {
                 occupiedContextTokens = 20_000,
                 directReadBudgetTokens = 12_000,
                 proposedBudget = NovexLearningTokenBudget(120_000, 12_000),
+                sourcePlanFingerprint = "wiki-plan-v1",
             ),
         )
     }

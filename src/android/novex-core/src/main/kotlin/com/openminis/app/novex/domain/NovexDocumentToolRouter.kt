@@ -83,7 +83,7 @@ class NovexDocumentToolRouter(
 
 /** Stable disk representation for derived snapshots. Original documents remain untouched. */
 object NovexDocumentSnapshotJsonCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun encode(snapshot: NovexDocumentSnapshot): String = JSONObject()
         .put("version", VERSION)
@@ -95,11 +95,13 @@ object NovexDocumentSnapshotJsonCodec {
         .put("status", snapshot.status.wireName)
         .put("blocks", JSONArray(snapshot.blocks.map(::encodeBlock)))
         .put("warnings", JSONArray(snapshot.warnings.map(::encodeWarning)))
+        .put("provenance", snapshot.provenance?.let(::encodeProvenance))
         .toString()
 
     fun decode(encoded: String): NovexDocumentSnapshot {
         val json = JSONObject(encoded)
-        require(json.getInt("version") == VERSION) { "不支持的文档快照版本" }
+        val version = json.getInt("version")
+        require(version in 1..VERSION) { "不支持的文档快照版本" }
         return NovexDocumentSnapshot(
             ref = NovexResourceRef(json.getString("ref")),
             sha256 = json.getString("sha256"),
@@ -109,6 +111,7 @@ object NovexDocumentSnapshotJsonCodec {
             status = enumValue(json.getString("status"), NovexDocumentStatus.entries) { it.wireName },
             blocks = json.getJSONArray("blocks").objects().map(::decodeBlock),
             warnings = json.optJSONArray("warnings").objects().map(::decodeWarning),
+            provenance = json.optJSONObject("provenance")?.let(::decodeProvenance),
         )
     }
 
@@ -154,6 +157,29 @@ object NovexDocumentSnapshotJsonCodec {
         code = json.getString("code"),
         message = json.getString("message"),
         blockId = json.optionalString("block_id"),
+    )
+
+    private fun encodeProvenance(provenance: NovexDocumentProvenance) = JSONObject()
+        .put("source_kind", provenance.sourceKind)
+        .put("source_url", provenance.sourceUrl)
+        .put("site_name", provenance.siteName)
+        .put("page_id", provenance.pageId)
+        .put("revision_id", provenance.revisionId)
+        .put("revision_timestamp", provenance.revisionTimestamp)
+        .put("license_title", provenance.licenseTitle)
+        .put("license_url", provenance.licenseUrl)
+        .put("retrieved_at_millis", provenance.retrievedAtMillis)
+
+    private fun decodeProvenance(json: JSONObject) = NovexDocumentProvenance(
+        sourceKind = json.getString("source_kind"),
+        sourceUrl = json.getString("source_url"),
+        siteName = json.optionalString("site_name"),
+        pageId = json.optionalString("page_id"),
+        revisionId = json.optionalString("revision_id"),
+        revisionTimestamp = json.optionalString("revision_timestamp"),
+        licenseTitle = json.optionalString("license_title"),
+        licenseUrl = json.optionalString("license_url"),
+        retrievedAtMillis = json.getLong("retrieved_at_millis"),
     )
 
     private fun JSONObject.optionalInt(name: String): Int? =

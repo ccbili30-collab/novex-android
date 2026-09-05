@@ -39,6 +39,7 @@ data class NovexLearningPreflightRequest(
     val occupiedContextTokens: Int,
     val directReadBudgetTokens: Int,
     val proposedBudget: NovexLearningTokenBudget,
+    val sourcePlanFingerprint: String? = null,
 ) {
     init {
         require(collectionRef.value.startsWith("novex://source-collections/")) { "学习预检必须属于资料集" }
@@ -49,6 +50,7 @@ data class NovexLearningPreflightRequest(
         require(effectiveContextTokens == null || effectiveContextTokens > 0) { "有效上下文必须大于零" }
         require(occupiedContextTokens >= 0) { "已占用上下文不能为负数" }
         require(directReadBudgetTokens > 0) { "直接读取预算必须大于零" }
+        require(sourcePlanFingerprint == null || sourcePlanFingerprint.isNotBlank()) { "资料计划指纹不能为空" }
     }
 }
 
@@ -132,6 +134,7 @@ data class NovexLearningPreflightSnapshot(
         "create_interactive_fiction",
         "modify_original_source",
     ),
+    val sourcePlanFingerprint: String? = null,
 ) {
     val requiresConfirmation: Boolean get() = route == NovexLearningRoute.CONFIRMATION_REQUIRED
 }
@@ -211,6 +214,7 @@ object NovexLearningPreflight {
                 .append(request.directReadBudgetTokens).append('\n')
             append(request.proposedBudget.inputTokens).append(':')
                 .append(request.proposedBudget.outputTokens).append('\n')
+            append(request.sourcePlanFingerprint.orEmpty()).append('\n')
             request.sources.forEach { source ->
                 append(source.ref.value).append('|')
                     .append(source.estimatedTokens).append('|')
@@ -256,6 +260,7 @@ object NovexLearningPreflight {
             unsupportedSources = request.sources.mapNotNull { source ->
                 source.unsupportedReason?.let { source.ref to it }
             }.toMap(),
+            sourcePlanFingerprint = request.sourcePlanFingerprint,
         )
     }
 
