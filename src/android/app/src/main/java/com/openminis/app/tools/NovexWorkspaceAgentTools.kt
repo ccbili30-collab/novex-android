@@ -30,6 +30,7 @@ class NovexWorkspaceAgentTools(
                 NovexConversationWorkspaceToolRouter.WORKSPACE_READ -> "读取工作区"
                 NovexConversationWorkspaceToolRouter.WORKSPACE_WRITE -> "写入工作区"
                 NovexConversationWorkspaceToolRouter.WORKSPACE_EDIT -> "编辑工作区"
+                NovexConversationWorkspaceToolRouter.WORKSPACE_COMPUTE -> "处理工作区"
                 else -> "工作区工具"
             },
         )

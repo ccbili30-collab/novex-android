@@ -11,18 +11,85 @@ import java.io.ByteArrayOutputStream
 
 object ReadImageTool {
     const val NAME = "read_image"
+    private const val MAX_SOURCE_BYTES = 32 * 1024 * 1024
+    private const val MAX_SOURCE_EDGE = 20_000
+    private const val MAX_OUTPUT_EDGE = 2_000
 
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = NAME,
-        description = "Read an image file from the Linux filesystem and return it for visual analysis. Supports PNG, JPEG, GIF, WEBP, and other common image formats. Use this to inspect generated charts, downloaded images, screenshots, or any visual output. If you natively support vision the image is returned directly for your analysis; if you do not, it is routed through a configured Vision Group that returns a text description — in that case pass a `prompt` to focus the description on what you actually need (you cannot see the pixels yourself, so this is how you 'ask' about the image). Metadata (dimensions, file size) is always included.",
+        description = "读取当前对话有权访问的一项 Novex 图片成果，用于查看生成图片、地图或已挂载内容图片。" +
+            "只接受成果编号，不接受设备路径；没有原生视觉能力时会通过已配置的视觉模型组返回文字描述。",
         parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'View generated bar chart', 'Inspect downloaded screenshot'). Use the same language as the user."),
-            "path" to AgentToolParam("string", "Linux path (e.g. /var/minis/attachments/chart.png) or minis:// URL (e.g. minis://attachments/chart.png)"),
-            "prompt" to AgentToolParam("string", "Optional. A custom instruction describing what you want to understand from the image (e.g. 'transcribe the table text', 'describe the people and their expressions', 'what error message is in this screenshot'). Most useful when you lack native vision and the image is described by a Vision Group — it steers that description toward your question. If omitted, a generic 'describe this image in detail' instruction is used."),
+            "tool_title" to AgentToolParam("string", "展示给用户的简短操作名称。"),
+            "artifact_id" to AgentToolParam("string", "当前对话创建或已通过挂载内容授权的 Novex 图片成果编号。"),
+            "prompt" to AgentToolParam("string", "可选的查看重点，例如转录图片文字、描述地图区域或检查画面问题。"),
         ),
-        required = listOf("tool_title", "path"),
-        propertyOrdering = listOf("tool_title", "path", "prompt"),
+        required = listOf("tool_title", "artifact_id"),
+        propertyOrdering = listOf("tool_title", "artifact_id", "prompt"),
     )
+
+    fun executeArtifact(
+        argsJson: String,
+        artifactTitle: String,
+        bytes: ByteArray,
+        mimeType: String,
+        imageFilePath: String?,
+    ): ToolExecutionResult {
+        return try {
+            val args = JSONObject(argsJson)
+            val toolTitle = args.optString("tool_title", NAME)
+            if (bytes.isEmpty()) {
+                return ToolExecutionResult("图片成果没有可读取的内容", false, toolTitle = toolTitle)
+            }
+            if (bytes.size > MAX_SOURCE_BYTES) {
+                return ToolExecutionResult("图片成果超过 32 MiB 读取上限", false, toolTitle = toolTitle)
+            }
+            if (!mimeType.lowercase().startsWith("image/")) {
+                return ToolExecutionResult("指定成果的媒体类型不是图片", false, toolTitle = toolTitle)
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                return ToolExecutionResult("图片成果格式无法解码", false, toolTitle = toolTitle)
+            }
+            if (bounds.outWidth > MAX_SOURCE_EDGE || bounds.outHeight > MAX_SOURCE_EDGE) {
+                return ToolExecutionResult("图片成果尺寸超过 20000 像素读取上限", false, toolTitle = toolTitle)
+            }
+            val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: return ToolExecutionResult("图片成果格式无法解码", false, toolTitle = toolTitle)
+            val width = original.width
+            val height = original.height
+            val scaled = if (width > MAX_OUTPUT_EDGE || height > MAX_OUTPUT_EDGE) {
+                val scale = MAX_OUTPUT_EDGE.toFloat() / maxOf(width, height)
+                Bitmap.createScaledBitmap(
+                    original,
+                    (width * scale).toInt().coerceAtLeast(1),
+                    (height * scale).toInt().coerceAtLeast(1),
+                    true,
+                )
+            } else {
+                original
+            }
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            val imageBytes = out.toByteArray()
+            if (scaled !== original) scaled.recycle()
+            original.recycle()
+            ToolExecutionResult(
+                output = "[成果：$artifactTitle | ${width}x${height} | ${bytes.size} 字节]",
+                success = true,
+                imageData = imageBytes,
+                imageMimeType = "image/jpeg",
+                toolTitle = toolTitle,
+                imageFilePath = imageFilePath,
+                imageLinuxPath = null,
+            )
+        } catch (error: OutOfMemoryError) {
+            ToolExecutionResult("图片成果过大，无法在当前设备上安全读取", false, toolTitle = NAME)
+        } catch (error: Exception) {
+            ToolExecutionResult("读取图片成果失败：${error.message}", false, toolTitle = NAME)
+        }
+    }
 
     /**
      * T178: when the caller knows the owning session, prefer
@@ -34,12 +101,10 @@ object ReadImageTool {
      * its PRoot reads from session B's host dir — confirmed leak per
      * docs/parity/cross-session-isolation-audit.md.
      *
-     * The legacy single-arg overload is preserved for callers that don't
-     * know the session id (and falls back to the global map). Mirror iOS
-     * `ReadImageTool` which carries `sessionId` through its tool-call
-     * pipeline.
+     * This path is preserved only for replaying tool calls already stored in
+     * conversation history. New provider schemas expose artifact IDs instead.
      */
-    fun execute(argsJson: String, sessionId: String? = null, context: Context? = null): ToolExecutionResult {
+    fun executeLegacy(argsJson: String, sessionId: String? = null, context: Context? = null): ToolExecutionResult {
         return try {
             val args = JSONObject(argsJson)
             val rawPath = args.optString("path", "")
@@ -66,6 +131,8 @@ object ReadImageTool {
 
             val original = BitmapFactory.decodeFile(file.absolutePath)
                 ?: return ToolExecutionResult("Error: Cannot decode image: $path", false, toolTitle = toolTitle)
+            val width = original.width
+            val height = original.height
 
             val maxEdge = 2000
             val scaled = if (original.width > maxEdge || original.height > maxEdge) {
@@ -84,7 +151,7 @@ object ReadImageTool {
             if (scaled !== original) scaled.recycle()
             original.recycle()
 
-            val metadata = "[$path | ${original.width}x${original.height} | ${file.length()} bytes]"
+            val metadata = "[$path | ${width}x${height} | ${file.length()} bytes]"
             ToolExecutionResult(
                 output = metadata,
                 success = true,

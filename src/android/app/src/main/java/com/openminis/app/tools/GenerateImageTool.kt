@@ -53,7 +53,7 @@ object GenerateImageTool {
 
     fun skillPrompt(): String = """
 <skill name="image-generation" description="统一生图与图片编辑">
-用户要求生成、绘制、重做或编辑图片时，调用 generate_image。只需提交完整视觉提示词和可选参考图路径；不要选择、猜测或向用户暴露具体生图模型。应用会按已启用生图分组的顺序自动选择，并在失败时继续尝试下一成员和下一分组。只有工具真正返回图片后才能声称完成，并在回复中展示返回的本地图片。
+用户要求生成、绘制、重做或编辑图片时，调用 generate_image。只需提交完整视觉提示词和可选的 Novex 参考图成果编号；不要选择、猜测或向用户暴露具体生图模型。应用会按已启用生图分组的顺序自动选择，并在失败时继续尝试下一成员和下一分组。只有工具真正返回图片成果后才能声称完成，并在回复中展示结果。
 </skill>
 """.trimIndent()
 
@@ -65,13 +65,13 @@ object GenerateImageTool {
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "Short user-visible action title in the user's language."),
             "prompt" to AgentToolParam("string", "Complete visual prompt describing subject, composition, style, lighting, text, and constraints."),
-            "reference_image_path" to AgentToolParam("string", "Optional /var/minis path or minis:// URL of an image to edit."),
+            "reference_artifact_id" to AgentToolParam("string", "需要编辑的可选 Novex 图片成果编号；不能使用设备路径。"),
             "size" to AgentToolParam("string", "Optional provider size such as 1024x1024, 1536x1024, or 1024x1536."),
             "quality" to AgentToolParam("string", "Optional provider quality such as standard, high, or hd."),
             "count" to AgentToolParam("integer", "Number of images requested, from 1 to 4."),
         ),
         required = listOf("tool_title", "prompt"),
-        propertyOrdering = listOf("tool_title", "prompt", "reference_image_path", "size", "quality", "count"),
+        propertyOrdering = listOf("tool_title", "prompt", "reference_artifact_id", "size", "quality", "count"),
     )
 
     suspend fun execute(
@@ -80,6 +80,7 @@ object GenerateImageTool {
         context: Context,
         repository: ProviderRepository,
         imageStylePrompt: String? = null,
+        referenceImage: LLMMessage.ImagePart? = null,
     ): ToolExecutionResult {
         val args = runCatching { JSONObject(argsJson) }.getOrElse {
             return ToolExecutionResult("生图参数不是有效的 JSON：${it.message}", false, toolTitle = "生成图片")
@@ -91,7 +92,8 @@ object GenerateImageTool {
         val title = args.optString("tool_title", "生成图片").ifBlank { "生成图片" }
         if (prompt.isEmpty()) return ToolExecutionResult("缺少生图提示词", false, toolTitle = title)
 
-        val reference = resolveReferenceImage(
+        val reference = referenceImage ?: resolveReferenceImage(
+            // Accepted only for historical tool calls created before the Novex artifact contract.
             rawPath = args.optString("reference_image_path").trim(),
             sessionId = sessionId,
             context = context,
@@ -135,13 +137,13 @@ object GenerateImageTool {
             ?.joinToString(prefix = "；已跳过：", separator = "；")
             .orEmpty()
         return ToolExecutionResult(
-            output = "图片已生成：${saved.joinToString("、") { it.first }}（${generated.entry.model.id}）$fallbackNote",
+            output = "图片已生成，共 ${saved.size} 张（${generated.entry.model.id}）$fallbackNote",
             success = true,
             imageData = first.third.data,
             imageMimeType = first.third.mimeType,
             toolTitle = title,
             imageFilePath = first.second.absolutePath,
-            imageLinuxPath = first.first,
+            imageLinuxPath = null,
         )
     }
 

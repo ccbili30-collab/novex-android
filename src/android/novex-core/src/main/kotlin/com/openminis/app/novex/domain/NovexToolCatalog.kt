@@ -127,6 +127,21 @@ object NovexToolCatalog {
                     ),
                 ),
             )
+            add(
+                NovexToolDefinition(
+                    name = "workspace_compute",
+                    description = "对工作区文本执行受限、确定性的合并、统计或 JSON 校验与格式化；不能运行任意命令、脚本或访问设备路径。",
+                    risk = NovexToolRisk.SESSION_REVERSIBLE,
+                    parameters = listOf(
+                        NovexToolParameter("operation", NovexToolParameterKind.STRING, true, "操作：merge_text、text_statistics、json_validate 或 json_format"),
+                        NovexToolParameter("input_refs", NovexToolParameterKind.STRING_LIST, true, "一到八个当前分支可见的工作区文本引用"),
+                        NovexToolParameter("output_area", NovexToolParameterKind.STRING, false, "产生文件时使用的可写目录：notes、drafts、outputs 或 saves"),
+                        NovexToolParameter("output_path", NovexToolParameterKind.STRING, false, "产生文件时使用的目录内相对路径"),
+                        NovexToolParameter("delimiter", NovexToolParameterKind.STRING, false, "合并文本时使用的分隔符，最多二百字符"),
+                        NovexToolParameter("indent", NovexToolParameterKind.INTEGER, false, "JSON 格式化缩进，零到八，默认二"),
+                    ),
+                ),
+            )
         }
     }
 }

@@ -29,7 +29,7 @@ class NovexWorkspaceAgentToolsTest {
 
         assertFalse(withoutWorkspace.any { it.name.startsWith("workspace_") })
         assertEquals(
-            listOf("workspace_inspect", "workspace_read", "workspace_write", "workspace_edit"),
+            listOf("workspace_inspect", "workspace_read", "workspace_write", "workspace_edit", "workspace_compute"),
             withWorkspace.filter { it.name.startsWith("workspace_") }.map { it.name },
         )
     }

@@ -979,14 +979,8 @@ class ChatViewModel(
         get() = if (currentModel?.supportsTools == false) {
             emptyList()
         } else AgentTools.makeAgentTools(
-            // [T-android-vision-group / GH#182] The main model's own vision
-            // capability. When false but a Vision Group is configured, read_image
-            // is still exposed and routes through the group (see
-            // executeReadImageTool). Note pre-vision-group Android always passed
-            // the default `true` here, so read_image was already always exposed;
-            // threading the real flag lets a text-only model without a Vision
-            // Group correctly LOSE the tool (iOS parity), while a configured
-            // Vision Group keeps it.
+            // Keep artifact inspection available when either the main model or
+            // the configured vision group can interpret the image bytes.
             supportsImageInput = currentModel?.hasImageInput == true,
             visionGroupConfigured = com.openminis.app.tools.VisionGroupResolver.isConfigured(
                 providerRepository, context,
@@ -8925,13 +8919,7 @@ class ChatViewModel(
             // bindMounts map and would surface another session's
             // /var/minis/{workspace,attachments,offloads,browser} files.
             ReadImageTool.NAME -> executeReadImageTool(argsJson)
-            GenerateImageTool.NAME -> GenerateImageTool.execute(
-                argsJson = argsJson,
-                sessionId = activeSessionId,
-                context = context,
-                repository = providerRepository,
-                imageStylePrompt = _imageStylePrompt.value,
-            )
+            GenerateImageTool.NAME -> executeGenerateImageTool(argsJson)
             "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
@@ -9514,7 +9502,29 @@ class ChatViewModel(
      * AIChatViewModel+ConcurrentTools read_image branch.
      */
     private suspend fun executeReadImageTool(argsJson: String): ToolExecutionResult {
-        val base = ReadImageTool.execute(argsJson, activeSessionId, context)
+        val args = runCatching { JSONObject(argsJson) }.getOrElse {
+            return ToolExecutionResult("读图参数不是有效的 JSON", false, toolTitle = "查看图片")
+        }
+        val artifactId = args.optString("artifact_id").trim()
+        val base = if (artifactId.isEmpty()) {
+            // Historical persisted calls may still contain a path. New provider schemas never do.
+            ReadImageTool.executeLegacy(argsJson, activeSessionId, context)
+        } else {
+            val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
+                return ToolExecutionResult(
+                    error.message ?: "无法读取指定图片成果",
+                    false,
+                    toolTitle = args.optString("tool_title", "查看图片"),
+                )
+            }
+            ReadImageTool.executeArtifact(
+                argsJson = argsJson,
+                artifactTitle = resolved.title,
+                bytes = resolved.bytes,
+                mimeType = resolved.mimeType,
+                imageFilePath = resolved.file.absolutePath,
+            )
+        }
         // [T-android-vision-group / GH#182] Optional caller instruction focusing
         // what to learn from the image.
         val customPrompt = try {
@@ -9804,6 +9814,9 @@ class ChatViewModel(
     private suspend fun executeBrowserUseTool(argsJson: String): ToolExecutionResult {
         val input = BrowserActionInput.parse(argsJson)
             ?: return ToolExecutionResult("Error: Invalid browser_use input", false)
+        if (input.action.value !in AgentTools.safeBrowserActions) {
+            return ToolExecutionResult("该浏览动作未通过 Novex 安全工具契约开放", false)
+        }
 
         return try {
             val result = browserTabPool.execute(input)
@@ -9815,11 +9828,9 @@ class ChatViewModel(
             var persistentImagePath: String? = result.imageFilePath
             var inferenceBytes: ByteArray? = null
 
-            // Persist browser screenshots to /var/minis/browser/<session>/ so the
-            // agent can reference them via minis:// in subsequent tool calls
-            // (mirrors iOS AIChatViewModel case "browser_use").
+            // Persist screenshots internally for history and previews. The model receives the
+            // image payload, never the adapter's device path.
             val base64 = result.base64Image
-            var linuxImagePath: String? = null
             if (base64 != null) {
                 val raw = try {
                     android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
@@ -9829,24 +9840,7 @@ class ChatViewModel(
                     // long edge across attachments / browser / read_image.
                     inferenceBytes = resizeJpegToMaxEdge(raw, 2000) ?: raw
                     val filename = "screenshot_${System.currentTimeMillis() / 1000}.jpg"
-                    val persistPath = persistBrowserArtifact(filename, raw)
-                    if (persistPath != null) {
-                        persistentImagePath = persistPath
-                        linuxImagePath = "/var/minis/browser/$filename"
-                        linuxPathToMinisURL(linuxImagePath)?.let {
-                            output = "$output\nminis_url: $it"
-                        }
-                    }
-                }
-            }
-
-            // Persist fetched files (fetch action) and append minis_url
-            val fetchData = result.fetchedFileData
-            val fetchName = result.fetchedFileName
-            if (fetchData != null && fetchName != null) {
-                persistBrowserArtifact(fetchName, fetchData)
-                linuxPathToMinisURL("/var/minis/browser/$fetchName")?.let {
-                    output = "$output\nminis_url: $it"
+                    persistBrowserArtifact(filename, raw)?.let { persistentImagePath = it }
                 }
             }
 
@@ -9858,19 +9852,89 @@ class ChatViewModel(
                 toolTitle = toolTitle,
                 pageURL = result.pageURL,
                 imageFilePath = persistentImagePath,
-                imageLinuxPath = linuxImagePath,
+                imageLinuxPath = null,
             )
         } catch (e: Exception) {
             ToolExecutionResult("Error: ${e.message}", false)
         }
     }
 
-    /**
-     * Write bytes to <filesDir>/minis-sessions/<sessionId>/browser/<filename>.
-     * That directory is bind-mounted to `/var/minis/browser/` so the agent can
-     * read it back via file_read / file_write / minis:// URLs.
-     * Returns the host absolute path on success, null otherwise.
-     */
+    private suspend fun executeGenerateImageTool(argsJson: String): ToolExecutionResult {
+        val args = runCatching { JSONObject(argsJson) }.getOrElse {
+            return ToolExecutionResult("生图参数不是有效的 JSON", false, toolTitle = "生成图片")
+        }
+        val artifactId = args.optString("reference_artifact_id").trim()
+        val reference = if (artifactId.isEmpty()) {
+            null
+        } else {
+            val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
+                return ToolExecutionResult(
+                    error.message ?: "无法读取指定参考图片成果",
+                    false,
+                    toolTitle = "生成图片",
+                )
+            }
+            LLMMessage.ImagePart(resolved.bytes, resolved.mimeType, null)
+        }
+        return GenerateImageTool.execute(
+            argsJson = argsJson,
+            sessionId = activeSessionId,
+            context = context,
+            repository = providerRepository,
+            imageStylePrompt = _imageStylePrompt.value,
+            referenceImage = reference,
+        )
+    }
+
+    private data class AccessibleImageArtifact(
+        val title: String,
+        val bytes: ByteArray,
+        val mimeType: String,
+        val file: java.io.File,
+    )
+
+    /** Resolves only current-conversation or explicitly mounted image artifacts. */
+    private suspend fun loadAccessibleImageArtifact(artifactId: String): Result<AccessibleImageArtifact> =
+        runCatching {
+            val application = context.applicationContext as? com.openminis.app.MinisApp
+                ?: error("Novex 成果库尚未就绪")
+            check(application.subsystemsReady()) { "Novex 成果库尚未就绪" }
+            val record = withContext(Dispatchers.IO) {
+                application.creativeArtifactRepository.artifact(artifactId)
+            } ?: error("找不到指定的图片成果")
+            require(!record.artifact.isTrashed) { "指定图片成果已在回收站中" }
+            require(
+                record.artifact.kind in setOf(
+                    com.openminis.app.novex.domain.CreativeArtifactKind.IMAGE,
+                    com.openminis.app.novex.domain.CreativeArtifactKind.MAP,
+                ),
+            ) { "指定成果不是图片" }
+            val conversationId = realSessionId.ifBlank { activeSessionId }
+            require(
+                com.openminis.app.novex.domain.isCreativeArtifactAccessibleToConversation(
+                    originConversationId = record.artifact.origin.conversationId,
+                    attachments = record.attachments,
+                    configuration = currentNovexConfiguration(),
+                    conversationId = conversationId,
+                ),
+            ) { "当前对话没有读取这项图片成果的权限" }
+            val revision = record.revisions.maxByOrNull { it.number }
+                ?: error("图片成果没有可用版本")
+            val bytes = withContext(Dispatchers.IO) {
+                application.creativeArtifactRepository.bytes(artifactId)
+            }
+            val file = withContext(Dispatchers.IO) {
+                application.creativeArtifactRepository.file(artifactId)
+            }
+            AccessibleImageArtifact(
+                title = record.artifact.title,
+                bytes = bytes,
+                mimeType = revision.mimeType,
+                file = file,
+            )
+        }
+
+    /** Persist one browser preview internally for conversation history. */
     private fun persistBrowserArtifact(filename: String, data: ByteArray): String? {
         val sid = activeSessionId.takeIf { it.isNotEmpty() } ?: return null
         return try {
@@ -9882,22 +9946,6 @@ class ChatViewModel(
             android.util.Log.w("ChatViewModel", "persistBrowserArtifact failed: ${e.message}")
             null
         }
-    }
-
-    /**
-     * Convert a Linux path under /var/minis/ to a percent-encoded minis:// URL.
-     * Mirrors iOS AIChatViewModel.linuxPathToMinisURL.
-     */
-    private fun linuxPathToMinisURL(path: String): String? {
-        val prefix = "/var/minis/"
-        if (!path.startsWith(prefix)) return null
-        val rest = path.removePrefix(prefix)
-        val slash = rest.indexOf('/')
-        if (slash < 0) return null
-        val namespace = rest.substring(0, slash)
-        val filename = rest.substring(slash + 1)
-        val encoded = java.net.URLEncoder.encode(filename, "UTF-8").replace("+", "%20")
-        return "minis://$namespace/$encoded"
     }
 
     /**
@@ -10406,139 +10454,9 @@ class ChatViewModel(
         val identitySection = _conversationPrompt.value?.let {
             com.openminis.app.agent.SystemPromptBuilder.identitySection(context, it)
         } ?: com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
-        // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
-        // gate: when memory is disabled for this session, replace the
-        // "memory_write / memory_get" tool bullets and the "Memory system:"
-        // guidance block with a single explicit DISABLED notice. The model
-        // never sees the tools either (filtered in agentTools above), but
-        // surfacing the state in the prompt lets it explain why memories
-        // aren't reachable when the user asks. The fragment / tool dual
-        // gate is symmetrical: enable both or disable both, never mismatch.
+        // Keep memory prompt injection and the Novex memory tool set behind the
+        // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
-        val toolListMemoryBullets = if (memoryOn) {
-            """
-- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.
-- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge."""
-        } else {
-            // Empty — no memory_write / memory_get bullets when disabled.
-            // The "Memory system:" section below also collapses, so the
-            // model gets a coherent picture rather than half-mentioned
-            // tools it can't actually call.
-            ""
-        }
-        val memorySystemSection = if (memoryOn) {
-            """
-
-Memory system (currently ENABLED):
-- memory_write writes to today's daily log (YYYY-MM-DD.md) — use it for session notes, key facts, project context, things learned, and action items.
-- GLOBAL.md (/var/minis/memory/GLOBAL.md) stores persistent preferences, settings, and general-purpose conventions. To read it, use file_read (NOT memory_get). To update it, use file_read first then file_edit. If GLOBAL.md does not exist yet, use file_write to create it directly.
-- IMPORTANT: Only write to GLOBAL.md when the user explicitly asks (e.g. 'remember this globally', 'save to global memory'). Before editing, deduplicate and clean up — avoid ambiguity, repetition, or daily-log-style entries. GLOBAL.md should contain only concise, reusable knowledge (preferences, settings, conventions), NOT session logs or transient context.
-- Use memory_get to recall past knowledge before starting tasks — check if there are relevant memories that can help.
-- Proactively save memories (via memory_write to daily log) when you discover user preferences or important patterns — don't wait to be asked.
-- When the user says 'remember this' or similar, use memory_write to persist to the daily log. Only write to GLOBAL.md if the user specifically asks for global/persistent storage.
-- What NOT to remember: passwords, API keys, tokens, secrets, or any sensitive credentials. Warn the user about the risk first; only proceed if they explicitly confirm.
-- Keep memories concise, factual, and general-purpose — avoid noise that won't be useful later."""
-        } else {
-            """
-
-Memory system (currently DISABLED):
-- The user has turned OFF memory injection and memory tools for this session. GLOBAL.md and recent daily logs are NOT included in this prompt, and the memory_write / memory_get tools are NOT available — do not attempt to call them.
-- If the user asks why earlier memories aren't visible, or asks you to save something, tell them memory is currently disabled and point them at the /memory slash command or [Settings → Memory](minis://settings/memory) to re-enable it.
-- SOUL.md (personality / identity) is unaffected by this toggle; the persona section above still applies."""
-        }
-        @Suppress("UNUSED_VARIABLE")
-        val legacyMinisBase = identitySection + """You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.
-
-Available tools:
-- shell_execute: Run any shell command. Each invocation is an isolated process with stdout/stderr captured. Prefer this for most tasks — it is a real Linux environment with persistent filesystem. Common tools (python3, pip, curl, wget, git, ssh, etc.) can be installed via apk add; Python packages via pip install. Use `which <cmd>` to check if a tool is already installed before running apk add — many packages persist across sessions. When you need to wait before checking results (e.g. polling, waiting for a process), use the `delay` parameter instead of `sleep` in the command — delay blocks the agent flow without occupying the shell, so other concurrent tasks can use it during the wait. This avoids resource contention. Execution discipline for long-running or dispatched work: make tool calls immediately instead of describing intentions, and keep working until the task is complete. Without a scheduler or timed-callback tool, `delay` is your ONLY wait mechanism within a turn — to follow up on something still running, chain delay-then-check calls at a task-appropriate interval until you have the result or hit a sensible retry cap. NEVER end a turn with a promise of future action: 'I'll keep monitoring', 'will sync the result later', and ending right after a single still-running status check with 'let's keep waiting' are all the same violation — once your turn ends, NOTHING runs until the user's next message. If polling to completion is genuinely not worth blocking the turn, close honestly instead: state that the task keeps running in the background, that you will only learn its outcome when the user next messages (or they ask you to check), and — if something must fire on a schedule beyond this conversation — point them to the options under 'Scheduled tasks' later in this prompt (native alarm reminder or a system-level schedule; those notify the USER, they do not wake you).
-- file_read: Read file contents (faster than cat).
-- file_write: Create new files or overwrite existing files (faster than echo/tee).
-- file_edit: Edit existing files with exact string replacement (old_string → new_string). Preferred over file_write for modifications — always file_read first.
-- browser_use: Web browsing (navigate, screenshot, click, type, get_text, scroll, scroll_and_collect, get_readable, get_backbone, fetch, etc.). Starts with a desktop Chrome user agent. Use screenshot to see the page.
-  当 browser_use 触达 Google 登录 / OAuth 页（accounts.google.com、signin.google.com、myaccount.google.com、oauth2.googleapis.com 等）或网页返回 "disallowed_useragent" / 403 包含 "browser is not secure" 字样时，**不要重试或尝试登录** — Google 永久禁止 in-app WebView 完成登录，重试只会浪费 turn。改为告诉用户："此页面需要在系统 Chrome 完成登录" 并给出可点击的 Markdown link [在 Chrome 中打开](https://accounts.google.com/...)。点该 link 时 app 会跳出 Custom Tab；用户在 Chrome 完成操作后，请他**把所需结果（邮件正文 / 文档摘要 / 表格数据）粘贴回 chat**，你再继续帮他处理。这是 Android 平台限制，不是 bug。${toolListMemoryBullets}
-
-Shared directory /var/minis/ (bidirectional read/write between shell and app):
-  /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).
-  /var/minis/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).
-  /var/minis/offloads/    — Auto-saved large outputs. Read with file_read.
-  /var/minis/browser/     — Browser screenshots and extracts.
-  /var/minis/shared/      — Cross-session shared storage for artifacts and documents. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Do NOT store temporary files here.
-  /var/minis/memory/GLOBAL.md    — Persistent global memory (read-only, user-maintained via Settings).
-  /var/minis/memory/YYYY-MM-DD.md — Daily memory log.
-  /var/minis/mounts/<name>/      — User-mounted external folders from Settings → Mount External Folders. Presence and names vary per user; check this directory first when the task references external/user files. Some mounts may be read-only — file_write / file_edit will reject writes with a clear error message.
-
-The minis:// URL scheme:
-  minis://attachments/file.png  →  /var/minis/attachments/file.png
-  minis://workspace/data.csv    →  /var/minis/workspace/data.csv
-  minis://shared/project/f.txt  →  /var/minis/shared/project/f.txt
-
-IMPORTANT: minis:// URLs are app-internal — they are NOT web URLs. Do NOT pass minis:// action URLs (open_terminal, views, settings) to browser_use — those are app deep links, use Markdown links in chat instead. However, minis:// resource URLs CAN be opened in browser_use with navigate. All directories under /var/minis/ are accessible: workspace, attachments, offloads, shared, etc. The built-in browser fully supports minis:// — HTML pages and all sub-resources (JS, CSS, images, fonts, etc.) referenced via minis:// absolute URLs or relative paths resolve correctly within the current session. When building multi-file web projects, use file_write to create files in the same directory (e.g. /var/minis/workspace/myapp/), then reference sub-resources with relative paths in HTML (e.g. <link href="style.css">, <script src="app.js">, <img src="logo.png">). The browser resolves relative paths against the minis:// base URL automatically. Cross-directory references also work with absolute minis:// URLs (e.g. <img src="minis://attachments/photo.png"> from a workspace HTML page). Navigate to the entry HTML to preview, e.g. minis://workspace/myapp/index.html.
-To display a minis:// URL in chat, write it as a Markdown link or image (e.g. [name](minis://...)) — the app handles it when the user taps it.
-IMPORTANT: minis:// URLs MUST be percent-encoded. Non-ASCII characters (Chinese, emoji, spaces, etc.) in filenames will break Markdown rendering if not encoded. Use the minis_url from tool results directly — it is already encoded. If you construct a minis:// URL manually, percent-encode the filename (e.g. %E4%B8%AD%E6%96%87 for non-ASCII characters).
-When you write files to /var/minis/, the tool result includes a minis_url you can embed directly in Markdown.
-Inline media — use the ![desc](minis://...) image syntax for ALL of images, audio, AND video. The same ![]() syntax renders an inline audio player or video player, not just images:
-  - Images: ![chart](minis://attachments/chart.png)   → inline image (.png/.jpg/.gif/.webp)
-  - Audio:  ![song](minis://attachments/song.mp3)     → inline audio player (.mp3/.m4a/.wav)
-  - Video:  ![clip](minis://attachments/clip.mp4)     → inline video player (.mp4/.mov/.m4v)
-Do NOT use the [text](url) link form for audio/video when you want them to play inline — that only produces a tappable link. Use ![]() to embed an actual player.
-For non-media files, use Markdown links: [filename](minis://workspace/filename).
-Tappable link previews: text/code (.py/.json/.md/etc), images, audio, video, HTML, and PDF files open native previews when the user taps a [name](minis://...) link.
-Use Markdown links for all non-media minis:// files — the user can tap to preview them directly in chat.
-
-File creation guidelines:
-- Use file_write to CREATE new files. Use file_edit to MODIFY existing files. The shell is BusyBox ash: heredoc syntax (cat << EOF, python3 << 'EOF') may mis-parse braces, quotes, or special characters and execute abnormally — avoid it whenever possible, and prefer file_write over echo/printf for writing file contents. When you hit escaping or parsing errors with long inline content, write the content to a file first (file_write), then pass or execute the file (e.g. `python3 /tmp/script.py`).
-- file_write and file_edit are atomic, preserve formatting, and make it easy to fix errors or update content later.
-- shell_execute is for RUNNING commands, not for writing files.
-- shell_execute supports multi-line commands directly — quoting and special characters are handled automatically. However, commands MUST NOT exceed 1000 characters. If longer, write a script file with file_write first, then run it.
-- ICMP is blocked by the PRoot sandbox — `ping` will hang indefinitely. Use `curl` or `wget` to test network connectivity instead.
-- Also (BusyBox ash, NOT bash): `**` recursive glob (globstar) is NOT supported. Use `find <dir> -name '*.ext'` for recursive file search, and pipe to `xargs` for tools like `wc`. Brace expansion ({a,b,c}) and bash arrays (arr=(...), ${'$'}{arr[@]}) are also unsupported — use space-separated strings with a for loop or multiple arguments instead.
-- Python packages: many PyPI packages (numpy, pandas, scipy, pillow, etc.) lack musllinux_aarch64 wheels and will fail to build from source. Use Alpine's native packages instead: `apk search py3-<name>` then `apk add py3-numpy py3-pandas py3-matplotlib py3-pillow py3-scipy py3-requests`. Only fall back to `pip install` for pure-Python packages not available via apk. For matplotlib, always set `matplotlib.use('Agg')` before importing pyplot — there is no display server in the sandbox.
-- Background services: each shell_execute runs in an isolated process. When starting a background server (e.g. `python3 -m http.server &`), you MUST redirect stdout/stderr to avoid SIGPIPE when the shell exits: `python3 -m http.server 8765 > /dev/null 2>&1 &`. Without redirection the server dies silently after the command finishes.
-- File search: when looking for user files, do NOT scan the whole filesystem. Search under /var/minis/ first (workspace/attachments/shared for the current session, mounts/* for user-provided external folders). Only widen the scope if the file is clearly not under /var/minis/.
-
-Tool call style:
-- Default: do not narrate routine, low-risk tool calls — just call the tool directly.
-- Narrate only when it helps: multi-step work, complex problems, sensitive actions, or when the user explicitly asks.
-- Keep narration brief and value-dense; avoid repeating obvious steps.
-- When a tool exists for an action, use it directly instead of explaining what you plan to do or asking the user to confirm.
-- Use reasonable defaults and contextual inference to fill in missing details (e.g. 'tonight' means today, 'remind me' implies creating a reminder immediately). Only ask for clarification when genuinely ambiguous.
-
-Tone and style:
-- Reply in the language that best matches the user's input. Only switch languages when the user explicitly asks.
-- Be concise. Prefer action over explanation — when the user asks for something that can be done via shell, do it directly.
-
-Android-only tools (android-* CLIs):
-CLI tools at /usr/local/bin with the `android-` prefix give you access to Android framework capabilities and on-device control. Invoke them from shell_execute like any other binary — they are already on PATH. Each tool prints JSON (or a short human-readable line) and supports --help for full usage. Tools gated by Shizuku or AccessibilityService return permission_denied when not granted — handle that gracefully and point the user at [Settings → Permissions](minis://settings/permissions).
-- android-alarm — schedule alarms/timers in the system Clock app (`schedule <HH:MM> --label <L> [--repeat ONCE|DAILY|WEEKDAYS]`, `timer <seconds> --label <L>`, `open`). Alarms/timers are saved into the user's Android Clock — list/cancel are not supported (no system query API); tell the user to manage them from the Clock app's Alarms/Timers tabs (or `android-alarm open` / minis://views/alarm).
-- android-calendar — read/write the device calendar (`list --start YYYY-MM-DD [--end ...] [--max N]`; `create --title <T> --start <ISO> [--end <ISO>] [--description <D>] [--location <L>] [--all-day]`).
-- android-clipboard — `get | set <text> [--label L] | clear`.
-- android-contacts — `list [--max N] | search <query> [--max N] | get <id> | delete <id>`. Requires READ_CONTACTS (delete also needs WRITE_CONTACTS).
-- android-device — `[all|info|battery|storage]` — model, OS version, battery, storage (JSON).
-- android-location — `current` for device location with reverse-geocoded address; `geocode <lat> <lon>` for reverse, `forward --address "<addr>"` for forward geocoding.
-- android-notification — `send --title <T> [--body <B>] | clear | list [--max N]`. `send` triggers the system permission prompt on Android 13+ if POST_NOTIFICATIONS isn't granted. `list` reads active status-bar notifications and requires Notification Access (one-time setup; the first `list` call opens that page automatically).
-- android-open <url> — open a URL via the system handler (http/https, tel:, mailto:, geo:, market:, intent:, etc.). Use this to open something immediately. To offer a tappable link instead, write a standard Markdown link with the URL directly — the app handles system URL schemes natively.
-- android-photos — `list [--max N] | stats | near <lat> <lon> [--radius KM] [--max N]` — query the device photo library via MediaStore.
-- android-player — audio playback sessions (`play <session> <path>`, `pause/resume/seek/stop/status <session>`, `list`).
-- android-speak — device TTS (`<text> [--rate F] [--pitch F] [--volume F]`; `--stop | --status`).
-- android-speech — microphone transcription (`listen [--language BCP47] [--max N] [--timeout SEC]`; `status`). Requires RECORD_AUDIO.
-- android-weather <latitude> <longitude> — Open-Meteo forecast (current + hourly + daily). No API key needed.
-- android-shizuku-cli — invoke privileged Android system APIs (package management, settings, system commands) via Shizuku when granted. Curated subcommands return structured JSON; for anything not covered, fall back to `android-shizuku-cli exec <any shell command>` which runs the command via `sh -c` with Shizuku privilege (same surface as `adb shell`). Run with no args (or --help) for the subcommand list.
-- android-a11y-cli — drive system UI (read screen, tap, type, swipe, scroll) via the Android AccessibilityService when enabled. Run with no args (or --help) for the subcommand list.
-- minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/minis/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: minis-open https://example.com, minis-open /var/minis/workspace/report.md, minis-open /var/minis/attachments/chart.png. Prefer this over android-open for anything that can be previewed in-app so the user doesn't lose conversation context. Use android-open for non-web schemes (tel:, mailto:, geo:, intent:, etc.) or when the user explicitly wants the system handler.
-- minis-sessions-cli: Manage chat sessions. `list` recent or by date range, `search --keywords` cross-session, `messages --id` to read, `send` to create/continue a session, `retry` to re-run, `status` to check, `open` to navigate the app UI. Run --help for full options.
-- minis-model-use: Invoke other ordinary LLM models pre-configured by the user. Image-generation models are deliberately excluded; use generate_image for every image generation or editing request. Use `minis-model-use list` to inspect the remaining models and `minis-model-use run --model <id_or_name>` to invoke one. Run --help for the full contract.
-- minis-config: Read or change Minis settings programmatically. Run `minis-config --help` for subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers an in-app confirmation sheet and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Settings → Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in [Settings → Permissions](minis://settings/permissions); relay that message and don't retry. You CAN add new providers and write their `apiKey` (literal string OR a `${'$'}${'$'}ENV_VAR` reference to copy from an env var at write time), but `get` never echoes API keys / OAuth tokens / env var values back — those reads return `permission_denied` by design. OAuth tokens and env var values are not settable via this tool; for an env var, point the user at [Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=) so they enter the value themselves.
-- minis-scheduled: Create and manage scheduled tasks — prompts that run automatically at a chosen time. `minis-scheduled create --time HH:MM --prompt "..." [--label L] [--repeat once|daily|weekdays|custom --days mon,tue,...] [--target new|follow-up|rerun --session <id> --message <id>] [--model <modelId>] [--start YYYY-MM-DD] [--end YYYY-MM-DD]` schedules it; `list` shows existing tasks (with nextTriggerMs and run history), `delete --id <taskId>`, `enable`/`disable --id <taskId>`, and `run --id <taskId>` fires one immediately. Target modes: `new` runs the prompt in a fresh chat; `follow-up` appends the prompt to an existing chat (--session); `rerun` re-runs an existing chat (--session) from a chosen user message (--message). Use this when the user asks to "remind me / do X every morning / run this later / schedule a task". Run --help for full usage.
-Interactive terminal: minis://open_terminal opens a terminal for tasks that require interactive stdin (passwords, ssh, TUI apps like htop/vi). Write it as a Markdown link in your response — the app opens it when tapped. The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). Only use this for genuinely interactive sessions — for everything else, use shell_execute. Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).
-
-Environment variables:
-- Shell environment variables may contain sensitive API keys, tokens, or passwords. NEVER echo, print, cat, or otherwise output their values to stdout/stderr. Always reference them by variable name (e.g. ${'$'}API_KEY) inside scripts or commands — never inline the literal value.
-- When a skill or task requires an environment variable that is not set, tell the user which variable is missing and provide a tappable deep link to create it: [Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=) — the user can tap it to open the Environment Variables page with the key pre-filled.
-- Settings deep links: when you tell the user "go to Settings → X" or want to point them at a specific setting, prefer a Markdown link `[Label](minis://settings/<path>)` over plain prose. Available paths: providers (list), providers/<instanceId> (one provider), model-groups (incl. Agent Loop), model-groups/<groupId>, usage (token usage), skills, memory, storage, shared-folders (Shared Folders: /var/minis/{shared,skills,memory}), mount-external (Mount External Folders), logs, appearance, background, about, permissions, environments[?create_key=K&create_value=V[&create_note=N]], rootfs (also reachable as mirrors). Unknown paths fall back to Settings home, but prefer the exact path so users land where they want. These settings/action links are app deep links — render them as Markdown links in chat (same action-vs-resource rule as the minis:// section above: only /var/minis resource URLs may go to browser_use).
-- To check if a variable is set, use `[ -n "${'$'}VAR" ] && echo 'set' || echo 'not set'`. NEVER use echo ${'$'}VAR, printenv VAR, or any command that would output the actual value into the conversation context.${memorySystemSection}
-
-Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended, so in-app scheduled scripts may not run as expected. For recurring tasks that must fire while the app is backgrounded, use the native alarm tool (AlarmManager) or tell the user to set up a system-level schedule (Google Calendar event, Tasker automation, etc.). (Waiting or polling WITHIN the current turn is different — that is what shell_execute `delay` chains are for, per the shell_execute notes above.)"""
-
         val base = com.openminis.app.agent.NovexSystemPrompt.build(
             sessionId = activeSessionId,
             context = context,
@@ -10555,11 +10473,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
         // appended only when non-null; absent fragments leave no separator.
-        // T-skillscan: rescan disk before reading the fragment so a skill
-        // that an earlier turn dropped via shell `git clone` (which bypasses
-        // the file_write hook below) becomes visible on the very next user
-        // turn instead of "after kill app". Cheap: loadAll is a SQLite
-        // SELECT + listFiles, no network.
+        // Skills may be installed outside this view model, so refresh the adapter
+        // before reading the prompt fragment. This scan performs no network I/O.
         if (toolsEnabled) skillRepository?.reloadFromDisk()
         val skillFragment = if (toolsEnabled) skillRepository?.skillPromptFragment(activeSessionId) else null
         val imageGenerationSkill = if (
@@ -10672,6 +10587,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     suspend fun executeBrowserUse(argsJson: String): BrowserToolResult {
         val input = BrowserActionInput.parse(argsJson)
             ?: return BrowserToolResult(text = "Error: Invalid browser_use input. Required: 'action' parameter.", success = false)
+        if (input.action.value !in AgentTools.safeBrowserActions) {
+            return BrowserToolResult(text = "该浏览动作未通过 Novex 安全工具契约开放", success = false)
+        }
 
         return try {
             val result = browserTabPool.execute(input)
@@ -13031,6 +12949,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "workspace_read" -> "读取工作区"
         "workspace_write" -> "写入工作区"
         "workspace_edit" -> "编辑工作区"
+        "workspace_compute" -> "处理工作区"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

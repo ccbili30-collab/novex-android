@@ -42,9 +42,10 @@ internal fun formatStepDuration(seconds: Long, stillRunning: Boolean): String {
 // Helper: tool accent color
 internal fun toolAccentColor(toolName: String): Color = when (toolName) {
     "shell_execute" -> Color(0xFF34C759)
-    "file_read", "document_inspect", "document_read" -> Color(0xFF32ADE6)
-    "file_write" -> Color(0xFF007AFF)
-    "file_edit" -> Color(0xFFFF9500)
+    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_read" -> Color(0xFF32ADE6)
+    "file_write", "workspace_write" -> Color(0xFF007AFF)
+    "file_edit", "workspace_edit" -> Color(0xFFFF9500)
+    "workspace_compute" -> Color(0xFFAF52DE)
     "browser_use" -> Color(0xFF007AFF)
     "read_image" -> Color(0xFFAF52DE)
     "memory_write", "memory_get",
@@ -56,9 +57,10 @@ internal fun toolAccentColor(toolName: String): Color = when (toolName) {
 // Helper: tool icon (iOS: distinct SF Symbols per tool type)
 internal fun toolIconFor(toolName: String) = when (toolName) {
     "shell_execute" -> com.openminis.app.ui.novex.NovexIcons.Terminal
-    "file_read", "document_inspect", "document_read" -> com.openminis.app.ui.novex.NovexIcons.Description
-    "file_write" -> com.openminis.app.ui.novex.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
-    "file_edit" -> com.openminis.app.ui.novex.NovexIcons.EditNote             // iOS: square.and.pencil
+    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_read" -> com.openminis.app.ui.novex.NovexIcons.Description
+    "file_write", "workspace_write" -> com.openminis.app.ui.novex.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
+    "file_edit", "workspace_edit" -> com.openminis.app.ui.novex.NovexIcons.EditNote             // iOS: square.and.pencil
+    "workspace_compute" -> com.openminis.app.ui.novex.NovexIcons.Build
     "browser_use" -> com.openminis.app.ui.novex.NovexIcons.Language            // iOS: globe
     "read_image" -> com.openminis.app.ui.novex.NovexIcons.Image                // iOS: photo
     "memory_write", "memory_get",
@@ -90,6 +92,11 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "novex_inspect_memory" -> "查看长期记忆"
     "novex_propose_memory_changes" -> "提出记忆变更"
     "novex_apply_memory_changes" -> "执行记忆变更"
+    "workspace_inspect" -> "检查工作区"
+    "workspace_read" -> "读取工作区"
+    "workspace_write" -> "写入工作区"
+    "workspace_edit" -> "编辑工作区"
+    "workspace_compute" -> "处理工作区"
     else -> "处理内容"
 }
 

@@ -27,11 +27,11 @@ class NovexConversationWorkspaceToolRouterTest {
     }
 
     @Test
-    fun `catalog publishes exactly four workspace tools with stable risks`() {
+    fun `catalog publishes workspace tools with stable risks`() {
         val definitions = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.WORKSPACE))
 
         assertEquals(
-            listOf("workspace_inspect", "workspace_read", "workspace_write", "workspace_edit"),
+            listOf("workspace_inspect", "workspace_read", "workspace_write", "workspace_edit", "workspace_compute"),
             definitions.map { it.name },
         )
         assertEquals(
@@ -40,9 +40,56 @@ class NovexConversationWorkspaceToolRouterTest {
                 NovexToolRisk.READ_ONLY,
                 NovexToolRisk.SESSION_REVERSIBLE,
                 NovexToolRisk.SESSION_REVERSIBLE,
+                NovexToolRisk.SESSION_REVERSIBLE,
             ),
             definitions.map { it.risk },
         )
+    }
+
+    @Test
+    fun `bounded compute formats JSON through logical references`() {
+        val write = router.execute(
+            NovexConversationWorkspaceToolRouter.WORKSPACE_WRITE,
+            JSONObject()
+                .put("area", "drafts")
+                .put("path", "设定.json")
+                .put("content", "{\"b\":2,\"a\":1}")
+                .put("mime_type", "application/json")
+                .toString(),
+        )
+        val ref = JSONObject(write.toJson()).getJSONArray("affected_refs").getString(0)
+
+        val computed = router.execute(
+            NovexConversationWorkspaceToolRouter.WORKSPACE_COMPUTE,
+            JSONObject()
+                .put("operation", "json_format")
+                .put("input_refs", org.json.JSONArray().put(ref))
+                .put("output_area", "outputs")
+                .put("output_path", "整理/设定.json")
+                .put("indent", 2)
+                .toString(),
+        )
+
+        assertTrue(computed.ok)
+        assertEquals("workspace.computed", computed.code)
+        assertEquals(NovexToolSideEffect.SESSION_REVERSIBLE, computed.sideEffect)
+        assertFalse(computed.toJson().contains(temporaryFolder.root.absolutePath))
+    }
+
+    @Test
+    fun `compute rejects arbitrary commands and reports allowed operations`() {
+        val result = router.execute(
+            NovexConversationWorkspaceToolRouter.WORKSPACE_COMPUTE,
+            JSONObject()
+                .put("operation", "run_shell")
+                .put("input_refs", org.json.JSONArray())
+                .toString(),
+        )
+
+        assertFalse(result.ok)
+        assertEquals("workspace.unsupported_operation", result.code)
+        assertTrue("run_shell" !in result.allowedValues)
+        assertTrue("json_format" in result.allowedValues)
     }
 
     @Test
