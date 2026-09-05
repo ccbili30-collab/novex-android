@@ -111,7 +111,11 @@ document_output="$($RUNNER \
 for expected in \
   "plan=novex-document" \
   "coverage=preview-document-tests" \
-  "com.openminis.app.data.attachments.*"; do
+  "com.openminis.app.data.attachments.*" \
+  "com.openminis.app.tools.NovexDocumentAgentToolsTest" \
+  "com.openminis.app.ui.chat.AttachmentPromptMetadataTest" \
+  "com.openminis.app.ui.chat.DocxAttachmentRequestChainTest" \
+  "com.openminis.app.data.character.CharacterPromptComposerTest"; do
   if [[ "$document_output" != *"$expected"* ]]; then
     echo "missing Novex document dry-run output: $expected" >&2
     exit 1
