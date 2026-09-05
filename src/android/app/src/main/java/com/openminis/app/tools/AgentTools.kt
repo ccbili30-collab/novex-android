@@ -42,6 +42,9 @@ object AgentTools {
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
         addAll(NovexManagementTools.definitions())
+        if (memoryEnabled) {
+            addAll(NovexMemoryAgentTools.definitions())
+        }
         if (documentsAvailable) {
             addAll(NovexDocumentAgentTools.providerDefinitions())
         }
@@ -61,10 +64,6 @@ object AgentTools {
             add(GenerateImageTool.definition())
         }
         add(browserUseDefinition())
-        if (memoryEnabled) {
-            add(memoryWriteDefinition())
-            add(memoryGetDefinition())
-        }
     }
 
     private fun presentChoicesDefinition(): AgentToolDefinition = AgentToolDefinition(
@@ -104,15 +103,20 @@ object AgentTools {
 
     private fun saveCheckpointDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = "save_checkpoint",
-        description = "Persist a complete Novex checkpoint for the current story. Use when the user asks to save, " +
-            "before a rollback, or at a major turning point explicitly allowed by the world's rules. Include all " +
-            "facts needed to continue without relying on old chat context.",
+        description = "Persist one structured, branch-local Novex checkpoint for the current story. Use when the user " +
+            "asks to save, before a rollback, or at a major turning point explicitly allowed by the world's rules. " +
+            "Include all facts needed to continue without relying on old chat context.",
         parameters = mapOf(
             "name" to AgentToolParam("string", "Short checkpoint name."),
-            "state" to AgentToolParam("string", "Complete Markdown snapshot: time, place, characters, relationships, inventory, world events, unresolved threads and applicable rules."),
+            "summary" to AgentToolParam("string", "Concise human-readable continuation summary."),
+            "state_json" to AgentToolParam(
+                "string",
+                "One JSON object containing time, place, characters, relationships, inventory, world events, " +
+                    "unresolved threads and applicable rules. Do not return Markdown or a file path.",
+            ),
         ),
-        required = listOf("name", "state"),
-        propertyOrdering = listOf("name", "state"),
+        required = listOf("name", "summary", "state_json"),
+        propertyOrdering = listOf("name", "summary", "state_json"),
     )
 
     private fun registerControlsDefinition(): AgentToolDefinition = AgentToolDefinition(
@@ -212,33 +216,4 @@ object AgentTools {
         propertyOrdering = listOf("tool_title", "action", "tab_id", "url", "selector", "text", "coordinate_x", "coordinate_y", "direction", "amount", "scroll_count", "item_selector", "script", "user_agent", "max_depth", "keywords", "fuzzy", "cookies", "timeout", "viewport_width", "viewport_height", "reset"),
     )
 
-    // Aligned with iOS AIChatViewModel.swift:5059-5067
-    private fun memoryWriteDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "memory_write",
-        description = "Write a memory entry to today's daily log (YYYY-MM-DD.md). Memories persist across all sessions. " +
-            "Each entry is prepended with a timestamp. " +
-            "Save: user preferences, recurring patterns, key facts, project conventions, reusable knowledge. " +
-            "Avoid saving passwords, API keys, tokens, or secrets unless the user explicitly confirms after being warned. " +
-            "Keep entries concise and general-purpose. GLOBAL.md is read-only (user-maintained via Settings).",
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Save user preference for Python', 'Note today's project context'). Use the same language as the user."),
-            "content" to AgentToolParam("string", "The memory content to write. Use concise Markdown with a short heading (## Topic) and context about what was done/learned."),
-        ),
-        required = listOf("tool_title", "content"),
-        propertyOrdering = listOf("tool_title", "content"),
-    )
-
-    // Aligned with iOS AIChatViewModel.swift:5069-5078
-    private fun memoryGetDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "memory_get",
-        description = "Retrieve memories from persistent storage. Supports keyword-based fuzzy search across memory files. " +
-            "Returns matching lines with surrounding context. Use this to recall previous knowledge, user preferences, or past notes.",
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Recall user preferences', 'Search past notes'). Use the same language as the user."),
-            "scope" to AgentToolParam("string", "Memory scope to search: 'daily' for daily logs only, 'all' for daily logs + GLOBAL.md.", enumValues = listOf("daily", "all")),
-            "keywords" to AgentToolParam("string", "Space-separated keywords for fuzzy matching (e.g. 'python preference' or 'API key setup'). All keywords must appear in a line or its surrounding context for a match. Leave empty to return full memory files."),
-        ),
-        required = listOf("tool_title"),
-        propertyOrdering = listOf("tool_title", "scope", "keywords"),
-    )
 }

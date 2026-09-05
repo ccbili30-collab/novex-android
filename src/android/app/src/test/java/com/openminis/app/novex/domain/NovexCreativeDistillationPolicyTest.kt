@@ -12,5 +12,8 @@ class NovexCreativeDistillationPolicyTest {
             assertTrue("缺少长期创作保真项：$it", prompt.contains(it))
         }
         assertTrue(prompt.contains("不要把摘要写成新的常驻任务"))
+        assertTrue(prompt.contains("已落库"))
+        assertTrue(prompt.contains("原始消息"))
+        assertTrue(prompt.contains("正式成果"))
     }
 }

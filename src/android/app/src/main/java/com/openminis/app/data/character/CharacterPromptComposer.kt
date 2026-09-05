@@ -97,6 +97,11 @@ $toolRule
 object CharacterToolPolicy {
     private val roleToolNames = setOf("present_choices", "generate_image")
     private val attachedReadOnlyToolNames = setOf("document_inspect", "document_read")
+    private val confirmedMemoryToolNames = setOf(
+        "novex_inspect_memory",
+        "novex_propose_memory_changes",
+        "novex_apply_memory_changes",
+    )
 
     fun allowedToolNames(character: CharacterCard?, availableToolNames: Set<String>): Set<String> {
         if (character == null) return availableToolNames
@@ -104,6 +109,8 @@ object CharacterToolPolicy {
             .asSequence()
             .filter { it in roleToolNames && it in availableToolNames }
             .toSet()
-        return configured + attachedReadOnlyToolNames.filter { it in availableToolNames }
+        return configured +
+            attachedReadOnlyToolNames.filter { it in availableToolNames } +
+            confirmedMemoryToolNames.filter { it in availableToolNames }
     }
 }

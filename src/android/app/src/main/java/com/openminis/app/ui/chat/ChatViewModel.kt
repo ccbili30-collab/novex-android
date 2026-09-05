@@ -113,9 +113,9 @@ import com.openminis.app.novex.domain.ManagedAccess
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
 import com.openminis.app.novex.domain.NovexConversationCommand
-import com.openminis.app.novex.domain.NovexManagementInspection
 import com.openminis.app.novex.domain.NovexManagementPlan
 import com.openminis.app.novex.domain.NovexManagementService
+import com.openminis.app.novex.domain.toToolJson
 import com.openminis.app.ui.navigation.applyDraftManagedSubjects
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -951,6 +951,11 @@ class ChatViewModel(
     private val novexWorkspaceAgentTools by lazy {
         NovexWorkspaceAgentTools(novexConversationWorkspaceStore)
     }
+    private val novexMemoryStore by lazy {
+        com.openminis.app.novex.domain.FileNovexMemoryStore(
+            java.io.File(context.filesDir, "novex/memory"),
+        )
+    }
     private val _novexLearningStatus = MutableStateFlow<NovexLearningTaskStatus?>(null)
     val novexLearningStatus: StateFlow<NovexLearningTaskStatus?> = _novexLearningStatus.asStateFlow()
     private val _novexLearningTask = MutableStateFlow<NovexLearningTaskState?>(null)
@@ -960,6 +965,8 @@ class ChatViewModel(
     private var novexLearningJob: Job? = null
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
+    private val pendingNovexMemoryPlans = linkedMapOf<String, com.openminis.app.novex.domain.NovexMemoryPlan>()
+    private val novexMemoryMutex = kotlinx.coroutines.sync.Mutex()
 
     /**
      * All agent tool definitions, recomputed on each read so the memory
@@ -1997,6 +2004,58 @@ class ChatViewModel(
                         }
                         return@launch
                     }
+                val distillationSourceRefs = toCompact.mapNotNull { message ->
+                    message.dbMessageId?.takeIf(String::isNotBlank)?.let { messageId ->
+                        com.openminis.app.novex.domain.NovexResourceRef(
+                            "novex://conversations/$sid/messages/$messageId",
+                        )
+                    }
+                }.distinct()
+                val distillationMemoryRefs = runCatching {
+                    novexMemoryService().inspect(
+                        scope = currentNovexMemoryScope(),
+                        source = currentNovexMemoryReadContext(),
+                        limit = 500,
+                    ).entries.map { it.ref.asResourceRef() }
+                }.getOrDefault(emptyList())
+                val distillationWorkspaceRefs = runCatching {
+                    val readScope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                        conversationId = sid,
+                        visibleBranchIds = activeBranchPathIds,
+                        writeBranchId = lastCompactedDbId,
+                    )
+                    novexConversationWorkspaceStore.inspect(readScope).entries
+                        .filter { entry ->
+                            entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.OUTPUTS ||
+                                entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.SAVES
+                        }
+                        .map { it.workspaceRef.asResourceRef() }
+                }.getOrDefault(emptyList())
+                val distillationId = java.util.UUID.randomUUID().toString()
+                val distillationScope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                    conversationId = sid,
+                    visibleBranchIds = activeBranchPathIds,
+                    writeBranchId = lastCompactedDbId,
+                )
+                val distillationEntry = com.openminis.app.novex.domain.NovexDistillationRecordWriter(
+                    novexConversationWorkspaceStore,
+                ).save(
+                    scope = distillationScope,
+                    record = com.openminis.app.novex.domain.NovexDistillationRecord(
+                        id = distillationId,
+                        conversationId = sid,
+                        branchId = lastCompactedDbId,
+                        summary = summary,
+                        sourceMessageRefs = distillationSourceRefs,
+                        durableFactRefs = (distillationMemoryRefs + distillationWorkspaceRefs).distinct(),
+                        createdAtMillis = System.currentTimeMillis(),
+                    ),
+                    provenance = com.openminis.app.novex.domain.NovexWorkspaceProvenance(
+                        conversationId = sid,
+                        branchId = lastCompactedDbId,
+                        messageId = lastCompactedDbId,
+                    ),
+                )
                 val marker = CompactMarkerEntity(
                     id = java.util.UUID.randomUUID().toString(),
                     sessionId = sid,
@@ -2010,10 +2069,11 @@ class ChatViewModel(
                     lastCompactedMessageId = lastCompactedDbId,
                     version = 2,
                 )
-                runCatching { chatRepository.dao.insertCompactMarker(marker) }
-                    .onFailure {
-                        Log.w(TAG, "Failed to persist compact marker: ${it.message}")
-                    }
+                chatRepository.dao.insertCompactMarker(marker)
+                AppLogger.info(
+                    TAG,
+                    "[Compact] persisted Novex distillation ${distillationEntry.workspaceRef.value}",
+                )
                 _compactSummary.value = summary
                 // Keep the marker in memory so effectiveAgentHistory() can
                 // resolve the boundary on the very next outgoing turn.
@@ -3346,7 +3406,7 @@ class ChatViewModel(
     /** Rebuilds branch-sensitive UI state without executing a control or tool. */
     private fun refreshNovexRuntimeProjection() {
         val configuration = currentNovexConfiguration()
-        _novexControls.value = configuration.controls.filter(ConversationControlDefinition::enabled)
+        _novexControls.value = InteractiveFictionRuntime.resolveControls(configuration, activeBranchPathIds)
         _activePlaythroughState.value = configuration.activeInteractiveFiction?.let {
             InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
         }
@@ -8876,12 +8936,24 @@ class ChatViewModel(
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
+            com.openminis.app.tools.NovexMemoryAgentTools.INSPECT -> executeNovexMemoryInspectTool(argsJson)
+            com.openminis.app.tools.NovexMemoryAgentTools.PROPOSE -> executeNovexMemoryProposeTool(
+                argsJson = argsJson,
+                proposalBranchId = assistantId,
+                sourceMessageId = turnMessageId,
+            )
+            com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> executeNovexMemoryApplyTool(argsJson)
             "present_choices" -> executePresentChoicesTool(argsJson)
             "render_panel", "panel" -> executePanelTool(argsJson)
             // Compatibility for tool calls already stored by earlier Novex builds.
             "present_system_panel" -> executePanelTool(argsJson)
-            "save_checkpoint" -> executeSaveCheckpointTool(argsJson)
-            "register_controls" -> executeRegisterControlsTool(argsJson)
+            "save_checkpoint" -> executeSaveCheckpointTool(
+                argsJson = argsJson,
+                replyBranchId = assistantId,
+                sourceMessageId = turnMessageId,
+                toolCallId = toolId,
+            )
+            "register_controls" -> executeRegisterControlsTool(argsJson, assistantId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
@@ -9036,6 +9108,158 @@ class ChatViewModel(
         )
     }
 
+    private fun currentNovexMemoryScope(): com.openminis.app.novex.domain.NovexMemoryScope {
+        val profile = _immersiveProfile.value
+        val character = profile.character ?: return com.openminis.app.novex.domain.NovexMemoryScope.nova()
+        val characterVersionId =
+            (currentNovexConfiguration().answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
+                ?: character.id
+        return com.openminis.app.novex.domain.NovexMemoryScope.role(
+            worldId = profile.world?.id ?: character.worldId,
+            playerIdentityId = profile.persona?.id,
+            characterVersionId = characterVersionId,
+        )
+    }
+
+    private fun currentNovexMemoryReadContext(
+        extraBranchId: String? = null,
+    ) = com.openminis.app.novex.domain.NovexMemoryReadContext(
+        conversationId = realSessionId.ifEmpty { activeSessionId },
+        activeBranchIds = (activeBranchPathIds + listOfNotNull(extraBranchId)).distinct(),
+    )
+
+    private fun novexMemoryService() = com.openminis.app.novex.domain.NovexMemoryService(
+        store = novexMemoryStore,
+        entryIdFactory = { java.util.UUID.randomUUID().toString() },
+    )
+
+    private fun activeNovexMemoryFragment(): String? {
+        if (!_memoryEnabled.value) return null
+        return runCatching {
+            val entries = novexMemoryService().inspect(
+                scope = currentNovexMemoryScope(),
+                source = currentNovexMemoryReadContext(),
+                limit = 100,
+            ).entries
+            if (entries.isEmpty()) return null
+            buildString {
+                appendLine("<Novex长期记忆>")
+                for (entry in entries) {
+                    val line = "- [${entry.ref.value}] ${entry.content}\n"
+                    if (length + line.length + 16 > 16_000) break
+                    append(line)
+                }
+                append("</Novex长期记忆>")
+            }
+        }.getOrNull()
+    }
+
+    private fun executeNovexMemoryInspectTool(argsJson: String): ToolExecutionResult = runCatching {
+        val args = JSONObject(argsJson.ifBlank { "{}" })
+        val inspection = novexMemoryService().inspect(
+            scope = currentNovexMemoryScope(),
+            source = currentNovexMemoryReadContext(),
+            keywords = args.optString("keywords").trim(),
+            limit = args.optInt("limit", 100),
+        )
+        val result = com.openminis.app.novex.domain.NovexToolResult.success(
+            code = "memory.ready",
+            summary = "当前记忆空间有 ${inspection.entries.size} 条可见记忆",
+            data = mapOf(
+                "scope" to inspection.scope.kind.wireName,
+                "entries" to inspection.entries.map { entry ->
+                    mapOf(
+                        "memory_ref" to entry.ref.value,
+                        "content" to entry.content,
+                        "tags" to entry.tags,
+                        "revision" to entry.revision,
+                        "updated_at_millis" to entry.updatedAtMillis,
+                    )
+                },
+            ),
+            affectedRefs = inspection.entries.map { it.ref.asResourceRef() },
+        )
+        ToolExecutionResult(result.toJson(), true, toolTitle = "查看长期记忆")
+    }.getOrElse { error ->
+        val result = com.openminis.app.novex.domain.NovexToolResult.failure(
+            code = "memory.inspect_failed",
+            summary = error.message?.takeIf(String::isNotBlank) ?: "无法查看长期记忆",
+        )
+        ToolExecutionResult(result.toJson(), false, toolTitle = "查看长期记忆")
+    }
+
+    private suspend fun executeNovexMemoryProposeTool(
+        argsJson: String,
+        proposalBranchId: String,
+        sourceMessageId: String,
+    ): ToolExecutionResult = novexMemoryMutex.withLock {
+        runCatching {
+            val plan = novexMemoryService().propose(
+                scope = currentNovexMemoryScope(),
+                changesJson = JSONObject(argsJson).jsonArrayText("changes"),
+                source = currentNovexMemoryReadContext(proposalBranchId),
+                sourceBranchId = proposalBranchId,
+                sourceMessageId = sourceMessageId,
+                planId = java.util.UUID.randomUUID().toString(),
+            )
+            pendingNovexMemoryPlans[plan.id] = plan
+            while (pendingNovexMemoryPlans.size > 20) {
+                pendingNovexMemoryPlans.remove(pendingNovexMemoryPlans.keys.first())
+            }
+            val result = com.openminis.app.novex.domain.NovexToolResult.success(
+                code = "memory.proposal_ready",
+                summary = plan.summary,
+                data = mapOf(
+                    "proposal_id" to plan.id,
+                    "confirmation_phrase" to plan.confirmationPhrase,
+                    "applied" to false,
+                ),
+                nextActions = listOf(
+                    com.openminis.app.novex.domain.NovexToolNextAction(
+                        id = "confirm_memory_plan",
+                        label = "用户单独发送：${plan.confirmationPhrase}",
+                    ),
+                ),
+            )
+            ToolExecutionResult(result.toJson(), true, toolTitle = "提出记忆变更")
+        }.getOrElse { error ->
+            val result = com.openminis.app.novex.domain.NovexToolResult.failure(
+                code = "memory.proposal_failed",
+                summary = error.message?.takeIf(String::isNotBlank) ?: "无法生成记忆变更计划",
+            )
+            ToolExecutionResult(result.toJson(), false, toolTitle = "提出记忆变更")
+        }
+    }
+
+    private suspend fun executeNovexMemoryApplyTool(argsJson: String): ToolExecutionResult =
+        novexMemoryMutex.withLock {
+            runCatching {
+                val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
+                val plan = requireNotNull(pendingNovexMemoryPlans[proposalId]) {
+                    "记忆变更计划不存在或已失效，请重新提出变更"
+                }
+                novexMemoryService().apply(plan, latestExplicitUserText())
+                pendingNovexMemoryPlans.remove(proposalId)
+                val result = com.openminis.app.novex.domain.NovexToolResult.success(
+                    code = "memory.applied",
+                    summary = "记忆变更已原子应用",
+                    data = mapOf(
+                        "proposal_id" to proposalId,
+                        "changed_entries" to plan.changes.size,
+                    ),
+                    affectedRefs = plan.affectedRefs,
+                    sideEffect = com.openminis.app.novex.domain.NovexToolSideEffect.SHARED_WRITE,
+                )
+                ToolExecutionResult(result.toJson(), true, toolTitle = "更新长期记忆")
+            }.getOrElse { error ->
+                val result = com.openminis.app.novex.domain.NovexToolResult.failure(
+                    code = "memory.apply_failed",
+                    summary = error.message?.takeIf(String::isNotBlank) ?: "长期记忆没有修改",
+                )
+                ToolExecutionResult(result.toJson(), false, toolTitle = "更新长期记忆")
+            }
+        }
+
     private fun latestExplicitUserText(): String = agentHistory.asReversed().firstNotNullOfOrNull { message ->
         if (message.role != LLMMessage.Role.USER ||
             message.contentParts.any { it is AgentContentPart.ToolResult }
@@ -9062,47 +9286,6 @@ class ChatViewModel(
             },
             id = id,
         )
-    }
-
-    private fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
-        put("mounted_subjects", org.json.JSONArray().apply {
-            subjects.forEach { value ->
-                put(JSONObject().apply {
-                    put("kind", value.subject.kind.toolValue())
-                    put("id", value.subject.id)
-                    put("label", value.label)
-                    put("access", value.access.name.lowercase())
-                })
-            }
-        })
-        selectedSubject?.let {
-            put("selected_subject", JSONObject().put("kind", it.kind.toolValue()).put("id", it.id))
-        }
-        selectedSubjectJson?.let { subjectJson ->
-            put("subject", runCatching { JSONObject(subjectJson) }.getOrElse { subjectJson })
-        }
-        put("modules", org.json.JSONArray().apply {
-            modules.forEach { module ->
-                put(JSONObject().apply {
-                    put("id", module.id)
-                    put("type", module.type.name)
-                    put("name", module.name)
-                    put("position", module.position)
-                    put("content", runCatching { JSONObject(module.contentJson) }.getOrElse { module.contentJson })
-                })
-            }
-        })
-        selectedModule?.let { detail ->
-            put("references", org.json.JSONArray().apply {
-                detail.references.forEach { reference ->
-                    put(JSONObject().apply {
-                        put("kind", reference.targetType.name.lowercase())
-                        put("id", reference.targetId)
-                        put("position", reference.position)
-                    })
-                }
-            })
-        }
     }
 
     private fun NovexContentKind.toolValue(): String = when (this) {
@@ -9157,49 +9340,98 @@ class ChatViewModel(
         }
     }
 
-    private fun executeSaveCheckpointTool(argsJson: String): ToolExecutionResult {
+    private fun executeSaveCheckpointTool(
+        argsJson: String,
+        replyBranchId: String,
+        sourceMessageId: String,
+        toolCallId: String,
+    ): ToolExecutionResult {
         return runCatching {
             val args = JSONObject(argsJson)
-            val name = args.optString("name").trim().ifEmpty { "自动存档" }
-            val state = args.optString("state").trim()
-            require(state.isNotEmpty()) { "存档内容为空" }
-            val safeName = name.replace(Regex("[^\\p{L}\\p{N}_-]+"), "-").trim('-').take(48)
-                .ifEmpty { "checkpoint" }
-            val timestamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT)
-                .format(java.util.Date())
-            val path = "/var/minis/workspace/novex/$activeSessionId/checkpoints/$timestamp-$safeName.md"
-            val writeArgs = JSONObject()
-                .put("tool_title", "保存文游进度")
-                .put("path", path)
-                .put("content", "# $name\n\n$state\n")
-                .put("create_dirs", true)
-                .toString()
-            val result = FileWriteTool.execute(writeArgs, activeSessionId, context)
-            if (!result.success) return result
+            val name = args.optString("name").trim()
+            require(name.isNotEmpty()) { "存档名称不能为空" }
+            val legacyState = args.optString("state").trim()
+            val summary = args.optString("summary").trim().ifBlank {
+                legacyState.lineSequence().firstOrNull(String::isNotBlank)?.take(240).orEmpty()
+            }
+            require(summary.isNotEmpty()) { "存档摘要不能为空" }
+            val stateJson = args.optString("state_json").trim().ifBlank {
+                require(legacyState.isNotEmpty()) { "存档状态不能为空" }
+                JSONObject().put("legacy_markdown", legacyState).toString()
+            }
+            val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                conversationId = activeSessionId,
+                visibleBranchIds = activeBranchPathIds,
+                writeBranchId = replyBranchId,
+            )
+            val checkpoint = com.openminis.app.novex.domain.NovexPlaythroughCheckpointFactory.create(
+                id = java.util.UUID.randomUUID().toString(),
+                configuration = currentNovexConfiguration(),
+                activePathIds = activeBranchPathIds,
+                writeBranchId = replyBranchId,
+                name = name,
+                summary = summary,
+                stateJson = stateJson,
+                createdAtMillis = System.currentTimeMillis(),
+            )
+            val entry = com.openminis.app.novex.domain.NovexPlaythroughCheckpointWriter(
+                novexConversationWorkspaceStore,
+            ).save(
+                scope = scope,
+                checkpoint = checkpoint,
+                provenance = com.openminis.app.novex.domain.NovexWorkspaceProvenance(
+                    conversationId = activeSessionId,
+                    branchId = replyBranchId,
+                    messageId = sourceMessageId,
+                    toolCallId = toolCallId,
+                ),
+            )
+            val result = com.openminis.app.novex.domain.NovexToolResult.success(
+                code = "playthrough.checkpoint_saved",
+                summary = "存档“$name”已保存",
+                data = mapOf(
+                    "checkpoint_id" to checkpoint.id,
+                    "workspace_ref" to entry.workspaceRef.value,
+                    "source_branch" to checkpoint.branchId,
+                ),
+                affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
+                sideEffect = com.openminis.app.novex.domain.NovexToolSideEffect.SESSION_REVERSIBLE,
+            )
             ToolExecutionResult(
-                output = "存档“$name”已保存。\n$path",
+                output = result.toJson(),
                 success = true,
                 toolTitle = "存档完成",
             )
         }.getOrElse { error ->
+            val result = com.openminis.app.novex.domain.NovexToolResult.failure(
+                code = "playthrough.checkpoint_failed",
+                summary = error.message?.takeIf(String::isNotBlank) ?: "存档失败，请稍后重试",
+            )
             ToolExecutionResult(
-                output = "存档失败：${error.message ?: "请稍后重试"}",
+                output = result.toJson(),
                 success = false,
                 toolTitle = "保存文游进度",
             )
         }
     }
 
-    private suspend fun executeRegisterControlsTool(argsJson: String): ToolExecutionResult {
+    private suspend fun executeRegisterControlsTool(
+        argsJson: String,
+        replyBranchId: String,
+    ): ToolExecutionResult {
         return runCatching {
             val args = JSONObject(argsJson)
             val controlsJson = args.jsonArrayText("controls")
             val updated = ConversationControlRegistration.registerAiControls(
                 currentNovexConfiguration(),
                 controlsJson,
+                branchId = replyBranchId,
             )
             persistNovexConfiguration(updated)
-            val count = updated.controls.count {
+            val count = InteractiveFictionRuntime.resolveControls(
+                updated,
+                activeBranchPathIds + replyBranchId,
+            ).count {
                 it.source == com.openminis.app.novex.domain.ConversationControlSource.AI
             }
             ToolExecutionResult(
@@ -10146,6 +10378,7 @@ class ChatViewModel(
             val roleMemory = if (_memoryEnabled.value) {
                 val repository = activeMemoryRepository()
                 listOfNotNull(
+                    activeNovexMemoryFragment(),
                     repository?.loadGlobalMemoryFragment(),
                     repository?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites),
                 ).joinToString("\n\n").takeIf { it.isNotBlank() }
@@ -10350,6 +10583,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         val dailyMemoryFragment = if (memoryOn) {
             activeMemory?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites)
         } else null
+        val novexMemoryFragment = if (memoryOn) activeNovexMemoryFragment() else null
 
         return buildString {
             append(base)
@@ -10376,6 +10610,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             if (dailyMemoryFragment != null) {
                 append("\n\n")
                 append(dailyMemoryFragment)
+            }
+            if (novexMemoryFragment != null) {
+                append("\n\n")
+                append(novexMemoryFragment)
             }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
@@ -12783,6 +13021,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "novex_inspect_content" -> "查看挂载内容"
         "novex_propose_content_changes" -> "提出内容变更"
         "novex_apply_content_changes" -> "执行内容变更"
+        "novex_inspect_memory" -> "查看长期记忆"
+        "novex_propose_memory_changes" -> "提出记忆变更"
+        "novex_apply_memory_changes" -> "执行记忆变更"
         "document_inspect" -> "检查文档"
         "document_read" -> "读取文档"
         "learning_prepare" -> "准备资料学习"

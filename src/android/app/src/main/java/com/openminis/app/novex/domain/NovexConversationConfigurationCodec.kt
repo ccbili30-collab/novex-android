@@ -153,6 +153,7 @@ private fun ConversationControlDefinition.toJson() = JSONObject()
     .put("actionKey", actionKey)
     .put("payloadJson", payloadJson)
     .put("enabled", enabled)
+    .put("branchId", branchId)
 
 private fun JSONObject.toControl() = ConversationControlDefinition(
     id = getString("id"),
@@ -170,6 +171,7 @@ private fun JSONObject.toControl() = ConversationControlDefinition(
     actionKey = getString("actionKey"),
     payloadJson = optString("payloadJson", "{}"),
     enabled = optBoolean("enabled", true),
+    branchId = optString("branchId").ifBlank { null },
 )
 
 private fun JSONArray?.objects(): List<JSONObject> = if (this == null) {

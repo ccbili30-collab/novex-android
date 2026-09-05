@@ -116,6 +116,7 @@ case "$plan" in
     validation_gradle_args=(
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.novex.domain.*'
+      --tests 'com.openminis.app.tools.InteractiveFictionAgentToolsTest'
     )
     ;;
   novex-core)

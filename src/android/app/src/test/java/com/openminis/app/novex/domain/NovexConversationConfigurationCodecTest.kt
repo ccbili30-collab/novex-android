@@ -52,6 +52,7 @@ class NovexConversationConfigurationCodecTest {
                     source = ConversationControlSource.USER,
                     actionKey = "show_status",
                     enabled = false,
+                    branchId = "reply-a",
                 ),
             ),
         )
@@ -62,6 +63,7 @@ class NovexConversationConfigurationCodecTest {
         )
 
         assertEquals(snapshot, restored)
+        assertEquals("reply-a", restored.controls.last().branchId)
     }
 
     @Test

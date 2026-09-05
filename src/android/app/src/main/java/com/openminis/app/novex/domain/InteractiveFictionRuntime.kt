@@ -66,6 +66,25 @@ object InteractiveFictionRuntime {
         return nearest ?: PlaythroughState(activePathIds.lastOrNull() ?: "unstarted")
     }
 
+    /** Selects branch-visible controls without executing them; nearest AI definition shadows ancestors. */
+    fun resolveControls(
+        configuration: NovexConversationConfigurationSnapshot,
+        activePathIds: List<String>,
+    ): List<ConversationControlDefinition> {
+        val branchRank = activePathIds.withIndex().associate { it.value to it.index }
+        val visible = configuration.controls.filter { control ->
+            control.enabled && (control.branchId == null || control.branchId in branchRank)
+        }
+        val aiWinners = visible.filter { it.source == ConversationControlSource.AI }
+            .groupBy(ConversationControlDefinition::actionKey)
+            .mapValues { (_, controls) ->
+                controls.maxBy { control -> control.branchId?.let { branchRank[it] } ?: -1 }
+            }
+        return visible.filter { control ->
+            control.source != ConversationControlSource.AI || aiWinners[control.actionKey] === control
+        }
+    }
+
     fun invoke(
         control: ConversationControlDefinition,
         state: PlaythroughState,
@@ -95,7 +114,9 @@ object ConversationControlRegistration {
     fun registerAiControls(
         configuration: NovexConversationConfigurationSnapshot,
         controlsJson: String,
+        branchId: String? = null,
     ): NovexConversationConfigurationSnapshot {
+        require(branchId == null || branchId.isNotBlank()) { "快捷操作分支编号不能为空" }
         val values = JSONArray(controlsJson)
         val registered = buildList {
             repeat(values.length()) { index ->
@@ -121,20 +142,27 @@ object ConversationControlRegistration {
                 }
                 add(
                     ConversationControlDefinition(
-                        id = "ai:$actionKey",
+                        id = if (branchId == null) {
+                            "ai:$actionKey"
+                        } else {
+                            "ai:${branchId.sha256().take(12)}:$actionKey"
+                        },
                         label = label,
                         behavior = behavior,
                         source = ConversationControlSource.AI,
                         actionKey = actionKey,
                         payloadJson = value.toString(),
                         enabled = value.optBoolean("enabled", true),
+                        branchId = branchId,
                     ),
                 )
             }
         }.distinctBy(ConversationControlDefinition::id).take(12)
         require(registered.isNotEmpty()) { "至少需要一个有效快捷操作" }
         return configuration.copy(
-            controls = configuration.controls.filterNot { it.source == ConversationControlSource.AI } + registered,
+            controls = configuration.controls.filterNot {
+                it.source == ConversationControlSource.AI && it.branchId == branchId
+            } + registered,
         )
     }
 }

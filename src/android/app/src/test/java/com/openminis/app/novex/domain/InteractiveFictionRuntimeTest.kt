@@ -147,6 +147,42 @@ class InteractiveFictionRuntimeTest {
         assertEquals(2, configuration.playthroughStates.size)
     }
 
+    @Test
+    fun aiControlsFollowTheActiveMessageBranchAndNearestDefinitionWins() {
+        val starting = NovexConversationConfiguration.empty("chat-1").snapshot
+        val branchA = ConversationControlRegistration.registerAiControls(
+            starting,
+            """[{"label":"A 路线状态","behavior":"view","actionKey":"status"}]""",
+            branchId = "reply-a",
+        )
+        val branches = ConversationControlRegistration.registerAiControls(
+            branchA,
+            """[{"label":"B 路线状态","behavior":"view","actionKey":"status"}]""",
+            branchId = "reply-b",
+        )
+        val branchAChild = ConversationControlRegistration.registerAiControls(
+            branches,
+            """[{"label":"A 子路线状态","behavior":"view","actionKey":"status"}]""",
+            branchId = "reply-a-child",
+        )
+
+        assertEquals(
+            listOf("A 路线状态"),
+            InteractiveFictionRuntime.resolveControls(branchAChild, listOf("user", "reply-a")).map { it.label },
+        )
+        assertEquals(
+            listOf("B 路线状态"),
+            InteractiveFictionRuntime.resolveControls(branchAChild, listOf("user", "reply-b")).map { it.label },
+        )
+        assertEquals(
+            listOf("A 子路线状态"),
+            InteractiveFictionRuntime.resolveControls(
+                branchAChild,
+                listOf("user", "reply-a", "user-child", "reply-a-child"),
+            ).map { it.label },
+        )
+    }
+
     private fun gameSnapshot(
         updatedAt: Long = 20,
         power: String = "灵力等级",

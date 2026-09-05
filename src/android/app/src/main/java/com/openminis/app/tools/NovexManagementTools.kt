@@ -43,7 +43,8 @@ object NovexManagementTools {
                     type = "string",
                     description = "JSON array (maximum 20) of change objects. Use inspect first to obtain ids. " +
                         "Module operations: add_module requires {operation, subject_kind, subject_id, " +
-                        "module_type, name, content_json}; update_module requires {operation, module_id, name?, " +
+                        "module_type, name, content_json}; module_type must use one of the stable module types returned by inspect for that subject kind. " +
+                        "update_module requires {operation, module_id, name?, " +
                         "content_json?}; move_module requires {operation, module_id, to_index}; delete_module " +
                         "requires {operation, module_id}. Reference operations add_reference and remove_reference " +
                         "require {operation, module_id, target_kind, target_id, position?}. Create operations: " +

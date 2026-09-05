@@ -107,11 +107,14 @@ data class ConversationControlDefinition(
     val actionKey: String,
     val payloadJson: String = "{}",
     val enabled: Boolean = true,
+    /** Null means conversation-wide; AI-created controls use the reply branch that created them. */
+    val branchId: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "快捷操作编号不能为空" }
         require(label.isNotBlank()) { "快捷操作名称不能为空" }
         require(actionKey.isNotBlank()) { "快捷操作行为编号不能为空" }
+        require(branchId == null || branchId.isNotBlank()) { "快捷操作分支编号不能为空" }
     }
 }
 

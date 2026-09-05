@@ -154,6 +154,33 @@ class NovexManagementPlanTest {
     }
 
     @Test
+    fun `structured change codec accepts stable module names instead of database enum names`() {
+        val world = NovexManagementChangeCodec.decode(
+            """[{"operation":"add_module","subject_kind":"world","subject_id":"w1","module_type":"map","name":"地图","content_json":{}}]""",
+        ).single() as NovexManagedChange.AddModule
+        val game = NovexManagementChangeCodec.decode(
+            """[{"operation":"add_module","subject_kind":"game","subject_id":"g1","module_type":"narrative_rules","name":"规则","content_json":{}}]""",
+        ).single() as NovexManagedChange.AddModule
+
+        assertEquals(ContentModuleType.MAP, world.type)
+        assertEquals(ContentModuleType.GAME_NARRATIVE_RULES, game.type)
+    }
+
+    @Test
+    fun `invalid module type reports legal stable values and no internal enum exception`() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementChangeCodec.decode(
+                """[{"operation":"add_module","subject_kind":"world","subject_id":"w1","module_type":"rule","name":"规则","content_json":{}}]""",
+            )
+        }
+
+        assertTrue(failure.message.orEmpty().contains("timeline"))
+        assertTrue(failure.message.orEmpty().contains("map"))
+        assertFalse(failure.message.orEmpty().contains("No enum constant"))
+        assertFalse(failure.message.orEmpty().contains("ContentModuleType"))
+    }
+
+    @Test
     fun `an artifact cannot be attached through a module owned by another subject`() {
         val otherWorld = NovexContentAddress.world("world-2")
         val configuration = NovexConversationConfigurationSnapshot(

@@ -47,7 +47,8 @@ internal fun toolAccentColor(toolName: String): Color = when (toolName) {
     "file_edit" -> Color(0xFFFF9500)
     "browser_use" -> Color(0xFF007AFF)
     "read_image" -> Color(0xFFAF52DE)
-    "memory_write", "memory_get" -> Color(0xFFFF2D55)
+    "memory_write", "memory_get",
+    "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes" -> Color(0xFFFF2D55)
     "web_search" -> Color(0xFF32ADE6)    // iOS: .cyan for search
     else -> Color(0xFF8E8E93)
 }
@@ -60,7 +61,9 @@ internal fun toolIconFor(toolName: String) = when (toolName) {
     "file_edit" -> com.openminis.app.ui.novex.NovexIcons.EditNote             // iOS: square.and.pencil
     "browser_use" -> com.openminis.app.ui.novex.NovexIcons.Language            // iOS: globe
     "read_image" -> com.openminis.app.ui.novex.NovexIcons.Image                // iOS: photo
-    "memory_write", "memory_get" -> com.openminis.app.ui.novex.NovexIcons.Psychology // iOS: brain.head.profile
+    "memory_write", "memory_get",
+    "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes" ->
+        com.openminis.app.ui.novex.NovexIcons.Psychology // iOS: brain.head.profile
     "web_search" -> com.openminis.app.ui.novex.NovexIcons.Search               // iOS: magnifyingglass
     else -> com.openminis.app.ui.novex.NovexIcons.Build
 }
@@ -84,6 +87,9 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "novex_inspect_content" -> "查看挂载内容"
     "novex_propose_content_changes" -> "提出内容变更"
     "novex_apply_content_changes" -> "执行内容变更"
+    "novex_inspect_memory" -> "查看长期记忆"
+    "novex_propose_memory_changes" -> "提出记忆变更"
+    "novex_apply_memory_changes" -> "执行记忆变更"
     else -> "处理内容"
 }
 

@@ -1,6 +1,7 @@
 package com.openminis.app.novex.domain
 
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ModuleReferenceTarget
@@ -225,6 +226,133 @@ data class NovexManagementApplyResult(
     val changes: List<NovexChange>,
     val createdSubjects: List<NovexContentAddress>,
 )
+
+data class NovexManagedModuleType(
+    val value: String,
+    val label: String,
+    val repeatable: Boolean,
+    val internalType: ContentModuleType,
+)
+
+/** Stable model-facing names mapped onto the current database enums at one boundary. */
+object NovexManagementModuleTypeCatalog {
+    private val stableNames = mapOf(
+        ContentModuleType.TIMELINE to "timeline",
+        ContentModuleType.ERA_EVENT to "era_event",
+        ContentModuleType.MAP to "map",
+        ContentModuleType.REGION to "region",
+        ContentModuleType.FACTION to "faction",
+        ContentModuleType.RACE to "race",
+        ContentModuleType.QUOTES to "quotes",
+        ContentModuleType.WORLD_EXPERIENCE to "world_experience",
+        ContentModuleType.ATTRIBUTE_PANEL to "attribute_panel",
+        ContentModuleType.EQUIPMENT to "equipment",
+        ContentModuleType.TALENT_SKILL to "talent_skill",
+        ContentModuleType.APPEARANCE_PERSONALITY to "appearance_personality",
+        ContentModuleType.INTEREST to "interest",
+        ContentModuleType.GAME_PLAYER_IDENTITY to "player_identity",
+        ContentModuleType.GAME_OPENING to "opening",
+        ContentModuleType.GAME_NARRATIVE_RULES to "narrative_rules",
+        ContentModuleType.GAME_POWER_SYSTEM to "power_system",
+        ContentModuleType.GAME_ATTRIBUTES to "attributes",
+        ContentModuleType.GAME_SKILLS to "skills",
+        ContentModuleType.GAME_EQUIPMENT to "equipment",
+        ContentModuleType.GAME_ITEMS to "items",
+        ContentModuleType.GAME_QUESTS to "quests",
+        ContentModuleType.GAME_CHECKS to "checks",
+        ContentModuleType.GAME_ENDINGS to "endings",
+        ContentModuleType.GAME_CHARACTER_STATUS to "character_status",
+        ContentModuleType.GAME_QUICK_ACTIONS to "quick_actions",
+        ContentModuleType.CUSTOM to "custom",
+    )
+
+    fun definitions(ownerType: ModuleOwnerType): List<NovexManagedModuleType> {
+        val scope = ContentModuleCatalog.scopeFor(ownerType)
+            ?: throw IllegalArgumentException("内容模块不能拥有根模块")
+        return ContentModuleCatalog.definitions(scope).map { definition ->
+            NovexManagedModuleType(
+                value = requireNotNull(stableNames[definition.type]) { "内容模块缺少稳定名称" },
+                label = definition.displayName,
+                repeatable = definition.repeatable,
+                internalType = definition.type,
+            )
+        }
+    }
+
+    fun decode(ownerType: ModuleOwnerType, value: String): ContentModuleType {
+        val definitions = definitions(ownerType)
+        return definitions.firstOrNull { definition ->
+            definition.value == value.trim().lowercase() ||
+                definition.internalType.name.equals(value.trim(), ignoreCase = true)
+        }?.internalType ?: throw IllegalArgumentException(
+            "模块类型“$value”不受支持；合法值：${definitions.joinToString(", ") { it.value }}",
+        )
+    }
+
+    fun wireName(ownerType: ModuleOwnerType, type: ContentModuleType): String =
+        definitions(ownerType).firstOrNull { it.internalType == type }?.value
+            ?: throw IllegalArgumentException("该对象不支持此模块类型")
+
+    fun definitions(subjectKind: NovexContentKind): List<NovexManagedModuleType> = when (subjectKind) {
+        NovexContentKind.WORLD -> definitions(ModuleOwnerType.WORLD)
+        NovexContentKind.CHARACTER_VERSION -> definitions(ModuleOwnerType.CHARACTER_VERSION)
+        NovexContentKind.INTERACTIVE_FICTION -> definitions(ModuleOwnerType.INTERACTIVE_FICTION)
+        NovexContentKind.CREATIVE_ARTIFACT -> emptyList()
+    }
+}
+
+/** Provider-neutral inspection payload, including the legal values needed for the next call. */
+fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
+    put("mounted_subjects", JSONArray().apply {
+        subjects.forEach { value ->
+            put(JSONObject()
+                .put("kind", value.subject.kind.managementWireName())
+                .put("id", value.subject.id)
+                .put("label", value.label)
+                .put("access", value.access.name.lowercase()))
+        }
+    })
+    selectedSubject?.let {
+        put("selected_subject", JSONObject().put("kind", it.kind.managementWireName()).put("id", it.id))
+    }
+    selectedSubjectJson?.let { subjectJson ->
+        put("subject", runCatching { JSONObject(subjectJson) }.getOrElse { subjectJson })
+    }
+    put("module_type_catalog", JSONObject().apply {
+        listOf(
+            "world" to NovexContentKind.WORLD,
+            "character_version" to NovexContentKind.CHARACTER_VERSION,
+            "game" to NovexContentKind.INTERACTIVE_FICTION,
+        ).forEach { (name, kind) ->
+            put(name, JSONArray(NovexManagementModuleTypeCatalog.definitions(kind).map { definition ->
+                JSONObject()
+                    .put("value", definition.value)
+                    .put("label", definition.label)
+                    .put("repeatable", definition.repeatable)
+            }))
+        }
+    })
+    put("modules", JSONArray().apply {
+        modules.forEach { module ->
+            put(JSONObject()
+                .put("id", module.id)
+                .put("type", NovexManagementModuleTypeCatalog.wireName(module.ownerType, module.type))
+                .put("name", module.name)
+                .put("position", module.position)
+                .put("content", runCatching { JSONObject(module.contentJson) }.getOrElse { module.contentJson }))
+        }
+    })
+    selectedModule?.let { detail ->
+        put("references", JSONArray().apply {
+            detail.references.forEach { reference ->
+                put(JSONObject()
+                    .put("kind", reference.targetType.name.lowercase())
+                    .put("id", reference.targetId)
+                    .put("position", reference.position))
+            }
+        })
+    }
+}
 
 /**
  * Application-facing management seam shared by agent tools and future UI automation.
@@ -464,12 +592,17 @@ object NovexManagementChangeCodec {
         return List(values.length()) { index ->
             val value = values.getJSONObject(index)
             when (value.getString("operation")) {
-                "add_module" -> NovexManagedChange.AddModule(
-                    owner = value.subjectOwner(),
-                    type = ContentModuleType.valueOf(value.getString("module_type")),
-                    name = value.getString("name").trim(),
-                    contentJson = value.jsonText("content_json"),
-                )
+                "add_module" -> value.subjectOwner().let { owner ->
+                    NovexManagedChange.AddModule(
+                        owner = owner,
+                        type = NovexManagementModuleTypeCatalog.decode(
+                            owner.type,
+                            value.getString("module_type"),
+                        ),
+                        name = value.getString("name").trim(),
+                        contentJson = value.jsonText("content_json"),
+                    )
+                }
                 "update_module" -> NovexManagedChange.UpdateModule(
                     moduleId = value.getString("module_id"),
                     name = value.getString("name").trim(),
@@ -738,6 +871,13 @@ private fun NovexContentKind.displayName(): String = when (this) {
     NovexContentKind.CHARACTER_VERSION -> "角色版本"
     NovexContentKind.INTERACTIVE_FICTION -> "文游"
     NovexContentKind.CREATIVE_ARTIFACT -> "创作成果"
+}
+
+private fun NovexContentKind.managementWireName(): String = when (this) {
+    NovexContentKind.WORLD -> "world"
+    NovexContentKind.CHARACTER_VERSION -> "character_version"
+    NovexContentKind.INTERACTIVE_FICTION -> "game"
+    NovexContentKind.CREATIVE_ARTIFACT -> "artifact"
 }
 
 private fun JSONObject.subjectOwner(): ModuleOwner = when (getString("subject_kind")) {
