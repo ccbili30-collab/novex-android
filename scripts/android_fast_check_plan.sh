@@ -6,7 +6,7 @@ mode="${1:-auto}"
 shift || true
 
 case "$mode" in
-  full | novex-ui | novex-domain | skip)
+  full | novex-ui | novex-domain | novex-core | skip)
     printf '%s\n' "$mode"
     exit 0
     ;;
@@ -21,6 +21,30 @@ esac
 if [[ "$#" -eq 0 ]]; then
   printf '%s\n' "full"
   exit 0
+fi
+
+core_only=true
+for path in "$@"; do
+  case "$path" in
+    AGENTS.md | CONTEXT.md | README.md | docs/* | .github/release-notes/* | \
+    src/android/novex-core/*)
+      ;;
+    *)
+      core_only=false
+      break
+      ;;
+  esac
+done
+
+if $core_only; then
+  for path in "$@"; do
+    case "$path" in
+      src/android/novex-core/*)
+        printf '%s\n' "novex-core"
+        exit 0
+        ;;
+    esac
+  done
 fi
 
 domain_only=true

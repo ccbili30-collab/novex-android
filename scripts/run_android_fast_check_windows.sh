@@ -18,7 +18,7 @@ package_preview_version=""
 declare -a changed_files=()
 
 usage() {
-  echo "Usage: $0 [--mode auto|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--package-preview-version VERSION] [--dry-run]"
+  echo "Usage: $0 [--mode auto|novex-core|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--package-preview-version VERSION] [--dry-run]"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -79,10 +79,11 @@ plan="$($PLANNER "$mode" "${changed_files[@]}")"
 coverage="none"
 
 declare -a common_gradle_args=(
-  --no-daemon
+  --daemon
   --console=plain
   --stacktrace
   --max-workers=4
+  -Dorg.gradle.daemon.idletimeout=3600000
   "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
   -Pkotlin.compiler.execution.strategy=in-process
 )
@@ -115,6 +116,13 @@ case "$plan" in
     validation_gradle_args=(
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.novex.domain.*'
+    )
+    ;;
+  novex-core)
+    coverage="novex-core-tests"
+    validation_gradle_args=(
+      -p novex-core
+      test
     )
     ;;
   *)
@@ -165,10 +173,17 @@ mkdir -p "$report_dir"
 
 (
   cd "$ANDROID_ROOT"
-  {
-    git ls-files -- .
-    git ls-files --others --exclude-standard -- .
-  } | LC_ALL=C sort -u > "$manifest"
+  if [[ "$plan" == "novex-core" ]]; then
+    {
+      git ls-files -- gradlew gradlew.bat gradle novex-core
+      git ls-files --others --exclude-standard -- gradlew gradlew.bat gradle novex-core
+    } | LC_ALL=C sort -u > "$manifest"
+  else
+    {
+      git ls-files -- .
+      git ls-files --others --exclude-standard -- .
+    } | LC_ALL=C sort -u > "$manifest"
+  fi
 
   tr '\n' '\0' < "$manifest" | xargs -0 shasum -a 256 -- | while read -r hash path; do
     printf '%s\t%s\n' "$path" "$hash"
@@ -182,15 +197,13 @@ mkdir -p "$report_dir"
 ssh "$host" "
   set -euo pipefail
   cd '$remote_dir' 2>/dev/null || exit 0
-  if [[ -f .novex-fast-files ]]; then
-    while IFS= read -r path; do
-      if [[ -f \"\$path\" ]]; then
-        hash=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
-        printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
-      fi
-    done < .novex-fast-files
-  fi
-" > "$remote_hash_manifest"
+  while IFS= read -r path; do
+    if [[ -f \"\$path\" ]]; then
+      hash=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
+      printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
+    fi
+  done
+" < "$manifest" > "$remote_hash_manifest"
 
 "$SYNC_PLANNER" "$hash_manifest" "$remote_hash_manifest" > "$changed_manifest"
 (
@@ -215,6 +228,8 @@ remote_archive="$remote_dir/.novex-upload-$run_id.tar"
 remote_shared_archive="$remote_dir/.novex-shared-$run_id.tar"
 remote_manifest="$remote_dir/.novex-files-$run_id"
 remote_expected_hashes="$remote_dir/.novex-hashes-$run_id"
+remote_gradle_log="$remote_dir/.novex-gradle-$run_id.log"
+remote_state_manifest=".novex-fast-files-$plan"
 report_path="$report_dir/$run_id-$plan.log"
 
 ssh "$host" "mkdir -p '$remote_dir' && tee '$remote_archive' >/dev/null" < "$archive"
@@ -235,21 +250,21 @@ ssh "$host" "
     exit 75
   fi
   cleanup_fast_check() {
-    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest' '$remote_expected_hashes'
+    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest' '$remote_expected_hashes' '$remote_gradle_log'
   }
   trap cleanup_fast_check EXIT
   if [[ ! -f local.properties && -f '$seed_dir/local.properties' ]]; then
     cp '$seed_dir/local.properties' local.properties
   fi
-  if [[ -f .novex-fast-files ]]; then
-    LC_ALL=C comm -23 .novex-fast-files '$remote_manifest' | while IFS= read -r stale; do
+  if [[ -f '$remote_state_manifest' ]]; then
+    LC_ALL=C comm -23 '$remote_state_manifest' '$remote_manifest' | while IFS= read -r stale; do
       [[ -n \"\$stale\" ]] && rm -f -- \"\$stale\"
     done
   fi
   tar -xf '$remote_archive'
   mkdir -p '$remote_parent'
   tar -xf '$remote_shared_archive' -C '$remote_parent'
-  mv '$remote_manifest' .novex-fast-files
+  mv '$remote_manifest' '$remote_state_manifest'
   rm -f '$remote_archive' '$remote_shared_archive'
   while IFS=$'\\t' read -r path expected; do
     [[ -n \"\$path\" ]] || continue
@@ -268,7 +283,16 @@ ssh "$host" "
   if [[ -n '$package_preview_version' ]]; then
     export NOVEX_VERSION_NAME='$package_preview_version'
   fi
-  $quoted_gradle
+  # On Windows Git Bash, a newly started Gradle daemon can inherit the SSH
+  # stdout pipe and keep an otherwise completed fast check open. Isolate the
+  # build output in a remote file, then replay it after the Gradle client exits.
+  remote_gradle_log='$remote_gradle_log'
+  set +e
+  $quoted_gradle > "\$remote_gradle_log" 2>&1
+  gradle_status=\$?
+  set -e
+  cat "\$remote_gradle_log"
+  [[ "\$gradle_status" -eq 0 ]] || exit "\$gradle_status"
   if [[ -n '$package_preview_version' ]]; then
     apk='app/build/outputs/apk/preview/daily/app-preview-daily.apk'
     sdk_windows=\$(sed -n 's/^sdk.dir=//p' local.properties | head -1)

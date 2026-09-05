@@ -290,6 +290,8 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") && it
     .configureEach { dependsOn(stageDebugSkillAssets) }
 
 dependencies {
+    implementation(project(":novex-core"))
+
     // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2025.09.00")
     implementation(composeBom)
