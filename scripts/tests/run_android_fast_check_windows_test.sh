@@ -60,13 +60,18 @@ core_output="$($RUNNER \
 for expected in \
   "plan=novex-core" \
   "coverage=novex-core-tests" \
-  " -p novex-core test" \
+  " :novex-core:test" \
   "--daemon"; do
   if [[ "$core_output" != *"$expected"* ]]; then
     echo "missing Novex core dry-run output: $expected" >&2
     exit 1
   fi
 done
+
+if [[ "$core_output" == *" -p novex-core"* ]]; then
+  echo "Novex core checks must share the Android root build identity" >&2
+  exit 1
+fi
 
 if [[ "$core_output" == *":app:compilePreviewDebugKotlin"* ]] || \
    [[ "$core_output" == *":app:testPreviewDebugUnitTest"* ]] || \
@@ -92,6 +97,7 @@ echo "android Windows daemon output isolation tests passed"
 
 for expected in \
   'if [[ "$plan" == "novex-core" ]]' \
+  'build.gradle.kts settings.gradle.kts gradle.properties app/build.gradle.kts' \
   'novex-core' \
   'remote_state_manifest=".novex-fast-files-$plan"' \
   '< "$manifest" > "$remote_hash_manifest"'; do
@@ -113,6 +119,7 @@ for expected in \
   "coverage=preview-document-tests" \
   "com.openminis.app.data.attachments.*" \
   "com.openminis.app.tools.NovexDocumentAgentToolsTest" \
+  "com.openminis.app.tools.NovexLearningAgentToolsTest" \
   "com.openminis.app.ui.chat.AttachmentPromptMetadataTest" \
   "com.openminis.app.ui.chat.DocxAttachmentRequestChainTest" \
   "com.openminis.app.data.character.CharacterPromptComposerTest"; do

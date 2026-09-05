@@ -121,8 +121,7 @@ case "$plan" in
   novex-core)
     coverage="novex-core-tests"
     validation_gradle_args=(
-      -p novex-core
-      test
+      :novex-core:test
     )
     ;;
   novex-document)
@@ -131,6 +130,7 @@ case "$plan" in
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.data.attachments.*'
       --tests 'com.openminis.app.tools.NovexDocumentAgentToolsTest'
+      --tests 'com.openminis.app.tools.NovexLearningAgentToolsTest'
       --tests 'com.openminis.app.ui.chat.AttachmentPromptMetadataTest'
       --tests 'com.openminis.app.ui.chat.DocxAttachmentRequestChainTest'
       --tests 'com.openminis.app.data.character.CharacterPromptComposerTest'
@@ -187,8 +187,8 @@ mkdir -p "$report_dir"
   cd "$ANDROID_ROOT"
   if [[ "$plan" == "novex-core" ]]; then
     {
-      git ls-files -- gradlew gradlew.bat gradle novex-core
-      git ls-files --others --exclude-standard -- gradlew gradlew.bat gradle novex-core
+      git ls-files -- gradlew gradlew.bat gradle build.gradle.kts settings.gradle.kts gradle.properties app/build.gradle.kts novex-core
+      git ls-files --others --exclude-standard -- gradlew gradlew.bat gradle build.gradle.kts settings.gradle.kts gradle.properties app/build.gradle.kts novex-core
     } | LC_ALL=C sort -u > "$manifest"
   else
     {
