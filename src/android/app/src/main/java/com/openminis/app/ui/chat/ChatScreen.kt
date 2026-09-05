@@ -3178,7 +3178,7 @@ fun ChatScreen(
                 // than jumping to the oldest message.
                 if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value) {
                     val upBaseBottom = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
-                    androidx.compose.material3.FilledIconButton(
+                    com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
                             coroutineScope.launch { scrollToPreviousUserTurn() }
                         },
@@ -3208,7 +3208,7 @@ fun ChatScreen(
                     contentOverflows.value && messages.isNotEmpty()
                 ) {
                     val fabBottomPadding = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
-                    androidx.compose.material3.FilledIconButton(
+                    com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
                             // [T-android-scrollbtn-turn-walk] Jumping to the
                             // bottom resets the up-button's turn-walk (iOS does

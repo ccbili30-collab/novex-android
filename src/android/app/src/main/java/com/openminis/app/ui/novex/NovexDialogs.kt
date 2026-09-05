@@ -52,6 +52,8 @@ internal fun NovexDecisionDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, color = NovexColors.Text, style = NovexType.SectionTitle) },
         content = { Text(message, color = NovexColors.SecondaryText, style = NovexType.Body) },
+        actionLayout = NovexDialogActionLayout.VERTICAL,
+        actionCount = actions.size,
         actions = {
             actions.forEachIndexed { index, action ->
                 if (index > 0) NovexDivider(Modifier.padding(horizontal = 12.dp))

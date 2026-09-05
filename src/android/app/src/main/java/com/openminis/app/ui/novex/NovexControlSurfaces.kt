@@ -35,6 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
+internal enum class NovexDialogActionLayout { HORIZONTAL, VERTICAL }
+
+internal fun novexDialogActionLayout(actionCount: Int): NovexDialogActionLayout =
+    if (actionCount <= 2) NovexDialogActionLayout.HORIZONTAL else NovexDialogActionLayout.VERTICAL
+
 /** All confirmation and form overlays use this surface, including legacy call sites. */
 @Composable
 internal fun NovexDialogSurface(
@@ -44,7 +49,9 @@ internal fun NovexDialogSurface(
     title: (@Composable () -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
     contentScrollsItself: Boolean = false,
-    actions: @Composable ColumnScope.() -> Unit,
+    actionLayout: NovexDialogActionLayout = NovexDialogActionLayout.HORIZONTAL,
+    actionCount: Int = 1,
+    actions: @Composable () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -82,8 +89,25 @@ internal fun NovexDialogSurface(
                         CompositionLocalProvider(LocalTextStyle provides NovexType.Body) { content?.invoke() }
                     }
                     NovexDivider()
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                        CompositionLocalProvider(LocalNovexDialogAction provides true) { actions() }
+                    val actionModifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                    if (actionLayout == NovexDialogActionLayout.HORIZONTAL) {
+                        Row(
+                            actionModifier,
+                            horizontalArrangement = if (actionCount > 1) Arrangement.SpaceBetween else Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CompositionLocalProvider(
+                                LocalNovexDialogAction provides true,
+                                LocalNovexDialogActionLayout provides actionLayout,
+                            ) { actions() }
+                        }
+                    } else {
+                        Column(actionModifier) {
+                            CompositionLocalProvider(
+                                LocalNovexDialogAction provides true,
+                                LocalNovexDialogActionLayout provides actionLayout,
+                            ) { actions() }
+                        }
                     }
                 }
             }
@@ -92,6 +116,7 @@ internal fun NovexDialogSurface(
 }
 
 internal val LocalNovexDialogAction = compositionLocalOf { false }
+internal val LocalNovexDialogActionLayout = compositionLocalOf { NovexDialogActionLayout.HORIZONTAL }
 
 /** One button renderer: dialog actions use full-width quiet rows, never nested pills. */
 @Composable
@@ -108,10 +133,17 @@ internal fun NovexButtonSurface(
     content: @Composable RowScope.() -> Unit,
 ) {
     val dialogAction = LocalNovexDialogAction.current
+    val dialogActionLayout = LocalNovexDialogActionLayout.current
     val actualShape = if (dialogAction) RoundedCornerShape(NovexDimensions.SmallRadius) else shape
     Row(
         modifier = modifier
-            .then(if (dialogAction) Modifier.fillMaxWidth() else Modifier)
+            .then(
+                if (dialogAction && dialogActionLayout == NovexDialogActionLayout.VERTICAL) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
+                },
+            )
             .heightIn(min = NovexDimensions.MinimumTouch)
             .clip(actualShape)
             .background(if (dialogAction) Color.Transparent else background)
@@ -124,7 +156,9 @@ internal fun NovexButtonSurface(
                 onClick = onClick,
             )
             .padding(if (dialogAction) PaddingValues(horizontal = 12.dp, vertical = 10.dp) else contentPadding),
-        horizontalArrangement = if (dialogAction) Arrangement.Start else Arrangement.Center,
+        horizontalArrangement = if (
+            dialogAction && dialogActionLayout == NovexDialogActionLayout.VERTICAL
+        ) Arrangement.Start else Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CompositionLocalProvider(

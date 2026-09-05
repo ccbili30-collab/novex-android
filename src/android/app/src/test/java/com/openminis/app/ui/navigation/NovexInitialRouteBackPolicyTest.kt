@@ -11,6 +11,18 @@ class NovexInitialRouteBackPolicyTest {
     }
 
     @Test
+    fun chatAndSettingsCanShareOneBackBoundary() {
+        var finished = false
+
+        handleNovexInitialRouteBack(
+            popBackStack = { false },
+            finishHost = { finished = true },
+        )
+
+        assertEquals(true, finished)
+    }
+
+    @Test
     fun settingsEntersFromTheLeftWhileContentEditorsKeepTheNormalDirection() {
         assertEquals(NovexRouteEntryEdge.LEFT, novexRouteEntryEdge("settings"))
         assertEquals(NovexRouteEntryEdge.RIGHT, novexRouteEntryEdge("characters/world/edit"))

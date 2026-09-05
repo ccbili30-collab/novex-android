@@ -1030,7 +1030,19 @@ internal fun ToolDetailSheet(
 
                     // ── Default: generic text output ──
                     else -> {
-                        if (block.content.isNotEmpty()) {
+                        val standardDetail = remember(block.toolName, block.toolArgs, block.content) {
+                            buildNovexStandardToolDetailPresentation(
+                                toolName = block.toolName,
+                                argumentsJson = block.toolArgs,
+                                resultText = block.content,
+                            )
+                        }
+                        if (standardDetail != null) {
+                            NovexStandardToolDetailContent(
+                                presentation = standardDetail,
+                                scrollState = outputScrollState,
+                            )
+                        } else if (block.content.isNotEmpty()) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()

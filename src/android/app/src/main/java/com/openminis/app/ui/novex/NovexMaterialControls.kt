@@ -19,6 +19,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
+import androidx.compose.material3.FilledIconButton as MaterialFilledIconButton
+import androidx.compose.material3.IconButtonColors
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ModalBottomSheet as MaterialModalBottomSheet
@@ -43,6 +46,27 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.PopupProperties
+
+/** Shared filled icon action for floating and compact page controls. */
+@Composable
+internal fun NovexFilledIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    colors: IconButtonColors = IconButtonDefaults.filledIconButtonColors(
+        containerColor = NovexColors.SurfaceMuted,
+        contentColor = NovexColors.Text,
+    ),
+    content: @Composable () -> Unit,
+) {
+    MaterialFilledIconButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = colors,
+        content = content,
+    )
+}
 
 /**
  * Low-level visual adapters for complex legacy feature pages. Business pages
@@ -76,9 +100,11 @@ internal fun AlertDialog(
         },
         content = text,
         contentScrollsItself = contentScrollsItself,
+        actionLayout = novexDialogActionLayout(if (dismissButton == null) 1 else 2),
+        actionCount = if (dismissButton == null) 1 else 2,
         actions = {
-            confirmButton()
             dismissButton?.invoke()
+            confirmButton()
         },
         properties = properties,
     )

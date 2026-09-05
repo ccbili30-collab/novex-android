@@ -583,7 +583,12 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
-                onBack = { navController.safePopBackStack() },
+                onBack = {
+                    handleNovexInitialRouteBack(
+                        popBackStack = { navController.safePopBackStack() },
+                        finishHost = { (context as? android.app.Activity)?.finish() },
+                    )
+                },
                 // [T-new-chat-menu-entry] Chat-menu "New Chat": same draft-id
                 // funnel as the session list / NewChat deep link — a fresh
                 // "__new__" route whose DB record is only created on first
@@ -652,10 +657,10 @@ fun AppNavigation(
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 onBack = {
-                    val canPop = navController.safePopBackStack()
-                    if (novexInitialRouteBackAction(canPop) == NovexInitialRouteBackAction.FINISH_HOST) {
-                        (context as? android.app.Activity)?.finish()
-                    }
+                    handleNovexInitialRouteBack(
+                        popBackStack = { navController.safePopBackStack() },
+                        finishHost = { (context as? android.app.Activity)?.finish() },
+                    )
                 },
                 onProvidersClick = { navController.safeNavigate(Routes.PROVIDER_LIST) },
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },

@@ -9,6 +9,7 @@ CONTROLS = {
     'TopAppBar', 'DropdownMenu', 'DropdownMenuItem', 'ModalBottomSheet', 'Switch', 'Scaffold',
     'Card', 'RadioButton', 'Checkbox', 'FilterChip', 'AssistChip',
     'ListItem', 'SegmentedButton', 'SingleChoiceSegmentedButtonRow', 'Slider', 'FloatingActionButton',
+    'FilledIconButton',
 }
 PLATFORM_FILES = {'novex/NovexMaterialControls.kt', 'novex/NovexChoiceControls.kt'}
 

@@ -116,6 +116,8 @@ case "$plan" in
       --tests 'com.openminis.app.ui.novex.*'
       --tests 'com.openminis.app.ui.sessions.Novex*'
       --tests 'com.openminis.app.ui.navigation.Novex*'
+      --tests 'com.openminis.app.ui.chat.NovexStandardToolDetailPresentationTest'
+      --tests 'com.openminis.app.ui.theme.*'
       --tests 'com.openminis.app.ui.settings.World*'
       --tests 'com.openminis.app.ui.settings.Character*'
       --tests 'com.openminis.app.ui.settings.NovexNativeCard*'

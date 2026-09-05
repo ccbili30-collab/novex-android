@@ -14,6 +14,12 @@ class ComponentBoundaryTest(unittest.TestCase):
                        'import androidx.compose.material3.*']:
             self.assertTrue(boundary.violations(source, 'settings/Example.kt'))
 
+    def test_filled_icon_buttons_cannot_bypass_the_shared_visual_module(self):
+        self.assertTrue(boundary.violations(
+            'androidx.compose.material3.FilledIconButton(onClick = {}) {}',
+            'chat/Example.kt',
+        ))
+
     def test_shared_controls_can_own_platform_behavior(self):
         self.assertFalse(boundary.violations('import androidx.compose.material3.ModalBottomSheet', 'novex/NovexMaterialControls.kt'))
 

@@ -30,6 +30,7 @@ class NovexComponentArchitectureTest {
             "androidx.compose.material3.SingleChoiceSegmentedButtonRow",
             "androidx.compose.material3.ListItem",
             "androidx.compose.material3.FloatingActionButton",
+            "androidx.compose.material3.FilledIconButton",
         )
         val violations = roots.asSequence().flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" }

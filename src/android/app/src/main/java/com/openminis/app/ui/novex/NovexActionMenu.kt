@@ -17,6 +17,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
@@ -30,6 +32,20 @@ internal data class NovexMenuAction(
     val onClick: () -> Unit,
 )
 
+/** Defers an action until the popup has left composition and restored its owner. */
+internal class NovexMenuActionCoordinator {
+    private var pending: (() -> Unit)? = null
+
+    fun request(action: () -> Unit) {
+        pending = action
+    }
+
+    fun takeReadyAction(menuExpanded: Boolean): (() -> Unit)? {
+        if (menuExpanded) return null
+        return pending.also { pending = null }
+    }
+}
+
 /** Novex 的唯一弹出操作菜单；页面只提交动作，不自行绘制菜单行。 */
 @Composable
 internal fun NovexActionMenu(
@@ -38,6 +54,14 @@ internal fun NovexActionMenu(
     actions: List<NovexMenuAction>,
     modifier: Modifier = Modifier,
 ) {
+    val coordinator = remember { NovexMenuActionCoordinator() }
+    LaunchedEffect(expanded) {
+        val action = coordinator.takeReadyAction(menuExpanded = expanded) ?: return@LaunchedEffect
+        // One frame lets DropdownMenu remove its focusable popup before a navigation
+        // callback consults the current NavBackStackEntry lifecycle.
+        androidx.compose.runtime.withFrameNanos { }
+        action()
+    }
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
@@ -55,8 +79,8 @@ internal fun NovexActionMenu(
                 )
             }
             NovexActionMenuRow(action) {
+                coordinator.request(action.onClick)
                 onDismissRequest()
-                action.onClick()
             }
         }
     }
