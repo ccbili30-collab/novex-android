@@ -19,6 +19,21 @@ class NovexLearningTools(
             summary = "找不到当前对话可用的资料集",
             affectedRefs = listOf(collectionRef),
         )
+        if (NovexLearningControlPolicy.blocksReplacementPreflight(preflight.taskStatus)) {
+            return NovexToolResult.success(
+                code = "learning.task_active",
+                summary = "这份资料集已有学习整理任务，请使用原生进度界面查看或控制",
+                data = mapOf(
+                    "preflight_id" to preflight.id,
+                    "collection_ref" to preflight.collectionRef.value,
+                    "task_status" to preflight.taskStatus.name,
+                ),
+                nextActions = listOf(
+                    NovexToolNextAction("open_native_learning_status", "查看资料学习进度"),
+                ),
+                affectedRefs = listOf(preflight.collectionRef),
+            )
+        }
         return NovexToolResult.success(
             code = "learning.preflight_ready",
             summary = if (preflight.requiresConfirmation) {
@@ -45,6 +60,16 @@ class NovexLearningTools(
                         "maximum_minor_units" to cost.maximumMinorUnits,
                     )
                 },
+                "estimated_duration" to mapOf(
+                    "minimum_minutes" to preflight.estimatedDuration.minimumMinutes,
+                    "maximum_minutes" to preflight.estimatedDuration.maximumMinutes,
+                ),
+                "data_exposure" to mapOf(
+                    "destination" to preflight.dataExposure.destination,
+                    "source_content_may_leave_device" to
+                        preflight.dataExposure.sourceContentMayLeaveDevice,
+                    "content_scope" to preflight.dataExposure.contentScope,
+                ),
                 "planned_steps" to preflight.plannedSteps,
                 "requires_confirmation" to preflight.requiresConfirmation,
                 "prohibited_outcomes" to preflight.prohibitedOutcomes.toList().sorted(),
@@ -58,6 +83,7 @@ class NovexLearningTools(
             affectedRefs = listOf(preflight.collectionRef),
         )
     }
+
 }
 
 class NovexLearningToolRouter(

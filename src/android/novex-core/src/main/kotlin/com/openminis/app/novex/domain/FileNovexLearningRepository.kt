@@ -48,7 +48,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 2
+    private const val VERSION = 3
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -212,6 +212,13 @@ object NovexLearningStateJsonCodec {
                 .put("minimum_minor_units", cost.minimumMinorUnits)
                 .put("maximum_minor_units", cost.maximumMinorUnits)
         })
+        .put("estimated_duration", JSONObject()
+            .put("minimum_minutes", preflight.estimatedDuration.minimumMinutes)
+            .put("maximum_minutes", preflight.estimatedDuration.maximumMinutes))
+        .put("data_exposure", JSONObject()
+            .put("destination", preflight.dataExposure.destination)
+            .put("source_content_may_leave_device", preflight.dataExposure.sourceContentMayLeaveDevice)
+            .put("content_scope", preflight.dataExposure.contentScope))
         .put("planned_steps", JSONArray(preflight.plannedSteps))
         .put("confirmed_budget", JSONObject()
             .put("input_tokens", preflight.confirmedBudget.inputTokens)
@@ -228,6 +235,11 @@ object NovexLearningStateJsonCodec {
     private fun decodePreflight(json: JSONObject): NovexLearningPreflightSnapshot {
         val budget = json.getJSONObject("confirmed_budget")
         val unsupportedJson = json.getJSONObject("unsupported_sources")
+        val estimatedRounds = json.getInt("estimated_model_rounds")
+        val ocrSourceCount = json.getInt("ocr_source_count")
+        val networkSourceCount = json.getInt("network_source_count")
+        val duration = json.optionalObject("estimated_duration")
+        val exposure = json.optionalObject("data_exposure")
         return NovexLearningPreflightSnapshot(
             id = json.getString("id"),
             collectionRef = NovexResourceRef(json.getString("collection_ref")),
@@ -237,11 +249,11 @@ object NovexLearningStateJsonCodec {
             route = NovexLearningRoute.valueOf(json.getString("route")),
             sourceCount = json.getInt("source_count"),
             estimatedSourceTokens = json.getInt("estimated_source_tokens"),
-            estimatedModelRounds = json.getInt("estimated_model_rounds"),
+            estimatedModelRounds = estimatedRounds,
             pageCount = json.getInt("page_count"),
             imageCount = json.getInt("image_count"),
-            ocrSourceCount = json.getInt("ocr_source_count"),
-            networkSourceCount = json.getInt("network_source_count"),
+            ocrSourceCount = ocrSourceCount,
+            networkSourceCount = networkSourceCount,
             estimatedCost = json.optionalObject("estimated_cost")?.let { cost ->
                 NovexLearningCostEstimate(
                     currencyCode = cost.getString("currency_code"),
@@ -249,6 +261,25 @@ object NovexLearningStateJsonCodec {
                     maximumMinorUnits = cost.getLong("maximum_minor_units"),
                 )
             },
+            estimatedDuration = duration?.let {
+                NovexLearningDurationEstimate(
+                    minimumMinutes = it.getInt("minimum_minutes"),
+                    maximumMinutes = it.getInt("maximum_minutes"),
+                )
+            } ?: NovexLearningDurationEstimate(
+                minimumMinutes = estimatedRounds + networkSourceCount + ocrSourceCount * 2,
+                maximumMinutes = estimatedRounds * 4 + networkSourceCount * 5 + ocrSourceCount * 10,
+            ),
+            dataExposure = exposure?.let {
+                NovexLearningDataExposure(
+                    destination = it.getString("destination"),
+                    sourceContentMayLeaveDevice = it.getBoolean("source_content_may_leave_device"),
+                    contentScope = it.getString("content_scope"),
+                )
+            } ?: NovexLearningDataExposure(
+                destination = json.getString("model_provider_name"),
+                sourceContentMayLeaveDevice = true,
+            ),
             plannedSteps = json.getJSONArray("planned_steps").strings(),
             confirmedBudget = NovexLearningTokenBudget(
                 inputTokens = budget.getInt("input_tokens"),

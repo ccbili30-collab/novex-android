@@ -76,6 +76,7 @@ import com.openminis.app.novex.domain.NovexDocumentStatus
 import com.openminis.app.novex.domain.NovexDocumentToolRouter
 import com.openminis.app.novex.domain.NovexLearningPreflight
 import com.openminis.app.novex.domain.NovexLearningConfirmation
+import com.openminis.app.novex.domain.NovexLearningControlPolicy
 import com.openminis.app.novex.domain.NovexLearningCoordinator
 import com.openminis.app.novex.domain.NovexLearningPreflightRequest
 import com.openminis.app.novex.domain.NovexLearningPreflightSnapshot
@@ -122,6 +123,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10778,8 +10780,6 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         }
         sourceCollection?.let { collection ->
             activeNovexSourceCollectionRefs = activeNovexSourceCollectionRefs + collection.ref.value
-            _novexLearningTask.value = null
-            _novexLearningStatus.value = null
         }
 
         // Order matches UserAttachmentList convention: images first, then files.
@@ -12162,6 +12162,32 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         val model = currentModel ?: return null
         if (requestedModelId != null && requestedModelId != model.id) return null
 
+        state.task?.takeIf { task ->
+            NovexLearningControlPolicy.blocksReplacementPreflight(task.status)
+        }?.let { task ->
+            _pendingNovexLearningPreflight.value = null
+            _novexLearningTask.value = task
+            _novexLearningStatus.value = task.status
+            return task.preflight.copy(taskStatus = task.status)
+        }
+
+        val preflight = buildNovexLearningPreflight(
+            state = state,
+            model = model,
+            providerName = currentProvider?.name ?: model.provider,
+        )
+        novexLearningRepository.save(state.copy(preflight = preflight))
+        _pendingNovexLearningPreflight.value = preflight.takeIf { it.requiresConfirmation }
+        return preflight
+    }
+
+    private fun buildNovexLearningPreflight(
+        state: NovexLearningState,
+        model: LLMModel,
+        providerName: String,
+        proposedBudget: NovexLearningTokenBudget? = null,
+    ): NovexLearningPreflightSnapshot {
+
         val sourceEstimates = state.collection.sources.map { source ->
             val snapshot = source.documentRef?.let(novexDocumentRepository::find)
             val estimatedTokens = snapshot?.blocks.orEmpty()
@@ -12190,34 +12216,62 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             )
         }
         val totalEstimatedTokens = sourceEstimates.sumOf { it.estimatedTokens.toLong() }
-        val inputBudget = (totalEstimatedTokens * 2)
-            .coerceIn(16_000L, 2_000_000L)
-            .toInt()
-        val outputBudget = (totalEstimatedTokens / 5)
-            .coerceIn(8_000L, 128_000L)
-            .toInt()
+        val budget = proposedBudget ?: NovexLearningTokenBudget(
+            inputTokens = (totalEstimatedTokens * 2)
+                .coerceIn(16_000L, 2_000_000L)
+                .toInt(),
+            outputTokens = (totalEstimatedTokens / 5)
+                .coerceIn(8_000L, 128_000L)
+                .toInt(),
+        )
         val preflight = NovexLearningPreflight.prepare(
             NovexLearningPreflightRequest(
-                collectionRef = collectionRef,
+                collectionRef = state.collection.ref,
                 sources = sourceEstimates,
                 modelId = model.id,
-                modelProviderName = currentProvider?.name ?: model.provider,
+                modelProviderName = providerName,
                 effectiveContextTokens = effectiveContextWindowTokens(),
                 occupiedContextTokens = _lastTurnContextTokens.value,
                 directReadBudgetTokens = 12_000,
-                proposedBudget = NovexLearningTokenBudget(
-                    inputTokens = inputBudget,
-                    outputTokens = outputBudget,
-                ),
+                proposedBudget = budget,
             ),
         )
-        novexLearningRepository.save(state.copy(preflight = preflight))
-        _pendingNovexLearningPreflight.value = preflight.takeIf { it.requiresConfirmation }
         return preflight
     }
 
     fun dismissNovexLearningPreflight() {
         _pendingNovexLearningPreflight.value = null
+        refreshNovexLearningTaskProjection()
+    }
+
+    fun requestNovexLearningBudgetExtension() {
+        val provider = currentProvider ?: return
+        val model = currentModel ?: return
+        val collectionRef = currentNovexLearningCollectionRef() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = novexLearningRepository.find(collectionRef) ?: return@launch
+            val task = state.task?.takeIf {
+                it.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
+            } ?: return@launch
+            val expandedBudget = NovexLearningTokenBudget(
+                inputTokens = (task.usage.maxInputTokens.toLong() +
+                    maxOf(task.usage.maxInputTokens / 2L, 64_000L))
+                    .coerceAtMost(10_000_000L)
+                    .toInt(),
+                outputTokens = (task.usage.maxOutputTokens.toLong() +
+                    maxOf(task.usage.maxOutputTokens / 2L, 8_000L))
+                    .coerceAtMost(1_000_000L)
+                    .toInt(),
+            )
+            val preflight = buildNovexLearningPreflight(
+                state = state,
+                model = model,
+                providerName = provider.name,
+                proposedBudget = expandedBudget,
+            )
+            _novexLearningTask.value = null
+            _pendingNovexLearningPreflight.value = preflight
+        }
     }
 
     fun confirmNovexLearning(preflightId: String) {
@@ -12233,10 +12287,31 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         }
         _pendingNovexLearningPreflight.value = null
         _novexLearningError.value = null
-        novexLearningJob?.cancel()
+        val previousLearningJob = novexLearningJob
         novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
+            previousLearningJob?.cancelAndJoin()
+            pauseCompetingNovexLearningTasks(preflight.collectionRef)
             val stored = novexLearningRepository.find(preflight.collectionRef) ?: run {
                 _novexLearningError.value = "找不到待整理的资料集"
+                return@launch
+            }
+            stored.task?.takeIf { task ->
+                NovexLearningControlPolicy.blocksReplacementPreflight(task.status)
+            }?.let { task ->
+                _novexLearningTask.value = task
+                _novexLearningStatus.value = task.status
+                return@launch
+            }
+            val refreshed = buildNovexLearningPreflight(
+                state = stored,
+                model = model,
+                providerName = provider.name,
+                proposedBudget = preflight.confirmedBudget,
+            )
+            if (refreshed.id != preflight.id) {
+                novexLearningRepository.save(stored.copy(preflight = refreshed))
+                _pendingNovexLearningPreflight.value = refreshed.takeIf { it.requiresConfirmation }
+                _novexLearningError.value = "资料、模型或预算已经变化，请确认新的整理计划"
                 return@launch
             }
             val confirmation = NovexLearningConfirmation(
@@ -12247,19 +12322,29 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 maxOutputTokens = preflight.confirmedBudget.outputTokens,
                 confirmedAtMillis = System.currentTimeMillis(),
             )
-            val task = runCatching { NovexLearningCoordinator().start(preflight, confirmation) }
+            val coordinator = NovexLearningCoordinator()
+            val storedTask = stored.task
+            val task = runCatching {
+                if (storedTask?.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
+                    coordinator.extendBudget(storedTask, refreshed, confirmation)
+                } else {
+                    coordinator.start(refreshed, confirmation)
+                }
+            }
                 .getOrElse { failure ->
                     _novexLearningError.value = failure.message ?: "学习确认已经失效"
                     return@launch
                 }
-            runNovexLearning(stored.copy(preflight = preflight, task = task), provider)
+            runNovexLearning(stored.copy(preflight = refreshed, task = task), provider)
         }
     }
 
     fun pauseNovexLearning() {
-        novexLearningJob?.cancel()
-        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
+        val collectionRef = currentNovexLearningCollectionRef() ?: return
+        val runningJob = novexLearningJob
+        novexLearningJob = null
         viewModelScope.launch(Dispatchers.IO) {
+            runningJob?.cancelAndJoin()
             val state = novexLearningRepository.find(collectionRef) ?: return@launch
             val task = state.task ?: return@launch
             if (task.status in setOf(
@@ -12277,9 +12362,11 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     }
 
     fun cancelNovexLearning() {
-        novexLearningJob?.cancel()
-        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
+        val collectionRef = currentNovexLearningCollectionRef() ?: return
+        val runningJob = novexLearningJob
+        novexLearningJob = null
         viewModelScope.launch(Dispatchers.IO) {
+            runningJob?.cancelAndJoin()
             val state = novexLearningRepository.find(collectionRef) ?: return@launch
             val task = state.task ?: return@launch
             if (task.status !in setOf(
@@ -12298,9 +12385,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
     fun resumeNovexLearning() {
         val provider = currentProvider ?: return
-        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
-        novexLearningJob?.cancel()
+        val collectionRef = currentNovexLearningCollectionRef() ?: return
+        val previousLearningJob = novexLearningJob
         novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
+            previousLearningJob?.cancelAndJoin()
             val state = novexLearningRepository.find(collectionRef) ?: return@launch
             val task = state.task ?: return@launch
             if (task.status != NovexLearningTaskStatus.PAUSED) return@launch
@@ -12356,6 +12444,28 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
             _novexLearningError.value = failure.message ?: "资料通读失败，已保留完成进度"
         }
+    }
+
+    private fun currentNovexLearningCollectionRef(): NovexResourceRef? =
+        _novexLearningTask.value?.collectionRef
+            ?: activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef)
+
+    private fun pauseCompetingNovexLearningTasks(except: NovexResourceRef) {
+        activeNovexSourceCollectionRefs.asSequence()
+            .map(::NovexResourceRef)
+            .filter { it != except }
+            .forEach { collectionRef ->
+                val state = novexLearningRepository.find(collectionRef) ?: return@forEach
+                val task = state.task ?: return@forEach
+                if (task.status in setOf(
+                        NovexLearningTaskStatus.INDEXING,
+                        NovexLearningTaskStatus.REVIEWING,
+                        NovexLearningTaskStatus.SYNTHESIZING,
+                    )
+                ) {
+                    novexLearningRepository.save(state.copy(task = task.pause()))
+                }
+            }
     }
 
     private fun providerNovexLearningReviewer(provider: LLMProvider): NovexLearningReviewer =

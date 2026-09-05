@@ -5331,9 +5331,12 @@ fun ChatScreen(
         val scope = buildString {
             append("将整理 ${preflight.sourceCount} 项资料，估算 ")
             append("${preflight.estimatedSourceTokens} 个词元，约 ${preflight.estimatedModelRounds} 轮模型处理。\n")
+            append("预计耗时：约 ${preflight.estimatedDuration.minimumMinutes}–")
+            append("${preflight.estimatedDuration.maximumMinutes} 分钟；实际时间取决于模型响应和网络。\n")
             append("模型：${preflight.modelProviderName} / ${preflight.modelId}\n")
             append("确认上限：输入 ${preflight.confirmedBudget.inputTokens}，输出 ${preflight.confirmedBudget.outputTokens} 个词元。\n")
             append("费用：当前价格无法可靠估算；达到上限前会自动暂停。")
+            append("\n隐私：正文片段与整理笔记会交给 ${preflight.dataExposure.destination} 处理，可能离开本设备。")
             if (preflight.ocrSourceCount > 0) append("\n需要光学字符识别：${preflight.ocrSourceCount} 项。")
             if (preflight.networkSourceCount > 0) append("\n需要联网：${preflight.networkSourceCount} 项。")
             if (preflight.unsupportedSources.isNotEmpty()) {
@@ -5422,6 +5425,14 @@ fun ChatScreen(
                             icon = R.drawable.ic_phosphor_brain,
                             tone = NovexDecisionTone.PRIMARY,
                             onClick = viewModel::resumeNovexLearning,
+                        ),
+                    )
+                    if (NovexLearningControl.EXTEND_BUDGET in controls) add(
+                        NovexDecisionAction(
+                            label = "增加预算并继续",
+                            icon = R.drawable.ic_phosphor_brain,
+                            tone = NovexDecisionTone.PRIMARY,
+                            onClick = viewModel::requestNovexLearningBudgetExtension,
                         ),
                     )
                     if (NovexLearningControl.CANCEL in controls) add(

@@ -1,6 +1,8 @@
 package com.openminis.app.novex.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexLearningControlPolicyTest {
@@ -21,9 +23,22 @@ class NovexLearningControlPolicyTest {
     }
 
     @Test
-    fun `terminal and budget stopped states can be acknowledged`() {
+    fun `budget stopped work can request a larger confirmation or end`() {
+        assertEquals(
+            setOf(
+                NovexLearningControl.EXTEND_BUDGET,
+                NovexLearningControl.CANCEL,
+                NovexLearningControl.DISMISS,
+            ),
+            NovexLearningControlPolicy.allowedControls(
+                NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
+            ),
+        )
+    }
+
+    @Test
+    fun `terminal states can be acknowledged`() {
         listOf(
-            NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
             NovexLearningTaskStatus.CANCELLED,
             NovexLearningTaskStatus.PARTIAL_FAILURE,
             NovexLearningTaskStatus.COMPLETE,
@@ -32,6 +47,27 @@ class NovexLearningControlPolicyTest {
                 setOf(NovexLearningControl.DISMISS),
                 NovexLearningControlPolicy.allowedControls(status),
             )
+        }
+    }
+
+    @Test
+    fun `only executing or manually paused work blocks a replacement preflight`() {
+        listOf(
+            NovexLearningTaskStatus.INDEXING,
+            NovexLearningTaskStatus.REVIEWING,
+            NovexLearningTaskStatus.SYNTHESIZING,
+            NovexLearningTaskStatus.PAUSED,
+        ).forEach { status ->
+            assertTrue(NovexLearningControlPolicy.blocksReplacementPreflight(status))
+        }
+        listOf(
+            NovexLearningTaskStatus.NOT_STARTED,
+            NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
+            NovexLearningTaskStatus.CANCELLED,
+            NovexLearningTaskStatus.PARTIAL_FAILURE,
+            NovexLearningTaskStatus.COMPLETE,
+        ).forEach { status ->
+            assertFalse(NovexLearningControlPolicy.blocksReplacementPreflight(status))
         }
     }
 }

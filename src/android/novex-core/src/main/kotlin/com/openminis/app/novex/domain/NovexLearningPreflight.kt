@@ -83,6 +83,27 @@ data class NovexLearningCostEstimate(
     }
 }
 
+data class NovexLearningDurationEstimate(
+    val minimumMinutes: Int,
+    val maximumMinutes: Int,
+) {
+    init {
+        require(minimumMinutes > 0) { "最短整理时间必须大于零" }
+        require(maximumMinutes >= minimumMinutes) { "最长整理时间不能短于最短时间" }
+    }
+}
+
+data class NovexLearningDataExposure(
+    val destination: String,
+    val sourceContentMayLeaveDevice: Boolean,
+    val contentScope: String = "batch_source_excerpts_and_notes",
+) {
+    init {
+        require(destination.isNotBlank()) { "学习资料处理目标不能为空" }
+        require(contentScope.isNotBlank()) { "学习资料处理范围不能为空" }
+    }
+}
+
 data class NovexLearningPreflightSnapshot(
     val id: String,
     val collectionRef: NovexResourceRef,
@@ -98,6 +119,8 @@ data class NovexLearningPreflightSnapshot(
     val ocrSourceCount: Int,
     val networkSourceCount: Int,
     val estimatedCost: NovexLearningCostEstimate?,
+    val estimatedDuration: NovexLearningDurationEstimate,
+    val dataExposure: NovexLearningDataExposure,
     val plannedSteps: List<String>,
     val confirmedBudget: NovexLearningTokenBudget,
     val risks: List<NovexLearningRisk>,
@@ -161,6 +184,12 @@ object NovexLearningPreflight {
                     message = "当前模型价格无法可靠估算，实际费用可能较高",
                 ),
             )
+            add(
+                NovexLearningRisk(
+                    code = "learning.model_data_transfer",
+                    message = "资料正文片段与整理笔记会交给${request.modelProviderName}处理，可能离开本设备",
+                ),
+            )
         }
         val plannedSteps = if (canReadDirectly) {
             listOf("direct_read")
@@ -179,7 +208,6 @@ object NovexLearningPreflight {
             append(request.modelId).append('\n')
             append(request.modelProviderName).append('\n')
             append(request.effectiveContextTokens).append(':')
-                .append(request.occupiedContextTokens).append(':')
                 .append(request.directReadBudgetTokens).append('\n')
             append(request.proposedBudget.inputTokens).append(':')
                 .append(request.proposedBudget.outputTokens).append('\n')
@@ -193,6 +221,15 @@ object NovexLearningPreflight {
                     .append(source.unsupportedReason.orEmpty()).append('\n')
             }
         }
+        val estimatedModelRounds = ceil(totalTokens.toDouble() / TOKENS_PER_MODEL_ROUND)
+            .toInt()
+            .coerceAtLeast(1)
+        val minimumMinutes = estimatedModelRounds +
+            request.sources.count { it.requiresNetwork } +
+            request.sources.count { it.requiresOcr } * 2
+        val maximumMinutes = estimatedModelRounds * 4 +
+            request.sources.count { it.requiresNetwork } * 5 +
+            request.sources.count { it.requiresOcr } * 10
         return NovexLearningPreflightSnapshot(
             id = "preflight_" + sha256(canonical).take(24),
             collectionRef = request.collectionRef,
@@ -202,12 +239,17 @@ object NovexLearningPreflight {
             route = if (canReadDirectly) NovexLearningRoute.DIRECT_READ else NovexLearningRoute.CONFIRMATION_REQUIRED,
             sourceCount = request.sources.size,
             estimatedSourceTokens = totalTokens,
-            estimatedModelRounds = ceil(totalTokens.toDouble() / TOKENS_PER_MODEL_ROUND).toInt().coerceAtLeast(1),
+            estimatedModelRounds = estimatedModelRounds,
             pageCount = request.sources.sumOf { it.pageCount ?: 0 },
             imageCount = request.sources.sumOf { it.imageCount },
             ocrSourceCount = request.sources.count { it.requiresOcr },
             networkSourceCount = request.sources.count { it.requiresNetwork },
             estimatedCost = null,
+            estimatedDuration = NovexLearningDurationEstimate(minimumMinutes, maximumMinutes),
+            dataExposure = NovexLearningDataExposure(
+                destination = request.modelProviderName,
+                sourceContentMayLeaveDevice = true,
+            ),
             plannedSteps = plannedSteps,
             confirmedBudget = request.proposedBudget,
             risks = risks,

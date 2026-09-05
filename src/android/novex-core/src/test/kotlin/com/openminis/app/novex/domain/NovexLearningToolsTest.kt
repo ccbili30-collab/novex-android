@@ -52,6 +52,15 @@ class NovexLearningToolsTest {
         assertEquals("none", json.getString("side_effect"))
         assertEquals(snapshot.id, data.getString("preflight_id"))
         assertEquals(90_000, data.getInt("estimated_source_tokens"))
+        assertEquals(3, data.getJSONObject("estimated_duration").getInt("minimum_minutes"))
+        assertEquals(12, data.getJSONObject("estimated_duration").getInt("maximum_minutes"))
+        assertEquals(
+            "测试模型提供商",
+            data.getJSONObject("data_exposure").getString("destination"),
+        )
+        assertTrue(
+            data.getJSONObject("data_exposure").getBoolean("source_content_may_leave_device"),
+        )
         assertTrue(data.getBoolean("requires_confirmation"))
         assertTrue(result.nextActions.any { it.id == "wait_for_native_confirmation" })
         assertFalse(result.nextActions.any { it.id == "learning_start" })
@@ -71,5 +80,22 @@ class NovexLearningToolsTest {
         assertFalse(result.ok)
         assertEquals("learning.collection_not_found", result.code)
         assertEquals(NovexToolSideEffect.NONE, result.sideEffect)
+    }
+
+    @Test
+    fun activeLearningTaskIsReportedInsteadOfCreatingAnotherConfirmationPlan() {
+        val tools = NovexLearningTools { requested, _ ->
+            snapshot.copy(taskStatus = NovexLearningTaskStatus.REVIEWING)
+                .takeIf { requested == collectionRef }
+        }
+
+        val result = tools.learningPrepare(collectionRef, null)
+        val data = JSONObject(result.toJson()).getJSONObject("data")
+
+        assertTrue(result.ok)
+        assertEquals("learning.task_active", result.code)
+        assertEquals("REVIEWING", data.getString("task_status"))
+        assertFalse(result.nextActions.any { it.id == "wait_for_native_confirmation" })
+        assertTrue(result.nextActions.any { it.id == "open_native_learning_status" })
     }
 }

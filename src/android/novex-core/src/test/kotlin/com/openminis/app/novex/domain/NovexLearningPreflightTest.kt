@@ -65,7 +65,13 @@ class NovexLearningPreflightTest {
         assertEquals(1, preflight.networkSourceCount)
         assertEquals("测试模型提供商", preflight.modelProviderName)
         assertEquals(null, preflight.estimatedCost)
+        assertEquals(7, preflight.estimatedDuration.minimumMinutes)
+        assertEquals(31, preflight.estimatedDuration.maximumMinutes)
+        assertEquals("测试模型提供商", preflight.dataExposure.destination)
+        assertTrue(preflight.dataExposure.sourceContentMayLeaveDevice)
+        assertEquals("batch_source_excerpts_and_notes", preflight.dataExposure.contentScope)
         assertTrue(preflight.risks.any { it.code == "learning.cost_unknown" })
+        assertTrue(preflight.risks.any { it.code == "learning.model_data_transfer" })
         assertTrue(preflight.plannedSteps.containsAll(
             listOf(
                 "local_parse",
@@ -110,6 +116,24 @@ class NovexLearningPreflightTest {
     }
 
     @Test
+    fun normalConversationGrowthDoesNotInvalidateAnOtherwiseIdenticalPreflight() {
+        val initial = NovexLearningPreflight.prepare(
+            request(
+                sources = listOf(source("novex://documents/long-a", 90_000)),
+                occupiedContextTokens = 20_000,
+            ),
+        )
+        val afterExplanation = NovexLearningPreflight.prepare(
+            request(
+                sources = listOf(source("novex://documents/long-a", 90_000)),
+                occupiedContextTokens = 24_000,
+            ),
+        )
+
+        assertEquals(initial.id, afterExplanation.id)
+    }
+
+    @Test
     fun confirmedUsageBudgetPausesBeforeAnyUnapprovedOverrun() {
         val preflight = NovexLearningPreflight.prepare(
             request(sources = listOf(source("novex://documents/long-a", 90_000))),
@@ -136,13 +160,14 @@ class NovexLearningPreflightTest {
         sources: List<NovexLearningSourceEstimate>,
         modelId: String = "model-a",
         modelProviderName: String = "当前模型提供商",
+        occupiedContextTokens: Int = 20_000,
     ) = NovexLearningPreflightRequest(
         collectionRef = collectionRef,
         sources = sources,
         modelId = modelId,
         modelProviderName = modelProviderName,
         effectiveContextTokens = 200_000,
-        occupiedContextTokens = 20_000,
+        occupiedContextTokens = occupiedContextTokens,
         directReadBudgetTokens = 12_000,
         proposedBudget = NovexLearningTokenBudget(inputTokens = 220_000, outputTokens = 30_000),
     )

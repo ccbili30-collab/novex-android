@@ -21,6 +21,43 @@ class NovexLearningCoordinator {
             resumeStatus = NovexLearningTaskStatus.INDEXING,
         )
     }
+
+    fun extendBudget(
+        task: NovexLearningTaskState,
+        preflight: NovexLearningPreflightSnapshot,
+        confirmation: NovexLearningConfirmation?,
+    ): NovexLearningTaskState {
+        require(task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
+            "只有到达预算后暂停的学习任务可以扩大预算"
+        }
+        require(preflight.collectionRef == task.collectionRef) { "扩大预算不能更换资料集" }
+        require(preflight.modelId == task.preflight.modelId) { "扩大预算不能更换学习模型" }
+        require(preflight.sourceRefs == task.preflight.sourceRefs) { "扩大预算不能更换资料范围" }
+        require(confirmation != null) { "扩大预算前必须由原生界面重新确认" }
+        require(NovexLearningGate.authorize(preflight, confirmation) == NovexLearningAuthorization.AUTHORIZED) {
+            "扩大预算尚未获得与新预检匹配的用户确认"
+        }
+        require(
+            confirmation.maxInputTokens >= task.usage.maxInputTokens &&
+                confirmation.maxOutputTokens >= task.usage.maxOutputTokens &&
+                (confirmation.maxInputTokens > task.usage.maxInputTokens ||
+                    confirmation.maxOutputTokens > task.usage.maxOutputTokens)
+        ) { "新确认的学习预算必须高于原预算" }
+        val usage = NovexLearningUsageLedger.restore(
+            preflightId = preflight.id,
+            maxInputTokens = confirmation.maxInputTokens,
+            maxOutputTokens = confirmation.maxOutputTokens,
+            usedInputTokens = task.usage.usedInputTokens,
+            usedOutputTokens = task.usage.usedOutputTokens,
+            status = task.resumeStatus,
+        )
+        return NovexLearningTaskState(
+            preflight = preflight,
+            status = task.resumeStatus,
+            usage = usage,
+            resumeStatus = task.resumeStatus,
+        )
+    }
 }
 
 class NovexLearningTaskState internal constructor(
