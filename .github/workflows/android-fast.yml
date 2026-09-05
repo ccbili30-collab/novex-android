@@ -1,0 +1,279 @@
+name: Android fast lane
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Validation scope"
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - novex-core
+          - novex-document
+          - novex-domain
+          - novex-ui
+          - full
+          - skip
+      build_preview:
+        description: "Build a signed non-R8 daily preview artifact"
+        required: true
+        default: false
+        type: boolean
+  push:
+    branches:
+      - next
+    paths:
+      - "src/android/**"
+      - "scripts/android_fast_check_plan.sh"
+      - "scripts/prepare_android_sandbox.sh"
+      - "scripts/verify_android_release.sh"
+      - "scripts/tests/android_*fast*"
+      - ".github/workflows/android-fast.yml"
+
+concurrency:
+  group: android-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: Selective validation and optional daily preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Validate fast-lane contract
+        shell: bash
+        run: |
+          ./scripts/tests/android_fast_check_plan_test.sh
+          ./scripts/tests/android_cloud_fast_workflow_test.sh
+          ./scripts/tests/android_daily_preview_build_type_test.sh
+
+      - name: Select validation scope
+        id: plan
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          REQUESTED_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'auto' }}
+        run: |
+          set -euo pipefail
+          changed="$RUNNER_TEMP/android-fast-changed-files.txt"
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              if [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+                if ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+                  git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+                fi
+                git diff --name-only "$BEFORE_SHA" HEAD > "$changed"
+              else
+                git diff --name-only HEAD^ HEAD > "$changed"
+              fi
+              ;;
+            *)
+              git diff --name-only HEAD^ HEAD > "$changed"
+              ;;
+          esac
+          mapfile -t files < "$changed"
+          plan="$(./scripts/android_fast_check_plan.sh "$REQUESTED_MODE" "${files[@]}")"
+          printf 'plan=%s\n' "$plan" >> "$GITHUB_OUTPUT"
+          printf 'changed_count=%s\n' "${#files[@]}" >> "$GITHUB_OUTPUT"
+          {
+            printf '### Android fast lane\n\n'
+            printf -- '- Plan: `%s`\n' "$plan"
+            printf -- '- Changed files: `%s`\n' "${#files[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate daily preview request
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/next" ]]; then
+            echo "Daily preview artifacts can only be built from next." >&2
+            exit 1
+          fi
+
+      - name: Resolve daily preview version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(sed -n 's/.*?: "\([0-9][0-9.]*\)"/\1/p' src/android/app/build.gradle.kts | head -1)"
+          if [[ -z "$base" ]]; then
+            echo "Unable to read the stable version." >&2
+            exit 1
+          fi
+          version="$base-beta.$GITHUB_RUN_NUMBER"
+          printf 'name=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'tag=v%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 21
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          packages: ""
+
+      - name: Restore Gradle cache
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-read-only: false
+
+      - name: Install application build components
+        if: >-
+          ${{ steps.plan.outputs.plan != 'novex-core' && steps.plan.outputs.plan != 'skip' ||
+              github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;27.0.12077973"
+
+      - name: Prepare sandbox runtime
+        if: >-
+          ${{ steps.plan.outputs.plan != 'novex-core' && steps.plan.outputs.plan != 'skip' ||
+              github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        run: ./scripts/prepare_android_sandbox.sh
+
+      - name: Restore preview signing
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.NOVEX_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.NOVEX_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NOVEX_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NOVEX_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for value in "$KEYSTORE_BASE64" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD"; do
+            if [[ -z "$value" ]]; then
+              echo "Daily preview packaging requires the complete preview signing configuration." >&2
+              exit 1
+            fi
+          done
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/novex-release.jks"
+
+      - name: Run selected checks and optional daily preview
+        working-directory: src/android
+        shell: bash
+        env:
+          PLAN: ${{ steps.plan.outputs.plan }}
+          BUILD_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+          NOVEX_VERSION_NAME: ${{ steps.version.outputs.name }}
+          NOVEX_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/novex-release.jks
+          NOVEX_RELEASE_STORE_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_STORE_PASSWORD || '' }}
+          NOVEX_RELEASE_KEY_ALIAS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_KEY_ALIAS || '' }}
+          NOVEX_RELEASE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_KEY_PASSWORD || '' }}
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
+        run: |
+          set -euo pipefail
+          tasks=()
+          case "$PLAN" in
+            skip)
+              ;;
+            novex-core)
+              tasks+=(":novex-core:test")
+              ;;
+            novex-document)
+              tasks+=(
+                ":app:testPreviewDebugUnitTest"
+                "--tests" "com.openminis.app.data.attachments.*"
+                "--tests" "com.openminis.app.tools.NovexDocumentAgentToolsTest"
+                "--tests" "com.openminis.app.tools.NovexLearningAgentToolsTest"
+                "--tests" "com.openminis.app.ui.chat.AttachmentPromptMetadataTest"
+                "--tests" "com.openminis.app.ui.chat.DocxAttachmentRequestChainTest"
+                "--tests" "com.openminis.app.data.character.CharacterPromptComposerTest"
+              )
+              ;;
+            novex-domain)
+              tasks+=(
+                ":app:testPreviewDebugUnitTest"
+                "--tests" "com.openminis.app.novex.domain.*"
+              )
+              ;;
+            novex-ui)
+              tasks+=(
+                ":app:testPreviewDebugUnitTest"
+                "--tests" "com.openminis.app.ui.novex.*"
+                "--tests" "com.openminis.app.ui.sessions.Novex*"
+                "--tests" "com.openminis.app.ui.navigation.Novex*"
+                "--tests" "com.openminis.app.ui.settings.World*"
+                "--tests" "com.openminis.app.ui.settings.Character*"
+                "--tests" "com.openminis.app.ui.settings.NovexNativeCard*"
+              )
+              ;;
+            full)
+              tasks+=(":app:testPreviewDebugUnitTest" ":app:compilePreviewDebugKotlin")
+              ;;
+            *)
+              echo "Unsupported fast-check plan: $PLAN" >&2
+              exit 2
+              ;;
+          esac
+          if [[ "$BUILD_PREVIEW" == "true" ]]; then
+            tasks+=(":app:assemblePreviewDaily")
+          fi
+          if [[ "${#tasks[@]}" -eq 0 ]]; then
+            echo "No Android work selected."
+            exit 0
+          fi
+          ./gradlew --daemon --console=plain --stacktrace --max-workers=4 \
+            -Dorg.gradle.daemon.idletimeout=3600000 \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8" \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            "${tasks[@]}"
+
+      - name: Stage verified daily preview
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6
+        run: |
+          set -euo pipefail
+          output="dist/preview-daily"
+          rm -rf "$output"
+          ./scripts/verify_android_release.sh \
+            src/android/app/build/outputs/apk/preview/daily/app-preview-daily.apk \
+            "${{ steps.version.outputs.tag }}" \
+            "$output" \
+            preview
+          cp src/android/app/build/outputs/apk/preview/daily/app-preview-daily.apk \
+            "$output/zz-novex-preview-installer.apk"
+          (
+            cd "$output"
+            find . -maxdepth 1 -type f \( -name '*.apk' -o -name '*.novex' \) -print | \
+              sed 's#^./##' | sort | xargs sha256sum > SHA256SUMS.txt
+          )
+
+      - name: Upload daily preview
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: novex-preview-daily-${{ steps.version.outputs.name }}
+          path: dist/preview-daily/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test report after failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-fast-failure-${{ github.sha }}
+          path: src/android/app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
