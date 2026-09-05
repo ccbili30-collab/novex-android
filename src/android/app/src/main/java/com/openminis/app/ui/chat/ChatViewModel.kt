@@ -18,8 +18,9 @@ import com.openminis.app.data.db.MessageEntity
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
-import com.openminis.app.data.attachments.DocumentTextExtractor
-import com.openminis.app.data.attachments.documentExtractionDiagnostic
+import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
+import com.openminis.app.data.attachments.containsAgentAttachmentMetadata
+import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
 import com.openminis.app.data.db.CompactMarkerEntity
@@ -54,6 +55,7 @@ import com.openminis.app.tools.FileReadTool
 import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
+import com.openminis.app.tools.NovexDocumentAgentTools
 import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
@@ -64,6 +66,8 @@ import com.openminis.app.novex.domain.InteractiveFictionRuntime
 import com.openminis.app.novex.domain.NovexConversationConfiguration
 import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
 import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
+import com.openminis.app.novex.domain.FileNovexDocumentSnapshotRepository
+import com.openminis.app.novex.domain.NovexDocumentToolRouter
 import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.novex.domain.PlaythroughStateRegistration
 import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
@@ -875,6 +879,21 @@ class ChatViewModel(
 
     /** Structured agent history for the agent loop (contentParts-based). */
     private val agentHistory = mutableListOf<LLMMessage>()
+    private val novexDocumentRepository by lazy {
+        FileNovexDocumentSnapshotRepository(
+            java.io.File(context.filesDir, "novex/derived/document-snapshots"),
+        )
+    }
+    private val novexDocumentSnapshotExtractor by lazy {
+        NovexDocumentSnapshotExtractor(novexDocumentRepository)
+    }
+    private val novexDocumentAgentTools by lazy {
+        NovexDocumentAgentTools(novexDocumentRepository) { requested ->
+            requested.value in activeNovexDocumentRefs
+        }
+    }
+    @Volatile
+    private var activeNovexDocumentRefs: Set<String> = emptySet()
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -904,6 +923,7 @@ class ChatViewModel(
             memoryEnabled = _memoryEnabled.value,
             imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
             interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null,
+            documentsAvailable = activeNovexDocumentRefs.isNotEmpty(),
         )
 
     /** Role chats start with no tools and expose only the role card's explicit allow-list. */
@@ -4164,6 +4184,7 @@ class ChatViewModel(
             // bulk-addAll here because loadSession runs once at init before
             // any sender writes into agentHistory.
             agentHistory.addAll(loaded.llmHistory)
+            activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
                 "[T-HANG-DIAG] agentHistory rebuilt session=$sessionId tookMs=${tHangDiagAfterAgentHistory - tHangDiagAfterTransform}",
@@ -4830,6 +4851,7 @@ class ChatViewModel(
         // Memory state — match iOS clearChat() field list one-for-one.
         _messages.value = emptyList()
         agentHistory.clear()
+        activeNovexDocumentRefs = emptySet()
         _error.value = null
         _cachedLatestMarker = null
         toolLoopDetector.reset()
@@ -5212,6 +5234,7 @@ class ChatViewModel(
         excludedBranchMemoryWrites = projection.excludedMemoryWrites
         agentHistory.clear()
         agentHistory.addAll(llmHistory)
+        activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
         toolLoopDetector.reset()
         _cachedLatestMarker = marker
         _compactSummary.value = marker?.summary
@@ -5353,7 +5376,7 @@ class ChatViewModel(
     /**
      * T187: enter edit mode for [messageId]. Returns the cleaned text the
      * caller should drop into the composer (with any
-     * `<user-attached-files>` XML stripped), or null when the message
+     * model-only attachment metadata stripped), or null when the message
      * cannot be edited (streaming in progress, message missing, or not
      * a user turn). Setting `_editingMessageId` is what flips the
      * composer into edit-mode UI; the next sendMessage call sees the
@@ -5364,17 +5387,7 @@ class ChatViewModel(
         if (_isStreaming.value) return null
         val msg = _messages.value.firstOrNull { it.id == messageId } ?: return null
         if (msg.role != "user") return null
-        var text = msg.content
-        val startIdx = text.indexOf("<user-attached-files>")
-        if (startIdx >= 0) {
-            val endTag = "</user-attached-files>"
-            val endIdx = text.indexOf(endTag, startIdx)
-            text = if (endIdx >= 0) {
-                (text.substring(0, startIdx) + text.substring(endIdx + endTag.length)).trim()
-            } else {
-                text.substring(0, startIdx).trim()
-            }
-        }
+        val text = stripAgentAttachmentMetadata(msg.content)
         _editingMessageId.value = messageId
         AppLogger.info(TAG_STREAM, "✏️ editMessage id=${messageId.take(8)} text=${text.length}ch")
         return text
@@ -8797,6 +8810,9 @@ class ChatViewModel(
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
+            NovexDocumentToolRouter.DOCUMENT_INSPECT,
+            NovexDocumentToolRouter.DOCUMENT_READ,
+            -> novexDocumentAgentTools.execute(name, argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -10573,49 +10589,29 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
 
             val linuxPath = "/var/minis/attachments/uploads/$safeName"
-            val extracted = runCatching {
-                DocumentTextExtractor.extract(
+            val documentSnapshot = runCatching {
+                novexDocumentSnapshotExtractor.extract(
                     context = context,
                     file = dest,
                     mimeType = attachment.mimeType,
                     originalName = attachment.fileName,
                 )
             }.onFailure { failure ->
-                val diagnostic = documentExtractionDiagnostic(
-                    fileName = attachment.fileName,
-                    fileSize = dest.length(),
-                    failure = failure,
-                )
-                AppLogger.error(TAG, diagnostic.logMessage)
                 Log.e(TAG, "document extraction failed for ${attachment.fileName}", failure)
-                _error.value = diagnostic.userMessage
             }.getOrNull()
-            extracted?.primaryFailureType?.let { primaryFailureType ->
+            documentSnapshot?.warnings?.forEach { warning ->
                 AppLogger.warning(
                     TAG,
-                    "document_extraction_fallback file=${attachment.fileName} " +
-                        "size=${dest.length()} exception=$primaryFailureType " +
-                        "stage=DOCX poi-on-android 主解析 engine=${extracted.extractionEngine}",
+                    "novex_document_snapshot file=${attachment.fileName} " +
+                        "size=${dest.length()} code=${warning.code}",
                 )
-            }
-            val extractedPath = extracted?.let { result ->
-                val extractedName = uniqueUploadFileName(uploadsHostDir, "$safeName.extracted.md")
-                val extractedFile = java.io.File(uploadsHostDir, extractedName)
-                runCatching {
-                    extractedFile.writeText(result.text)
-                    "/var/minis/attachments/uploads/$extractedName"
-                }.onFailure { failure ->
-                    Log.w(TAG, "extracted text write failed for ${attachment.fileName}: ${failure.message}")
-                }.getOrNull()
             }
             metas.add(
                 UserAttachedFilePromptMeta(
                     linuxPath = linuxPath,
                     size = dest.length(),
                     modifiedIso = nowStr,
-                    extractedTextPath = extractedPath,
-                    extractedFormat = extracted?.formatLabel,
-                    extractedText = extracted?.text,
+                    documentSnapshot = documentSnapshot,
                 ),
             )
         }
@@ -10656,11 +10652,13 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
         }
 
-        // Build the <user-attached-files> XML block (iOS parity). One <file>
-        // per attachment (image and non-image) that successfully landed in
-        // the iSH uploads dir — gives the model a metadata-only inventory
-        // it can resolve via shell tools when content is needed.
+        // Parsed documents become bounded Novex receipts; ordinary files retain
+        // compatibility metadata until the controlled workspace replaces raw paths.
         val xml = buildUserAttachedFilesPrompt(metas)
+        val newDocumentRefs = metas.mapNotNull { meta -> meta.documentSnapshot?.ref?.value }.toSet()
+        if (newDocumentRefs.isNotEmpty()) {
+            activeNovexDocumentRefs = activeNovexDocumentRefs + newDocumentRefs
+        }
 
         // Order matches UserAttachmentList convention: images first, then files.
         PreparedAttachments(
@@ -11074,7 +11072,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
      * [T-title-gen-fallback-first-message-android] Set the session title to a
      * cleaned-up truncation of the first user message when LLM title generation
      * fails (request error / timeout / empty / parse failure / model
-     * unavailable). Strips the trailing `<user-attached-files>` XML block,
+     * unavailable). Strips model-only attachment metadata,
      * collapses whitespace/newlines to single spaces, and clamps to ~30 chars
      * with an ellipsis — matching the title norm (single-line, short). No-op
      * (logged) when there's no usable first-message text.
@@ -11098,19 +11096,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             return
         }
         val raw = _messages.value.firstOrNull { it.role == "user" }?.content
-        var text = raw ?: ""
-        // Drop the <user-attached-files> XML the composer appends so the title
-        // reflects what the user actually typed, not the attachment manifest.
-        val startIdx = text.indexOf("<user-attached-files>")
-        if (startIdx >= 0) {
-            val endTag = "</user-attached-files>"
-            val endIdx = text.indexOf(endTag, startIdx)
-            text = if (endIdx >= 0) {
-                text.substring(0, startIdx) + text.substring(endIdx + endTag.length)
-            } else {
-                text.substring(0, startIdx)
-            }
-        }
+        val text = stripAgentAttachmentMetadata(raw ?: "")
         // Collapse all whitespace (incl. newlines) to single spaces, trim.
         val cleaned = text.replace(Regex("\\s+"), " ").trim()
         if (cleaned.isEmpty()) {
@@ -11778,25 +11764,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         else systemReminderRegex.replace(text, "")
 
     /**
-     * [T-android-retry-attachment-loss] Remove the `<user-attached-files>` XML
-     * inventory from a persisted text part for DISPLAY only. The XML is now
-     * persisted (iOS parity) so the model keeps the file paths across retry /
-     * reload, but it must never render in the user bubble — the file chips are
-     * rebuilt from the mediaRef parts instead. Mirrors the index-based strip
-     * already used by editMessage / the title-fallback path.
+     * Attachment metadata is stripped for display by the shared attachment
+     * envelope helper. Persisted rows and model history keep the original receipt.
      */
-    private fun stripAttachedFilesXml(text: String): String {
-        val startIdx = text.indexOf("<user-attached-files>")
-        if (startIdx < 0) return text
-        val endTag = "</user-attached-files>"
-        val endIdx = text.indexOf(endTag, startIdx)
-        return if (endIdx >= 0) {
-            text.substring(0, startIdx) + text.substring(endIdx + endTag.length)
-        } else {
-            text.substring(0, startIdx)
-        }
-    }
-
     private fun List<MessageEntity>.toChatMessages(
         branchGraph: com.openminis.app.data.ConversationBranchGraph? = null,
         contextUsageByRequest: Map<String, ContextUsageRecord> = emptyMap(),
@@ -11870,7 +11840,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                             // doesn't render in the user bubble (file chips come
                             // from mediaRef parts). The DB row + agentHistory
                             // keep the raw XML so the model still sees paths.
-                            val t = stripAttachedFilesXml(stripSystemReminders(raw)).let {
+                            val t = stripAgentAttachmentMetadata(stripSystemReminders(raw)).let {
                                 if (it != raw) it.trim() else it
                             }
                             if (t.isEmpty()) continue
@@ -12047,6 +12017,13 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
     private data class ToolResultData(val output: String, val success: Boolean)
 
+    private fun novexDocumentRefsInHistory(history: List<LLMMessage>): Set<String> = history
+        .asSequence()
+        .flatMap { message -> message.contentParts.asSequence() }
+        .filterIsInstance<AgentContentPart.Text>()
+        .flatMap { part -> novexDocumentRefsInPrompt(part.text).asSequence() }
+        .toSet()
+
     private fun MessageEntity.toLLMMessage(): LLMMessage {
         val r = if (role == "user") LLMMessage.Role.USER else LLMMessage.Role.ASSISTANT
         val contentParts = mutableListOf<AgentContentPart>()
@@ -12069,7 +12046,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                         // messages byte-identical so `.content` consumers
                         // (summary, title fallback, edit) see the same string
                         // as a fresh turn and don't get the XML twice.
-                        if (value.contains("<user-attached-files>")) {
+                        if (containsAgentAttachmentMetadata(value)) {
                             contentParts.add(AgentContentPart.Text(value))
                         } else {
                             textContent += value
@@ -12214,6 +12191,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "novex_inspect_content" -> "查看挂载内容"
         "novex_propose_content_changes" -> "提出内容变更"
         "novex_apply_content_changes" -> "执行内容变更"
+        "document_inspect" -> "检查文档"
+        "document_read" -> "读取文档"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

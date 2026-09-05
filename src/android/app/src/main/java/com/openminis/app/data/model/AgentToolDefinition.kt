@@ -78,16 +78,33 @@ data class AgentToolParam(
     val type: String,
     val description: String,
     val enumValues: List<String>? = null,
+    val items: AgentToolParam? = null,
+    val properties: Map<String, AgentToolParam>? = null,
+    val required: List<String> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("type", type)
         put("description", description)
         if (enumValues != null) put("enum", JSONArray(enumValues))
+        if (items != null) put("items", items.toJson())
+        if (properties != null) {
+            put("properties", JSONObject().apply {
+                properties.forEach { (name, parameter) -> put(name, parameter.toJson()) }
+            })
+        }
+        if (required.isNotEmpty()) put("required", JSONArray(required))
     }
 
     fun toGeminiJson(): JSONObject = JSONObject().apply {
         put("type", type.uppercase())
         put("description", description)
         if (enumValues != null) put("enum", JSONArray(enumValues))
+        if (items != null) put("items", items.toGeminiJson())
+        if (properties != null) {
+            put("properties", JSONObject().apply {
+                properties.forEach { (name, parameter) -> put(name, parameter.toGeminiJson()) }
+            })
+        }
+        if (required.isNotEmpty()) put("required", JSONArray(required))
     }
 }

@@ -1,8 +1,9 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.attachments.DocumentTextExtractor
+import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
+import com.openminis.app.novex.domain.InMemoryNovexDocumentSnapshotCache
 import com.openminis.app.provider.openai.OpenAIProvider
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -14,10 +15,11 @@ import org.junit.Test
 
 class DocxAttachmentRequestChainTest {
     @Test
-    fun `selected docx text reaches provider request and can ground the answer`() = runBlocking {
+    fun `selected docx receipt reaches provider request without injecting its body`() = runBlocking {
         val file = fixture("docx/libreoffice-comment.docx")
-        val extracted = requireNotNull(
-            DocumentTextExtractor.extract(null, file, null, "review.docx"),
+        val snapshot = requireNotNull(
+            NovexDocumentSnapshotExtractor(InMemoryNovexDocumentSnapshotCache())
+                .extract(null, file, null, "review.docx"),
         )
         val attachmentContext = requireNotNull(
             buildUserAttachedFilesPrompt(
@@ -26,9 +28,7 @@ class DocxAttachmentRequestChainTest {
                         linuxPath = "/var/minis/attachments/uploads/review.docx",
                         size = file.length(),
                         modifiedIso = "2026-08-31T00:00:00Z",
-                        extractedTextPath = "/var/minis/attachments/uploads/review.docx.extracted.md",
-                        extractedFormat = extracted.formatLabel,
-                        extractedText = extracted.text,
+                        documentSnapshot = snapshot,
                     ),
                 ),
             ),
@@ -69,7 +69,10 @@ class DocxAttachmentRequestChainTest {
             )
 
             val requestBody = server.takeRequest().body.readUtf8()
-            assertTrue(requestBody.contains("This is the first line"))
+            assertTrue(requestBody.contains(snapshot.ref.value))
+            assertTrue(requestBody.contains("document_inspect"))
+            assertTrue(requestBody.contains("document_read"))
+            assertTrue(!requestBody.contains("This is the first line"))
             assertEquals("批注内容是 This is the first line", response.text)
         } finally {
             server.shutdown()

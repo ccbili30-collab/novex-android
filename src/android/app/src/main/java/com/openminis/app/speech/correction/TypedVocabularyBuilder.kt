@@ -2,6 +2,7 @@ package com.openminis.app.speech.correction
 
 import android.content.Context
 import android.util.Log
+import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.data.db.ChatDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -163,12 +164,7 @@ class TypedVocabularyBuilder(
          * filenames don't become vocabulary.
          */
         internal fun stripAttachmentMarkup(text: String): String {
-            val start = text.indexOf("<user-attached-files>")
-            if (start < 0) return text.trim()
-            val endTag = "</user-attached-files>"
-            val end = text.indexOf(endTag, start)
-            if (end < 0) return text.trim()
-            return (text.substring(0, start) + text.substring(end + endTag.length)).trim()
+            return stripAgentAttachmentMetadata(text)
         }
     }
 }

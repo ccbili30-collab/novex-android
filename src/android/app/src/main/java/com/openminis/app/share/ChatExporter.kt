@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.MessageEntity
 import com.openminis.app.data.repository.ChatRepository
@@ -265,17 +266,7 @@ object ChatExporter {
                 // <user-attached-files> XML inventory from the human-readable
                 // text export — it's model-facing metadata, not chat content.
                 // (The JSON export above keeps full-fidelity parts_json.)
-                var value = obj.optString("value")
-                val start = value.indexOf("<user-attached-files>")
-                if (start >= 0) {
-                    val endTag = "</user-attached-files>"
-                    val end = value.indexOf(endTag, start)
-                    value = if (end >= 0) {
-                        value.substring(0, start) + value.substring(end + endTag.length)
-                    } else {
-                        value.substring(0, start)
-                    }.trim()
-                }
+                val value = stripAgentAttachmentMetadata(obj.optString("value"))
                 if (value.isNotEmpty()) {
                     if (sb.isNotEmpty()) sb.append('\n')
                     sb.append(value)

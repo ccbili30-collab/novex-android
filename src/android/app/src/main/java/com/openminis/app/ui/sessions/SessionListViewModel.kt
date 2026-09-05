@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.model.LLMMessage
@@ -1003,24 +1004,14 @@ class SessionListViewModel(
     }
 
     /**
-     * Strip the composer's `<user-attached-files>` block, collapse whitespace
+     * Strip the composer's model-only attachment metadata, collapse whitespace
      * and truncate to 30 chars. Same shape as iOS `fallbackTitle(fromFirst‑
      * UserMessage:)` and ChatViewModel.applyFallbackTitleFromFirstMessage, so
      * a title recovered here is indistinguishable from one written by the auto
      * path. Returns null when nothing usable remains.
      */
     private fun fallbackTitleFrom(raw: String?): String? {
-        var text = raw ?: return null
-        val startIdx = text.indexOf("<user-attached-files>")
-        if (startIdx >= 0) {
-            val endTag = "</user-attached-files>"
-            val endIdx = text.indexOf(endTag, startIdx)
-            text = if (endIdx >= 0) {
-                text.substring(0, startIdx) + text.substring(endIdx + endTag.length)
-            } else {
-                text.substring(0, startIdx)
-            }
-        }
+        val text = stripAgentAttachmentMetadata(raw ?: return null)
         val cleaned = text.replace(Regex("\\s+"), " ").trim()
         if (cleaned.isEmpty()) return null
         return if (cleaned.length > 30) cleaned.take(30).trimEnd() + "…" else cleaned
@@ -1039,19 +1030,7 @@ class SessionListViewModel(
                 // session-list previews + search snippets so the inventory XML
                 // never surfaces as visible session content (iOS strips it the
                 // same way in ChatStore.toChatMessage).
-                if (value.contains("<user-attached-files>")) {
-                    val start = value.indexOf("<user-attached-files>")
-                    val endTag = "</user-attached-files>"
-                    val end = value.indexOf(endTag, start)
-                    val cleaned = if (end >= 0) {
-                        value.substring(0, start) + value.substring(end + endTag.length)
-                    } else {
-                        value.substring(0, start)
-                    }.trim()
-                    cleaned.ifEmpty { null }
-                } else {
-                    value
-                }
+                stripAgentAttachmentMetadata(value).ifEmpty { null }
             }.joinToString("\n")
         } catch (_: Exception) {
             partsJson

@@ -96,12 +96,14 @@ $toolRule
 /** Keeps character conversations from inheriting the general Nova tool set. */
 object CharacterToolPolicy {
     private val roleToolNames = setOf("present_choices", "generate_image")
+    private val attachedReadOnlyToolNames = setOf("document_inspect", "document_read")
 
     fun allowedToolNames(character: CharacterCard?, availableToolNames: Set<String>): Set<String> {
         if (character == null) return availableToolNames
-        return character.allowedTools
+        val configured = character.allowedTools
             .asSequence()
             .filter { it in roleToolNames && it in availableToolNames }
             .toSet()
+        return configured + attachedReadOnlyToolNames.filter { it in availableToolNames }
     }
 }

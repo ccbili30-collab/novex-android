@@ -29,6 +29,7 @@ object AgentTools {
         memoryEnabled: Boolean = true,
         imageGenerationConfigured: Boolean = false,
         interactiveFictionActive: Boolean = false,
+        documentsAvailable: Boolean = false,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
@@ -39,6 +40,9 @@ object AgentTools {
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
         addAll(NovexManagementTools.definitions())
+        if (documentsAvailable) {
+            addAll(NovexDocumentAgentTools.providerDefinitions())
+        }
         if (interactiveFictionActive) {
             add(updatePlaythroughStateDefinition())
         }

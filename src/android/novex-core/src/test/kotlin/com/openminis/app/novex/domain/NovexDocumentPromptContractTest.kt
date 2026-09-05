@@ -16,6 +16,34 @@ class NovexDocumentPromptContractTest {
     }
 
     @Test
+    fun documentCatalogIsTheSingleTypedSourceForProviderSchemas() {
+        val tools = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.DOCUMENTS))
+        val inspect = tools.single { it.name == "document_inspect" }
+        val read = tools.single { it.name == "document_read" }
+
+        assertEquals(
+            NovexToolParameterKind.BOOLEAN,
+            inspect.parameters.single { it.name == "include_outline" }.kind,
+        )
+        assertEquals(
+            NovexToolParameterKind.INTEGER,
+            inspect.parameters.single { it.name == "max_depth" }.kind,
+        )
+        assertEquals(
+            NovexToolParameterKind.STRING_LIST,
+            read.parameters.single { it.name == "block_ids" }.kind,
+        )
+        assertEquals(
+            NovexToolParameterKind.PAGE_RANGE,
+            read.parameters.single { it.name == "page_range" }.kind,
+        )
+        assertEquals(
+            listOf("max_blocks", "max_chars"),
+            read.parameters.filter { it.kind == NovexToolParameterKind.INTEGER }.map { it.name },
+        )
+    }
+
+    @Test
     fun attachmentReceiptContainsOutlineAndReferenceButNeverTheLargeDocumentBody() {
         val sha = "b".repeat(64)
         val secretBody = "长篇正文唯一标记" + "甲".repeat(120_000)

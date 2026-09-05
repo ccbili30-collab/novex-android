@@ -6,9 +6,18 @@ enum class NovexToolCapability {
 
 data class NovexToolParameter(
     val name: String,
+    val kind: NovexToolParameterKind,
     val required: Boolean,
     val description: String,
 )
+
+enum class NovexToolParameterKind {
+    STRING,
+    INTEGER,
+    BOOLEAN,
+    STRING_LIST,
+    PAGE_RANGE,
+}
 
 data class NovexToolDefinition(
     val name: String,
@@ -27,10 +36,10 @@ object NovexToolCatalog {
                     description = "检查文档格式、状态、规模、警告和紧凑目录；不返回全文。",
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
-                        NovexToolParameter("document_ref", true, "Novex 文档引用"),
-                        NovexToolParameter("include_outline", false, "是否返回紧凑目录"),
-                        NovexToolParameter("max_depth", false, "目录最大层级，一到六"),
-                        NovexToolParameter("max_outline_items", false, "目录最大条目数，一到五百"),
+                        NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
+                        NovexToolParameter("include_outline", NovexToolParameterKind.BOOLEAN, false, "是否返回紧凑目录，默认 true"),
+                        NovexToolParameter("max_depth", NovexToolParameterKind.INTEGER, false, "目录最大层级，一到六"),
+                        NovexToolParameter("max_outline_items", NovexToolParameterKind.INTEGER, false, "目录最大条目数，一到五百"),
                     ),
                 ),
             )
@@ -40,12 +49,14 @@ object NovexToolCatalog {
                     description = "按内容块、标题、关键词、页码或游标有界读取文档。",
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
-                        NovexToolParameter("document_ref", true, "Novex 文档引用"),
-                        NovexToolParameter("block_ids", false, "需要读取的稳定内容块编号"),
-                        NovexToolParameter("heading_path", false, "需要读取的标题路径"),
-                        NovexToolParameter("query", false, "需要定位的关键词或短语"),
-                        NovexToolParameter("page_range", false, "格式可靠支持时使用的页码范围"),
-                        NovexToolParameter("cursor", false, "继续上次顺序读取的游标"),
+                        NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
+                        NovexToolParameter("block_ids", NovexToolParameterKind.STRING_LIST, false, "需要读取的稳定内容块编号"),
+                        NovexToolParameter("heading_path", NovexToolParameterKind.STRING_LIST, false, "需要读取的完整标题路径"),
+                        NovexToolParameter("query", NovexToolParameterKind.STRING, false, "需要定位的关键词或短语"),
+                        NovexToolParameter("page_range", NovexToolParameterKind.PAGE_RANGE, false, "格式可靠支持时使用的页码闭区间"),
+                        NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "继续上次顺序读取的游标"),
+                        NovexToolParameter("max_blocks", NovexToolParameterKind.INTEGER, false, "本次最多返回的内容块数量，一到一百"),
+                        NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次最多返回的字符数，一到四万八千"),
                     ),
                 ),
             )

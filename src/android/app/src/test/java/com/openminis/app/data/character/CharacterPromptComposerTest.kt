@@ -176,16 +176,26 @@ class CharacterPromptComposerTest {
 
     @Test
     fun `role tool policy defaults closed and never exposes general Nova tools`() {
-        val available = setOf("present_choices", "generate_image", "shell_execute", "read_file")
+        val available = setOf(
+            "present_choices",
+            "generate_image",
+            "shell_execute",
+            "read_file",
+            "document_inspect",
+            "document_read",
+        )
         val closed = CharacterCard(id = "closed", name = "艾琳", createdAt = 1, updatedAt = 1)
         val enabled = closed.copy(
             id = "enabled",
             allowedTools = listOf("present_choices", "generate_image", "shell_execute"),
         )
 
-        assertTrue(CharacterToolPolicy.allowedToolNames(closed, available).isEmpty())
         assertEquals(
-            setOf("present_choices", "generate_image"),
+            setOf("document_inspect", "document_read"),
+            CharacterToolPolicy.allowedToolNames(closed, available),
+        )
+        assertEquals(
+            setOf("present_choices", "generate_image", "document_inspect", "document_read"),
             CharacterToolPolicy.allowedToolNames(enabled, available),
         )
         assertEquals(available, CharacterToolPolicy.allowedToolNames(null, available))
