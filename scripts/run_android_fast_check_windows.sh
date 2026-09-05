@@ -150,6 +150,7 @@ case "$plan" in
       --tests 'com.openminis.app.ui.chat.AttachmentPromptMetadataTest'
       --tests 'com.openminis.app.ui.chat.DocxAttachmentRequestChainTest'
       --tests 'com.openminis.app.data.character.CharacterPromptComposerTest'
+      --tests 'com.openminis.app.speech.correction.TypedVocabularyBuilderTest'
     )
     ;;
   *)

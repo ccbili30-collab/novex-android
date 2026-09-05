@@ -123,7 +123,8 @@ for expected in \
   "com.openminis.app.tools.NovexLearningAgentToolsTest" \
   "com.openminis.app.ui.chat.AttachmentPromptMetadataTest" \
   "com.openminis.app.ui.chat.DocxAttachmentRequestChainTest" \
-  "com.openminis.app.data.character.CharacterPromptComposerTest"; do
+  "com.openminis.app.data.character.CharacterPromptComposerTest" \
+  "com.openminis.app.speech.correction.TypedVocabularyBuilderTest"; do
   if [[ "$document_output" != *"$expected"* ]]; then
     echo "missing Novex document dry-run output: $expected" >&2
     exit 1

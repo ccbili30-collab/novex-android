@@ -17,11 +17,11 @@ fun stripAgentAttachmentMetadata(text: String): String {
             if (start < 0) break
             val endTag = "</$tag>"
             val end = cleaned.indexOf(endTag, start)
-            cleaned = if (end >= 0) {
-                cleaned.substring(0, start) + cleaned.substring(end + endTag.length)
-            } else {
-                cleaned.substring(0, start)
-            }
+            // Only a complete application-owned envelope is metadata. A user can
+            // legitimately type a tag-like fragment; truncating everything after
+            // an unmatched opener loses visible conversation content and exports.
+            if (end < 0) break
+            cleaned = cleaned.substring(0, start) + cleaned.substring(end + endTag.length)
         }
     }
     cleaned = NovexSourceCollectionPromptReceipt.stripFrom(cleaned)
