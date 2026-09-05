@@ -16,6 +16,15 @@ class NovexDocumentPromptContractTest {
     }
 
     @Test
+    fun learningCapabilityExposesPreparationButNeverLetsTheModelStartOrConfirmWork() {
+        val tools = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.LEARNING))
+
+        assertEquals(listOf("learning_prepare"), tools.map { it.name })
+        assertTrue(tools.single().risk == NovexToolRisk.READ_ONLY)
+        assertFalse(tools.any { it.name in setOf("learning_start", "learning_confirm") })
+    }
+
+    @Test
     fun documentCatalogIsTheSingleTypedSourceForProviderSchemas() {
         val tools = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.DOCUMENTS))
         val inspect = tools.single { it.name == "document_inspect" }

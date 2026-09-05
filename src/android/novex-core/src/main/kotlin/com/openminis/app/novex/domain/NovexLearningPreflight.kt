@@ -34,6 +34,7 @@ data class NovexLearningPreflightRequest(
     val collectionRef: NovexResourceRef,
     val sources: List<NovexLearningSourceEstimate>,
     val modelId: String,
+    val modelProviderName: String = "当前模型提供商",
     val effectiveContextTokens: Int?,
     val occupiedContextTokens: Int,
     val directReadBudgetTokens: Int,
@@ -44,6 +45,7 @@ data class NovexLearningPreflightRequest(
         require(sources.isNotEmpty()) { "学习预检至少需要一项资料" }
         require(sources.map { it.ref }.distinct().size == sources.size) { "学习预检不能包含重复引用" }
         require(modelId.isNotBlank()) { "学习模型编号不能为空" }
+        require(modelProviderName.isNotBlank()) { "模型提供商名称不能为空" }
         require(effectiveContextTokens == null || effectiveContextTokens > 0) { "有效上下文必须大于零" }
         require(occupiedContextTokens >= 0) { "已占用上下文不能为负数" }
         require(directReadBudgetTokens > 0) { "直接读取预算必须大于零" }
@@ -69,16 +71,34 @@ enum class NovexLearningTaskStatus {
 
 data class NovexLearningRisk(val code: String, val message: String)
 
+data class NovexLearningCostEstimate(
+    val currencyCode: String,
+    val minimumMinorUnits: Long,
+    val maximumMinorUnits: Long,
+) {
+    init {
+        require(currencyCode.isNotBlank()) { "费用币种不能为空" }
+        require(minimumMinorUnits >= 0) { "最低费用不能为负数" }
+        require(maximumMinorUnits >= minimumMinorUnits) { "最高费用不能低于最低费用" }
+    }
+}
+
 data class NovexLearningPreflightSnapshot(
     val id: String,
     val collectionRef: NovexResourceRef,
     val sourceRefs: List<NovexResourceRef>,
     val modelId: String,
+    val modelProviderName: String,
     val route: NovexLearningRoute,
+    val sourceCount: Int,
     val estimatedSourceTokens: Int,
     val estimatedModelRounds: Int,
     val pageCount: Int,
     val imageCount: Int,
+    val ocrSourceCount: Int,
+    val networkSourceCount: Int,
+    val estimatedCost: NovexLearningCostEstimate?,
+    val plannedSteps: List<String>,
     val confirmedBudget: NovexLearningTokenBudget,
     val risks: List<NovexLearningRisk>,
     val unsupportedSources: Map<NovexResourceRef, String>,
@@ -135,10 +155,29 @@ object NovexLearningPreflight {
                     message = "当前模型上下文上限未知，不能直接承诺一次读完",
                 ),
             )
+            add(
+                NovexLearningRisk(
+                    code = "learning.cost_unknown",
+                    message = "当前模型价格无法可靠估算，实际费用可能较高",
+                ),
+            )
+        }
+        val plannedSteps = if (canReadDirectly) {
+            listOf("direct_read")
+        } else {
+            buildList {
+                add("local_parse")
+                if (request.sources.any { it.requiresNetwork }) add("fetch_network_sources")
+                if (request.sources.any { it.requiresOcr }) add("optical_character_recognition")
+                add("batch_review")
+                add("deduplicate_classify")
+                add("synthesize_notes")
+            }
         }
         val canonical = buildString {
             append(request.collectionRef.value).append('\n')
             append(request.modelId).append('\n')
+            append(request.modelProviderName).append('\n')
             append(request.effectiveContextTokens).append(':')
                 .append(request.occupiedContextTokens).append(':')
                 .append(request.directReadBudgetTokens).append('\n')
@@ -159,11 +198,17 @@ object NovexLearningPreflight {
             collectionRef = request.collectionRef,
             sourceRefs = request.sources.map { it.ref },
             modelId = request.modelId,
+            modelProviderName = request.modelProviderName,
             route = if (canReadDirectly) NovexLearningRoute.DIRECT_READ else NovexLearningRoute.CONFIRMATION_REQUIRED,
+            sourceCount = request.sources.size,
             estimatedSourceTokens = totalTokens,
             estimatedModelRounds = ceil(totalTokens.toDouble() / TOKENS_PER_MODEL_ROUND).toInt().coerceAtLeast(1),
             pageCount = request.sources.sumOf { it.pageCount ?: 0 },
             imageCount = request.sources.sumOf { it.imageCount },
+            ocrSourceCount = request.sources.count { it.requiresOcr },
+            networkSourceCount = request.sources.count { it.requiresNetwork },
+            estimatedCost = null,
+            plannedSteps = plannedSteps,
             confirmedBudget = request.proposedBudget,
             risks = risks,
             unsupportedSources = request.sources.mapNotNull { source ->
@@ -271,6 +316,26 @@ class NovexLearningUsageLedger private constructor(
                 usedInputTokens = 0,
                 usedOutputTokens = 0,
                 status = NovexLearningTaskStatus.INDEXING,
+            )
+        }
+
+        internal fun restore(
+            preflightId: String,
+            maxInputTokens: Int,
+            maxOutputTokens: Int,
+            usedInputTokens: Int,
+            usedOutputTokens: Int,
+            status: NovexLearningTaskStatus,
+        ): NovexLearningUsageLedger {
+            require(usedInputTokens in 0..maxInputTokens) { "已用输入词元超出学习预算" }
+            require(usedOutputTokens in 0..maxOutputTokens) { "已用输出词元超出学习预算" }
+            return NovexLearningUsageLedger(
+                preflightId = preflightId,
+                maxInputTokens = maxInputTokens,
+                maxOutputTokens = maxOutputTokens,
+                usedInputTokens = usedInputTokens,
+                usedOutputTokens = usedOutputTokens,
+                status = status,
             )
         }
     }

@@ -20,6 +20,7 @@ class NovexLearningPreflightTest {
         assertEquals(NovexLearningRoute.DIRECT_READ, preflight.route)
         assertFalse(preflight.requiresConfirmation)
         assertEquals(NovexLearningTaskStatus.NOT_STARTED, preflight.taskStatus)
+        assertEquals(listOf("direct_read"), preflight.plannedSteps)
     }
 
     @Test
@@ -39,6 +40,43 @@ class NovexLearningPreflightTest {
         assertEquals(NovexLearningTaskStatus.NOT_STARTED, preflight.taskStatus)
         assertTrue(preflight.risks.any { it.code == "learning.high_token_use" })
         assertTrue(preflight.risks.any { it.code == "learning.network_access" })
+    }
+
+    @Test
+    fun preflightDisclosesRealScopeProviderAndUnknownCostInsteadOfInventingAZeroEstimate() {
+        val preflight = NovexLearningPreflight.prepare(
+            request(
+                sources = listOf(
+                    source("novex://documents/long-a", 80_000),
+                    source(
+                        ref = "novex://wiki-pages/42",
+                        estimatedTokens = 30_000,
+                        requiresNetwork = true,
+                        requiresOcr = true,
+                    ),
+                ),
+                modelProviderName = "测试模型提供商",
+            ),
+        )
+
+        assertEquals(2, preflight.sourceCount)
+        assertEquals(2, preflight.pageCount)
+        assertEquals(1, preflight.ocrSourceCount)
+        assertEquals(1, preflight.networkSourceCount)
+        assertEquals("测试模型提供商", preflight.modelProviderName)
+        assertEquals(null, preflight.estimatedCost)
+        assertTrue(preflight.risks.any { it.code == "learning.cost_unknown" })
+        assertTrue(preflight.plannedSteps.containsAll(
+            listOf(
+                "local_parse",
+                "fetch_network_sources",
+                "optical_character_recognition",
+                "batch_review",
+                "deduplicate_classify",
+                "synthesize_notes",
+            ),
+        ))
+        assertTrue("create_world" in preflight.prohibitedOutcomes)
     }
 
     @Test
@@ -97,10 +135,12 @@ class NovexLearningPreflightTest {
     private fun request(
         sources: List<NovexLearningSourceEstimate>,
         modelId: String = "model-a",
+        modelProviderName: String = "当前模型提供商",
     ) = NovexLearningPreflightRequest(
         collectionRef = collectionRef,
         sources = sources,
         modelId = modelId,
+        modelProviderName = modelProviderName,
         effectiveContextTokens = 200_000,
         occupiedContextTokens = 20_000,
         directReadBudgetTokens = 12_000,
@@ -111,11 +151,13 @@ class NovexLearningPreflightTest {
         ref: String,
         estimatedTokens: Int,
         requiresNetwork: Boolean = false,
+        requiresOcr: Boolean = false,
     ) = NovexLearningSourceEstimate(
         ref = NovexResourceRef(ref),
         estimatedTokens = estimatedTokens,
         pageCount = 1,
         imageCount = 0,
         requiresNetwork = requiresNetwork,
+        requiresOcr = requiresOcr,
     )
 }

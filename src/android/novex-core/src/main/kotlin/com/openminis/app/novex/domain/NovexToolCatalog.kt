@@ -2,6 +2,7 @@ package com.openminis.app.novex.domain
 
 enum class NovexToolCapability {
     DOCUMENTS,
+    LEARNING,
 }
 
 data class NovexToolParameter(
@@ -57,6 +58,19 @@ object NovexToolCatalog {
                         NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "继续上次顺序读取的游标"),
                         NovexToolParameter("max_blocks", NovexToolParameterKind.INTEGER, false, "本次最多返回的内容块数量，一到一百"),
                         NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次最多返回的字符数，一到四万八千"),
+                    ),
+                ),
+            )
+        }
+        if (NovexToolCapability.LEARNING in capabilities) {
+            add(
+                NovexToolDefinition(
+                    name = "learning_prepare",
+                    description = "生成资料学习的只读预检、范围、风险和预算建议；不会开始模型通读、联网抓取或光学字符识别。",
+                    risk = NovexToolRisk.READ_ONLY,
+                    parameters = listOf(
+                        NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
+                        NovexToolParameter("model_id", NovexToolParameterKind.STRING, false, "拟用于学习的模型编号；省略时使用当前对话模型"),
                     ),
                 ),
             )
