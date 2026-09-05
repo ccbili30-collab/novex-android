@@ -75,10 +75,18 @@ import com.openminis.app.novex.domain.NovexDocumentBlockKind
 import com.openminis.app.novex.domain.NovexDocumentStatus
 import com.openminis.app.novex.domain.NovexDocumentToolRouter
 import com.openminis.app.novex.domain.NovexLearningPreflight
+import com.openminis.app.novex.domain.NovexLearningConfirmation
+import com.openminis.app.novex.domain.NovexLearningCoordinator
 import com.openminis.app.novex.domain.NovexLearningPreflightRequest
 import com.openminis.app.novex.domain.NovexLearningPreflightSnapshot
+import com.openminis.app.novex.domain.NovexLearningReviewOutput
+import com.openminis.app.novex.domain.NovexLearningReviewRequest
+import com.openminis.app.novex.domain.NovexLearningReviewRunner
+import com.openminis.app.novex.domain.NovexLearningReviewer
 import com.openminis.app.novex.domain.NovexLearningSourceEstimate
 import com.openminis.app.novex.domain.NovexLearningState
+import com.openminis.app.novex.domain.NovexLearningSynthesisRequest
+import com.openminis.app.novex.domain.NovexLearningTaskStatus
 import com.openminis.app.novex.domain.NovexLearningTokenBudget
 import com.openminis.app.novex.domain.NovexLearningToolRouter
 import com.openminis.app.novex.domain.NovexResourceRef
@@ -146,6 +154,12 @@ class ChatViewModel(
 
     companion object {
         internal const val TAG = "ChatViewModel"
+        private const val NOVEX_LEARNING_REVIEW_SYSTEM_PROMPT =
+            "你正在执行经过用户确认的资料通读。只整理给定内容，保留事实、时间、人物、术语、冲突与不确定性；" +
+                "不要创建或修改世界卡、角色卡、文游、存档或源文件。输出紧凑的分层笔记，并明确无法确认的内容。"
+        private const val NOVEX_LEARNING_SYNTHESIS_SYSTEM_PROMPT =
+            "把给定的来源锚定笔记整合成资料集总览。保留关键事实、矛盾、待核实项和来源边界；" +
+                "不要补写原文不存在的设定，也不要创建或修改任何卡类对象。"
 
         /**
          * [T-android-auto-grouping-injection] Strip the characters that would let
@@ -925,6 +939,11 @@ class ChatViewModel(
             prepareNovexLearningPreflight(collectionRef, requestedModelId)
         }
     }
+    private val _novexLearningStatus = MutableStateFlow<NovexLearningTaskStatus?>(null)
+    val novexLearningStatus: StateFlow<NovexLearningTaskStatus?> = _novexLearningStatus.asStateFlow()
+    private val _novexLearningError = MutableStateFlow<String?>(null)
+    val novexLearningError: StateFlow<String?> = _novexLearningError.asStateFlow()
+    private var novexLearningJob: Job? = null
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -12185,6 +12204,188 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         novexLearningRepository.save(state.copy(preflight = preflight))
         _pendingNovexLearningPreflight.value = preflight.takeIf { it.requiresConfirmation }
         return preflight
+    }
+
+    fun dismissNovexLearningPreflight() {
+        _pendingNovexLearningPreflight.value = null
+    }
+
+    fun confirmNovexLearning(preflightId: String) {
+        val preflight = _pendingNovexLearningPreflight.value
+            ?.takeIf { it.id == preflightId }
+            ?: return
+        val provider = currentProvider
+        val model = currentModel
+        if (provider == null || model == null || model.id != preflight.modelId) {
+            _novexLearningError.value = "当前模型已经变化，请重新准备资料学习计划"
+            _pendingNovexLearningPreflight.value = null
+            return
+        }
+        _pendingNovexLearningPreflight.value = null
+        _novexLearningError.value = null
+        novexLearningJob?.cancel()
+        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
+            val stored = novexLearningRepository.find(preflight.collectionRef) ?: run {
+                _novexLearningError.value = "找不到待整理的资料集"
+                return@launch
+            }
+            val confirmation = NovexLearningConfirmation(
+                preflightId = preflight.id,
+                modelId = preflight.modelId,
+                sourceRefs = preflight.sourceRefs,
+                maxInputTokens = preflight.confirmedBudget.inputTokens,
+                maxOutputTokens = preflight.confirmedBudget.outputTokens,
+                confirmedAtMillis = System.currentTimeMillis(),
+            )
+            val task = runCatching { NovexLearningCoordinator().start(preflight, confirmation) }
+                .getOrElse { failure ->
+                    _novexLearningError.value = failure.message ?: "学习确认已经失效"
+                    return@launch
+                }
+            runNovexLearning(stored.copy(preflight = preflight, task = task), provider)
+        }
+    }
+
+    fun pauseNovexLearning() {
+        novexLearningJob?.cancel()
+        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = novexLearningRepository.find(collectionRef) ?: return@launch
+            val task = state.task ?: return@launch
+            if (task.status in setOf(
+                    NovexLearningTaskStatus.INDEXING,
+                    NovexLearningTaskStatus.REVIEWING,
+                    NovexLearningTaskStatus.SYNTHESIZING,
+                )
+            ) {
+                val paused = state.copy(task = task.pause())
+                novexLearningRepository.save(paused)
+                _novexLearningStatus.value = paused.task?.status
+            }
+        }
+    }
+
+    fun cancelNovexLearning() {
+        novexLearningJob?.cancel()
+        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = novexLearningRepository.find(collectionRef) ?: return@launch
+            val task = state.task ?: return@launch
+            if (task.status !in setOf(
+                    NovexLearningTaskStatus.CANCELLED,
+                    NovexLearningTaskStatus.COMPLETE,
+                    NovexLearningTaskStatus.PARTIAL_FAILURE,
+                )
+            ) {
+                val cancelled = state.copy(task = task.cancel())
+                novexLearningRepository.save(cancelled)
+                _novexLearningStatus.value = cancelled.task?.status
+            }
+        }
+    }
+
+    fun resumeNovexLearning() {
+        val provider = currentProvider ?: return
+        val collectionRef = activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef) ?: return
+        novexLearningJob?.cancel()
+        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
+            val state = novexLearningRepository.find(collectionRef) ?: return@launch
+            val task = state.task ?: return@launch
+            if (task.status != NovexLearningTaskStatus.PAUSED) return@launch
+            runNovexLearning(state.copy(task = task.resume()), provider)
+        }
+    }
+
+    fun clearNovexLearningError() {
+        _novexLearningError.value = null
+    }
+
+    private suspend fun runNovexLearning(initial: NovexLearningState, provider: LLMProvider) {
+        try {
+            val runner = NovexLearningReviewRunner(
+                documents = novexDocumentRepository,
+                reviewer = providerNovexLearningReviewer(provider),
+                saveCheckpoint = { checkpoint ->
+                    novexLearningRepository.save(checkpoint)
+                    _novexLearningStatus.value = checkpoint.task?.status
+                },
+            )
+            runner.run(initial)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            _novexLearningError.value = failure.message ?: "资料通读失败，已保留完成进度"
+        }
+    }
+
+    private fun providerNovexLearningReviewer(provider: LLMProvider): NovexLearningReviewer =
+        object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                val material = request.blocks.joinToString("\n\n") { block ->
+                    buildString {
+                        append("[内容块 ").append(block.id).append("]")
+                        if (block.headingPath.isNotEmpty()) {
+                            append("\n标题：").append(block.headingPath.joinToString(" / "))
+                        }
+                        append('\n').append(block.text)
+                    }
+                }
+                val response = provider.sendMessage(
+                    messages = listOf(
+                        LLMMessage(
+                            role = LLMMessage.Role.USER,
+                            content = "资料：${request.documentTitle}\n\n$material",
+                        ),
+                    ),
+                    systemPrompt = NOVEX_LEARNING_REVIEW_SYSTEM_PROMPT,
+                    maxTokens = request.maxOutputTokens,
+                    temperature = null,
+                    tools = emptyList(),
+                    thinkingLevel = ThinkingLevel.OFF,
+                )
+                return response.toNovexLearningOutput(
+                    fallbackTitle = "${request.documentTitle} · 通读笔记",
+                    estimatedInputTokens = request.estimatedInputTokens,
+                )
+            }
+
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                val material = request.notes.joinToString("\n\n") { note ->
+                    "[${note.title}]\n${note.body}"
+                }
+                val response = provider.sendMessage(
+                    messages = listOf(
+                        LLMMessage(
+                            role = LLMMessage.Role.USER,
+                            content = "资料集：${request.collectionTitle}\n\n$material",
+                        ),
+                    ),
+                    systemPrompt = NOVEX_LEARNING_SYNTHESIS_SYSTEM_PROMPT,
+                    maxTokens = request.maxOutputTokens,
+                    temperature = null,
+                    tools = emptyList(),
+                    thinkingLevel = ThinkingLevel.OFF,
+                )
+                return response.toNovexLearningOutput(
+                    fallbackTitle = "${request.collectionTitle} · 总结",
+                    estimatedInputTokens = request.estimatedInputTokens,
+                )
+            }
+        }
+
+    private fun com.openminis.app.data.model.LLMResponse.toNovexLearningOutput(
+        fallbackTitle: String,
+        estimatedInputTokens: Int,
+    ): NovexLearningReviewOutput {
+        val body = text.trim()
+        require(body.isNotEmpty()) { "学习模型没有返回可保存的笔记" }
+        return NovexLearningReviewOutput(
+            title = fallbackTitle,
+            body = body,
+            inputTokens = usage?.inputTokens?.takeIf { it > 0 } ?: estimatedInputTokens,
+            outputTokens = usage?.outputTokens?.takeIf { it > 0 }
+                ?: ((body.length + 2) / 3).coerceAtLeast(1),
+        )
     }
 
     private fun novexHashedRef(kind: String, material: String): NovexResourceRef {

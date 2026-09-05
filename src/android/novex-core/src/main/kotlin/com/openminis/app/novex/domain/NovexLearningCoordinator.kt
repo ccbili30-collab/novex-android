@@ -60,6 +60,31 @@ class NovexLearningTaskState internal constructor(
         return copy(status = NovexLearningTaskStatus.CANCELLED)
     }
 
+    fun advanceTo(next: NovexLearningTaskStatus): NovexLearningTaskState {
+        val allowed = when (status) {
+            NovexLearningTaskStatus.INDEXING -> setOf(NovexLearningTaskStatus.REVIEWING)
+            NovexLearningTaskStatus.REVIEWING -> setOf(NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)
+            else -> emptySet()
+        }
+        require(next in allowed) { "学习任务阶段不能从 $status 前进到 $next" }
+        return copy(status = next, resumeStatus = next)
+    }
+
+    fun pauseForBudget(): NovexLearningTaskState {
+        check(status in EXECUTING_STATUSES) { "只有执行中的学习任务可以因预算暂停" }
+        return copy(status = NovexLearningTaskStatus.PAUSED_BUDGET_REACHED, resumeStatus = status)
+    }
+
+    fun finish(result: NovexLearningTaskStatus): NovexLearningTaskState {
+        require(result in setOf(NovexLearningTaskStatus.COMPLETE, NovexLearningTaskStatus.PARTIAL_FAILURE)) {
+            "学习任务只能结束为完成或部分失败"
+        }
+        check(status in EXECUTING_STATUSES || status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
+            "当前学习任务不能结束"
+        }
+        return copy(status = result)
+    }
+
     private fun copy(
         status: NovexLearningTaskStatus = this.status,
         usage: NovexLearningUsageLedger = this.usage,

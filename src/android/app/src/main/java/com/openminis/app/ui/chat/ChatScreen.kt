@@ -43,6 +43,9 @@ import kotlinx.coroutines.withContext
 import com.openminis.app.novex.domain.ConversationControlBehavior
 import com.openminis.app.novex.domain.PlaythroughValue
 import com.openminis.app.ui.novex.NovexNoticeDialog
+import com.openminis.app.ui.novex.NovexDecisionAction
+import com.openminis.app.ui.novex.NovexDecisionDialog
+import com.openminis.app.ui.novex.NovexDecisionTone
 import com.openminis.app.ui.novex.NovexSelectionAction
 import com.openminis.app.ui.novex.NovexSelectionSheet
 import androidx.compose.runtime.withFrameNanos
@@ -384,6 +387,8 @@ fun ChatScreen(
     val memoryToolRecords by viewModel.memoryToolRecords.collectAsState()
     val selectedGroupName by viewModel.selectedGroupName.collectAsState()
     val providerName by viewModel.providerName.collectAsState()
+    val pendingNovexLearningPreflight by viewModel.pendingNovexLearningPreflight.collectAsState()
+    val novexLearningError by viewModel.novexLearningError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // [T-android-voice-panel] Shared 3-stage RECORD_AUDIO permission flow
@@ -5317,6 +5322,52 @@ fun ChatScreen(
 
     // Offload permission dialog
     OffloadPermissionDialog()
+
+    pendingNovexLearningPreflight?.let { preflight ->
+        val scope = buildString {
+            append("将整理 ${preflight.sourceCount} 项资料，估算 ")
+            append("${preflight.estimatedSourceTokens} 个词元，约 ${preflight.estimatedModelRounds} 轮模型处理。\n")
+            append("模型：${preflight.modelProviderName} / ${preflight.modelId}\n")
+            append("确认上限：输入 ${preflight.confirmedBudget.inputTokens}，输出 ${preflight.confirmedBudget.outputTokens} 个词元。\n")
+            append("费用：当前价格无法可靠估算；达到上限前会自动暂停。")
+            if (preflight.ocrSourceCount > 0) append("\n需要光学字符识别：${preflight.ocrSourceCount} 项。")
+            if (preflight.networkSourceCount > 0) append("\n需要联网：${preflight.networkSourceCount} 项。")
+            if (preflight.unsupportedSources.isNotEmpty()) {
+                append("\n无法完整读取：${preflight.unsupportedSources.size} 项，将明确标为部分失败。")
+            }
+            if (preflight.risks.isNotEmpty()) {
+                append("\n\n风险：")
+                preflight.risks.forEach { risk -> append("\n• ").append(risk.message) }
+            }
+            append("\n\n整理只生成来源锚定笔记，不会创建或修改世界、角色、文游和原文件。")
+        }
+        NovexDecisionDialog(
+            title = "开始整理资料？",
+            message = scope,
+            onDismiss = viewModel::dismissNovexLearningPreflight,
+            actions = listOf(
+                NovexDecisionAction(
+                    label = "确认并开始整理",
+                    icon = R.drawable.ic_phosphor_brain,
+                    tone = NovexDecisionTone.PRIMARY,
+                    onClick = { viewModel.confirmNovexLearning(preflight.id) },
+                ),
+                NovexDecisionAction(
+                    label = "稍后再说",
+                    icon = R.drawable.ic_phosphor_arrow_left,
+                    onClick = viewModel::dismissNovexLearningPreflight,
+                ),
+            ),
+        )
+    }
+
+    novexLearningError?.let { message ->
+        NovexNoticeDialog(
+            title = "资料整理已停止",
+            message = "$message\n已完成的通读进度和笔记仍然保留。",
+            onDismiss = viewModel::clearNovexLearningError,
+        )
+    }
 
     // URL preview sheet — shown when a markdown link is tapped
     previewUrl?.let { url ->
