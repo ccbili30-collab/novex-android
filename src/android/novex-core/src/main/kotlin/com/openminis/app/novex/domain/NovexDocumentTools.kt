@@ -6,8 +6,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class NovexDocumentFormat(val wireName: String) {
+    DOC("doc"),
     DOCX("docx"),
     PDF("pdf"),
+    XLSX("xlsx"),
+    PPTX("pptx"),
+    EPUB("epub"),
+    RTF("rtf"),
+    CSV("csv"),
+    JSON("json"),
+    XML("xml"),
+    YAML("yaml"),
     TEXT("text"),
     MARKDOWN("markdown"),
     HTML("html"),
@@ -16,6 +25,7 @@ enum class NovexDocumentFormat(val wireName: String) {
 
 enum class NovexDocumentStatus(val wireName: String) {
     READY("ready"),
+    EMPTY("empty"),
     OCR_REQUIRED("ocr_required"),
     PASSWORD_REQUIRED("password_required"),
     UNSUPPORTED("unsupported"),

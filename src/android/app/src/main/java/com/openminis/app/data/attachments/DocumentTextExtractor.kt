@@ -34,6 +34,9 @@ object DocumentTextExtractor {
         val truncated: Boolean,
         val extractionEngine: String = "built-in",
         val primaryFailureType: String? = null,
+        val contentText: String = text,
+        val requiresOcr: Boolean = false,
+        val emptyDocument: Boolean = false,
     )
 
     private data class RawResult(
@@ -67,7 +70,9 @@ object DocumentTextExtractor {
             "rtf" -> RawResult(extractRtf(file.readText()), "RTF 文档", "built-in")
             else -> RawResult(file.readText(), "文本文件", "built-in")
         }
-        val normalized = raw.text.replace("\u0000", "").trim().ifBlank {
+        val extractedBody = raw.text.replace("\u0000", "").trim()
+        val requiresOcr = ext == "docx" && extractedBody.isBlank() && raw.hasPictures
+        val normalized = extractedBody.ifBlank {
             when {
                 ext == "docx" && raw.hasPictures ->
                     "该文档没有可提取的文字，内容可能仅由图片或扫描页组成。需要 OCR（光学字符识别）或视觉模型才能读取。"
@@ -89,6 +94,9 @@ object DocumentTextExtractor {
             truncated = truncated,
             extractionEngine = raw.extractionEngine,
             primaryFailureType = raw.primaryFailureType,
+            contentText = if (extractedBody.isBlank()) "" else body,
+            requiresOcr = requiresOcr,
+            emptyDocument = extractedBody.isBlank(),
         )
     }
 
