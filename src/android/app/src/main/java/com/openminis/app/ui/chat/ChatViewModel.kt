@@ -87,6 +87,7 @@ import com.openminis.app.novex.domain.NovexLearningSourceEstimate
 import com.openminis.app.novex.domain.NovexLearningState
 import com.openminis.app.novex.domain.NovexLearningSynthesisRequest
 import com.openminis.app.novex.domain.NovexLearningTaskStatus
+import com.openminis.app.novex.domain.NovexLearningTaskState
 import com.openminis.app.novex.domain.NovexLearningTokenBudget
 import com.openminis.app.novex.domain.NovexLearningToolRouter
 import com.openminis.app.novex.domain.NovexResourceRef
@@ -941,6 +942,8 @@ class ChatViewModel(
     }
     private val _novexLearningStatus = MutableStateFlow<NovexLearningTaskStatus?>(null)
     val novexLearningStatus: StateFlow<NovexLearningTaskStatus?> = _novexLearningStatus.asStateFlow()
+    private val _novexLearningTask = MutableStateFlow<NovexLearningTaskState?>(null)
+    val novexLearningTask: StateFlow<NovexLearningTaskState?> = _novexLearningTask.asStateFlow()
     private val _novexLearningError = MutableStateFlow<String?>(null)
     val novexLearningError: StateFlow<String?> = _novexLearningError.asStateFlow()
     private var novexLearningJob: Job? = null
@@ -4237,6 +4240,7 @@ class ChatViewModel(
             agentHistory.addAll(loaded.llmHistory)
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
+            refreshNovexLearningTaskProjection()
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
                 "[T-HANG-DIAG] agentHistory rebuilt session=$sessionId tookMs=${tHangDiagAfterAgentHistory - tHangDiagAfterTransform}",
@@ -4906,6 +4910,8 @@ class ChatViewModel(
         activeNovexDocumentRefs = emptySet()
         activeNovexSourceCollectionRefs = emptySet()
         _pendingNovexLearningPreflight.value = null
+        _novexLearningTask.value = null
+        _novexLearningStatus.value = null
         _error.value = null
         _cachedLatestMarker = null
         toolLoopDetector.reset()
@@ -5227,6 +5233,7 @@ class ChatViewModel(
      */
     fun switchMessageBranch(messageId: String, delta: Int) {
         if (_isStreaming.value || delta == 0) return
+        if (novexLearningJob?.isActive == true) pauseNovexLearning()
         val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
         if (sid.isEmpty()) return
         viewModelScope.launch {
@@ -5291,6 +5298,7 @@ class ChatViewModel(
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
         activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
         _pendingNovexLearningPreflight.value = null
+        refreshNovexLearningTaskProjection()
         toolLoopDetector.reset()
         _cachedLatestMarker = marker
         _compactSummary.value = marker?.summary
@@ -10770,6 +10778,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         }
         sourceCollection?.let { collection ->
             activeNovexSourceCollectionRefs = activeNovexSourceCollectionRefs + collection.ref.value
+            _novexLearningTask.value = null
+            _novexLearningStatus.value = null
         }
 
         // Order matches UserAttachmentList convention: images first, then files.
@@ -12260,6 +12270,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             ) {
                 val paused = state.copy(task = task.pause())
                 novexLearningRepository.save(paused)
+                _novexLearningTask.value = paused.task
                 _novexLearningStatus.value = paused.task?.status
             }
         }
@@ -12279,6 +12290,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             ) {
                 val cancelled = state.copy(task = task.cancel())
                 novexLearningRepository.save(cancelled)
+                _novexLearningTask.value = cancelled.task
                 _novexLearningStatus.value = cancelled.task?.status
             }
         }
@@ -12300,6 +12312,20 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         _novexLearningError.value = null
     }
 
+    fun dismissNovexLearningTaskNotice() {
+        val status = _novexLearningTask.value?.status ?: return
+        if (status in setOf(
+                NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
+                NovexLearningTaskStatus.CANCELLED,
+                NovexLearningTaskStatus.PARTIAL_FAILURE,
+                NovexLearningTaskStatus.COMPLETE,
+            )
+        ) {
+            _novexLearningTask.value = null
+            _novexLearningStatus.value = null
+        }
+    }
+
     private suspend fun runNovexLearning(initial: NovexLearningState, provider: LLMProvider) {
         try {
             val runner = NovexLearningReviewRunner(
@@ -12307,6 +12333,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 reviewer = providerNovexLearningReviewer(provider),
                 saveCheckpoint = { checkpoint ->
                     novexLearningRepository.save(checkpoint)
+                    _novexLearningTask.value = checkpoint.task
                     _novexLearningStatus.value = checkpoint.task?.status
                 },
             )
@@ -12314,6 +12341,19 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
+            val stored = novexLearningRepository.find(initial.collection.ref)
+            val runningTask = stored?.task
+            if (stored != null && runningTask != null && runningTask.status in setOf(
+                    NovexLearningTaskStatus.INDEXING,
+                    NovexLearningTaskStatus.REVIEWING,
+                    NovexLearningTaskStatus.SYNTHESIZING,
+                )
+            ) {
+                val paused = stored.copy(task = runningTask.pause())
+                novexLearningRepository.save(paused)
+                _novexLearningTask.value = paused.task
+                _novexLearningStatus.value = paused.task?.status
+            }
             _novexLearningError.value = failure.message ?: "资料通读失败，已保留完成进度"
         }
     }
@@ -12386,6 +12426,48 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             outputTokens = usage?.outputTokens?.takeIf { it > 0 }
                 ?: ((body.length + 2) / 3).coerceAtLeast(1),
         )
+    }
+
+    private fun refreshNovexLearningTaskProjection() {
+        val refs = activeNovexSourceCollectionRefs.toList()
+        if (refs.isEmpty()) {
+            _novexLearningTask.value = null
+            _novexLearningStatus.value = null
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val restored = refs.asReversed().asSequence()
+                .mapNotNull { value -> novexLearningRepository.find(NovexResourceRef(value))?.task }
+                .firstOrNull { task ->
+                    task.status !in setOf(
+                        NovexLearningTaskStatus.CANCELLED,
+                        NovexLearningTaskStatus.PARTIAL_FAILURE,
+                        NovexLearningTaskStatus.COMPLETE,
+                    )
+                }
+                ?.let { task ->
+                    if (task.status in setOf(
+                            NovexLearningTaskStatus.INDEXING,
+                            NovexLearningTaskStatus.REVIEWING,
+                            NovexLearningTaskStatus.SYNTHESIZING,
+                        )
+                    ) {
+                        task.pause()
+                    } else {
+                        task
+                    }
+                }
+            if (activeNovexSourceCollectionRefs.toList() == refs) {
+                if (restored != null) {
+                    val state = novexLearningRepository.find(restored.collectionRef)
+                    if (state != null && state.task?.status != restored.status) {
+                        novexLearningRepository.save(state.copy(task = restored))
+                    }
+                }
+                _novexLearningTask.value = restored
+                _novexLearningStatus.value = restored?.status
+            }
+        }
     }
 
     private fun novexHashedRef(kind: String, material: String): NovexResourceRef {
@@ -12565,6 +12647,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "novex_apply_content_changes" -> "执行内容变更"
         "document_inspect" -> "检查文档"
         "document_read" -> "读取文档"
+        "learning_prepare" -> "准备资料学习"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.openminis.app.novex.domain.ConversationControlBehavior
+import com.openminis.app.novex.domain.NovexLearningControl
+import com.openminis.app.novex.domain.NovexLearningControlPolicy
+import com.openminis.app.novex.domain.NovexLearningTaskStatus
 import com.openminis.app.novex.domain.PlaythroughValue
 import com.openminis.app.ui.novex.NovexNoticeDialog
 import com.openminis.app.ui.novex.NovexDecisionAction
@@ -388,6 +391,7 @@ fun ChatScreen(
     val selectedGroupName by viewModel.selectedGroupName.collectAsState()
     val providerName by viewModel.providerName.collectAsState()
     val pendingNovexLearningPreflight by viewModel.pendingNovexLearningPreflight.collectAsState()
+    val novexLearningTask by viewModel.novexLearningTask.collectAsState()
     val novexLearningError by viewModel.novexLearningError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -5367,6 +5371,78 @@ fun ChatScreen(
             message = "$message\n已完成的通读进度和笔记仍然保留。",
             onDismiss = viewModel::clearNovexLearningError,
         )
+    }
+
+    if (novexLearningError == null) {
+        novexLearningTask?.let { task ->
+            val statusLabel = when (task.status) {
+                NovexLearningTaskStatus.INDEXING -> "正在建立资料索引"
+                NovexLearningTaskStatus.REVIEWING -> "正在分批通读资料"
+                NovexLearningTaskStatus.SYNTHESIZING -> "正在整理总览"
+                NovexLearningTaskStatus.PAUSED -> "资料整理已暂停"
+                NovexLearningTaskStatus.PAUSED_BUDGET_REACHED -> "已到达确认预算"
+                NovexLearningTaskStatus.CANCELLED -> "资料整理已取消"
+                NovexLearningTaskStatus.PARTIAL_FAILURE -> "资料整理部分完成"
+                NovexLearningTaskStatus.COMPLETE -> "资料整理已完成"
+                NovexLearningTaskStatus.NOT_STARTED -> "资料整理尚未开始"
+            }
+            val usage = task.usage
+            val message = buildString {
+                append(statusLabel)
+                append("。\n输入词元：${usage.usedInputTokens} / ${usage.maxInputTokens}")
+                append("\n输出词元：${usage.usedOutputTokens} / ${usage.maxOutputTokens}")
+                when (task.status) {
+                    NovexLearningTaskStatus.PAUSED_BUDGET_REACHED ->
+                        append("\n已在下一次模型调用前停止，没有超出你确认的上限。")
+                    NovexLearningTaskStatus.PARTIAL_FAILURE ->
+                        append("\n可读取内容已经保留笔记，无法读取的资料已明确记录。")
+                    NovexLearningTaskStatus.COMPLETE ->
+                        append("\n通读账本、分层笔记和资料集总览均已保存。")
+                    else -> append("\n每完成一批都会保存进度；退出应用后仍可恢复。")
+                }
+            }
+            val controls = NovexLearningControlPolicy.allowedControls(task.status)
+            NovexDecisionDialog(
+                title = "资料学习",
+                message = message,
+                onDismiss = {
+                    if (NovexLearningControl.PAUSE in controls) viewModel.pauseNovexLearning()
+                },
+                actions = buildList {
+                    if (NovexLearningControl.PAUSE in controls) add(
+                        NovexDecisionAction(
+                            label = "暂停整理",
+                            icon = R.drawable.ic_phosphor_arrow_left,
+                            onClick = viewModel::pauseNovexLearning,
+                        ),
+                    )
+                    if (NovexLearningControl.RESUME in controls) add(
+                        NovexDecisionAction(
+                            label = "继续整理",
+                            icon = R.drawable.ic_phosphor_brain,
+                            tone = NovexDecisionTone.PRIMARY,
+                            onClick = viewModel::resumeNovexLearning,
+                        ),
+                    )
+                    if (NovexLearningControl.CANCEL in controls) add(
+                        NovexDecisionAction(
+                            label = "取消整理",
+                            icon = R.drawable.ic_phosphor_trash,
+                            tone = NovexDecisionTone.DESTRUCTIVE,
+                            onClick = viewModel::cancelNovexLearning,
+                        ),
+                    )
+                    if (NovexLearningControl.DISMISS in controls) add(
+                        NovexDecisionAction(
+                            label = "知道了",
+                            icon = R.drawable.ic_phosphor_check,
+                            tone = NovexDecisionTone.PRIMARY,
+                            onClick = viewModel::dismissNovexLearningTaskNotice,
+                        ),
+                    )
+                },
+            )
+        }
     }
 
     // URL preview sheet — shown when a markdown link is tapped
