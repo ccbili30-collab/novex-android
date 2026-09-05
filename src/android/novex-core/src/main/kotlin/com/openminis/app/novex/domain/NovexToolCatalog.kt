@@ -3,6 +3,7 @@ package com.openminis.app.novex.domain
 enum class NovexToolCapability {
     DOCUMENTS,
     LEARNING,
+    WORKSPACE,
 }
 
 data class NovexToolParameter(
@@ -71,6 +72,58 @@ object NovexToolCatalog {
                     parameters = listOf(
                         NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
                         NovexToolParameter("model_id", NovexToolParameterKind.STRING, false, "拟用于学习的模型编号；省略时使用当前对话模型"),
+                    ),
+                ),
+            )
+        }
+        if (NovexToolCapability.WORKSPACE in capabilities) {
+            add(
+                NovexToolDefinition(
+                    name = "workspace_inspect",
+                    description = "查看当前对话分支可见的来源、笔记、草稿、成果、存档和派生文件；不返回文件正文。",
+                    risk = NovexToolRisk.READ_ONLY,
+                    parameters = listOf(
+                        NovexToolParameter("area", NovexToolParameterKind.STRING, false, "可选目录：sources、notes、drafts、outputs、saves 或 derived"),
+                        NovexToolParameter("max_entries", NovexToolParameterKind.INTEGER, false, "最多返回的文件数量，一到五百"),
+                    ),
+                ),
+            )
+            add(
+                NovexToolDefinition(
+                    name = "workspace_read",
+                    description = "通过 Novex 工作区引用有界读取文本；二进制成果只返回成果引用。",
+                    risk = NovexToolRisk.READ_ONLY,
+                    parameters = listOf(
+                        NovexToolParameter("workspace_ref", NovexToolParameterKind.STRING, true, "workspace_inspect 返回的 Novex 工作区引用"),
+                        NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "继续上次读取的游标"),
+                        NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次最多返回的字符数，一到四万八千"),
+                    ),
+                ),
+            )
+            add(
+                NovexToolDefinition(
+                    name = "workspace_write",
+                    description = "在当前回复分支的 notes、drafts、outputs 或 saves 目录创建文本文件；同名文件必须改用 workspace_edit。",
+                    risk = NovexToolRisk.SESSION_REVERSIBLE,
+                    parameters = listOf(
+                        NovexToolParameter("area", NovexToolParameterKind.STRING, true, "可写目录：notes、drafts、outputs 或 saves"),
+                        NovexToolParameter("path", NovexToolParameterKind.STRING, true, "目录内相对路径，不能使用设备绝对路径"),
+                        NovexToolParameter("content", NovexToolParameterKind.STRING, true, "需要写入的完整文本"),
+                        NovexToolParameter("mime_type", NovexToolParameterKind.STRING, false, "文本媒体类型，默认 text/markdown"),
+                    ),
+                ),
+            )
+            add(
+                NovexToolDefinition(
+                    name = "workspace_edit",
+                    description = "按字符范围定点编辑当前分支可见的文本；必须携带最近读取到的 SHA-256 校验值以防覆盖并发修改。",
+                    risk = NovexToolRisk.SESSION_REVERSIBLE,
+                    parameters = listOf(
+                        NovexToolParameter("workspace_ref", NovexToolParameterKind.STRING, true, "需要编辑的 Novex 工作区引用"),
+                        NovexToolParameter("expected_sha256", NovexToolParameterKind.STRING, true, "workspace_read 返回的当前文件 SHA-256 校验值"),
+                        NovexToolParameter("start_char", NovexToolParameterKind.INTEGER, true, "替换起始字符位置，包含该位置"),
+                        NovexToolParameter("end_char", NovexToolParameterKind.INTEGER, true, "替换结束字符位置，不包含该位置"),
+                        NovexToolParameter("replacement", NovexToolParameterKind.STRING, true, "替换文本，可为空"),
                     ),
                 ),
             )

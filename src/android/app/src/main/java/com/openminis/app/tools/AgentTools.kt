@@ -31,6 +31,7 @@ object AgentTools {
         interactiveFictionActive: Boolean = false,
         documentsAvailable: Boolean = false,
         sourceCollectionsAvailable: Boolean = false,
+        workspaceAvailable: Boolean = false,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
@@ -46,6 +47,9 @@ object AgentTools {
         }
         if (sourceCollectionsAvailable) {
             addAll(NovexLearningAgentTools.providerDefinitions())
+        }
+        if (workspaceAvailable) {
+            addAll(NovexWorkspaceAgentTools.providerDefinitions())
         }
         if (interactiveFictionActive) {
             add(updatePlaythroughStateDefinition())

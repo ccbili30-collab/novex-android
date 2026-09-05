@@ -57,6 +57,7 @@ import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.NovexDocumentAgentTools
 import com.openminis.app.tools.NovexLearningAgentTools
+import com.openminis.app.tools.NovexWorkspaceAgentTools
 import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
@@ -942,6 +943,14 @@ class ChatViewModel(
             prepareNovexLearningPreflight(collectionRef, requestedModelId)
         }
     }
+    private val novexConversationWorkspaceStore by lazy {
+        com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(
+            java.io.File(context.filesDir, "novex/conversation-workspaces"),
+        )
+    }
+    private val novexWorkspaceAgentTools by lazy {
+        NovexWorkspaceAgentTools(novexConversationWorkspaceStore)
+    }
     private val _novexLearningStatus = MutableStateFlow<NovexLearningTaskStatus?>(null)
     val novexLearningStatus: StateFlow<NovexLearningTaskStatus?> = _novexLearningStatus.asStateFlow()
     private val _novexLearningTask = MutableStateFlow<NovexLearningTaskState?>(null)
@@ -980,6 +989,7 @@ class ChatViewModel(
             interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null,
             documentsAvailable = activeNovexDocumentRefs.isNotEmpty(),
             sourceCollectionsAvailable = activeNovexSourceCollectionRefs.isNotEmpty(),
+            workspaceAvailable = true,
         )
 
     /** Role chats start with no tools and expose only the role card's explicit allow-list. */
@@ -8880,6 +8890,24 @@ class ChatViewModel(
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> novexDocumentAgentTools.execute(name, argsJson)
             NovexLearningToolRouter.LEARNING_PREPARE -> novexLearningAgentTools.execute(name, argsJson)
+            in com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter.TOOL_NAMES -> {
+                val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                    conversationId = activeSessionId,
+                    visibleBranchIds = activeBranchPathIds,
+                    writeBranchId = assistantId,
+                )
+                novexWorkspaceAgentTools.execute(
+                    name = name,
+                    argumentsJson = argsJson,
+                    scope = scope,
+                    provenance = com.openminis.app.novex.domain.NovexWorkspaceProvenance(
+                        conversationId = scope.conversationId,
+                        branchId = scope.writeBranchId,
+                        messageId = turnMessageId,
+                        toolCallId = toolId,
+                    ),
+                )
+            }
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -12758,6 +12786,10 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         "document_inspect" -> "检查文档"
         "document_read" -> "读取文档"
         "learning_prepare" -> "准备资料学习"
+        "workspace_inspect" -> "检查工作区"
+        "workspace_read" -> "读取工作区"
+        "workspace_write" -> "写入工作区"
+        "workspace_edit" -> "编辑工作区"
         "memory_get" -> "Read Memory"
         "web_search" -> "Search Web"
         else -> toolName

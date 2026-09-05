@@ -131,6 +131,7 @@ case "$plan" in
       --tests 'com.openminis.app.data.attachments.*'
       --tests 'com.openminis.app.tools.NovexDocumentAgentToolsTest'
       --tests 'com.openminis.app.tools.NovexLearningAgentToolsTest'
+      --tests 'com.openminis.app.tools.NovexWorkspaceAgentToolsTest'
       --tests 'com.openminis.app.ui.chat.AttachmentPromptMetadataTest'
       --tests 'com.openminis.app.ui.chat.DocxAttachmentRequestChainTest'
       --tests 'com.openminis.app.data.character.CharacterPromptComposerTest'
