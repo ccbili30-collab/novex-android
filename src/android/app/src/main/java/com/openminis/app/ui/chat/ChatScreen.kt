@@ -31,17 +31,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.VerticalAlignTop
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.automirrored.filled.Article
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.conflate
@@ -95,50 +84,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AppShortcut
-import androidx.compose.material.icons.filled.ArrowCircleUp
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DataUsage
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.CloseFullscreen
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -224,8 +170,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -239,19 +183,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.ArrowCircleDown
-import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.style.TextAlign
@@ -1768,7 +1699,7 @@ fun ChatScreen(
                                         style = noFontPad,
                                     )
                                     Icon(
-                                        Icons.Default.KeyboardArrowDown,
+                                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                                         contentDescription = null,
                                         tint = ChatColors.tertiaryText,
                                         modifier = Modifier.size(14.dp),
@@ -1818,7 +1749,7 @@ fun ChatScreen(
                                                     .background(Color(0xFFFF9500), CircleShape),
                                             ) {
                                                 Icon(
-                                                    Icons.Default.Bolt,
+                                                    com.openminis.app.ui.novex.NovexIcons.Bolt,
                                                     contentDescription = null,
                                                     tint = Color.White,
                                                     modifier = Modifier.size(9.dp),
@@ -1872,7 +1803,7 @@ fun ChatScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -3257,7 +3188,7 @@ fun ChatScreen(
                             // an arrow pointing at a top line reads as "jump to a top
                             // anchor" for the turn-walk, and keeps this button visually
                             // distinct from the down button's plain chevron.
-                            imageVector = Icons.Default.VerticalAlignTop,
+                            imageVector = com.openminis.app.ui.novex.NovexIcons.VerticalAlignTop,
                             contentDescription = "Scroll to previous message",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3289,7 +3220,7 @@ fun ChatScreen(
                         ),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
+                            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                             contentDescription = "Scroll to bottom",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3512,7 +3443,7 @@ fun ChatScreen(
                                     }
                                     if (cmd.id == "memory") {
                                         Icon(
-                                            imageVector = if (memoryOnState) Icons.Default.CheckCircle else Icons.Default.Block,
+                                            imageVector = if (memoryOnState) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Block,
                                             contentDescription = null,
                                             tint = if (memoryOnState) ChatColors.sendButton else ChatColors.secondaryText,
                                             modifier = Modifier.size(18.dp),
@@ -3663,7 +3594,7 @@ fun ChatScreen(
                                             // we keep it uniform here so the row stays
                                             // visually consistent at small sizes on Pixel 4a.
                                             Icon(
-                                                imageVector = Icons.Default.Description,
+                                                imageVector = com.openminis.app.ui.novex.NovexIcons.Description,
                                                 contentDescription = null,
                                                 tint = ChatColors.secondaryText,
                                                 modifier = Modifier.size(16.dp),
@@ -3916,7 +3847,7 @@ fun ChatScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            Icons.AutoMirrored.Filled.ArrowForward,
+                                            com.openminis.app.ui.novex.NovexIcons.ArrowForward,
                                             contentDescription = null,
                                             modifier = Modifier.size(10.dp),
                                             tint = ChatColors.secondaryText,
@@ -4064,7 +3995,7 @@ fun ChatScreen(
                                             text = { Text(stringResource(R.string.webapp_add_to_home)) },
                                             leadingIcon = {
                                                 Icon(
-                                                    Icons.Default.AppShortcut,
+                                                    com.openminis.app.ui.novex.NovexIcons.AppShortcut,
                                                     contentDescription = null,
                                                 )
                                             },
@@ -4389,28 +4320,8 @@ fun ChatScreen(
                             ),
                             interactionSource = interactionSource,
                             decorationBox = { innerTextField ->
-                                OutlinedTextFieldDefaults.DecorationBox(
-                                    value = inputText,
-                                    innerTextField = innerTextField,
-                                    enabled = true,
-                                    singleLine = false,
-                                    visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                                    interactionSource = interactionSource,
-                                    placeholder = {
-                                        // [T-android-placeholder-single-line, port iOS 19e1d61f]
-                                        // Single-line composer placeholder. The
-                                        // parenthetical "(@ to mention files)"
-                                        // is folded into the same line as
-                                        // "Message <SoulName>" at the same font
-                                        // size and color — iOS collapsed the
-                                        // two-line variant (#421/#425/#426) into
-                                        // a single hint because users read the
-                                        // smaller hint row as a separate UI
-                                        // element rather than placeholder text.
-                                        // SoulStore.cachedMetadata stays the
-                                        // source for the Soul-customized name
-                                        // so renames in Soul Settings reflect
-                                        // here live.
+                                Box(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
+                                    if (inputText.isEmpty()) {
                                         Text(
                                             teachingHints.getOrElse(teachingHintIndex) { "" },
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
@@ -4418,32 +4329,9 @@ fun ChatScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                    },
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color.Transparent,
-                                        unfocusedBorderColor = Color.Transparent,
-                                        focusedContainerColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
-                                    ),
-                                    // T7: vertical 10dp → 7dp (≈ −15%) to slim the
-                                    // chat composer. Settings TextFields keep
-                                    // Material3 default padding — those are
-                                    // 1-shot config inputs, not the daily-
-                                    // friction surface the user wants tightened.
-                                    // T185: 12dp horizontal lines the
-                                    // typed text up with the +/slash and
-                                    // mic/send icon-button row below
-                                    // (Modifier.padding(horizontal = 12.dp)
-                                    // there) and the attachment chip row
-                                    // (also 12dp). 16dp left an unaligned
-                                    // jog where the text started further
-                                    // right than every other composer
-                                    // element.
-                                    contentPadding = PaddingValues(
-                                        horizontal = 12.dp,
-                                        vertical = 7.dp,
-                                    ),
-                                )
+                                    }
+                                    innerTextField()
+                                }
                             },
                         )
                     }
@@ -4464,7 +4352,7 @@ fun ChatScreen(
                                 onClick = { showAttachMenu = true },
                             ) {
                                 Icon(
-                                    Icons.Default.Add,
+                                    com.openminis.app.ui.novex.NovexIcons.Add,
                                     contentDescription = "Attach",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp),
@@ -4477,7 +4365,7 @@ fun ChatScreen(
                                 // iOS parity: Take Photo / Choose Photos & Videos / Add File
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_take_photo)) },
-                                    leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.CameraAlt, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         val granted = ContextCompat.checkSelfPermission(
@@ -4493,7 +4381,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_choose_photos_videos)) },
-                                    leadingIcon = { Icon(Icons.Default.PhotoLibrary, contentDescription = null) },
+                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.PhotoLibrary, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         mediaPickerLauncher.launch(
@@ -4505,7 +4393,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_add_file)) },
-                                    leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
+                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Description, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         // OpenMultipleDocuments takes a mime-
@@ -4762,7 +4650,7 @@ fun ChatScreen(
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                             ) {
                                 Icon(
-                                    if (readReplies) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                    if (readReplies) com.openminis.app.ui.novex.NovexIcons.VolumeUp else com.openminis.app.ui.novex.NovexIcons.VolumeOff,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
                                     tint = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
@@ -5014,7 +4902,7 @@ fun ChatScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    Icons.Default.Stop,
+                                    com.openminis.app.ui.novex.NovexIcons.Stop,
                                     contentDescription = "Stop",
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp),
@@ -5047,7 +4935,7 @@ fun ChatScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    Icons.Default.ArrowUpward,
+                                    com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
                                     contentDescription = "Send",
                                     tint = if (canActivate) ChatColors.background
                                     else ChatColors.primaryText.copy(alpha = 0.5f),
@@ -5564,7 +5452,7 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
  *
  * Deliberately smaller than the 11sp model-name text next to it — a 9dp
  * lightbulb + 9sp level label — so it reads as secondary auxiliary info and
- * never crowds out the model name. Uses [Icons.Default.Lightbulb], the same
+ * never crowds out the model name. Uses [com.openminis.app.ui.novex.NovexIcons.Lightbulb], the same
  * glyph the `/thinking` slash command uses.
  *
  * Colors mirror iOS AIChatView.thinkingLevelBadge exactly — a NEUTRAL look, not
@@ -5608,7 +5496,7 @@ private fun ThinkingLevelBadge(
             .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
         Icon(
-            imageVector = Icons.Default.Lightbulb,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
             contentDescription = null,
             // Dimmed in the Off state (sheet Off-row convention) so "Off" reads
             // as "thinking disabled" at a glance.
@@ -5644,7 +5532,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = Icons.Default.ChevronLeft,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
                 contentDescription = "上一分支",
                 modifier = Modifier.size(18.dp),
             )
@@ -5663,7 +5551,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronRight,
                 contentDescription = "下一分支",
                 modifier = Modifier.size(18.dp),
             )
@@ -5775,7 +5663,7 @@ private fun ThinkingLevelSheet(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Lightbulb,
+                        imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
                         contentDescription = null,
                         tint = ChatColors.thinking.copy(
                             alpha = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) 0.4f else 1f,
@@ -5791,7 +5679,7 @@ private fun ThinkingLevelSheet(
                     )
                     if (isSelected) {
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
                             contentDescription = null,
                             tint = ChatColors.thinking,
                             modifier = Modifier.size(18.dp),

@@ -37,17 +37,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.automirrored.filled.Article
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.conflate
@@ -95,47 +84,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AppShortcut
-import androidx.compose.material.icons.filled.ArrowCircleUp
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DataUsage
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.CloseFullscreen
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -213,8 +162,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -226,18 +173,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.ArrowCircleDown
-import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.style.TextAlign
@@ -440,77 +375,11 @@ internal fun ModelPickerSheet(
                 }
             }
 
-            // ── Search bar (iOS: capsule rounded) ──
-            //
-            // [T-android-search-height] BasicTextField + DecorationBox rather
-            // than a plain OutlinedTextField, so contentPadding is ours to set.
-            //
-            // The plain component cannot be made 42dp tall: its intrinsic
-            // height is 56dp, so `heightIn(min=42)` never binds, and forcing
-            // `height(42)` squeezes the frame while its own 16dp vertical
-            // contentPadding stays put — which clipped the placeholder to its
-            // top half on device. Owning contentPadding is the only way to
-            // shrink the field without cutting the text; same pattern
-            // SectionTextField already uses for this reason.
-            val searchInteraction = remember { MutableInteractionSource() }
-            BasicTextField(
+            com.openminis.app.ui.novex.NovexSearchField(
                 value = searchText,
                 onValueChange = { searchText = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .height(42.dp),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                interactionSource = searchInteraction,
-                decorationBox = { innerTextField ->
-                    OutlinedTextFieldDefaults.DecorationBox(
-                        value = searchText,
-                        visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
-                        innerTextField = innerTextField,
-                        placeholder = { Text(stringResource(R.string.model_picker_search_placeholder)) },
-                        label = null,
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchText.isNotEmpty()) {
-                                IconButton(onClick = { searchText = "" }) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = stringResource(R.string.model_picker_search_clear),
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        enabled = true,
-                        isError = false,
-                        interactionSource = searchInteraction,
-                        colors = OutlinedTextFieldDefaults.colors(),
-                        // Zero vertical: the 42dp frame plus the icons already
-                        // give the text room; any inset here re-clips it.
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                        container = {
-                            OutlinedTextFieldDefaults.Container(
-                                enabled = true,
-                                isError = false,
-                                interactionSource = searchInteraction,
-                                colors = OutlinedTextFieldDefaults.colors(),
-                                shape = RoundedCornerShape(50),
-                            )
-                        },
-                    )
-                },
+                placeholder = stringResource(R.string.model_picker_search_placeholder),
+                onClear = { searchText = "" },
             )
 
             LazyColumn(
@@ -611,7 +480,7 @@ internal fun ModelPickerSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
-                                        if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                         contentDescription = null,
                                         tint = if (isSelected) Color(0xFF34C759)
                                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -627,7 +496,7 @@ internal fun ModelPickerSheet(
                                     // different things (a group can fail over
                                     // or load-balance; a model cannot).
                                     Icon(
-                                        Icons.Default.Layers,
+                                        com.openminis.app.ui.novex.NovexIcons.Layers,
                                         contentDescription = null,
                                         tint = Color(0xFF007AFF),
                                         modifier = Modifier.size(18.dp),
@@ -653,8 +522,8 @@ internal fun ModelPickerSheet(
                                             ) {
                                                 Icon(
                                                     if (group.strategy == RoutingStrategy.fallback)
-                                                        Icons.Default.ArrowCircleDown
-                                                    else Icons.Default.AccountTree,
+                                                        com.openminis.app.ui.novex.NovexIcons.ArrowCircleDown
+                                                    else com.openminis.app.ui.novex.NovexIcons.AccountTree,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(9.dp),
                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -758,7 +627,7 @@ internal fun ModelPickerSheet(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            if (isExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -818,7 +687,7 @@ internal fun ModelPickerSheet(
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 Icon(
-                                                    if (isActive) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                                    if (isActive) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                                     contentDescription = null,
                                                     tint = if (isActive) Color(0xFF007AFF)
                                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
@@ -962,7 +831,7 @@ internal fun ModelPickerSheet(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            if (isCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                            if (isCollapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1001,7 +870,7 @@ internal fun ModelPickerSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Icon(
-                                                if (selectedEntry != null) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                                if (selectedEntry != null) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                                 contentDescription = null,
                                                 tint = if (selectedEntry != null) Color(0xFF007AFF)
                                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -1086,7 +955,7 @@ internal fun ModelPickerSheet(
                                             // floating under the model names above
                                             // rather than aligned with the card.
                                             Icon(
-                                                Icons.Default.KeyboardArrowDown,
+                                                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(16.dp),
                                                 tint = Color(0xFF007AFF),
@@ -1128,7 +997,7 @@ internal fun ModelPickerSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Icon(
-                                                if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                                if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                                 contentDescription = null,
                                                 tint = if (isSelected) Color(0xFF007AFF)
                                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -1207,7 +1076,7 @@ internal fun ModelPickerSheet(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
-                                if (searchText.isNotEmpty()) Icons.Default.Search else Icons.Default.Memory,
+                                if (searchText.isNotEmpty()) com.openminis.app.ui.novex.NovexIcons.Search else com.openminis.app.ui.novex.NovexIcons.Memory,
                                 contentDescription = null,
                                 modifier = Modifier.size(28.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -1274,7 +1143,7 @@ private fun QuickTestButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.Default.Bolt,
+            com.openminis.app.ui.novex.NovexIcons.Bolt,
             contentDescription = stringResource(R.string.model_picker_quick_test),
             tint = Color(0xFF007AFF),
             modifier = Modifier.size(17.dp),

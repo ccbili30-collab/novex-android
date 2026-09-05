@@ -14,13 +14,21 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -69,37 +77,62 @@ internal fun NovexPageTopBar(
     actions: @Composable () -> Unit = {},
     backgroundColor: Color = NovexColors.Canvas,
 ) {
+    NovexTopBarSurface(
+        title = { Text(title, style = NovexType.SectionTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        navigation = {
+            when {
+                navigation != null -> navigation()
+                onBack != null -> IconButton(onClick = onBack) {
+                    Icon(painterResource(R.drawable.ic_phosphor_arrow_left), "返回", Modifier.size(NovexDimensions.HeaderActionIconSize))
+                }
+            }
+        },
+        actions = { actions() },
+        backgroundColor = backgroundColor,
+    )
+}
+
+/** Slot-based header shared by old call signatures and all Novex detail pages. */
+@Composable
+internal fun NovexTopBarSurface(
+    title: @Composable () -> Unit,
+    navigation: @Composable () -> Unit,
+    actions: @Composable RowScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = NovexColors.Canvas,
+    windowInsets: WindowInsets = WindowInsets.statusBars,
+) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(backgroundColor)
-            .statusBarsPadding()
+            .windowInsetsPadding(windowInsets)
             .height(NovexDimensions.TopBarHeight),
     ) {
-        when {
-            navigation != null -> Box(Modifier.align(Alignment.CenterStart)) { navigation() }
-            onBack != null -> IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
-                Icon(
-                    painterResource(R.drawable.ic_phosphor_arrow_left),
-                    contentDescription = "返回",
-                    tint = NovexColors.Text,
-                    modifier = Modifier.size(22.dp),
-                )
+        CompositionLocalProvider(LocalContentColor provides NovexColors.Text, LocalTextStyle provides NovexType.SectionTitle) {
+            Layout(
+                modifier = Modifier.fillMaxSize(),
+                content = {
+                    Box { navigation() }
+                    Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+                    Box { title() }
+                },
+            ) { measurables, constraints ->
+                val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                val leading = measurables[0].measure(loose)
+                val trailing = measurables[1].measure(loose.copy(maxWidth = (constraints.maxWidth - leading.width).coerceAtLeast(0)))
+                val heading = measurables[2].measure(loose.copy(maxWidth = (constraints.maxWidth - leading.width - trailing.width).coerceAtLeast(0)))
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    leading.placeRelative(0, (constraints.maxHeight - leading.height) / 2)
+                    trailing.placeRelative(constraints.maxWidth - trailing.width, (constraints.maxHeight - trailing.height) / 2)
+                    heading.placeRelative(
+                        novexHeaderTitleOffset(constraints.maxWidth, leading.width, trailing.width, heading.width),
+                        (constraints.maxHeight - heading.height) / 2,
+                    )
+                }
             }
         }
-        Text(
-            title,
-            color = NovexColors.Text,
-            style = NovexType.SectionTitle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 104.dp),
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
-        ) { actions() }
     }
 }
 

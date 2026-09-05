@@ -29,18 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -144,9 +132,9 @@ fun BrowserSheet(
             IconButton(onClick = { showSettings = true }) {
                 Icon(
                     when (userAgentProfile) {
-                        UserAgentProfile.MOBILE_CHROME -> Icons.Default.PhoneAndroid
-                        UserAgentProfile.DESKTOP_CHROME -> Icons.Default.Computer
-                        UserAgentProfile.CUSTOM -> Icons.Default.Edit
+                        UserAgentProfile.MOBILE_CHROME -> com.openminis.app.ui.novex.NovexIcons.PhoneAndroid
+                        UserAgentProfile.DESKTOP_CHROME -> com.openminis.app.ui.novex.NovexIcons.Computer
+                        UserAgentProfile.CUSTOM -> com.openminis.app.ui.novex.NovexIcons.Edit
                     },
                     contentDescription = stringResource(R.string.browser_settings_title),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -170,7 +158,7 @@ fun BrowserSheet(
                     enabled = tabs.size < 3 && !isAgentBusy,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.browser_new_tab), modifier = Modifier.size(20.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.browser_new_tab), modifier = Modifier.size(20.dp))
                 }
                 LazyRow(
                     modifier = Modifier
@@ -212,7 +200,7 @@ fun BrowserSheet(
                     enabled = !isAgentBusy,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(Icons.Default.History, contentDescription = stringResource(R.string.browser_history_action), modifier = Modifier.size(20.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.History, contentDescription = stringResource(R.string.browser_history_action), modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -282,7 +270,7 @@ fun BrowserSheet(
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                Icons.Default.Close,
+                                com.openminis.app.ui.novex.NovexIcons.Close,
                                 contentDescription = stringResource(R.string.browser_stop),
                                 modifier = Modifier.size(14.dp),
                             )
@@ -352,7 +340,7 @@ fun BrowserSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        Icons.Default.Download,
+                        com.openminis.app.ui.novex.NovexIcons.Download,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = accent,
@@ -387,13 +375,13 @@ fun BrowserSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ToolbarIcon(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    icon = com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                     contentDesc = stringResource(R.string.browser_nav_back),
                     enabled = canGoBack && !isAgentBusy,
                     onClick = { selectedTab?.manager?.goBack() },
                 )
                 ToolbarIcon(
-                    icon = Icons.AutoMirrored.Filled.ArrowForward,
+                    icon = com.openminis.app.ui.novex.NovexIcons.ArrowForward,
                     contentDesc = stringResource(R.string.browser_nav_forward),
                     enabled = canGoForward && !isAgentBusy,
                     onClick = { selectedTab?.manager?.goForward() },
@@ -412,7 +400,7 @@ fun BrowserSheet(
                         },
                     ) {
                         ToolbarIcon(
-                            icon = Icons.Default.Download,
+                            icon = com.openminis.app.ui.novex.NovexIcons.Download,
                             contentDesc = stringResource(R.string.browser_downloads_title),
                             enabled = true,
                             tint = accent,
@@ -422,7 +410,7 @@ fun BrowserSheet(
                 }
                 if (isLoading) {
                     ToolbarIcon(
-                        icon = Icons.Default.Close,
+                        icon = com.openminis.app.ui.novex.NovexIcons.Close,
                         contentDesc = stringResource(R.string.browser_stop),
                         enabled = !isAgentBusy,
                         tint = accent,
@@ -430,7 +418,7 @@ fun BrowserSheet(
                     )
                 } else {
                     ToolbarIcon(
-                        icon = Icons.Default.Refresh,
+                        icon = com.openminis.app.ui.novex.NovexIcons.Refresh,
                         contentDesc = stringResource(R.string.browser_reload),
                         enabled = !isAgentBusy,
                         tint = accent,
@@ -510,7 +498,7 @@ private fun TabChip(
                 modifier = Modifier.size(16.dp),
             ) {
                 Icon(
-                    Icons.Default.Close,
+                    com.openminis.app.ui.novex.NovexIcons.Close,
                     contentDescription = stringResource(R.string.browser_close_tab),
                     modifier = Modifier.size(10.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -553,7 +541,7 @@ private fun BrowserAddressBarIcon(isLoading: Boolean, accent: Color) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.Default.Language,
+            com.openminis.app.ui.novex.NovexIcons.Language,
             contentDescription = null,
             modifier = Modifier.size(14.dp),
             tint = if (isLoading) accent else MaterialTheme.colorScheme.onSurfaceVariant,

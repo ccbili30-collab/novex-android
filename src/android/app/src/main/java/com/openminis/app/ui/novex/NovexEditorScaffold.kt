@@ -44,75 +44,52 @@ internal fun <Draft> NovexEditorScaffold(
     saveContainerColor: Color = NovexColors.Primary,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    var showExitPrompt by rememberSaveable { mutableStateOf(false) }
-    fun requestBack() {
-        if (saving) return
-        when (
-            novexEditorBackAction(
-                previewVisible = false,
-                baselineDraft = baselineDraft,
-                currentDraft = currentDraft,
-            )
-        ) {
-            NovexEditorBackAction.PROMPT_SAVE -> showExitPrompt = true
-            NovexEditorBackAction.LEAVE_EDITOR -> onBack()
-            NovexEditorBackAction.CLOSE_PREVIEW -> Unit
-        }
-    }
-    BackHandler(onBack = ::requestBack)
-
-    NovexDetailScaffold(
-        title = title,
-        onBack = ::requestBack,
-        pageTone = NovexPageTone.EDITOR,
-        actions = {
-            onDeleteRequest?.let { delete ->
-                NovexTopAction(
-                    icon = R.drawable.ic_phosphor_trash,
-                    contentDescription = "删除",
-                    onClick = delete,
-                )
-            }
-            onPreview?.let { preview ->
-                NovexTopAction(
-                    icon = R.drawable.ic_phosphor_eye,
-                    contentDescription = "预览草稿",
-                    onClick = { if (loaded && canSave) preview() },
-                )
-            }
-        },
-        bottomBar = {
-            NovexPrimaryButton(
-                label = if (saving) "保存中" else "保存",
-                onClick = onSave,
-                enabled = loaded && canSave && !saving,
-                containerColor = saveContainerColor,
-                modifier = Modifier.fillMaxWidth().padding(
-                    horizontal = NovexDimensions.PageHorizontal,
-                    vertical = 10.dp,
-                ),
-            )
-        },
-    ) {
-        if (!loaded) {
-            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp)
-            }
-        } else {
-            content()
-        }
-    }
-
-    if (showExitPrompt) {
-        NovexUnsavedChangesDialog(
-            saving = saving,
-            onSaveAndExit = onSave,
-            onDiscard = {
-                showExitPrompt = false
-                onBack()
+    NovexDraftExitBoundary(
+        baselineDraft = baselineDraft, currentDraft = currentDraft, saving = saving,
+        onBack = onBack, onSaveAndExit = onSave,
+    ) { requestBack ->
+        NovexDetailScaffold(
+            title = title,
+            onBack = requestBack,
+            pageTone = NovexPageTone.EDITOR,
+            actions = {
+                onDeleteRequest?.let { delete ->
+                    NovexTopAction(
+                        icon = R.drawable.ic_phosphor_trash,
+                        contentDescription = "删除",
+                        onClick = delete,
+                    )
+                }
+                onPreview?.let { preview ->
+                    NovexTopAction(
+                        icon = R.drawable.ic_phosphor_eye,
+                        contentDescription = "预览草稿",
+                        onClick = { if (loaded && canSave) preview() },
+                    )
+                }
             },
-            onContinueEditing = { showExitPrompt = false },
-        )
+            bottomBar = {
+                NovexPrimaryButton(
+                    label = if (saving) "保存中" else "保存",
+                    onClick = onSave,
+                    enabled = loaded && canSave && !saving,
+                    containerColor = saveContainerColor,
+                    modifier = Modifier.fillMaxWidth().padding(
+                        horizontal = NovexDimensions.PageHorizontal,
+                        vertical = 10.dp,
+                    ),
+                )
+            },
+        ) {
+            if (!loaded) {
+                Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp)
+                }
+            } else {
+                content()
+            }
+        }
+
     }
 }
 

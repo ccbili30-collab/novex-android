@@ -22,17 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ArrowCircleDown
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -207,69 +196,11 @@ fun UnifiedModelPickerSheet(
                 }
             }
 
-            // ── Search bar — the main picker's exact OutlinedTextField
-            // DecorationBox recipe (ChatModelPickerSheet [T-android-search-height]):
-            // outlined 50%-radius container so focus draws the primary ring,
-            // trailing ✕ clears. The previous filled-capsule stand-in had no
-            // focus feedback and no clear affordance — visibly different the
-            // moment the field was tapped.
-            val searchInteraction = remember { MutableInteractionSource() }
-            BasicTextField(
+            com.openminis.app.ui.novex.NovexSearchField(
                 value = searchText,
                 onValueChange = { searchText = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .height(42.dp),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                interactionSource = searchInteraction,
-                decorationBox = { innerTextField ->
-                    OutlinedTextFieldDefaults.DecorationBox(
-                        value = searchText,
-                        visualTransformation = VisualTransformation.None,
-                        innerTextField = innerTextField,
-                        placeholder = { Text(stringResource(R.string.model_picker_search_placeholder)) },
-                        label = null,
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchText.isNotEmpty()) {
-                                IconButton(onClick = { searchText = "" }) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = stringResource(R.string.model_picker_search_clear),
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        enabled = true,
-                        isError = false,
-                        interactionSource = searchInteraction,
-                        colors = OutlinedTextFieldDefaults.colors(),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                        container = {
-                            OutlinedTextFieldDefaults.Container(
-                                enabled = true,
-                                isError = false,
-                                interactionSource = searchInteraction,
-                                colors = OutlinedTextFieldDefaults.colors(),
-                                shape = RoundedCornerShape(50),
-                            )
-                        },
-                    )
-                },
+                placeholder = stringResource(R.string.model_picker_search_placeholder),
+                onClear = { searchText = "" },
             )
 
             LazyColumn(
@@ -327,8 +258,8 @@ fun UnifiedModelPickerSheet(
                                     selectedId == null ||
                                         boundGroup.memberEntryIds.contains(selectedId)
                                 Icon(
-                                    if (groupSelected) Icons.Default.CheckCircle
-                                    else Icons.Default.RadioButtonUnchecked,
+                                    if (groupSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle
+                                    else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                     contentDescription = null,
                                     tint = if (groupSelected) Color(0xFF34C759)
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -336,7 +267,7 @@ fun UnifiedModelPickerSheet(
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Icon(
-                                    Icons.Default.Layers,
+                                    com.openminis.app.ui.novex.NovexIcons.Layers,
                                     contentDescription = null,
                                     tint = Color(0xFF007AFF),
                                     modifier = Modifier.size(18.dp),
@@ -360,7 +291,7 @@ fun UnifiedModelPickerSheet(
                                                 .padding(horizontal = 5.dp, vertical = 1.dp),
                                         ) {
                                             Icon(
-                                                Icons.Default.ArrowCircleDown,
+                                                com.openminis.app.ui.novex.NovexIcons.ArrowCircleDown,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(9.dp),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -403,8 +334,8 @@ fun UnifiedModelPickerSheet(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        if (groupExpanded) Icons.Default.KeyboardArrowUp
-                                        else Icons.Default.KeyboardArrowDown,
+                                        if (groupExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                                        else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -700,8 +631,8 @@ fun UnifiedModelPickerSheet(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        if (collapsed) Icons.Default.KeyboardArrowDown
-                                        else Icons.Default.KeyboardArrowUp,
+                                        if (collapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                                        else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -776,7 +707,7 @@ fun UnifiedModelPickerSheet(
                                             modifier = Modifier.size(32.dp),
                                         ) {
                                             Icon(
-                                                Icons.Outlined.Bolt,
+                                                com.openminis.app.ui.novex.NovexIcons.Bolt,
                                                 contentDescription = stringResource(R.string.quicktest_button),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(18.dp),
@@ -829,7 +760,7 @@ private fun PickerSectionHeader(
 @Composable
 private fun SelectionMark(selected: Boolean) {
     Icon(
-        if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+        if (selected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
         contentDescription = null,
         tint = if (selected) Color(0xFF007AFF)
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

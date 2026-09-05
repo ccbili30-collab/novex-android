@@ -21,31 +21,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AltRoute
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Diamond
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import com.openminis.app.ui.novex.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
+import com.openminis.app.ui.novex.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -187,13 +171,13 @@ private val providerDisplayOrder = listOf(
 
 /** Icon and color per provider type, matching iOS SF Symbols. */
 private fun providerIcon(type: ProviderType): Pair<ImageVector, Color> = when (type) {
-    ProviderType.openAI -> Icons.Default.Hub to Color(0xFF4CAF50)           // green
-    ProviderType.anthropic -> Icons.Default.AutoAwesome to Color(0xFFAB47BC) // purple
-    ProviderType.gemini -> Icons.Default.Diamond to Color(0xFF42A5F5)        // blue
-    ProviderType.openRouter -> Icons.Default.AltRoute to Color(0xFF00BCD4)    // cyan
-    ProviderType.xAI -> Icons.Default.FlashOn to Color(0xFFFF7043)           // orange — Grok visual cue
+    ProviderType.openAI -> com.openminis.app.ui.novex.NovexIcons.Hub to Color(0xFF4CAF50)           // green
+    ProviderType.anthropic -> com.openminis.app.ui.novex.NovexIcons.AutoAwesome to Color(0xFFAB47BC) // purple
+    ProviderType.gemini -> com.openminis.app.ui.novex.NovexIcons.Diamond to Color(0xFF42A5F5)        // blue
+    ProviderType.openRouter -> com.openminis.app.ui.novex.NovexIcons.AltRoute to Color(0xFF00BCD4)    // cyan
+    ProviderType.xAI -> com.openminis.app.ui.novex.NovexIcons.FlashOn to Color(0xFFFF7043)           // orange — Grok visual cue
     // [T-kimi-oauth] Indigo — matches iOS's Kimi accent.
-    ProviderType.kimiCode -> Icons.Default.Terminal to Color(0xFF5C6BC0)
+    ProviderType.kimiCode -> com.openminis.app.ui.novex.NovexIcons.Terminal to Color(0xFF5C6BC0)
 }
 
 /** Returns available credential types per provider. */
@@ -285,7 +269,7 @@ private fun ChooseProviderScreen(
                 SettingsRow(
                     title = template.name,
                     subtitle = stringResource(capabilityRes),
-                    icon = Icons.Outlined.GraphicEq,
+                    icon = com.openminis.app.ui.novex.NovexIcons.GraphicEq,
                     onClick = { onSelectVoiceTemplate(template) },
                     showDivider = index < templates.size - 1,
                 )
@@ -319,12 +303,12 @@ private fun ChooseCredentialScreen(
                     ProviderCredential.apiKey -> Triple(
                         stringResource(R.string.provider_list_api_key),
                         apiKeyDescription(providerType),
-                        Icons.Default.Key,
+                        com.openminis.app.ui.novex.NovexIcons.Key,
                     )
                     ProviderCredential.oauth -> Triple(
                         "OAuth",
                         oauthDescription(providerType),
-                        Icons.Default.Person,
+                        com.openminis.app.ui.novex.NovexIcons.Person,
                     )
                 }
                 SettingsRow(
@@ -498,7 +482,7 @@ private fun ColumnScope.ApiKeyConfigSection(
                 trailingIcon = {
                     IconButton(onClick = { showApiKeyPlaintext = !showApiKeyPlaintext }) {
                         Icon(
-                            if (showApiKeyPlaintext) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            if (showApiKeyPlaintext) com.openminis.app.ui.novex.NovexIcons.VisibilityOff else com.openminis.app.ui.novex.NovexIcons.Visibility,
                             contentDescription = if (showApiKeyPlaintext) "Hide" else "Show",
                         )
                     }
@@ -684,7 +668,7 @@ private fun ColumnScope.OAuthConfigSection(
             SettingsCardBlock {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Default.CheckCircle,
+                        com.openminis.app.ui.novex.NovexIcons.CheckCircle,
                         contentDescription = null,
                         tint = Color(0xFF34C759),
                         modifier = Modifier.size(20.dp),

@@ -13,14 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Icon
@@ -177,7 +169,7 @@ fun LazyListScope.modelEntryPickerItems(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             leadingIcon = {
                 Icon(
-                    Icons.Default.Search,
+                    com.openminis.app.ui.novex.NovexIcons.Search,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -187,7 +179,7 @@ fun LazyListScope.modelEntryPickerItems(
                 if (searchQuery.value.isNotEmpty()) {
                     IconButton(onClick = { searchQuery.value = "" }) {
                         Icon(
-                            Icons.Default.Close,
+                            com.openminis.app.ui.novex.NovexIcons.Close,
                             contentDescription = stringResource(clearContentDescriptionRes),
                             modifier = Modifier.size(18.dp),
                         )
@@ -240,7 +232,7 @@ fun LazyListScope.modelEntryPickerItems(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (isCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        if (isCollapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -368,7 +360,7 @@ fun LazyListScope.modelEntryPickerItems(
                                     modifier = Modifier.size(32.dp),
                                 ) {
                                     Icon(
-                                        Icons.Outlined.Bolt,
+                                        com.openminis.app.ui.novex.NovexIcons.Bolt,
                                         contentDescription = stringResource(R.string.quicktest_button),
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(18.dp),
@@ -403,7 +395,7 @@ fun LazyListScope.modelEntryPickerItems(
 @Composable
 private fun SelectionDot(isSelected: Boolean) {
     Icon(
-        if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+        if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
         contentDescription = null,
         tint = if (isSelected) Color(0xFF007AFF)
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

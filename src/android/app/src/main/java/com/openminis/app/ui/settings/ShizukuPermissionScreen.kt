@@ -2,19 +2,6 @@ package com.openminis.app.ui.settings
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.Launch
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -247,16 +234,16 @@ private data class ShizukuCapability(
 )
 
 private val ShizukuCapabilities: List<ShizukuCapability> = listOf(
-    ShizukuCapability("package", R.string.shizuku_cap_package_desc, Icons.Default.Apps),
-    ShizukuCapability("permission", R.string.shizuku_cap_permission_desc, Icons.Default.Lock),
-    ShizukuCapability("activity", R.string.shizuku_cap_activity_desc, Icons.Default.Launch),
-    ShizukuCapability("display", R.string.shizuku_cap_display_desc, Icons.Default.Fullscreen),
-    ShizukuCapability("settings", R.string.shizuku_cap_settings_desc, Icons.Default.Settings),
-    ShizukuCapability("user", R.string.shizuku_cap_user_desc, Icons.Default.Person),
-    ShizukuCapability("network", R.string.shizuku_cap_network_desc, Icons.Default.Wifi),
-    ShizukuCapability("input", R.string.shizuku_cap_input_desc, Icons.Default.TouchApp),
-    ShizukuCapability("notification", R.string.shizuku_cap_notification_desc, Icons.Default.Notifications),
-    ShizukuCapability("file", R.string.shizuku_cap_file_desc, Icons.Default.Folder),
-    ShizukuCapability("device", R.string.shizuku_cap_device_desc, Icons.Default.PhoneAndroid),
-    ShizukuCapability("service", R.string.shizuku_cap_service_desc, Icons.Default.Dns),
+    ShizukuCapability("package", R.string.shizuku_cap_package_desc, com.openminis.app.ui.novex.NovexIcons.Apps),
+    ShizukuCapability("permission", R.string.shizuku_cap_permission_desc, com.openminis.app.ui.novex.NovexIcons.Lock),
+    ShizukuCapability("activity", R.string.shizuku_cap_activity_desc, com.openminis.app.ui.novex.NovexIcons.Launch),
+    ShizukuCapability("display", R.string.shizuku_cap_display_desc, com.openminis.app.ui.novex.NovexIcons.Fullscreen),
+    ShizukuCapability("settings", R.string.shizuku_cap_settings_desc, com.openminis.app.ui.novex.NovexIcons.Settings),
+    ShizukuCapability("user", R.string.shizuku_cap_user_desc, com.openminis.app.ui.novex.NovexIcons.Person),
+    ShizukuCapability("network", R.string.shizuku_cap_network_desc, com.openminis.app.ui.novex.NovexIcons.Wifi),
+    ShizukuCapability("input", R.string.shizuku_cap_input_desc, com.openminis.app.ui.novex.NovexIcons.TouchApp),
+    ShizukuCapability("notification", R.string.shizuku_cap_notification_desc, com.openminis.app.ui.novex.NovexIcons.Notifications),
+    ShizukuCapability("file", R.string.shizuku_cap_file_desc, com.openminis.app.ui.novex.NovexIcons.Folder),
+    ShizukuCapability("device", R.string.shizuku_cap_device_desc, com.openminis.app.ui.novex.NovexIcons.PhoneAndroid),
+    ShizukuCapability("service", R.string.shizuku_cap_service_desc, com.openminis.app.ui.novex.NovexIcons.Dns),
 )

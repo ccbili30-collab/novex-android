@@ -26,17 +26,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddToHomeScreen
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DesktopWindows
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -298,7 +287,7 @@ internal fun WebPreviewToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolbarIcon(
-            icon = Icons.Default.Close,
+            icon = com.openminis.app.ui.novex.NovexIcons.Close,
             description = stringResource(R.string.webpreview_close),
             onClick = onClose,
         )
@@ -327,14 +316,14 @@ internal fun WebPreviewToolbar(
         }
         if (isLoading) {
             ToolbarIcon(
-                icon = Icons.Default.Stop,
+                icon = com.openminis.app.ui.novex.NovexIcons.Stop,
                 description = stringResource(R.string.webpreview_stop),
                 onClick = onStop,
             )
         }
         Box {
             ToolbarIcon(
-                icon = Icons.Default.MoreVert,
+                icon = com.openminis.app.ui.novex.NovexIcons.MoreVert,
                 description = stringResource(R.string.webpreview_more),
                 onClick = { menuOpen = true },
             )
@@ -342,27 +331,27 @@ internal fun WebPreviewToolbar(
                 expanded = menuOpen,
                 onDismissRequest = { menuOpen = false },
             ) {
-                androidx.compose.material3.DropdownMenuItem(
+                com.openminis.app.ui.novex.DropdownMenuItem(
                     text = { Text(stringResource(R.string.webpreview_open_external)) },
                     leadingIcon = {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.OpenInBrowser, contentDescription = null)
                     },
                     onClick = {
                         menuOpen = false
                         onOpenExternal()
                     },
                 )
-                androidx.compose.material3.DropdownMenuItem(
+                com.openminis.app.ui.novex.DropdownMenuItem(
                     text = { Text(stringResource(R.string.webpreview_reload)) },
                     leadingIcon = {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
                     },
                     onClick = {
                         menuOpen = false
                         onReload()
                     },
                 )
-                androidx.compose.material3.DropdownMenuItem(
+                com.openminis.app.ui.novex.DropdownMenuItem(
                     text = {
                         Text(
                             if (desktopMode) stringResource(R.string.webpreview_mobile_site)
@@ -371,8 +360,8 @@ internal fun WebPreviewToolbar(
                     },
                     leadingIcon = {
                         Icon(
-                            if (desktopMode) Icons.Default.PhoneAndroid
-                            else Icons.Default.DesktopWindows,
+                            if (desktopMode) com.openminis.app.ui.novex.NovexIcons.PhoneAndroid
+                            else com.openminis.app.ui.novex.NovexIcons.DesktopWindows,
                             contentDescription = null,
                         )
                     },
@@ -382,10 +371,10 @@ internal fun WebPreviewToolbar(
                     },
                 )
                 if (onExpand != null) {
-                    androidx.compose.material3.DropdownMenuItem(
+                    com.openminis.app.ui.novex.DropdownMenuItem(
                         text = { Text(stringResource(R.string.webpreview_open_fullscreen)) },
                         leadingIcon = {
-                            Icon(Icons.Default.Fullscreen, contentDescription = null)
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Fullscreen, contentDescription = null)
                         },
                         onClick = {
                             menuOpen = false
@@ -394,10 +383,10 @@ internal fun WebPreviewToolbar(
                     )
                 }
                 if (onPinToHome != null) {
-                    androidx.compose.material3.DropdownMenuItem(
+                    com.openminis.app.ui.novex.DropdownMenuItem(
                         text = { Text(stringResource(R.string.webpreview_pin_to_home)) },
                         leadingIcon = {
-                            Icon(Icons.Default.AddToHomeScreen, contentDescription = null)
+                            Icon(com.openminis.app.ui.novex.NovexIcons.AddToHomeScreen, contentDescription = null)
                         },
                         onClick = {
                             menuOpen = false

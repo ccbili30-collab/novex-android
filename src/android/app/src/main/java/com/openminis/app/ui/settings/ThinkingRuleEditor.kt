@@ -11,7 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedTextField
 import com.openminis.app.ui.novex.NovexCheckToggle
@@ -101,6 +101,7 @@ fun ThinkingRuleEditorDialog(
         (choice != FormatChoice.CUSTOM_PATH || path.isNotBlank())
 
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
             Text(

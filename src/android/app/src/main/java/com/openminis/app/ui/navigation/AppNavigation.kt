@@ -677,6 +677,9 @@ fun AppNavigation(
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
                 onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
                 onCreativeLibraryClick = { navController.safeNavigate(Routes.creativeLibrary()) },
+                onComponentGalleryClick = if (com.openminis.app.BuildConfig.APPLICATION_ID.endsWith(".preview")) {
+                    { navController.safeNavigate("settings/component-gallery") }
+                } else null,
             )
         }
 
@@ -1110,6 +1113,10 @@ fun AppNavigation(
                     }
                 },
             )
+        }
+
+        composable("settings/component-gallery") {
+            com.openminis.app.ui.novex.NovexComponentGallery { navController.safePopBackStack() }
         }
 
         composable(Routes.PROVIDER_LIST) {

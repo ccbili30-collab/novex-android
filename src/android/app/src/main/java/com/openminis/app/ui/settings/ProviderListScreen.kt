@@ -18,17 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.VpnKey
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.CircularProgressIndicator
@@ -164,7 +153,7 @@ fun ProviderListScreen(
         onBack = onBack,
         actions = {
             IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
+                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
             }
         },
     ) {
@@ -201,7 +190,7 @@ fun ProviderListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.VpnKey,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.VpnKey,
                     contentDescription = null,
                     modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -358,7 +347,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_add_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -379,7 +368,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_import_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -469,11 +458,11 @@ private fun OpenCodeFreeSection(
                 CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
             } else {
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, contentDescription = "刷新 OpenCode 模型")
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = "刷新 OpenCode 模型")
                 }
             }
             Icon(
-                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                 contentDescription = if (expanded) "折叠免费模型" else "展开免费模型",
             )
         }
@@ -507,7 +496,7 @@ private fun OpenCodeFreeSection(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            Icons.Default.Build,
+                            com.openminis.app.ui.novex.NovexIcons.Build,
                             contentDescription = if (entry.model.supportsTools != false) {
                                 "关闭 ${entry.model.displayName} 的工具调用"
                             } else {
@@ -528,7 +517,7 @@ private fun OpenCodeFreeSection(
                 }
                 IconButton(onClick = { onQuickTest(entry) }) {
                     Icon(
-                        Icons.Default.Bolt,
+                        com.openminis.app.ui.novex.NovexIcons.Bolt,
                         contentDescription = "测试 ${entry.model.displayName}",
                     )
                 }
@@ -628,7 +617,7 @@ private fun ProviderInstanceRow(
         }
 
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),
@@ -655,7 +644,7 @@ private fun ShadowVoiceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Outlined.GraphicEq,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.GraphicEq,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary,
@@ -688,7 +677,7 @@ private fun ShadowVoiceRow(
             }
         }
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),

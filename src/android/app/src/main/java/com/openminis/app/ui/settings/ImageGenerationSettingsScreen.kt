@@ -13,18 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import com.openminis.app.ui.novex.Button
 import androidx.compose.material3.CircularProgressIndicator
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -119,7 +111,7 @@ fun ImageGenerationSettingsScreen(
                 ) {
                     Text("还没有生图来源", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = onAddSource) {
-                        Icon(Icons.Default.Add, null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Add, null)
                         Text("新增来源", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
@@ -163,7 +155,7 @@ fun ImageGenerationSettingsScreen(
                             order.add(index - 1, order.removeAt(index))
                             providerRepository.reorderImageGenerationProviders(order)
                         },
-                    ) { Icon(Icons.Default.ArrowUpward, "上移") }
+                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowUpward, "上移") }
                     IconButton(
                         enabled = index < sources.lastIndex,
                         onClick = {
@@ -171,8 +163,8 @@ fun ImageGenerationSettingsScreen(
                             order.add(index + 1, order.removeAt(index))
                             providerRepository.reorderImageGenerationProviders(order)
                         },
-                    ) { Icon(Icons.Default.ArrowDownward, "下移") }
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowDownward, "下移") }
+                    Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight, null)
                 }
                 if (index < sources.lastIndex) HorizontalDivider()
             }
@@ -400,7 +392,7 @@ fun ImageGenerationSourceScreen(
                 Button(onClick = { saveSource() }, modifier = Modifier.weight(1f)) { Text("保存来源") }
                 OutlinedButton(onClick = ::pullModels, enabled = !pulling, modifier = Modifier.weight(1f)) {
                     if (pulling) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, null)
+                    else Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, null)
                     Text("拉取模型", modifier = Modifier.padding(start = 6.dp))
                 }
             }
@@ -449,7 +441,7 @@ fun ImageGenerationSourceScreen(
                             providerRepository.setImageGenerationModelEnabled(currentId, entry.id, true)
                             manualModel = ""
                         },
-                    ) { Icon(Icons.Default.Add, "添加") }
+                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.Add, "添加") }
                 }
                 orderedEntries.forEach { entry ->
                     val selected = entry.id in selectedIds
@@ -531,10 +523,10 @@ private fun ImageModelRow(
             }
         }
         IconButton(enabled = onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
-            Icon(Icons.Default.ArrowUpward, "上移")
+            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowUpward, "上移")
         }
         IconButton(enabled = onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
-            Icon(Icons.Default.ArrowDownward, "下移")
+            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowDownward, "下移")
         }
     }
 }

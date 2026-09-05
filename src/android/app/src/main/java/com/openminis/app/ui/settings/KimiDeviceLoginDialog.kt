@@ -12,10 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.OpenInBrowser
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -97,7 +93,7 @@ fun KimiDeviceLoginDialog(
                         )
                         Spacer(Modifier.width(10.dp))
                         Icon(
-                            if (copied) Icons.Default.CheckCircle else Icons.Default.ContentCopy,
+                            if (copied) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.ContentCopy,
                             contentDescription = stringResource(R.string.kimi_login_copy_code),
                             tint = if (copied) {
                                 androidx.compose.ui.graphics.Color(0xFF34C759)
@@ -123,7 +119,7 @@ fun KimiDeviceLoginDialog(
                         .padding(vertical = 8.dp),
                 ) {
                     Icon(
-                        Icons.Default.OpenInBrowser,
+                        com.openminis.app.ui.novex.NovexIcons.OpenInBrowser,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),

@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -290,7 +288,7 @@ fun ModelEntryDetailScreen(
         ) {
             SettingsRow(
                 title = stringResource(R.string.quicktest_button),
-                icon = Icons.Outlined.Bolt,
+                icon = com.openminis.app.ui.novex.NovexIcons.Bolt,
                 showChevron = false,
                 showDivider = false,
                 onClick = { showQuickTest = true },

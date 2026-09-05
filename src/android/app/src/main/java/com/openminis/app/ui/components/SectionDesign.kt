@@ -121,9 +121,9 @@ fun SectionHeader(
 ) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleMedium,
+        style = com.openminis.app.ui.novex.NovexType.Metadata,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
+        color = NovexColors.SecondaryText,
         modifier = modifier.padding(
             start = SectionDesign.ScreenHorizontalPadding,
             end = SectionDesign.ScreenHorizontalPadding,
@@ -142,7 +142,7 @@ fun SectionFooter(
 ) {
     Text(
         text = text,
-        style = MaterialTheme.typography.bodySmall,
+        style = com.openminis.app.ui.novex.NovexType.Metadata,
         color = SectionDesign.footerColor(),
         modifier = modifier.padding(
             start = SectionDesign.ScreenHorizontalPadding,
@@ -164,9 +164,7 @@ fun SectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        color = SectionDesign.cardColor(),
-        shape = SectionDesign.CardShape,
+    com.openminis.app.ui.novex.NovexSectionSurface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = SectionDesign.ScreenHorizontalPadding),

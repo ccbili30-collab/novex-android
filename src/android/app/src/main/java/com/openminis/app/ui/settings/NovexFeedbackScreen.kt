@@ -9,13 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,7 +47,7 @@ fun NovexFeedbackScreen(onBack: () -> Unit) {
                 title = { Text("QQ 反馈与交流") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
@@ -72,16 +65,16 @@ fun NovexFeedbackScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 20.dp),
             )
-            FeedbackRow(Icons.Outlined.Groups, "Novex（诺文）交流群", NOVEX_GROUP_QQ) {
+            FeedbackRow(com.openminis.app.ui.novex.NovexIcons.Groups, "Novex（诺文）交流群", NOVEX_GROUP_QQ) {
                 copy(NOVEX_GROUP_QQ)
             }
             HorizontalDivider()
-            FeedbackRow(Icons.Outlined.Person, "作者个人 QQ", NOVEX_AUTHOR_QQ) {
+            FeedbackRow(com.openminis.app.ui.novex.NovexIcons.Person, "作者个人 QQ", NOVEX_AUTHOR_QQ) {
                 copy(NOVEX_AUTHOR_QQ)
             }
             HorizontalDivider()
             FeedbackRow(
-                Icons.Outlined.ReportProblem,
+                com.openminis.app.ui.novex.NovexIcons.ReportProblem,
                 "GitHub Issues（GitHub 问题反馈页）",
                 "Novex（诺文）问题反馈",
                 showCopy = false,
@@ -114,7 +107,7 @@ private fun FeedbackRow(
             Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(
-            if (showCopy) Icons.Outlined.ContentCopy else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            if (showCopy) com.openminis.app.ui.novex.NovexIcons.ContentCopy else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )

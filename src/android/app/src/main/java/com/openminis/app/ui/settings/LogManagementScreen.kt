@@ -18,12 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.SegmentedButton
+import com.openminis.app.ui.novex.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Share
+import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -449,7 +446,7 @@ fun LogDetailScreen(
                 title = { Text(fileName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -457,7 +454,7 @@ fun LogDetailScreen(
                         val file = File(File(context.filesDir, "logs"), fileName)
                         if (file.exists()) shareLogFile(context, file)
                     }) {
-                        Icon(Icons.Default.Share, contentDescription = stringResource(R.string.common_share))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = stringResource(R.string.common_share))
                     }
                 },
             )
@@ -559,4 +556,3 @@ private fun shareLogFile(context: Context, file: File) {
         context.startActivity(Intent.createChooser(intent, context.getString(R.string.log_share_chooser)))
     }
 }
-

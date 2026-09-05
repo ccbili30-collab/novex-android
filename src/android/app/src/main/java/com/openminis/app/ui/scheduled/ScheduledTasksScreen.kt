@@ -20,15 +20,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import com.openminis.app.ui.novex.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,13 +82,13 @@ fun ScheduledTasksScreen(
                     Text(
                         stringResource(R.string.scheduled_tasks_title),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(20),
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.back),
                         )
                     }
@@ -104,7 +97,7 @@ fun ScheduledTasksScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { onEditTask(null) }, shape = CircleShape) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.scheduled_task_new))
+                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.scheduled_task_new))
             }
         },
     ) { padding ->
@@ -133,12 +126,12 @@ fun ScheduledTasksScreen(
 
     val toDelete = pendingDelete
     if (toDelete != null) {
-        androidx.compose.material3.AlertDialog(
+        com.openminis.app.ui.novex.AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.scheduled_task_delete_title)) },
             text = { Text(stringResource(R.string.scheduled_task_delete_body, toDelete.label)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
+                com.openminis.app.ui.novex.TextButton(onClick = {
                     vm.delete(toDelete.id)
                     pendingDelete = null
                 }) {
@@ -146,7 +139,7 @@ fun ScheduledTasksScreen(
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { pendingDelete = null }) {
+                com.openminis.app.ui.novex.TextButton(onClick = { pendingDelete = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -165,7 +158,7 @@ private fun EmptyState(padding: PaddingValues) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                Icons.Outlined.Schedule,
+                com.openminis.app.ui.novex.NovexIcons.Schedule,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -213,7 +206,7 @@ private fun ScheduledTaskRow(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Outlined.Schedule,
+                    com.openminis.app.ui.novex.NovexIcons.Schedule,
                     contentDescription = null,
                     tint = if (task.enabled)
                         MaterialTheme.colorScheme.primary
@@ -227,7 +220,7 @@ private fun ScheduledTaskRow(
                 Text(
                     text = task.label.ifBlank { task.prompt.take(40) },
                     fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -235,7 +228,7 @@ private fun ScheduledTaskRow(
                 Text(
                     text = formatScheduleSummary(task),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -250,17 +243,17 @@ private fun ScheduledTaskRow(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
         ) {
-            androidx.compose.material3.DropdownMenuItem(
+            com.openminis.app.ui.novex.DropdownMenuItem(
                 text = { Text(stringResource(R.string.scheduled_task_menu_edit)) },
-                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null) },
                 onClick = { menuExpanded = false; onEdit() },
             )
-            androidx.compose.material3.DropdownMenuItem(
+            com.openminis.app.ui.novex.DropdownMenuItem(
                 text = { Text(stringResource(R.string.scheduled_task_menu_runs)) },
-                leadingIcon = { Icon(Icons.Outlined.History, contentDescription = null) },
+                leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.History, contentDescription = null) },
                 onClick = { menuExpanded = false; onViewRuns() },
             )
-            androidx.compose.material3.DropdownMenuItem(
+            com.openminis.app.ui.novex.DropdownMenuItem(
                 text = {
                     Text(
                         stringResource(R.string.scheduled_task_menu_delete),
@@ -268,7 +261,7 @@ private fun ScheduledTaskRow(
                     )
                 },
                 leadingIcon = {
-                    Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                 },
                 onClick = { menuExpanded = false; onDelete() },
             )

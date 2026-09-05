@@ -3,6 +3,8 @@ package com.openminis.app.ui.theme
 import android.content.SharedPreferences
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -20,6 +22,8 @@ internal data class AppAppearance(
     val fontScale: Float,
     val themeColors: AppThemeColors,
 )
+
+internal val LocalAppFontScale = compositionLocalOf { 1f }
 
 internal fun resolveAppAppearance(
     systemDarkTheme: Boolean,
@@ -74,6 +78,6 @@ internal fun NovexAppTheme(
         fontScale = appearance.fontScale,
         themeColors = appearance.themeColors,
     ) {
-        content(appearance)
+        CompositionLocalProvider(LocalAppFontScale provides appearance.fontScale) { content(appearance) }
     }
 }

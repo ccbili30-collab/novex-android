@@ -15,13 +15,6 @@ import com.openminis.app.agent.ToolLoopDetector
 import com.openminis.app.browser.BrowserActionInput
 import com.openminis.app.browser.BrowserTabPool
 import com.openminis.app.data.db.MessageEntity
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Extension
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
@@ -1426,25 +1419,25 @@ class ChatViewModel(
     internal val availableSlashCommands: List<SlashCommand> = listOf(
         SlashCommand(
             id = "clear",
-            icon = Icons.Default.Delete,
+            icon = com.openminis.app.ui.novex.NovexIcons.Delete,
             title = "Clear",
             subtitle = "",
         ),
         SlashCommand(
             id = "compact",
-            icon = Icons.Default.Compress,
+            icon = com.openminis.app.ui.novex.NovexIcons.Compress,
             title = "Compact",
             subtitle = "",
         ),
         SlashCommand(
             id = "memory",
-            icon = Icons.Default.Psychology,
+            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
             title = "Memory",
             subtitle = "",
         ),
         SlashCommand(
             id = "thinking",
-            icon = Icons.Default.Lightbulb,
+            icon = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
             title = "Thinking",
             subtitle = "",
         ),

@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.NovexCheckToggle
@@ -157,7 +154,7 @@ private fun VoiceModelRow(entry: ModelEntry, isInput: Boolean, onClick: () -> Un
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = if (isInput) Icons.Outlined.Mic else Icons.AutoMirrored.Outlined.VolumeUp,
+            imageVector = if (isInput) com.openminis.app.ui.novex.NovexIcons.Mic else com.openminis.app.ui.novex.NovexIcons.VolumeUp,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -337,7 +335,7 @@ private fun StorageOverviewRow(
             if (onClick != null) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(20.dp),

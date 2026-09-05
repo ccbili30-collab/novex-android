@@ -24,18 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -480,7 +471,7 @@ fun InlineVoiceInputPanel(
         Box(modifier = Modifier.fillMaxWidth()) {
             // Top-left: expand/collapse chevron.
             CircleIconButton(
-                icon = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                icon = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                 contentDescription = stringResource(
                     if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
                 ),
@@ -493,7 +484,7 @@ fun InlineVoiceInputPanel(
             // correction runs regardless: consent governs whether we STORE the
             // learning data, not whether the feature works.
             if (showCorrectionConsent) {
-                androidx.compose.material3.AlertDialog(
+                com.openminis.app.ui.novex.AlertDialog(
                     onDismissRequest = {
                         // Dismissing without choosing is not an answer; leave
                         // hasPrompted unset so the question can be asked again.
@@ -502,7 +493,7 @@ fun InlineVoiceInputPanel(
                     title = { Text(stringResource(R.string.voice_correction_consent_title)) },
                     text = { Text(stringResource(R.string.voice_correction_consent_body)) },
                     confirmButton = {
-                        androidx.compose.material3.TextButton(onClick = {
+                        com.openminis.app.ui.novex.TextButton(onClick = {
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
                                 .setEnabled(panelContext, true)
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
@@ -514,7 +505,7 @@ fun InlineVoiceInputPanel(
                         }
                     },
                     dismissButton = {
-                        androidx.compose.material3.TextButton(onClick = {
+                        com.openminis.app.ui.novex.TextButton(onClick = {
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
                                 .setPrompted(panelContext, true)
                             showCorrectionConsent = false
@@ -542,7 +533,7 @@ fun InlineVoiceInputPanel(
                         )
                     } else {
                         CircleIconButton(
-                            icon = Icons.Default.AutoAwesome,
+                            icon = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
                             contentDescription = stringResource(
                                 R.string.voice_correction_button_a11y,
                             ),
@@ -564,7 +555,7 @@ fun InlineVoiceInputPanel(
             } else if (!isEditing) {
                 Box(modifier = Modifier.align(Alignment.TopEnd)) {
                     CircleIconButton(
-                        icon = Icons.Default.Language,
+                        icon = com.openminis.app.ui.novex.NovexIcons.Language,
                         contentDescription = stringResource(R.string.voice_panel_language),
                     ) { showLanguageMenu = true }
                     DropdownMenu(
@@ -789,7 +780,7 @@ private fun ExpandedContent(
             )
             Spacer(Modifier.width(3.dp))
             Icon(
-                Icons.Default.UnfoldMore,
+                com.openminis.app.ui.novex.NovexIcons.UnfoldMore,
                 contentDescription = null,
                 modifier = Modifier.size(12.dp),
                 tint = ChatColors.secondaryText.copy(alpha = 0.6f),
@@ -969,13 +960,13 @@ private fun MicCircleButton(
         when {
             isRecording -> InlineMiniWaveform(levels = levels)
             isTranscribing -> Icon(
-                Icons.Default.Close,
+                com.openminis.app.ui.novex.NovexIcons.Close,
                 contentDescription = stringResource(R.string.voice_panel_cancel_transcription),
                 tint = Color.Black,
                 modifier = Modifier.size(22.dp),
             )
             else -> Icon(
-                Icons.Default.Mic,
+                com.openminis.app.ui.novex.NovexIcons.Mic,
                 contentDescription = stringResource(R.string.voice_panel_toggle_recording),
                 tint = Color.Black,
                 modifier = Modifier.size(26.dp),
@@ -1105,7 +1096,7 @@ private fun VoiceDeleteButton(onDeleteOne: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.AutoMirrored.Filled.Backspace,
+            com.openminis.app.ui.novex.NovexIcons.Backspace,
             contentDescription = stringResource(R.string.voice_panel_delete),
             tint = ChatColors.secondaryText,
             modifier = Modifier.size(21.dp),
@@ -1216,7 +1207,7 @@ private fun VoiceEngineUnavailableNotice(
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             CircleIconButton(
-                icon = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                icon = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                 contentDescription = stringResource(
                     if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
                 ),

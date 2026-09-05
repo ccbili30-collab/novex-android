@@ -14,10 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -98,7 +94,7 @@ fun AddAgentLoopModelsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.model_group_detail_back),
                         )
                     }
@@ -189,7 +185,7 @@ fun AddAgentLoopGroupsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.model_group_detail_back),
                         )
                     }
@@ -285,7 +281,7 @@ fun AddAgentLoopGroupsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
-                                    if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
                                     contentDescription = null,
                                     tint = if (isSelected) Color(0xFF007AFF)
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

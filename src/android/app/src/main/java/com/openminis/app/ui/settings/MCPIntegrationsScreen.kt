@@ -14,23 +14,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.outlined.Extension
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Terminal
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.ModalBottomSheet
-import androidx.compose.material3.SegmentedButton
+import com.openminis.app.ui.novex.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
 import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -93,7 +86,7 @@ fun MCPIntegrationsScreen(
         onBack = onBack,
         actions = {
             IconButton(onClick = { showAddSheet = true }) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.mcp_add))
+                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.mcp_add))
             }
         },
     ) {
@@ -110,7 +103,7 @@ fun MCPIntegrationsScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
-                        Icons.Outlined.Extension,
+                        com.openminis.app.ui.novex.NovexIcons.Extension,
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -128,7 +121,7 @@ fun MCPIntegrationsScreen(
                 }
             } else {
                 servers.forEachIndexed { index, server ->
-                    val transportIcon = if (server.isStdio) Icons.Outlined.Terminal else Icons.Outlined.Language
+                    val transportIcon = if (server.isStdio) com.openminis.app.ui.novex.NovexIcons.Terminal else com.openminis.app.ui.novex.NovexIcons.Language
                     SettingsRow(
                         title = server.id,
                         subtitle = server.transportSummary.takeIf { it.isNotBlank() },
@@ -454,8 +447,8 @@ private fun MCPFormTab(
                     Spacer(Modifier.width(8.dp))
                 }
                 Icon(
-                    imageVector = if (oauthExpanded) Icons.Default.KeyboardArrowUp
-                    else Icons.Default.KeyboardArrowDown,
+                    imageVector = if (oauthExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                    else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                     contentDescription = null,
                 )
             }

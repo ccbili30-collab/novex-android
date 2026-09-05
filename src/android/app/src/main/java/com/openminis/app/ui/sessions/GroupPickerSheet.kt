@@ -12,11 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOff
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -155,7 +150,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Default.Warning,
+                        com.openminis.app.ui.novex.NovexIcons.Warning,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp),
@@ -188,7 +183,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Default.AutoAwesome,
+                        com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -223,7 +218,7 @@ fun GroupPickerSheet(
                             )
                         } else {
                             Icon(
-                                Icons.Default.AutoAwesome,
+                                com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp),
@@ -278,7 +273,7 @@ fun GroupPickerSheet(
                             GroupRow(
                                 title = label,
                                 subtitle = hint,
-                                icon = Icons.Default.FolderOff,
+                                icon = com.openminis.app.ui.novex.NovexIcons.FolderOff,
                                 onClick = { onChoose(GroupChoice.RemoveFromGroup) },
                                 // Merge the two lines for screen readers;
                                 // announced separately they read as unrelated
@@ -299,7 +294,7 @@ fun GroupPickerSheet(
                             subtitle = folder.description?.takeIf { it.isNotBlank() }
                                 ?: if (count > 0) stringResource(R.string.group_n_chats, count)
                                 else stringResource(R.string.group_empty),
-                            icon = Icons.Default.Folder,
+                            icon = com.openminis.app.ui.novex.NovexIcons.Folder,
                             onClick = { onChoose(GroupChoice.Existing(folder.id)) },
                         )
                     }

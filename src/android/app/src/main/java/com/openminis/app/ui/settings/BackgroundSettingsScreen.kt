@@ -19,13 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.BatteryFull
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -135,7 +128,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 title = { Text(stringResource(R.string.bg_section_header)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
             )
@@ -155,7 +148,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             // BackgroundSettingsRepository.DEFAULT_TASK_NOTIFICATIONS).
             BgSectionTitle(stringResource(R.string.settings_section_notifications))
             BgToggleRow(
-                icon = Icons.Outlined.NotificationsActive,
+                icon = com.openminis.app.ui.novex.NovexIcons.NotificationsActive,
                 iconColor = Color(0xFF007AFF),
                 title = stringResource(R.string.settings_task_notifications),
                 checked = taskNotificationsEnabled,
@@ -170,7 +163,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             // immediately makes the UI reflect ready-to-use state.
             Spacer(Modifier.size(8.dp))
             BgToggleRow(
-                icon = Icons.Outlined.Layers,
+                icon = com.openminis.app.ui.novex.NovexIcons.Layers,
                 iconColor = Color(0xFF5856D6),
                 title = stringResource(R.string.settings_bg_overlay),
                 checked = backgroundOverlayEnabled && canDrawOverlays,
@@ -214,7 +207,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             // devices/versions that don't support it.
             Spacer(Modifier.size(8.dp))
             BgToggleRow(
-                icon = Icons.Outlined.Bolt,
+                icon = com.openminis.app.ui.novex.NovexIcons.Bolt,
                 iconColor = Color(0xFF34C759),
                 title = stringResource(R.string.settings_dynamic_island),
                 checked = dynamicIslandEnabled && dynamicIslandCapable,
@@ -232,7 +225,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.size(16.dp))
             BgSectionTitle(stringResource(R.string.battery_opt_section_title))
             BgRow(
-                icon = Icons.Outlined.BatteryFull,
+                icon = com.openminis.app.ui.novex.NovexIcons.BatteryFull,
                 iconColor = if (ignoringOptimizations) Color(0xFF34C759) else Color(0xFFFF9500),
                 title = stringResource(R.string.battery_opt_row_title),
                 subtitle = if (ignoringOptimizations) {
@@ -252,7 +245,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 Spacer(Modifier.size(16.dp))
                 BgSectionTitle(stringResource(R.string.rom_autostart_section_title))
                 BgRow(
-                    icon = Icons.Outlined.PhoneAndroid,
+                    icon = com.openminis.app.ui.novex.NovexIcons.PhoneAndroid,
                     iconColor = Color(0xFFFF9500),
                     title = stringResource(R.string.rom_autostart_row_title),
                     subtitle = stringResource(
@@ -280,7 +273,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
 private fun BgSectionTitle(text: String) {
     Text(
         text = text.uppercase(),
-        fontSize = 12.sp,
+        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp),
     )
@@ -290,7 +283,7 @@ private fun BgSectionTitle(text: String) {
 private fun BgFooter(text: String) {
     Text(
         text = text,
-        fontSize = 12.sp,
+        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp),
     )
@@ -335,7 +328,7 @@ private fun BgToggleRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = title,
-            fontSize = 15.sp,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = rowAlpha),
             modifier = Modifier.weight(1f),
@@ -383,14 +376,14 @@ private fun BgRow(
         Column(modifier = Modifier.padding(end = 6.dp)) {
             Text(
                 text = title,
-                fontSize = 15.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             if (!subtitle.isNullOrEmpty()) {
                 Text(
                     text = subtitle,
-                    fontSize = 12.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

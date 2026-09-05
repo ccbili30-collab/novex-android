@@ -554,7 +554,7 @@ private fun NovexVisualCatalogCard(
             Text(
                 title,
                 color = Color.White,
-                fontSize = 17.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(17),
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -563,7 +563,7 @@ private fun NovexVisualCatalogCard(
                 Text(
                     summary,
                     color = Color.White.copy(alpha = 0.88f),
-                    fontSize = 12.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -572,7 +572,7 @@ private fun NovexVisualCatalogCard(
             Text(
                 metadata,
                 color = Color.White.copy(alpha = 0.9f),
-                fontSize = 12.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                 modifier = Modifier.padding(top = 5.dp),
             )
         }
@@ -637,7 +637,7 @@ private fun NovexCharacterRow(
             Text(
                 row.character.name,
                 color = NovexRootColors.Text,
-                fontSize = 16.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -646,8 +646,8 @@ private fun NovexCharacterRow(
                 Text(
                     row.profile.summary,
                     color = NovexRootColors.SecondaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
+                    lineHeight = com.openminis.app.ui.novex.novexScaledSp(18),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
@@ -656,7 +656,7 @@ private fun NovexCharacterRow(
             Text(
                 "本体${if (row.variantCount > 0) " · ${row.variantCount} 个分身" else ""}",
                 color = NovexRootColors.SecondaryText,
-                fontSize = 12.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                 modifier = Modifier.padding(top = 7.dp),
             )
         }
@@ -724,11 +724,11 @@ private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit, onImportWorld: () 
                         .align(Alignment.BottomStart)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
-                    Text("建立第一个世界", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("建立第一个世界", color = Color.White, fontSize = com.openminis.app.ui.novex.novexScaledSp(17), fontWeight = FontWeight.Bold)
                     Text(
                         "只需一个名称，封面和内容都可以稍后添加",
                         color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 12.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
@@ -769,20 +769,20 @@ private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit, onImportCh
                     Text(
                         "创建第一个角色",
                         color = NovexRootColors.Text,
-                        fontSize = 16.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         "先写下名字，头像、背景和角色模块都可以留空",
                         color = NovexRootColors.SecondaryText,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
+                        lineHeight = com.openminis.app.ui.novex.novexScaledSp(18),
                         modifier = Modifier.padding(top = 4.dp),
                     )
                     Text(
                         "本体",
                         color = NovexRootColors.SecondaryText,
-                        fontSize = 12.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                         modifier = Modifier.padding(top = 7.dp),
                     )
                 }
@@ -807,7 +807,7 @@ private fun NovexLoading() {
 @Composable
 private fun NovexEmptyMessage(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = NovexRootColors.SecondaryText, fontSize = 14.sp)
+        Text(text, color = NovexRootColors.SecondaryText, fontSize = com.openminis.app.ui.novex.novexScaledSp(14))
     }
 }
 

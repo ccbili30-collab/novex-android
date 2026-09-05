@@ -14,10 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -125,7 +121,7 @@ fun SessionMemorySheet(
                     }
                 }) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                         contentDescription = stringResource(R.string.memory_action_back),
                     )
                 }
@@ -273,7 +269,7 @@ private fun DetailToolbar(
         if (showEdit) {
             IconButton(onClick = onEdit) {
                 Icon(
-                    Icons.Default.Edit,
+                    com.openminis.app.ui.novex.NovexIcons.Edit,
                     contentDescription = stringResource(R.string.memory_action_edit),
                 )
             }
@@ -286,7 +282,7 @@ private fun DetailToolbar(
         if (showRevoke) {
             IconButton(onClick = onRevoke) {
                 Icon(
-                    Icons.AutoMirrored.Filled.Undo,
+                    com.openminis.app.ui.novex.NovexIcons.Undo,
                     contentDescription = stringResource(R.string.memory_action_revoke),
                     tint = MaterialTheme.colorScheme.error,
                 )

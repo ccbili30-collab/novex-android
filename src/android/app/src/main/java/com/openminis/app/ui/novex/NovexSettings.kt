@@ -89,13 +89,8 @@ internal fun NovexSettingsSection(
                 modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal, vertical = 7.dp),
             )
         }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = NovexDimensions.PageHorizontal)
-                .clip(sectionShape)
-                .background(NovexColors.Surface)
-                .border(NovexDimensions.Hairline, NovexColors.Divider, sectionShape),
+        NovexSectionSurface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = NovexDimensions.PageHorizontal),
             content = content,
         )
         footer?.let {
@@ -107,6 +102,20 @@ internal fun NovexSettingsSection(
             )
         }
     }
+}
+
+/** Shared section boundary; callers own only surrounding spacing and content. */
+@Composable
+internal fun NovexSectionSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(NovexDimensions.SectionRadius)
+    Column(
+        modifier.fillMaxWidth().clip(shape).background(NovexColors.Surface)
+            .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
+        content = content,
+    )
 }
 
 /** Shared check/no-check control used by every binary setting. */

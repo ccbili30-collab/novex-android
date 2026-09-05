@@ -76,7 +76,6 @@ internal fun NovexCardImportPreviewDialog(
                 label = if (importing) "导入中" else "确认导入",
                 enabled = !importing,
                 onClick = onConfirm,
-                modifier = Modifier.width(120.dp),
             )
         },
         dismissButton = {

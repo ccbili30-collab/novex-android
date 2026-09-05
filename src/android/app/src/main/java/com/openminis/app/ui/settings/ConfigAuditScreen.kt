@@ -15,11 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.History
 import com.openminis.app.ui.novex.AlertDialog
-import androidx.compose.material3.AssistChip
+import com.openminis.app.ui.novex.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -110,7 +107,7 @@ fun ConfigAuditScreen(modifier: Modifier = Modifier) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        imageVector = Icons.Filled.History,
+                        imageVector = com.openminis.app.ui.novex.NovexIcons.History,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -249,7 +246,7 @@ private fun AuditRow(entry: ConfigAuditEntry, onRevert: () -> Unit) {
             )
             Spacer(Modifier.width(6.dp))
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowForward,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(top = 2.dp),

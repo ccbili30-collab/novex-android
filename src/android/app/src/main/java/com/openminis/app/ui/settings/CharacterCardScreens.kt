@@ -22,29 +22,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Photo
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Upload
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.Button
-import androidx.compose.material3.Card
+import com.openminis.app.ui.novex.Card
 import androidx.compose.material3.CardDefaults
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
-import androidx.compose.material3.RadioButton
+import com.openminis.app.ui.novex.RadioButton
 import com.openminis.app.ui.novex.NovexCheckToggle
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
@@ -174,17 +164,17 @@ fun CharacterHubScreen(
             }
             Box {
                 IconButton(onClick = { addMenuOpen = true }, enabled = !importing) {
-                    Icon(Icons.Default.Add, contentDescription = "添加角色")
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = "添加角色")
                 }
                 DropdownMenu(expanded = addMenuOpen, onDismissRequest = { addMenuOpen = false }) {
                     DropdownMenuItem(
                         text = { Text("创建空白角色") },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null) },
                         onClick = { addMenuOpen = false; onEditCharacter(null) },
                     )
                     DropdownMenuItem(
                         text = { Text("导入酒馆角色卡") },
-                        leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.FileDownload, contentDescription = null) },
                         onClick = {
                             addMenuOpen = false
                             importLauncher.launch(arrayOf("image/png", "application/json", "text/json", "text/plain"))
@@ -232,7 +222,7 @@ fun CharacterHubScreen(
                                 onClick = { shareCharacterCard(context, card) },
                                 modifier = Modifier.weight(0.8f),
                             ) {
-                                Icon(Icons.Default.Upload, contentDescription = null)
+                                Icon(com.openminis.app.ui.novex.NovexIcons.Upload, contentDescription = null)
                                 Spacer(Modifier.width(4.dp))
                                 Text("导出")
                             }
@@ -244,7 +234,7 @@ fun CharacterHubScreen(
                                 onClick = { onStartCharacter(card.id) },
                                 modifier = Modifier.weight(1f),
                             ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(4.dp))
                                 Text("开始对话")
                             }
@@ -279,7 +269,7 @@ fun CharacterHubScreen(
                     onClick = { onEditPersona(null) },
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("创建玩家身份")
                 }
@@ -370,6 +360,7 @@ private fun ImportCharacterPreviewDialog(
 ) {
     val card = preview.card
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = { Text("导入角色预览") },
         text = {
@@ -460,7 +451,7 @@ fun CharacterEditorScreen(cardId: String?, onBack: () -> Unit, onSaved: () -> Un
         actions = {
             if (existing != null) {
                 IconButton(onClick = { showDelete = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除角色")
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = "删除角色")
                 }
             }
         },
@@ -573,7 +564,7 @@ fun PersonaEditorScreen(personaId: String?, onBack: () -> Unit, onSaved: () -> U
         onBack = onBack,
         actions = {
             if (existing != null) IconButton(onClick = { showDelete = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "删除身份")
+                Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = "删除身份")
             }
         },
     ) {
@@ -720,7 +711,7 @@ fun StartCharacterChatScreen(
             },
             modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
+            Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null)
             Spacer(Modifier.width(6.dp))
             Text("进入对话")
         }
@@ -752,7 +743,7 @@ private fun LibraryRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -770,7 +761,7 @@ private fun ProfileImage(path: String?, circle: Boolean) {
         Box(
             modifier = Modifier.size(54.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Default.Person, contentDescription = null) }
+        ) { Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null) }
     }
 }
 
@@ -815,7 +806,7 @@ private fun ImageField(label: String, path: String?, circle: Boolean, onClick: (
             Text(label, fontWeight = FontWeight.Medium)
             Text(if (path == null) "点击选择图片" else "点击更换图片", style = MaterialTheme.typography.bodySmall)
         }
-        Icon(Icons.Default.Photo, contentDescription = null)
+        Icon(com.openminis.app.ui.novex.NovexIcons.Photo, contentDescription = null)
     }
 }
 

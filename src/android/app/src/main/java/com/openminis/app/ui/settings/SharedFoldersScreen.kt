@@ -13,11 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,7 +54,7 @@ fun SharedFoldersScreen(
                 title = { Text(stringResource(R.string.shared_folders_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
             )
@@ -190,7 +185,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_shared,
             linuxPath = "/var/minis/shared",
             writable = true,
-            icon = Icons.Outlined.Folder,
+            icon = com.openminis.app.ui.novex.NovexIcons.Folder,
             iconColor = Color(0xFF007AFF),
         ),
         SharedFolderEntry(
@@ -198,7 +193,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_skills,
             linuxPath = "/var/minis/skills",
             writable = false,
-            icon = Icons.Outlined.AutoAwesome,
+            icon = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
             iconColor = Color(0xFFAF52DE),
         ),
         SharedFolderEntry(
@@ -206,7 +201,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_memory,
             linuxPath = "/var/minis/memory",
             writable = false,
-            icon = Icons.Outlined.Psychology,
+            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
             iconColor = Color(0xFFFF2D55),
         ),
     )

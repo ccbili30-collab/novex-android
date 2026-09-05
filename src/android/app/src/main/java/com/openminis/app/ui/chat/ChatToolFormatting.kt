@@ -1,15 +1,5 @@
 package com.openminis.app.ui.chat
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.ui.graphics.Color
 
 // [T-android-split-chat] Pure tool-label / duration / timestamp formatting
@@ -64,15 +54,15 @@ internal fun toolAccentColor(toolName: String): Color = when (toolName) {
 
 // Helper: tool icon (iOS: distinct SF Symbols per tool type)
 internal fun toolIconFor(toolName: String) = when (toolName) {
-    "shell_execute" -> Icons.Default.Terminal
-    "file_read" -> Icons.Default.Description         // iOS: doc.text
-    "file_write" -> Icons.AutoMirrored.Filled.NoteAdd   // iOS: doc.text.fill (filled variant)
-    "file_edit" -> Icons.Default.EditNote             // iOS: square.and.pencil
-    "browser_use" -> Icons.Default.Language            // iOS: globe
-    "read_image" -> Icons.Default.Image                // iOS: photo
-    "memory_write", "memory_get" -> Icons.Default.Psychology // iOS: brain.head.profile
-    "web_search" -> Icons.Default.Search               // iOS: magnifyingglass
-    else -> Icons.Default.Build
+    "shell_execute" -> com.openminis.app.ui.novex.NovexIcons.Terminal
+    "file_read" -> com.openminis.app.ui.novex.NovexIcons.Description         // iOS: doc.text
+    "file_write" -> com.openminis.app.ui.novex.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
+    "file_edit" -> com.openminis.app.ui.novex.NovexIcons.EditNote             // iOS: square.and.pencil
+    "browser_use" -> com.openminis.app.ui.novex.NovexIcons.Language            // iOS: globe
+    "read_image" -> com.openminis.app.ui.novex.NovexIcons.Image                // iOS: photo
+    "memory_write", "memory_get" -> com.openminis.app.ui.novex.NovexIcons.Psychology // iOS: brain.head.profile
+    "web_search" -> com.openminis.app.ui.novex.NovexIcons.Search               // iOS: magnifyingglass
+    else -> com.openminis.app.ui.novex.NovexIcons.Build
 }
 
 // Helper: tool display name for "Minis is using X"

@@ -25,15 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircleFilled
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -231,7 +222,7 @@ private fun CodeBlockView(block: MarkdownParser.Block.CodeBlock) {
                 modifier = Modifier.height(28.dp),
             ) {
                 Icon(
-                    Icons.Default.ContentCopy,
+                    com.openminis.app.ui.novex.NovexIcons.ContentCopy,
                     contentDescription = "Copy code",
                     modifier = Modifier.height(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -311,7 +302,7 @@ private fun BulletListView(
                 if (item.checked != null) {
                     // Task list item
                     Icon(
-                        imageVector = if (item.checked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        imageVector = if (item.checked) com.openminis.app.ui.novex.NovexIcons.CheckBox else com.openminis.app.ui.novex.NovexIcons.CheckBoxOutlineBlank,
                         contentDescription = null,
                         tint = color.copy(alpha = 0.6f),
                         modifier = Modifier
@@ -811,7 +802,7 @@ private fun MinisVideoBlock(block: MarkdownParser.Block.Video) {
                 )
             }
             Icon(
-                imageVector = Icons.Filled.PlayCircleFilled,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled,
                 contentDescription = "Play video",
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.width(56.dp).height(56.dp),
@@ -824,7 +815,7 @@ private fun MinisVideoBlock(block: MarkdownParser.Block.Video) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Filled.Videocam,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.Videocam,
                 contentDescription = null,
                 tint = captionColor,
                 modifier = Modifier.width(14.dp).height(14.dp),
@@ -905,7 +896,7 @@ private fun MinisAudioBlock(block: MarkdownParser.Block.Audio) {
     ) {
         // Leading icon
         Icon(
-            imageVector = Icons.Filled.Audiotrack,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.Audiotrack,
             contentDescription = null,
             tint = subtle,
             modifier = Modifier.width(18.dp).height(18.dp),
@@ -941,7 +932,7 @@ private fun MinisAudioBlock(block: MarkdownParser.Block.Audio) {
             }
         }
         Icon(
-            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            imageVector = if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
             contentDescription = if (isPlaying) "Pause" else "Play",
             tint = tint,
             modifier = Modifier.width(28.dp).height(28.dp),

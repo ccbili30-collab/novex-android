@@ -21,11 +21,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -210,7 +205,7 @@ fun ImageGalleryViewer(
                         .padding(8.dp),
                 ) {
                     Icon(
-                        Icons.Default.Close,
+                        com.openminis.app.ui.novex.NovexIcons.Close,
                         contentDescription = "Close",
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
@@ -273,13 +268,13 @@ fun ImageGalleryViewer(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             ImageActionButton(
-                                icon = Icons.Outlined.ContentCopy,
+                                icon = com.openminis.app.ui.novex.NovexIcons.ContentCopy,
                                 label = stringResource(R.string.image_action_copy),
                                 onClick = { copyBitmapToClipboard(context, scope, currentItem.model) },
                             )
                             var sharing by remember { mutableStateOf(false) }
                             ImageActionButton(
-                                icon = Icons.Outlined.Share,
+                                icon = com.openminis.app.ui.novex.NovexIcons.Share,
                                 label = stringResource(R.string.image_action_share),
                                 onClick = onClick@{
                                     if (sharing) return@onClick
@@ -296,7 +291,7 @@ fun ImageGalleryViewer(
                             val savedToAlbumMsg = stringResource(R.string.image_saved_to_album_toast)
                             val saveFailedMsg = stringResource(R.string.image_save_failed_toast)
                             ImageActionButton(
-                                icon = Icons.Outlined.Download,
+                                icon = com.openminis.app.ui.novex.NovexIcons.Download,
                                 label = stringResource(R.string.image_action_save),
                                 onClick = {
                                     scope.launch {

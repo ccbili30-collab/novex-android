@@ -87,6 +87,7 @@ internal fun NovexSearchField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    onClear: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -123,6 +124,11 @@ internal fun NovexSearchField(
                 .weight(1f)
                 .semantics { contentDescription = placeholder },
         )
+        if (value.isNotEmpty() && onClear != null) {
+            androidx.compose.material3.IconButton(onClick = onClear) {
+                Icon(NovexIcons.Close, contentDescription = "清除搜索", tint = NovexColors.SecondaryText)
+            }
+        }
     }
 }
 
@@ -149,8 +155,8 @@ internal fun <T> NovexFilterTabs(
                 Text(
                     label(item),
                     color = if (active) NovexColors.Text else NovexColors.SecondaryText,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
+                    lineHeight = com.openminis.app.ui.novex.novexScaledSp(20),
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                 )
                 Box(

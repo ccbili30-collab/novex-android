@@ -13,28 +13,20 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Warning
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import com.openminis.app.ui.novex.ListItem
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
-import androidx.compose.material3.SegmentedButton
+import com.openminis.app.ui.novex.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
+import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
+import com.openminis.app.ui.novex.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -144,7 +136,7 @@ fun ModelGroupDetailScreen(
                 title = { Text(group.name, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -303,7 +295,7 @@ fun ModelGroupDetailScreen(
                                 },
                                 leadingContent = {
                                     Icon(
-                                        imageVector = Icons.Default.Warning,
+                                        imageVector = com.openminis.app.ui.novex.NovexIcons.Warning,
                                         contentDescription = stringResource(R.string.model_group_detail_unavailable),
                                         tint = MaterialTheme.colorScheme.error,
                                     )
@@ -315,7 +307,7 @@ fun ModelGroupDetailScreen(
                                         providerRepository.updateGroup(group.copy(memberEntryIds = newIds.toMutableList()))
                                     }) {
                                         Icon(
-                                            imageVector = Icons.Default.Delete,
+                                            imageVector = com.openminis.app.ui.novex.NovexIcons.Delete,
                                             contentDescription = stringResource(R.string.common_remove),
                                             tint = MaterialTheme.colorScheme.error,
                                         )
@@ -353,13 +345,13 @@ fun ModelGroupDetailScreen(
                                         modifier = Modifier.draggableHandle(),
                                         onClick = {},
                                     ) {
-                                        Icon(Icons.Default.DragHandle, contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder))
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.DragHandle, contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder))
                                     }
                                 },
                                 trailingContent = {
                                     Box {
                                         IconButton(onClick = { showMenu = true }) {
-                                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.model_group_detail_more_options))
+                                            Icon(com.openminis.app.ui.novex.NovexIcons.MoreVert, contentDescription = stringResource(R.string.model_group_detail_more_options))
                                         }
                                         com.openminis.app.ui.components.MinisMenu(
                                             expanded = showMenu,
@@ -418,7 +410,7 @@ fun ModelGroupDetailScreen(
                                 group.copy(defaultThinkingLevel = newLevel)
                             )
                         },
-                        icon = Icons.Default.Psychology,
+                        icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
                         iconColor = Color(0xFFAF52DE),
                         showDivider = reasoningEnabled,
                     )
@@ -533,7 +525,7 @@ fun ModelGroupDetailScreen(
                                 )
                             }
                         },
-                        icon = Icons.Default.Memory,
+                        icon = com.openminis.app.ui.novex.NovexIcons.Memory,
                         iconColor = Color(0xFF5856D6),
                         showDivider = contextEnabled,
                     )

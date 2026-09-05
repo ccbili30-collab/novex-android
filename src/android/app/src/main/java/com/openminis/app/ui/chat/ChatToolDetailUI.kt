@@ -38,15 +38,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.automirrored.filled.Article
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.conflate
@@ -94,47 +85,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AppShortcut
-import androidx.compose.material.icons.filled.ArrowCircleUp
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DataUsage
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.CloseFullscreen
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -210,8 +161,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -223,18 +172,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.ArrowCircleDown
-import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.style.TextAlign
@@ -318,7 +255,7 @@ internal fun ToolDetailSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.Close,
+                        com.openminis.app.ui.novex.NovexIcons.Close,
                         contentDescription = "Close",
                         tint = ChatColors.primaryText,
                         modifier = Modifier.size(16.dp),
@@ -426,10 +363,10 @@ internal fun ToolDetailSheet(
                 ) {
                     Icon(
                         when {
-                            copyDone -> Icons.Default.Check
-                            isShellTool -> Icons.Default.Terminal
-                            isBrowserTool -> Icons.Outlined.Public
-                            else -> Icons.Default.ContentCopy
+                            copyDone -> com.openminis.app.ui.novex.NovexIcons.Check
+                            isShellTool -> com.openminis.app.ui.novex.NovexIcons.Terminal
+                            isBrowserTool -> com.openminis.app.ui.novex.NovexIcons.Public
+                            else -> com.openminis.app.ui.novex.NovexIcons.ContentCopy
                         },
                         contentDescription = when {
                             isShellTool -> "Open in terminal"
@@ -668,7 +605,7 @@ internal fun ToolDetailSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
-                                        Icons.Default.EditNote,
+                                        com.openminis.app.ui.novex.NovexIcons.EditNote,
                                         contentDescription = null,
                                         tint = Color(0xFFFF9500),
                                         modifier = Modifier.size(12.dp),
@@ -798,8 +735,8 @@ internal fun ToolDetailSheet(
                         }
                         EditorCard(
                             title = fileName.ifEmpty { "file" },
-                            icon = if (block.toolName == "file_read") Icons.Default.Description
-                                   else Icons.AutoMirrored.Filled.NoteAdd,
+                            icon = if (block.toolName == "file_read") com.openminis.app.ui.novex.NovexIcons.Description
+                                   else com.openminis.app.ui.novex.NovexIcons.NoteAdd,
                             iconTint = ChatColors.secondaryText,
                             titleColor = ChatColors.primaryText,
                             sizeColor = ChatColors.tertiaryText,
@@ -980,7 +917,7 @@ internal fun ToolDetailSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
-                                            Icons.Default.Language,
+                                            com.openminis.app.ui.novex.NovexIcons.Language,
                                             contentDescription = null,
                                             tint = ChatColors.tertiaryText,
                                             modifier = Modifier.size(12.dp),
@@ -1024,7 +961,7 @@ internal fun ToolDetailSheet(
                             "Keywords: $keywords\n\n" else ""
                         EditorCard(
                             title = block.toolName,
-                            icon = Icons.Default.Psychology,
+                            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
                             iconTint = ToolMemoryAccent.copy(alpha = 0.6f),
                             titleColor = ToolMemoryAccent,
                             sizeColor = ToolMemoryAccent.copy(alpha = 0.5f),
@@ -1169,11 +1106,11 @@ internal fun ToolDetailSheet(
                         )
                     } else {
                         val (icon, tint) = when (block.toolStatus) {
-                            ToolBlockStatus.SUCCESS -> Icons.Default.CheckCircle to ToolCheckColor
-                            ToolBlockStatus.FAILED -> Icons.Default.Error to ToolErrorColor
-                            ToolBlockStatus.CANCELLED -> Icons.Default.Cancel to ToolCancelColor
-                            ToolBlockStatus.TIMEOUT -> Icons.Default.Schedule to ToolErrorColor
-                            else -> Icons.Default.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.SUCCESS -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.FAILED -> com.openminis.app.ui.novex.NovexIcons.Error to ToolErrorColor
+                            ToolBlockStatus.CANCELLED -> com.openminis.app.ui.novex.NovexIcons.Cancel to ToolCancelColor
+                            ToolBlockStatus.TIMEOUT -> com.openminis.app.ui.novex.NovexIcons.Schedule to ToolErrorColor
+                            else -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
                         }
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
                     }
@@ -1247,7 +1184,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            Icons.Default.SkipPrevious,
+                            com.openminis.app.ui.novex.NovexIcons.SkipPrevious,
                             contentDescription = "Previous",
                             tint = if (currentIdx > 0) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),
@@ -1293,7 +1230,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            Icons.Default.SkipNext,
+                            com.openminis.app.ui.novex.NovexIcons.SkipNext,
                             contentDescription = "Next",
                             tint = if (currentIdx < toolBlocks.lastIndex) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),

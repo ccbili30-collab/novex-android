@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -394,7 +394,7 @@ private fun NovexConversationRow(
             Text(
                 session.title?.takeIf(String::isNotBlank) ?: "新对话",
                 color = NovexColors.Text,
-                fontSize = 16.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -409,7 +409,7 @@ private fun NovexConversationRow(
                 Text(
                     preview,
                     color = NovexColors.SecondaryText,
-                    fontSize = 13.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp),
@@ -419,7 +419,7 @@ private fun NovexConversationRow(
                 Text(
                     versionLine,
                     color = NovexColors.SecondaryText,
-                    fontSize = 12.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp),
@@ -429,7 +429,7 @@ private fun NovexConversationRow(
         Text(
             conversationTime(session.updatedAt),
             color = NovexColors.SecondaryText,
-            fontSize = 12.sp,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
             modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
     }
@@ -457,7 +457,7 @@ private fun NovexConversationEmptyState(
                 else -> "还没有带设定的对话"
             },
             color = NovexColors.Text,
-            fontSize = 18.sp,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(18),
             fontWeight = FontWeight.SemiBold,
         )
         if (!searching) {
@@ -468,13 +468,13 @@ private fun NovexConversationEmptyState(
                     "从一个新的想法开始"
                 },
                 color = NovexColors.SecondaryText,
-                fontSize = 14.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(14),
                 modifier = Modifier.padding(top = 7.dp),
             )
             Text(
                 if (filter == SessionHomeFilter.WITH_CONTEXT) "前往世界" else "新建对话",
                 color = NovexColors.Primary,
-                fontSize = 15.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .padding(top = 18.dp)
@@ -523,7 +523,7 @@ private fun NovexConversationThumbnailView(
             Text(
                 thumbnail.text,
                 color = Color.White,
-                fontSize = 21.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(21),
                 fontWeight = FontWeight.SemiBold,
             )
         }

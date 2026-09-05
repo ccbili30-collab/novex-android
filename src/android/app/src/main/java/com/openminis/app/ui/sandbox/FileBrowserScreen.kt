@@ -21,34 +21,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.AppShortcut
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -103,7 +79,7 @@ fun FileBrowserScreen(
                 title = { Text(stringResource(R.string.filebrowser_title)) },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -155,7 +131,7 @@ fun FileBrowserScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
-                                Icons.Filled.Folder,
+                                com.openminis.app.ui.novex.NovexIcons.Folder,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -265,7 +241,7 @@ private fun BreadcrumbBar(
             )
             if (index < pathComponents.lastIndex) {
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -365,7 +341,7 @@ private fun FileItemRow(
         if (!item.isDirectory) {
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    Icons.Filled.Delete,
+                    com.openminis.app.ui.novex.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.delete),
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -376,7 +352,7 @@ private fun FileItemRow(
         // Chevron for directories
         if (item.isDirectory) {
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -397,7 +373,7 @@ private fun FileItemRow(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.filebrowser_copy_abs_path)) },
                 leadingIcon = {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null)
                 },
                 onClick = {
                     menuExpanded = false
@@ -422,7 +398,7 @@ private fun FileItemRow(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.webapp_add_to_home)) },
                 leadingIcon = {
-                    Icon(Icons.Filled.AppShortcut, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.AppShortcut, contentDescription = null)
                 },
                 onClick = {
                     menuExpanded = false
@@ -464,7 +440,7 @@ private fun MoreMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
+            Icon(com.openminis.app.ui.novex.NovexIcons.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
         }
         com.openminis.app.ui.components.MinisMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             // Display options — sort key choices first so the most
@@ -479,7 +455,7 @@ private fun MoreMenu(
                     })) },
                     leadingIcon = {
                         if (key == sortKey) {
-                            Icon(Icons.Filled.Check, contentDescription = null)
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
                         } else {
                             Spacer(modifier = Modifier.size(24.dp))
                         }
@@ -495,7 +471,7 @@ private fun MoreMenu(
                 text = { Text(stringResource(if (ascending) R.string.filebrowser_sort_ascending else R.string.filebrowser_sort_descending)) },
                 leadingIcon = {
                     Icon(
-                        if (ascending) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                        if (ascending) com.openminis.app.ui.novex.NovexIcons.ArrowUpward else com.openminis.app.ui.novex.NovexIcons.ArrowDownward,
                         contentDescription = null,
                     )
                 },
@@ -508,7 +484,7 @@ private fun MoreMenu(
                 text = { Text(stringResource(R.string.filebrowser_sort_folders_first)) },
                 leadingIcon = {
                     if (foldersFirst) {
-                        Icon(Icons.Filled.Check, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
                     } else {
                         Spacer(modifier = Modifier.size(24.dp))
                     }
@@ -527,7 +503,7 @@ private fun MoreMenu(
                 },
                 leadingIcon = {
                     Icon(
-                        if (showHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        if (showHidden) com.openminis.app.ui.novex.NovexIcons.VisibilityOff else com.openminis.app.ui.novex.NovexIcons.Visibility,
                         contentDescription = null,
                     )
                 },
@@ -541,17 +517,17 @@ private fun MoreMenu(
 }
 
 private fun fileIcon(item: FileItem): ImageVector {
-    if (item.isDirectory) return Icons.Filled.Folder
+    if (item.isDirectory) return com.openminis.app.ui.novex.NovexIcons.Folder
     return when (item.iconRes) {
-        "text" -> Icons.Filled.Description
-        "terminal" -> Icons.Filled.Terminal
-        "code" -> Icons.Filled.Code
-        "image" -> Icons.Filled.Image
-        "audio" -> Icons.Filled.AudioFile
-        "video" -> Icons.Filled.VideoFile
-        "archive" -> Icons.Filled.Archive
-        "pdf" -> Icons.Filled.PictureAsPdf
-        "database" -> Icons.Filled.Storage
-        else -> Icons.AutoMirrored.Filled.InsertDriveFile
+        "text" -> com.openminis.app.ui.novex.NovexIcons.Description
+        "terminal" -> com.openminis.app.ui.novex.NovexIcons.Terminal
+        "code" -> com.openminis.app.ui.novex.NovexIcons.Code
+        "image" -> com.openminis.app.ui.novex.NovexIcons.Image
+        "audio" -> com.openminis.app.ui.novex.NovexIcons.AudioFile
+        "video" -> com.openminis.app.ui.novex.NovexIcons.VideoFile
+        "archive" -> com.openminis.app.ui.novex.NovexIcons.Archive
+        "pdf" -> com.openminis.app.ui.novex.NovexIcons.PictureAsPdf
+        "database" -> com.openminis.app.ui.novex.NovexIcons.Storage
+        else -> com.openminis.app.ui.novex.NovexIcons.InsertDriveFile
     }
 }

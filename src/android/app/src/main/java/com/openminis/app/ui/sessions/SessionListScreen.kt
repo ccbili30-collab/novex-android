@@ -47,62 +47,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.FolderOff
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.outlined.AddComment
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FolderOff
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Book
-import androidx.compose.material.icons.outlined.Brush
-import androidx.compose.material.icons.outlined.Calculate
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChecklistRtl
-import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Translate
 import android.content.Intent
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import androidx.compose.material3.Surface
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
@@ -116,9 +66,9 @@ import com.openminis.app.ui.novex.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.FloatingActionButton
+import com.openminis.app.ui.novex.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
-import androidx.compose.material3.FilterChip
+import com.openminis.app.ui.novex.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -206,23 +156,23 @@ private data class CategoryStyle(val icon: ImageVector, val color: Color)
 // 16 categories matching iOS (ContentView.swift:1897-1916)
 private fun categoryStyle(category: String?): CategoryStyle {
     return when (category?.lowercase()) {
-        "code"         -> CategoryStyle(Icons.Outlined.Code, Color(0xFFF09A37))
-        "writing"      -> CategoryStyle(Icons.Outlined.Description, Color(0xFF3478F6))
-        "research"     -> CategoryStyle(Icons.Outlined.Language, Color(0xFF30B0C7))
-        "analysis"     -> CategoryStyle(Icons.Outlined.BarChart, Color(0xFF5856D6))
-        "creative"     -> CategoryStyle(Icons.Outlined.Brush, Color(0xFFFF2D55))
-        "chat"         -> CategoryStyle(Icons.Outlined.Forum, Color(0xFF34C759))
-        "math"         -> CategoryStyle(Icons.Outlined.Calculate, Color(0xFF9B59B6))
-        "translation"  -> CategoryStyle(Icons.Outlined.Translate, Color(0xFF00BCD4))
-        "health"       -> CategoryStyle(Icons.Outlined.Favorite, Color(0xFFFF3B30))
-        "finance"      -> CategoryStyle(Icons.Outlined.Payments, Color(0xFF00C7BE))
-        "travel"       -> CategoryStyle(Icons.Outlined.Map, Color(0xFFF09A37))
-        "education"    -> CategoryStyle(Icons.Outlined.Book, Color(0xFF3478F6))
-        "design"       -> CategoryStyle(Icons.Outlined.Palette, Color(0xFFFF2D55))
-        "productivity" -> CategoryStyle(Icons.Outlined.CalendarMonth, Color(0xFFFFCC00))
-        "support"      -> CategoryStyle(Icons.Outlined.Settings, Color(0xFF8B6914))
-        "other"        -> CategoryStyle(Icons.Outlined.GridView, Color(0xFF8E8E93))
-        else           -> CategoryStyle(Icons.Outlined.Forum, Color(0xFF8E8E93))
+        "code"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Code, Color(0xFFF09A37))
+        "writing"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Description, Color(0xFF3478F6))
+        "research"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Language, Color(0xFF30B0C7))
+        "analysis"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.BarChart, Color(0xFF5856D6))
+        "creative"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Brush, Color(0xFFFF2D55))
+        "chat"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF34C759))
+        "math"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Calculate, Color(0xFF9B59B6))
+        "translation"  -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Translate, Color(0xFF00BCD4))
+        "health"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Favorite, Color(0xFFFF3B30))
+        "finance"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Payments, Color(0xFF00C7BE))
+        "travel"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Map, Color(0xFFF09A37))
+        "education"    -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Book, Color(0xFF3478F6))
+        "design"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Palette, Color(0xFFFF2D55))
+        "productivity" -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
+        "support"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Settings, Color(0xFF8B6914))
+        "other"        -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.GridView, Color(0xFF8E8E93))
+        else           -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF8E8E93))
     }
 }
 
@@ -719,7 +669,7 @@ fun SessionListScreen(
                                         onCharactersClick()
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Person, contentDescription = null)
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
                                     },
                                 )
                                 MinisMenuDivider()
@@ -731,7 +681,7 @@ fun SessionListScreen(
                                             viewModel.isSelecting.value = true
                                         },
                                         leadingIcon = {
-                                            Icon(Icons.Outlined.ChecklistRtl, contentDescription = null)
+                                            Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
                                         },
                                     )
                                     MinisMenuDivider()
@@ -746,7 +696,7 @@ fun SessionListScreen(
                                         }
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Forum, contentDescription = null)
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null)
                                     },
                                 )
                                 DropdownMenuItem(
@@ -756,7 +706,7 @@ fun SessionListScreen(
                                         onCharactersClick()
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Person, contentDescription = null)
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
                                     },
                                 )
                                 DropdownMenuItem(
@@ -771,7 +721,7 @@ fun SessionListScreen(
                                         }
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.AutoAwesome, contentDescription = null)
                                     },
                                 )
                             }
@@ -1150,7 +1100,7 @@ fun SessionListScreen(
                                     },
                             ) {
                                 Icon(
-                                    Icons.Default.KeyboardArrowUp,
+                                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                                     contentDescription = stringResource(R.string.group_collapse),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp),
@@ -1231,7 +1181,7 @@ fun SessionListScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Outlined.Forum, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("新建对话")
                 }
@@ -1242,7 +1192,7 @@ fun SessionListScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Outlined.Person, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("从世界开始")
                 }
@@ -1258,7 +1208,7 @@ fun SessionListScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Icon(com.openminis.app.ui.novex.NovexIcons.AutoAwesome, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("帮我创作")
                 }
@@ -1333,7 +1283,7 @@ fun SessionListScreen(
         // text fields, and MinisAlertDialog is a title/text/buttons component.
         // Widening it for a single caller would push layout complexity into
         // every other dialog in the app.
-        androidx.compose.material3.AlertDialog(
+        com.openminis.app.ui.novex.AlertDialog(
             onDismissRequest = { folderToRename = null },
             title = { Text(stringResource(R.string.group_rename)) },
             text = {
@@ -1535,7 +1485,7 @@ private fun DualFabRow(
                     .shadow(8.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.2f)),
                 elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
             ) {
-                Icon(Icons.Outlined.Forum, contentDescription = "New Chat", tint = Color.White, modifier = Modifier.size(24.dp))
+                Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = "New Chat", tint = Color.White, modifier = Modifier.size(24.dp))
             }
             DropdownMenu(
                 expanded = showGroupMenu,
@@ -1544,7 +1494,7 @@ private fun DualFabRow(
                 topGroups.forEach { group ->
                     DropdownMenuItem(
                         text = { Text(group.name) },
-                        leadingIcon = { Icon(Icons.Outlined.Forum, contentDescription = null) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null) },
                         onClick = {
                             showGroupMenu = false
                             onNewChatWithGroup(group.id)
@@ -1587,7 +1537,7 @@ private fun DualFabRow(
                         .shadow(6.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.15f)),
                     elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
                 ) {
-                    Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.sessionlist_search_action), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Search, contentDescription = stringResource(R.string.sessionlist_search_action), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -1619,7 +1569,7 @@ private fun DualFabRow(
                 singleLine = true,
                 placeholder = { Text(stringResource(R.string.search_chats_placeholder)) },
                 leadingIcon = {
-                    Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
                 trailingIcon = {
                     // T46: while debounce is in flight, swap the close icon
@@ -1636,7 +1586,7 @@ private fun DualFabRow(
                         )
                     } else {
                         IconButton(onClick = onSearchDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.sessionlist_dismiss), modifier = Modifier.size(18.dp))
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Close, contentDescription = stringResource(R.string.sessionlist_dismiss), modifier = Modifier.size(18.dp))
                         }
                     }
                 },
@@ -1707,7 +1657,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Share,
+                    com.openminis.app.ui.novex.NovexIcons.Share,
                     contentDescription = stringResource(R.string.sessionlist_export),
                     modifier = Modifier.size(20.dp),
                 )
@@ -1723,7 +1673,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Folder,
+                    com.openminis.app.ui.novex.NovexIcons.Folder,
                     contentDescription = stringResource(R.string.group_move_action),
                     modifier = Modifier.size(20.dp),
                 )
@@ -1739,7 +1689,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.Default.Delete,
+                    com.openminis.app.ui.novex.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.delete),
                     tint = if (selectedCount > 0) MaterialTheme.colorScheme.error else Color.Gray,
                     modifier = Modifier.size(20.dp),
@@ -1853,7 +1803,7 @@ private fun SessionInlineSearchField(
             )
         } else {
             IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.sessionlist_dismiss))
+                Icon(com.openminis.app.ui.novex.NovexIcons.Close, contentDescription = stringResource(R.string.sessionlist_dismiss))
             }
         }
     }
@@ -1880,7 +1830,7 @@ private fun WorldOverviewSection(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Outlined.Map,
+                                com.openminis.app.ui.novex.NovexIcons.Map,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
@@ -1939,7 +1889,7 @@ private fun SectionHeader(title: String) {
     ) {
         if (isPinned) {
             Icon(
-                imageVector = Icons.Default.PushPin,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.PushPin,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -2010,7 +1960,7 @@ private fun SessionItemContent(
             rowBackground = rowBackground,
             leadingIcon = {
                 Icon(
-                    imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                    imageVector = if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Circle,
                     contentDescription = null,
                     tint = if (isSelected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2097,7 +2047,7 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            if (isPinned) Icons.Default.Close else Icons.Default.PushPin,
+                            if (isPinned) com.openminis.app.ui.novex.NovexIcons.Close else com.openminis.app.ui.novex.NovexIcons.PushPin,
                             contentDescription = null,
                         )
                     },
@@ -2108,12 +2058,12 @@ private fun SessionItemContent(
                     text = {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.sessionlist_export))
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     },
                     onClick = { showExportSub = !showExportSub },
                     leadingIcon = {
-                        Icon(Icons.Default.Share, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null)
                     },
                 )
                 if (showExportSub) {
@@ -2140,7 +2090,7 @@ private fun SessionItemContent(
                         onEditRequest(session)
                     },
                     leadingIcon = {
-                        Icon(Icons.Default.Edit, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null)
                     },
                 )
                 // Regenerate Title
@@ -2151,7 +2101,7 @@ private fun SessionItemContent(
                         onRegenerateTitle(session.id)
                     },
                     leadingIcon = {
-                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
                     },
                 )
                 // Duplicate
@@ -2162,7 +2112,7 @@ private fun SessionItemContent(
                         onDuplicate(session.id)
                     },
                     leadingIcon = {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null)
                     },
                 )
                 // Move to / Change Group
@@ -2189,8 +2139,8 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            if (isFiled) Icons.Default.DriveFileMove
-                            else Icons.Default.Folder,
+                            if (isFiled) com.openminis.app.ui.novex.NovexIcons.DriveFileMove
+                            else com.openminis.app.ui.novex.NovexIcons.Folder,
                             contentDescription = null,
                         )
                     },
@@ -2207,7 +2157,7 @@ private fun SessionItemContent(
                         onEnterSelect(session.id)
                     },
                     leadingIcon = {
-                        Icon(Icons.Outlined.ChecklistRtl, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
                     },
                 )
                 MinisMenuDivider()
@@ -2220,7 +2170,7 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            Icons.Default.Delete,
+                            com.openminis.app.ui.novex.NovexIcons.Delete,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                         )
@@ -2548,14 +2498,14 @@ private fun FolderCard(
                 ) {
                     if (block.folder.isPinned) {
                         Icon(
-                            Icons.Default.PushPin,
+                            com.openminis.app.ui.novex.NovexIcons.PushPin,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(12.dp),
                         )
                     }
                     Icon(
-                        Icons.Default.KeyboardArrowDown,
+                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier
@@ -2601,19 +2551,19 @@ private fun FolderCard(
                         )
                     },
                     onClick = { menuOpen = false; onTogglePin() },
-                    leadingIcon = { menuIcon(Icons.Outlined.PushPin) },
+                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.PushPin) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_rename)) },
                     onClick = { menuOpen = false; onRename() },
-                    leadingIcon = { menuIcon(Icons.Outlined.Edit) },
+                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.Edit) },
                 )
                 // iOS folder menu parity: "New Chat in Group" (plus.bubble)
                 // sits between Rename and the divider.
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_new_chat_in)) },
                     onClick = { menuOpen = false; onNewChatInGroup() },
-                    leadingIcon = { menuIcon(Icons.Outlined.AddComment) },
+                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.AddComment) },
                 )
                 MinisMenuDivider()
                 // Dissolve is deliberately NOT destructive-tinted (iOS note):
@@ -2623,7 +2573,7 @@ private fun FolderCard(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_dissolve)) },
                     onClick = { menuOpen = false; onDissolve() },
-                    leadingIcon = { menuIcon(Icons.Outlined.FolderOff) },
+                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.FolderOff) },
                 )
                 MinisMenuDivider()
                 // The one destructive item, last, with the count in the title
@@ -2641,7 +2591,7 @@ private fun FolderCard(
                     onClick = { menuOpen = false; onDeleteWithSessions() },
                     leadingIcon = {
                         Icon(
-                            Icons.Outlined.Delete,
+                            com.openminis.app.ui.novex.NovexIcons.Delete,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp),
@@ -2969,7 +2919,7 @@ private fun SessionBadgeOverlay(
                 // Pause glyph (⏸) — mirrors iOS's "pause.fill" badge so the
                 // cross-platform "this task was paused" affordance matches.
                 Icon(
-                    imageVector = Icons.Filled.Pause,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.Pause,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(9.dp),
@@ -3136,7 +3086,7 @@ private fun SetupStepCard(
         ) {
             if (isDone) {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(16.dp),
@@ -3171,7 +3121,7 @@ private fun SetupStepCard(
 
         if (!isDone && isEnabled) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             )
@@ -3327,7 +3277,7 @@ internal fun SessionEditSheet(
                     Text(stringResource(R.string.sessionlist_regenerating_title))
                 } else {
                     Icon(
-                        Icons.Default.Refresh,
+                        com.openminis.app.ui.novex.NovexIcons.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )

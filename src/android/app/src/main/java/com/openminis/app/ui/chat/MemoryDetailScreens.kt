@@ -13,8 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -206,7 +204,7 @@ fun MemoryGetDetailBody(record: MemoryToolRecord) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.Search,
                     contentDescription = null,
                     tint = ChatColors.secondaryText,
                     modifier = Modifier.size(14.dp),

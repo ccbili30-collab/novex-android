@@ -111,6 +111,7 @@ fun SettingsScreen(
     onAboutClick: () -> Unit = {},
     onFeedbackClick: () -> Unit = {},
     onCreativeLibraryClick: () -> Unit = {},
+    onComponentGalleryClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     NovexSettingsScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
@@ -164,6 +165,9 @@ fun SettingsScreen(
                 showDivider = false,
                 onClick = onAppearanceClick,
             )
+            onComponentGalleryClick?.let { open ->
+                NovexSettingsRow(R.drawable.ic_phosphor_puzzle_piece, "组件预览", "集中查看新组件和各种交互状态", showDivider = false, onClick = open)
+            }
         }
         NovexSettingsSection(title = stringResource(R.string.settings_section_agent_runtime)) {
             NovexSettingsRow(

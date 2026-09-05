@@ -234,7 +234,7 @@ private fun NovexRootDock(
                         Text(
                             novexRootSpaceLabel(destination),
                             color = NovexRootColors.Text,
-                            fontSize = 15.sp,
+                            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
                             fontWeight = if (selected == destination) FontWeight.SemiBold else FontWeight.Medium,
                         )
                     }

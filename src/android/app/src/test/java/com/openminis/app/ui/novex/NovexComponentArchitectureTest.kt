@@ -19,13 +19,26 @@ class NovexComponentArchitectureTest {
             "androidx.compose.material3.Switch",
             "androidx.compose.material3.TextButton",
             "androidx.compose.material3.TopAppBar",
+            "androidx.compose.material3.Card",
+            "androidx.compose.material3.Checkbox",
+            "androidx.compose.material3.RadioButton",
+            "androidx.compose.material3.DropdownMenuItem",
+            "androidx.compose.material3.FilterChip",
+            "androidx.compose.material3.AssistChip",
+            "androidx.compose.material3.Slider",
+            "androidx.compose.material3.SegmentedButton",
+            "androidx.compose.material3.SingleChoiceSegmentedButtonRow",
+            "androidx.compose.material3.ListItem",
+            "androidx.compose.material3.FloatingActionButton",
         )
         val violations = roots.asSequence().flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" }
-            .filterNot { it.name == "NovexMaterialControls.kt" }
+            .filterNot { it.name in setOf("NovexMaterialControls.kt", "NovexChoiceControls.kt") }
             .flatMap { file ->
                 file.readLines().mapIndexedNotNull { index, line ->
-                    val direct = forbiddenImports.firstOrNull { line.trim() == "import $it" }
+                    val direct = forbiddenImports.firstOrNull {
+                        Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(line.substringBefore("//"))
+                    }
                     when {
                         direct != null -> "${file.name}:${index + 1}: $direct"
                         line.trim() == "import androidx.compose.material3.*" ->
@@ -65,5 +78,27 @@ class NovexComponentArchitectureTest {
         assertTrue(buttons.contains("com.openminis.app.ui.novex.TextButton"))
         assertTrue(dialog.contains("com.openminis.app.ui.novex.AlertDialog"))
         assertTrue(menu.contains("NovexColors.Surface"))
+        assertTrue(menu.contains("NovexPopupMenu("))
+        assertTrue(File(controls, "DialogTextField.kt").readText().contains("NovexInputSurface("))
+        assertTrue(File(controls, "SectionTextField.kt").readText().contains("NovexInputSurface("))
+        assertTrue(File(controls, "SectionDropdown.kt").readText().contains("NovexSearchableSelectionSheet("))
+    }
+
+    @Test
+    fun productIconsHaveOneSourceAndAdvancedConversationActionsRemainReachable() {
+        val roots = File("src/main/java/com/openminis/app/ui")
+        val pattern = Regex("\\bIcons\\.(?:AutoMirrored\\.)?(?:Default|Filled|Outlined|Rounded)\\.\\w+")
+        val violations = roots.walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { pattern.containsMatchIn(it.readText().replace(Regex("/\\*.*?\\*/|//[^\\n]*", RegexOption.DOT_MATCHES_ALL), "")) }
+            .map { it.name }.toList()
+        assertTrue("旧图标仍在产品页面中：$violations", violations.isEmpty())
+        assertTrue(
+            "业务页面不能用基础输入框绕过统一外观",
+            roots.walkTopDown().filter { it.isFile && it.extension == "kt" }
+                .none { it.readText().contains("OutlinedTextFieldDefaults.DecorationBox(") },
+        )
+        val navigation = File("src/main/java/com/openminis/app/ui/navigation/AppNavigation.kt").readText()
+        assertTrue(navigation.contains("onSelectModelsClick ="))
+        assertTrue(navigation.contains("onScheduledTasksClick ="))
     }
 }

@@ -378,7 +378,7 @@ private fun CharacterHero(
                 Text(
                     name,
                     color = NovexColors.Text,
-                    fontSize = 27.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(27),
                     fontWeight = FontWeight.Bold,
                 )
                 Row(

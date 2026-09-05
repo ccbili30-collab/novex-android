@@ -18,10 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Delete
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -225,7 +221,7 @@ private fun MemoryFileRow(
         if (onDelete != null) {
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    Icons.Outlined.Delete,
+                    com.openminis.app.ui.novex.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.common_delete),
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
                     modifier = Modifier.size(20.dp),
@@ -233,7 +229,7 @@ private fun MemoryFileRow(
             }
         }
         Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),
@@ -262,7 +258,8 @@ fun MemoryFileEditScreen(
     memoryRepository: MemoryRepository,
     onBack: () -> Unit,
 ) {
-    var content by remember { mutableStateOf("") }
+    var content by androidx.compose.runtime.saveable.rememberSaveable(fileName) { mutableStateOf("") }
+    var baseline by androidx.compose.runtime.saveable.rememberSaveable(fileName) { mutableStateOf<String?>(null) }
     var saveError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     // [T-memory-save-toast-feedback] Confirm Save actually committed by
@@ -274,82 +271,88 @@ fun MemoryFileEditScreen(
     val savedToastText = stringResource(R.string.memory_save_toast)
 
     LaunchedEffect(fileName) {
-        content = memoryRepository.readFile(fileName)
+        if (baseline == null) {
+            content = memoryRepository.readFile(fileName)
+            baseline = content
+        }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(fileName) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                actions = {
-                    // [T-global-memory-save-always-visible] Always render Save —
-                    // no hasChanges gate (see KDoc above).
-                    MinisTextButton(onClick = {
-                        try {
-                            memoryRepository.saveFile(fileName, content)
-                            saveError = null
-                            android.widget.Toast.makeText(
-                                context,
-                                savedToastText,
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        } catch (e: Exception) {
-                            saveError = e.message
+    fun save(): Boolean = try {
+        memoryRepository.saveFile(fileName, content)
+        baseline = content
+        saveError = null
+        android.widget.Toast.makeText(context, savedToastText, android.widget.Toast.LENGTH_SHORT).show()
+        true
+    } catch (e: Exception) {
+        saveError = e.message ?: "保存失败，请重试"
+        false
+    }
+    com.openminis.app.ui.novex.NovexDraftExitBoundary(
+        baselineDraft = baseline, currentDraft = content, saving = false,
+        onBack = onBack, onSaveAndExit = { if (save()) onBack() },
+    ) { requestBack ->
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(fileName) },
+                    navigationIcon = {
+                        IconButton(onClick = requestBack) {
+                            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                         }
-                    }) {
-                        Text("Save")
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-        ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Editor
-            DialogTextField(
-                value = content,
-                onValueChange = {
-                    content = it
-                },
-                singleLine = false,
-                textStyle = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                ),
-                placeholder = stringResource(R.string.memory_editor_placeholder),
-                modifier = Modifier.weight(1f),
-            )
-
-            // Footer text
-            if (isGlobal) {
-                Text(
-                    stringResource(R.string.memory_global_footer),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    },
+                    actions = {
+                        // [T-global-memory-save-always-visible] Always render Save —
+                        // no hasChanges gate (see KDoc above).
+                        MinisTextButton(onClick = { save() }, enabled = baseline != null) {
+                            Text("保存")
+                        }
+                    },
                 )
-            }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
 
-            if (saveError != null) {
-                Text(
-                    saveError!!,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                // Editor
+                DialogTextField(
+                    value = content,
+                    onValueChange = {
+                        content = it
+                    },
+                    singleLine = false,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    ),
+                    placeholder = stringResource(R.string.memory_editor_placeholder),
+                    modifier = Modifier.weight(1f),
                 )
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                // Footer text
+                if (isGlobal) {
+                    Text(
+                        stringResource(R.string.memory_global_footer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+
+                if (saveError != null) {
+                    Text(
+                        saveError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
     }
 }

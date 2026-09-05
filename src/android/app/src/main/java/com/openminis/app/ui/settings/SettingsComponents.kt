@@ -3,8 +3,6 @@ package com.openminis.app.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -161,7 +159,7 @@ fun SettingsChoiceRow(
         trailing = if (selected) {
             {
                 Icon(
-                    Icons.Default.Check,
+                    com.openminis.app.ui.novex.NovexIcons.Check,
                     contentDescription = "已选择",
                     tint = NovexColors.Primary,
                 )

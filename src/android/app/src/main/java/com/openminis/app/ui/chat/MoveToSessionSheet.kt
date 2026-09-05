@@ -13,23 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Book
-import androidx.compose.material.icons.outlined.Brush
-import androidx.compose.material.icons.outlined.Calculate
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -140,7 +123,7 @@ fun MoveToSessionSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Forum,
+                        com.openminis.app.ui.novex.NovexIcons.Forum,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                     )
@@ -257,23 +240,23 @@ private data class CategoryStyle(val icon: ImageVector, val color: Color)
 
 private fun categoryStyle(category: String?): CategoryStyle {
     return when (category?.lowercase()) {
-        "code"         -> CategoryStyle(Icons.Outlined.Code, Color(0xFFF09A37))
-        "writing"      -> CategoryStyle(Icons.Outlined.Description, Color(0xFF3478F6))
-        "research"     -> CategoryStyle(Icons.Outlined.Language, Color(0xFF30B0C7))
-        "analysis"     -> CategoryStyle(Icons.Outlined.BarChart, Color(0xFF5856D6))
-        "creative"     -> CategoryStyle(Icons.Outlined.Brush, Color(0xFFFF2D55))
-        "chat"         -> CategoryStyle(Icons.Outlined.Forum, Color(0xFF34C759))
-        "math"         -> CategoryStyle(Icons.Outlined.Calculate, Color(0xFF9B59B6))
-        "translation"  -> CategoryStyle(Icons.Outlined.Translate, Color(0xFF00BCD4))
-        "health"       -> CategoryStyle(Icons.Outlined.Favorite, Color(0xFFFF3B30))
-        "finance"      -> CategoryStyle(Icons.Outlined.Payments, Color(0xFF00C7BE))
-        "travel"       -> CategoryStyle(Icons.Outlined.Map, Color(0xFFF09A37))
-        "education"    -> CategoryStyle(Icons.Outlined.Book, Color(0xFF3478F6))
-        "design"       -> CategoryStyle(Icons.Outlined.Palette, Color(0xFFFF2D55))
-        "productivity" -> CategoryStyle(Icons.Outlined.CalendarMonth, Color(0xFFFFCC00))
-        "support"      -> CategoryStyle(Icons.Outlined.Settings, Color(0xFF8B6914))
-        "other"        -> CategoryStyle(Icons.Outlined.GridView, Color(0xFF8E8E93))
-        else           -> CategoryStyle(Icons.Outlined.Forum, Color(0xFF8E8E93))
+        "code"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Code, Color(0xFFF09A37))
+        "writing"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Description, Color(0xFF3478F6))
+        "research"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Language, Color(0xFF30B0C7))
+        "analysis"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.BarChart, Color(0xFF5856D6))
+        "creative"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Brush, Color(0xFFFF2D55))
+        "chat"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF34C759))
+        "math"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Calculate, Color(0xFF9B59B6))
+        "translation"  -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Translate, Color(0xFF00BCD4))
+        "health"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Favorite, Color(0xFFFF3B30))
+        "finance"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Payments, Color(0xFF00C7BE))
+        "travel"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Map, Color(0xFFF09A37))
+        "education"    -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Book, Color(0xFF3478F6))
+        "design"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Palette, Color(0xFFFF2D55))
+        "productivity" -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
+        "support"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Settings, Color(0xFF8B6914))
+        "other"        -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.GridView, Color(0xFF8E8E93))
+        else           -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF8E8E93))
     }
 }
 

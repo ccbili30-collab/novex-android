@@ -27,27 +27,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardReturn
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.BrightnessAuto
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.DataUsage
-import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.Keyboard
-import androidx.compose.material.icons.outlined.Launch
-import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.ScreenLockPortrait
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import com.openminis.app.ui.novex.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -220,9 +203,9 @@ fun AppearanceScreen(
         ) {
             data class ThemeRow(val label: String, val icon: ImageVector, val tint: Color)
             val themeRows = listOf(
-                ThemeRow(stringResource(R.string.appearance_theme_system), Icons.Outlined.BrightnessAuto, tilePurple),
-                ThemeRow(stringResource(R.string.appearance_theme_light), Icons.Outlined.LightMode, tileOrange),
-                ThemeRow(stringResource(R.string.appearance_theme_dark), Icons.Outlined.DarkMode, tilePurple),
+                ThemeRow(stringResource(R.string.appearance_theme_system), com.openminis.app.ui.novex.NovexIcons.BrightnessAuto, tilePurple),
+                ThemeRow(stringResource(R.string.appearance_theme_light), com.openminis.app.ui.novex.NovexIcons.LightMode, tileOrange),
+                ThemeRow(stringResource(R.string.appearance_theme_dark), com.openminis.app.ui.novex.NovexIcons.DarkMode, tilePurple),
             )
             themeRows.forEachIndexed { idx, row ->
                 SettingsChoiceRow(
@@ -244,7 +227,7 @@ fun AppearanceScreen(
                 )
             }
             SettingsRow(
-                icon = Icons.Outlined.Palette,
+                icon = com.openminis.app.ui.novex.NovexIcons.Palette,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_color_theme_title),
                 subtitle = stringResource(R.string.appearance_color_theme_subtitle),
@@ -277,13 +260,13 @@ fun AppearanceScreen(
                     leading = {
                         if (idx == 0) {
                             androidx.compose.material3.Icon(
-                                Icons.AutoMirrored.Outlined.KeyboardReturn,
+                                com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
                                 contentDescription = null,
                                 tint = tilePurple,
                             )
                         } else {
                             androidx.compose.material3.Icon(
-                                Icons.AutoMirrored.Outlined.Send,
+                                com.openminis.app.ui.novex.NovexIcons.Send,
                                 contentDescription = null,
                                 tint = tileGreen,
                             )
@@ -304,7 +287,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_keep_awake_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.ScreenLockPortrait,
+                icon = com.openminis.app.ui.novex.NovexIcons.ScreenLockPortrait,
                 iconColor = tileGreen,
                 title = stringResource(R.string.appearance_keep_awake_title),
                 checked = keepScreenAwake,
@@ -322,7 +305,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_tool_preview_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.Visibility,
+                icon = com.openminis.app.ui.novex.NovexIcons.Visibility,
                 iconColor = tileTeal,
                 title = stringResource(R.string.appearance_tool_preview_title),
                 checked = toolPreview,
@@ -339,7 +322,7 @@ fun AppearanceScreen(
             footer = "在对话顶部显示当前模型实际上下文窗口的使用进度。",
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.DataUsage,
+                icon = com.openminis.app.ui.novex.NovexIcons.DataUsage,
                 iconColor = tileBlue,
                 title = "显示上下文用量",
                 subtitle = "点击圆圈可切换百分比与进度视图",
@@ -362,7 +345,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_expand_thinking_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.Psychology,
+                icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
                 iconColor = tilePurple,
                 title = stringResource(R.string.appearance_auto_expand_thinking_title),
                 checked = autoExpandThinking,
@@ -382,7 +365,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_focus_after_reply_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.Keyboard,
+                icon = com.openminis.app.ui.novex.NovexIcons.Keyboard,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_auto_focus_after_reply_title),
                 checked = autoFocusAfterReply,
@@ -403,7 +386,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_show_chat_title_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.ChatBubbleOutline,
+                icon = com.openminis.app.ui.novex.NovexIcons.ChatBubbleOutline,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_show_chat_title),
                 subtitle = stringResource(R.string.appearance_show_chat_title_subtitle),
@@ -424,7 +407,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_grouping_footer),
         ) {
             SettingsSwitchRow(
-                icon = Icons.Outlined.Folder,
+                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_auto_grouping),
                 subtitle = stringResource(R.string.appearance_auto_grouping_subtitle),
@@ -443,7 +426,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_font_size_footer),
         ) {
             SettingsRow(
-                icon = Icons.Outlined.FormatSize,
+                icon = com.openminis.app.ui.novex.NovexIcons.FormatSize,
                 iconColor = tileOrange,
                 title = stringResource(R.string.appearance_font_scale_title),
                 subtitle = stringResource(R.string.appearance_font_scale_subtitle),
@@ -610,7 +593,7 @@ fun AppearanceScreen(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        Icons.Filled.CheckCircle,
+                                        com.openminis.app.ui.novex.NovexIcons.CheckCircle,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(22.dp),

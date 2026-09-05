@@ -5,8 +5,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -19,6 +17,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import coil.compose.AsyncImage
 import com.openminis.app.R
 
@@ -121,6 +121,11 @@ internal object NovexDimensions {
     val Hairline = 0.75.dp
     val ActionIconTile = 30.dp
 }
+
+/** Explicit display sizes still participate in the application's appearance preference. */
+@Composable
+internal fun novexScaledSp(size: Int): TextUnit =
+    size.sp * com.openminis.app.ui.theme.LocalAppFontScale.current
 
 /** Shared outer rail for conversation, world, character and interactive-fiction page content. */
 internal fun novexPagePadding(bottom: Dp = 0.dp): PaddingValues = PaddingValues(
@@ -313,7 +318,7 @@ private fun NovexNeutralArtwork(modifier: Modifier) {
             drawRect(primarySoft)
         }
         Icon(
-            imageVector = Icons.Default.Person,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.Person,
             contentDescription = null,
             tint = primary.copy(alpha = 0.46f),
             modifier = Modifier.fillMaxSize(0.38f),

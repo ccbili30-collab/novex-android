@@ -21,10 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import com.openminis.app.ui.novex.AlertDialog
@@ -35,7 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.ModalBottomSheet
 import com.openminis.app.ui.novex.OutlinedTextField
-import androidx.compose.material3.RadioButton
+import com.openminis.app.ui.novex.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -389,7 +385,7 @@ fun BrowserSettingsSheet(
                                 modifier = Modifier.size(32.dp),
                             ) {
                                 Icon(
-                                    Icons.Default.Delete,
+                                    com.openminis.app.ui.novex.NovexIcons.Delete,
                                     contentDescription = stringResource(R.string.browser_settings_clear_cookies_for, domain),
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(16.dp),
@@ -677,7 +673,7 @@ private fun UaMismatchBanner(message: String) {
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
-            Icons.Filled.Warning,
+            com.openminis.app.ui.novex.NovexIcons.Warning,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.tertiary,

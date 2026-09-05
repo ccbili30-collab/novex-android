@@ -77,30 +77,11 @@ internal fun NovexTextField(
     minLines: Int = 1,
     placeholder: String = "可留空",
 ) {
-    Column(modifier.fillMaxWidth().padding(horizontal = NovexDimensions.PageHorizontal, vertical = 7.dp)) {
-        Text(label, color = NovexColors.SecondaryText, style = NovexType.Metadata)
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            minLines = minLines,
-            textStyle = NovexType.Body.copy(color = NovexColors.Text),
-            cursorBrush = SolidColor(NovexColors.Primary),
-            decorationBox = { inner ->
-                Box(Modifier.fillMaxWidth()) {
-                    if (value.isBlank()) {
-                        Text(placeholder, color = NovexColors.TertiaryText, style = NovexType.Body)
-                    }
-                    inner()
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 7.dp)
-                .border(1.dp, NovexColors.Divider, RoundedCornerShape(NovexDimensions.SmallRadius))
-                .background(NovexColors.Surface, RoundedCornerShape(NovexDimensions.SmallRadius))
-                .padding(horizontal = 12.dp, vertical = 11.dp),
-        )
-    }
+    NovexInputSurface(
+        value = value, onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth().padding(horizontal = NovexDimensions.PageHorizontal, vertical = 7.dp),
+        label = { Text(label) }, placeholder = { Text(placeholder) }, minLines = minLines,
+    )
 }
 
 @Composable
@@ -111,20 +92,10 @@ internal fun NovexPrimaryButton(
     enabled: Boolean = true,
     containerColor: Color = NovexColors.Primary,
 ) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(NovexDimensions.SmallRadius))
-            .background(
-                if (enabled) containerColor else containerColor.copy(alpha = 0.34f),
-                RoundedCornerShape(NovexDimensions.SmallRadius),
-            )
-            .semantics { role = Role.Button }
-            .clickable(enabled = enabled, onClick = onClick),
-    ) {
-        Text(label, color = Color.White, style = NovexType.ItemTitle)
-    }
+    Button(
+        onClick = onClick, modifier = modifier, enabled = enabled,
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = Color.White),
+    ) { Text(label) }
 }
 
 @Composable
@@ -137,27 +108,12 @@ internal fun NovexOutlineButton(
     enabled: Boolean = true,
 ) {
     val tint = if (danger) NovexColors.Danger else NovexColors.Text
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .height(44.dp)
-            .alpha(if (enabled) 1f else 0.42f)
-            .clip(RoundedCornerShape(NovexDimensions.SmallRadius))
-            .border(1.dp, NovexColors.Divider, RoundedCornerShape(NovexDimensions.SmallRadius))
-            .semantics { role = Role.Button }
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp),
-    ) {
+    OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
         icon?.let {
-            Icon(
-                painterResource(it),
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp),
-            )
+            Icon(painterResource(it), null, Modifier.size(18.dp), tint = tint)
             Spacer(Modifier.width(7.dp))
         }
-        Text(label, color = tint, style = NovexType.Body)
+        Text(label, color = tint)
     }
 }
 

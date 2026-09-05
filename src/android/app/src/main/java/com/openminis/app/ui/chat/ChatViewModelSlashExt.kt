@@ -19,13 +19,6 @@ import com.openminis.app.agent.ToolLoopDetector
 import com.openminis.app.browser.BrowserActionInput
 import com.openminis.app.browser.BrowserTabPool
 import com.openminis.app.data.db.MessageEntity
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Extension
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
@@ -138,7 +131,7 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             val sub = if (trimmed.isNotEmpty()) trimmed else "Skill · v${skill.version}"
             SlashCommand(
                 id = "skill:${skill.id}",
-                icon = Icons.Outlined.Extension,
+                icon = com.openminis.app.ui.novex.NovexIcons.Extension,
                 title = skill.name,
                 subtitle = sub,
                 isSkill = true,
@@ -157,7 +150,7 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             val sub = if (note.isNotEmpty()) "[mcp] $note" else "[mcp] ${server.transportSummary}"
             SlashCommand(
                 id = "mcp:${server.id}",
-                icon = Icons.Outlined.Build,
+                icon = com.openminis.app.ui.novex.NovexIcons.Build,
                 title = server.id,
                 subtitle = sub,
                 isMcp = true,

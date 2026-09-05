@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SystemUpdate
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.NovexDimensions
 import com.openminis.app.ui.novex.NovexIconAction
@@ -172,7 +170,7 @@ fun CheckUpdateSection() {
         ),
     ) {
         SettingsRow(
-            icon = Icons.Outlined.SystemUpdate,
+            icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
             iconColor = Color(0xFF007AFF),
             title = stringResource(
                 if (checking) R.string.check_update_checking
@@ -474,6 +472,7 @@ private fun UpdateDialog(
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
             Column {
@@ -618,6 +617,7 @@ private fun AnnouncementDialog(
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
             Text(CurrentNovexAnnouncement.title, fontWeight = FontWeight.Bold)

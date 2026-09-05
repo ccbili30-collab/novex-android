@@ -14,10 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material3.Card
+import com.openminis.app.ui.novex.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,7 +85,7 @@ internal fun NovexPanel(argsJson: String, onButton: (String) -> Unit) {
                     }
                 }
                 Icon(
-                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    if (expanded) com.openminis.app.ui.novex.NovexIcons.ExpandLess else com.openminis.app.ui.novex.NovexIcons.ExpandMore,
                     contentDescription = if (expanded) "收起" else "展开",
                 )
             }
@@ -178,7 +175,7 @@ private fun PanelDetails(block: JSONObject) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(block.optString("title", "详细内容"), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Icon(if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null)
+            Icon(if (open) com.openminis.app.ui.novex.NovexIcons.ExpandLess else com.openminis.app.ui.novex.NovexIcons.ExpandMore, contentDescription = null)
         }
         AnimatedVisibility(open) { Markdown(content = block.optString("content")) }
     }

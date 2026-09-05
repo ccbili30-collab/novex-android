@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,7 +96,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
         SettingsSection(header = stringResource(R.string.about_links)) {
             SettingsRow(
-                icon = Icons.Outlined.Code,
+                icon = com.openminis.app.ui.novex.NovexIcons.Code,
                 iconColor = tileBlue,
                 title = stringResource(R.string.about_github_repository),
                 // Settings → ABOUT siblings (Privacy Policy / Submit GitHub

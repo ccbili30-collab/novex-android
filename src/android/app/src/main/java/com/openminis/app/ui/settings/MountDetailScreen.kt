@@ -16,10 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.FolderShared
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -97,7 +93,7 @@ fun MountDetailScreen(
                 title = { Text(stringResource(R.string.mount_detail_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -189,7 +185,7 @@ fun MountDetailScreen(
 
             Spacer(Modifier.height(20.dp))
             ActionRow(
-                icon = Icons.Outlined.Folder,
+                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
                 tint = Color(0xFF007AFF),
                 label = stringResource(R.string.mount_detail_browse_files),
                 onClick = onBrowseFiles,
@@ -197,7 +193,7 @@ fun MountDetailScreen(
 
             Spacer(Modifier.height(12.dp))
             ActionRow(
-                icon = Icons.Outlined.Folder,
+                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
                 tint = MaterialTheme.colorScheme.error,
                 label = stringResource(R.string.mount_unmount_confirm),
                 destructive = true,
@@ -255,7 +251,7 @@ private fun HeaderCard(entry: MountedFoldersStore.Entry) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.FolderShared,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.FolderShared,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp),

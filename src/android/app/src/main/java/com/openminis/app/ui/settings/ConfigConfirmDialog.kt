@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Warning
 import com.openminis.app.ui.novex.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +71,7 @@ private fun ConfigConfirmDialog(change: PendingConfigChange) {
     val approvedCount = workingItems.count { it.isApproved }
 
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = { /* force explicit Apply / Cancel */ },
         properties = DialogProperties(
             dismissOnBackPress = false,
@@ -169,7 +167,7 @@ private fun ConfirmRow(item: PendingConfigChangeItem, onToggle: (Boolean) -> Uni
                 )
                 Spacer(Modifier.width(6.dp))
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowForward,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(top = 2.dp),
@@ -229,7 +227,7 @@ private fun VerbBadge(verb: String) {
 private fun RiskHint(text: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = Icons.Filled.Warning,
+            imageVector = com.openminis.app.ui.novex.NovexIcons.Warning,
             contentDescription = null,
             tint = color,
             modifier = Modifier.height(14.dp),

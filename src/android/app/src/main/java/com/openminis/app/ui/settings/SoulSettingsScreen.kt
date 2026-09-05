@@ -119,20 +119,20 @@ fun SoulSettingsScreen(onBack: () -> Unit) {
                 // emoji field was removed; see [SoulMetadata.displayEmoji].
                 Text(
                     text = SoulMetadata.DISPLAY_EMOJI,
-                    fontSize = 28.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(28),
                     modifier = Modifier.width(48.dp),
                 )
                 Column(modifier = Modifier.padding(start = 4.dp)) {
                     Text(
                         text = name.ifBlank { "Nova" },
-                        fontSize = 17.sp,
+                        fontSize = com.openminis.app.ui.novex.novexScaledSp(17),
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (style.isNotBlank()) {
                         Text(
                             text = style,
-                            fontSize = 13.sp,
+                            fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -203,7 +203,7 @@ fun SoulSettingsScreen(onBack: () -> Unit) {
                 }
                 Text(
                     text = indicatorText,
-                    fontSize = 12.sp,
+                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                     color = warnColor,
                 )
             }
@@ -338,7 +338,7 @@ private fun LangPicker(lang: String, onLangChange: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = stringResource(R.string.soul_field_lang),
-            fontSize = 13.sp,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
         )

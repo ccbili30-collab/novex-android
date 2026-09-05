@@ -12,13 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -69,7 +62,7 @@ fun ThinkingRulesSection(
                 verticalAlignment = Alignment.Top,
             ) {
                 Icon(
-                    Icons.Default.Info,
+                    com.openminis.app.ui.novex.NovexIcons.Info,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
@@ -146,13 +139,13 @@ fun ThinkingRulesSection(
         // --- Default (built-in) rules, collapsed ---
         SettingsRow(
             title = stringResource(R.string.thinking_rules_default_rules_count, builtIns.size),
-            icon = Icons.Default.Lock,
+            icon = com.openminis.app.ui.novex.NovexIcons.Lock,
             iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { defaultsExpanded = !defaultsExpanded },
             showChevron = false,
             trailing = {
                 Icon(
-                    if (defaultsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.ArrowDropDown,
+                    if (defaultsExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.ArrowDropDown,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -184,7 +177,7 @@ fun ThinkingRulesSection(
         // --- Add rule ---
         SettingsRow(
             title = stringResource(R.string.thinking_rules_add_rule),
-            icon = Icons.Default.Add,
+            icon = com.openminis.app.ui.novex.NovexIcons.Add,
             iconColor = MaterialTheme.colorScheme.primary,
             onClick = {
                 editorRequest = ThinkingRuleEditorRequest(
@@ -251,7 +244,7 @@ private fun ThinkingRuleRow(
         ) {
             if (locked) {
                 Icon(
-                    Icons.Default.Lock,
+                    com.openminis.app.ui.novex.NovexIcons.Lock,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),
@@ -276,7 +269,7 @@ private fun ThinkingRuleRow(
             }
             if (onMoveUp != null) {
                 Icon(
-                    Icons.Default.KeyboardArrowUp,
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
                     contentDescription = stringResource(R.string.thinking_rules_move_up),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp).clickable(onClick = onMoveUp),
@@ -285,7 +278,7 @@ private fun ThinkingRuleRow(
             }
             if (onMoveDown != null) {
                 Icon(
-                    Icons.Default.KeyboardArrowDown,
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                     contentDescription = stringResource(R.string.thinking_rules_move_down),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp).clickable(onClick = onMoveDown),

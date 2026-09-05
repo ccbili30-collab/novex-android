@@ -18,9 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,7 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.openminis.app.ui.novex.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,9 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
 import com.openminis.app.ui.novex.Scaffold
-import androidx.compose.material3.SegmentedButton
+import com.openminis.app.ui.novex.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import com.openminis.app.ui.novex.TextButton
 import androidx.compose.material3.TimeInput
@@ -217,7 +214,7 @@ fun ScheduledTaskEditScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.back),
                         )
                     }
@@ -405,7 +402,7 @@ private fun EditFormBody(
                         selected = targetKind == kind,
                         onClick = { onTargetKindChange(kind) },
                         shape = SegmentedButtonDefaults.itemShape(idx, targetOpts.size),
-                    ) { Text(stringResource(resId), fontSize = 13.sp) }
+                    ) { Text(stringResource(resId), fontSize = com.openminis.app.ui.novex.novexScaledSp(13)) }
                 }
             }
             if (targetKind != TargetKind.NEW) {
@@ -451,7 +448,7 @@ private fun EditFormBody(
                         selected = repeatMode == mode,
                         onClick = { onRepeatModeChange(mode) },
                         shape = SegmentedButtonDefaults.itemShape(idx, options.size),
-                    ) { Text(stringResource(resId), fontSize = 13.sp) }
+                    ) { Text(stringResource(resId), fontSize = com.openminis.app.ui.novex.novexScaledSp(13)) }
                 }
             }
             if (repeatMode == ScheduledRepeatMode.CUSTOM) {
@@ -475,7 +472,7 @@ private fun EditFormBody(
                                 }
                                 onCustomDaysChange(next)
                             },
-                            label = { Text(name, fontSize = 12.sp) },
+                            label = { Text(name, fontSize = com.openminis.app.ui.novex.novexScaledSp(12)) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -522,7 +519,7 @@ private fun EditFormBody(
         } else {
             Text(
                 stringResource(R.string.scheduled_task_rerun_note),
-                fontSize = 12.sp,
+                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -538,7 +535,7 @@ private fun EditFormBody(
         HorizontalDivider()
 
         OutlinedButton(onClick = onRunNow, enabled = canRunNow, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.scheduled_task_run_now))
         }
@@ -673,7 +670,7 @@ private fun PickerRow(
         trailingIcon = if (onClear != null) {
             {
                 IconButton(onClick = onClear) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(0.dp))
+                    Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(0.dp))
                     Text("✕", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -694,6 +691,7 @@ private fun SessionPickerDialog(
     var sessions by remember { mutableStateOf<List<ScheduledTasksViewModel.SessionOption>?>(null) }
     LaunchedEffect(Unit) { sessions = vm.listSessions() }
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.scheduled_task_pick_session)) },
         text = {
@@ -733,6 +731,7 @@ private fun MessagePickerDialog(
     var messages by remember { mutableStateOf<List<ScheduledTasksViewModel.MessageOption>?>(null) }
     LaunchedEffect(sessionId) { messages = vm.listUserMessages(sessionId) }
     AlertDialog(
+            contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.scheduled_task_pick_message)) },
         text = {
@@ -750,7 +749,7 @@ private fun MessagePickerDialog(
                             Modifier.fillMaxWidth().clickable { onPick(m.id, m.preview) }
                                 .padding(vertical = 10.dp),
                         ) {
-                            Text(m.preview, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+                            Text(m.preview, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = com.openminis.app.ui.novex.novexScaledSp(14))
                         }
                     }
                 }

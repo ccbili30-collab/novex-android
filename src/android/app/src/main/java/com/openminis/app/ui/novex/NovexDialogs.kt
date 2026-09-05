@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,42 +48,17 @@ internal fun NovexDecisionDialog(
     actions: List<NovexDecisionAction>,
     onDismiss: () -> Unit,
 ) {
-    Dialog(
+    NovexDialogSurface(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        val shape = RoundedCornerShape(NovexDimensions.DialogRadius)
-        Surface(
-            color = NovexColors.Surface,
-            shape = shape,
-            tonalElevation = 0.dp,
-            shadowElevation = 10.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = NovexDimensions.OverlayHorizontal)
-                .widthIn(max = 360.dp)
-                .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
-        ) {
-            Column {
-                Text(
-                    title,
-                    color = NovexColors.Text,
-                    style = NovexType.SectionTitle,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp),
-                )
-                Text(
-                    message,
-                    color = NovexColors.SecondaryText,
-                    style = NovexType.Body,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 7.dp, bottom = 14.dp),
-                )
-                actions.forEachIndexed { index, action ->
-                    if (index > 0) NovexDivider(Modifier.padding(horizontal = 16.dp))
-                    NovexDecisionActionRow(action)
-                }
+        title = { Text(title, color = NovexColors.Text, style = NovexType.SectionTitle) },
+        content = { Text(message, color = NovexColors.SecondaryText, style = NovexType.Body) },
+        actions = {
+            actions.forEachIndexed { index, action ->
+                if (index > 0) NovexDivider(Modifier.padding(horizontal = 12.dp))
+                NovexDecisionActionRow(action)
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable
@@ -101,10 +77,10 @@ private fun NovexDecisionActionRow(action: NovexDecisionAction) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .heightIn(min = 54.dp)
             .alpha(if (action.enabled) 1f else 0.42f)
             .clickable(enabled = action.enabled, onClick = action.onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Box(
             contentAlignment = Alignment.Center,

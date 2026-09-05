@@ -13,27 +13,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog as MaterialAlertDialog
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button as MaterialButton
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
-import androidx.compose.material3.DropdownMenu as MaterialDropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ModalBottomSheet as MaterialModalBottomSheet
-import androidx.compose.material3.OutlinedButton as MaterialOutlinedButton
-import androidx.compose.material3.OutlinedTextField as MaterialOutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold as MaterialScaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.TextButton as MaterialTextButton
 import androidx.compose.material3.TextFieldColors
-import androidx.compose.material3.TopAppBar as MaterialTopAppBar
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -72,23 +65,21 @@ internal fun AlertDialog(
     textContentColor: Color = NovexColors.SecondaryText,
     tonalElevation: Dp = 0.dp,
     properties: DialogProperties = DialogProperties(),
+    contentScrollsItself: Boolean = false,
 ) {
-    MaterialAlertDialog(
+    NovexDialogSurface(
         onDismissRequest = onDismissRequest,
-        confirmButton = confirmButton,
-        modifier = modifier
-            .widthIn(max = 360.dp)
-            .border(NovexDimensions.Hairline, NovexColors.Divider, shape),
-        dismissButton = dismissButton,
-        icon = icon,
-        title = title,
-        text = text,
-        shape = shape,
-        containerColor = containerColor,
-        iconContentColor = iconContentColor,
-        titleContentColor = titleContentColor,
-        textContentColor = textContentColor,
-        tonalElevation = tonalElevation,
+        modifier = modifier,
+        title = {
+            icon?.invoke()
+            title?.invoke()
+        },
+        content = text,
+        contentScrollsItself = contentScrollsItself,
+        actions = {
+            confirmButton()
+            dismissButton?.invoke()
+        },
         properties = properties,
     )
 }
@@ -102,17 +93,17 @@ internal fun Button(
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = null,
-    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
-    MaterialButton(
+    NovexButtonSurface(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
         shape = shape,
-        colors = colors,
-        elevation = elevation,
+        background = if (enabled) colors.containerColor else colors.disabledContainerColor,
+        foreground = if (enabled) colors.contentColor else colors.disabledContentColor,
         border = border,
         contentPadding = contentPadding,
         interactionSource = interactionSource ?: remember { MutableInteractionSource() },
@@ -129,17 +120,17 @@ internal fun OutlinedButton(
     colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled),
-    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
-    MaterialOutlinedButton(
+    NovexButtonSurface(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
         shape = shape,
-        colors = colors,
-        elevation = elevation,
+        background = if (enabled) colors.containerColor else colors.disabledContainerColor,
+        foreground = if (enabled) colors.contentColor else colors.disabledContentColor,
         border = border,
         contentPadding = contentPadding,
         interactionSource = interactionSource ?: remember { MutableInteractionSource() },
@@ -156,17 +147,17 @@ internal fun TextButton(
     colors: ButtonColors = ButtonDefaults.textButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = null,
-    contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
-    MaterialTextButton(
+    NovexButtonSurface(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
         shape = shape,
-        colors = colors,
-        elevation = elevation,
+        background = if (enabled) colors.containerColor else colors.disabledContainerColor,
+        foreground = if (enabled) colors.contentColor else colors.disabledContentColor,
         border = border,
         contentPadding = contentPadding,
         interactionSource = interactionSource ?: remember { MutableInteractionSource() },
@@ -206,7 +197,7 @@ internal fun OutlinedTextField(
         unfocusedBorderColor = NovexColors.Divider,
     ),
 ) {
-    MaterialOutlinedTextField(
+    NovexInputSurface(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier,
@@ -228,8 +219,6 @@ internal fun OutlinedTextField(
         maxLines = maxLines,
         minLines = minLines,
         interactionSource = interactionSource,
-        shape = shape,
-        colors = colors,
     )
 }
 
@@ -267,7 +256,7 @@ internal fun TopAppBar(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
-    expandedHeight: Dp = TopAppBarDefaults.TopAppBarExpandedHeight,
+    expandedHeight: Dp = NovexDimensions.TopBarHeight,
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     colors: TopAppBarColors = TopAppBarDefaults.topAppBarColors(
         containerColor = NovexColors.Background,
@@ -278,17 +267,15 @@ internal fun TopAppBar(
     ),
     scrollBehavior: TopAppBarScrollBehavior? = null,
 ) {
-    MaterialTopAppBar(
+    NovexTopBarSurface(
         title = {
             CompositionLocalProvider(LocalTextStyle provides NovexType.SectionTitle) { title() }
         },
         modifier = modifier,
-        navigationIcon = navigationIcon,
+        navigation = navigationIcon,
         actions = actions,
-        expandedHeight = expandedHeight,
         windowInsets = windowInsets,
-        colors = colors,
-        scrollBehavior = scrollBehavior,
+        backgroundColor = colors.containerColor,
     )
 }
 
@@ -335,12 +322,12 @@ internal fun DropdownMenu(
     properties: PopupProperties = PopupProperties(focusable = true),
     shape: Shape = RoundedCornerShape(NovexDimensions.PopupRadius),
     containerColor: Color = NovexColors.Surface,
-    tonalElevation: Dp = MenuDefaults.TonalElevation,
-    shadowElevation: Dp = MenuDefaults.ShadowElevation,
+    tonalElevation: Dp = 0.dp,
+    shadowElevation: Dp = 8.dp,
     border: BorderStroke? = BorderStroke(NovexDimensions.Hairline, NovexColors.Divider),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    MaterialDropdownMenu(
+    NovexPopupMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,

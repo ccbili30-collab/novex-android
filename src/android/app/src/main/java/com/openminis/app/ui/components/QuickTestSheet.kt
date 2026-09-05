@@ -17,16 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -97,10 +87,10 @@ enum class QuickTestKind {
 
     val icon: ImageVector
         get() = when (this) {
-            TEXT -> Icons.Outlined.TextFields
-            IMAGE_GEN -> Icons.Outlined.Image
-            SPEECH_OUT -> Icons.Outlined.GraphicEq
-            TRANSCRIPTION -> Icons.Outlined.Mic
+            TEXT -> com.openminis.app.ui.novex.NovexIcons.TextFields
+            IMAGE_GEN -> com.openminis.app.ui.novex.NovexIcons.Image
+            SPEECH_OUT -> com.openminis.app.ui.novex.NovexIcons.GraphicEq
+            TRANSCRIPTION -> com.openminis.app.ui.novex.NovexIcons.Mic
         }
 }
 
@@ -189,7 +179,7 @@ fun QuickTestSheet(
                     enabled = !isRunning,
                 ) {
                     Icon(
-                        Icons.Filled.Refresh,
+                        com.openminis.app.ui.novex.NovexIcons.Refresh,
                         contentDescription = stringResource(R.string.quicktest_run_again),
                     )
                 }
@@ -212,7 +202,7 @@ fun QuickTestSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Outlined.Bolt,
+                        com.openminis.app.ui.novex.NovexIcons.Bolt,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -282,14 +272,14 @@ private fun StatusBadge(run: QuickTestRun) {
             strokeWidth = 2.dp,
         )
         is QuickTestState.Failure -> Icon(
-            Icons.Filled.Cancel,
+            com.openminis.app.ui.novex.NovexIcons.Cancel,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
             modifier = Modifier.size(18.dp),
         )
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.CheckCircle,
+                com.openminis.app.ui.novex.NovexIcons.CheckCircle,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -393,7 +383,7 @@ private fun AudioReplyContent(data: ByteArray) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { if (!isPlaying) play() }) {
             Icon(
-                if (isPlaying) Icons.Outlined.GraphicEq else Icons.Filled.PlayArrow,
+                if (isPlaying) com.openminis.app.ui.novex.NovexIcons.GraphicEq else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
                 contentDescription = stringResource(
                     if (isPlaying) R.string.quicktest_audio_play else R.string.quicktest_audio_replay,
                 ),

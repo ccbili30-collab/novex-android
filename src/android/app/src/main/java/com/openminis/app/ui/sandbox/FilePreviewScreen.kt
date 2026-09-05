@@ -42,17 +42,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import com.openminis.app.ui.novex.ListItem
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
 import androidx.compose.material3.Text
@@ -176,14 +170,14 @@ fun FilePreviewScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     // T142: Share works for any file — FileProvider URI +
                     // ACTION_SEND + FLAG_GRANT_READ_URI_PERMISSION. iOS parity.
                     IconButton(onClick = { shareFile(context, item) }) {
-                        Icon(Icons.Default.Share, contentDescription = stringResource(R.string.filepreview_share))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = stringResource(R.string.filepreview_share))
                     }
                     // Print: HTML renders via WebView; markdown / plain text /
                     // json / csv print their raw text wrapped in a WebView so we
@@ -194,7 +188,7 @@ fun FilePreviewScreen(
                         item.isJsonFile || item.isCsvFile
                     ) {
                         IconButton(onClick = { printFile(context, item) }) {
-                            Icon(Icons.Default.Print, contentDescription = stringResource(R.string.action_print))
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Print, contentDescription = stringResource(R.string.action_print))
                         }
                     }
                     if (item.isImageFile) {
@@ -209,12 +203,12 @@ fun FilePreviewScreen(
                                 ).show()
                             }
                         }) {
-                            Icon(Icons.Default.Download, contentDescription = stringResource(R.string.filepreview_save_to_gallery))
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_to_gallery))
                         }
                     } else {
                         // T144 non-image → SAF Save-As (user picks location).
                         IconButton(onClick = { saveAsLauncher.launch(item.name) }) {
-                            Icon(Icons.Default.Download, contentDescription = stringResource(R.string.filepreview_save_as))
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_as))
                         }
                     }
                 },
@@ -277,7 +271,7 @@ private fun ImagePreview(item: FileItem) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.AutoMirrored.Filled.InsertDriveFile,
+                        com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -604,7 +598,7 @@ private fun PdfOpenExternalFallback(item: FileItem, reason: String) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                Icons.AutoMirrored.Filled.InsertDriveFile,
+                com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -897,7 +891,7 @@ private fun OfficeOpenExternal(item: FileItem) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                Icons.AutoMirrored.Filled.InsertDriveFile,
+                com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -956,7 +950,7 @@ private fun FileInfoView(item: FileItem) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    Icons.AutoMirrored.Filled.InsertDriveFile,
+                    com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1196,4 +1190,3 @@ private fun collectImageGallery(
     }
     return items to startIdx
 }
-

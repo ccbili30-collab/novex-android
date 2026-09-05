@@ -24,19 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.KeyboardTab
-import androidx.compose.material.icons.filled.Brush
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Eject
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardHide
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Keyboard
-import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -311,7 +298,7 @@ private fun TerminalTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircularIconButton(
-            icon = Icons.Default.Close,
+            icon = com.openminis.app.ui.novex.NovexIcons.Close,
             contentDescription = stringResource(R.string.common_close),
             tint = TerminalFg,
             onClick = onClose,
@@ -327,7 +314,7 @@ private fun TerminalTopBar(
         )
         Spacer(modifier = Modifier.weight(1f))
         CircularIconButton(
-            icon = Icons.Default.Brush,
+            icon = com.openminis.app.ui.novex.NovexIcons.Brush,
             contentDescription = stringResource(R.string.terminal_clear),
             tint = TerminalGreen,
             onClick = onClear,
@@ -387,11 +374,11 @@ private fun KeyboardAccessoryBar(
         ) {
         QuickCommandButton(
             label = stringResource(if (keyboardVisible) R.string.terminal_hide_keyboard else R.string.terminal_show_keyboard),
-            icon = if (keyboardVisible) Icons.Default.KeyboardHide else Icons.Outlined.Keyboard,
+            icon = if (keyboardVisible) com.openminis.app.ui.novex.NovexIcons.KeyboardHide else com.openminis.app.ui.novex.NovexIcons.Keyboard,
             onClick = onToggleKeyboard,
         )
         QuickCommandButton("Esc", iconText = "⎋") { onSendRaw(byteArrayOf(0x1B)) }
-        QuickCommandButton("Tab", icon = Icons.AutoMirrored.Filled.KeyboardTab) { onSendRaw(byteArrayOf(0x09)) }
+        QuickCommandButton("Tab", icon = com.openminis.app.ui.novex.NovexIcons.KeyboardTab) { onSendRaw(byteArrayOf(0x09)) }
         // [T-android-shell-toolbar-enter-key] The soft keyboard's Return
         // inserts a newline inside the terminal, so it can't send a real
         // carriage return to run a command line / trigger an in-CLI prompt.
@@ -399,13 +386,13 @@ private fun KeyboardAccessoryBar(
         // Placed right after Tab, mirroring iOS fa3d2f8c.
         QuickCommandButton("⏎", iconText = "⏎") { onSendRaw(byteArrayOf(0x0D)) }
         QuickCommandButton("Ctrl", iconText = "^", isActive = ctrlActive, onClick = onCtrlToggle)
-        QuickCommandButton("\u2191", icon = Icons.Default.KeyboardArrowUp) { onArrow('A') }
-        QuickCommandButton("\u2193", icon = Icons.Default.KeyboardArrowDown) { onArrow('B') }
-        QuickCommandButton("\u2190", icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft) { onArrow('D') }
-        QuickCommandButton("\u2192", icon = Icons.AutoMirrored.Filled.KeyboardArrowRight) { onArrow('C') }
-        QuickCommandButton("C-c", icon = Icons.Outlined.Cancel) { onSendRaw(byteArrayOf(0x03)) }
-        QuickCommandButton("C-d", icon = Icons.Default.Eject) { onSendRaw(byteArrayOf(0x04)) }
-        QuickCommandButton("C-z", icon = Icons.Outlined.PauseCircle) { onSendRaw(byteArrayOf(0x1A)) }
+        QuickCommandButton("\u2191", icon = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp) { onArrow('A') }
+        QuickCommandButton("\u2193", icon = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown) { onArrow('B') }
+        QuickCommandButton("\u2190", icon = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft) { onArrow('D') }
+        QuickCommandButton("\u2192", icon = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight) { onArrow('C') }
+        QuickCommandButton("C-c", icon = com.openminis.app.ui.novex.NovexIcons.Cancel) { onSendRaw(byteArrayOf(0x03)) }
+        QuickCommandButton("C-d", icon = com.openminis.app.ui.novex.NovexIcons.Eject) { onSendRaw(byteArrayOf(0x04)) }
+        QuickCommandButton("C-z", icon = com.openminis.app.ui.novex.NovexIcons.PauseCircle) { onSendRaw(byteArrayOf(0x1A)) }
         }
     }
 }

@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.IosShare
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -137,7 +134,7 @@ internal fun LargeContentBadge(
                 modifier = Modifier.padding(0.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.UnfoldMore,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.UnfoldMore,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )
@@ -164,7 +161,7 @@ internal fun LargeContentBadge(
                 modifier = Modifier.padding(0.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Filled.IosShare,
+                    imageVector = com.openminis.app.ui.novex.NovexIcons.IosShare,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )

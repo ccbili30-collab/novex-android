@@ -30,17 +30,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import com.openminis.app.ui.novex.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -167,7 +161,7 @@ fun InlineAudioPlayer(
                             .background(MaterialTheme.colorScheme.primary),
                     ) {
                         Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(20.dp),
@@ -208,7 +202,7 @@ fun InlineAudioPlayer(
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                Icons.Default.Stop,
+                                com.openminis.app.ui.novex.NovexIcons.Stop,
                                 contentDescription = "Stop",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp),
@@ -493,7 +487,7 @@ private fun FullscreenVideoContent(file: File, onDismiss: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircleControlButton(
-                    icon = Icons.Default.Close,
+                    icon = com.openminis.app.ui.novex.NovexIcons.Close,
                     contentDescription = "Close",
                     onClick = {
                         try { videoView?.pause() } catch (_: Throwable) {}
@@ -509,7 +503,7 @@ private fun FullscreenVideoContent(file: File, onDismiss: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
                 CircleControlButton(
-                    icon = Icons.Default.Share,
+                    icon = com.openminis.app.ui.novex.NovexIcons.Share,
                     contentDescription = "Share",
                     onClick = { shareMediaFile(context, file, "video/*") },
                 )
@@ -549,7 +543,7 @@ private fun FullscreenVideoContent(file: File, onDismiss: () -> Unit) {
                     modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        imageVector = if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
                         tint = Color.White,
                     )

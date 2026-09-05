@@ -37,16 +37,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.automirrored.filled.Article
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.conflate
@@ -94,49 +84,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AppShortcut
-import androidx.compose.material.icons.filled.ArrowCircleUp
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DataUsage
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.CloseFullscreen
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import com.openminis.app.ui.novex.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import com.openminis.app.ui.novex.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -213,8 +162,6 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -226,18 +173,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.automirrored.filled.NoteAdd
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.ArrowCircleDown
-import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.style.TextAlign
@@ -455,7 +390,7 @@ internal fun UserMessageBubble(
                                 modifier = Modifier.size(44.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Filled.Cancel,
+                                    imageVector = com.openminis.app.ui.novex.NovexIcons.Cancel,
                                     contentDescription = "Withdraw queued message",
                                     tint = Color(0xFFFF3B30),
                                     modifier = Modifier.size(24.dp),
@@ -516,13 +451,13 @@ internal fun UserMessageBubble(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.chat_longpress_copy)) },
                     onClick = { showMenu = false; onCopy() },
-                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
                 if (onShare != null) {
                     DropdownMenuItem(
                         text = { Text("分享到其他文游") },
                         onClick = { showMenu = false; onShare() },
-                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 // T119: while the model is generating, hide every action that
@@ -533,7 +468,7 @@ internal fun UserMessageBubble(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_retry)) },
                         onClick = { showMenu = false; onRetry() },
-                        leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 // T187: Edit replaces the original turn with edited text. Same
@@ -542,14 +477,14 @@ internal fun UserMessageBubble(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_edit)) },
                         onClick = { showMenu = false; onEdit() },
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 if (onDelete != null) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_delete_from_here)) },
                         onClick = { showMenu = false; onDelete() },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
             }
@@ -571,7 +506,7 @@ internal fun UserMessageBubble(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Filled.Person,
+                        imageVector = com.openminis.app.ui.novex.NovexIcons.Person,
                         contentDescription = "玩家默认头像",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(19.dp),
@@ -737,13 +672,13 @@ private fun FileAttachmentTile(
 private fun fileIconFor(fileName: String): androidx.compose.ui.graphics.vector.ImageVector {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return when (ext) {
-        "pdf" -> Icons.Default.PictureAsPdf
-        "doc", "docx", "pages" -> Icons.AutoMirrored.Filled.Article
-        "txt", "log", "csv", "md", "markdown" -> Icons.AutoMirrored.Filled.Article
-        "mp4", "mov", "avi", "mkv" -> Icons.Default.VideoFile
-        "mp3", "wav", "m4a", "aac" -> Icons.Default.AudioFile
-        "zip", "tar", "gz", "7z" -> Icons.Default.FolderZip
-        else -> Icons.AutoMirrored.Filled.InsertDriveFile
+        "pdf" -> com.openminis.app.ui.novex.NovexIcons.PictureAsPdf
+        "doc", "docx", "pages" -> com.openminis.app.ui.novex.NovexIcons.Article
+        "txt", "log", "csv", "md", "markdown" -> com.openminis.app.ui.novex.NovexIcons.Article
+        "mp4", "mov", "avi", "mkv" -> com.openminis.app.ui.novex.NovexIcons.VideoFile
+        "mp3", "wav", "m4a", "aac" -> com.openminis.app.ui.novex.NovexIcons.AudioFile
+        "zip", "tar", "gz", "7z" -> com.openminis.app.ui.novex.NovexIcons.FolderZip
+        else -> com.openminis.app.ui.novex.NovexIcons.InsertDriveFile
     }
 }
 
@@ -791,7 +726,7 @@ private fun ImageGalleryDialog(
                     .padding(8.dp),
             ) {
                 Icon(
-                    androidx.compose.material.icons.Icons.Default.Close,
+                    com.openminis.app.ui.novex.NovexIcons.Close,
                     contentDescription = "Close",
                     tint = Color.White,
                 )

@@ -22,21 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Terrain
-import androidx.compose.material.icons.outlined.Javascript
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
+import com.openminis.app.ui.novex.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
@@ -89,9 +80,9 @@ enum class MirrorCategory(
 
     val icon: ImageVector
         get() = when (this) {
-            ALPINE -> Icons.Filled.Terrain
-            PIP -> Icons.Filled.Inventory2
-            NPM -> Icons.Outlined.Javascript
+            ALPINE -> com.openminis.app.ui.novex.NovexIcons.Terrain
+            PIP -> com.openminis.app.ui.novex.NovexIcons.Inventory2
+            NPM -> com.openminis.app.ui.novex.NovexIcons.Javascript
         }
 
     val iconColor: Color
@@ -503,7 +494,7 @@ fun MirrorsSectionView(onNavigate: (MirrorCategory) -> Unit) {
     ListItem(
         headlineContent = { Text(if (vm.isTesting) stringResource(R.string.mirror_test_speed_testing) else stringResource(R.string.mirror_detect_fast_label)) },
         leadingContent = {
-            CircleIconBadge(icon = Icons.Filled.Bolt, tint = Color(0xFFFF9500))
+            CircleIconBadge(icon = com.openminis.app.ui.novex.NovexIcons.Bolt, tint = Color(0xFFFF9500))
         },
         modifier = Modifier
             .fillMaxWidth()
@@ -555,7 +546,7 @@ private fun MirrorCategoryRow(category: MirrorCategory, onClick: () -> Unit) {
                     Spacer(Modifier.width(4.dp))
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
@@ -626,7 +617,7 @@ fun MirrorCategoryDetailScreen(
                 title = { Text(category.displayName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.mirror_back))
+                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.mirror_back))
                     }
                 },
             )
@@ -731,7 +722,7 @@ fun MirrorCategoryDetailScreen(
             ListItem(
                 headlineContent = { Text(if (vm.isTesting) stringResource(R.string.mirror_test_speed_testing) else stringResource(R.string.mirror_test_speed_label)) },
                 leadingContent = {
-                    CircleIconBadge(icon = Icons.Filled.Bolt, tint = Color(0xFFFF9500))
+                    CircleIconBadge(icon = com.openminis.app.ui.novex.NovexIcons.Bolt, tint = Color(0xFFFF9500))
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -769,7 +760,7 @@ private fun MirrorRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+            if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
             contentDescription = null,
             tint = if (isSelected) MaterialTheme.colorScheme.primary
                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
@@ -820,4 +811,3 @@ private fun MirrorRow(
         }
     }
 }
-

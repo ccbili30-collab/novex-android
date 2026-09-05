@@ -13,12 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -131,11 +125,11 @@ private fun DownloadRow(
     ) {
         val (icon, tint) = when (entry.state) {
             BrowserTabPool.DownloadState.DOWNLOADING ->
-                Icons.Default.Download to MaterialTheme.colorScheme.primary
+                com.openminis.app.ui.novex.NovexIcons.Download to MaterialTheme.colorScheme.primary
             BrowserTabPool.DownloadState.COMPLETED ->
-                Icons.Default.CheckCircle to androidx.compose.ui.graphics.Color(0xFF34C759)
+                com.openminis.app.ui.novex.NovexIcons.CheckCircle to androidx.compose.ui.graphics.Color(0xFF34C759)
             BrowserTabPool.DownloadState.FAILED ->
-                Icons.Default.ErrorOutline to MaterialTheme.colorScheme.error
+                com.openminis.app.ui.novex.NovexIcons.ErrorOutline to MaterialTheme.colorScheme.error
         }
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
@@ -204,7 +198,7 @@ private fun DownloadRow(
             BrowserTabPool.DownloadState.DOWNLOADING -> {
                 IconButton(onClick = onCancel) {
                     Icon(
-                        Icons.Default.Cancel,
+                        com.openminis.app.ui.novex.NovexIcons.Cancel,
                         contentDescription = stringResource(R.string.browser_downloads_cancel),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -213,7 +207,7 @@ private fun DownloadRow(
             BrowserTabPool.DownloadState.COMPLETED -> {
                 IconButton(onClick = onOpen) {
                     Icon(
-                        Icons.Default.OpenInNew,
+                        com.openminis.app.ui.novex.NovexIcons.OpenInNew,
                         contentDescription = stringResource(R.string.browser_downloads_open),
                         tint = MaterialTheme.colorScheme.primary,
                     )

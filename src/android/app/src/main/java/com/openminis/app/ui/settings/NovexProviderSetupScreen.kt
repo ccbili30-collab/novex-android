@@ -6,17 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -265,11 +254,11 @@ fun NovexProviderSetupScreen(
 
     Scaffold(topBar = { TopAppBar(
         title = { Text(if (existing == null) "连接模型" else "模型连接") },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, "返回") } },
         actions = {
             if (existing != null) {
                 IconButton(onClick = { deleteConfirm = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除 AI 服务商")
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = "删除 AI 服务商")
                 }
             }
         },
@@ -306,7 +295,7 @@ fun NovexProviderSetupScreen(
                     },
                 )
             }
-            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(Icons.Outlined.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             Text(
                 "滑到最下方获取密钥",
                 style = MaterialTheme.typography.bodySmall,
@@ -381,7 +370,7 @@ fun NovexProviderSetupScreen(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    Icons.Default.Build,
+                                    com.openminis.app.ui.novex.NovexIcons.Build,
                                     contentDescription = if (toolsEnabled(modelId)) "关闭该模型的工具调用" else "开启该模型的工具调用",
                                     modifier = Modifier.size(20.dp),
                                     tint = if (toolsEnabled(modelId)) Color(0xFF168A45) else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -404,7 +393,7 @@ fun NovexProviderSetupScreen(
                             },
                         ) {
                             Icon(
-                                if (checkingModelId == modelId) Icons.Default.Stop else Icons.Default.Refresh,
+                                if (checkingModelId == modelId) com.openminis.app.ui.novex.NovexIcons.Stop else com.openminis.app.ui.novex.NovexIcons.Refresh,
                                 contentDescription = if (checkingModelId == modelId) "停止检测 $modelId" else "检测 $modelId",
                             )
                         }
@@ -438,7 +427,7 @@ fun NovexProviderSetupScreen(
                     },
                     enabled = manualModelId.isNotBlank(),
                 ) {
-                    Icon(Icons.Default.Add, "添加模型")
+                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, "添加模型")
                 }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -452,9 +441,9 @@ fun NovexProviderSetupScreen(
                         ModelResultState.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     val icon = when (result.state) {
-                        ModelResultState.PASSED -> Icons.Default.CheckCircle
-                        ModelResultState.WARNING, ModelResultState.FAILED -> Icons.Default.Error
-                        ModelResultState.CANCELLED -> Icons.Default.Close
+                        ModelResultState.PASSED -> com.openminis.app.ui.novex.NovexIcons.CheckCircle
+                        ModelResultState.WARNING, ModelResultState.FAILED -> com.openminis.app.ui.novex.NovexIcons.Error
+                        ModelResultState.CANCELLED -> com.openminis.app.ui.novex.NovexIcons.Close
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
