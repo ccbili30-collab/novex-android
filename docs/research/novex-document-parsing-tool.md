@@ -311,3 +311,11 @@ HTML（超文本标记语言）导入必须默认离线：`img（图片）`、`l
 - 官方资料没有提供这些方案在同一 Android（安卓系统）设备、同一文档集上的速度与峰值内存对比；本文对性能的排序是基于流式 / DOM（文档对象模型）/ 完整对象图架构做出的推断，最终必须用 Novex 夹具实测。
 - 表中的制品大小是压缩依赖或当前本地文件大小，不等于 R8（安卓代码压缩器）后的 APK（安卓应用安装包）增量。
 - 本轮在 macOS（苹果桌面系统）环境尝试复跑目标单元测试时，机器没有可用 Java（爪哇语言）运行时，因此没有生成新的测试通过证据；本文只核对了现有实现和测试源文件。产品源码与版本历史均未修改。
+
+## 十、Wiki（维基）资料来源补充
+
+MediaWiki REST API（维基媒体表述性状态传递接口）支持搜索、读取页面内容、获取 HTML（超文本标记语言）、页面历史和媒体链接，并使用站点自己的 `/w/rest.php/v1/` 版本化路径。官方说明它比 Action API（动作接口）的操作集合更小、网址结构更一致，并利用缓存改善读取性能；Action API 则保留更广泛的搜索、分类和属性查询能力。[MediaWiki REST API 官方说明](https://www.mediawiki.org/wiki/API%3AREST_API/en)、[MediaWiki REST API 官方参考](https://www.mediawiki.org/wiki/API%3AREST_API/Reference)、[MediaWiki API 对比](https://www.mediawiki.org/wiki/API/en)
+
+对 Novex 而言，REST API 适合作为页面搜索与正文快照的默认适配器，Action API 只在分类、反向链接等 REST API 不覆盖的查询中使用。每个导入页面必须保存站点、页面编号、修订编号、标题、规范网址、获取时间和许可信息；同一页面的新修订应视为新来源版本，不静默覆盖学习任务已经引用的旧快照。
+
+官方政策要求请求携带可识别的 User-Agent（用户代理标识），并遵守 API（应用程序编程接口）使用、机器人、速率和内容再利用许可规则。网络学习因此必须在预检中说明站点、页面上限、链接深度、预计流量、许可和资料可靠性风险，不能把“搜索 Wiki”扩张为无边界爬取。[MediaWiki REST API 政策](https://www.mediawiki.org/wiki/API%3AREST_API/Policies)、[MediaWiki 搜索接口](https://www.mediawiki.org/wiki/API%3ASearch/en)
