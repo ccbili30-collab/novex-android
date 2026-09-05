@@ -34,6 +34,19 @@ class NovexDocumentAgentToolsTest {
     }
 
     @Test
+    fun `learning preparation is exposed only when the active branch owns a source collection`() {
+        val withoutCollection = AgentTools.makeAgentTools(sourceCollectionsAvailable = false)
+        val withCollection = AgentTools.makeAgentTools(sourceCollectionsAvailable = true)
+
+        assertFalse(withoutCollection.any { it.name.startsWith("learning_") })
+        assertEquals(
+            listOf("learning_prepare"),
+            withCollection.filter { it.name.startsWith("learning_") }.map { it.name },
+        )
+        assertFalse(withCollection.any { it.name in setOf("learning_start", "learning_confirm") })
+    }
+
+    @Test
     fun `document read schema exposes real arrays instead of encoded strings`() {
         val definition = tools.definitions().single { it.name == "document_read" }
         val parameters = definition.toOpenAIJson()

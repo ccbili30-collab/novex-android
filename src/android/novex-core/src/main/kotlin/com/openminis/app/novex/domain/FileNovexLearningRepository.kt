@@ -48,25 +48,33 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
         .put("collection", encodeCollection(state.collection))
         .put("review_ledger", encodeLedger(state.reviewLedger))
         .put("notes", JSONArray(state.notes.map(::encodeNote)))
+        .put("preflight", state.preflight?.let(::encodePreflight))
         .put("task", state.task?.let(::encodeTask))
         .toString()
 
     fun decode(encoded: String): NovexLearningState {
         val json = JSONObject(encoded)
-        require(json.getInt("version") == VERSION) { "不支持的学习状态版本" }
+        val version = json.getInt("version")
+        require(version in 1..VERSION) { "不支持的学习状态版本" }
         val collection = decodeCollection(json.getJSONObject("collection"))
+        val task = json.optionalObject("task")?.let(::decodeTask)
         return NovexLearningState(
             collection = collection,
             reviewLedger = decodeLedger(json.getJSONObject("review_ledger")),
             notes = json.getJSONArray("notes").objects().map(::decodeNote),
-            task = json.optionalObject("task")?.let(::decodeTask),
+            task = task,
+            preflight = if (version >= 2) {
+                json.optionalObject("preflight")?.let(::decodePreflight)
+            } else {
+                task?.preflight
+            },
         )
     }
 

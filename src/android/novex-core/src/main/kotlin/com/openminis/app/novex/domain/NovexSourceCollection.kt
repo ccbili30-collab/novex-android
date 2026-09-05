@@ -319,6 +319,7 @@ data class NovexLearningState(
     val reviewLedger: NovexReviewLedger,
     val notes: List<NovexLearningNote> = emptyList(),
     val task: NovexLearningTaskState? = null,
+    val preflight: NovexLearningPreflightSnapshot? = task?.preflight,
 ) {
     init {
         require(reviewLedger.collectionRef == collection.ref) { "通读账本与资料集不一致" }
@@ -328,5 +329,9 @@ data class NovexLearningState(
             "学习笔记不能引用资料集以外的文档"
         }
         require(task == null || task.collectionRef == collection.ref) { "学习任务与资料集不一致" }
+        require(preflight == null || preflight.collectionRef == collection.ref) { "学习预检与资料集不一致" }
+        require(task == null || preflight == null || task.preflightId == preflight.id) {
+            "学习任务与预检快照不一致"
+        }
     }
 }

@@ -8,6 +8,29 @@ import org.junit.Test
 
 class FileNovexLearningRepositoryTest {
     @Test
+    fun confirmationPreflightPersistsBeforeAnyLearningTaskStarts() {
+        val directory = Files.createTempDirectory("novex-learning-preflight").toFile()
+        try {
+            val collection = collection()
+            val preflight = preflight(collection)
+            val state = NovexLearningState(
+                collection = collection,
+                reviewLedger = NovexReviewLedger.start(collection),
+                preflight = preflight,
+            )
+
+            FileNovexLearningRepository(directory).save(state)
+            val restored = FileNovexLearningRepository(directory).find(collection.ref)
+
+            assertEquals(preflight.id, restored?.preflight?.id)
+            assertEquals(NovexLearningTaskStatus.NOT_STARTED, restored?.preflight?.taskStatus)
+            assertEquals(null, restored?.task)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun collectionCoverageAndAnchoredNotesResumeAfterRepositoryRecreation() {
         val directory = Files.createTempDirectory("novex-learning").toFile()
         try {
@@ -52,8 +75,23 @@ class FileNovexLearningRepositoryTest {
     }
 
     private fun pausedTask(collection: NovexSourceCollection): NovexLearningTaskState {
+        val preflight = preflight(collection)
+        val confirmation = NovexLearningConfirmation(
+            preflightId = preflight.id,
+            modelId = preflight.modelId,
+            sourceRefs = preflight.sourceRefs,
+            maxInputTokens = 120_000,
+            maxOutputTokens = 12_000,
+            confirmedAtMillis = 1_000,
+        )
+        return NovexLearningCoordinator().start(preflight, confirmation)
+            .recordUsage(12_000, 1_200)
+            .pause()
+    }
+
+    private fun preflight(collection: NovexSourceCollection): NovexLearningPreflightSnapshot {
         val documentRef = requireNotNull(collection.sources.first().documentRef)
-        val preflight = NovexLearningPreflight.prepare(
+        return NovexLearningPreflight.prepare(
             NovexLearningPreflightRequest(
                 collectionRef = collection.ref,
                 sources = listOf(
@@ -70,17 +108,6 @@ class FileNovexLearningRepositoryTest {
                 proposedBudget = NovexLearningTokenBudget(120_000, 12_000),
             ),
         )
-        val confirmation = NovexLearningConfirmation(
-            preflightId = preflight.id,
-            modelId = preflight.modelId,
-            sourceRefs = preflight.sourceRefs,
-            maxInputTokens = 120_000,
-            maxOutputTokens = 12_000,
-            confirmedAtMillis = 1_000,
-        )
-        return NovexLearningCoordinator().start(preflight, confirmation)
-            .recordUsage(12_000, 1_200)
-            .pause()
     }
 
     private fun collection(): NovexSourceCollection {

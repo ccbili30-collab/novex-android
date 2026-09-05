@@ -1,5 +1,7 @@
 package com.openminis.app.data.attachments
 
+import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
+
 private val AGENT_ATTACHMENT_ENVELOPES = listOf(
     "user-attached-files",
     "novex-document-receipts",
@@ -22,9 +24,11 @@ fun stripAgentAttachmentMetadata(text: String): String {
             }
         }
     }
+    cleaned = NovexSourceCollectionPromptReceipt.stripFrom(cleaned)
     return cleaned.trim()
 }
 
 /** True when a persisted text part is metadata that must remain model-visible but UI-hidden. */
 fun containsAgentAttachmentMetadata(text: String): Boolean =
-    AGENT_ATTACHMENT_ENVELOPES.any { tag -> text.contains("<$tag>") }
+    AGENT_ATTACHMENT_ENVELOPES.any { tag -> text.contains("<$tag>") } ||
+        NovexSourceCollectionPromptReceipt.contains(text)

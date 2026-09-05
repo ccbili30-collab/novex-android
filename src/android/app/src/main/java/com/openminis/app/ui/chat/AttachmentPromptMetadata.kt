@@ -2,6 +2,8 @@ package com.openminis.app.ui.chat
 
 import com.openminis.app.novex.domain.NovexDocumentPromptReceipt
 import com.openminis.app.novex.domain.NovexDocumentSnapshot
+import com.openminis.app.novex.domain.NovexResourceRef
+import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
 
 internal data class UserAttachedFilePromptMeta(
     val linuxPath: String,
@@ -17,8 +19,14 @@ internal data class UserAttachedFilePromptMeta(
  */
 internal fun buildUserAttachedFilesPrompt(
     metas: List<UserAttachedFilePromptMeta>,
+    sourceCollectionRef: NovexResourceRef? = null,
+    sourceCount: Int = 0,
 ): String? {
-    if (metas.isEmpty()) return null
+    require((sourceCollectionRef == null) == (sourceCount == 0)) {
+        "资料集引用与来源数量必须同时提供"
+    }
+    require(sourceCount >= 0) { "资料来源数量不能为负数" }
+    if (metas.isEmpty() && sourceCollectionRef == null) return null
     val documents = metas.mapNotNull(UserAttachedFilePromptMeta::documentSnapshot)
     val ordinaryFiles = metas.filter { it.documentSnapshot == null }
     return buildString {
@@ -39,6 +47,10 @@ internal fun buildUserAttachedFilesPrompt(
             if (documents.isNotEmpty()) append('\n')
         }
         if (documents.isNotEmpty()) append(NovexDocumentPromptReceipt.build(documents))
+        if (sourceCollectionRef != null) {
+            if (isNotEmpty()) append('\n')
+            append(NovexSourceCollectionPromptReceipt.build(sourceCollectionRef, sourceCount))
+        }
     }
 }
 
@@ -53,6 +65,10 @@ internal fun novexDocumentRefsInPrompt(prompt: String): Set<String> {
         .map { match -> match.groupValues[1].lowercase() }
         .toSet()
 }
+
+/** Recovers only validated branch-scoped source collection capabilities. */
+internal fun novexSourceCollectionRefsInPrompt(prompt: String): Set<String> =
+    NovexSourceCollectionPromptReceipt.refsIn(prompt).mapTo(linkedSetOf()) { it.value }
 
 private fun escapeXmlAttribute(value: String): String = value
     .replace("&", "&amp;")

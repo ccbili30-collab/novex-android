@@ -30,6 +30,7 @@ object AgentTools {
         imageGenerationConfigured: Boolean = false,
         interactiveFictionActive: Boolean = false,
         documentsAvailable: Boolean = false,
+        sourceCollectionsAvailable: Boolean = false,
     ): List<AgentToolDefinition> = buildList {
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
@@ -42,6 +43,9 @@ object AgentTools {
         addAll(NovexManagementTools.definitions())
         if (documentsAvailable) {
             addAll(NovexDocumentAgentTools.providerDefinitions())
+        }
+        if (sourceCollectionsAvailable) {
+            addAll(NovexLearningAgentTools.providerDefinitions())
         }
         if (interactiveFictionActive) {
             add(updatePlaythroughStateDefinition())

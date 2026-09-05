@@ -56,6 +56,7 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.GenerateImageTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.NovexDocumentAgentTools
+import com.openminis.app.tools.NovexLearningAgentTools
 import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
@@ -67,7 +68,22 @@ import com.openminis.app.novex.domain.NovexConversationConfiguration
 import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
 import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
 import com.openminis.app.novex.domain.FileNovexDocumentSnapshotRepository
+import com.openminis.app.novex.domain.FileNovexLearningRepository
+import com.openminis.app.novex.domain.NovexBatchDocumentImporter
+import com.openminis.app.novex.domain.NovexBatchDocumentRequest
+import com.openminis.app.novex.domain.NovexDocumentBlockKind
+import com.openminis.app.novex.domain.NovexDocumentStatus
 import com.openminis.app.novex.domain.NovexDocumentToolRouter
+import com.openminis.app.novex.domain.NovexLearningPreflight
+import com.openminis.app.novex.domain.NovexLearningPreflightRequest
+import com.openminis.app.novex.domain.NovexLearningPreflightSnapshot
+import com.openminis.app.novex.domain.NovexLearningSourceEstimate
+import com.openminis.app.novex.domain.NovexLearningState
+import com.openminis.app.novex.domain.NovexLearningTokenBudget
+import com.openminis.app.novex.domain.NovexLearningToolRouter
+import com.openminis.app.novex.domain.NovexResourceRef
+import com.openminis.app.novex.domain.NovexReviewLedger
+import com.openminis.app.novex.domain.NovexSourceCollectionBuilder
 import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.novex.domain.PlaythroughStateRegistration
 import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
@@ -894,6 +910,21 @@ class ChatViewModel(
     }
     @Volatile
     private var activeNovexDocumentRefs: Set<String> = emptySet()
+    private val novexLearningRepository by lazy {
+        FileNovexLearningRepository(
+            java.io.File(context.filesDir, "novex/learning"),
+        )
+    }
+    @Volatile
+    private var activeNovexSourceCollectionRefs: Set<String> = emptySet()
+    private val _pendingNovexLearningPreflight = MutableStateFlow<NovexLearningPreflightSnapshot?>(null)
+    val pendingNovexLearningPreflight: StateFlow<NovexLearningPreflightSnapshot?> =
+        _pendingNovexLearningPreflight.asStateFlow()
+    private val novexLearningAgentTools by lazy {
+        NovexLearningAgentTools { collectionRef, requestedModelId ->
+            prepareNovexLearningPreflight(collectionRef, requestedModelId)
+        }
+    }
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -924,6 +955,7 @@ class ChatViewModel(
             imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
             interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null,
             documentsAvailable = activeNovexDocumentRefs.isNotEmpty(),
+            sourceCollectionsAvailable = activeNovexSourceCollectionRefs.isNotEmpty(),
         )
 
     /** Role chats start with no tools and expose only the role card's explicit allow-list. */
@@ -4185,6 +4217,7 @@ class ChatViewModel(
             // any sender writes into agentHistory.
             agentHistory.addAll(loaded.llmHistory)
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
+            activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
                 "[T-HANG-DIAG] agentHistory rebuilt session=$sessionId tookMs=${tHangDiagAfterAgentHistory - tHangDiagAfterTransform}",
@@ -4852,6 +4885,8 @@ class ChatViewModel(
         _messages.value = emptyList()
         agentHistory.clear()
         activeNovexDocumentRefs = emptySet()
+        activeNovexSourceCollectionRefs = emptySet()
+        _pendingNovexLearningPreflight.value = null
         _error.value = null
         _cachedLatestMarker = null
         toolLoopDetector.reset()
@@ -5235,6 +5270,8 @@ class ChatViewModel(
         agentHistory.clear()
         agentHistory.addAll(llmHistory)
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
+        activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
+        _pendingNovexLearningPreflight.value = null
         toolLoopDetector.reset()
         _cachedLatestMarker = marker
         _compactSummary.value = marker?.summary
@@ -8813,6 +8850,7 @@ class ChatViewModel(
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> novexDocumentAgentTools.execute(name, argsJson)
+            NovexLearningToolRouter.LEARNING_PREPARE -> novexLearningAgentTools.execute(name, argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -10469,6 +10507,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         ).apply { mkdirs() }
         // Metadata captured per attachment for the <user-attached-files> XML.
         val metas = mutableListOf<UserAttachedFilePromptMeta>()
+        val documentRequests = mutableListOf<Pair<Int, NovexBatchDocumentRequest>>()
         val nowMs = System.currentTimeMillis()
         val isoFormatter = java.text.SimpleDateFormat(
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
@@ -10589,31 +10628,78 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
 
             val linuxPath = "/var/minis/attachments/uploads/$safeName"
-            val documentSnapshot = runCatching {
-                novexDocumentSnapshotExtractor.extract(
-                    context = context,
-                    file = dest,
-                    mimeType = attachment.mimeType,
-                    originalName = attachment.fileName,
-                )
-            }.onFailure { failure ->
-                Log.e(TAG, "document extraction failed for ${attachment.fileName}", failure)
-            }.getOrNull()
-            documentSnapshot?.warnings?.forEach { warning ->
-                AppLogger.warning(
-                    TAG,
-                    "novex_document_snapshot file=${attachment.fileName} " +
-                        "size=${dest.length()} code=${warning.code}",
-                )
-            }
             metas.add(
                 UserAttachedFilePromptMeta(
                     linuxPath = linuxPath,
                     size = dest.length(),
                     modifiedIso = nowStr,
-                    documentSnapshot = documentSnapshot,
                 ),
             )
+            documentRequests += metas.lastIndex to NovexBatchDocumentRequest(
+                sourceRef = NovexResourceRef(
+                    "novex://sources/${ref?.id ?: java.util.UUID.randomUUID()}",
+                ),
+                file = dest,
+                mimeType = attachment.mimeType,
+                originalName = attachment.fileName,
+            )
+        }
+
+        val batchOutcomes = if (documentRequests.isEmpty()) {
+            emptyList()
+        } else {
+            NovexBatchDocumentImporter(maxParallelism = 2) { request ->
+                novexDocumentSnapshotExtractor.extract(
+                    context = context,
+                    file = request.file,
+                    mimeType = request.mimeType.orEmpty(),
+                    originalName = request.originalName,
+                )
+            }.importAll(documentRequests.map { it.second })
+        }
+        batchOutcomes.forEachIndexed { index, outcome ->
+            val metaIndex = documentRequests[index].first
+            metas[metaIndex] = metas[metaIndex].copy(documentSnapshot = outcome.snapshot)
+            outcome.snapshot?.warnings?.forEach { warning ->
+                AppLogger.warning(
+                    TAG,
+                    "novex_document_snapshot file=${outcome.title} " +
+                        "size=${documentRequests[index].second.file.length()} code=${warning.code}",
+                )
+            }
+            if (outcome.failureCode != null) {
+                AppLogger.warning(
+                    TAG,
+                    "novex_document_snapshot file=${outcome.title} code=${outcome.failureCode}",
+                )
+            }
+        }
+
+        val sourceCollection = batchOutcomes.takeIf { it.isNotEmpty() }?.let { outcomes ->
+            val activeBranchAnchor = activeBranchPathIds.lastOrNull() ?: "root"
+            val scopeRef = novexHashedRef(
+                kind = "conversation-branches",
+                material = "$sessionId\u0000$activeBranchAnchor",
+            )
+            val collectionRef = novexHashedRef(
+                kind = "source-collections",
+                material = "$sessionId\u0000$activeBranchAnchor\u0000$nowMs\u0000" +
+                    outcomes.joinToString("\u0000") { it.sourceRef.value },
+            )
+            NovexSourceCollectionBuilder.create(
+                ref = collectionRef,
+                scopeRef = scopeRef,
+                title = if (outcomes.size == 1) outcomes.first().title else "本轮资料 · ${outcomes.size} 项",
+                imports = outcomes.map { it.toSourceImportResult() },
+                nowMillis = nowMs,
+            ).also { collection ->
+                novexLearningRepository.save(
+                    NovexLearningState(
+                        collection = collection,
+                        reviewLedger = NovexReviewLedger.start(collection),
+                    ),
+                )
+            }
         }
 
         // T-imgsize: byte-level budget enforcement. The resizeImageBytes pass
@@ -10654,10 +10740,17 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
 
         // Parsed documents become bounded Novex receipts; ordinary files retain
         // compatibility metadata until the controlled workspace replaces raw paths.
-        val xml = buildUserAttachedFilesPrompt(metas)
+        val xml = buildUserAttachedFilesPrompt(
+            metas = metas,
+            sourceCollectionRef = sourceCollection?.ref,
+            sourceCount = sourceCollection?.sources?.size ?: 0,
+        )
         val newDocumentRefs = metas.mapNotNull { meta -> meta.documentSnapshot?.ref?.value }.toSet()
         if (newDocumentRefs.isNotEmpty()) {
             activeNovexDocumentRefs = activeNovexDocumentRefs + newDocumentRefs
+        }
+        sourceCollection?.let { collection ->
+            activeNovexSourceCollectionRefs = activeNovexSourceCollectionRefs + collection.ref.value
         }
 
         // Order matches UserAttachmentList convention: images first, then files.
@@ -12023,6 +12116,84 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
         .filterIsInstance<AgentContentPart.Text>()
         .flatMap { part -> novexDocumentRefsInPrompt(part.text).asSequence() }
         .toSet()
+
+    private fun novexSourceCollectionRefsInHistory(history: List<LLMMessage>): Set<String> = history
+        .asSequence()
+        .flatMap { message -> message.contentParts.asSequence() }
+        .filterIsInstance<AgentContentPart.Text>()
+        .flatMap { part -> novexSourceCollectionRefsInPrompt(part.text).asSequence() }
+        .toSet()
+
+    private fun prepareNovexLearningPreflight(
+        collectionRef: NovexResourceRef,
+        requestedModelId: String?,
+    ): NovexLearningPreflightSnapshot? {
+        if (collectionRef.value !in activeNovexSourceCollectionRefs) return null
+        val state = novexLearningRepository.find(collectionRef) ?: return null
+        val model = currentModel ?: return null
+        if (requestedModelId != null && requestedModelId != model.id) return null
+
+        val sourceEstimates = state.collection.sources.map { source ->
+            val snapshot = source.documentRef?.let(novexDocumentRepository::find)
+            val estimatedTokens = snapshot?.blocks.orEmpty()
+                .sumOf { block -> (block.text.length + 2) / 3 }
+            val pages = snapshot?.blocks.orEmpty()
+                .mapNotNull { block -> block.source.page }
+                .distinct()
+                .size
+                .takeIf { it > 0 }
+            val unsupportedReason = when (snapshot?.status) {
+                null -> source.failureCode ?: if (source.documentRef == null) "资料无法解析" else null
+                NovexDocumentStatus.UNSUPPORTED -> "当前版本不支持此文档格式"
+                NovexDocumentStatus.PASSWORD_REQUIRED -> "文档需要密码"
+                NovexDocumentStatus.DAMAGED -> "文档已损坏"
+                NovexDocumentStatus.EMPTY -> "文档没有可读取内容"
+                else -> null
+            }
+            NovexLearningSourceEstimate(
+                ref = source.ref,
+                estimatedTokens = estimatedTokens,
+                pageCount = pages,
+                imageCount = snapshot?.blocks.orEmpty().count { it.kind == NovexDocumentBlockKind.IMAGE },
+                requiresOcr = snapshot?.status == NovexDocumentStatus.OCR_REQUIRED,
+                requiresNetwork = false,
+                unsupportedReason = unsupportedReason,
+            )
+        }
+        val totalEstimatedTokens = sourceEstimates.sumOf { it.estimatedTokens.toLong() }
+        val inputBudget = (totalEstimatedTokens * 2)
+            .coerceIn(16_000L, 2_000_000L)
+            .toInt()
+        val outputBudget = (totalEstimatedTokens / 5)
+            .coerceIn(8_000L, 128_000L)
+            .toInt()
+        val preflight = NovexLearningPreflight.prepare(
+            NovexLearningPreflightRequest(
+                collectionRef = collectionRef,
+                sources = sourceEstimates,
+                modelId = model.id,
+                modelProviderName = currentProvider?.name ?: model.provider,
+                effectiveContextTokens = effectiveContextWindowTokens(),
+                occupiedContextTokens = _lastTurnContextTokens.value,
+                directReadBudgetTokens = 12_000,
+                proposedBudget = NovexLearningTokenBudget(
+                    inputTokens = inputBudget,
+                    outputTokens = outputBudget,
+                ),
+            ),
+        )
+        novexLearningRepository.save(state.copy(preflight = preflight))
+        _pendingNovexLearningPreflight.value = preflight.takeIf { it.requiresConfirmation }
+        return preflight
+    }
+
+    private fun novexHashedRef(kind: String, material: String): NovexResourceRef {
+        require(kind.matches(Regex("[a-z-]+"))) { "Novex 引用类型无效" }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(material.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+        return NovexResourceRef("novex://$kind/$digest")
+    }
 
     private fun MessageEntity.toLLMMessage(): LLMMessage {
         val r = if (role == "user") LLMMessage.Role.USER else LLMMessage.Role.ASSISTANT

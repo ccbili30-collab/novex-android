@@ -60,6 +60,41 @@ class AttachmentPromptMetadataTest {
     }
 
     @Test
+    fun `source collection receipt persists branch capability without exposing source bodies`() {
+        val collectionRef = NovexResourceRef("novex://source-collections/${"b".repeat(64)}")
+        val prompt = buildUserAttachedFilesPrompt(
+            metas = listOf(
+                UserAttachedFilePromptMeta(
+                    linuxPath = "/var/minis/attachments/uploads/world.docx",
+                    size = 10,
+                    modifiedIso = "2026-08-31T00:00:00Z",
+                    documentSnapshot = snapshot("不得泄露的完整正文"),
+                ),
+            ),
+            sourceCollectionRef = collectionRef,
+            sourceCount = 1,
+        ).orEmpty()
+
+        assertTrue(prompt.contains("<novex-source-collection"))
+        assertTrue(prompt.contains(collectionRef.value))
+        assertFalse(prompt.contains("不得泄露的完整正文"))
+        assertEquals(setOf(collectionRef.value), novexSourceCollectionRefsInPrompt(prompt))
+        assertEquals("", stripAgentAttachmentMetadata(prompt))
+    }
+
+    @Test
+    fun `source collection recovery rejects untrusted references`() {
+        val valid = "novex://source-collections/${"c".repeat(64)}"
+        val prompt = """
+            <novex-source-collection ref="$valid" sources="3" />
+            <novex-source-collection ref="novex://source-collections/not-a-hash" sources="2" />
+            <novex-source-collection ref="file:///private/data" sources="1" />
+        """.trimIndent()
+
+        assertEquals(setOf(valid), novexSourceCollectionRefsInPrompt(prompt))
+    }
+
+    @Test
     fun `ordinary non-document attachment keeps only its inventory metadata`() {
         val prompt = buildUserAttachedFilesPrompt(
             listOf(
