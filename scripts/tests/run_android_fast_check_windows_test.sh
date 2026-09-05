@@ -14,6 +14,7 @@ for expected in \
   "plan=novex-ui" \
   "host=win-zhz" \
   "remote_dir=/c/Users/16014/CodexBuild/novex-fast" \
+  "--max-workers=4" \
   ":app:testPreviewDebugUnitTest" \
   "coverage=preview-compile,targeted-tests" \
   "com.openminis.app.ui.novex.*"; do
@@ -170,6 +171,7 @@ for expected in \
   "package_tier=daily" \
   ":app:assemblePreviewDaily" \
   "--daemon" \
+  "--max-workers=1" \
   "-Xmx4g" \
   "kotlin.compiler.execution.strategy=in-process" \
   "expected_package=com.noven.player.preview"; do

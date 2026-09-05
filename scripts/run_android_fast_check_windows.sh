@@ -78,11 +78,21 @@ fi
 plan="$($PLANNER "$mode" "${changed_files[@]}")"
 coverage="none"
 
+if [[ -n "$package_preview_version" ]]; then
+  max_workers="${NOVEX_WINDOWS_PACKAGE_MAX_WORKERS:-1}"
+else
+  max_workers="${NOVEX_WINDOWS_TEST_MAX_WORKERS:-4}"
+fi
+if ! [[ "$max_workers" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Windows Gradle worker count must be a positive integer" >&2
+  exit 2
+fi
+
 declare -a common_gradle_args=(
   --daemon
   --console=plain
   --stacktrace
-  --max-workers=4
+  "--max-workers=$max_workers"
   -Dorg.gradle.daemon.idletimeout=3600000
   "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
   -Pkotlin.compiler.execution.strategy=in-process
