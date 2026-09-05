@@ -13,6 +13,120 @@ import org.junit.Test
 
 class NovexDocumentSnapshotExtractorTest {
     @Test
+    fun streamingDocxPathProducesStructuredBlocksWithoutCallingTheLegacyExtractor() {
+        val original = makeZip(
+            "word/styles.xml" to """
+                <w:styles xmlns:w="urn:test"><w:style w:type="paragraph" w:styleId="Heading1"/></w:styles>
+            """.trimIndent(),
+            "word/document.xml" to """
+                <w:document xmlns:w="urn:test"><w:body>
+                  <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>北境档案</w:t></w:r></w:p>
+                  <w:tbl><w:tr><w:tc><w:p><w:r><w:t>人物</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>埃莉诺</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:body></w:document>
+            """.trimIndent(),
+        )
+        var legacyCalls = 0
+        val adapter = NovexDocumentSnapshotExtractor(
+            cache = InMemoryNovexDocumentSnapshotCache(),
+            legacyExtractor = NovexLegacyDocumentExtractor { _, _, _, _ ->
+                legacyCalls += 1
+                error("结构化解析成功时不应调用旧解析器")
+            },
+        )
+
+        val snapshot = requireNotNull(adapter.extract(null, original, null, "setting.docx"))
+
+        assertEquals(0, legacyCalls)
+        assertEquals(
+            listOf(NovexDocumentBlockKind.HEADING, NovexDocumentBlockKind.TABLE),
+            snapshot.blocks.map { it.kind },
+        )
+        assertEquals("人物\t埃莉诺", snapshot.blocks.last().text)
+        assertTrue(snapshot.parserVersion.startsWith("docx-streaming-"))
+    }
+
+    @Test
+    fun streamingDocxPathReadsTheExistingProducerFixturesWithoutPoiFallback() {
+        val expectations = mapOf(
+            "google-docs-sample.docx" to listOf("The Canons of Rhetoric", "Correctness of Style"),
+            "libreoffice-comment.docx" to listOf("This is the first line"),
+            "microsoft-word-header-footer-notes.docx" to listOf("I am some simple header text here", "Footer Middle"),
+            "microsoft-word-footnotes.docx" to listOf("snoska"),
+            "microsoft-word-endnotes.docx" to listOf("XXX"),
+            "microsoft-word-numbered-lists.docx" to listOf("Entry #2, with children", "2-a"),
+            "microsoft-word-table.docx" to listOf("Loren", "Ipsum"),
+            "microsoft-word-textboxes.docx" to listOf("Floating text box", "An ellipse with text inside"),
+            "microsoft-word-revisions.docx" to listOf("This is a filler sentence.", "Will this sentence be duplicated ADDED STUFF?"),
+        )
+        var legacyCalls = 0
+        val adapter = NovexDocumentSnapshotExtractor(
+            cache = InMemoryNovexDocumentSnapshotCache(),
+            legacyExtractor = NovexLegacyDocumentExtractor { _, _, _, _ ->
+                legacyCalls += 1
+                error("现有真实夹具不应退回 POI")
+            },
+        )
+
+        expectations.forEach { (name, expectedTexts) ->
+            val snapshot = requireNotNull(adapter.extract(null, fixture(name), null, name))
+            val text = snapshot.blocks.joinToString("\n") { it.text }
+            expectedTexts.forEach { expected ->
+                assertTrue("$name 缺少：$expected", text.contains(expected))
+            }
+        }
+
+        assertEquals(0, legacyCalls)
+    }
+
+    @Test
+    fun streamingDocxPathKeepsImageOnlyFixtureAsAnOcrReadySnapshot() {
+        val adapter = NovexDocumentSnapshotExtractor(
+            cache = InMemoryNovexDocumentSnapshotCache(),
+            legacyExtractor = NovexLegacyDocumentExtractor { _, _, _, _ ->
+                error("图片型真实夹具不应退回 POI")
+            },
+        )
+
+        val snapshot = requireNotNull(adapter.extract(
+            null,
+            fixture("microsoft-word-image-only.docx"),
+            null,
+            "scan.docx",
+        ))
+
+        assertEquals(NovexDocumentStatus.OCR_REQUIRED, snapshot.status)
+        assertTrue(snapshot.blocks.any { it.kind == NovexDocumentBlockKind.IMAGE && it.mediaRef != null })
+        assertTrue(snapshot.warnings.any { it.code == "document.ocr_required" })
+    }
+
+    @Test
+    fun streamingDocxPathKeepsALargeStructuredDocumentWithoutFlatTextTruncation() {
+        val payload = "这是用于长文压力、结构顺序和完整读取验证的正文内容。".repeat(4)
+        val paragraphs = (1..10_000).joinToString("") { index ->
+            "<w:p><w:r><w:t>第 $index 段：$payload</w:t></w:r></w:p>"
+        }
+        val original = makeZip(
+            "word/document.xml" to """
+                <w:document xmlns:w="urn:test"><w:body>$paragraphs</w:body></w:document>
+            """.trimIndent(),
+        )
+        val adapter = NovexDocumentSnapshotExtractor(
+            cache = InMemoryNovexDocumentSnapshotCache(),
+            legacyExtractor = NovexLegacyDocumentExtractor { _, _, _, _ ->
+                error("长文结构化解析不应调用旧解析器")
+            },
+        )
+
+        val snapshot = requireNotNull(adapter.extract(null, original, null, "long.docx"))
+
+        assertEquals(10_000, snapshot.blocks.size)
+        assertEquals("第 1 段：$payload", snapshot.blocks.first().text)
+        assertEquals("第 10000 段：$payload", snapshot.blocks.last().text)
+        assertTrue(snapshot.blocks.sumOf { it.text.length } > 1_000_000)
+        assertEquals(NovexDocumentStatus.READY, snapshot.status)
+    }
+
+    @Test
     fun realExistingDocxExtractorFeedsTheStructuredSnapshotAdapter() {
         val original = makeZip(
             "word/document.xml" to """
@@ -196,4 +310,8 @@ class NovexDocumentSnapshotExtractorTest {
         }
         return file
     }
+
+    private fun fixture(name: String): File = File(
+        requireNotNull(javaClass.classLoader?.getResource("docx/$name")) { "Missing fixture: $name" }.toURI(),
+    )
 }

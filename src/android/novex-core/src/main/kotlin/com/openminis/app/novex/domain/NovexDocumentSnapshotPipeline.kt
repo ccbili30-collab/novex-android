@@ -76,6 +76,42 @@ class NovexDocumentSnapshotPipeline(
         warnings = document.warnings,
     )
 
+    fun resolveStructured(
+        descriptor: NovexDocumentDescriptor,
+        extract: () -> NovexStructuredDocument,
+    ): NovexDocumentSnapshot {
+        val key = descriptor.cacheKey()
+        cache.find(key)?.let { cached ->
+            return cached.copy(ref = descriptor.ref, title = descriptor.title)
+        }
+        return buildStructured(descriptor, extract()).also { snapshot -> cache.store(key, snapshot) }
+    }
+
+    fun buildStructured(
+        descriptor: NovexDocumentDescriptor,
+        document: NovexStructuredDocument,
+    ): NovexDocumentSnapshot = NovexDocumentSnapshot(
+        ref = descriptor.ref,
+        sha256 = descriptor.sha256.lowercase(),
+        parserVersion = descriptor.parserVersion,
+        title = descriptor.title,
+        format = descriptor.format,
+        status = document.status,
+        blocks = document.blocks.mapIndexed { order, block ->
+            NovexDocumentBlock(
+                id = NovexDocumentBlockId.from(descriptor.sha256, block.source),
+                kind = block.kind,
+                order = order,
+                text = block.text,
+                headingPath = block.headingPath,
+                headingLevel = block.headingLevel,
+                source = block.source,
+                mediaRef = block.mediaRef,
+            )
+        },
+        warnings = document.warnings,
+    )
+
     private fun NovexDocumentDescriptor.cacheKey() = NovexDocumentSnapshotCacheKey(
         sha256 = sha256.lowercase(),
         parserVersion = parserVersion,

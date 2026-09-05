@@ -4,12 +4,15 @@ import android.content.Context
 import com.openminis.app.novex.domain.NovexCompatibilityDocument
 import com.openminis.app.novex.domain.NovexDocumentDescriptor
 import com.openminis.app.novex.domain.NovexDocumentFormat
+import com.openminis.app.novex.domain.NovexDocxParseException
+import com.openminis.app.novex.domain.NovexDocxStreamingParser
 import com.openminis.app.novex.domain.NovexDocumentSnapshot
 import com.openminis.app.novex.domain.NovexDocumentSnapshotCache
 import com.openminis.app.novex.domain.NovexDocumentSnapshotPipeline
 import com.openminis.app.novex.domain.NovexDocumentStatus
 import com.openminis.app.novex.domain.NovexDocumentWarning
 import com.openminis.app.novex.domain.NovexResourceRef
+import com.openminis.app.novex.domain.NovexStructuredDocument
 import java.io.File
 import java.security.MessageDigest
 
@@ -22,6 +25,10 @@ fun interface NovexLegacyDocumentExtractor {
     ): DocumentTextExtractor.Result?
 }
 
+fun interface NovexStructuredDocxExtractor {
+    fun extract(file: File, sha256: String): NovexStructuredDocument
+}
+
 /**
  * Compatibility adapter around the existing Android extractors.
  *
@@ -32,6 +39,9 @@ class NovexDocumentSnapshotExtractor(
     cache: NovexDocumentSnapshotCache,
     private val legacyExtractor: NovexLegacyDocumentExtractor = NovexLegacyDocumentExtractor(
         DocumentTextExtractor::extract,
+    ),
+    private val structuredDocxExtractor: NovexStructuredDocxExtractor = NovexStructuredDocxExtractor(
+        NovexDocxStreamingParser()::parse,
     ),
     private val parserVersion: String = PARSER_VERSION,
 ) {
@@ -50,7 +60,11 @@ class NovexDocumentSnapshotExtractor(
             sha256 = sha256,
             title = originalName,
             format = format,
-            parserVersion = parserVersion,
+            parserVersion = if (format == NovexDocumentFormat.DOCX) {
+                "$DOCX_PARSER_VERSION+$parserVersion"
+            } else {
+                parserVersion
+            },
         )
         if (format == NovexDocumentFormat.DOC) {
             return pipeline.resolve(descriptor) {
@@ -65,6 +79,39 @@ class NovexDocumentSnapshotExtractor(
                     ),
                 )
             }
+        }
+
+        if (format == NovexDocumentFormat.DOCX) {
+            val structured = runCatching {
+                pipeline.resolveStructured(descriptor) {
+                    structuredDocxExtractor.extract(file, sha256)
+                }
+            }
+            structured.getOrNull()?.let { return it }
+            val failure = requireNotNull(structured.exceptionOrNull())
+            val parseFailure = failure.causeChain().filterIsInstance<NovexDocxParseException>().firstOrNull()
+            if (parseFailure?.code in NON_RECOVERABLE_DOCX_ERRORS) {
+                return pipeline.resolveStructured(descriptor) {
+                    NovexStructuredDocument(
+                        status = NovexDocumentStatus.DAMAGED,
+                        blocks = emptyList(),
+                        warnings = listOf(
+                            NovexDocumentWarning(
+                                code = requireNotNull(parseFailure).code,
+                                message = parseFailure.message.orEmpty().ifBlank { "新版 Word 文档未通过安全检查" },
+                            ),
+                        ),
+                    )
+                }
+            }
+            return extractWithLegacyFallback(
+                context = context,
+                file = file,
+                mimeType = mimeType,
+                originalName = originalName,
+                descriptor = descriptor,
+                primaryFailure = failure,
+            )
         }
 
         return pipeline.resolve(descriptor) {
@@ -106,6 +153,51 @@ class NovexDocumentSnapshotExtractor(
                     ),
                 )
             }
+        }
+    }
+
+    private fun extractWithLegacyFallback(
+        context: Context?,
+        file: File,
+        mimeType: String?,
+        originalName: String,
+        descriptor: NovexDocumentDescriptor,
+        primaryFailure: Throwable,
+    ): NovexDocumentSnapshot = pipeline.resolve(descriptor) {
+        try {
+            val result = legacyExtractor.extract(context, file, mimeType, originalName)
+                ?: return@resolve NovexCompatibilityDocument(
+                    text = "",
+                    status = NovexDocumentStatus.UNSUPPORTED,
+                    warnings = listOf(NovexDocumentWarning("document.unsupported", "当前文档格式不受支持")),
+                )
+            result.copy(
+                primaryFailureType = result.primaryFailureType ?: primaryFailure.javaClass.name,
+            ).toCompatibilityDocument()
+        } catch (fallbackFailure: Exception) {
+            fallbackFailure.addSuppressed(primaryFailure)
+            val passwordProtected = fallbackFailure.causeChain().any { cause ->
+                val detail = "${cause.javaClass.simpleName} ${cause.message.orEmpty()}".lowercase()
+                "password" in detail || "encrypted" in detail || "加密" in detail || "密码" in detail
+            }
+            NovexCompatibilityDocument(
+                text = "",
+                status = if (passwordProtected) {
+                    NovexDocumentStatus.PASSWORD_REQUIRED
+                } else {
+                    NovexDocumentStatus.DAMAGED
+                },
+                warnings = listOf(
+                    NovexDocumentWarning(
+                        code = if (passwordProtected) "document.password_required" else "document.parse_failed",
+                        message = if (passwordProtected) {
+                            "文档受到密码保护，需要用户提供可读取版本"
+                        } else {
+                            "文档解析失败，原文件未被修改，可以更换文件后重试"
+                        },
+                    ),
+                ),
+            )
         }
     }
 
@@ -191,5 +283,12 @@ class NovexDocumentSnapshotExtractor(
 
     companion object {
         const val PARSER_VERSION = "android-compatibility-v1"
+        const val DOCX_PARSER_VERSION = "docx-streaming-v1+poi-fallback-v1"
+        private val NON_RECOVERABLE_DOCX_ERRORS = setOf(
+            "document.unsafe_xml",
+            "document.package_too_large",
+            "document.unsafe_package_path",
+            "document.block_limit_exceeded",
+        )
     }
 }
