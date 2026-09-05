@@ -1,14 +1,6 @@
 name: Android preview candidate
 
 on:
-  push:
-    branches:
-      - next
-    paths:
-      - "src/android/**"
-      - "scripts/**"
-      - ".github/workflows/android-*.yml"
-      - ".github/release-notes/**"
   workflow_dispatch:
     inputs:
       package_channel:

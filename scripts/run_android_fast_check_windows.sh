@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ANDROID_ROOT="$REPO_ROOT/src/android"
 PLANNER="$SCRIPT_DIR/android_fast_check_plan.sh"
+SYNC_PLANNER="$SCRIPT_DIR/android_source_sync_plan.sh"
 
 host="${NOVEX_WINDOWS_HOST:-win-zhz}"
 remote_dir="${NOVEX_WINDOWS_BUILD_DIR:-/c/Users/16014/CodexBuild/novex-fast}"
@@ -13,10 +14,11 @@ remote_parent="${remote_dir%/*}"
 seed_dir="${NOVEX_WINDOWS_SEED_DIR:-/c/Users/16014/CodexBuild/novex-preview-home}"
 mode="auto"
 dry_run=false
+package_preview_version=""
 declare -a changed_files=()
 
 usage() {
-  echo "Usage: $0 [--mode auto|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--dry-run]"
+  echo "Usage: $0 [--mode auto|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--package-preview-version VERSION] [--dry-run]"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -33,6 +35,10 @@ while [[ "$#" -gt 0 ]]; do
       dry_run=true
       shift
       ;;
+    --package-preview-version)
+      package_preview_version="${2:?missing value for --package-preview-version}"
+      shift 2
+      ;;
     --help | -h)
       usage
       exit 0
@@ -44,6 +50,12 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$package_preview_version" ]] && \
+   ! [[ "$package_preview_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*$ ]]; then
+  echo "preview package version must look like 0.2.12-beta.31" >&2
+  exit 2
+fi
 
 if [[ "${#changed_files[@]}" -eq 0 ]]; then
   while IFS= read -r path; do
@@ -67,31 +79,28 @@ plan="$($PLANNER "$mode" "${changed_files[@]}")"
 coverage="none"
 
 declare -a common_gradle_args=(
+  --no-daemon
   --console=plain
   --stacktrace
   --max-workers=4
+  "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+  -Pkotlin.compiler.execution.strategy=in-process
 )
-declare -a first_gradle_args=()
-declare -a second_gradle_args=()
+declare -a validation_gradle_args=()
 
 case "$plan" in
   skip)
     ;;
   full)
     coverage="stable-tests,preview-compile"
-    first_gradle_args=(
-      "${common_gradle_args[@]}"
+    validation_gradle_args=(
       :app:testStableDebugUnitTest
-    )
-    second_gradle_args=(
-      "${common_gradle_args[@]}"
       :app:compilePreviewDebugKotlin
     )
     ;;
   novex-ui)
     coverage="preview-compile,targeted-tests"
-    first_gradle_args=(
-      "${common_gradle_args[@]}"
+    validation_gradle_args=(
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.ui.novex.*'
       --tests 'com.openminis.app.ui.sessions.Novex*'
@@ -103,8 +112,7 @@ case "$plan" in
     ;;
   novex-domain)
     coverage="preview-domain-tests"
-    first_gradle_args=(
-      "${common_gradle_args[@]}"
+    validation_gradle_args=(
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.novex.domain.*'
     )
@@ -115,33 +123,39 @@ case "$plan" in
     ;;
 esac
 
+declare -a gradle_args=("${common_gradle_args[@]}" "${validation_gradle_args[@]}")
+if [[ -n "$package_preview_version" ]]; then
+  gradle_args+=(:app:assemblePreviewDaily)
+fi
+
 printf 'plan=%s\n' "$plan"
 printf 'host=%s\n' "$host"
 printf 'remote_dir=%s\n' "$remote_dir"
 printf 'changed_files=%s\n' "${#changed_files[@]}"
 printf 'coverage=%s\n' "$coverage"
-if [[ "$plan" != "skip" ]]; then
-  printf 'gradle_1='
-  printf ' %s' ./gradlew "${first_gradle_args[@]}"
+if [[ -n "$package_preview_version" ]]; then
+  printf 'package_version=%s\n' "$package_preview_version"
+  printf 'package_tier=daily\n'
+  printf 'expected_package=com.noven.player.preview\n'
+fi
+if [[ "${#validation_gradle_args[@]}" -gt 0 || -n "$package_preview_version" ]]; then
+  printf 'gradle='
+  printf ' %s' ./gradlew "${gradle_args[@]}"
   printf '\n'
-  if [[ "${#second_gradle_args[@]}" -gt 0 ]]; then
-    printf 'gradle_2='
-    printf ' %s' ./gradlew "${second_gradle_args[@]}"
-    printf '\n'
-  fi
 fi
 
-if $dry_run || [[ "$plan" == "skip" ]]; then
+if $dry_run || { [[ "$plan" == "skip" ]] && [[ -z "$package_preview_version" ]]; }; then
   exit 0
 fi
 
 manifest="$(mktemp)"
 hash_manifest="$(mktemp)"
+remote_hash_manifest="$(mktemp)"
 changed_manifest="$(mktemp)"
 archive="$(mktemp)"
 shared_archive="$(mktemp)"
 cleanup() {
-  rm -f "$manifest" "$hash_manifest" "$changed_manifest" "$archive" "$shared_archive"
+  rm -f "$manifest" "$hash_manifest" "$remote_hash_manifest" "$changed_manifest" "$archive" "$shared_archive"
 }
 trap cleanup EXIT
 
@@ -160,15 +174,27 @@ mkdir -p "$report_dir"
     printf '%s\t%s\n' "$path" "$hash"
   done | LC_ALL=C sort > "$hash_manifest"
 
-  if [[ -f "$state_manifest" ]]; then
-    awk -F '\t' '
-      NR == FNR { previous[$1] = $2; next }
-      !($1 in previous) || previous[$1] != $2 { print $1 }
-    ' "$state_manifest" "$hash_manifest" > "$changed_manifest"
-  else
-    cut -f1 "$hash_manifest" > "$changed_manifest"
-  fi
+)
 
+# Compare against what is actually present in the Windows mirror. A failed
+# build is allowed to leave source files there, so a last-successful local
+# manifest is not proof that the remote contents still match.
+ssh "$host" "
+  set -euo pipefail
+  cd '$remote_dir' 2>/dev/null || exit 0
+  if [[ -f .novex-fast-files ]]; then
+    while IFS= read -r path; do
+      if [[ -f \"\$path\" ]]; then
+        hash=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
+        printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
+      fi
+    done < .novex-fast-files
+  fi
+" > "$remote_hash_manifest"
+
+"$SYNC_PLANNER" "$hash_manifest" "$remote_hash_manifest" > "$changed_manifest"
+(
+  cd "$ANDROID_ROOT"
   COPYFILE_DISABLE=1 tar --no-xattrs -cf "$archive" -T "$changed_manifest"
 )
 
@@ -188,18 +214,16 @@ run_id="${source_sha}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 remote_archive="$remote_dir/.novex-upload-$run_id.tar"
 remote_shared_archive="$remote_dir/.novex-shared-$run_id.tar"
 remote_manifest="$remote_dir/.novex-files-$run_id"
+remote_expected_hashes="$remote_dir/.novex-hashes-$run_id"
 report_path="$report_dir/$run_id-$plan.log"
 
 ssh "$host" "mkdir -p '$remote_dir' && tee '$remote_archive' >/dev/null" < "$archive"
 ssh "$host" "tee '$remote_shared_archive' >/dev/null" < "$shared_archive"
 ssh "$host" "tee '$remote_manifest' >/dev/null" < "$manifest"
+ssh "$host" "tee '$remote_expected_hashes' >/dev/null" < "$hash_manifest"
 
-quoted_first_gradle=""
-quoted_second_gradle=""
-printf -v quoted_first_gradle '%q ' ./gradlew "${first_gradle_args[@]}"
-if [[ "${#second_gradle_args[@]}" -gt 0 ]]; then
-  printf -v quoted_second_gradle '%q ' ./gradlew "${second_gradle_args[@]}"
-fi
+quoted_gradle=""
+printf -v quoted_gradle '%q ' ./gradlew "${gradle_args[@]}"
 
 start_epoch="$(date +%s)"
 set +e
@@ -211,7 +235,7 @@ ssh "$host" "
     exit 75
   fi
   cleanup_fast_check() {
-    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest'
+    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest' '$remote_expected_hashes'
   }
   trap cleanup_fast_check EXIT
   if [[ ! -f local.properties && -f '$seed_dir/local.properties' ]]; then
@@ -227,9 +251,44 @@ ssh "$host" "
   tar -xf '$remote_shared_archive' -C '$remote_parent'
   mv '$remote_manifest' .novex-fast-files
   rm -f '$remote_archive' '$remote_shared_archive'
+  while IFS=$'\\t' read -r path expected; do
+    [[ -n \"\$path\" ]] || continue
+    if [[ ! -f \"\$path\" ]]; then
+      echo \"Windows mirror is missing source file: \$path\" >&2
+      exit 1
+    fi
+    actual=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
+    if [[ \"\$actual\" != \"\$expected\" ]]; then
+      echo \"Windows mirror source mismatch: \$path\" >&2
+      exit 1
+    fi
+  done < '$remote_expected_hashes'
+  rm -f '$remote_expected_hashes'
   export NOVEX_PREFER_CANONICAL_REPOSITORIES=true
-  $quoted_first_gradle
-  $quoted_second_gradle
+  if [[ -n '$package_preview_version' ]]; then
+    export NOVEX_VERSION_NAME='$package_preview_version'
+  fi
+  $quoted_gradle
+  if [[ -n '$package_preview_version' ]]; then
+    apk='app/build/outputs/apk/preview/daily/app-preview-daily.apk'
+    sdk_windows=\$(sed -n 's/^sdk.dir=//p' local.properties | head -1)
+    sdk=\$(cygpath -u \"\$sdk_windows\")
+    apksigner=\$(find \"\$sdk/build-tools\" -type f -name apksigner.bat | sort -V | tail -1)
+    aapt=\$(find \"\$sdk/build-tools\" -type f -name aapt.exe | sort -V | tail -1)
+    signature=\$(\"\$apksigner\" verify --verbose --print-certs \"\$apk\")
+    cert=\$(printf '%s\\n' \"\$signature\" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -1 | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+    expected_cert='cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6'
+    [[ \"\$cert\" == \"\$expected_cert\" ]] || { echo \"preview signing certificate mismatch\" >&2; exit 1; }
+    package_line=\$(\"\$aapt\" dump badging \"\$apk\" | sed -n '1p')
+    package_name=\$(printf '%s\\n' \"\$package_line\" | sed -n \"s/.*package: name='\\([^']*\\)'.*/\\1/p\")
+    version_name=\$(printf '%s\\n' \"\$package_line\" | sed -n \"s/.*versionName='\\([^']*\\)'.*/\\1/p\")
+    [[ \"\$package_name\" == 'com.noven.player.preview' ]] || { echo \"preview package id mismatch\" >&2; exit 1; }
+    [[ \"\$version_name\" == '$package_preview_version' ]] || { echo \"preview package version mismatch\" >&2; exit 1; }
+    printf 'Verified channel=preview package=%s versionName=%s\\n' \"\$package_name\" \"\$version_name\"
+    printf 'candidate_apk=%s/%s\\n' '$remote_dir' \"\$apk\"
+    printf 'candidate_sha256=%s\\n' \"\$(sha256sum \"\$apk\" | cut -d ' ' -f 1)\"
+    printf 'candidate_cert_sha256=%s\\n' \"\$cert\"
+  fi
 " 2>&1 | tee "$report_path"
 status="${PIPESTATUS[0]}"
 set -e

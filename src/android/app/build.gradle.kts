@@ -154,6 +154,19 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+        create("daily") {
+            initWith(getByName("release"))
+            // Daily preview updates favour iteration speed. The manually run
+            // release-candidate workflow remains the only R8-minified path.
+            isMinifyEnabled = false
+            isDebuggable = false
+            signingConfig = if (hasReleaseSigningEnvironment) {
+                signingConfigs.getByName("releaseEnvironment")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            matchingFallbacks += listOf("release")
+        }
         create("benchmark") {
             initWith(getByName("release"))
             // Local startup evidence only: optimized like release, signed with
