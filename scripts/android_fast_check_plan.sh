@@ -6,7 +6,7 @@ mode="${1:-auto}"
 shift || true
 
 case "$mode" in
-  full | novex-ui | novex-domain | novex-core | skip)
+  full | novex-ui | novex-domain | novex-core | novex-document | skip)
     printf '%s\n' "$mode"
     exit 0
     ;;
@@ -41,6 +41,35 @@ if $core_only; then
     case "$path" in
       src/android/novex-core/*)
         printf '%s\n' "novex-core"
+        exit 0
+        ;;
+    esac
+  done
+fi
+
+document_only=true
+for path in "$@"; do
+  case "$path" in
+    AGENTS.md | CONTEXT.md | README.md | docs/* | .github/release-notes/* | \
+    src/android/novex-core/* | \
+    src/android/app/src/main/java/com/openminis/app/data/attachments/* | \
+    src/android/app/src/test/java/com/openminis/app/data/attachments/* | \
+    src/android/app/src/test/resources/docx/*)
+      ;;
+    *)
+      document_only=false
+      break
+      ;;
+  esac
+done
+
+if $document_only; then
+  for path in "$@"; do
+    case "$path" in
+      src/android/app/src/main/java/com/openminis/app/data/attachments/* | \
+      src/android/app/src/test/java/com/openminis/app/data/attachments/* | \
+      src/android/app/src/test/resources/docx/*)
+        printf '%s\n' "novex-document"
         exit 0
         ;;
     esac

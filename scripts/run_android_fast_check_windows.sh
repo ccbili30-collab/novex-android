@@ -18,7 +18,7 @@ package_preview_version=""
 declare -a changed_files=()
 
 usage() {
-  echo "Usage: $0 [--mode auto|novex-core|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--package-preview-version VERSION] [--dry-run]"
+  echo "Usage: $0 [--mode auto|novex-core|novex-document|novex-domain|novex-ui|full|skip] [--changed-file PATH] [--package-preview-version VERSION] [--dry-run]"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -125,6 +125,13 @@ case "$plan" in
       test
     )
     ;;
+  novex-document)
+    coverage="preview-document-tests"
+    validation_gradle_args=(
+      :app:testPreviewDebugUnitTest
+      --tests 'com.openminis.app.data.attachments.*'
+    )
+    ;;
   *)
     echo "planner returned unsupported plan: $plan" >&2
     exit 2
@@ -160,10 +167,11 @@ manifest="$(mktemp)"
 hash_manifest="$(mktemp)"
 remote_hash_manifest="$(mktemp)"
 changed_manifest="$(mktemp)"
+changed_hash_manifest="$(mktemp)"
 archive="$(mktemp)"
 shared_archive="$(mktemp)"
 cleanup() {
-  rm -f "$manifest" "$hash_manifest" "$remote_hash_manifest" "$changed_manifest" "$archive" "$shared_archive"
+  rm -f "$manifest" "$hash_manifest" "$remote_hash_manifest" "$changed_manifest" "$changed_hash_manifest" "$archive" "$shared_archive"
 }
 trap cleanup EXIT
 
@@ -199,13 +207,19 @@ ssh "$host" "
   cd '$remote_dir' 2>/dev/null || exit 0
   while IFS= read -r path; do
     if [[ -f \"\$path\" ]]; then
-      hash=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
-      printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
+      printf '%s\\0' \"\$path\"
     fi
+  done | xargs -0 sha256sum -- | while read -r hash path; do
+    path=\${path#\\*}
+    printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
   done
 " < "$manifest" > "$remote_hash_manifest"
 
 "$SYNC_PLANNER" "$hash_manifest" "$remote_hash_manifest" > "$changed_manifest"
+awk -F '\t' '
+  NR == FNR { changed[$0] = true; next }
+  $1 in changed { print }
+' "$changed_manifest" "$hash_manifest" > "$changed_hash_manifest"
 (
   cd "$ANDROID_ROOT"
   COPYFILE_DISABLE=1 tar --no-xattrs -cf "$archive" -T "$changed_manifest"
@@ -228,6 +242,7 @@ remote_archive="$remote_dir/.novex-upload-$run_id.tar"
 remote_shared_archive="$remote_dir/.novex-shared-$run_id.tar"
 remote_manifest="$remote_dir/.novex-files-$run_id"
 remote_expected_hashes="$remote_dir/.novex-hashes-$run_id"
+remote_actual_hashes="$remote_dir/.novex-actual-hashes-$run_id"
 remote_gradle_log="$remote_dir/.novex-gradle-$run_id.log"
 remote_state_manifest=".novex-fast-files-$plan"
 report_path="$report_dir/$run_id-$plan.log"
@@ -235,7 +250,7 @@ report_path="$report_dir/$run_id-$plan.log"
 ssh "$host" "mkdir -p '$remote_dir' && tee '$remote_archive' >/dev/null" < "$archive"
 ssh "$host" "tee '$remote_shared_archive' >/dev/null" < "$shared_archive"
 ssh "$host" "tee '$remote_manifest' >/dev/null" < "$manifest"
-ssh "$host" "tee '$remote_expected_hashes' >/dev/null" < "$hash_manifest"
+ssh "$host" "tee '$remote_expected_hashes' >/dev/null" < "$changed_hash_manifest"
 
 quoted_gradle=""
 printf -v quoted_gradle '%q ' ./gradlew "${gradle_args[@]}"
@@ -250,7 +265,7 @@ ssh "$host" "
     exit 75
   fi
   cleanup_fast_check() {
-    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest' '$remote_expected_hashes' '$remote_gradle_log'
+    rm -rf .novex-fast-check.lock '$remote_archive' '$remote_shared_archive' '$remote_manifest' '$remote_expected_hashes' '$remote_actual_hashes' '$remote_gradle_log'
   }
   trap cleanup_fast_check EXIT
   if [[ ! -f local.properties && -f '$seed_dir/local.properties' ]]; then
@@ -266,19 +281,25 @@ ssh "$host" "
   tar -xf '$remote_shared_archive' -C '$remote_parent'
   mv '$remote_manifest' '$remote_state_manifest'
   rm -f '$remote_archive' '$remote_shared_archive'
-  while IFS=$'\\t' read -r path expected; do
-    [[ -n \"\$path\" ]] || continue
-    if [[ ! -f \"\$path\" ]]; then
-      echo \"Windows mirror is missing source file: \$path\" >&2
-      exit 1
-    fi
-    actual=\$(sha256sum -- \"\$path\" | cut -d ' ' -f 1)
-    if [[ \"\$actual\" != \"\$expected\" ]]; then
-      echo \"Windows mirror source mismatch: \$path\" >&2
-      exit 1
-    fi
-  done < '$remote_expected_hashes'
-  rm -f '$remote_expected_hashes'
+  : > '$remote_actual_hashes'
+  if [[ -s '$remote_expected_hashes' ]]; then
+    cut -f 1 '$remote_expected_hashes' | while IFS= read -r path; do
+      [[ -f \"\$path\" ]] && printf '%s\\0' \"\$path\"
+    done | xargs -0 sha256sum -- | while read -r hash path; do
+      path=\${path#\\*}
+      printf '%s\\t%s\\n' \"\$path\" \"\$hash\"
+    done > '$remote_actual_hashes'
+  fi
+  if ! cmp -s '$remote_expected_hashes' '$remote_actual_hashes'; then
+    mismatch=\$(awk -F '\\t' '
+      NR == FNR { actual[\$1] = \$2; next }
+      !(\$1 in actual) { print \"missing: \" \$1; exit }
+      actual[\$1] != \$2 { print \"mismatch: \" \$1; exit }
+    ' '$remote_actual_hashes' '$remote_expected_hashes')
+    echo \"Windows mirror source verification failed: \$mismatch\" >&2
+    exit 1
+  fi
+  rm -f '$remote_expected_hashes' '$remote_actual_hashes'
   export NOVEX_PREFER_CANONICAL_REPOSITORIES=true
   if [[ -n '$package_preview_version' ]]; then
     export NOVEX_VERSION_NAME='$package_preview_version'

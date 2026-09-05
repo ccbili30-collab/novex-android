@@ -28,6 +28,10 @@ assert_plan novex-core auto \
   src/android/novex-core/src/main/kotlin/com/openminis/app/novex/domain/NovexToolContract.kt \
   src/android/novex-core/src/test/kotlin/com/openminis/app/novex/domain/NovexToolContractTest.kt
 
+assert_plan novex-document auto \
+  src/android/app/src/main/java/com/openminis/app/data/attachments/NovexDocumentSnapshotExtractor.kt \
+  src/android/app/src/test/java/com/openminis/app/data/attachments/NovexDocumentSnapshotExtractorTest.kt
+
 assert_plan novex-ui auto \
   src/android/app/src/main/java/com/openminis/app/ui/sessions/NovexRootScreen.kt \
   src/android/app/src/main/java/com/openminis/app/ui/settings/WorldCatalogScreens.kt \
@@ -42,5 +46,6 @@ assert_plan full full src/android/app/src/main/java/com/openminis/app/ui/novex/N
 assert_plan novex-ui novex-ui src/android/app/build.gradle.kts
 assert_plan novex-domain novex-domain src/android/app/build.gradle.kts
 assert_plan novex-core novex-core src/android/app/build.gradle.kts
+assert_plan novex-document novex-document src/android/app/build.gradle.kts
 
 echo "android fast-check planner tests passed"

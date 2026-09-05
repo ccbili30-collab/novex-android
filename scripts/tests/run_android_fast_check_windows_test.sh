@@ -103,6 +103,51 @@ done
 
 echo "Android Novex core scoped-sync tests passed"
 
+document_output="$($RUNNER \
+  --dry-run \
+  --mode auto \
+  --changed-file src/android/app/src/main/java/com/openminis/app/data/attachments/NovexDocumentSnapshotExtractor.kt)"
+
+for expected in \
+  "plan=novex-document" \
+  "coverage=preview-document-tests" \
+  "com.openminis.app.data.attachments.*"; do
+  if [[ "$document_output" != *"$expected"* ]]; then
+    echo "missing Novex document dry-run output: $expected" >&2
+    exit 1
+  fi
+done
+
+echo "Android Novex document fast-check runner tests passed"
+
+batched_hashers="$({ grep -o 'xargs -0 sha256sum' "$RUNNER" || true; } | wc -l | tr -d ' ')"
+if [[ "$batched_hashers" -lt 2 ]]; then
+  echo "Windows mirror verification must hash its manifest in one batch" >&2
+  exit 1
+fi
+
+echo "android Windows batched mirror verification tests passed"
+
+normalized_hash_paths="$({ grep -o 'path#' "$RUNNER" || true; } | wc -l | tr -d ' ')"
+if [[ "$normalized_hash_paths" -lt 2 ]]; then
+  echo "Windows sha256sum binary path markers must be normalized" >&2
+  exit 1
+fi
+
+echo "android Windows hash path normalization tests passed"
+
+for expected in \
+  'changed_hash_manifest="$(mktemp)"' \
+  '"$changed_hash_manifest"' \
+  'tee '\''$remote_expected_hashes'\'' >/dev/null" < "$changed_hash_manifest"'; do
+  if [[ "$runner_source" != *"$expected"* ]]; then
+    echo "Post-upload verification must hash only files changed in this run: $expected" >&2
+    exit 1
+  fi
+done
+
+echo "android Windows changed-file verification tests passed"
+
 package_output="$($RUNNER \
   --dry-run \
   --mode novex-ui \
