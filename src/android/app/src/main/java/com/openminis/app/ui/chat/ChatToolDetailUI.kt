@@ -204,6 +204,8 @@ import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
+import com.openminis.app.ui.theme.LocalAppCodeFontFamily
+import com.openminis.app.ui.theme.LocalAppSemanticPalette
 import com.openminis.app.ui.components.MinisTextButton
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -467,7 +469,7 @@ internal fun ToolDetailSheet(
                                             text = "$ $command",
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = LocalAppCodeFontFamily.current,
                                             color = Color.White,
                                             lineHeight = 18.sp,
                                         )
@@ -488,7 +490,7 @@ internal fun ToolDetailSheet(
                                             Text(
                                                 text = linkified,
                                                 fontSize = 13.sp,
-                                                fontFamily = FontFamily.Monospace,
+                                                fontFamily = LocalAppCodeFontFamily.current,
                                                 color = Color(0xFF34C759),  // iOS .green
                                                 lineHeight = 18.sp,
                                             )
@@ -515,14 +517,14 @@ internal fun ToolDetailSheet(
                                             text = sheetMonitor.formattedCpu(),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium,
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = LocalAppCodeFontFamily.current,
                                             color = Color(0xFF34C759),  // iOS .green
                                         )
                                         Text(
                                             text = sheetMonitor.formattedMem(),
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium,
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = LocalAppCodeFontFamily.current,
                                             color = Color(0xFF34C759),
                                         )
                                     }
@@ -552,9 +554,9 @@ internal fun ToolDetailSheet(
                         val cardBg = if (isDark) Color(0xFF1A1A1A) else Color(0xFFF0F0F0)
                         val cardBorder = if (isDark) Color(0xFF404040) else Color(0xFFD1D1D1)
                         val redBg = if (isDark) Color(0xFF4D1414) else Color(0xFFFFE5E5)
-                        val redText = if (isDark) Color(0xFFFF6666) else Color(0xFFCC1A1A)
+                        val redText = LocalAppSemanticPalette.current.diffRemoved
                         val greenBg = if (isDark) Color(0xFF144D14) else Color(0xFFE5FFE5)
-                        val greenText = if (isDark) Color(0xFF66FF66) else Color(0xFF1A991A)
+                        val greenText = LocalAppSemanticPalette.current.diffAdded
 
                         val bytes = (oldStr.toByteArray(Charsets.UTF_8).size +
                             newStr.toByteArray(Charsets.UTF_8).size)
@@ -615,7 +617,7 @@ internal fun ToolDetailSheet(
                                         text = if (fileName.isNotEmpty()) fileName else "(file)",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium,
-                                        fontFamily = FontFamily.Monospace,
+                                        fontFamily = LocalAppCodeFontFamily.current,
                                         color = ChatColors.primaryText,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -648,7 +650,7 @@ internal fun ToolDetailSheet(
                                                 Text(
                                                     text = "- $line",
                                                     fontSize = 13.sp,
-                                                    fontFamily = FontFamily.Monospace,
+                                                    fontFamily = LocalAppCodeFontFamily.current,
                                                     color = redText,
                                                     lineHeight = 17.sp,
                                                     modifier = Modifier
@@ -663,7 +665,7 @@ internal fun ToolDetailSheet(
                                                 Text(
                                                     text = "+ $line",
                                                     fontSize = 13.sp,
-                                                    fontFamily = FontFamily.Monospace,
+                                                    fontFamily = LocalAppCodeFontFamily.current,
                                                     color = greenText,
                                                     lineHeight = 17.sp,
                                                     modifier = Modifier
@@ -699,7 +701,7 @@ internal fun ToolDetailSheet(
                                                 Text(
                                                     text = path,
                                                     fontSize = 12.sp,
-                                                    fontFamily = FontFamily.Monospace,
+                                                    fontFamily = LocalAppCodeFontFamily.current,
                                                     color = ChatColors.secondaryText,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
@@ -934,7 +936,7 @@ internal fun ToolDetailSheet(
                                     Text(
                                         text = block.content,
                                         fontSize = 13.sp,
-                                        fontFamily = FontFamily.Monospace,
+                                        fontFamily = LocalAppCodeFontFamily.current,
                                         color = ChatColors.primaryText,
                                         lineHeight = 16.sp,
                                         modifier = Modifier.padding(14.dp),
@@ -1020,7 +1022,7 @@ internal fun ToolDetailSheet(
                                 Text(
                                     text = block.content,
                                     fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = LocalAppCodeFontFamily.current,
                                     color = ChatColors.primaryText,
                                     lineHeight = 18.sp,
                                 )
@@ -1165,7 +1167,7 @@ internal fun ToolDetailSheet(
                                 Text(
                                     text = formatToolDuration(block.durationMs),
                                     fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = LocalAppCodeFontFamily.current,
                                     color = ChatColors.tertiaryText,
                                 )
                             }
@@ -1173,7 +1175,7 @@ internal fun ToolDetailSheet(
                                 Text(
                                     text = formatStepTimestamp(block.startTimeMs),
                                     fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = LocalAppCodeFontFamily.current,
                                     color = ChatColors.tertiaryText.copy(alpha = 0.75f),
                                 )
                             }
@@ -1228,7 +1230,7 @@ internal fun ToolDetailSheet(
                             "${currentIdx + 1} / ${toolBlocks.size}",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = LocalAppCodeFontFamily.current,
                             color = ChatColors.secondaryText,
                         )
                     }
@@ -1432,7 +1434,7 @@ private fun LazyRevealToolText(
         Text(
             text = displayed,
             fontSize = 13.sp,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = LocalAppCodeFontFamily.current,
             color = color,
             lineHeight = 18.sp,
             modifier = Modifier.fillMaxWidth(),

@@ -671,6 +671,7 @@
     <string name="theme_colors_presets_header">Presets</string>
     <string name="theme_colors_presets_footer">A preset changes both light and dark colors. You can fine-tune either mode afterwards.</string>
     <string name="theme_colors_preset_novex">Novex</string>
+    <string name="theme_colors_preset_cloude">Cloude</string>
     <string name="theme_colors_preset_blue">Blue</string>
     <string name="theme_colors_preset_purple">Purple</string>
     <string name="theme_colors_preset_pink">Pink</string>

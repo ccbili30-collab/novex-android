@@ -13,11 +13,33 @@ class AppThemeColorsTest {
         val colors = ThemeColorPresets.default.colors
 
         assertEquals(0xFF528AD2.toInt(), colors.light.accent)
-        assertEquals(0xFFF2F2F7.toInt(), colors.light.background)
+        assertEquals(0xFFFFFFFF.toInt(), colors.light.background)
         assertEquals(0xFF171D1C.toInt(), colors.light.foreground)
         assertEquals(0xFF6A94CE.toInt(), colors.dark.accent)
         assertEquals(0xFF000000.toInt(), colors.dark.background)
         assertEquals(0xFFDEE4E2.toInt(), colors.dark.foreground)
+    }
+
+    @Test
+    fun `Cloude preset preserves the supplied light dark and serif contract`() {
+        val preset = ThemeColorPresets.cloude
+
+        assertEquals("cloude", preset.id)
+        assertEquals(ThemeTypographyPreset.CLOUDE_SERIF, preset.typography)
+        assertEquals(0xFFDA7756.toInt(), preset.colors.light.accent)
+        assertEquals(0xFFF5F4EE.toInt(), preset.colors.light.background)
+        assertEquals(0xFF141413.toInt(), preset.colors.light.foreground)
+        assertEquals(0xFFCC785C.toInt(), preset.colors.dark.accent)
+        assertEquals(0xFF262624.toInt(), preset.colors.dark.background)
+        assertEquals(0xFFF5F4EE.toInt(), preset.colors.dark.foreground)
+        assertEquals("absolutely", preset.sourceContract?.codeThemeId)
+        assertEquals(45, preset.sourceContract?.lightContrast)
+        assertEquals(60, preset.sourceContract?.darkContrast)
+        assertEquals("JetBrainsMono NFM", preset.sourceContract?.codeFont)
+        assertEquals(0xFF00C853.toInt(), preset.sourceContract?.semanticColors?.diffAdded)
+        assertEquals(0xFFFF5F38.toInt(), preset.sourceContract?.semanticColors?.diffRemoved)
+        assertEquals(0xFFCC7D5E.toInt(), preset.sourceContract?.semanticColors?.skill)
+        assertTrue(ThemeColorPresets.cloude in ThemeColorPresets.all)
     }
 
     @Test
@@ -88,6 +110,13 @@ class AppThemeColorsTest {
         assertEquals(colors, AppThemeColorPreferences.decode(encoded))
         assertNull(AppThemeColorPreferences.decode("1|purple|#123456"))
         assertNull(AppThemeColorPreferences.decode("2|purple|#123456|#FFFFFF|#000000|#123456|#000000|#FFFFFF"))
+    }
+
+    @Test
+    fun `stored bundled preset follows its current complete visual contract after upgrade`() {
+        val legacyDefault = "1|novex|#528AD2|#F2F2F7|#171D1C|#6A94CE|#000000|#DEE4E2"
+
+        assertEquals(ThemeColorPresets.default.colors, AppThemeColorPreferences.decode(legacyDefault))
     }
 
     @Test

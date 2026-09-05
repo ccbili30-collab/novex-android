@@ -5,9 +5,7 @@ import android.graphics.Typeface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.core.content.res.ResourcesCompat
 import com.openminis.app.R
 
@@ -27,10 +25,7 @@ import com.openminis.app.R
  *    through Compose. Loaded once via `ResourcesCompat.getFont` and
  *    cached.
  */
-val JetBrainsMonoFontFamily: FontFamily = FontFamily(
-    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
-    Font(R.font.jetbrains_mono_bold, FontWeight.Bold),
-)
+val JetBrainsMonoFontFamily: FontFamily = com.openminis.app.ui.theme.AppJetBrainsMonoFontFamily
 
 /** Lazily-loaded JetBrains Mono Typeface for Canvas/Paint usage. */
 private var cachedRegular: Typeface? = null

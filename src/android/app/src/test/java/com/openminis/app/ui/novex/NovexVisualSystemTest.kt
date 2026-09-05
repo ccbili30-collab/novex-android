@@ -12,7 +12,7 @@ import org.junit.Test
 
 class NovexVisualSystemTest {
     @Test
-    fun rootAndDisplayPagesStayWhiteWhileManagementPagesStayGrouped() {
+    fun everyLightPageToneUsesTheSameWhiteCanvas() {
         val palette = NovexSurfacePalette(
             canvas = Color.White,
             grouped = Color(0xFFF2F2F7),
@@ -23,8 +23,8 @@ class NovexVisualSystemTest {
         assertEquals(Color.White, NovexPageTone.CONVERSATION.resolve(palette))
         assertEquals(Color.White, NovexPageTone.CATALOG.resolve(palette))
         assertEquals(Color.White, NovexPageTone.DISPLAY.resolve(palette))
-        assertEquals(Color(0xFFF2F2F7), NovexPageTone.EDITOR.resolve(palette))
-        assertEquals(Color(0xFFF2F2F7), NovexPageTone.SETTINGS.resolve(palette))
+        assertEquals(Color.White, NovexPageTone.EDITOR.resolve(palette))
+        assertEquals(Color.White, NovexPageTone.SETTINGS.resolve(palette))
     }
 
     @Test

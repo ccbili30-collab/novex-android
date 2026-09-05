@@ -184,6 +184,7 @@ private data class MdColors(
     val divider: Color,
     val tableBorder: Color,
     val tableHeaderBg: Color,
+    val codeFont: FontFamily,
 )
 
 @Composable
@@ -201,6 +202,7 @@ private fun currentMdColors(): MdColors {
         divider = c.separator,
         tableBorder = c.tableBorder,
         tableHeaderBg = c.secondaryBg,
+        codeFont = com.openminis.app.ui.theme.LocalAppCodeFontFamily.current,
     )
 }
 
@@ -1758,7 +1760,7 @@ private fun RenderBlock(block: MdBlock) {
                         Text(
                             text = block.code,
                             fontSize = BaseFontSize * 0.85f,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = colors.codeFont,
                             color = colors.codeText,
                             lineHeight = BaseLineHeight * 0.9f,
                         )
@@ -2118,7 +2120,7 @@ private fun RenderInlineMath(latex: String, fontSize: TextUnit) {
         Text(
             text = latex,
             fontSize = fontSize * 0.9f,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = palette.codeFont,
             color = palette.text,
         )
     }
@@ -2186,7 +2188,7 @@ private fun RenderMathDisplay(latex: String) {
             Text(
                 text = latex,
                 fontSize = BaseFontSize * 0.95f,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = palette.codeFont,
                 color = palette.text,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
@@ -3317,7 +3319,7 @@ private fun parseInline(text: String, colors: MdColors): AnnotatedString {
                     val end = findInlineCodeClose(text, i + 1)
                     if (end != -1) {
                         val codeStyle = SpanStyle(
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = colors.codeFont,
                             color = colors.inlineCodeText,
                         )
                         withStyle(codeStyle) { append("\u2006") }
@@ -3407,7 +3409,7 @@ private fun AnnotatedString.Builder.appendRecursive(text: String, colors: MdColo
             text[i] == '`' -> {
                 val end = findInlineCodeClose(text, i + 1)
                 if (end != -1) {
-                    val codeStyle = SpanStyle(fontFamily = FontFamily.Monospace, color = colors.inlineCodeText)
+                    val codeStyle = SpanStyle(fontFamily = colors.codeFont, color = colors.inlineCodeText)
                     withStyle(codeStyle) { append("\u2006") }
                     // See T223 in the top-level inline-code branch \u2014 annotation
                     // excludes the U+2006 pads to keep wrap-line background

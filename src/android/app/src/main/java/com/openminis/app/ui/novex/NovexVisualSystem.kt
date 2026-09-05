@@ -31,8 +31,8 @@ internal data class NovexSurfacePalette(
 
 /**
  * A page chooses a semantic tone; it never chooses a raw theme surface.
- * Root and reading surfaces stay quiet while editing and settings surfaces
- * retain a grouped-background hierarchy.
+ * Every Novex page starts from one quiet canvas. Internal sections and hairlines
+ * provide hierarchy without switching the whole page to a grouped gray field.
  */
 internal enum class NovexPageTone {
     CONVERSATION,
@@ -41,10 +41,7 @@ internal enum class NovexPageTone {
     EDITOR,
     SETTINGS;
 
-    fun resolve(palette: NovexSurfacePalette): Color = when (this) {
-        CONVERSATION, CATALOG, DISPLAY -> palette.canvas
-        EDITOR, SETTINGS -> palette.grouped
-    }
+    fun resolve(palette: NovexSurfacePalette): Color = palette.canvas
 }
 
 internal data class NovexLayoutMetrics(

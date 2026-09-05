@@ -552,6 +552,7 @@ private fun ColorPickerDialog(
 
 private fun presetNameResource(id: String): Int = when (id) {
     "novex" -> R.string.theme_colors_preset_novex
+    "cloude" -> R.string.theme_colors_preset_cloude
     "blue" -> R.string.theme_colors_preset_blue
     "purple" -> R.string.theme_colors_preset_purple
     "pink" -> R.string.theme_colors_preset_pink

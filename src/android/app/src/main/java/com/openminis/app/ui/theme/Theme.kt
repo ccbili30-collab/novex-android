@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +74,7 @@ private val TealDarkOutline = Color(0xFF899390)
 // teal primary tint.
 // Light: page = #F2F2F7 gray, card = white
 // Dark:  page = #000, card = #1C1C1E
-private val NeutralGroupedBg = Color(0xFFF2F2F7)
+private val NeutralGroupedBg = Color(0xFFFFFFFF)
 private val NeutralGroupedCard = Color(0xFFFFFFFF)
 private val NeutralGroupedCardElevated = Color(0xFFF7F7FA)
 private val NeutralOutline = Color(0xFFD1D1D6)
@@ -167,7 +168,12 @@ fun MinisTheme(
     } else {
         themedColorScheme(variant)
     }
-    val typography = scaledTypography(fontScale)
+    val selectedPreset = ThemeColorPresets.find(themeColors.presetId)?.takeIf { it.colors == themeColors }
+    val typographyPreset = selectedPreset
+        ?.typography
+        ?: ThemeTypographyPreset.SYSTEM_SANS
+    val fontFamilies = typographyFamilies(typographyPreset)
+    val typography = scaledTypography(fontScale, fontFamilies.ui)
     val chatPalette = if (usesNovexDefaults) {
         if (darkTheme) DarkChatPalette else LightChatPalette
     } else {
@@ -179,7 +185,12 @@ fun MinisTheme(
         shapes = MinisShapes,
         typography = typography,
     ) {
-        CompositionLocalProvider(LocalChatPalette provides chatPalette, content = content)
+        CompositionLocalProvider(
+            LocalChatPalette provides chatPalette,
+            LocalAppCodeFontFamily provides fontFamilies.code,
+            LocalAppSemanticPalette provides semanticPalette(selectedPreset),
+            content = content,
+        )
     }
 }
 
@@ -194,7 +205,12 @@ fun MinisThemePreview(
         if (darkTheme) ThemeVariantMode.Dark else ThemeVariantMode.Light
     )
     val usesNovexDefaults = themeColors == ThemeColorPresets.default.colors
-    val parentTypography = MaterialTheme.typography
+    val selectedPreset = ThemeColorPresets.find(themeColors.presetId)?.takeIf { it.colors == themeColors }
+    val typographyPreset = selectedPreset
+        ?.typography
+        ?: ThemeTypographyPreset.SYSTEM_SANS
+    val fontFamilies = typographyFamilies(typographyPreset)
+    val previewTypography = scaledTypography(LocalAppFontScale.current, fontFamilies.ui)
     val parentShapes = MaterialTheme.shapes
     MaterialTheme(
         colorScheme = if (usesNovexDefaults) {
@@ -202,7 +218,7 @@ fun MinisThemePreview(
         } else {
             themedColorScheme(variant)
         },
-        typography = parentTypography,
+        typography = previewTypography,
         shapes = parentShapes,
     ) {
         CompositionLocalProvider(
@@ -211,6 +227,8 @@ fun MinisThemePreview(
             } else {
                 themedChatPalette(variant)
             },
+            LocalAppCodeFontFamily provides fontFamilies.code,
+            LocalAppSemanticPalette provides semanticPalette(selectedPreset),
             content = content,
         )
     }
@@ -403,23 +421,26 @@ private fun TextStyle.scale(factor: Float): TextStyle =
         lineHeight = if (lineHeight == TextUnit.Unspecified) lineHeight else lineHeight * factor,
     )
 
-internal fun scaledTypography(factor: Float): Typography {
+internal fun scaledTypography(
+    factor: Float,
+    fontFamily: FontFamily = FontFamily.Default,
+): Typography {
     val base = Typography()
     return Typography(
-        displayLarge = base.displayLarge.scale(factor),
-        displayMedium = base.displayMedium.scale(factor),
-        displaySmall = base.displaySmall.scale(factor),
-        headlineLarge = base.headlineLarge.scale(factor),
-        headlineMedium = base.headlineMedium.scale(factor),
-        headlineSmall = base.headlineSmall.scale(factor),
-        titleLarge = base.titleLarge.scale(factor),
-        titleMedium = base.titleMedium.scale(factor),
-        titleSmall = base.titleSmall.scale(factor),
-        bodyLarge = base.bodyLarge.scale(factor),
-        bodyMedium = base.bodyMedium.scale(factor),
-        bodySmall = base.bodySmall.scale(factor),
-        labelLarge = base.labelLarge.scale(factor),
-        labelMedium = base.labelMedium.scale(factor),
-        labelSmall = base.labelSmall.scale(factor),
+        displayLarge = base.displayLarge.copy(fontFamily = fontFamily).scale(factor),
+        displayMedium = base.displayMedium.copy(fontFamily = fontFamily).scale(factor),
+        displaySmall = base.displaySmall.copy(fontFamily = fontFamily).scale(factor),
+        headlineLarge = base.headlineLarge.copy(fontFamily = fontFamily).scale(factor),
+        headlineMedium = base.headlineMedium.copy(fontFamily = fontFamily).scale(factor),
+        headlineSmall = base.headlineSmall.copy(fontFamily = fontFamily).scale(factor),
+        titleLarge = base.titleLarge.copy(fontFamily = fontFamily).scale(factor),
+        titleMedium = base.titleMedium.copy(fontFamily = fontFamily).scale(factor),
+        titleSmall = base.titleSmall.copy(fontFamily = fontFamily).scale(factor),
+        bodyLarge = base.bodyLarge.copy(fontFamily = fontFamily).scale(factor),
+        bodyMedium = base.bodyMedium.copy(fontFamily = fontFamily).scale(factor),
+        bodySmall = base.bodySmall.copy(fontFamily = fontFamily).scale(factor),
+        labelLarge = base.labelLarge.copy(fontFamily = fontFamily).scale(factor),
+        labelMedium = base.labelMedium.copy(fontFamily = fontFamily).scale(factor),
+        labelSmall = base.labelSmall.copy(fontFamily = fontFamily).scale(factor),
     )
 }

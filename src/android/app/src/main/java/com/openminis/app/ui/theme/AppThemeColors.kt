@@ -19,6 +19,27 @@ enum class ThemeColorField {
     Foreground,
 }
 
+enum class ThemeTypographyPreset {
+    SYSTEM_SANS,
+    CLOUDE_SERIF,
+}
+
+data class ThemeSemanticColors(
+    val diffAdded: Int,
+    val diffRemoved: Int,
+    val skill: Int,
+)
+
+data class ThemePresetSourceContract(
+    val codeThemeId: String,
+    val lightContrast: Int,
+    val darkContrast: Int,
+    val codeFont: String,
+    val uiFontStack: String,
+    val opaqueWindows: Boolean,
+    val semanticColors: ThemeSemanticColors,
+)
+
 data class ThemeVariantColors(
     val accent: Int,
     val background: Int,
@@ -44,6 +65,9 @@ data class AppThemeColors(
 data class ThemeColorPreset(
     val id: String,
     val colors: AppThemeColors,
+    val typography: ThemeTypographyPreset = ThemeTypographyPreset.SYSTEM_SANS,
+    val minimumAccentContrast: Double = 3.0,
+    val sourceContract: ThemePresetSourceContract? = null,
 )
 
 object ThemeColorPresets {
@@ -52,15 +76,43 @@ object ThemeColorPresets {
     val default = preset(
         id = "novex",
         lightAccent = 0xFF528AD2.toInt(),
-        lightBackground = 0xFFF2F2F7.toInt(),
+        lightBackground = 0xFFFFFFFF.toInt(),
         lightForeground = 0xFF171D1C.toInt(),
         darkAccent = 0xFF6A94CE.toInt(),
         darkBackground = 0xFF000000.toInt(),
         darkForeground = 0xFFDEE4E2.toInt(),
     )
 
+    val cloude = preset(
+        id = "cloude",
+        lightAccent = 0xFFDA7756.toInt(),
+        lightBackground = 0xFFF5F4EE.toInt(),
+        lightForeground = 0xFF141413.toInt(),
+        darkAccent = 0xFFCC785C.toInt(),
+        darkBackground = 0xFF262624.toInt(),
+        darkForeground = 0xFFF5F4EE.toInt(),
+        typography = ThemeTypographyPreset.CLOUDE_SERIF,
+        // The supplied theme deliberately uses its accent decoratively at 2.82:1.
+        // Buttons still select a contrasting on-accent color automatically.
+        minimumAccentContrast = 2.75,
+        sourceContract = ThemePresetSourceContract(
+            codeThemeId = "absolutely",
+            lightContrast = 45,
+            darkContrast = 60,
+            codeFont = "JetBrainsMono NFM",
+            uiFontStack = "ui-serif, Georgia, Cambria, Times New Roman, Times, Noto Serif SC, serif",
+            opaqueWindows = true,
+            semanticColors = ThemeSemanticColors(
+                diffAdded = 0xFF00C853.toInt(),
+                diffRemoved = 0xFFFF5F38.toInt(),
+                skill = 0xFFCC7D5E.toInt(),
+            ),
+        ),
+    )
+
     val all: List<ThemeColorPreset> = listOf(
         default,
+        cloude,
         preset(
             id = "blue",
             lightAccent = 0xFF2563EB.toInt(),
@@ -127,13 +179,22 @@ object ThemeColorPresets {
         darkAccent: Int,
         darkBackground: Int,
         darkForeground: Int,
+        typography: ThemeTypographyPreset = ThemeTypographyPreset.SYSTEM_SANS,
+        minimumAccentContrast: Double = 3.0,
+        sourceContract: ThemePresetSourceContract? = null,
     ): ThemeColorPreset {
         val colors = AppThemeColors(
             presetId = id,
             light = ThemeVariantColors(lightAccent, lightBackground, lightForeground),
             dark = ThemeVariantColors(darkAccent, darkBackground, darkForeground),
         )
-        return ThemeColorPreset(id = id, colors = colors)
+        return ThemeColorPreset(
+            id = id,
+            colors = colors,
+            typography = typography,
+            minimumAccentContrast = minimumAccentContrast,
+            sourceContract = sourceContract,
+        )
     }
 }
 
@@ -167,9 +228,8 @@ object AppThemeColorPreferences {
         if (parts.size != 8 || parts[0] != "1") return null
         val values = parts.drop(2).map(::parseOpaqueThemeColor)
         if (values.any { it == null }) return null
-        val presetId = parts[1].takeIf { candidate ->
-            candidate == ThemeColorPresets.CUSTOM_ID || ThemeColorPresets.find(candidate) != null
-        } ?: ThemeColorPresets.CUSTOM_ID
+        ThemeColorPresets.find(parts[1])?.let { return it.colors }
+        val presetId = ThemeColorPresets.CUSTOM_ID
         return AppThemeColors(
             presetId = presetId,
             light = ThemeVariantColors(
@@ -195,6 +255,10 @@ fun formatOpaqueThemeColor(color: Int): String =
     String.format(Locale.ROOT, "#%06X", color and 0x00FFFFFF)
 
 fun validateThemeColors(colors: AppThemeColors): List<ThemeColorIssue> = buildList {
+    val requiredAccentRatio = ThemeColorPresets.find(colors.presetId)
+        ?.takeIf { it.colors == colors }
+        ?.minimumAccentContrast
+        ?: 3.0
     ThemeVariantMode.entries.forEach { mode ->
         val variant = colors.variant(mode)
         val textRatio = contrastRatio(variant.foreground, variant.background)
@@ -202,8 +266,8 @@ fun validateThemeColors(colors: AppThemeColors): List<ThemeColorIssue> = buildLi
             add(ThemeColorIssue(mode, ThemeColorField.Foreground, textRatio, 4.5))
         }
         val accentRatio = contrastRatio(variant.accent, variant.background)
-        if (accentRatio < 3.0) {
-            add(ThemeColorIssue(mode, ThemeColorField.Accent, accentRatio, 3.0))
+        if (accentRatio < requiredAccentRatio) {
+            add(ThemeColorIssue(mode, ThemeColorField.Accent, accentRatio, requiredAccentRatio))
         }
     }
 }

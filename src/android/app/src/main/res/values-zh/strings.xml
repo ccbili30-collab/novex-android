@@ -313,6 +313,7 @@
     <string name="theme_colors_presets_header">主题预设</string>
     <string name="theme_colors_presets_footer">选择预设会同时更换浅色和深色配色，之后仍可分别微调。</string>
     <string name="theme_colors_preset_novex">Novex 默认</string>
+    <string name="theme_colors_preset_cloude">Cloude</string>
     <string name="theme_colors_preset_blue">蓝色</string>
     <string name="theme_colors_preset_purple">紫色</string>
     <string name="theme_colors_preset_pink">粉色</string>
