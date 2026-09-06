@@ -9126,14 +9126,14 @@ class ChatViewModel(
                 ToolExecutionResult(
                     output = buildString {
                         appendLine("变更计划：${plan.id}")
-                        appendLine("处理范围：${if (plan.requiresConfirmation) "需要确认的内容变更" else "本对话私有空卡创建"}")
+                        appendLine("处理范围：${if (plan.requiresConfirmation) "需要确认的内容变更" else "本对话私有作品创建或整理"}")
                         appendLine("内容：${plan.summary}")
                         if (plan.impact.isNotEmpty()) appendLine("影响：${plan.impact.joinToString("；")}")
                         if (plan.requiresConfirmation) {
                             appendLine("尚未执行。请等待用户确认。")
                             append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
                         } else {
-                            appendLine("尚未写入正文。当前用户已明确授权创建；请立即调用 novex_apply_content_changes（执行内容变更），无需重复询问。")
+                            appendLine("尚未写入正文。当前用户已授权本对话私有作品的这项创建或整理；请立即调用 novex_apply_content_changes（执行内容变更），无需重复询问。")
                         }
                     },
                     success = true,

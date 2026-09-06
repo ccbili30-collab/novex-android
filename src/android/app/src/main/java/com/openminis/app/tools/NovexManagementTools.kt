@@ -59,9 +59,9 @@ object NovexManagementTools {
                 "for subjects mounted with edit access, or for a global create explicitly requested by the user. " +
                 "The app retains an explicit creation request across follow-up turns such as 'continue' in the current task; " +
                 "do not ask the user to repeat it. Cancellation or a changed target ends that request. " +
-                "Follow the result: a current explicit creation request using this conversation's private empty card " +
-                "can be applied immediately in this turn. Shared, destructive, cross-project or extra global changes " +
-                "require the real user's exact confirmation phrase. Never invent authorization.",
+                "依据返回范围执行：当前明确创建请求可使用本对话私有空卡立即写入；已经授权编辑的本对话私有作品，" +
+                "常规模块整理和引用调整也可立即执行。共享修改、删除、其他跨项目变更与额外全局创建仍需真实用户的确认短语。" +
+                "不得伪造授权；只讨论、取消或没有创作意图时不能自行写入。",
             parameters = mapOf(
                 "changes" to AgentToolParam(
                     type = "string",
@@ -111,8 +111,8 @@ object NovexManagementTools {
         AgentToolDefinition(
             name = APPLY,
             description = "Apply a previously validated Novex proposal atomically. The app, not tool arguments, " +
-                "checks the latest real user message: private empty-card creation retains its original explicit request; " +
-                "other changes require the proposal's exact confirmation phrase. " +
+                "checks the latest real user message. 私有空卡创建和已授权的私有作品常规整理沿用真实用户请求，" +
+                "其余变更需计划返回的确认短语。执行前再次检查作品归属与模块是否改变。" +
                 "Never invent confirmation and never retry a rejected proposal without the real user.",
             parameters = mapOf(
                 "proposal_id" to AgentToolParam("string", "Proposal id returned by novex_propose_content_changes."),
