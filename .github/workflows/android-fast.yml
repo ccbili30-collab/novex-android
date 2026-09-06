@@ -195,15 +195,26 @@ jobs:
                 "--tests" "com.openminis.app.data.attachments.*"
                 "--tests" "com.openminis.app.tools.NovexDocumentAgentToolsTest"
                 "--tests" "com.openminis.app.tools.NovexLearningAgentToolsTest"
+                "--tests" "com.openminis.app.tools.NovexWorkspaceAgentToolsTest"
                 "--tests" "com.openminis.app.ui.chat.AttachmentPromptMetadataTest"
                 "--tests" "com.openminis.app.ui.chat.DocxAttachmentRequestChainTest"
                 "--tests" "com.openminis.app.data.character.CharacterPromptComposerTest"
+                "--tests" "com.openminis.app.speech.correction.TypedVocabularyBuilderTest"
               )
               ;;
             novex-domain)
               tasks+=(
                 ":app:testPreviewDebugUnitTest"
                 "--tests" "com.openminis.app.novex.domain.*"
+                "--tests" "com.openminis.app.data.character.ContentModule*"
+                "--tests" "com.openminis.app.ui.novex.ContentModuleDraftListTest"
+                "--tests" "com.openminis.app.ui.novex.NovexContentModulePresentationTest"
+                "--tests" "com.openminis.app.agent.NovexSystemPromptTest"
+                "--tests" "com.openminis.app.tools.InteractiveFictionAgentToolsTest"
+                "--tests" "com.openminis.app.tools.ImageGenerationPolicyTest"
+                "--tests" "com.openminis.app.tools.NovexRawToolRetirementTest"
+                "--tests" "com.openminis.app.tools.NovexWorkspaceAgentToolsTest"
+                "--tests" "com.openminis.app.service.NovexAgentForegroundServiceTest"
               )
               ;;
             novex-ui)
@@ -212,6 +223,8 @@ jobs:
                 "--tests" "com.openminis.app.ui.novex.*"
                 "--tests" "com.openminis.app.ui.sessions.Novex*"
                 "--tests" "com.openminis.app.ui.navigation.Novex*"
+                "--tests" "com.openminis.app.ui.chat.NovexStandardToolDetailPresentationTest"
+                "--tests" "com.openminis.app.ui.theme.*"
                 "--tests" "com.openminis.app.ui.settings.World*"
                 "--tests" "com.openminis.app.ui.settings.Character*"
                 "--tests" "com.openminis.app.ui.settings.NovexNativeCard*"

@@ -12,6 +12,26 @@ fi
 
 source="$(<"$WORKFLOW")"
 
+# Both runners must select the same focused regressions; a green lane that omitted
+# the relevant tests cannot validate a repair. Compare each mode, not the whole file.
+WINDOWS_RUNNER="$SCRIPT_DIR/../run_android_fast_check_windows.sh"
+for scope in novex-document novex-domain novex-ui; do
+  windows_filters="$(awk -v mode="$scope)" '
+    $1 == mode { active = 1; next }
+    active && $1 == ";;" { exit }
+    active { print }
+  ' "$WINDOWS_RUNNER" | sed -n "s/.*--tests ['\"]\(com\.openminis[^'\"]*\)['\"].*/\1/p" | LC_ALL=C sort)"
+  cloud_filters="$(awk -v mode="$scope)" '
+    $1 == mode { active = 1; next }
+    active && $1 == ";;" { exit }
+    active { print }
+  ' "$WORKFLOW" | sed -n 's/.*"--tests" "\(com\.openminis[^\"]*\)".*/\1/p' | LC_ALL=C sort)"
+  if [[ -z "$windows_filters" || "$windows_filters" != "$cloud_filters" ]]; then
+    echo "Cloud and Windows focused regression coverage differs: $scope" >&2
+    exit 1
+  fi
+done
+
 for expected in \
   'name: Android fast lane' \
   'workflow_dispatch:' \
