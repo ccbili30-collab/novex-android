@@ -20,7 +20,7 @@ class NovexAgentForegroundServiceTest {
     @Test
     @Config(application = MinisApp::class)
     fun processRestartBeforeRuntimeIsReadyDoesNotReadUninitializedRepositories() {
-        val app = RuntimeEnvironment.getApplication<MinisApp>()
+        val app = RuntimeEnvironment.getApplication() as MinisApp
         assertFalse("A restored service must not start the model/tool runtime", app.subsystemsReady())
         val controller = Robolectric.buildService(AgentForegroundService::class.java).create()
         try {
