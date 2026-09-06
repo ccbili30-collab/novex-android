@@ -40,7 +40,7 @@ object UpdateChecker {
     // published". The 0.1-preview release is published as a prerelease on
     // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
     private const val REPO = "novex-android"
-    private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
+    private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100"
     private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
@@ -63,6 +63,7 @@ object UpdateChecker {
             val apkSizeBytes: Long,
             val channel: UpdateChannel,
             val isPrerelease: Boolean,
+            val releaseNotes: List<ReleaseNote>,
         ) : CheckResult()
         data object UpToDate : CheckResult()
         // The repo has zero non-draft releases (or 404'd entirely).
@@ -80,6 +81,12 @@ object UpdateChecker {
         data object NetworkUnreachable : CheckResult()
     }
 
+    data class ReleaseNote(
+        val versionName: String,
+        val releaseName: String,
+        val changelog: String,
+    )
+
     sealed class DownloadResult {
         data class Success(val file: File) : DownloadResult()
         data class Error(val message: String) : DownloadResult()
@@ -92,6 +99,35 @@ object UpdateChecker {
 
     val currentChannel: UpdateChannel
         get() = UpdateChannel.fromWireName(BuildConfig.UPDATE_CHANNEL)
+
+    /** Loads the official announcement and release archive without requiring an update to exist. */
+    internal suspend fun fetchBulletin(): NovexBulletin = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url(RELEASES_API_URL)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.warning(TAG, "bulletin HTTP ${response.code}; using bundled archive")
+                    return@withContext NovexBulletinDefaults.value
+                }
+                val body = response.body?.string().orEmpty()
+                val releases = runCatching { parsePublishedReleases(body) }
+                    .onFailure {
+                        AppLogger.warning(TAG, "bulletin parse failed: ${it.javaClass.simpleName}: ${it.message}")
+                    }
+                    .getOrDefault(emptyList())
+                NovexBulletinPolicy.build(currentChannel, releases)
+                    .takeIf { it.announcements.isNotEmpty() || it.releaseNotes.isNotEmpty() }
+                    ?: NovexBulletinDefaults.value
+            }
+        } catch (e: Exception) {
+            AppLogger.warning(TAG, "bulletin fetch failed: ${e.javaClass.simpleName}: ${e.message}")
+            NovexBulletinDefaults.value
+        }
+    }
 
     /**
      * Hit `repos/{owner}/{repo}/releases` (the list endpoint, NOT
@@ -136,33 +172,14 @@ object UpdateChecker {
                 }
                 val body = resp.body?.string()
                     ?: return@withContext checkAtomFallback(localVer, CheckResult.Error("empty body"))
-                val arr = runCatching { JSONArray(body) }.getOrNull()
-                if (arr == null) {
+                val candidates = runCatching { parsePublishedReleases(body) }.getOrNull()
+                if (candidates == null) {
                     AppLogger.warning(TAG, "GitHub API returned malformed release data")
                     return@withContext checkAtomFallback(localVer, CheckResult.Error("invalid release data"))
                 }
-                if (arr.length() == 0) {
+                if (candidates.isEmpty()) {
                     AppLogger.info(TAG, "releases list empty")
                     return@withContext CheckResult.NoReleaseAvailable
-                }
-
-                // Build a list of non-draft releases. GitHub already returns
-                // them sorted by created_at desc, but we re-sort by parsed
-                // version number to be robust against odd ordering.
-                val candidates = mutableListOf<PublishedUpdate>()
-                for (i in 0 until arr.length()) {
-                    val r = arr.optJSONObject(i) ?: continue
-                    if (r.optBoolean("draft", false)) continue
-                    val tag = r.optString("tag_name")
-                    if (tag.isEmpty()) continue
-                    candidates += PublishedUpdate(
-                        tagName = tag,
-                        versionName = normalizeTag(tag),
-                        releaseName = r.optString("name").ifEmpty { tag },
-                        changelog = r.optString("body", ""),
-                        isPrerelease = r.optBoolean("prerelease", false),
-                        assets = readUpdateAssets(r.optJSONArray("assets")),
-                    )
                 }
                 val channel = currentChannel
                 val eligible = UpdateReleasePolicy.eligibleReleases(channel, candidates)
@@ -193,6 +210,12 @@ object UpdateChecker {
 
                 if (upgradeCandidate != null) {
                     val asset = requireNotNull(upgradeCandidate.assets[channel.assetName])
+                    val releaseNotes = buildReleaseNotes(
+                        channel = channel,
+                        localVersion = localVer,
+                        targetVersion = upgradeCandidate.versionName,
+                        releases = candidates,
+                    )
                     AppLogger.info(
                         TAG,
                         "Update available: $localVer → ${upgradeCandidate.versionName} " +
@@ -207,6 +230,7 @@ object UpdateChecker {
                         apkSizeBytes = asset.sizeBytes,
                         channel = channel,
                         isPrerelease = upgradeCandidate.isPrerelease,
+                        releaseNotes = releaseNotes,
                     )
                 }
 
@@ -324,6 +348,12 @@ object UpdateChecker {
         val highest = UpdateReleasePolicy.selectUpgrade(channel, localVersion, eligible)
             ?: return CheckResult.UpToDate
         val asset = requireNotNull(highest.assets[channel.assetName])
+        val releaseNotes = buildReleaseNotes(
+            channel = channel,
+            localVersion = localVersion,
+            targetVersion = highest.versionName,
+            releases = entries,
+        )
         return CheckResult.UpdateAvailable(
             tagName = highest.tagName,
             versionName = highest.versionName,
@@ -333,11 +363,55 @@ object UpdateChecker {
             apkSizeBytes = 0,
             channel = channel,
             isPrerelease = highest.isPrerelease,
+            releaseNotes = releaseNotes,
+        )
+    }
+
+    private fun buildReleaseNotes(
+        channel: UpdateChannel,
+        localVersion: String,
+        targetVersion: String,
+        releases: List<PublishedUpdate>,
+    ): List<ReleaseNote> = UpdateReleasePolicy.releaseHistory(
+        channel = channel,
+        localVersion = localVersion,
+        targetVersion = targetVersion,
+        releases = releases,
+    ).map { release ->
+        ReleaseNote(
+            versionName = release.versionName,
+            releaseName = release.releaseName,
+            changelog = release.changelog
+                .substringBefore("\n## 包含的往期更新")
+                .trim()
+                .ifBlank { "该版本未提供更新说明。" },
         )
     }
 
     /** Public so UI can deep-link users to manual download when GitHub is blocked. */
     const val RELEASES_URL: String = "https://github.com/ccbili30-collab/novex-android/releases"
+
+    internal fun parsePublishedReleases(body: String): List<PublishedUpdate> {
+        val releases = JSONArray(body)
+        return buildList {
+            for (index in 0 until releases.length()) {
+                val release = releases.optJSONObject(index) ?: continue
+                if (release.optBoolean("draft", false)) continue
+                val tag = release.optString("tag_name")
+                if (tag.isEmpty()) continue
+                add(
+                    PublishedUpdate(
+                        tagName = tag,
+                        versionName = normalizeTag(tag),
+                        releaseName = release.optString("name").ifEmpty { tag },
+                        changelog = release.optString("body", ""),
+                        isPrerelease = release.optBoolean("prerelease", false),
+                        assets = readUpdateAssets(release.optJSONArray("assets")),
+                    ),
+                )
+            }
+        }
+    }
 
     /** Index installable assets by exact file name so channels cannot cross. */
     private fun readUpdateAssets(assets: JSONArray?): Map<String, PublishedAsset> {

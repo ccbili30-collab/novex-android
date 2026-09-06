@@ -18,6 +18,29 @@ internal fun isAtTranscriptLatest(canScrollForward: Boolean): Boolean = !canScro
 internal fun latestTranscriptItemIndex(totalItemsCount: Int): Int? =
     (totalItemsCount - 1).takeIf { it >= 0 }
 
+internal data class SubmittedTurnNavigation(
+    val pendingMessageId: String? = null,
+) {
+    fun awaiting(messageId: String): SubmittedTurnNavigation =
+        copy(pendingMessageId = messageId)
+
+    fun resolve(rowKeys: List<String>): SubmittedTurnNavigationResolution {
+        val messageId = pendingMessageId
+            ?: return SubmittedTurnNavigationResolution(targetIndex = null, nextState = this)
+        val targetIndex = rowKeys.indexOf("user:$messageId").takeIf { it >= 0 }
+            ?: return SubmittedTurnNavigationResolution(targetIndex = null, nextState = this)
+        return SubmittedTurnNavigationResolution(
+            targetIndex = targetIndex,
+            nextState = copy(pendingMessageId = null),
+        )
+    }
+}
+
+internal data class SubmittedTurnNavigationResolution(
+    val targetIndex: Int?,
+    val nextState: SubmittedTurnNavigation,
+)
+
 internal enum class TranscriptViewportMove {
     SessionOpened,
     UserSentMessage,
@@ -41,4 +64,37 @@ internal fun allowsTranscriptViewportMove(reason: TranscriptViewportMove): Boole
     TranscriptViewportMove.ImageMeasured,
     TranscriptViewportMove.ToolCardMeasured,
     TranscriptViewportMove.KeyboardInsetChanged -> false
+}
+
+internal enum class TranscriptFollowEvent {
+    UserRequestedLatest,
+    UserDragStarted,
+    StreamCompleted,
+}
+
+/**
+ * A tap on “latest” is a temporary follow request, not a distance threshold.
+ * It follows passive layout growth until the stream ends or the user drags.
+ */
+internal data class TranscriptFollowState(
+    val isFollowingLatest: Boolean = false,
+) {
+    fun after(event: TranscriptFollowEvent): TranscriptFollowState = when (event) {
+        TranscriptFollowEvent.UserRequestedLatest -> copy(isFollowingLatest = true)
+        TranscriptFollowEvent.UserDragStarted,
+        TranscriptFollowEvent.StreamCompleted -> copy(isFollowingLatest = false)
+    }
+
+    fun shouldMoveFor(reason: TranscriptViewportMove): Boolean =
+        allowsTranscriptViewportMove(reason) || isFollowingLatest && reason in followableGrowth
+
+    private companion object {
+        val followableGrowth = setOf(
+            TranscriptViewportMove.PassiveStreamGrowth,
+            TranscriptViewportMove.StreamCompleted,
+            TranscriptViewportMove.ImageMeasured,
+            TranscriptViewportMove.ToolCardMeasured,
+            TranscriptViewportMove.KeyboardInsetChanged,
+        )
+    }
 }

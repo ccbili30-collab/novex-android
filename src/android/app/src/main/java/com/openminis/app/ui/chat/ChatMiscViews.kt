@@ -454,7 +454,12 @@ private fun BorderedMarkdownTable(
 // notices, and model-switch fallback notices — no card, no attribution.
 
 @Composable
-internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = null) {
+internal fun FallbackInfoBlock(
+    block: AssistantBlock,
+    onRevert: (() -> Unit)? = null,
+    compactedHistoryExpanded: Boolean? = null,
+    onToggleCompactedHistory: (() -> Unit)? = null,
+) {
     val divider = ChatColors.separator
     val fg = ChatColors.secondaryText
     val icon = when (block.toolName) {
@@ -480,6 +485,11 @@ internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = 
     // Mirrors iOS compactDividerRow's info.circle button.
     val hasDetail = block.toolArgs.isNotEmpty()
     var showDetail by remember(block.id) { mutableStateOf(false) }
+    val visibleLabel = when (compactedHistoryExpanded) {
+        true -> stringResource(R.string.chat_compacted_history_hide, block.content)
+        false -> stringResource(R.string.chat_compacted_history_show, block.content)
+        null -> block.content
+    }
 
     androidx.compose.ui.layout.SubcomposeLayout(
         modifier = Modifier
@@ -500,6 +510,11 @@ internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = 
         // first and the info-icon never gets pushed off-screen.
         val labelPlaceables = subcompose("label") {
             Row(
+                modifier = if (onToggleCompactedHistory != null) {
+                    Modifier.clickable(onClick = onToggleCompactedHistory)
+                } else {
+                    Modifier
+                },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -510,7 +525,7 @@ internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = 
                     modifier = Modifier.size(10.dp),
                 )
                 Text(
-                    text = block.content,
+                    text = visibleLabel,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
                     color = fg,
@@ -529,6 +544,22 @@ internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = 
                         modifier = Modifier
                             .size(14.dp)
                             .clickable { showDetail = true },
+                    )
+                }
+                if (compactedHistoryExpanded != null) {
+                    Icon(
+                        imageVector = if (compactedHistoryExpanded) {
+                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                        } else {
+                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                        },
+                        contentDescription = if (compactedHistoryExpanded) {
+                            "折叠已压缩对话"
+                        } else {
+                            "展开已压缩对话"
+                        },
+                        tint = fg,
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }

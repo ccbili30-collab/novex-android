@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.NovexDimensions
 import com.openminis.app.ui.novex.NovexIconAction
+import com.openminis.app.ui.novex.NovexIcons
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +52,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
+import com.openminis.app.data.NovexAnnouncement
+import com.openminis.app.data.NovexBulletin
+import com.openminis.app.data.NovexBulletinDefaults
 import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
@@ -75,18 +80,6 @@ internal object NovexUpdateAnnouncementStore {
             .putString(LAST_SHOWN, releaseKey)
             .apply()
     }
-}
-
-internal object CurrentNovexAnnouncement {
-    const val title = "特别致哀"
-    val paragraphs = listOf(
-        "今年以来，台风、暴雨、洪涝与地质灾害侵袭祖国多地。每一则伤亡消息背后，都是一个家庭难以承受的离别。",
-        "在西藏吉隆泥石流灾害发生之际，我们也一并向今年所有灾害中的遇难者致以沉痛哀悼，向遇难者家属和受灾群众致以深切慰问，向所有奋战在抢险救援一线的人们致以崇高敬意。",
-        "愿逝者安息，愿伤者康复，愿失联者早日归来，愿所有受灾群众平安渡过难关，重建家园。",
-    )
-    const val closing = "愿山河无恙，愿人间皆安"
-    val markdown: String
-        get() = paragraphs.joinToString("\n\n") + "\n\n**$closing**"
 }
 
 internal enum class NovexHomeAction { ANNOUNCEMENT, UPDATE }
@@ -309,6 +302,8 @@ fun NovexUpdateAction() {
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
     var announcementOpen by remember { mutableStateOf(false) }
+    var bulletinLoading by remember { mutableStateOf(false) }
+    var bulletin by remember { mutableStateOf(NovexBulletinDefaults.value) }
     var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
 
     fun openDetectedUpdateOrCheck() {
@@ -346,6 +341,13 @@ fun NovexUpdateAction() {
         if (dismissedUpdateVersion != detectedUpdate?.versionName) {
             dismissedUpdateVersion = null
         }
+    }
+
+    LaunchedEffect(announcementOpen) {
+        if (!announcementOpen) return@LaunchedEffect
+        bulletinLoading = true
+        bulletin = UpdateChecker.fetchBulletin()
+        bulletinLoading = false
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -405,6 +407,8 @@ fun NovexUpdateAction() {
 
     if (announcementOpen) {
         AnnouncementDialog(
+            bulletin = bulletin,
+            loading = bulletinLoading,
             checking = checking,
             onCheckUpdate = {
                 announcementOpen = false
@@ -525,11 +529,18 @@ private fun UpdateDialog(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                MarkdownText(
-                    markdown = update.changelog.ifBlank {
-                        "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                ReleaseNotesList(
+                    notes = update.releaseNotes.ifEmpty {
+                        listOf(
+                            UpdateChecker.ReleaseNote(
+                                versionName = update.versionName,
+                                releaseName = update.releaseName,
+                                changelog = update.changelog.ifBlank {
+                                    "更新说明暂未加载。请稍后重新检查，或前往发布页查看完整公告。"
+                                },
+                            ),
+                        )
                     },
-                    style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 320.dp)
@@ -611,16 +622,85 @@ private fun UpdateDialog(
 }
 
 @Composable
+private fun ReleaseNotesList(
+    notes: List<UpdateChecker.ReleaseNote>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        notes.forEachIndexed { index, note ->
+            if (index == 1) {
+                Text(
+                    "包含的往期更新",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            ReleaseNoteItem(
+                note = note,
+                latest = index == 0,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReleaseNoteItem(
+    note: UpdateChecker.ReleaseNote,
+    latest: Boolean,
+    initiallyExpanded: Boolean = latest,
+) {
+    var expanded by rememberSaveable("release-${note.versionName}") {
+        mutableStateOf(initiallyExpanded)
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (latest) "本次更新 · ${note.versionName}" else note.versionName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (latest) FontWeight.SemiBold else FontWeight.Medium,
+            )
+            Icon(
+                if (expanded) NovexIcons.KeyboardArrowUp else NovexIcons.KeyboardArrowDown,
+                contentDescription = if (expanded) "收起 ${note.versionName}" else "展开 ${note.versionName}",
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (expanded) {
+            MarkdownText(
+                markdown = note.changelog,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun AnnouncementDialog(
+    bulletin: NovexBulletin,
+    loading: Boolean,
     checking: Boolean,
     onCheckUpdate: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
-            contentScrollsItself = true,
+        contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
-            Text(CurrentNovexAnnouncement.title, fontWeight = FontWeight.Bold)
+            Text("公告", fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -630,10 +710,43 @@ private fun AnnouncementDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MarkdownText(
-                    markdown = CurrentNovexAnnouncement.markdown,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (loading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                bulletin.announcements.firstOrNull()?.let { latest ->
+                    Text(
+                        "最新公告",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    AnnouncementItem(announcement = latest, initiallyExpanded = true)
+                }
+                if (bulletin.announcements.size > 1) {
+                    Text(
+                        "往期公告",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    bulletin.announcements.drop(1).forEach { announcement ->
+                        AnnouncementItem(announcement = announcement, initiallyExpanded = false)
+                    }
+                }
+                if (bulletin.releaseNotes.isNotEmpty()) {
+                    Text(
+                        "版本更新",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    bulletin.releaseNotes.forEach { note ->
+                        ReleaseNoteItem(
+                            note = note,
+                            latest = false,
+                            initiallyExpanded = false,
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -647,6 +760,50 @@ private fun AnnouncementDialog(
             }
         },
     )
+}
+
+@Composable
+private fun AnnouncementItem(
+    announcement: NovexAnnouncement,
+    initiallyExpanded: Boolean,
+) {
+    var expanded by rememberSaveable("announcement-${announcement.versionName}-${announcement.title}") {
+        mutableStateOf(initiallyExpanded)
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "${announcement.title} · ${announcement.versionName}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (initiallyExpanded) FontWeight.SemiBold else FontWeight.Medium,
+            )
+            Icon(
+                if (expanded) NovexIcons.KeyboardArrowUp else NovexIcons.KeyboardArrowDown,
+                contentDescription = if (expanded) {
+                    "收起 ${announcement.title}"
+                } else {
+                    "展开 ${announcement.title}"
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (expanded) {
+            MarkdownText(
+                markdown = announcement.markdown,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+            )
+        }
+    }
 }
 
 @Composable
