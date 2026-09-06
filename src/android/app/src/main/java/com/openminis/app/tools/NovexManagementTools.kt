@@ -50,10 +50,14 @@ object NovexManagementTools {
                         "move_module requires {operation, module_id, to_index}; delete_module " +
                         "requires {operation, module_id}. Reference operations add_reference and remove_reference " +
                         "require {operation, module_id, target_kind, target_id, position?}. Create operations: " +
-                        "create_world requires {operation, name, overview?}; create_character requires {operation, " +
-                        "name, profile_json}; create_character_version requires {operation, source_version_id, " +
+                        "create_world requires {operation, name, overview?, modules?}; create_character requires {operation, " +
+                        "name, profile_json, modules?}; create_character_version requires {operation, source_version_id, " +
                         "label, profile_json}; create_game requires {operation, name, summary?, launch_mode?, " +
-                        "player_identity?}; launch_mode is fixed_identity, user_created_identity, co_create_world, or " +
+                        "player_identity?, modules?}. Initial modules are an ordered array of {module_type,name,content_json}, " +
+                        "using the same inspect catalog. Include the source chapters here to create a complete card atomically, " +
+                        "not an empty shell; their ids and owner are assigned by the app. The 20-operation limit does not " +
+                        "count nested modules (up to 1000 per new card). Add cross-card references after creation returns real ids. " +
+                        "launch_mode is fixed_identity, user_created_identity, co_create_world, or " +
                         "free_sandbox (default); inspect also returns their labels. World links link_character_version and unlink_character_version require " +
                         "{operation, world_id, version_id, position?}. Artifact operations attach_artifact and " +
                         "detach_artifact require {operation, artifact_id, subject_kind, subject_id, module_id?, " +

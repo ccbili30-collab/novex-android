@@ -38,8 +38,12 @@ sealed interface NovexManagedChange {
         val target: ModuleReferenceTarget,
     ) : NovexManagedChange
 
-    data class CreateWorld(val name: String, val overview: String) : NovexManagedChange
-    data class CreateCharacter(val name: String, val profileJson: String) : NovexManagedChange
+    data class CreateWorld(
+        val name: String, val overview: String, val modules: List<NovexModuleDraft> = emptyList(),
+    ) : NovexManagedChange
+    data class CreateCharacter(
+        val name: String, val profileJson: String, val modules: List<NovexModuleDraft> = emptyList(),
+    ) : NovexManagedChange
     data class CreateCharacterVersion(
         val sourceVersionId: String,
         val label: String,
@@ -51,6 +55,7 @@ sealed interface NovexManagedChange {
         val summary: String,
         val launchMode: InteractiveFictionLaunchMode,
         val playerIdentity: String,
+        val modules: List<NovexModuleDraft> = emptyList(),
     ) : NovexManagedChange
 
     data class LinkCharacterVersion(
@@ -650,10 +655,12 @@ object NovexManagementChangeCodec {
                 "create_world" -> NovexManagedChange.CreateWorld(
                     value.getString("name").trim(),
                     value.optString("overview"),
+                    value.initialModules(ModuleOwnerType.WORLD),
                 )
                 "create_character" -> NovexManagedChange.CreateCharacter(
                     value.getString("name").trim(),
                     value.jsonText("profile_json"),
+                    value.initialModules(ModuleOwnerType.CHARACTER_VERSION),
                 )
                 "create_character_version" -> NovexManagedChange.CreateCharacterVersion(
                     value.getString("source_version_id"),
@@ -665,6 +672,7 @@ object NovexManagementChangeCodec {
                     summary = value.optString("summary"),
                     launchMode = NovexManagementLaunchModes.decode(value.optString("launch_mode", "free_sandbox")),
                     playerIdentity = value.optString("player_identity"),
+                    modules = value.initialModules(ModuleOwnerType.INTERACTIVE_FICTION),
                 )
                 "link_character_version" -> NovexManagedChange.LinkCharacterVersion(
                     value.getString("world_id"),
@@ -688,6 +696,27 @@ object NovexManagementChangeCodec {
                 }
                 else -> error("未知管理操作：${value.getString("operation")}")
             }.also(::validateChange)
+        }
+    }
+
+    private fun JSONObject.initialModules(ownerType: ModuleOwnerType): List<NovexModuleDraft> {
+        if (!has("modules")) return emptyList()
+        val values = optJSONArray("modules") ?: throw IllegalArgumentException("modules 必须是模块数组")
+        require(values.length() <= 1_000) { "一次初始创建最多一千个模块，更多内容可在创建后继续添加" }
+        val scope = requireNotNull(ContentModuleCatalog.scopeFor(ownerType))
+        val usedTypes = mutableListOf<ContentModuleType>()
+        return List(values.length()) { index ->
+            val value = values.optJSONObject(index) ?: throw IllegalArgumentException("modules[$index] 必须是对象")
+            val type = NovexManagementModuleTypeCatalog.decode(ownerType, value.getString("module_type"))
+            ContentModuleCatalog.requireCanAdd(scope, type, usedTypes)
+            usedTypes += type
+            val name = value.getString("name").trim()
+            require(name.isNotBlank()) { "modules[$index].name 不能为空" }
+            val content = value.jsonText("content_json")
+            ContentModuleDocumentContract.validate(content, type)
+            NovexModuleDraft(
+                id = java.util.UUID.randomUUID().toString(), type = type, name = name, contentJson = content,
+            )
         }
     }
 
@@ -807,10 +836,10 @@ private fun NovexManagedChange.summary(): String = when (this) {
     is NovexManagedChange.DeleteModule -> "删除模块 $moduleId"
     is NovexManagedChange.AddModuleReference -> "增加内容关联"
     is NovexManagedChange.RemoveModuleReference -> "解除内容关联"
-    is NovexManagedChange.CreateWorld -> "创建世界“$name”"
-    is NovexManagedChange.CreateCharacter -> "创建角色“$name”"
+    is NovexManagedChange.CreateWorld -> "创建世界“$name”${modules.creationSummary()}"
+    is NovexManagedChange.CreateCharacter -> "创建角色“$name”${modules.creationSummary()}"
     is NovexManagedChange.CreateCharacterVersion -> "创建角色版本“$label”"
-    is NovexManagedChange.CreateInteractiveFiction -> "创建文游“$name”"
+    is NovexManagedChange.CreateInteractiveFiction -> "创建文游“$name”${modules.creationSummary()}"
     is NovexManagedChange.LinkCharacterVersion -> "关联世界与角色版本"
     is NovexManagedChange.UnlinkCharacterVersion -> "解除世界与角色版本关联"
     is NovexManagedChange.AttachArtifact -> "附加创作成果 $artifactId"
@@ -845,6 +874,9 @@ private fun NovexManagedChange.DetachArtifact.toAttachment() = CreativeArtifactA
     slot = slot,
 )
 
+private fun List<NovexModuleDraft>.creationSummary(): String = if (isEmpty()) "（未提供初始模块）" else
+    "（${size} 个模块，按顺序：${take(10).joinToString("、") { it.name }}${if (size > 10) "等" else ""}）"
+
 private fun NovexManagedChange.toCommand(
     facts: NovexManagementFacts,
     currentModule: com.openminis.app.data.character.ContentModuleEntity? = null,
@@ -862,8 +894,17 @@ private fun NovexManagedChange.toCommand(
     is NovexManagedChange.DeleteModule -> NovexCommand.DeleteModule(moduleId)
     is NovexManagedChange.AddModuleReference -> NovexCommand.AddModuleReference(moduleId, target, position)
     is NovexManagedChange.RemoveModuleReference -> NovexCommand.RemoveModuleReference(moduleId, target)
-    is NovexManagedChange.CreateWorld -> NovexCommand.CreateWorld(name, overview)
-    is NovexManagedChange.CreateCharacter -> NovexCommand.CreateCharacter(name, profileJson)
+    is NovexManagedChange.CreateWorld -> if (modules.isEmpty()) NovexCommand.CreateWorld(name, overview) else
+        NovexCommand.SaveWorldPage(worldId = null, name = name, overview = overview, modules = modules)
+    is NovexManagedChange.CreateCharacter -> if (modules.isEmpty()) NovexCommand.CreateCharacter(name, profileJson) else
+        NovexCommand.SaveCharacterPage(
+            characterId = null, versionId = null, sourceVersionId = null, createVariant = false,
+            rootName = name, label = "本体",
+            profileJson = JSONObject(profileJson).apply {
+                if (optString("name").isBlank()) put("name", name)
+            }.toString(),
+            modules = modules,
+        )
     is NovexManagedChange.CreateCharacterVersion -> NovexCommand.CreateVariant(
         characterId = requireNotNull(facts.versionCharacterIds[sourceVersionId]) { "来源角色版本不存在" },
         label = label,
@@ -875,6 +916,7 @@ private fun NovexManagedChange.toCommand(
         summary = summary,
         launchMode = launchMode,
         playerIdentity = playerIdentity,
+        modules = modules,
     )
     is NovexManagedChange.LinkCharacterVersion -> NovexCommand.LinkCharacterVersion(worldId, versionId, position)
     is NovexManagedChange.UnlinkCharacterVersion -> NovexCommand.UnlinkCharacterVersion(worldId, versionId)

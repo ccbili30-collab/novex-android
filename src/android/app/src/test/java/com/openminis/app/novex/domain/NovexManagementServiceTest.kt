@@ -16,6 +16,56 @@ import org.junit.Test
 
 class NovexManagementServiceTest {
     @Test
+    fun `new cards carry complete ordered modules through the atomic page command`() = runBlocking {
+        val initialModules = org.json.JSONArray((1..25).map { index -> org.json.JSONObject()
+            .put("module_type", "custom").put("name", "第 $index 章")
+            .put("content_json", org.json.JSONObject().put("kind", "article").put("text", "完整规则 $index")) })
+        for ((operation, label) in listOf("create_world" to "世界", "create_character" to "角色", "create_game" to "文游")) {
+            val workspace = FakeManagementWorkspace()
+            var transactionCount = 0
+            val service = NovexManagementService(workspace, FakeArtifactPort(), NovexManagementTransaction { work ->
+                transactionCount++
+                work()
+            })
+            val configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1")
+            val proposal = service.propose(configuration, org.json.JSONArray().put(org.json.JSONObject()
+                .put("operation", operation).put("name", "西幻 $label")
+                .put("profile_json", org.json.JSONObject().put("name", "西幻 $label"))
+                .put("modules", initialModules)).toString(), "创建 $label 卡", "creation-$operation")
+            assertTrue(workspace.applied.isEmpty())
+            service.apply(configuration, proposal, proposal.confirmationPhrase)
+            assertEquals(1, transactionCount)
+            val modules = when (val command = workspace.applied.single()) {
+                is NovexCommand.SaveWorldPage -> command.modules
+                is NovexCommand.SaveCharacterPage -> command.modules
+                is NovexCommand.SaveInteractiveFictionPage -> command.modules
+                else -> error("Creation must use the existing complete-page command, not an empty container: $command")
+            }
+            assertEquals((1..25).map { "第 $it 章" }, modules.map { it.name })
+            assertEquals((1..25).map { "完整规则 $it" }, modules.map {
+                org.json.JSONObject(it.contentJson).getString("text")
+            })
+            assertEquals(25, modules.map { it.id }.distinct().size)
+            assertTrue(proposal.summary.contains("25"))
+        }
+    }
+
+    @Test
+    fun `invalid initial modules reject the proposal before creating a shell`() = runBlocking {
+        val workspace = FakeManagementWorkspace()
+        val service = NovexManagementService(workspace, FakeArtifactPort())
+        val configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1")
+        for (content in listOf("""{"rule":"wrong"}""", """{"kind":"article","text":123}""")) {
+            assertThrows(IllegalArgumentException::class.java) { runBlocking {
+                service.propose(configuration,
+                    """[{"operation":"create_world","name":"世界","modules":[{"module_type":"custom","name":"规则","content_json":$content}]}]""",
+                    "创建世界", "invalid-plan")
+            } }
+        }
+        assertTrue(workspace.applied.isEmpty())
+    }
+
+    @Test
     fun `partial module changes preserve omitted fields through inspection`() = runBlocking {
         val workspace = FakeManagementWorkspace()
         val owner = ModuleOwner.world("w1")
