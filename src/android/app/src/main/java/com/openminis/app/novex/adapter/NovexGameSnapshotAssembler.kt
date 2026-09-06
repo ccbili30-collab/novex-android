@@ -12,6 +12,7 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
         val identityReference = workspace.referencesFrom(root.subject).singleOrNull {
             it.sourceModuleId == null && it.purpose == NovexReferencePurpose.ANSWER_IDENTITY
         }
+        require(identityReference == null || base.answerIdentity == null) { "文游同时指定了独立人格和回答角色，请保留其中一个回答身份后启动" }
         val frozen = linkedMapOf<NovexReferenceTarget, NovexFrozenContext>()
         val reader = NovexReferenceContextReader(workspace)
         val adoptedBackgrounds = backgroundSettings.distinct().map { background ->
@@ -34,12 +35,21 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
                 "snapshot:$projectId", answerIdentity = identity)).filter { it.kind == ContextSourceKind.ANSWER_IDENTITY }
             NovexFrozenContext(reference.target, context, identity.versionId)
         }
+        val players = NovexPlayerIdentityReader(workspace)
+        val companions = actor?.let { players.read(it.target) }.orEmpty()
+        val playerReference = workspace.referencesFrom(root.subject).singleOrNull {
+            it.sourceModuleId == null && it.purpose == NovexReferencePurpose.PLAYER_IDENTITY
+        }
+        val referencedPlayers = playerReference?.let { players.read(it.target).also { identities ->
+            require(identities.isNotEmpty()) { "玩家身份引用没有可采用的正文，请填写身份模块后启动" }
+        } }.orEmpty()
         val content = JSONObject(base.contentJson).apply {
             put("linkedContext", JSONArray().apply { (frozen.values + listOfNotNull(actor)).forEach { put(NovexFrozenContextCodec.encode(it)) } })
-            put("references", JSONArray().apply { (traversal.references + listOfNotNull(identityReference)).forEach { put(JSONObject(NovexCardReferenceCodec.encode(it))) } })
+            put("references", JSONArray().apply { (traversal.references + listOfNotNull(identityReference, playerReference)).forEach { put(JSONObject(NovexCardReferenceCodec.encode(it))) } })
             put("cycleReferenceIds", JSONArray(traversal.cycleReferenceIds.toList()))
         }.toString()
-        return base.copy(contentJson = content, snapshotId = NovexFrozenContextCodec.digest(content),
-            answerIdentity = actor?.actorVersionId?.let { AnswerIdentity.CharacterVersion(it) })
+        return NovexGamePlayerChoices.prepare(base.copy(contentJson = content, snapshotId = NovexFrozenContextCodec.digest(content),
+            answerIdentity = actor?.actorVersionId?.let { AnswerIdentity.CharacterVersion(it) } ?: base.answerIdentity),
+            listOfNotNull(base.playerIdentity) + referencedPlayers + companions)
     }
 }

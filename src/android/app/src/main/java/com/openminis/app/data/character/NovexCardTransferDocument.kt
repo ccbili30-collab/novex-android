@@ -248,6 +248,9 @@ object NovexCardTransferParser {
             "skills" -> ContentModuleType.TALENT_SKILL
             "appearancePersonality" -> ContentModuleType.APPEARANCE_PERSONALITY
             "interests" -> ContentModuleType.INTEREST
+            "roleInstructions" -> ContentModuleType.ROLE_INSTRUCTIONS
+            "rolePlayerIdentity" -> ContentModuleType.ROLE_PLAYER_IDENTITY
+            "gameAnswerIdentity" -> ContentModuleType.GAME_ANSWER_IDENTITY
             "gamePlayerIdentity" -> ContentModuleType.GAME_PLAYER_IDENTITY
             "gameOpening" -> ContentModuleType.GAME_OPENING
             "gameNarrativeRules" -> ContentModuleType.GAME_NARRATIVE_RULES

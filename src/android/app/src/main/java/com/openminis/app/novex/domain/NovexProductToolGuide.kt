@@ -8,7 +8,10 @@ object NovexProductToolGuide {
         appendLine("用户明确要求创建世界卡、角色卡或文游卡时，默认创建应用内卡片，不是只给一段文字。除非用户明确只要文本或格式讨论，不要再次询问‘要文字还是应用内对象’。")
         appendLine("按来源已有的章节、主题与条目组织模块，主动保留顺序、名称、规则、细节和相互引用。不得把整份资料塞进一个模块，也不要把每行拆成一个模块。只有实质影响内容的歧义才询问，不询问是否应该模块化。")
         appendLine("资料尚未通读时不得声称完整理解；关键词命中只是局部查看。无法完成时说明已读范围与未读部分，不用抽样内容冒充全文。")
+        if ("novex_read_context" in availableTools) appendLine("- 当前采用资料通过 novex_read_context（读取当前设定）查看目录、按来源读取或搜索；无需把背景卡另行挂载为管理对象。目录预览和搜索命中只是片段；继续读取沿用返回的下一偏移与修订摘要。只依据本局已采用的资料回答，管理区原卡的新修订不自动替换本局快照。")
         if (availableTools.containsAll(setOf("novex_inspect_content", "novex_propose_content_changes", "novex_apply_content_changes"))) {
+            appendLine("- 角色使用范围：role_instructions（专属扮演指令）只供当前回答角色；companion_player_identity（配套玩家身份）必须采用后才进入对话。管理角色总览默认只返回公开资料；通过 private_modules（私有模块目录）明确指定 module_id（模块编号）后才读取对应私有模块。旧格式专属字段通过 profile_section=role_instructions（专属扮演资料范围）单独读取，不能从总览、背景搜索或摘要旁路取得。")
+            appendLine("- 文游可用 answer_identity（独立回答人格）文章模块保存主持职责，模块名称作为人格名称、text（正文）作为职责指令；不要求先创建世界或角色。具体人物扮演通过 answer_identity（回答身份）卡片引用指定，不能同时声明另一套独立人格。player_identity（玩家身份）引用只采用身份模块，不启动被引用的文游；多来源身份需明确选择，不能擅自覆盖或拼接。")
             appendLine("- 卡片互引用 put_card_reference（设置带用途引用）和 remove_card_reference（移除引用），沿用原生变更提案流程。背景、回答身份、玩家身份、规则、管理目标是不同用途；只改来源卡片，不扩大目标权限。查看 card_references（向外引用）与 card_backlinks（使用来源）中的稳定编号，不按重名连接。已有角色身份必须明确替换；管理文游不启动，修改原卡不改写本局已经采用的快照。")
             appendLine("- 卡片操作：先调用 novex_inspect_content。即使库为空也可不带参数查询合法类型、content_example 内容示例和启动方式。没有专用类型的规则或章节使用 custom 文章模块，不猜类型。结构化条目在 description 中保留完整正文，summary 只作摘要。")
             appendLine("- 每段新对话有三个私有空卡目标及工作空间；空卡不自动成为背景、角色身份或活动文游。创建工具自动优先使用对应空卡，已经填过的卡不会被新建请求覆盖。新建成品时，在 create_world、create_character 或 create_game 的 modules 数组中按顺序提供各模块的 module_type、name、content_json，让对象与正文一起原子保存。不得只建一个空容器后声称完成；跨卡引用等创建返回真实编号后再添加并回读核对。")

@@ -155,9 +155,14 @@ class WorkspaceNovexContextLoader(
                     alwaysInclude = true,
                     position = -1,
                 )
+                val modules = workspace.modules(ModuleOwner.characterVersion(versionId)).modules
                 if (identity) {
                     val raw = runCatching { JSONObject(version.profileJson) }.getOrDefault(JSONObject())
-                    val instructions = listOf("personality", "scenario", "exampleDialogue", "systemPrompt", "postHistoryInstructions", "contentBoundary")
+                    val hasDedicatedInstructions = modules.any {
+                        it.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS &&
+                            ContentModuleDocumentCodec.decode(it.type, it.contentJson).toPlainText().isNotBlank()
+                    }
+                    val instructions = if (hasDedicatedInstructions) "" else listOf("personality", "scenario", "exampleDialogue", "systemPrompt", "postHistoryInstructions", "contentBoundary")
                         .mapNotNull { key -> raw.optString(key).takeIf(String::isNotBlank) }
                         .joinToString("\n")
                     candidates += NovexContextCandidate(
@@ -168,7 +173,6 @@ class WorkspaceNovexContextLoader(
                         alwaysInclude = true, position = Int.MIN_VALUE,
                     )
                 }
-                val modules = workspace.modules(ModuleOwner.characterVersion(versionId)).modules
                 candidates += moduleCandidates(
                     ownerLabel = "角色 · $rootName · ${version.label}",
                     modules = modules,
@@ -212,7 +216,7 @@ class WorkspaceNovexContextLoader(
         modules: List<ContentModuleEntity>,
         kind: ContextSourceKind = ContextSourceKind.BACKGROUND_MODULE,
     ): List<NovexContextCandidate> = modules
-        .filterNot { it.type == com.openminis.app.data.character.ContentModuleType.GAME_PLAYER_IDENTITY }
+        .filter { com.openminis.app.novex.domain.NovexModuleVisibility.allowsContext(it.type, kind == ContextSourceKind.ANSWER_IDENTITY) }
         .sortedBy(ContentModuleEntity::position).map { module ->
         val document = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
         val references = workspace.module(module.id)?.references.orEmpty()
@@ -232,7 +236,8 @@ class WorkspaceNovexContextLoader(
                     ModuleReferenceTargetType.CHARACTER_VERSION -> characterCoreId(reference.targetId)
                 }
             },
-            position = module.position,
+            alwaysInclude = module.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS,
+            position = if (module.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS) Int.MIN_VALUE + 2 else module.position,
         )
     }
 
@@ -261,6 +266,7 @@ class WorkspaceNovexContextLoader(
                 val value = modules.optJSONObject(index) ?: return@repeat
                 val moduleId = value.optString("id").ifBlank { index.toString() }
                 val typeName = value.optString("type")
+                if (typeName == "GAME_ANSWER_IDENTITY") return@repeat
                 if (typeName == "GAME_PLAYER_IDENTITY" && !includeLegacyPlayer) return@repeat
                 val type = runCatching {
                     com.openminis.app.data.character.ContentModuleType.valueOf(typeName)

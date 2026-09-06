@@ -13,6 +13,16 @@ import org.junit.Test
 
 class NovexCardPackageTest {
     @Test
+    fun exportRejectsAnArchiveThatExceedsTheImportFileLimit() {
+        val preview = NovexCardPackagePreview(NovexCardKind.GAME, "dependencies", "关联卡包", "{}",
+            (1..126).map { NovexCardMedia("media/$it.png", "image/png", pngBytes()) })
+        assertEquals(126, NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(preview)).media.size)
+        assertIllegalArgument {
+            NovexCardPackageCodec.encode(preview.copy(media = preview.media + NovexCardMedia("media/127.png", "image/png", pngBytes())))
+        }
+    }
+
+    @Test
     fun interactiveFictionUsesItsStableNativePackageIdentity() {
         assertEquals("novex.game.package", NovexCardKind.GAME.packageType)
         assertEquals("game.json", NovexCardKind.GAME.entryName)

@@ -96,9 +96,11 @@ object NovexCardPackageCodec {
     fun encode(preview: NovexCardPackagePreview): ByteArray {
         require(preview.packageId.isNotBlank()) { "卡包编号不能为空" }
         require(preview.displayName.isNotBlank()) { "卡包名称不能为空" }
+        require(preview.media.size <= MAX_ENTRY_COUNT - 2) { "关联卡包文件数量过多，请缩小依赖或图片范围后导出" }
         JSONObject(preview.documentJson)
         val normalizedMedia = preview.media.map { media ->
             val path = requireSafePath(media.path)
+            require(path != "manifest.json" && path != preview.kind.entryName) { "媒体路径与卡包主文件冲突" }
             requireSupportedImageMimeType(media.mimeType)
             requireImageHeader(media.bytes, media.mimeType, path)
             media.copy(path = path, sha256 = media.bytes.sha256())
@@ -124,10 +126,15 @@ object NovexCardPackageCodec {
                 }
             })
         }
+        val manifestBytes = manifest.toString(2).toByteArray(Charsets.UTF_8)
+        val documentBytes = preview.documentJson.toByteArray(Charsets.UTF_8)
+        require(manifestBytes.size.toLong() + documentBytes.size + normalizedMedia.sumOf { it.bytes.size.toLong() } <= MAX_TOTAL_BYTES) {
+            "关联卡包解压后超过导入容量，请缩小依赖或图片范围后导出"
+        }
         return ByteArrayOutputStream().use { output ->
             ZipOutputStream(output).use { zip ->
-                zip.putStableEntry("manifest.json", manifest.toString(2).toByteArray())
-                zip.putStableEntry(preview.kind.entryName, preview.documentJson.toByteArray())
+                zip.putStableEntry("manifest.json", manifestBytes)
+                zip.putStableEntry(preview.kind.entryName, documentBytes)
                 normalizedMedia.sortedBy(NovexCardMedia::path).forEach { media ->
                     zip.putStableEntry(media.path, media.bytes)
                 }

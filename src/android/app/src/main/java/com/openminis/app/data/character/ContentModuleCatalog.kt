@@ -29,6 +29,8 @@ object ContentModuleCatalog {
     )
 
     private val characterDefinitions = listOf(
+        ContentModuleDefinition(ContentModuleType.ROLE_INSTRUCTIONS, "专属扮演指令"),
+        ContentModuleDefinition(ContentModuleType.ROLE_PLAYER_IDENTITY, "配套玩家身份"),
         ContentModuleDefinition(ContentModuleType.QUOTES, "多形态语录"),
         ContentModuleDefinition(ContentModuleType.WORLD_EXPERIENCE, "世界经历"),
         ContentModuleDefinition(ContentModuleType.ATTRIBUTE_PANEL, "属性面板"),
@@ -40,6 +42,7 @@ object ContentModuleCatalog {
     )
 
     private val interactiveFictionDefinitions = listOf(
+        ContentModuleDefinition(ContentModuleType.GAME_ANSWER_IDENTITY, "独立回答人格"),
         ContentModuleDefinition(ContentModuleType.GAME_PLAYER_IDENTITY, "玩家身份"),
         ContentModuleDefinition(ContentModuleType.GAME_OPENING, "开局说明"),
         ContentModuleDefinition(ContentModuleType.GAME_NARRATIVE_RULES, "叙事规则"),

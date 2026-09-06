@@ -216,6 +216,9 @@ object ContentModuleDocumentCodec {
                 .orEmpty(),
         )
 
+        ContentModuleType.ROLE_INSTRUCTIONS,
+        ContentModuleType.ROLE_PLAYER_IDENTITY,
+        ContentModuleType.GAME_ANSWER_IDENTITY,
         ContentModuleType.GAME_PLAYER_IDENTITY,
         ContentModuleType.GAME_OPENING,
         ContentModuleType.GAME_NARRATIVE_RULES,

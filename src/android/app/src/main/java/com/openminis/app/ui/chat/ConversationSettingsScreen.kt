@@ -44,6 +44,7 @@ import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.repository.SkillRepository
 import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
+import com.openminis.app.novex.domain.NovexGamePlayerChoices
 import com.openminis.app.novex.domain.AnswerIdentity
 import com.openminis.app.novex.domain.ConversationPlayerIdentity
 import com.openminis.app.novex.domain.NovexPersonaPresets
@@ -126,6 +127,7 @@ fun ConversationSettingsScreen(
     var preparingGame by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<ConversationPicker?>(null) }
     var pendingGame by remember { mutableStateOf<ActiveInteractiveFictionSnapshot?>(null) }
+    var pendingRole by remember { mutableStateOf<Pair<AnswerIdentity.CharacterVersion, List<ConversationPlayerIdentity>>?>(null) }
     var expandedPlaythrough by remember { mutableStateOf<Int?>(null) }
     var managedAction by remember { mutableStateOf<NovexContentAddress?>(null) }
     var addingControl by remember { mutableStateOf(false) }
@@ -589,7 +591,32 @@ fun ConversationSettingsScreen(
     picker?.let { active ->
         NovexSelectionSheet(
             title = active.pickerTitle(),
-            actions = pickerActions(active, options, draft, onGameSelected = { projectId ->
+            actions = pickerActions(active, options, draft, onRoleSelected = { versionId ->
+                if (!preparingGame) {
+                    preparingGame = true
+                    picker = null
+                    val expected = draft.configuration
+                    scope.launch {
+                        try {
+                            val identity = AnswerIdentity.CharacterVersion(versionId)
+                            val companions = com.openminis.app.novex.adapter.NovexPlayerIdentityReader(workspace).read(
+                                com.openminis.app.novex.domain.NovexReferenceTarget(NovexContentAddress.characterVersion(versionId)))
+                            require(draft.configuration == expected) { "准备角色期间对话设定已改变，请重新选择角色" }
+                            val current = expected.playerIdentity
+                            if (companions.size > 1 || (companions.isNotEmpty() && current != null && companions.singleOrNull() != current)) {
+                                pendingRole = identity to companions
+                            } else {
+                                draft = draft.setAnswerIdentity(identity)
+                                if (current == null && companions.size == 1) draft = draft.setPlayerIdentity(companions.single())
+                            }
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            error = "尚未切换角色：${failure.message ?: "读取配套身份失败"}"
+                        } finally { preparingGame = false }
+                    }
+                }
+            }, onGameSelected = { projectId ->
                 if (!preparingGame) {
                     preparingGame = true
                     picker = null
@@ -599,7 +626,8 @@ fun ConversationSettingsScreen(
                             val game = NovexGameSnapshotAssembler(workspace).create(projectId, expected.backgroundSettings)
                             require(draft.configuration == expected) { "准备文游期间对话设定已改变，请重新选择文游" }
                             val currentPlayer = draft.configuration.playerIdentity
-                            if (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer) {
+                            if (NovexGamePlayerChoices.needsSelection(game) ||
+                                (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer)) {
                                 pendingGame = game
                             } else draft = draft.activateGame(game)
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -615,15 +643,41 @@ fun ConversationSettingsScreen(
     }
     pendingGame?.let { game ->
         NovexSelectionSheet(
-            title = "文游要求不同的玩家身份：${game.playerIdentity?.label.orEmpty()}",
-            actions = listOf(
-                NovexSelectionAction("使用文游身份并启动") {
-                    draft = draft.activateGame(game, replacePlayerIdentity = true)
-                    pendingGame = null
-                },
-                NovexSelectionAction("取消，保留当前身份") { pendingGame = null },
-            ),
+            title = "选择本局玩家身份",
+            actions = buildList {
+                NovexGamePlayerChoices.read(game).forEach { identity ->
+                    add(NovexSelectionAction(identity.label, description = identity.description) {
+                        draft = draft.activateGame(NovexGamePlayerChoices.select(game, identity.id), replacePlayerIdentity = true)
+                        pendingGame = null
+                    })
+                }
+                draft.configuration.playerIdentity?.let { current ->
+                    add(NovexSelectionAction("保留当前身份 · ${current.label}", description = current.description) {
+                        draft = draft.activateGame(NovexGamePlayerChoices.useCurrent(game, current), replacePlayerIdentity = true)
+                        pendingGame = null
+                    })
+                }
+                add(NovexSelectionAction("取消启动") { pendingGame = null })
+            },
             onDismissRequest = { pendingGame = null },
+        )
+    }
+    pendingRole?.let { (role, companions) ->
+        NovexSelectionSheet(
+            title = "选择与该角色扮演时的玩家身份",
+            actions = companions.map { identity ->
+                NovexSelectionAction(identity.label, description = identity.description) {
+                    draft = draft.setAnswerIdentity(role).setPlayerIdentity(identity)
+                    pendingRole = null
+                }
+            } + listOf(
+                NovexSelectionAction(if (draft.configuration.playerIdentity == null) "不采用配套身份" else "保留当前玩家身份") {
+                    draft = draft.setAnswerIdentity(role)
+                    pendingRole = null
+                },
+                NovexSelectionAction("取消切换角色") { pendingRole = null },
+            ),
+            onDismissRequest = { pendingRole = null },
         )
     }
     managedAction?.let { address ->
@@ -657,6 +711,7 @@ private fun pickerActions(
     picker: ConversationPicker,
     options: List<ConversationContentOption>,
     draft: NovexConversationEditorDraftState,
+    onRoleSelected: (String) -> Unit,
     onGameSelected: (String) -> Unit,
     update: (NovexConversationEditorDraftState) -> Unit,
 ): List<NovexSelectionAction> = when (picker) {
@@ -674,7 +729,7 @@ private fun pickerActions(
         },
     ) + options.filter { it.address.kind == NovexContentKind.CHARACTER_VERSION }.map { option ->
         NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
-            update(draft.setAnswerIdentity(AnswerIdentity.CharacterVersion(option.address.id)))
+            onRoleSelected(option.address.id)
         }
     }
     ConversationPicker.BACKGROUND -> options

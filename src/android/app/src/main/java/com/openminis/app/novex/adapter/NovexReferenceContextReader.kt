@@ -49,6 +49,6 @@ internal class NovexReferenceContextReader(private val workspace: NovexWorkspace
             (reference.sourceModuleId == null || workspace.module(reference.sourceModuleId)?.module?.let { backgroundModule(it.type) } == true)
     }
 
-    private fun backgroundModule(type: ContentModuleType) = type !in setOf(
-        ContentModuleType.GAME_PLAYER_IDENTITY, ContentModuleType.GAME_OPENING, ContentModuleType.GAME_QUICK_ACTIONS)
+    private fun backgroundModule(type: ContentModuleType) = NovexModuleVisibility.allowsContext(type, acting = false) &&
+        type !in setOf(ContentModuleType.GAME_OPENING, ContentModuleType.GAME_QUICK_ACTIONS)
 }

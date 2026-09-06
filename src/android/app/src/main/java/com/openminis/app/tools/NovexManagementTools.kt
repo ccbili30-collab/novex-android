@@ -11,11 +11,28 @@ import com.openminis.app.data.model.AgentToolParam
  * there is intentionally no boolean or confirmation-text tool argument.
  */
 object NovexManagementTools {
+    const val READ_CONTEXT = "novex_read_context"
     const val INSPECT = "novex_inspect_content"
     const val PROPOSE = "novex_propose_content_changes"
     const val APPLY = "novex_apply_content_changes"
 
     fun definitions(): List<AgentToolDefinition> = listOf(
+        AgentToolDefinition(
+            name = READ_CONTEXT,
+            description = "查看当前对话实际采用的身份、背景与活动文游资料，或按来源编号读取、搜索。" +
+                "只返回当前用途允许的内容；管理挂载不会自动进入此目录。私有扮演指令仅供当前回答角色使用，未采用的配套玩家身份不可读取。" +
+                "活动文游采用已固定的资料，不能用管理区中的新版本替换本局内容。目录预览与搜索片段不代表通读全文。",
+            parameters = mapOf(
+                "operation" to AgentToolParam("string", "操作：inspect（查看目录，默认）、read（读取来源）、search（搜索当前可用资料）。",
+                    enumValues = listOf("inspect", "read", "search")),
+                "source_id" to AgentToolParam("string", "读取时必填，使用目录返回的来源编号；不能猜测或使用管理对象编号代替。"),
+                "query" to AgentToolParam("string", "搜索时必填，一到三百个字符。"),
+                "offset" to AgentToolParam("integer", "使用上次返回的 next_offset（下一偏移），默认零。目录与搜索按条数，读取按字符偏移。"),
+                "limit" to AgentToolParam("integer", "目录每页最多一百项，搜索最多五十项，读取最多两万四千字符；省略时使用默认大小。"),
+                "revision" to AgentToolParam("string", "读取后续片段时必须传上次返回的修订摘要；版本变化会拒绝继续拼接。"),
+            ),
+            propertyOrdering = listOf("operation", "source_id", "query", "offset", "limit", "revision"),
+        ),
         AgentToolDefinition(
             name = INSPECT,
             description = "Read Novex worlds, character versions, games and modules mounted in the current " +
@@ -31,8 +48,9 @@ object NovexManagementTools {
                 ),
                 "subject_id" to AgentToolParam("string", "Mounted subject id; required with subject_kind."),
                 "module_id" to AgentToolParam("string", "Optional module id owned by the selected mounted subject."),
+                "profile_section" to AgentToolParam("string", "角色总览默认只读 public（公开资料）；明确管理旧格式专属扮演资料时选择 role_instructions（专属扮演指令）。私有模块通过 private_modules（私有模块目录）的编号单独读取。", enumValues = listOf("public", "role_instructions")),
             ),
-            propertyOrdering = listOf("subject_kind", "subject_id", "module_id"),
+            propertyOrdering = listOf("subject_kind", "subject_id", "module_id", "profile_section"),
         ),
         AgentToolDefinition(
             name = PROPOSE,

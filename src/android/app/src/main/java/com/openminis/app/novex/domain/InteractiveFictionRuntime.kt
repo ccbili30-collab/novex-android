@@ -38,6 +38,15 @@ object InteractiveFictionRuntimeSnapshotFactory {
             snapshotId = content.sha256(),
             title = source.project.name,
             contentJson = content,
+            answerIdentity = source.modules.filter { it.type == ContentModuleType.GAME_ANSWER_IDENTITY }
+                .mapNotNull { module -> ContentModuleDocumentCodec.decode(module.type, module.contentJson).toPlainText()
+                    .trim().takeIf(String::isNotBlank)?.let { instructions ->
+                        AnswerIdentity.PersonaPreset("game-persona:${source.project.id}:${module.id}", module.name.ifBlank { "文游主持人" }, instructions)
+                    }
+                }.let { identities ->
+                    require(identities.size <= 1) { "文游只能声明一个独立回答人格" }
+                    identities.singleOrNull()
+                },
             playerIdentity = (listOf(source.project.playerIdentity) + source.modules
                 .filter { it.type == ContentModuleType.GAME_PLAYER_IDENTITY }
                 .sortedBy(ContentModuleEntity::position)

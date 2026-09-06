@@ -74,6 +74,9 @@ internal fun ContentModuleType.novexContentLayout(): NovexContentModuleLayout = 
     ContentModuleType.GAME_CHARACTER_STATUS,
     ContentModuleType.GAME_QUICK_ACTIONS,
     -> NovexContentModuleLayout.GAME_COLLECTION
+    ContentModuleType.ROLE_INSTRUCTIONS,
+    ContentModuleType.ROLE_PLAYER_IDENTITY,
+    ContentModuleType.GAME_ANSWER_IDENTITY,
     ContentModuleType.GAME_PLAYER_IDENTITY,
     ContentModuleType.GAME_OPENING,
     ContentModuleType.GAME_NARRATIVE_RULES,

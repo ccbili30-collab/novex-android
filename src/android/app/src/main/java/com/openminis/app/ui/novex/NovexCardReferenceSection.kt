@@ -81,7 +81,9 @@ internal fun NovexCardReferenceSection(
                 NovexContentKind.INTERACTIVE_FICTION -> ModuleOwner.interactiveFiction(address.id)
                 NovexContentKind.CREATIVE_ARTIFACT -> error("文件不属于卡片引用")
             }
-            val modules = workspace.modules(owner).modules
+            val modules = workspace.modules(owner).modules.filter {
+                purpose != NovexReferencePurpose.PLAYER_IDENTITY || NovexModuleVisibility.isPlayerIdentity(it.type)
+            }
             sheet = "选择引用范围 · $title" to (listOf(NovexSelectionAction("整张卡片") {
                 save(NovexReferenceTarget(address), purpose, title, replacing)
             }) + modules.map { module -> NovexSelectionAction(module.name) {
@@ -101,7 +103,7 @@ internal fun NovexCardReferenceSection(
         perform {
             val choices = buildList {
                 if (purpose != NovexReferencePurpose.ANSWER_IDENTITY) {
-                    workspace.worlds().forEach { add(NovexContentAddress.world(it.world.id) to "世界 · ${it.world.name}") }
+                    if (purpose != NovexReferencePurpose.PLAYER_IDENTITY) workspace.worlds().forEach { add(NovexContentAddress.world(it.world.id) to "世界 · ${it.world.name}") }
                     workspace.interactiveFictions().forEach { add(NovexContentAddress.interactiveFiction(it.project.id) to "文游 · ${it.project.name}") }
                 }
                 workspace.characters().forEach { root -> root.character.allVersions.forEach { version ->
@@ -131,7 +133,6 @@ internal fun NovexCardReferenceSection(
         }
         NovexTextActionRow("添加带用途的引用", onClick = {
             sheet = "这条引用用来做什么" to NovexReferencePurpose.entries
-                .filter { it != NovexReferencePurpose.PLAYER_IDENTITY }
                 .map { purpose -> NovexSelectionAction(purpose.label) { chooseTarget(purpose, null) } }
         })
         if (incoming.isEmpty()) NovexSummaryRow("谁在使用它", "尚无其他卡片引用")

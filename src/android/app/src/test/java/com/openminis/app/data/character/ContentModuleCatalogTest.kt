@@ -22,6 +22,8 @@ class ContentModuleCatalogTest {
         )
         assertEquals(
             listOf(
+                ContentModuleType.ROLE_INSTRUCTIONS,
+                ContentModuleType.ROLE_PLAYER_IDENTITY,
                 ContentModuleType.QUOTES,
                 ContentModuleType.WORLD_EXPERIENCE,
                 ContentModuleType.ATTRIBUTE_PANEL,
@@ -37,6 +39,7 @@ class ContentModuleCatalogTest {
         assertEquals("世界经历", ContentModuleCatalog.definition(ContentModuleType.WORLD_EXPERIENCE).displayName)
         assertEquals(
             listOf(
+                ContentModuleType.GAME_ANSWER_IDENTITY,
                 ContentModuleType.GAME_PLAYER_IDENTITY,
                 ContentModuleType.GAME_OPENING,
                 ContentModuleType.GAME_NARRATIVE_RULES,

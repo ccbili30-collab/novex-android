@@ -240,6 +240,7 @@ class NovexConversationConfiguration private constructor(
 
         is NovexConversationCommand.ActivateInteractiveFiction -> {
             require(command.playthroughId.isNotBlank()) { "本局编号不能为空" }
+            require(!NovexGamePlayerChoices.needsSelection(command.snapshot)) { "存在多个玩家身份来源，请明确选择后启动，不能自动拼接或覆盖" }
             val keepsCurrentPlaythrough = snapshot.activeInteractiveFiction == command.snapshot
             val requestedPlayer = command.snapshot.playerIdentity
             require(keepsCurrentPlaythrough || requestedPlayer == null || snapshot.playerIdentity == null ||

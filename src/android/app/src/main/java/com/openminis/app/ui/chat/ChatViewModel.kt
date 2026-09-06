@@ -3986,11 +3986,26 @@ class ChatViewModel(
                         rolePresentationEnabled = draftCharacter != null,
                     )
                 }
-                val startingConfiguration = legacyNovexConfiguration(
+                var startingConfiguration = legacyNovexConfiguration(
                     conversationId = sessionId,
                     worldId = _immersiveProfile.value.worldId,
                     characterVersionId = _immersiveProfile.value.characterVersionId,
                 )
+                if (initialInteractiveFictionId == null) {
+                    val role = startingConfiguration.answerIdentity as? com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion
+                    val workspace = (context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace
+                    if (role != null && workspace?.characterForVersion(role.versionId) != null) {
+                        val companions = com.openminis.app.novex.adapter.NovexPlayerIdentityReader(workspace).read(
+                            com.openminis.app.novex.domain.NovexReferenceTarget(
+                                com.openminis.app.novex.domain.NovexContentAddress.characterVersion(role.versionId)))
+                        val current = startingConfiguration.playerIdentity
+                        if (companions.size > 1 || (companions.isNotEmpty() && current != null && companions.singleOrNull() != current)) {
+                            _error.value = "角色提供了不同的配套玩家身份，已保留当前选择。请在对话编辑中选择回答角色，再明确采用哪个玩家身份。"
+                        } else if (current == null && companions.size == 1) {
+                            startingConfiguration = startingConfiguration.copy(playerIdentity = companions.single())
+                        }
+                    }
+                }
                 val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
                     val application = context.applicationContext as? com.openminis.app.MinisApp
                     application?.novexWorkspace?.let { workspace ->
@@ -4002,8 +4017,9 @@ class ChatViewModel(
                             _error.value = "文游尚未启动：${failure.message ?: "读取设定失败"}"
                             return@let startingConfiguration
                         }
-                        if (game.playerIdentity != null && startingConfiguration.playerIdentity != null &&
-                            game.playerIdentity != startingConfiguration.playerIdentity) {
+                        if (com.openminis.app.novex.domain.NovexGamePlayerChoices.needsSelection(game) ||
+                            (game.playerIdentity != null && startingConfiguration.playerIdentity != null &&
+                            game.playerIdentity != startingConfiguration.playerIdentity)) {
                             _error.value = "文游的玩家身份与当前选择不同，尚未启动。请在对话编辑中选择文游并确认使用哪个身份。"
                             startingConfiguration
                         } else NovexConversationConfiguration.open(startingConfiguration).apply(
@@ -8961,6 +8977,7 @@ class ChatViewModel(
             "register_controls" -> executeRegisterControlsTool(argsJson, assistantId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
+            NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
@@ -8991,12 +9008,35 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun executeNovexReadContextTool(argsJson: String): ToolExecutionResult = try {
+        val args = JSONObject(argsJson.ifBlank { "{}" })
+        val workspace = requireNotNull((context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace) { "内容工作空间尚未就绪" }
+        val profile = _immersiveProfile.value
+        val reader = com.openminis.app.novex.adapter.NovexContextReadService(workspace,
+            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+        val configuration = currentNovexConfiguration()
+        val offset = args.optInt("offset", 0)
+        val result = when (args.optString("operation", "inspect")) {
+            "inspect" -> reader.inspect(configuration, offset, args.optInt("limit", 80))
+            "search" -> reader.search(configuration, args.getString("query"), offset, args.optInt("limit", 20))
+            "read" -> reader.read(configuration, args.getString("source_id"), offset, args.optInt("limit", 12_000),
+                args.optString("revision").ifBlank { null })
+            else -> error("操作无效，请选择查看目录、读取或搜索")
+        }
+        ToolExecutionResult(result.toString(2), true, toolTitle = "读取当前采用资料")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        ToolExecutionResult("无法读取当前资料：${failure.message ?: "请求无效"}", false, toolTitle = "读取当前采用资料")
+    }
+
     private suspend fun executeNovexInspectTool(argsJson: String): ToolExecutionResult = runCatching {
         val args = JSONObject(argsJson.ifBlank { "{}" })
         val inspection = novexManagementService().inspect(
             configuration = currentNovexConfiguration(),
             subject = args.managementSubjectOrNull(),
             moduleId = args.optString("module_id").trim().ifBlank { null },
+            profileSection = args.optString("profile_section").trim().ifBlank { "public" },
         )
         ToolExecutionResult(
             output = inspection.toToolJson().toString(2),
@@ -10471,7 +10511,14 @@ class ChatViewModel(
 
         // The selected identity is assembled by prepareNovexRequestContext. The editable
         // conversation instructions survive identity changes and never mutate shared cards.
-        val identitySection = _conversationPrompt.value ?: inheritedEditablePrompt()
+        val legacyProfile = _immersiveProfile.value
+        val identitySection = com.openminis.app.novex.domain.NovexLegacyPromptProjection.project(
+            prompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
+            configuration = currentNovexConfiguration(),
+            legacyRoleId = legacyProfile.characterVersionId ?: legacyProfile.character?.id,
+            legacyPlayerId = legacyProfile.persona?.id,
+            legacyWorldId = legacyProfile.worldId,
+        )
         // Keep memory prompt injection and the Novex memory tool set behind the
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
@@ -12973,6 +13020,7 @@ class ChatViewModel(
         "register_controls" -> "更新快捷操作"
         "end_interactive_fiction" -> "结束文游"
         "update_playthrough_state" -> "更新本局状态"
+        "novex_read_context" -> "读取当前采用资料"
         "novex_inspect_content" -> "查看挂载内容"
         "novex_propose_content_changes" -> "提出内容变更"
         "novex_apply_content_changes" -> "执行内容变更"

@@ -239,6 +239,7 @@ data class NovexManagementInspection(
     val cardReferences: List<NovexCardReference> = emptyList(),
     val cardBacklinks: List<NovexCardReference> = emptyList(),
     val referenceStatuses: Map<String, NovexReferenceTargetStatus> = emptyMap(),
+    val privateModuleIds: Map<String, String> = emptyMap(),
 )
 
 data class NovexManagementApplyResult(
@@ -269,6 +270,9 @@ object NovexManagementModuleTypeCatalog {
         ContentModuleType.TALENT_SKILL to "talent_skill",
         ContentModuleType.APPEARANCE_PERSONALITY to "appearance_personality",
         ContentModuleType.INTEREST to "interest",
+        ContentModuleType.ROLE_INSTRUCTIONS to "role_instructions",
+        ContentModuleType.ROLE_PLAYER_IDENTITY to "companion_player_identity",
+        ContentModuleType.GAME_ANSWER_IDENTITY to "answer_identity",
         ContentModuleType.GAME_PLAYER_IDENTITY to "player_identity",
         ContentModuleType.GAME_OPENING to "opening",
         ContentModuleType.GAME_NARRATIVE_RULES to "narrative_rules",
@@ -339,6 +343,12 @@ object NovexManagementLaunchModes {
 
 /** Provider-neutral inspection payload, including the legal values needed for the next call. */
 fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
+    put("private_modules", JSONArray(privateModuleIds.map { (id, type) ->
+        JSONObject().put("id", id).put("type", type).put("read_scope", "请明确指定模块编号后读取")
+    }))
+    if (selectedSubject?.kind == NovexContentKind.CHARACTER_VERSION) {
+        put("profile_sections", JSONArray(listOf("public", "role_instructions")))
+    }
     put("reference_purposes", JSONArray(NovexReferencePurpose.entries.map {
         JSONObject().put("value", it.wireName).put("label", it.label)
     }))
@@ -415,7 +425,12 @@ class NovexManagementService(
         configuration: NovexConversationConfigurationSnapshot,
         subject: NovexContentAddress?,
         moduleId: String?,
+        profileSection: String = "public",
     ): NovexManagementInspection {
+        require(profileSection in setOf("public", "role_instructions")) { "资料范围只能是 public（公开资料）或 role_instructions（专属扮演指令）" }
+        require(profileSection == "public" || (subject?.kind == NovexContentKind.CHARACTER_VERSION && moduleId == null)) {
+            "读取专属扮演资料时，请指定角色版本，且不要同时指定模块"
+        }
         if (subject != null) require(NovexManagementPolicy.canRead(configuration, subject)) {
             "该内容没有挂载到当前对话的管理区"
         }
@@ -428,17 +443,24 @@ class NovexManagementService(
             if (subject != null) require(owner == subject) { "模块不属于指定管理对象" }
             value
         }
-        val modules = when {
+        val availableModules = when {
             selectedModule != null -> listOf(selectedModule.module)
             subject != null && subject.kind != NovexContentKind.CREATIVE_ARTIFACT ->
                 workspace.modules(subject.toModuleOwner()).modules
             else -> emptyList()
         }
+        val hiddenModules = availableModules.filter {
+            selectedModule == null && it.ownerType == ModuleOwnerType.CHARACTER_VERSION && NovexModuleVisibility.isPrivate(it.type)
+        }
+        val hiddenIds = hiddenModules.map { it.id }.toSet()
+        val modules = if (profileSection == "public") availableModules.filter { it.id !in hiddenIds } else emptyList()
         val referenceOwner = subject ?: selectedModule?.module?.owner?.toAddress()
         val references = referenceOwner?.let { workspace.referencesFrom(it) }.orEmpty()
             .filter { moduleId == null || it.sourceModuleId == moduleId }
+            .filter { it.sourceModuleId !in hiddenIds && profileSection == "public" }
         val backlinks = referenceOwner?.let { workspace.referencesTo(it) }.orEmpty()
             .filter { moduleId == null || it.target.moduleId == moduleId }
+            .filter { it.target.moduleId !in hiddenIds && profileSection == "public" }
         return NovexManagementInspection(
             subjects = configuration.managedSubjects.map { managed ->
                 NovexManagedSubjectInspection(
@@ -448,13 +470,14 @@ class NovexManagementService(
                 )
             },
             selectedSubject = subject,
-            selectedSubjectJson = subject?.let { subjectContentJson(it) },
+            selectedSubjectJson = subject?.let { subjectContentJson(it, profileSection) },
             modules = modules,
             selectedModule = selectedModule,
             draftTargets = workspace.emptyConversationDrafts(configuration.conversationId),
             cardReferences = references,
             cardBacklinks = backlinks,
             referenceStatuses = references.associate { it.id to workspace.referenceStatus(it.target) },
+            privateModuleIds = hiddenModules.associate { it.id to NovexManagementModuleTypeCatalog.wireName(it.ownerType, it.type) },
         )
     }
 
@@ -630,7 +653,7 @@ class NovexManagementService(
         NovexContentKind.CREATIVE_ARTIFACT -> artifacts.describe(subject.id)?.title ?: "已删除创作成果"
     }
 
-    private suspend fun subjectContentJson(subject: NovexContentAddress): String = when (subject.kind) {
+    private suspend fun subjectContentJson(subject: NovexContentAddress, profileSection: String): String = when (subject.kind) {
         NovexContentKind.WORLD -> {
             val world = requireNotNull(workspace.world(subject.id)) { "世界不存在：${subject.id}" }.world
             JSONObject().apply {
@@ -651,7 +674,12 @@ class NovexManagementService(
                 put("character_name", card.character.character.name)
                 put("kind", version.kind.name)
                 put("label", version.label)
-                put("profile", runCatching { JSONObject(version.profileJson) }.getOrElse { version.profileJson })
+                val rawProfile = runCatching { JSONObject(version.profileJson) }.getOrElse { JSONObject() }
+                val fields = if (profileSection == "role_instructions") listOf(
+                    "personality", "scenario", "greeting", "exampleDialogue", "systemPrompt", "postHistoryInstructions", "contentBoundary",
+                ) else listOf("profileSchema", "name", "tags", "gender", "age", "race", "occupation", "summary", "customAttributes", "relationships")
+                put("profile", JSONObject().apply { fields.filter(rawProfile::has).forEach { put(it, rawProfile.get(it)) } })
+                put("profile_section", profileSection)
             }.toString()
         }
         NovexContentKind.INTERACTIVE_FICTION -> {

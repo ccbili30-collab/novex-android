@@ -128,6 +128,9 @@ internal class ContentModuleDraftList private constructor(
             ContentModuleType.GAME_CHARACTER_STATUS,
             ContentModuleType.GAME_QUICK_ACTIONS,
             -> ContentModuleDocument.Collection()
+            ContentModuleType.ROLE_INSTRUCTIONS,
+            ContentModuleType.ROLE_PLAYER_IDENTITY,
+            ContentModuleType.GAME_ANSWER_IDENTITY,
             ContentModuleType.GAME_PLAYER_IDENTITY,
             ContentModuleType.GAME_OPENING,
             ContentModuleType.GAME_NARRATIVE_RULES,

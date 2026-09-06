@@ -38,6 +38,8 @@ data class NovexCardReference(
     val targetLabel: String = "",
     /** Foreign address retained when a dependency is absent; never used to look up local content. */
     val unresolvedTarget: NovexReferenceTarget? = null,
+    /** Unknown transport metadata is retained but never interpreted as an instruction or permission. */
+    val preservedJson: String = "{}",
 ) {
     init {
         require(id.isNotBlank()) { "引用编号不能为空" }
@@ -88,6 +90,14 @@ internal class NovexCardReferences(
                 "回答身份必须指向完整的具体角色版本"
             }
         }
+        if (reference.purpose == NovexReferencePurpose.PLAYER_IDENTITY) {
+            require(reference.target.subject.kind in setOf(NovexContentKind.CHARACTER_VERSION, NovexContentKind.INTERACTIVE_FICTION)) {
+                "玩家身份只能指向角色配套身份或文游玩家身份"
+            }
+            reference.target.moduleId?.let { id -> content.module(id)?.let { module ->
+                require(NovexModuleVisibility.isPlayerIdentity(module.type)) { "玩家身份引用必须指向身份模块，不能使用背景正文代替" }
+            } }
+        }
         if (reference.purpose in setOf(NovexReferencePurpose.ANSWER_IDENTITY, NovexReferencePurpose.PLAYER_IDENTITY)) {
             require(links.outgoing(reference.source).none {
                 it.id != reference.id && it.sourceModuleId == reference.sourceModuleId && it.purpose == reference.purpose
@@ -130,12 +140,16 @@ internal class NovexCardReferences(
 }
 
 internal object NovexCardReferenceCodec {
-    fun encode(value: NovexCardReference): String = JSONObject()
-        .put("id", value.id).put("source", address(value.source))
-        .put("target", address(value.target.subject).put("moduleId", value.target.moduleId).put("entryId", value.target.entryId))
-        .put("purpose", value.purpose.name).put("sourceModuleId", value.sourceModuleId)
-        .put("position", value.position).put("targetLabel", value.targetLabel)
-        .put("unresolvedTarget", value.unresolvedTarget?.let { address(it.subject).put("moduleId", it.moduleId).put("entryId", it.entryId) }).toString()
+    fun encode(value: NovexCardReference): String = JSONObject(value.preservedJson).apply {
+        put("id", value.id)
+        put("source", address(value.source, optJSONObject("source")))
+        put("target", address(value.target.subject, optJSONObject("target")).put("moduleId", value.target.moduleId).put("entryId", value.target.entryId))
+        put("purpose", value.purpose.name); put("sourceModuleId", value.sourceModuleId)
+        put("position", value.position); put("targetLabel", value.targetLabel)
+        put("unresolvedTarget", value.unresolvedTarget?.let {
+            address(it.subject, optJSONObject("unresolvedTarget")).put("moduleId", it.moduleId).put("entryId", it.entryId)
+        })
+    }.toString()
 
     fun decode(raw: String): NovexCardReference {
         val value = JSONObject(raw)
@@ -145,10 +159,21 @@ internal object NovexCardReferenceCodec {
             NovexReferencePurpose.valueOf(value.getString("purpose")), value.optionalText("sourceModuleId"),
             value.optInt("position"), value.optString("targetLabel"), value.optJSONObject("unresolvedTarget")?.let {
                 NovexReferenceTarget(address(it), it.optionalText("moduleId"), it.optionalText("entryId"))
-            })
+            }, preservedJson = extensions(value))
     }
 
     private fun JSONObject.optionalText(key: String) = optString(key).takeIf { it.isNotBlank() }
-    private fun address(value: NovexContentAddress) = JSONObject().put("kind", value.kind.name).put("id", value.id)
+    private fun address(value: NovexContentAddress, preserved: JSONObject? = null) =
+        (preserved ?: JSONObject()).put("kind", value.kind.name).put("id", value.id)
     private fun address(value: JSONObject) = NovexContentAddress(NovexContentKind.valueOf(value.getString("kind")), value.getString("id"))
+
+    private fun extensions(value: JSONObject): String = JSONObject(value.toString()).apply {
+        listOf("id", "purpose", "sourceModuleId", "position", "targetLabel").forEach(::remove)
+        listOf("source", "target", "unresolvedTarget").forEach { key ->
+            optJSONObject(key)?.let { nested ->
+                listOf("kind", "id", "moduleId", "entryId").forEach(nested::remove)
+                if (nested.length() == 0) remove(key)
+            } ?: remove(key)
+        }
+    }.toString()
 }
