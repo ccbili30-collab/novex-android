@@ -69,6 +69,11 @@ internal fun NovexCardImportPreviewDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 summary.forEach { line -> Text(line, modifier = Modifier.padding(top = 8.dp)) }
+                (preview.document as? NovexCharacterImportDocument)?.versions?.firstOrNull()?.let { version ->
+                    com.openminis.app.novex.domain.NovexTavernExchange.sourceSummary(version.profileJson)?.let { message ->
+                        Text(message, modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if (bundle != null) {
                     Text("同时导入 ${dependencyNames.size} 张依赖卡片、${bundle.optJSONArray("references")?.length() ?: 0} 条带用途引用。",
                         modifier = Modifier.padding(top = 8.dp))

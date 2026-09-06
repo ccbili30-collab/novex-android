@@ -65,6 +65,7 @@ data class NovexModuleImportDocument(
     val itemImagePaths: Map<String, String> = emptyMap(),
     /** Portable links; targets absent from the package remain unresolved, never guessed by name. */
     val referencesJson: String = "[]",
+    val originalJson: String = "{}",
 )
 
 data class NovexCharacterVersionImportLink(
@@ -321,6 +322,7 @@ object NovexCardTransferParser {
             imagePath = imagePath,
             itemImagePaths = itemImagePaths,
             referencesJson = (module.optJSONArray("references") ?: JSONArray()).toString(),
+            originalJson = module.toString(),
         )
     }
 

@@ -29,7 +29,7 @@ object ContentModuleCatalog {
     )
 
     private val characterDefinitions = listOf(
-        ContentModuleDefinition(ContentModuleType.ROLE_INSTRUCTIONS, "专属扮演指令"),
+        ContentModuleDefinition(ContentModuleType.ROLE_INSTRUCTIONS, "专属扮演指令", repeatable = true),
         ContentModuleDefinition(ContentModuleType.ROLE_PLAYER_IDENTITY, "配套玩家身份"),
         ContentModuleDefinition(ContentModuleType.QUOTES, "多形态语录"),
         ContentModuleDefinition(ContentModuleType.WORLD_EXPERIENCE, "世界经历"),

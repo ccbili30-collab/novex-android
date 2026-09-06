@@ -38,8 +38,9 @@ internal fun novexNativeCardImportSpec(kind: NovexCardKind): NovexNativeCardImpo
             NovexCardKind.CHARACTER -> "导入角色卡"
             NovexCardKind.GAME -> "导入文游卡"
         },
-        extensionLabel = ".${kind.extension}",
-        mimeTypes = listOf("application/zip", "application/octet-stream"),
+        extensionLabel = if (kind == NovexCardKind.CHARACTER) ".${kind.extension} 或酒馆 PNG（便携式网络图像）／JSON（结构化数据）" else ".${kind.extension}",
+        mimeTypes = listOf("application/zip", "application/octet-stream") +
+            if (kind == NovexCardKind.CHARACTER) listOf("image/png", "application/json", "text/plain") else emptyList(),
     )
 
 internal data class NovexNativeCardImporter(
@@ -72,8 +73,21 @@ internal fun rememberNovexNativeCardImporter(
             importing = true
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count < 0) break
+                            require(output.size().toLong() + count <= 64L * 1024 * 1024) { "卡片文件超过 64 MiB（兆二进制字节）" }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toByteArray()
+                    }
                         ?: error("无法读取${spec.label.removePrefix("导入")}")
+                    if (kind == NovexCardKind.CHARACTER && !(bytes.size >= 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte())) {
+                        return@withContext com.openminis.app.novex.domain.NovexTavernExchange.importCharacter(bytes)
+                    }
                     val packagePreview = NovexCardPackageCodec.decode(bytes)
                     require(packagePreview.kind == spec.kind) {
                         "请选择 ${spec.extensionLabel} ${spec.label.removePrefix("导入")}"

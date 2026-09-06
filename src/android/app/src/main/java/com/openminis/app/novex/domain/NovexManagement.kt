@@ -353,7 +353,7 @@ fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
         JSONObject().put("id", id).put("type", type).put("read_scope", "请明确指定模块编号后读取")
     }))
     if (selectedSubject?.kind == NovexContentKind.CHARACTER_VERSION) {
-        put("profile_sections", JSONArray(listOf("public", "role_instructions")))
+        put("profile_sections", JSONArray(listOf("public", "role_instructions", "exchange_source")))
     }
     put("reference_purposes", JSONArray(NovexReferencePurpose.entries.map {
         JSONObject().put("value", it.wireName).put("label", it.label)
@@ -435,6 +435,16 @@ class NovexManagementService(
     private val artifacts: NovexManagementArtifactPort,
     private val transaction: NovexManagementTransaction = NovexManagementTransaction { block -> block() },
 ) {
+    suspend fun readExchangeSource(configuration: NovexConversationConfigurationSnapshot,
+        subject: NovexContentAddress, offset: Int, limit: Int, revision: String?): JSONObject {
+        require(subject.kind == NovexContentKind.CHARACTER_VERSION && NovexManagementPolicy.canRead(configuration, subject)) {
+            "酒馆原始数据只能通过已挂载的角色管理对象读取；背景使用不授予原件读取权限"
+        }
+        val version = workspace.characterForVersion(subject.id)?.character?.allVersions?.singleOrNull { it.id == subject.id }
+            ?: error("角色版本不存在")
+        return NovexTavernExchange.readSource(version.profileJson, version.id, offset, limit, revision)
+    }
+
     suspend fun inspect(
         configuration: NovexConversationConfigurationSnapshot,
         subject: NovexContentAddress?,
@@ -734,6 +744,10 @@ class NovexManagementService(
                 ) else listOf("profileSchema", "name", "tags", "gender", "age", "race", "occupation", "summary", "customAttributes", "relationships")
                 put("profile", JSONObject().apply { fields.filter(rawProfile::has).forEach { put(it, rawProfile.get(it)) } })
                 put("profile_section", profileSection)
+                if (profileSection == "public") NovexTavernExchange.sourceSummary(version.profileJson)?.let {
+                    put("exchange_compatibility", it)
+                    put("exchange_source_access", "明确分析酒馆原件时使用 profile_section=exchange_source（交换原件），按偏移与修订分段读取；不从公开总览展开原文")
+                }
             }.toString()
         }
         NovexContentKind.INTERACTIVE_FICTION -> {

@@ -9018,7 +9018,7 @@ class ChatViewModel(
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
             NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
-            NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
+            NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
@@ -9085,8 +9085,25 @@ class ChatViewModel(
         ToolExecutionResult("无法读取当前资料：${failure.message ?: "请求无效"}", false, toolTitle = "读取当前采用资料")
     }
 
-    private suspend fun executeNovexInspectTool(argsJson: String): ToolExecutionResult = runCatching {
+    private suspend fun executeNovexInspectTool(argsJson: String, requestMessageId: String?, responseMessageId: String): ToolExecutionResult = runCatching {
         val args = JSONObject(argsJson.ifBlank { "{}" })
+        if (args.optString("profile_section") == "exchange_source") {
+            require(args.optString("module_id").isBlank()) { "读取交换原件时请指定角色版本，不同时指定模块" }
+            val configuration = currentNovexConfiguration()
+            val result = novexManagementService().readExchangeSource(configuration, requireNotNull(args.managementSubjectOrNull()) { "请指定管理区中的角色版本" },
+                args.optInt("offset", 0), args.optInt("limit", 8000), args.optString("revision").ifBlank { null })
+            val receipt = novexContextUsageMutex.withLock {
+                com.openminis.app.novex.adapter.NovexContextReadJournal(chatRepository).record(
+                    conversationId = activeSessionId, requestMessageId = requireNotNull(requestMessageId) { "读取没有对应的用户请求" },
+                    responseMessageId = responseMessageId, activeMessageIds = activeBranchPathIds.toSet(),
+                    answerIdentity = configuration.answerIdentity, effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
+                    operation = "read", result = result)
+            }
+            receipt.usage?.let { usage -> withContext(Dispatchers.Main) {
+                _messages.value = _messages.value.map { if (it.id == usage.requestMessageId) it.copy(novexContextUsage = usage) else it }
+            } }
+            return@runCatching ToolExecutionResult(receipt.result.toString(2), true, toolTitle = "读取酒馆原始资料")
+        }
         val inspection = novexManagementService().inspect(
             configuration = currentNovexConfiguration(),
             subject = args.managementSubjectOrNull(),

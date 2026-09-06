@@ -1494,7 +1494,8 @@ internal class DefaultNovexWorkspace(
                 owner = owner,
                 type = moduleDocument.type,
                 name = moduleDocument.title,
-                contentJson = ContentModuleDocumentCodec.encode(moduleDocument.document),
+                contentJson = JSONObject(ContentModuleDocumentCodec.encode(moduleDocument.document))
+                    .put("_novexTransferSource", JSONObject(moduleDocument.originalJson)).toString(),
                 collapsed = true,
                 now = now,
                 id = UUID.randomUUID().toString(),
@@ -1879,12 +1880,16 @@ internal class DefaultNovexWorkspace(
                 runCatching { JSONObject(document.contentJson) }.getOrDefault(JSONObject().put("raw", document.contentJson))
             }
         }
-        return JSONObject()
+        val retainedSource = runCatching { JSONObject(module.contentJson).optJSONObject("_novexTransferSource") }.getOrNull()
+        val retainedContent = retainedSource?.optJSONObject("content")?.let { JSONObject(it.toString()) } ?: JSONObject()
+        listOf("text", "description", "image", "nodes", "items").forEach(retainedContent::remove)
+        content.keys().forEach { key -> retainedContent.put(key, content.get(key)) }
+        return (retainedSource?.let { JSONObject(it.toString()) } ?: JSONObject())
             .put("id", module.id)
             .put("type", originalType)
             .put("title", module.name)
             .put("presentation", presentation)
-            .put("content", content)
+            .put("content", retainedContent)
             .put("references", JSONArray().apply {
                 this@DefaultNovexWorkspace.content.references(module.id).forEach { reference ->
                     put(JSONObject()

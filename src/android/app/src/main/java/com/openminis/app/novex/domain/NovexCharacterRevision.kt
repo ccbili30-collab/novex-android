@@ -34,12 +34,12 @@ internal class NovexCharacterRevisionJournal(
         val modules = page.modulesByVersion[versionId].orEmpty()
         val value = JSONObject().apply {
             put("label", version.label)
-            put("profile", JSONObject(version.profileJson))
+            put("profile", jsonOrText(version.profileJson))
             // A root rename belongs to the default version, not every parallel version.
             if (version.id == page.character.original.id) put("rootName", page.character.character.name)
             put("modules", JSONArray(modules.map { module -> JSONObject().apply {
                 put("id", module.id); put("type", module.type.name); put("name", module.name)
-                put("content", JSONObject(module.contentJson))
+                put("content", jsonOrText(module.contentJson))
                 put("references", JSONArray(workspace.module(module.id)?.references.orEmpty().map { reference -> JSONObject().apply {
                     put("type", reference.targetType.name); put("id", reference.targetId); put("position", reference.position)
                 } }))
@@ -93,6 +93,8 @@ internal class NovexCharacterRevisionJournal(
             workspace.character(result.localId)?.character?.allVersions.orEmpty().map { it.id } else emptyList()
         else -> emptyList()
     }
+
+    private fun jsonOrText(raw: String): Any = runCatching { JSONObject(raw) }.getOrElse { raw }
 
     private fun canonical(value: Any?): String = when (value) {
         is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->

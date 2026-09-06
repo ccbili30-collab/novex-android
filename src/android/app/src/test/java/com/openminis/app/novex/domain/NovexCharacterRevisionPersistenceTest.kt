@@ -24,6 +24,19 @@ class NovexCharacterRevisionPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun `revision capture preserves legacy plain text modules instead of rejecting their save`() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
+            val person = workspace.apply(NovexCommand.CreateCharacter("旧角色")).requireCharacter()
+            val module = workspace.apply(NovexCommand.AddModule(ModuleOwner.characterVersion(person.original.id), ContentModuleType.CUSTOM,
+                "旧式笔记", "原有的纯文本正文")).requireModule()
+            assertEquals("原有的纯文本正文", workspace.module(module.id)!!.module.contentJson)
+            assertTrue(workspace.characterRevisions(person.original.id).last().contentJson.contains("原有的纯文本正文"))
+        } finally { database.close() }
+    }
+
+    @Test
     fun `migration starts history at first observed edit and a failed page save leaves no revision`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
             File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29).allowMainThreadQueries().build()

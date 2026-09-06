@@ -14,6 +14,7 @@ data class CharacterCardImportPreview(
     val avatarPng: ByteArray? = null,
     val sourceLabel: String,
     val knowledgeEntryCount: Int = 0,
+    val sourceJson: String? = null,
 )
 
 /** Parses Novex JSON plus SillyTavern Character Card V1/V2/V3 JSON and PNG cards. */
@@ -101,6 +102,7 @@ object SillyTavernCardParser {
             avatarPng = avatarPng,
             sourceLabel = sourceLabel,
             knowledgeEntryCount = knowledgeResult.second,
+            sourceJson = source,
         )
     }
 
@@ -124,6 +126,7 @@ object SillyTavernCardParser {
     }
 
     private fun extractPngCardJson(png: ByteArray): String? {
+        var legacyPayload: String? = null
         DataInputStream(ByteArrayInputStream(png)).use { input ->
             val signature = ByteArray(8)
             input.readFully(signature)
@@ -141,11 +144,17 @@ object SillyTavernCardParser {
                     "iTXt" -> parseInternationalTextChunk(data)
                     else -> null
                 }
-                if (payload != null) return decodeMetadataPayload(payload)
+                if (payload != null) {
+                    val separator = data.indexOf(0)
+                    val keyword = data.copyOfRange(0, separator).toString(Charsets.ISO_8859_1)
+                    val decoded = decodeMetadataPayload(payload)
+                    if (keyword == "ccv3") return decoded
+                    if (legacyPayload == null) legacyPayload = decoded
+                }
                 if (type == "IEND") break
             }
         }
-        return null
+        return legacyPayload
     }
 
     private fun parseTextChunk(data: ByteArray): String? {

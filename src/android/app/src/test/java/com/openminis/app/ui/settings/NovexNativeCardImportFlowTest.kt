@@ -16,11 +16,13 @@ class NovexNativeCardImportFlowTest {
     }
 
     @Test
-    fun characterRootOffersOnlyTheNativeCharacterCardContract() {
+    fun characterRootOffersNativeAndTavernCharacterFiles() {
         val spec = novexNativeCardImportSpec(NovexCardKind.CHARACTER)
 
         assertEquals("导入角色卡", spec.label)
-        assertEquals(".novexcharacter", spec.extensionLabel)
+        assertTrue(spec.extensionLabel.contains(".novexcharacter"))
+        assertTrue("image/png" in spec.mimeTypes)
+        assertTrue("application/json" in spec.mimeTypes)
         assertTrue("application/octet-stream" in spec.mimeTypes)
     }
 

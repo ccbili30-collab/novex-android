@@ -68,7 +68,11 @@ class ContentModuleRepository(
         now: Long = System.currentTimeMillis(),
     ) {
         val module = requireNotNull(dao.module(id)) { "模块不存在" }
-        dao.update(module.copy(contentJson = contentJson, updatedAt = now))
+        val source = runCatching { org.json.JSONObject(module.contentJson).optJSONObject("_novexTransferSource") }.getOrNull()
+        val saved = if (source == null) contentJson else runCatching { org.json.JSONObject(contentJson) }
+            .getOrElse { org.json.JSONObject(ContentModuleDocumentCodec.encode(ContentModuleDocument.Article(contentJson))) }
+            .put("_novexTransferSource", source).toString()
+        dao.update(module.copy(contentJson = saved, updatedAt = now))
     }
 
     suspend fun move(
