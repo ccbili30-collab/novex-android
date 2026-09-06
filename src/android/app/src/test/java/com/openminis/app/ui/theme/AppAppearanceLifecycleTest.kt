@@ -118,6 +118,30 @@ class AppAppearanceLifecycleTest {
             settle()
             assertEquals(original, rendered)
 
+            // Each selection must replace the previous rendered palette, including
+            // transitions away from Cloude, rather than merely updating preferences.
+            for (preset in ThemeColorPresets.all.reversed()) {
+                assertTrue(AppThemeColorPreferences.write(prefs, preset.colors))
+                settle()
+                assertEquals(preset.colors, requireNotNull(rendered).appearance.themeColors)
+                assertEquals(Color(preset.colors.light.background), requireNotNull(rendered).background)
+            }
+            val custom = ThemeColorPresets.cloude.colors.update(
+                ThemeVariantMode.Dark,
+                ThemeColorPresets.cloude.colors.dark.copy(foreground = 0xFFFFFFFF.toInt()),
+            )
+            assertTrue(validateThemeColors(custom).isEmpty())
+            assertTrue(AppThemeColorPreferences.write(prefs, custom))
+            settle()
+            composition.dispose()
+            composition = open()
+            settle()
+            assertEquals(custom, requireNotNull(rendered).appearance.themeColors)
+            assertEquals(Color(0xFFF5F4EE), requireNotNull(rendered).background)
+            assertTrue(AppThemeColorPreferences.write(prefs, ThemeColorPresets.default.colors))
+            settle()
+            assertEquals(original, rendered)
+
             prefs.edit().putInt(KEY_THEME_MODE, 2).putInt(KEY_FONT_APP_BASE, 2).commit()
             settle()
             assertTrue(requireNotNull(rendered).appearance.darkTheme)
