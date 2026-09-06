@@ -12645,7 +12645,13 @@ class ChatViewModel(
                     messages = listOf(
                         LLMMessage(
                             role = LLMMessage.Role.USER,
-                            content = "资料集：${request.collectionTitle}\n\n$material",
+                            content = buildString {
+                                append("资料集：${request.collectionTitle}\n")
+                                request.targetCharacters?.let { target ->
+                                    append("本轮只生成阶段笔记，正文不超过 $target 字符；原始笔记仍然保留供回查。\n")
+                                }
+                                append('\n').append(material)
+                            },
                         ),
                     ),
                     systemPrompt = NOVEX_LEARNING_SYNTHESIS_SYSTEM_PROMPT,

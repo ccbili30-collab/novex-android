@@ -18,6 +18,7 @@ data class NovexLearningSynthesisRequest(
     val notes: List<NovexLearningNote>,
     val estimatedInputTokens: Int,
     val maxOutputTokens: Int,
+    val targetCharacters: Int? = null,
 )
 
 data class NovexLearningReviewOutput(
@@ -58,10 +59,10 @@ class NovexLearningReviewRunner(
     suspend fun run(initial: NovexLearningState): NovexLearningState {
         var state = initial
         var task = requireNotNull(state.task) { "学习任务尚未由原生界面确认启动" }
-        require(task.status in setOf(NovexLearningTaskStatus.INDEXING, NovexLearningTaskStatus.REVIEWING)) {
+        require(task.status in setOf(NovexLearningTaskStatus.INDEXING, NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)) {
             "当前学习任务不能执行通读"
         }
-        task = task.advanceTo(NovexLearningTaskStatus.REVIEWING)
+        if (task.status != NovexLearningTaskStatus.SYNTHESIZING) task = task.advanceTo(NovexLearningTaskStatus.REVIEWING)
         state = state.copy(task = task)
         saveCheckpoint(state)
 
@@ -123,47 +124,83 @@ class NovexLearningReviewRunner(
             }
         }
 
-        val synthesisInput = conservativeInputEstimate(state.notes.sumOf { it.body.length })
-        val synthesisOutput = outputReservation(synthesisInput)
-        if (!task.usage.canConsume(synthesisInput, synthesisOutput)) {
-            state = state.copy(task = task.pauseForBudget())
-            saveCheckpoint(state)
-            return state
-        }
-        task = task.advanceTo(NovexLearningTaskStatus.SYNTHESIZING)
+        if (task.status != NovexLearningTaskStatus.SYNTHESIZING) task = task.advanceTo(NovexLearningTaskStatus.SYNTHESIZING)
         state = state.copy(task = task)
         saveCheckpoint(state)
-        val synthesis = reviewer.synthesize(
-            NovexLearningSynthesisRequest(
+        while (true) {
+            // Keep every leaf note. Only the frontier enters the next model request;
+            // persisted input edges also prevent repeating completed paid summaries.
+            val consumed = state.notes.flatMap { it.inputNoteRefs }.toSet()
+            val frontier = state.notes.filter { it.ref !in consumed && it.level != NovexLearningNoteLevel.COLLECTION }
+            val oversized = frontier.firstOrNull { it.body.length > maxCharsPerBatch }
+            if (oversized != null) {
+                val pieces = NovexLearningBatchPlanner.splitText(oversized.body, maxCharsPerBatch)
+                    .mapIndexedNotNull { index, body ->
+                        if (body.isBlank()) null else NovexLearningNote(
+                            ref = stableNoteRef("note-piece", oversized.ref.value, index.toString()),
+                            level = NovexLearningNoteLevel.FILE,
+                            title = "${oversized.title} · ${index + 1}",
+                            body = body,
+                            sourceDocumentRefs = oversized.sourceDocumentRefs,
+                            sourceBlockIds = oversized.sourceBlockIds,
+                            inputNoteRefs = listOf(oversized.ref),
+                        )
+                    }
+                state = state.copy(notes = state.notes + pieces)
+                saveCheckpoint(state)
+                continue
+            }
+            var chars = 0
+            val batch = frontier.takeWhile { note ->
+                (chars + note.body.length <= maxCharsPerBatch).also { fits -> if (fits) chars += note.body.length }
+            }
+            val final = batch.size == frontier.size
+            val synthesisInput = conservativeInputEstimate(chars)
+            val synthesisOutput = outputReservation(synthesisInput)
+            if (!task.usage.canConsume(synthesisInput, synthesisOutput)) {
+                state = state.copy(task = task.pauseForBudget())
+                saveCheckpoint(state)
+                return state
+            }
+            val targetCharacters = if (final) null else (chars / 2).coerceAtLeast(1)
+            val synthesis = reviewer.synthesize(NovexLearningSynthesisRequest(
                 collectionRef = state.collection.ref,
                 collectionTitle = state.collection.title,
-                notes = state.notes,
+                notes = batch,
                 estimatedInputTokens = synthesisInput,
                 maxOutputTokens = synthesisOutput,
-            ),
-        )
-        require(synthesis.inputTokens <= synthesisInput && synthesis.outputTokens <= synthesisOutput) {
-            "学习总结实际用量超过保留预算"
+                targetCharacters = targetCharacters,
+            ))
+            require(synthesis.inputTokens <= synthesisInput && synthesis.outputTokens <= synthesisOutput) {
+                "学习总结实际用量超过保留预算"
+            }
+            task = task.recordUsage(synthesis.inputTokens, synthesis.outputTokens)
+            if (!final && synthesis.body.length > requireNotNull(targetCharacters)) {
+                // Charge the completed request, then stop instead of repeatedly paying
+                // for a model that is expanding its intermediate summaries.
+                state = state.copy(task = if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) task else task.pause())
+                saveCheckpoint(state)
+                error("模型未按约定缩短阶段笔记，已暂停并保留原笔记和本次用量；请检查模型输出后决定是否继续")
+            }
+            val note = NovexLearningNote(
+                ref = if (final) stableNoteRef("collection", state.collection.ref.value)
+                    else stableNoteRef("synthesis", *batch.map { it.ref.value }.toTypedArray()),
+                level = if (final) NovexLearningNoteLevel.COLLECTION else NovexLearningNoteLevel.FILE,
+                title = synthesis.title,
+                body = synthesis.body,
+                sourceDocumentRefs = if (final) state.collection.uniqueDocumentRefs else batch.flatMap { it.sourceDocumentRefs }.distinct(),
+                sourceBlockIds = batch.flatMap { it.sourceBlockIds }.distinct(),
+                inputNoteRefs = batch.map { it.ref },
+            )
+            if (final) {
+                val status = if (state.reviewLedger.unreadableSourceRefs.isEmpty()) NovexLearningTaskStatus.COMPLETE
+                    else NovexLearningTaskStatus.PARTIAL_FAILURE
+                task = task.finish(status)
+            }
+            state = state.copy(notes = state.notes.upsert(note), task = task)
+            saveCheckpoint(state)
+            if (final || task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) return state
         }
-        task = task.recordUsage(synthesis.inputTokens, synthesis.outputTokens)
-        val collectionNote = NovexLearningNote(
-            ref = stableNoteRef("collection", state.collection.ref.value),
-            level = NovexLearningNoteLevel.COLLECTION,
-            title = synthesis.title,
-            body = synthesis.body,
-            sourceDocumentRefs = state.collection.uniqueDocumentRefs,
-        )
-        val finishedStatus = if (state.reviewLedger.unreadableSourceRefs.isEmpty()) {
-            NovexLearningTaskStatus.COMPLETE
-        } else {
-            NovexLearningTaskStatus.PARTIAL_FAILURE
-        }
-        state = state.copy(
-            notes = state.notes.upsert(collectionNote),
-            task = task.finish(finishedStatus),
-        )
-        saveCheckpoint(state)
-        return state
     }
 
     private fun NovexLearningState.finishPartialFailure(): NovexLearningState = copy(

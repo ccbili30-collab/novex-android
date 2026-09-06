@@ -48,7 +48,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 5
+    private const val VERSION = 6
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -151,6 +151,7 @@ object NovexLearningStateJsonCodec {
         .put("body", note.body)
         .put("source_documents", JSONArray(note.sourceDocumentRefs.map { it.value }))
         .put("source_blocks", JSONArray(note.sourceBlockIds))
+        .put("input_notes", JSONArray(note.inputNoteRefs.map { it.value }))
         .put("read_ranges", JSONArray(note.readRanges.map { range ->
             JSONObject().put("document_ref", range.documentRef.value).put("block_id", range.blockId)
                 .put("start", range.start).put("end", range.end)
@@ -163,6 +164,7 @@ object NovexLearningStateJsonCodec {
         body = json.getString("body"),
         sourceDocumentRefs = json.getJSONArray("source_documents").strings().map(::NovexResourceRef),
         sourceBlockIds = json.getJSONArray("source_blocks").strings(),
+        inputNoteRefs = json.optJSONArray("input_notes")?.strings()?.map(::NovexResourceRef).orEmpty(),
         readRanges = json.optJSONArray("read_ranges")?.objects()?.map { range ->
             NovexLearningReadRange(NovexResourceRef(range.getString("document_ref")),
                 range.getString("block_id"), range.getInt("start"), range.getInt("end"))

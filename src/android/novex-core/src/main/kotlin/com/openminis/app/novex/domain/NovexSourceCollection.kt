@@ -301,6 +301,7 @@ data class NovexLearningNote(
     val sourceDocumentRefs: List<NovexResourceRef>,
     val sourceBlockIds: List<String> = emptyList(),
     val readRanges: List<NovexLearningReadRange> = emptyList(),
+    val inputNoteRefs: List<NovexResourceRef> = emptyList(),
 ) {
     init {
         require(ref.value.startsWith("novex://learning-notes/")) { "学习笔记引用无效" }
@@ -311,6 +312,9 @@ data class NovexLearningNote(
         require(sourceBlockIds.distinct().size == sourceBlockIds.size) { "学习笔记来源内容块不能重复" }
         require(readRanges.all { it.documentRef in sourceDocumentRefs && it.blockId in sourceBlockIds }) {
             "学习片段必须属于笔记声明的来源"
+        }
+        require(inputNoteRefs.distinct().size == inputNoteRefs.size && ref !in inputNoteRefs) {
+            "笔记综合来源不能重复或引用自己"
         }
         if (level == NovexLearningNoteLevel.BLOCK) {
             require(sourceBlockIds.isNotEmpty()) { "内容块笔记必须保留来源内容块" }

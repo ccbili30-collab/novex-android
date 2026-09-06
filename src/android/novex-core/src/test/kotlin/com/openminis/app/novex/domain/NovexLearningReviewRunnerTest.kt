@@ -7,6 +7,88 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `single huge note is split for synthesis without deleting the original note`() = runTest {
+        val fixture = fixture(500_000, 80_000, listOf("x".repeat(800)))
+        var summaries = 0
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest) =
+                NovexLearningReviewOutput("详细笔记", "a".repeat(5000), request.estimatedInputTokens, 1250)
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                assertTrue(request.notes.sumOf { it.body.length } <= 1000)
+                summaries++
+                return NovexLearningReviewOutput("小结", "b".repeat(100), request.estimatedInputTokens, 50)
+            }
+        }
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {},
+            maxCharsPerBatch = 1000).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertTrue(summaries > 1)
+        assertEquals(1, result.notes.count { it.body == "a".repeat(5000) })
+    }
+
+    @Test fun `expanding intermediate summaries pause with paid usage recorded instead of looping`() = runTest {
+        val fixture = fixture(500_000, 80_000, List(4) { "x".repeat(800) })
+        var saved = fixture.state
+        var summaries = 0
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest) =
+                NovexLearningReviewOutput("详细笔记", "a".repeat(1500), request.estimatedInputTokens, 400)
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                summaries++
+                return NovexLearningReviewOutput("反而扩写", "b".repeat(2000), request.estimatedInputTokens, 500)
+            }
+        }
+        try {
+            NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, { saved = it },
+                maxCharsPerBatch = 2000).run(fixture.state)
+            error("应暂停扩写循环")
+        } catch (failure: IllegalStateException) {
+            assertTrue(failure.message.orEmpty().contains("阶段笔记"))
+        }
+        assertEquals(1, summaries)
+        assertEquals(NovexLearningTaskStatus.PAUSED, saved.task?.status)
+        assertEquals(1300, saved.task?.usage?.usedOutputTokens)
+        assertEquals(2, saved.notes.size)
+    }
+
+    @Test fun `large note synthesis is bounded and resumes without repeating paid summaries`() = runTest {
+        val fixture = fixture(500_000, 80_000, List(12) { "正文".repeat(400) })
+        var persisted = fixture.state
+        var interrupt = true
+        var reviewCalls = 0
+        val summarized = mutableListOf<List<String>>()
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                reviewCalls++
+                return NovexLearningReviewOutput("第 $reviewCalls 批", "a".repeat(1400), request.estimatedInputTokens, 400)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                if (interrupt && summarized.isNotEmpty()) throw CancellationException("总结期间退出")
+                assertTrue("总结也必须遵循正文预算", request.notes.sumOf { it.body.length } <= 2000)
+                val refs = request.notes.map { it.ref.value }
+                assertTrue("已持久化的总结不应重复付费执行", refs !in summarized)
+                summarized += refs
+                return NovexLearningReviewOutput("小结", "b".repeat(200), request.estimatedInputTokens, 100)
+            }
+        }
+        fun runner() = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer,
+            { persisted = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) },
+            maxCharsPerBatch = 2000)
+        try {
+            runner().run(fixture.state)
+            error("预期中断")
+        } catch (_: CancellationException) { }
+        assertEquals(12, persisted.reviewLedger.reviewedBlocks)
+        assertEquals(1, summarized.size)
+        interrupt = false
+        val result = runner().run(persisted)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals(6, reviewCalls)
+        assertTrue(summarized.size > 1)
+        assertEquals(6, result.notes.count { it.body == "a".repeat(1400) })
+        assertEquals(NovexLearningNoteLevel.COLLECTION, result.notes.last().level)
+    }
+
     @Test fun `short line documents use the content budget rather than twenty line batches`() = runTest {
         val fixture = fixture(500_000, 80_000, List(1154) { "规则 $it：玩家不是世界的中心。" })
         val reviewer = RecordingReviewer()

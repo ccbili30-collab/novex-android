@@ -44,6 +44,9 @@ object NovexLearningBatchPlanner {
         for (block in blocks) {
             val unseen = missing(block.text.length, covered[block.id].orEmpty())
             for ((start, end) in unseen) {
+                // A paragraph that fits a fresh batch stays whole. Only oversized
+                // source blocks need a second split, not the last row of every batch.
+                if (end - start <= maxChars && end - start > maxChars - chars) flush()
                 var position = start
                 do {
                     if (content.size >= maxBlocks || maxChars - chars < 2) flush()
@@ -62,6 +65,18 @@ object NovexLearningBatchPlanner {
 
     fun fullyCovered(length: Int, ranges: List<NovexLearningReadRange>): Boolean =
         missing(length, ranges).isEmpty()
+
+    fun splitText(text: String, maxChars: Int): List<String> {
+        require(maxChars >= 2)
+        val result = mutableListOf<String>()
+        var position = 0
+        while (position < text.length) {
+            val next = splitEnd(text, position, text.length, maxChars)
+            result += text.substring(position, next)
+            position = next
+        }
+        return result
+    }
 
     private fun missing(length: Int, ranges: List<NovexLearningReadRange>): List<Pair<Int, Int>> {
         if (length == 0) return if (ranges.any { it.start == 0 && it.end == 0 }) emptyList() else listOf(0 to 0)
