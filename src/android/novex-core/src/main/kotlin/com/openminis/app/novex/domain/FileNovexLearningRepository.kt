@@ -48,7 +48,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 7
+    private const val VERSION = 8
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -181,6 +181,8 @@ object NovexLearningStateJsonCodec {
             .put("max_output_tokens", task.usage.maxOutputTokens)
             .put("used_input_tokens", task.usage.usedInputTokens)
             .put("used_output_tokens", task.usage.usedOutputTokens)
+            .put("contains_estimates", task.usage.containsEstimates)
+            .put("contains_unknown_legacy_usage", task.usage.containsUnknownLegacyUsage)
             .put("status", task.usage.status.name))
 
     private fun decodeTask(json: JSONObject): NovexLearningTaskState {
@@ -193,6 +195,10 @@ object NovexLearningStateJsonCodec {
             usedInputTokens = usageJson.getInt("used_input_tokens"),
             usedOutputTokens = usageJson.getInt("used_output_tokens"),
             status = NovexLearningTaskStatus.valueOf(usageJson.getString("status")),
+            containsEstimates = usageJson.optBoolean("contains_estimates"),
+            containsUnknownLegacyUsage = usageJson.optBoolean("contains_unknown_legacy_usage") ||
+                (!usageJson.has("contains_estimates") &&
+                    (usageJson.getInt("used_input_tokens") > 0 || usageJson.getInt("used_output_tokens") > 0)),
         )
         return NovexLearningTaskState.restore(
             preflight = preflight,

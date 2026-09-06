@@ -81,10 +81,11 @@ class NovexLearningTools(
             summary = "找不到当前对话可用的资料集",
             affectedRefs = listOf(collectionRef),
         )
-        if (NovexLearningControlPolicy.blocksReplacementPreflight(preflight.taskStatus)) {
+        if (preflight.taskStatus != NovexLearningTaskStatus.NOT_STARTED) {
             return NovexToolResult.success(
-                code = "learning.task_active",
-                summary = "这份资料集已有学习整理任务，请使用原生进度界面查看或控制",
+                code = if (NovexLearningControlPolicy.blocksReplacementPreflight(preflight.taskStatus))
+                    "learning.task_active" else "learning.task_saved",
+                summary = "这份资料集已有学习整理记录；先读取已保存笔记，需要继续时使用原生进度界面，不重复建立任务",
                 data = mapOf(
                     "preflight_id" to preflight.id,
                     "collection_ref" to preflight.collectionRef.value,

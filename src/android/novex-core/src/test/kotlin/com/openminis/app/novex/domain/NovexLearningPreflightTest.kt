@@ -9,6 +9,17 @@ import org.junit.Test
 class NovexLearningPreflightTest {
     private val collectionRef = NovexResourceRef("novex://source-collections/research-1")
 
+    @Test fun `confirmation distinguishes remaining review reservations from estimated synthesis and cumulative limits`() {
+        val preflight = NovexLearningPreflight.prepare(request(sources = listOf(source("novex://documents/a", 90_000))))
+            .copy(reviewBatchCount = 3, reviewInputReservationTokens = 24_680)
+        val message = NovexLearningControlPolicy.preflightMessage(preflight)
+        assertTrue(message, message.contains("剩余通读：3 批"))
+        assertTrue(message.contains("24680"))
+        assertTrue(message.contains("累计上限"))
+        assertTrue(message.contains("综合"))
+        assertFalse(message.contains("达到上限前会自动暂停"))
+    }
+
     @Test
     fun smallLocalSourceCanBeReadDirectlyWithoutStartingALearningTask() {
         val preflight = NovexLearningPreflight.prepare(

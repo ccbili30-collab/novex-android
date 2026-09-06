@@ -12300,9 +12300,7 @@ class ChatViewModel(
         val model = currentModel ?: return null
         if (requestedModelId != null && requestedModelId != model.id) return null
 
-        state.task?.takeIf { task ->
-            NovexLearningControlPolicy.blocksReplacementPreflight(task.status)
-        }?.let { task ->
+        state.task?.let { task ->
             _pendingNovexLearningPreflight.value = null
             _novexLearningTask.value = task
             _novexLearningStatus.value = task.status
@@ -12380,6 +12378,7 @@ class ChatViewModel(
                 sourceDocuments = sourceDocuments,
                 modelMaxOutputTokens = model.maxOutputTokens ?: 4096,
             ),
+            progress = state,
         )
         return preflight
     }
@@ -12408,12 +12407,12 @@ class ChatViewModel(
                     .coerceAtMost(1_000_000L)
                     .toInt(),
             )
-            val preflight = buildNovexLearningPreflight(
-                state = state,
-                model = model,
-                providerName = provider.name,
-                proposedBudget = expandedBudget,
-            )
+            val preflight = runCatching {
+                buildNovexLearningPreflight(state, model, provider.name, expandedBudget)
+            }.getOrElse { failure ->
+                _novexLearningError.value = failure.message ?: "无法准备新的学习预算，已保存进度不变"
+                return@launch
+            }
             _novexLearningTask.value = null
             _pendingNovexLearningPreflight.value = preflight
         }
@@ -12441,20 +12440,21 @@ class ChatViewModel(
                 return@launch
             }
             stored.task?.takeIf { task ->
-                NovexLearningControlPolicy.blocksReplacementPreflight(task.status)
+                task.status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
             }?.let { task ->
                 _novexLearningTask.value = task
                 _novexLearningStatus.value = task.status
                 return@launch
             }
-            val refreshed = buildNovexLearningPreflight(
-                state = stored,
-                model = model,
-                providerName = provider.name,
-                proposedBudget = preflight.confirmedBudget,
-            )
+            val refreshed = runCatching {
+                buildNovexLearningPreflight(stored, model, provider.name, preflight.confirmedBudget)
+            }.getOrElse { failure ->
+                _novexLearningError.value = failure.message ?: "无法核对学习计划，已保存进度不变"
+                return@launch
+            }
             if (refreshed.id != preflight.id) {
-                novexLearningRepository.save(stored.copy(preflight = refreshed))
+                // A budget proposal must not replace the authorization of the saved task.
+                if (stored.task == null) novexLearningRepository.save(stored.copy(preflight = refreshed))
                 _pendingNovexLearningPreflight.value = refreshed.takeIf { it.requiresConfirmation }
                 _novexLearningError.value = "资料、模型或预算已经变化，请确认新的整理计划"
                 return@launch
@@ -12647,10 +12647,9 @@ class ChatViewModel(
                     tools = emptyList(),
                     thinkingLevel = ThinkingLevel.OFF,
                 )
-                return response.toNovexLearningOutput(
-                    fallbackTitle = "${request.documentTitle} · 通读笔记",
-                    estimatedInputTokens = request.estimatedInputTokens,
-                )
+                return NovexLearningReviewOutput.fromProvider("${request.documentTitle} · 通读笔记",
+                    response.text, response.usage?.inputTokens, response.usage?.outputTokens,
+                    request.estimatedInputTokens, request.maxOutputTokens)
             }
 
             override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
@@ -12669,27 +12668,11 @@ class ChatViewModel(
                     tools = emptyList(),
                     thinkingLevel = ThinkingLevel.OFF,
                 )
-                return response.toNovexLearningOutput(
-                    fallbackTitle = "${request.collectionTitle} · 总结",
-                    estimatedInputTokens = request.estimatedInputTokens,
-                )
+                return NovexLearningReviewOutput.fromProvider("${request.collectionTitle} · 总结",
+                    response.text, response.usage?.inputTokens, response.usage?.outputTokens,
+                    request.estimatedInputTokens, request.maxOutputTokens)
             }
         }
-
-    private fun com.openminis.app.data.model.LLMResponse.toNovexLearningOutput(
-        fallbackTitle: String,
-        estimatedInputTokens: Int,
-    ): NovexLearningReviewOutput {
-        val body = text.trim()
-        require(body.isNotEmpty()) { "学习模型没有返回可保存的笔记" }
-        return NovexLearningReviewOutput(
-            title = fallbackTitle,
-            body = body,
-            inputTokens = usage?.inputTokens?.takeIf { it > 0 } ?: estimatedInputTokens,
-            outputTokens = usage?.outputTokens?.takeIf { it > 0 }
-                ?: ((body.length + 2) / 3).coerceAtLeast(1),
-        )
-    }
 
     private fun refreshNovexLearningTaskProjection() {
         val refs = activeNovexSourceCollectionRefs.toList()

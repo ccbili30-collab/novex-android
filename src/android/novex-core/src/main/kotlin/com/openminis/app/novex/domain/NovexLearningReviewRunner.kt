@@ -30,11 +30,26 @@ data class NovexLearningReviewOutput(
     val body: String,
     val inputTokens: Int,
     val outputTokens: Int,
+    val usageIsEstimated: Boolean = false,
 ) {
     init {
         require(title.isNotBlank()) { "学习笔记标题不能为空" }
         require(body.isNotBlank()) { "学习笔记正文不能为空" }
         require(inputTokens >= 0 && outputTokens >= 0) { "学习模型用量不能为负数" }
+    }
+
+    companion object {
+        fun fromProvider(title: String, text: String, inputTokens: Int?, outputTokens: Int?,
+            reservedInputTokens: Int, reservedOutputTokens: Int): NovexLearningReviewOutput {
+            val body = text.trim()
+            require(body.isNotEmpty()) { "学习模型没有返回可保存的笔记" }
+            require(reservedInputTokens > 0 && reservedOutputTokens > 0) { "请求预留预算无效" }
+            val observedInput = inputTokens?.takeIf { it > 0 }
+            val observedOutput = outputTokens?.takeIf { it > 0 }
+            return NovexLearningReviewOutput(title, body,
+                observedInput ?: reservedInputTokens, observedOutput ?: reservedOutputTokens,
+                usageIsEstimated = observedInput == null || observedOutput == null)
+        }
     }
 }
 
@@ -99,7 +114,7 @@ class NovexLearningReviewRunner(
                 }
                 val output = reviewer.review(request)
                 val exceedsReservation = output.inputTokens > estimatedInput || output.outputTokens > reservedOutput
-                task = task.recordObservedUsage(output.inputTokens, output.outputTokens)
+                task = task.recordObservedUsage(output.inputTokens, output.outputTokens, output.usageIsEstimated)
                 val blockIds = blocks.map { it.id }.distinct()
                 readRanges += request.sourceRanges
                 val rangesByBlock = readRanges.filter { it.documentRef == documentRef }.groupBy { it.blockId }
@@ -127,7 +142,7 @@ class NovexLearningReviewRunner(
                 saveCheckpoint(state)
                 if (exceedsReservation) {
                     state = state.pauseAfterObservedOverrun()
-                    error("提供商报告的用量超出本批预留，已保存已读笔记、进度与实际用量并暂停；请核对模型计费后再继续")
+                    error("计入的用量超出本批预留，已保存已读笔记、进度与用量并暂停；缺少提供商计数的部分标为估算，请核对模型计费后再继续")
                 }
                 if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) return state
             }
@@ -206,7 +221,7 @@ class NovexLearningReviewRunner(
                 targetCharacters = targetCharacters,
             ))
             val exceedsReservation = synthesis.inputTokens > synthesisInput || synthesis.outputTokens > synthesisOutput
-            task = task.recordObservedUsage(synthesis.inputTokens, synthesis.outputTokens)
+            task = task.recordObservedUsage(synthesis.inputTokens, synthesis.outputTokens, synthesis.usageIsEstimated)
             if (!final && synthesis.body.length > requireNotNull(targetCharacters)) {
                 // Charge the completed request, then stop instead of repeatedly paying
                 // for a model that is expanding its intermediate summaries.
@@ -234,7 +249,7 @@ class NovexLearningReviewRunner(
             saveCheckpoint(state)
             if (exceedsReservation) {
                 state = state.pauseAfterObservedOverrun()
-                error("提供商报告的综合用量超出预留，已保存笔记和实际用量并暂停；请核对模型计费后再继续")
+                error("计入的综合用量超出预留，已保存笔记和用量并暂停；缺少提供商计数的部分标为估算，请核对模型计费后再继续")
             }
             if (final || task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) return state
         }

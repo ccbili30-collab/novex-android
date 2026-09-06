@@ -149,11 +149,17 @@ object NovexLearningPreflight {
     private const val TOKENS_PER_MODEL_ROUND = 32_000
     private const val MAX_DIRECT_FILE_COUNT = 3
 
-    fun prepare(request: NovexLearningPreflightRequest): NovexLearningPreflightSnapshot {
+    fun prepare(request: NovexLearningPreflightRequest, progress: NovexLearningState? = null): NovexLearningPreflightSnapshot {
+        require(progress == null || progress.collection.ref == request.collectionRef) { "学习进度不属于当前资料集" }
         val limits = NovexLearningModelLimits(request.effectiveContextTokens, request.modelMaxOutputTokens)
         val documents = request.sources.mapNotNull { request.sourceDocuments[it.ref] }.distinctBy { it.ref }
+        val readRanges = progress?.notes.orEmpty().flatMap { it.readRanges }
+        val continuing = progress?.task != null || progress?.notes?.isNotEmpty() == true ||
+            (progress?.reviewLedger?.reviewedBlocks ?: 0) > 0
         val fullPlan = if (request.effectiveContextTokens != null && documents.isNotEmpty()) documents.flatMap { document ->
-            NovexLearningBatchPlanner.reviewRequests(request.collectionRef, document, limits)
+            val reviewed = progress?.reviewLedger?.reviewedBlocksByDocument?.get(document.ref).orEmpty()
+            NovexLearningBatchPlanner.reviewRequests(request.collectionRef,
+                document.copy(blocks = document.blocks.filter { it.id !in reviewed }), limits, readRanges = readRanges)
         } else null
         val reviewReservation = fullPlan?.sumOf { it.estimatedInputTokens.toLong() }?.saturatedInt()
         val totalTokens = request.sources.sumOf { it.estimatedTokens.toLong() }.saturatedInt()
@@ -167,10 +173,12 @@ object NovexLearningPreflight {
         }
         val directBudget = listOfNotNull(request.directReadBudgetTokens, contextRoom).minOrNull()
             ?: request.directReadBudgetTokens
-        val canReadDirectly = contextRoom != null && request.sources.size <= MAX_DIRECT_FILE_COUNT &&
+        val canReadDirectly = !continuing && contextRoom != null && request.sources.size <= MAX_DIRECT_FILE_COUNT &&
             totalTokens <= directBudget &&
             !hasExpensiveCapability
         val risks = buildList {
+            if (continuing) add(NovexLearningRisk("learning.resuming_saved_progress",
+                "本次从已保存的阅读进度继续，已读内容不重复计入剩余通读批次；确认预算是任务累计上限，不是额外可用额度"))
             if (hasIncompleteParsing) add(NovexLearningRisk("learning.incomplete_source",
                 "部分资料解析被截断，只能整理已经解析的部分；完成后仍会标记缺失范围，不能宣称通读全文"))
             if (totalTokens > request.directReadBudgetTokens) add(
@@ -238,6 +246,16 @@ object NovexLearningPreflight {
             append(request.proposedBudget.inputTokens).append(':')
                 .append(request.proposedBudget.outputTokens).append('\n')
             append(request.sourcePlanFingerprint.orEmpty()).append('\n')
+            progress?.reviewLedger?.reviewedBlocksByDocument?.entries?.sortedBy { it.key.value }?.forEach { (ref, ids) ->
+                append(ref.value).append(':').append(ids.sorted().joinToString(",")).append('\n')
+            }
+            progress?.notes.orEmpty().forEach { note ->
+                append(note.ref.value).append(':').append(sha256(note.body)).append('\n')
+                note.readRanges.forEach { range ->
+                    append(range.documentRef.value).append(':').append(range.blockId).append(':')
+                        .append(range.start).append(':').append(range.end).append('\n')
+                }
+            }
             documents.forEach { document ->
                 append(document.ref.value).append(':').append(document.sha256).append(':').append(document.parserVersion).append('\n')
                 append(sha256(NovexLearningPrompt.review(document.title, document.blocks).user)).append('\n')
@@ -366,6 +384,8 @@ class NovexLearningUsageLedger private constructor(
     val usedInputTokens: Int,
     val usedOutputTokens: Int,
     val status: NovexLearningTaskStatus,
+    val containsEstimates: Boolean = false,
+    val containsUnknownLegacyUsage: Boolean = false,
 ) {
     fun canConsume(inputTokens: Int, outputTokens: Int): Boolean {
         require(inputTokens >= 0 && outputTokens >= 0) { "学习任务词元用量不能为负数" }
@@ -380,7 +400,7 @@ class NovexLearningUsageLedger private constructor(
     }
 
     /** Completed provider work is a fact, even when its reported usage exceeded a reservation. */
-    fun recordObserved(inputTokens: Int, outputTokens: Int): NovexLearningUsageLedger {
+    fun recordObserved(inputTokens: Int, outputTokens: Int, estimated: Boolean = false): NovexLearningUsageLedger {
         require(inputTokens >= 0 && outputTokens >= 0) { "实际模型用量不能为负数" }
         val nextInput = (usedInputTokens.toLong() + inputTokens).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val nextOutput = (usedOutputTokens.toLong() + outputTokens).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -391,6 +411,8 @@ class NovexLearningUsageLedger private constructor(
             maxOutputTokens = maxOutputTokens,
             usedInputTokens = nextInput,
             usedOutputTokens = nextOutput,
+            containsEstimates = containsEstimates || estimated,
+            containsUnknownLegacyUsage = containsUnknownLegacyUsage,
             status = if (reachesLimit) {
                 NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
             } else {
@@ -424,6 +446,8 @@ class NovexLearningUsageLedger private constructor(
             usedInputTokens: Int,
             usedOutputTokens: Int,
             status: NovexLearningTaskStatus,
+            containsEstimates: Boolean = false,
+            containsUnknownLegacyUsage: Boolean = false,
         ): NovexLearningUsageLedger {
             require(usedInputTokens >= 0 && usedOutputTokens >= 0) { "实际模型用量不能为负数" }
             return NovexLearningUsageLedger(
@@ -432,6 +456,8 @@ class NovexLearningUsageLedger private constructor(
                 maxOutputTokens = maxOutputTokens,
                 usedInputTokens = usedInputTokens,
                 usedOutputTokens = usedOutputTokens,
+                containsEstimates = containsEstimates,
+                containsUnknownLegacyUsage = containsUnknownLegacyUsage,
                 status = if (usedInputTokens >= maxInputTokens || usedOutputTokens >= maxOutputTokens)
                     NovexLearningTaskStatus.PAUSED_BUDGET_REACHED else status,
             )

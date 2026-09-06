@@ -51,6 +51,8 @@ class NovexLearningCoordinator {
             usedInputTokens = task.usage.usedInputTokens,
             usedOutputTokens = task.usage.usedOutputTokens,
             status = task.resumeStatus,
+            containsEstimates = task.usage.containsEstimates,
+            containsUnknownLegacyUsage = task.usage.containsUnknownLegacyUsage,
         )
         return NovexLearningTaskState(
             preflight = preflight,
@@ -75,9 +77,9 @@ class NovexLearningTaskState internal constructor(
         return withUsage(usage.record(inputTokens, outputTokens))
     }
 
-    fun recordObservedUsage(inputTokens: Int, outputTokens: Int): NovexLearningTaskState {
+    fun recordObservedUsage(inputTokens: Int, outputTokens: Int, estimated: Boolean = false): NovexLearningTaskState {
         check(status in EXECUTING_STATUSES) { "只有执行中的学习任务可以记录模型用量" }
-        return withUsage(usage.recordObserved(inputTokens, outputTokens))
+        return withUsage(usage.recordObserved(inputTokens, outputTokens, estimated))
     }
 
     private fun withUsage(nextUsage: NovexLearningUsageLedger): NovexLearningTaskState = copy(

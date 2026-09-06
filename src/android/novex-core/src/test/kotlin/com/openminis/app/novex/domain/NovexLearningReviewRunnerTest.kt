@@ -7,6 +7,85 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `progress disclosure preserves estimated and legacy usage and never denies an observed overrun`() {
+        val fixture = fixture(30_000, 8_000)
+        val overrun = fixture.state.copy(task = fixture.state.task!!.recordObservedUsage(31_000, 20, estimated = true))
+        val message = NovexLearningControlPolicy.progressMessage(overrun.task!!)
+        assertTrue(message.contains("估算"))
+        assertTrue(message.contains("31000"))
+        assertTrue(message.contains("超出"))
+        assertEquals(false, message.contains("没有超出"))
+        val oldJson = org.json.JSONObject(NovexLearningStateJsonCodec.encode(overrun)).put("version", 7)
+        oldJson.getJSONObject("task").getJSONObject("usage").apply {
+            remove("contains_estimates"); remove("contains_unknown_legacy_usage")
+        }
+        val legacy = NovexLearningStateJsonCodec.decode(oldJson.toString())
+        assertTrue(NovexLearningControlPolicy.progressMessage(legacy.task!!).contains("来源未记录"))
+        assertEquals(31_000, legacy.task!!.usage.usedInputTokens)
+    }
+
+    @Test fun `missing provider usage uses request reservations labelled as estimates not a fabricated bill`() {
+        val missing = NovexLearningReviewOutput.fromProvider("笔记", " 返回正文 ", null, null, 1600, 4096)
+        assertTrue(missing.usageIsEstimated)
+        assertEquals(1600, missing.inputTokens)
+        assertEquals(4096, missing.outputTokens)
+        assertEquals("返回正文", missing.body)
+        val partial = NovexLearningReviewOutput.fromProvider("笔记", "正文", 123, null, 1600, 4096)
+        assertTrue(partial.usageIsEstimated)
+        assertEquals(123, partial.inputTokens)
+        val actual = NovexLearningReviewOutput.fromProvider("笔记", "正文", 123, 42, 1600, 4096)
+        assertEquals(false, actual.usageIsEstimated)
+        assertEquals(42, actual.outputTokens)
+    }
+
+    @Test fun `estimated provider usage remains labelled after summaries and process restoration`() = runTest {
+        val fixture = fixture(30_000, 8_000, listOf("短规则"))
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest) =
+                NovexLearningReviewOutput("笔记", "内容已读", 100, 100, usageIsEstimated = true)
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest) =
+                NovexLearningReviewOutput("总览", "内容已汇总", 100, 100)
+        }
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {}).run(fixture.state)
+        val restored = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(result))
+        val usage = org.json.JSONObject(NovexLearningStateJsonCodec.encode(restored)).getJSONObject("task").getJSONObject("usage")
+        assertTrue("一次估算不能被后续真实用量或重启掩盖", usage.optBoolean("contains_estimates"))
+        assertEquals(200, restored.task!!.usage.usedInputTokens)
+        assertEquals(200, restored.task!!.usage.usedOutputTokens)
+    }
+
+    @Test fun `continuation preflight excludes completed source fragments and still requires confirmation`() = runTest {
+        val fixture = fixture(500_000, 80_000, listOf("a".repeat(50_000)))
+        var saved = fixture.state
+        var readCalls = 0
+        val firstBatchOnly = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                if (++readCalls > 1) throw CancellationException("暂停")
+                return NovexLearningReviewOutput("第一批", "已读第一批", request.estimatedInputTokens, 20)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput = error("尚未综合")
+        }
+        runCatching {
+            NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, firstBatchOnly,
+                { saved = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) }).run(fixture.state)
+        }
+        assertEquals(24_000, saved.notes.single().readRanges.single().end)
+        val request = NovexLearningPreflightRequest(
+            collectionRef = fixture.state.collection.ref,
+            sources = listOf(NovexLearningSourceEstimate(fixture.document.ref, 50_000)),
+            sourceDocuments = mapOf(fixture.document.ref to fixture.document), modelId = "model-a",
+            effectiveContextTokens = 200_000, occupiedContextTokens = 0, directReadBudgetTokens = 100_000,
+            proposedBudget = NovexLearningTokenBudget(600_000, 90_000))
+        val continuation = NovexLearningPreflight.prepare(request, saved)
+        assertEquals("已完成首批后只剩两批正文", 2, continuation.reviewBatchCount)
+        assertTrue("扩大预算必须重新确认，不能因剩余量变小绕过确认", continuation.requiresConfirmation)
+        val remainingReviewer = RecordingReviewer()
+        NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, remainingReviewer, {}).run(saved)
+        assertEquals(2, remainingReviewer.reviewRequests.size)
+        assertEquals(26_000, remainingReviewer.reviewRequests.sumOf { it.blocks.sumOf { block -> block.text.length } })
+        assertEquals(remainingReviewer.reviewRequests.sumOf { it.estimatedInputTokens }, continuation.reviewInputReservationTokens)
+    }
+
     @Test fun `truncated parsing preserves available notes but never claims complete source review`() = runTest {
         val fixture = fixture(30_000, 8_000)
         val reviewer = RecordingReviewer()

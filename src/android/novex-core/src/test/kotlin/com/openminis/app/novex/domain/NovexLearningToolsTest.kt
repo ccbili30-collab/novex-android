@@ -8,6 +8,19 @@ import org.junit.Test
 import java.nio.file.Files
 
 class NovexLearningToolsTest {
+    @Test fun `preparing a saved stopped task points to its notes instead of requesting a fresh paid run`() {
+        listOf(NovexLearningTaskStatus.COMPLETE, NovexLearningTaskStatus.PARTIAL_FAILURE,
+            NovexLearningTaskStatus.CANCELLED, NovexLearningTaskStatus.PAUSED_BUDGET_REACHED).forEach { status ->
+            val tools = NovexLearningTools { _, _ -> snapshot.copy(taskStatus = status) }
+            val result = tools.learningPrepare(collectionRef, null)
+            assertTrue(result.ok)
+            assertEquals(status.name, JSONObject(result.toJson()).getJSONObject("data").optString("task_status"))
+            assertFalse("$status 不得重开付费确认", result.nextActions.any { it.id == "wait_for_native_confirmation" })
+            assertTrue(result.nextActions.any { it.id == "learning_read" })
+            assertTrue(result.nextActions.any { it.id == "open_native_learning_status" })
+        }
+    }
+
     @Test fun `saved learning notes are readable with source anchors and bounded continuation without restarting learning`() {
         val directory = Files.createTempDirectory("novex-note-read").toFile()
         try {
