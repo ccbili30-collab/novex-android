@@ -25,6 +25,8 @@ class NovexAgentForegroundServiceTest {
         val controller = Robolectric.buildService(AgentForegroundService::class.java).create()
         try {
             assertNotNull(shadowOf(controller.get()).lastForegroundNotification)
+            assertEquals(Service.START_STICKY, controller.get().onStartCommand(null, 0, 1))
+            assertNotNull(shadowOf(controller.get()).lastForegroundNotification)
             assertFalse("Optional overlay setup must not force runtime initialization", app.subsystemsReady())
         } finally {
             controller.destroy()
