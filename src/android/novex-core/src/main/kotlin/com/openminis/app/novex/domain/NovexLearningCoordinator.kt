@@ -31,7 +31,8 @@ class NovexLearningCoordinator {
             "只有到达预算后暂停的学习任务可以扩大预算"
         }
         require(preflight.collectionRef == task.collectionRef) { "扩大预算不能更换资料集" }
-        require(preflight.modelId == task.preflight.modelId) { "扩大预算不能更换学习模型" }
+        NovexLearningGate.requireExecutionContext(task.preflight, preflight.modelId,
+            preflight.modelProviderName, preflight.modelLimits)
         require(preflight.sourceRefs == task.preflight.sourceRefs) { "扩大预算不能更换资料范围" }
         require(confirmation != null) { "扩大预算前必须由原生界面重新确认" }
         require(NovexLearningGate.authorize(preflight, confirmation) == NovexLearningAuthorization.AUTHORIZED) {

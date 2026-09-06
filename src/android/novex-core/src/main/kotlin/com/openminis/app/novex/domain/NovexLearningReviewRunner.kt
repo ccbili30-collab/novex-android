@@ -75,6 +75,13 @@ class NovexLearningReviewRunner(
 
         for ((documentRef, readableBlockIds) in state.reviewLedger.readableBlocksByDocument) {
             val snapshot = documents.find(documentRef) ?: return state.finishPartialFailure()
+            if (snapshot.status != NovexDocumentStatus.READY) {
+                state = state.copy(reviewLedger = state.reviewLedger.recordIncompleteSources(
+                    state.collection.sources.filter { it.documentRef == documentRef }.map { it.ref },
+                ))
+                saveCheckpoint(state)
+                if (snapshot.status != NovexDocumentStatus.TRUNCATED) return state.finishPartialFailure()
+            }
             val presentIds = snapshot.blocks.map { it.id }.toSet()
             if (readableBlockIds.any { it !in presentIds }) return state.finishPartialFailure()
             val alreadyReviewed = state.reviewLedger.reviewedBlocksByDocument[documentRef].orEmpty()

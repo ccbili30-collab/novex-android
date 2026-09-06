@@ -157,7 +157,8 @@ object NovexLearningPreflight {
         } else null
         val reviewReservation = fullPlan?.sumOf { it.estimatedInputTokens.toLong() }?.saturatedInt()
         val totalTokens = request.sources.sumOf { it.estimatedTokens.toLong() }.saturatedInt()
-        val hasExpensiveCapability = request.sources.any {
+        val hasIncompleteParsing = documents.any { it.status == NovexDocumentStatus.TRUNCATED }
+        val hasExpensiveCapability = hasIncompleteParsing || request.sources.any {
             it.requiresNetwork || it.requiresOcr || it.unsupportedReason != null
         }
         val contextRoom = request.effectiveContextTokens?.let {
@@ -170,6 +171,8 @@ object NovexLearningPreflight {
             totalTokens <= directBudget &&
             !hasExpensiveCapability
         val risks = buildList {
+            if (hasIncompleteParsing) add(NovexLearningRisk("learning.incomplete_source",
+                "部分资料解析被截断，只能整理已经解析的部分；完成后仍会标记缺失范围，不能宣称通读全文"))
             if (totalTokens > request.directReadBudgetTokens) add(
                 NovexLearningRisk(
                     code = "learning.high_token_use",
@@ -323,6 +326,20 @@ enum class NovexLearningAuthorization {
 }
 
 object NovexLearningGate {
+    fun requireExecutionContext(
+        preflight: NovexLearningPreflightSnapshot,
+        modelId: String,
+        providerName: String,
+        limits: NovexLearningModelLimits?,
+    ) {
+        require(preflight.modelLimits?.contextTokens != null) {
+            "旧学习任务缺少模型窗口记录，请取消后重新确认整理计划；已保存笔记仍可读取"
+        }
+        require(modelId == preflight.modelId && providerName == preflight.modelProviderName && limits == preflight.modelLimits) {
+            "学习模型、提供商或窗口配置已变化。请恢复原配置后继续，或取消后重新确认计划；已保存进度和笔记不会删除"
+        }
+    }
+
     fun authorize(
         preflight: NovexLearningPreflightSnapshot,
         confirmation: NovexLearningConfirmation?,

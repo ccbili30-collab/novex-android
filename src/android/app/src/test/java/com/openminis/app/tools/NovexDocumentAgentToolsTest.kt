@@ -34,13 +34,13 @@ class NovexDocumentAgentToolsTest {
     }
 
     @Test
-    fun `learning preparation is exposed only when the active branch owns a source collection`() {
+    fun `learning preparation and note reading are exposed only when the active branch owns a source collection`() {
         val withoutCollection = AgentTools.makeAgentTools(sourceCollectionsAvailable = false)
         val withCollection = AgentTools.makeAgentTools(sourceCollectionsAvailable = true)
 
         assertFalse(withoutCollection.any { it.name.startsWith("learning_") })
         assertEquals(
-            listOf("learning_prepare"),
+            listOf("learning_prepare", "learning_read"),
             withCollection.filter { it.name.startsWith("learning_") }.map { it.name },
         )
         assertFalse(withCollection.any { it.name in setOf("learning_start", "learning_confirm") })

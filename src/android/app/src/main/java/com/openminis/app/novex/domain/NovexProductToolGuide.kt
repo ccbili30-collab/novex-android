@@ -22,6 +22,9 @@ object NovexProductToolGuide {
         if ("learning_prepare" in availableTools) {
             appendLine("- 大量或超长资料先用 learning_prepare 预检整理范围、消耗、网络与隐私风险，得到用户确认后才开始高消耗通读。资料整理不等于创建卡片；没有创作要求时只整理来源和笔记。")
         }
+        if ("learning_read" in availableTools) {
+            appendLine("- 资料已经整理或任务暂时停止时，先用 learning_read 读取已保存的总览与阶段笔记，不重新开启同一学习任务。笔记按字符预算分页，可带原样游标续读、按 note_ref 定位或查正文关键词；保留来源和未读范围，需要原文细节再使用 document_read 回查。学习笔记不是原文，不能把笔记数量或关键词命中当作全文已读。")
+        }
         if ("workspace_inspect" in availableTools) {
             appendLine("- 用 workspace_inspect 找当前分支的来源、笔记、草稿和成果；workspace_read 有界读取，workspace_write 新建文件，workspace_edit 先读取再带最新校验值修改。workspace_compute 只执行公布的确定性文本操作，不运行任意脚本。只用工具返回的 novex:// 引用，不猜应用目录或文件路径。")
         }

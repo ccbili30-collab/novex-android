@@ -5,8 +5,58 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 
 class NovexLearningToolsTest {
+    @Test fun `saved learning notes are readable with source anchors and bounded continuation without restarting learning`() {
+        val directory = Files.createTempDirectory("novex-note-read").toFile()
+        try {
+            val sourceRef = NovexResourceRef("novex://documents/source-a")
+            val collection = NovexSourceCollection(collectionRef,
+                NovexResourceRef("novex://conversation-branches/branch-a"), "资料集", listOf(
+                    NovexCollectionSource(NovexResourceRef("novex://sources/a"), "原文", "a".repeat(64),
+                        NovexSourceStatus.READY, sourceRef, listOf("block_a")),
+                ), 0, 0)
+            val body = "整理后的规则与关系。".repeat(600)
+            val note = NovexLearningNote(NovexResourceRef("novex://learning-notes/note-a"),
+                NovexLearningNoteLevel.SECTION, "规则笔记", body, listOf(sourceRef), listOf("block_a"))
+            FileNovexLearningRepository(directory).save(NovexLearningState(collection,
+                NovexReviewLedger.start(collection), notes = listOf(note)))
+            val router = NovexLearningToolRouter(NovexLearningTools(object : NovexLearningPreflightResolver {
+                override fun prepare(collectionRef: NovexResourceRef, modelId: String?): NovexLearningPreflightSnapshot? =
+                    error("回读不能重新发起学习预检")
+                override fun readState(collectionRef: NovexResourceRef): NovexLearningState? =
+                    FileNovexLearningRepository(directory).find(collectionRef).takeIf { collectionRef == collection.ref }
+            }))
+            val received = StringBuilder()
+            var cursor: String? = null
+            var pages = 0
+            do {
+                val args = JSONObject().put("collection_ref", collectionRef.value).put("max_chars", 1000)
+                cursor?.let { args.put("cursor", it) }
+                val result = router.execute("learning_read", args.toString())
+                assertTrue(result.summary, result.ok)
+                assertEquals(NovexToolSideEffect.NONE, result.sideEffect)
+                val data = JSONObject(result.toJson()).getJSONObject("data")
+                val blocks = data.getJSONArray("blocks")
+                var pageChars = 0
+                for (i in 0 until blocks.length()) {
+                    val text = blocks.getJSONObject(i).getString("text")
+                    received.append(text)
+                    pageChars += text.length
+                }
+                assertTrue(pageChars <= 1000)
+                assertTrue(data.getJSONArray("note_sources").toString().contains(sourceRef.value))
+                cursor = data.optString("next_cursor").ifBlank { null }
+                pages++
+                assertTrue(pages < 20)
+            } while (cursor != null)
+            assertEquals(body, received.toString())
+            assertTrue(pages > 1)
+            assertFalse(router.execute("learning_read", "{\"collection_ref\":\"novex://source-collections/other\"}").ok)
+        } finally { directory.deleteRecursively() }
+    }
+
     private val collectionRef = NovexResourceRef("novex://source-collections/large")
     private val snapshot = NovexLearningPreflight.prepare(
         NovexLearningPreflightRequest(

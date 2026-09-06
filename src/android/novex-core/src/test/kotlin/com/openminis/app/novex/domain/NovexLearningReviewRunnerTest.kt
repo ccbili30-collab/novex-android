@@ -7,6 +7,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `truncated parsing preserves available notes but never claims complete source review`() = runTest {
+        val fixture = fixture(30_000, 8_000)
+        val reviewer = RecordingReviewer()
+        val result = NovexLearningReviewRunner(
+            NovexDocumentSnapshotStore { fixture.document.copy(status = NovexDocumentStatus.TRUNCATED) },
+            reviewer, {},
+        ).run(fixture.state)
+        val restored = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(result))
+        assertEquals(NovexLearningTaskStatus.PARTIAL_FAILURE, restored.task?.status)
+        assertTrue("可读部分仍应保留整理成果", restored.notes.isNotEmpty())
+        assertTrue("未能完整解析的来源必须明确留在阅读记录中", restored.reviewLedger.unreadableSourceRefs.isNotEmpty())
+        assertEquals(fixture.document.blocks.size, restored.reviewLedger.reviewedBlocks)
+    }
+
     @Test fun `missing planned source blocks cannot be reported as a completed full review`() = runTest {
         val fixture = fixture(30_000, 8_000)
         val reviewer = RecordingReviewer()

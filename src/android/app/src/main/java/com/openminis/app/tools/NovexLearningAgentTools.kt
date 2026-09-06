@@ -17,10 +17,10 @@ class NovexLearningAgentTools(
         return ToolExecutionResult(
             output = result.toJson(),
             success = result.ok,
-            toolTitle = if (name == NovexLearningToolRouter.LEARNING_PREPARE) {
-                "准备资料学习"
-            } else {
-                "资料学习"
+            toolTitle = when (name) {
+                NovexLearningToolRouter.LEARNING_PREPARE -> "准备资料学习"
+                NovexLearningToolRouter.LEARNING_READ -> "读取整理笔记"
+                else -> "资料学习"
             },
         )
     }

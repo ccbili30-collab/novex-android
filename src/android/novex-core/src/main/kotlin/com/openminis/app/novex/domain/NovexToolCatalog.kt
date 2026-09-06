@@ -78,6 +78,19 @@ object NovexToolCatalog {
                     ),
                 ),
             )
+            add(NovexToolDefinition(
+                name = "learning_read",
+                description = "只读访问当前分支资料集已保存的学习笔记与来源、覆盖进度；总览优先，正文有界分页。不会重新启动学习，不会创建卡片。",
+                risk = NovexToolRisk.READ_ONLY,
+                parameters = listOf(
+                    NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
+                    NovexToolParameter("note_ref", NovexToolParameterKind.STRING, false, "可选本工具返回的笔记引用；不能与其他定位方式混用"),
+                    NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样使用上次 next_cursor；续读时只传这一种定位参数"),
+                    NovexToolParameter("query", NovexToolParameterKind.STRING, false, "可选笔记正文关键词，只返回命中笔记，不能冒充完整通读"),
+                    NovexToolParameter("first_note", NovexToolParameterKind.INTEGER, false, "从第几条笔记重读，从 1 计数；对应 next_position.block，不与游标混用"),
+                    NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次正文字符预算，一到四万八千，默认二万四千；最多二十条笔记，剩余内容返回游标"),
+                ),
+            ))
         }
         if (NovexToolCapability.WORKSPACE in capabilities) {
             add(

@@ -6,6 +6,27 @@ import org.junit.Test
 
 class NovexLearningCoordinatorTest {
     @Test
+    fun budgetExtensionCannotSilentlySwitchProviderOrModelCapacity() {
+        val coordinator = NovexLearningCoordinator()
+        val initial = NovexLearningPreflight.prepare(request(budget = NovexLearningTokenBudget(20_000, 2_000)))
+        val stopped = coordinator.start(initial, confirmation(initial))
+            .recordUsage(20_000, 2_000)
+        val larger = request(budget = NovexLearningTokenBudget(50_000, 5_000))
+        listOf(
+            larger.copy(modelProviderName = "另一提供商"),
+            larger.copy(effectiveContextTokens = 32_000),
+            larger.copy(modelMaxOutputTokens = 512),
+        ).forEach { changed ->
+            val replacement = NovexLearningPreflight.prepare(changed)
+            assertThrows(IllegalArgumentException::class.java) {
+                coordinator.extendBudget(stopped, replacement, confirmation(replacement))
+            }
+        }
+        assertEquals(20_000, stopped.usage.usedInputTokens)
+        assertEquals(NovexLearningTaskStatus.PAUSED_BUDGET_REACHED, stopped.status)
+    }
+
+    @Test
     fun longRunningLearningStartsOnlyFromAConfirmationBoundToTheCurrentPreflight() {
         val preflight = NovexLearningPreflight.prepare(request())
         val coordinator = NovexLearningCoordinator()

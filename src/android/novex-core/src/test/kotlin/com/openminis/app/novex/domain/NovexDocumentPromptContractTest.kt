@@ -16,11 +16,11 @@ class NovexDocumentPromptContractTest {
     }
 
     @Test
-    fun learningCapabilityExposesPreparationButNeverLetsTheModelStartOrConfirmWork() {
+    fun learningCapabilityExposesPreparationAndSavedNotesButNeverLetsTheModelStartOrConfirmWork() {
         val tools = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.LEARNING))
 
-        assertEquals(listOf("learning_prepare"), tools.map { it.name })
-        assertTrue(tools.single().risk == NovexToolRisk.READ_ONLY)
+        assertEquals(listOf("learning_prepare", "learning_read"), tools.map { it.name })
+        assertTrue(tools.all { it.risk == NovexToolRisk.READ_ONLY })
         assertFalse(tools.any { it.name in setOf("learning_start", "learning_confirm") })
     }
 

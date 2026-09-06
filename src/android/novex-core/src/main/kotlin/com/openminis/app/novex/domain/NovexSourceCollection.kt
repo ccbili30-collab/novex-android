@@ -2,6 +2,7 @@ package com.openminis.app.novex.domain
 
 enum class NovexSourceStatus(val wireName: String) {
     READY("ready"),
+    TRUNCATED("truncated"),
     EMPTY("empty"),
     OCR_REQUIRED("ocr_required"),
     PASSWORD_REQUIRED("password_required"),
@@ -140,9 +141,8 @@ object NovexSourceCollectionBuilder {
     }
 
     private fun NovexDocumentStatus.toSourceStatus(): NovexSourceStatus = when (this) {
-        NovexDocumentStatus.READY,
-        NovexDocumentStatus.TRUNCATED,
-        -> NovexSourceStatus.READY
+        NovexDocumentStatus.READY -> NovexSourceStatus.READY
+        NovexDocumentStatus.TRUNCATED -> NovexSourceStatus.TRUNCATED
         NovexDocumentStatus.EMPTY -> NovexSourceStatus.EMPTY
         NovexDocumentStatus.OCR_REQUIRED -> NovexSourceStatus.OCR_REQUIRED
         NovexDocumentStatus.PASSWORD_REQUIRED -> NovexSourceStatus.PASSWORD_REQUIRED
@@ -206,6 +206,13 @@ class NovexReviewLedger private constructor(
         get() = status == NovexLearningTaskStatus.COMPLETE ||
             status == NovexLearningTaskStatus.PARTIAL_FAILURE
 
+    /** Available blocks remain readable, but do not prove the whole source was parsed. */
+    fun recordIncompleteSources(sourceRefs: List<NovexResourceRef>): NovexReviewLedger = NovexReviewLedger(
+        collectionRef, readableBlocksByDocument, reviewedBlocksByDocument,
+        (unreadableSourceRefs + sourceRefs).distinct(),
+        if (status == NovexLearningTaskStatus.COMPLETE && sourceRefs.isNotEmpty()) NovexLearningTaskStatus.PARTIAL_FAILURE else status,
+    )
+
     fun recordRead(
         documentRef: NovexResourceRef,
         blockIds: List<String>,
@@ -238,7 +245,7 @@ class NovexReviewLedger private constructor(
     companion object {
         fun start(collection: NovexSourceCollection): NovexReviewLedger {
             val readable = collection.sources
-                .filter { it.status == NovexSourceStatus.READY && it.documentRef != null }
+                .filter { it.status in setOf(NovexSourceStatus.READY, NovexSourceStatus.TRUNCATED) && it.documentRef != null }
                 .associate { source -> requireNotNull(source.documentRef) to source.blockIds }
             val unreadable = collection.sources
                 .filter { source ->

@@ -911,8 +911,8 @@ class ChatViewModel(
     // streaming, hiding the Stop button while the new turn was live).
     @Volatile
     private var streamJob: Job? = null
-    private var currentProvider: LLMProvider? = null
-    private var currentModel: LLMModel? = null
+    @Volatile private var currentProvider: LLMProvider? = null
+    @Volatile private var currentModel: LLMModel? = null
 
     /** Structured agent history for the agent loop (contentParts-based). */
     private val agentHistory = mutableListOf<LLMMessage>()
@@ -942,9 +942,14 @@ class ChatViewModel(
     val pendingNovexLearningPreflight: StateFlow<NovexLearningPreflightSnapshot?> =
         _pendingNovexLearningPreflight.asStateFlow()
     private val novexLearningAgentTools by lazy {
-        NovexLearningAgentTools { collectionRef, requestedModelId ->
-            prepareNovexLearningPreflight(collectionRef, requestedModelId)
-        }
+        NovexLearningAgentTools(object : com.openminis.app.novex.domain.NovexLearningPreflightResolver {
+            override fun prepare(collectionRef: NovexResourceRef, modelId: String?) =
+                prepareNovexLearningPreflight(collectionRef, modelId)
+            override fun readState(collectionRef: NovexResourceRef): NovexLearningState? {
+                if (collectionRef.value !in activeNovexSourceCollectionRefs) return null
+                return novexLearningRepository.find(collectionRef)?.takeIf { collectionRef.value in activeNovexSourceCollectionRefs }
+            }
+        })
     }
     private val novexConversationWorkspaceStore by lazy {
         com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(
@@ -8896,7 +8901,8 @@ class ChatViewModel(
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> novexDocumentAgentTools.execute(name, argsJson)
-            NovexLearningToolRouter.LEARNING_PREPARE -> novexLearningAgentTools.execute(name, argsJson)
+            NovexLearningToolRouter.LEARNING_PREPARE,
+            NovexLearningToolRouter.LEARNING_READ -> novexLearningAgentTools.execute(name, argsJson)
             in com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter.TOOL_NAMES -> {
                 val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
                     conversationId = activeSessionId,
@@ -12531,6 +12537,11 @@ class ChatViewModel(
             val state = novexLearningRepository.find(collectionRef) ?: return@launch
             val task = state.task ?: return@launch
             if (task.status != NovexLearningTaskStatus.PAUSED) return@launch
+            runCatching { requireNovexLearningExecutionContext(task.preflight, provider) }
+                .getOrElse { failure ->
+                    _novexLearningError.value = failure.message ?: "学习配置已变化，请重新确认"
+                    return@launch
+                }
             runNovexLearning(state.copy(task = task.resume()), provider)
         }
     }
@@ -12557,7 +12568,7 @@ class ChatViewModel(
         try {
             val runner = NovexLearningReviewRunner(
                 documents = novexDocumentRepository,
-                reviewer = providerNovexLearningReviewer(provider),
+                reviewer = providerNovexLearningReviewer(provider, requireNotNull(initial.task).preflight),
                 saveCheckpoint = { checkpoint ->
                     novexLearningRepository.save(checkpoint)
                     _novexLearningTask.value = checkpoint.task
@@ -12607,9 +12618,21 @@ class ChatViewModel(
             }
     }
 
-    private fun providerNovexLearningReviewer(provider: LLMProvider): NovexLearningReviewer =
+    private fun requireNovexLearningExecutionContext(preflight: NovexLearningPreflightSnapshot, provider: LLMProvider) {
+        require(currentProvider === provider) { "当前模型连接已变化，学习已暂停；请恢复原配置后继续" }
+        val model = requireNotNull(currentModel) { "当前没有可用模型，学习已暂停" }
+        com.openminis.app.novex.domain.NovexLearningGate.requireExecutionContext(preflight,
+            model.id, provider.name, com.openminis.app.novex.domain.NovexLearningModelLimits(
+                effectiveContextWindowTokens(), model.maxOutputTokens ?: 4096))
+        require(preflight.collectionRef.value in activeNovexSourceCollectionRefs) {
+            "当前对话分支不再包含这份资料集，学习已暂停"
+        }
+    }
+
+    private fun providerNovexLearningReviewer(provider: LLMProvider, preflight: NovexLearningPreflightSnapshot): NovexLearningReviewer =
         object : NovexLearningReviewer {
             override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                requireNovexLearningExecutionContext(preflight, provider)
                 val prompt = request.prompt
                 val response = provider.sendMessage(
                     messages = listOf(
@@ -12631,6 +12654,7 @@ class ChatViewModel(
             }
 
             override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                requireNovexLearningExecutionContext(preflight, provider)
                 val prompt = request.prompt
                 val response = provider.sendMessage(
                     messages = listOf(
