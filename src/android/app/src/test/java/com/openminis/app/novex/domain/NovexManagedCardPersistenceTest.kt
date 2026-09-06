@@ -36,6 +36,48 @@ class NovexManagedCardPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun `interrupted confirmed creation leaves no partial cards after database reopen`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val path = File(files.root, "rollback.db").absolutePath
+        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+            .allowMainThreadQueries().build()
+        var database = openDatabase()
+        val media = File(files.root, "media")
+        var workspace = NovexWorkspaceFactory.create(database, media)
+        try {
+            val existing = workspace.apply(NovexCommand.CreateWorld("原有世界", "不得改动旧资料")).requireWorld()
+            val service = NovexManagementService(workspace,
+                CreativeArtifactRepository(database, CreativeArtifactFileStore(File(files.root, "artifacts"))),
+                NovexManagementTransaction { work -> database.withTransaction {
+                    work()
+                    throw IllegalStateException("模拟写入后提交前中断")
+                } })
+            val operations = JSONArray()
+            for ((operation, name) in listOf("create_world" to "新世界", "create_character" to "新角色", "create_game" to "新文游")) {
+                operations.put(JSONObject().put("operation", operation).put("name", name)
+                    .put("profile_json", JSONObject().put("name", name))
+                    .put("modules", JSONArray().put(JSONObject().put("module_type", "custom")
+                        .put("name", "完整正文").put("content_json", JSONObject().put("kind", "article").put("text", "不能留下半成品")))))
+            }
+            val configuration = NovexConversationConfigurationSnapshot("interrupted-creation")
+            val proposal = service.propose(configuration, operations.toString(), "创建世界卡、角色卡和文游卡", "interrupted-cards")
+            val error = assertThrows(IllegalStateException::class.java) { runBlocking {
+                service.apply(configuration, proposal, proposal.confirmationPhrase)
+            } }
+            assertEquals("模拟写入后提交前中断", error.message)
+            database.close()
+            database = openDatabase()
+            workspace = NovexWorkspaceFactory.create(database, media)
+            assertEquals(listOf(existing.id), workspace.worlds().map { it.world.id })
+            assertEquals("不得改动旧资料", workspace.world(existing.id)!!.world.overview)
+            assertTrue(workspace.characters().isEmpty())
+            assertTrue(workspace.interactiveFictions().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun `native copy retains map item images and unknown content after original deletion`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
