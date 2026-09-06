@@ -112,6 +112,7 @@ object NovexContextComposer {
         val ranked = candidates.withIndex().mapNotNull { indexedCandidate ->
             val candidate = indexedCandidate.value
             val rank = when {
+                candidate.alwaysInclude && candidate.kind == ContextSourceKind.ANSWER_IDENTITY -> -1
                 candidate.alwaysInclude -> 0
                 candidate.sourceId in direct -> 1
                 candidate.sourceId in oneHopIds -> 2
@@ -126,6 +127,7 @@ object NovexContextComposer {
             )
         }.sortedWith(
             compareBy<RankedCandidate> { it.rank }
+                .thenBy { if (it.rank == -1) it.value.position else 0 }
                 .thenByDescending { it.recallScore }
                 .thenBy { it.value.position }
                 .thenBy { it.inputIndex }

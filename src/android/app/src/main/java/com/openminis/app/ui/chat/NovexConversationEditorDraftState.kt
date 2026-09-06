@@ -4,6 +4,7 @@ import com.openminis.app.data.ConversationSettingsSnapshot
 import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
 import com.openminis.app.novex.domain.AnswerIdentity
 import com.openminis.app.novex.domain.ConversationControlDefinition
+import com.openminis.app.novex.domain.ConversationPlayerIdentity
 import com.openminis.app.novex.domain.ManagedAccess
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexConversationCommand
@@ -31,6 +32,10 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.SetAnswerIdentity(identity),
     )
 
+    fun setPlayerIdentity(identity: ConversationPlayerIdentity?) = apply(
+        NovexConversationCommand.SetPlayerIdentity(identity),
+    )
+
     fun addBackground(subject: NovexContentAddress) = apply(
         NovexConversationCommand.AddBackground(subject),
     )
@@ -39,8 +44,8 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.RemoveBackground(subject),
     )
 
-    fun activateGame(snapshot: ActiveInteractiveFictionSnapshot) = apply(
-        NovexConversationCommand.ActivateInteractiveFiction(snapshot),
+    fun activateGame(snapshot: ActiveInteractiveFictionSnapshot, replacePlayerIdentity: Boolean = false) = apply(
+        NovexConversationCommand.ActivateInteractiveFiction(snapshot, replacePlayerIdentity),
     )
 
     fun deactivateGame() = apply(NovexConversationCommand.DeactivateInteractiveFiction)

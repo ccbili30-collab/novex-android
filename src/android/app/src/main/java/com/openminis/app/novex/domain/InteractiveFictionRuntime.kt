@@ -4,6 +4,7 @@ import com.openminis.app.data.character.ContentModuleDocument
 import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.toPlainText
 import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -37,6 +38,18 @@ object InteractiveFictionRuntimeSnapshotFactory {
             snapshotId = content.sha256(),
             title = source.project.name,
             contentJson = content,
+            playerIdentity = (listOf(source.project.playerIdentity) + source.modules
+                .filter { it.type == ContentModuleType.GAME_PLAYER_IDENTITY }
+                .sortedBy(ContentModuleEntity::position)
+                .map { ContentModuleDocumentCodec.decode(it.type, it.contentJson).toPlainText() })
+                .map(String::trim).filter(String::isNotBlank).distinct().joinToString("\n")
+                .takeIf(String::isNotBlank)?.let { description ->
+                    ConversationPlayerIdentity(
+                        id = "game-player:${source.project.id}:${description.sha256()}",
+                        label = source.project.playerIdentity.take(80).ifBlank { "${source.project.name}的玩家" },
+                        description = description,
+                    )
+                },
             presetControls = source.modules
                 .filter { it.type == ContentModuleType.GAME_QUICK_ACTIONS }
                 .sortedBy(ContentModuleEntity::position)

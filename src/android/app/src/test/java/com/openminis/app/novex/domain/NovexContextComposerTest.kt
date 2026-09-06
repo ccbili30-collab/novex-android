@@ -9,6 +9,17 @@ class NovexContextComposerTest {
     private val oneTokenPerChar: (String) -> Int = { it.length }
 
     @Test
+    fun recalledBackgroundCannotConsumeTheBudgetBeforeTheSelectedIdentity() {
+        val result = NovexContextComposer.compose("青龙会", 8, listOf(
+            NovexContextCandidate("world", "青龙会", "青龙会相关的长文", alwaysInclude = true, aliases = setOf("青龙会")),
+            NovexContextCandidate("identity", "史官", "你是史官", kind = ContextSourceKind.ANSWER_IDENTITY, alwaysInclude = true),
+        ), estimateTokens = oneTokenPerChar)
+        assertEquals("identity", result.fragments.first().sourceId)
+        assertEquals("你是史官", result.fragments.first().text)
+        assertTrue(result.usedTokens <= 8)
+    }
+
+    @Test
     fun deterministicNameRecallIncludesOneRelationshipHopOnly() {
         val result = NovexContextComposer.compose(
             query = "青龙会在哪个地区出现？",

@@ -31,6 +31,9 @@ object NovexProductToolGuide {
         if ("save_checkpoint" in availableTools) {
             appendLine("- 用户要求存档时调用 save_checkpoint，提交可读摘要与结构化状态；普通文本文件不能冒充正式存档。")
         }
+        if ("end_interactive_fiction" in availableTools) {
+            appendLine("- 用户明确结束文游时调用 end_interactive_fiction，使用核心设定中的本局编号；成功后恢复启动前身份并保留历史局次。返回列表不是结束文游，不因此调用。")
+        }
         if (availableTools.containsAll(setOf("novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes"))) {
             appendLine("- 长期记忆通过 novex_inspect_memory、novex_propose_memory_changes、novex_apply_memory_changes 检查、提案和确认写入；每次修改需要新的真实用户确认，不保存密钥、口令或访问凭据。")
         }

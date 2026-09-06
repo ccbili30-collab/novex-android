@@ -16,15 +16,48 @@ import com.openminis.app.novex.domain.NovexWorkspace
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Older conversations can retain card snapshots whose originals no longer exist in the catalog. */
+data class NovexLegacyContext(
+    val characterVersionId: String? = null,
+    val character: com.openminis.app.data.character.CharacterCard? = null,
+    val world: com.openminis.app.data.character.StoryWorld? = null,
+)
+
 /**
  * Resolves only content that the conversation explicitly uses as background, answer identity or
  * an active game. Managed subjects are intentionally absent: edit authorization is not context.
  */
 class WorkspaceNovexContextLoader(
     private val workspace: NovexWorkspace,
+    private val legacy: NovexLegacyContext = NovexLegacyContext(),
 ) {
     suspend fun load(configuration: NovexConversationConfigurationSnapshot): List<NovexContextCandidate> {
         val candidates = mutableListOf<NovexContextCandidate>()
+        when (val identity = configuration.answerIdentity) {
+            AnswerIdentity.Nova -> candidates.add(NovexContextCandidate(
+                sourceId = "answer-identity:nova",
+                label = "回答身份 · Nova（诺瓦）",
+                content = "你是 Nova（诺瓦），适合交流、资料整理与共同创作的助手。加入世界背景不自动开始扮演或游戏。",
+                kind = ContextSourceKind.ANSWER_IDENTITY,
+                alwaysInclude = true, position = Int.MIN_VALUE,
+            ))
+            is AnswerIdentity.PersonaPreset -> candidates.add(NovexContextCandidate(
+                sourceId = "answer-identity:persona:${identity.presetId}",
+                label = "回答人格 · ${identity.label}",
+                content = "当前回答人格：${identity.label}\n${identity.instructions}",
+                kind = ContextSourceKind.ANSWER_IDENTITY,
+                alwaysInclude = true, position = Int.MIN_VALUE,
+            ))
+            is AnswerIdentity.CharacterVersion -> Unit
+        }
+        configuration.playerIdentity?.let { player ->
+            candidates += NovexContextCandidate(
+                sourceId = "player-identity:${player.id}",
+                label = "当前玩家身份 · ${player.label}",
+                content = "玩家身份：${player.label}\n${player.description}\n这描述用户的故事身份，不代表其已经做出行动。",
+                alwaysInclude = true, position = Int.MIN_VALUE + 1,
+            )
+        }
         val backgroundWorldIds = configuration.backgroundSettings
             .filter { it.subject.kind == NovexContentKind.WORLD }
             .map { it.subject.id }
@@ -34,7 +67,14 @@ class WorkspaceNovexContextLoader(
         val identityVersionId = (configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
 
         backgroundWorldIds.distinct().forEach { worldId ->
-            val snapshot = workspace.world(worldId) ?: return@forEach
+            val snapshot = workspace.world(worldId)
+            if (snapshot == null) {
+                legacy.world?.takeIf { it.id == worldId }?.let { world ->
+                    candidates += NovexContextCandidate(worldCoreId(worldId), "世界 · ${world.name}",
+                        world.description, alwaysInclude = true, position = -1)
+                }
+                return@forEach
+            }
             val coreId = worldCoreId(worldId)
             candidates += NovexContextCandidate(
                 sourceId = coreId,
@@ -56,8 +96,20 @@ class WorkspaceNovexContextLoader(
                 card.character.allVersions.map { version -> Triple(card.character.character.name, version, card) }
             }.associateBy { it.second.id }
             requestedVersions.forEach { versionId ->
-                val (rootName, version) = versions[versionId]?.let { it.first to it.second } ?: return@forEach
                 val identity = versionId == identityVersionId
+                val entry = versions[versionId]
+                if (entry == null) {
+                    legacy.character?.takeIf { versionId == (legacy.characterVersionId ?: it.id) }?.let { role ->
+                        val text = if (identity) {
+                            com.openminis.app.data.character.CharacterPromptComposer.compose(role.toJson().toString(), null).orEmpty()
+                        } else listOf(role.name, role.summary, role.background, role.knowledge).filter(String::isNotBlank).joinToString("\n")
+                        candidates += NovexContextCandidate(characterCoreId(versionId), "角色 · ${role.name}", text,
+                            kind = if (identity) ContextSourceKind.ANSWER_IDENTITY else ContextSourceKind.BACKGROUND_MODULE,
+                            alwaysInclude = true, position = if (identity) Int.MIN_VALUE else -1)
+                    }
+                    return@forEach
+                }
+                val (rootName, version) = entry.first to entry.second
                 val profile = CharacterVersionProfile.fromJson(version.profileJson, rootName)
                 candidates += NovexContextCandidate(
                     sourceId = characterCoreId(versionId),
@@ -74,6 +126,19 @@ class WorkspaceNovexContextLoader(
                     alwaysInclude = true,
                     position = -1,
                 )
+                if (identity) {
+                    val raw = runCatching { JSONObject(version.profileJson) }.getOrDefault(JSONObject())
+                    val instructions = listOf("personality", "scenario", "exampleDialogue", "systemPrompt", "postHistoryInstructions", "contentBoundary")
+                        .mapNotNull { key -> raw.optString(key).takeIf(String::isNotBlank) }
+                        .joinToString("\n")
+                    candidates += NovexContextCandidate(
+                        sourceId = "character-version:$versionId:instructions",
+                        label = "角色 · $rootName · 扮演要求",
+                        content = "你扮演${profile.name}，不得替用户决定行动或虚构其内心。\n$instructions",
+                        kind = ContextSourceKind.ANSWER_IDENTITY,
+                        alwaysInclude = true, position = Int.MIN_VALUE,
+                    )
+                }
                 val modules = workspace.modules(ModuleOwner.characterVersion(versionId)).modules
                 candidates += moduleCandidates(
                     ownerLabel = "角色 · $rootName · ${version.label}",
@@ -84,7 +149,9 @@ class WorkspaceNovexContextLoader(
         }
 
         configuration.activeInteractiveFiction?.let { active ->
-            candidates += gameCandidates(active.snapshotId, active.title, active.contentJson)
+            candidates += gameCandidates(active.snapshotId, active.title, active.contentJson,
+                includeLegacyPlayer = active.playerIdentity == null && configuration.playerIdentity == null,
+                playthroughId = configuration.effectivePlaythroughId.orEmpty())
         }
         return candidates.mergeDuplicates()
     }
@@ -116,12 +183,13 @@ class WorkspaceNovexContextLoader(
         )
     }
 
-    private fun gameCandidates(snapshotId: String, title: String, raw: String): List<NovexContextCandidate> {
+    private fun gameCandidates(snapshotId: String, title: String, raw: String, includeLegacyPlayer: Boolean, playthroughId: String): List<NovexContextCandidate> {
         val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
         val prefix = "game:$snapshotId"
         val core = listOf(
+            "本局编号：$playthroughId",
             root.optString("summary").takeIf(String::isNotBlank),
-            root.optString("playerIdentity").takeIf(String::isNotBlank)?.let { "玩家身份：$it" },
+            root.optString("playerIdentity").takeIf { includeLegacyPlayer && it.isNotBlank() }?.let { "玩家身份：$it" },
             root.optString("launchMode").takeIf(String::isNotBlank)?.let { "启动方式：$it" },
         ).filterNotNull().joinToString("\n")
         return buildList {
@@ -140,6 +208,7 @@ class WorkspaceNovexContextLoader(
                 val value = modules.optJSONObject(index) ?: return@repeat
                 val moduleId = value.optString("id").ifBlank { index.toString() }
                 val typeName = value.optString("type")
+                if (typeName == "GAME_PLAYER_IDENTITY" && !includeLegacyPlayer) return@repeat
                 val type = runCatching {
                     com.openminis.app.data.character.ContentModuleType.valueOf(typeName)
                 }.getOrNull() ?: return@repeat

@@ -66,6 +66,23 @@ sealed interface AnswerIdentity {
     }
 }
 
+object NovexPersonaPresets {
+    val gameHost = AnswerIdentity.PersonaPreset(
+        "novex:game-host", "游戏主持人",
+        "你是本局游戏主持人。依照活动文游的规则组织开局与推进，维护可核对的状态，尊重玩家自主行动；缺少世界时可以按文游规则与用户共创。管理作品时执行真实工具任务，不把操作结果伪装成剧情。",
+    )
+}
+
+data class ConversationPlayerIdentity(
+    val id: String,
+    val label: String,
+    val description: String = "",
+) {
+    init {
+        require(id.isNotBlank()) { "玩家身份编号不能为空" }
+    }
+}
+
 data class ActiveInteractiveFictionSnapshot(
     val projectId: String,
     val snapshotId: String,
@@ -73,6 +90,8 @@ data class ActiveInteractiveFictionSnapshot(
     /** Complete immutable project payload used by the conversation runtime. */
     val contentJson: String = "{}",
     val presetControls: List<ConversationControlDefinition> = emptyList(),
+    val playerIdentity: ConversationPlayerIdentity? = null,
+    val answerIdentity: AnswerIdentity? = null,
 ) {
     init {
         require(projectId.isNotBlank()) { "文游项目编号不能为空" }
@@ -130,6 +149,13 @@ data class ConversationControlDefinition(
     }
 }
 
+data class CompletedPlaythrough(
+    val game: ActiveInteractiveFictionSnapshot,
+    val states: Map<String, PlaythroughState>,
+    val controls: List<ConversationControlDefinition>,
+    val playthroughId: String = "",
+)
+
 data class NovexConversationConfigurationSnapshot(
     val conversationId: String,
     val answerIdentity: AnswerIdentity = AnswerIdentity.Nova,
@@ -138,13 +164,31 @@ data class NovexConversationConfigurationSnapshot(
     val activeInteractiveFiction: ActiveInteractiveFictionSnapshot? = null,
     val playthroughStates: Map<String, PlaythroughState> = emptyMap(),
     val controls: List<ConversationControlDefinition> = emptyList(),
-)
+    val preGameAnswerIdentity: AnswerIdentity? = null,
+    val playerIdentity: ConversationPlayerIdentity? = null,
+    val preGamePlayerIdentity: ConversationPlayerIdentity? = null,
+    val completedPlaythroughs: List<CompletedPlaythrough> = emptyList(),
+    val activePlaythroughId: String? = null,
+) {
+    val effectivePlaythroughId: String?
+        get() = activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
+
+    val hasPersistentConfiguration: Boolean
+        get() = answerIdentity != AnswerIdentity.Nova || playerIdentity != null ||
+            backgroundSettings.isNotEmpty() || managedSubjects.isNotEmpty() ||
+            activeInteractiveFiction != null || completedPlaythroughs.isNotEmpty() ||
+            playthroughStates.isNotEmpty() || controls.isNotEmpty()
+}
 
 sealed interface NovexConversationCommand {
+    data class SetPlayerIdentity(val identity: ConversationPlayerIdentity?) : NovexConversationCommand
     data class SetAnswerIdentity(val identity: AnswerIdentity) : NovexConversationCommand
     data class ActivateInteractiveFiction(
         val snapshot: ActiveInteractiveFictionSnapshot,
+        val replacePlayerIdentity: Boolean = false,
+        val playthroughId: String = java.util.UUID.randomUUID().toString(),
     ) : NovexConversationCommand
+    data class EndInteractiveFiction(val playthroughId: String) : NovexConversationCommand
     data object DeactivateInteractiveFiction : NovexConversationCommand
     data class SetPlaythroughValue(
         val branchId: String,
@@ -175,19 +219,50 @@ sealed interface NovexConversationCommand {
 class NovexConversationConfiguration private constructor(
     val snapshot: NovexConversationConfigurationSnapshot,
 ) {
+    private fun archiveCurrentPlaythrough(): List<CompletedPlaythrough> = snapshot.activeInteractiveFiction?.let { game ->
+        snapshot.completedPlaythroughs + CompletedPlaythrough(game, snapshot.playthroughStates, snapshot.controls, snapshot.effectivePlaythroughId.orEmpty())
+    } ?: snapshot.completedPlaythroughs
+
     fun apply(command: NovexConversationCommand): NovexConversationConfiguration = when (command) {
+        is NovexConversationCommand.EndInteractiveFiction -> {
+            require(command.playthroughId.isNotBlank()) { "结束文游需要本局编号" }
+            if (snapshot.activeInteractiveFiction == null && snapshot.completedPlaythroughs.lastOrNull()?.playthroughId == command.playthroughId) {
+                this
+            } else {
+                require(snapshot.effectivePlaythroughId == command.playthroughId) { "当前局次已经变化，没有结束任何文游；请重新读取当前局次" }
+                apply(NovexConversationCommand.DeactivateInteractiveFiction)
+            }
+        }
+        is NovexConversationCommand.SetPlayerIdentity -> withSnapshot(snapshot.copy(playerIdentity = command.identity))
         is NovexConversationCommand.SetAnswerIdentity -> withSnapshot(
             snapshot.copy(answerIdentity = command.identity),
         )
 
         is NovexConversationCommand.ActivateInteractiveFiction -> {
+            require(command.playthroughId.isNotBlank()) { "本局编号不能为空" }
             val keepsCurrentPlaythrough = snapshot.activeInteractiveFiction == command.snapshot
+            val requestedPlayer = command.snapshot.playerIdentity
+            require(keepsCurrentPlaythrough || requestedPlayer == null || snapshot.playerIdentity == null ||
+                requestedPlayer == snapshot.playerIdentity || command.replacePlayerIdentity) {
+                "文游玩家身份与当前选择不同，请确认替换后再启动"
+            }
             val localControls = snapshot.controls.filterNot {
-                it.source == ConversationControlSource.PROJECT_PRESET
+                it.source == ConversationControlSource.PROJECT_PRESET ||
+                    (!keepsCurrentPlaythrough && it.source == ConversationControlSource.AI)
             }
             withSnapshot(
                 snapshot.copy(
                     activeInteractiveFiction = command.snapshot,
+                    activePlaythroughId = if (keepsCurrentPlaythrough) snapshot.activePlaythroughId else command.playthroughId,
+                    completedPlaythroughs = if (keepsCurrentPlaythrough) snapshot.completedPlaythroughs else archiveCurrentPlaythrough(),
+                    answerIdentity = if (keepsCurrentPlaythrough) snapshot.answerIdentity else command.snapshot.answerIdentity ?: NovexPersonaPresets.gameHost,
+                    preGameAnswerIdentity = if (snapshot.activeInteractiveFiction == null) {
+                        snapshot.answerIdentity
+                    } else snapshot.preGameAnswerIdentity,
+                    playerIdentity = if (keepsCurrentPlaythrough) snapshot.playerIdentity else requestedPlayer ?: snapshot.playerIdentity,
+                    preGamePlayerIdentity = if (snapshot.activeInteractiveFiction == null) {
+                        snapshot.playerIdentity
+                    } else snapshot.preGamePlayerIdentity,
                     playthroughStates = if (keepsCurrentPlaythrough) {
                         snapshot.playthroughStates
                     } else {
@@ -201,8 +276,14 @@ class NovexConversationConfiguration private constructor(
         NovexConversationCommand.DeactivateInteractiveFiction -> withSnapshot(
             snapshot.copy(
                 activeInteractiveFiction = null,
+                activePlaythroughId = null,
+                completedPlaythroughs = archiveCurrentPlaythrough(),
+                answerIdentity = snapshot.preGameAnswerIdentity ?: snapshot.answerIdentity,
+                preGameAnswerIdentity = null,
+                playerIdentity = if (snapshot.preGameAnswerIdentity != null) snapshot.preGamePlayerIdentity else snapshot.playerIdentity,
+                preGamePlayerIdentity = null,
                 controls = snapshot.controls.filterNot {
-                    it.source == ConversationControlSource.PROJECT_PRESET
+                    it.source != ConversationControlSource.USER
                 },
             ),
         )
@@ -339,6 +420,10 @@ class NovexConversationConfiguration private constructor(
                     state.copy(values = state.values.toMap())
                 },
                 controls = snapshot.controls.toList(),
+                completedPlaythroughs = snapshot.completedPlaythroughs.map { completed ->
+                    completed.copy(states = completed.states.mapValues { (_, state) -> state.copy(values = state.values.toMap()) },
+                        controls = completed.controls.toList(), game = completed.game.copy(presetControls = completed.game.presetControls.toList()))
+                },
             )
             return NovexConversationConfiguration(detached)
         }

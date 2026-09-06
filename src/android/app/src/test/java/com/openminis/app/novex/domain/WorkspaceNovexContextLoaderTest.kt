@@ -17,6 +17,54 @@ import org.junit.Test
 
 class WorkspaceNovexContextLoaderTest {
     @Test
+    fun legacyRoleSnapshotsAreUsedOnlyWhileThatExactRoleIsSelected() = kotlinx.coroutines.test.runTest {
+        val legacy = com.openminis.app.novex.adapter.NovexLegacyContext(
+            characterVersionId = "old-role",
+            character = com.openminis.app.data.character.CharacterCard(
+                "old-role", "伏生", systemPrompt = "讲述古书，不知未来", createdAt = 1, updatedAt = 1,
+            ),
+        )
+        val configuration = NovexConversationConfigurationSnapshot("chat", answerIdentity = AnswerIdentity.CharacterVersion("old-role"))
+        val loader = WorkspaceNovexContextLoader(FakeWorkspace(), legacy)
+        assertTrue(loader.load(configuration).any { it.content.contains("讲述古书，不知未来") })
+        val switched = configuration.copy(answerIdentity = AnswerIdentity.PersonaPreset("creator", "共创者"))
+        assertFalse(loader.load(switched).any { it.content.contains("讲述古书，不知未来") })
+    }
+
+    @Test
+    fun changingThePlayerDoesNotInjectThePreviousGamePlayerAlongsideIt() = kotlinx.coroutines.test.runTest {
+        val game = ActiveInteractiveFictionSnapshot("game", "snapshot", "修行", contentJson =
+            """{"playerIdentity":"外门弟子","modules":[{"id":"player","type":"GAME_PLAYER_IDENTITY","name":"玩家","contentJson":"{\"text\":\"外门弟子\"}"}]}""",
+            playerIdentity = ConversationPlayerIdentity("disciple", "外门弟子", "外门弟子"),
+        )
+        val configuration = NovexConversationConfigurationSnapshot("chat",
+            activeInteractiveFiction = game,
+            playerIdentity = ConversationPlayerIdentity("visitor", "访客", "远方访客"),
+        )
+        val text = WorkspaceNovexContextLoader(FakeWorkspace()).load(configuration).joinToString { it.content }
+        assertTrue(text.contains("远方访客"))
+        assertFalse(text.contains("外门弟子"))
+    }
+
+    @Test
+    fun independentPersonaInstructionsReachTheRequestWithoutLoadingManagedCards() = kotlinx.coroutines.test.runTest {
+        val workspace = FakeWorkspace()
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat",
+            answerIdentity = AnswerIdentity.PersonaPreset("historian", "史官", "逐条辨明史实与推测"),
+            managedSubjects = listOf(ManagedSubject(NovexContentAddress.world("private"), ManagedAccess.EDIT)),
+        )
+        val candidates = WorkspaceNovexContextLoader(workspace).load(configuration)
+        val composition = NovexContextComposer.compose("整理资料", 1000, candidates)
+        val request = NovexContextPromptFormatter.appendTo("保留对话自定义指令", composition.fragments)
+
+        assertTrue(request.contains("逐条辨明史实与推测"))
+        assertTrue(request.contains("保留对话自定义指令"))
+        assertTrue(composition.fragments.any { it.kind == ContextSourceKind.ANSWER_IDENTITY })
+        assertTrue(workspace.requestedWorldIds.isEmpty())
+    }
+
+    @Test
     fun managedWorldIsNotLoadedUnlessItIsAlsoMountedAsBackground() = kotlinx.coroutines.test.runTest {
         val background = world("background", "云岚书院")
         val managedOnly = world("managed", "未注入世界")

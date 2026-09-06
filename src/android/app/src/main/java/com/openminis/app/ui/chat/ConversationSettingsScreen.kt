@@ -44,6 +44,8 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.repository.SkillRepository
 import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
 import com.openminis.app.novex.domain.AnswerIdentity
+import com.openminis.app.novex.domain.ConversationPlayerIdentity
+import com.openminis.app.novex.domain.NovexPersonaPresets
 import com.openminis.app.novex.domain.ConversationControlBehavior
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlSource
@@ -118,6 +120,8 @@ fun ConversationSettingsScreen(
     var options by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     var gameSnapshots by remember { mutableStateOf<Map<String, ActiveInteractiveFictionSnapshot>>(emptyMap()) }
     var picker by remember { mutableStateOf<ConversationPicker?>(null) }
+    var pendingGame by remember { mutableStateOf<ActiveInteractiveFictionSnapshot?>(null) }
+    var expandedPlaythrough by remember { mutableStateOf<Int?>(null) }
     var managedAction by remember { mutableStateOf<NovexContentAddress?>(null) }
     var addingControl by remember { mutableStateOf(false) }
     var editingControlId by remember { mutableStateOf<String?>(null) }
@@ -188,7 +192,7 @@ fun ConversationSettingsScreen(
     fun save() {
         if (saving) return
         saving = true
-        viewModel.saveConversationSettings(draft.toSettings()) { result ->
+        viewModel.saveConversationSettings(draft.toSettings(), expectedConfigurationJson = baseline?.settings?.novexConfigurationJson) { result ->
             saving = false
             result.onSuccess { onBack() }.onFailure { failure ->
                 error = "保存失败：${failure.message ?: failure::class.java.simpleName}"
@@ -204,7 +208,7 @@ fun ConversationSettingsScreen(
     }
     val labels = options.associateBy(ConversationContentOption::address)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
-        AnswerIdentity.Nova -> "Nova · 通用人格"
+        AnswerIdentity.Nova -> "Nova（诺瓦） · 通用人格"
         is AnswerIdentity.PersonaPreset -> "${identity.label} · 人格预设"
         is AnswerIdentity.CharacterVersion -> labels[NovexContentAddress.characterVersion(identity.versionId)]?.label
             ?: "角色版本 · ${identity.versionId.take(8)}"
@@ -222,9 +226,17 @@ fun ConversationSettingsScreen(
     ) {
         NovexEditorSection(
             header = "回答身份",
-            footer = "Nova 是通用人格；背景角色不会自动替换回答身份。",
+            footer = "人格决定职责与表达，角色版本决定扮演对象；工具权限与背景设定分别管理。",
         ) {
             NovexSummaryRow("当前人格", answerLabel, onClick = { picker = ConversationPicker.ANSWER })
+            (draft.configuration.answerIdentity as? AnswerIdentity.PersonaPreset)?.let { persona ->
+                NovexTextField("人格名称", persona.label, onValueChange = { value ->
+                    if (value.isNotBlank()) draft = draft.setAnswerIdentity(persona.copy(label = value.take(80)))
+                })
+                NovexTextField("职责与表达", persona.instructions, onValueChange = { value ->
+                    draft = draft.setAnswerIdentity(persona.copy(instructions = value.take(MAX_CONVERSATION_PROMPT_CHARS)))
+                }, minLines = 4)
+            }
         }
 
         NovexEditorSection(
@@ -245,7 +257,7 @@ fun ConversationSettingsScreen(
                 "恢复当前人格的来源提示词",
                 R.drawable.ic_phosphor_arrow_left,
                 onClick = {
-                    draft = draft.updateSettings { it.copy(conversationPrompt = viewModel.sourceConversationPrompt()) }
+                    draft = draft.updateSettings { it.copy(conversationPrompt = viewModel.sourceConversationPrompt(draft.configuration.answerIdentity)) }
                 },
             )
         }
@@ -266,6 +278,21 @@ fun ConversationSettingsScreen(
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
             NovexDivider(Modifier.padding(horizontal = 16.dp))
+            NovexTextField(
+                label = "玩家身份说明",
+                value = draft.configuration.playerIdentity?.description.orEmpty(),
+                placeholder = "描述你是谁，不替你决定行动",
+                onValueChange = { value ->
+                    val current = draft.configuration.playerIdentity
+                    draft = draft.setPlayerIdentity(
+                        if (value.isBlank()) null else ConversationPlayerIdentity(
+                            current?.id ?: "player:${java.util.UUID.randomUUID()}",
+                            current?.label ?: draft.settings.playerDisplayName,
+                            value.take(MAX_CONVERSATION_PROMPT_CHARS),
+                        ),
+                    )
+                }, minLines = 3,
+            )
             NovexInlineField(
                 label = "玩家名称",
                 value = draft.settings.playerDisplayName,
@@ -284,16 +311,35 @@ fun ConversationSettingsScreen(
 
         NovexEditorSection(
             header = "活动文游",
-            footer = "每段对话同时只能运行一个文游；更换会建立新的运行快照。",
+            footer = "结束文游后恢复启动前身份，保留消息、状态与存档。返回列表不结束文游。",
         ) {
             draft.configuration.activeInteractiveFiction?.let { active ->
-                ConversationSubjectRow(active.title, "正在运行", onRemove = { draft = draft.deactivateGame() })
+                NovexSummaryRow("正在运行", active.title)
+                NovexTextActionRow("结束文游并恢复原身份", onClick = { draft = draft.deactivateGame() })
             }
             NovexTextActionRow(
                 if (draft.configuration.activeInteractiveFiction == null) "选择文游" else "更换文游",
                 R.drawable.ic_phosphor_puzzle_piece,
                 onClick = { picker = ConversationPicker.GAME },
             )
+            draft.configuration.completedPlaythroughs.forEachIndexed { index, completed ->
+                NovexSummaryRow(
+                    "历史第 ${index + 1} 局 · ${completed.game.title}",
+                    "${completed.states.size} 个消息分支 · ${completed.controls.size} 项操作",
+                    onClick = { expandedPlaythrough = if (expandedPlaythrough == index) null else index },
+                )
+                if (expandedPlaythrough == index) {
+                    completed.states.forEach { (branch, state) ->
+                        state.values.forEach { (key, value) ->
+                            NovexSummaryRow("${branch.take(8)} · $key", when (value) {
+                                is com.openminis.app.novex.domain.PlaythroughValue.Text -> value.value
+                                is com.openminis.app.novex.domain.PlaythroughValue.Number -> value.value.toString()
+                                is com.openminis.app.novex.domain.PlaythroughValue.Flag -> if (value.value) "是" else "否"
+                            })
+                        }
+                    }
+                }
+            }
         }
 
         NovexEditorSection(
@@ -502,8 +548,29 @@ fun ConversationSettingsScreen(
     picker?.let { active ->
         NovexSelectionSheet(
             title = active.pickerTitle(),
-            actions = pickerActions(active, options, draft, gameSnapshots) { updated -> draft = updated },
+            actions = pickerActions(active, options, draft, gameSnapshots, onGameSelected = { game ->
+                val currentPlayer = draft.configuration.playerIdentity
+                if (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer) {
+                    pendingGame = game
+                    picker = null
+                } else {
+                    draft = draft.activateGame(game)
+                }
+            }) { updated -> draft = updated },
             onDismissRequest = { picker = null },
+        )
+    }
+    pendingGame?.let { game ->
+        NovexSelectionSheet(
+            title = "文游要求不同的玩家身份：${game.playerIdentity?.label.orEmpty()}",
+            actions = listOf(
+                NovexSelectionAction("使用文游身份并启动") {
+                    draft = draft.activateGame(game, replacePlayerIdentity = true)
+                    pendingGame = null
+                },
+                NovexSelectionAction("取消，保留当前身份") { pendingGame = null },
+            ),
+            onDismissRequest = { pendingGame = null },
         )
     }
     managedAction?.let { address ->
@@ -538,11 +605,20 @@ private fun pickerActions(
     options: List<ConversationContentOption>,
     draft: NovexConversationEditorDraftState,
     games: Map<String, ActiveInteractiveFictionSnapshot>,
+    onGameSelected: (ActiveInteractiveFictionSnapshot) -> Unit,
     update: (NovexConversationEditorDraftState) -> Unit,
 ): List<NovexSelectionAction> = when (picker) {
     ConversationPicker.ANSWER -> listOf(
-        NovexSelectionAction("Nova · 通用人格", R.drawable.ic_phosphor_sparkle) {
+        NovexSelectionAction("Nova（诺瓦） · 通用人格", R.drawable.ic_phosphor_sparkle) {
             update(draft.setAnswerIdentity(AnswerIdentity.Nova))
+        },
+        NovexSelectionAction("游戏主持人 · 独立人格") {
+            update(draft.setAnswerIdentity(NovexPersonaPresets.gameHost))
+        },
+        NovexSelectionAction("自定义独立人格") {
+            update(draft.setAnswerIdentity(AnswerIdentity.PersonaPreset(
+                "custom:${java.util.UUID.randomUUID()}", "自定义人格",
+            )))
         },
     ) + options.filter { it.address.kind == NovexContentKind.CHARACTER_VERSION }.map { option ->
         NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
@@ -559,7 +635,7 @@ private fun pickerActions(
         }
     ConversationPicker.GAME -> options.filter { it.address.kind == NovexContentKind.INTERACTIVE_FICTION }.map { option ->
         NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
-            games[option.address.id]?.let { update(draft.activateGame(it)) }
+            games[option.address.id]?.let(onGameSelected)
         }
     }
     ConversationPicker.MANAGED -> options

@@ -973,6 +973,8 @@ class ChatViewModel(
     private var novexLearningJob: Job? = null
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
+    private val novexConfigurationMutex = kotlinx.coroutines.sync.Mutex()
+    private val sessionCreationMutex = kotlinx.coroutines.sync.Mutex()
     private val pendingNovexMemoryPlans = linkedMapOf<String, com.openminis.app.novex.domain.NovexMemoryPlan>()
     private val novexMemoryMutex = kotlinx.coroutines.sync.Mutex()
 
@@ -3287,20 +3289,11 @@ class ChatViewModel(
         val application = context.applicationContext as? com.openminis.app.MinisApp ?: return null
         if (!application.subsystemsReady()) return null
         val configuration = currentNovexConfiguration()
-        val candidates = WorkspaceNovexContextLoader(application.novexWorkspace)
+        val profile = _immersiveProfile.value
+        val candidates = WorkspaceNovexContextLoader(application.novexWorkspace,
+            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
             .load(configuration)
             .toMutableList()
-        if (configuration.answerIdentity == AnswerIdentity.Nova) {
-            candidates += NovexContextCandidate(
-                sourceId = "answer-identity:nova",
-                label = "回答人格 · Nova",
-                content = "你是 Nova，一名通用、可靠且适合交流、游玩与共同创作的助手。",
-                kind = ContextSourceKind.ANSWER_IDENTITY,
-                aliases = setOf("Nova"),
-                alwaysInclude = true,
-                position = Int.MIN_VALUE,
-            )
-        }
         configuration.activeInteractiveFiction?.let {
             val state = InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
             if (state.values.isNotEmpty()) {
@@ -3372,13 +3365,15 @@ class ChatViewModel(
     }
 
     private suspend fun persistNovexConfiguration(configuration: NovexConversationConfigurationSnapshot) {
-        installNovexConfiguration(configuration)
         val sid = realSessionId
         if (sid.isNotEmpty()) {
             withContext(Dispatchers.IO) {
-                chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot())
+                chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot().copy(
+                    novexConfigurationJson = NovexConversationConfigurationCodec.encode(configuration.copy(conversationId = activeSessionId)),
+                ))
             }
         }
+        installNovexConfiguration(configuration)
     }
 
     private fun legacyNovexConfiguration(
@@ -3386,6 +3381,7 @@ class ChatViewModel(
         worldId: String?,
         characterVersionId: String?,
     ): com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot {
+        val effectiveCharacterVersionId = characterVersionId ?: _immersiveProfile.value.character?.id
         val backgrounds = buildList {
             worldId?.takeIf(String::isNotBlank)?.let {
                 add(
@@ -3394,7 +3390,7 @@ class ChatViewModel(
                     ),
                 )
             }
-            characterVersionId?.takeIf(String::isNotBlank)?.let {
+            effectiveCharacterVersionId?.takeIf(String::isNotBlank)?.let {
                 add(
                     com.openminis.app.novex.domain.BackgroundSetting(
                         com.openminis.app.novex.domain.NovexContentAddress.characterVersion(it),
@@ -3405,21 +3401,33 @@ class ChatViewModel(
         return com.openminis.app.novex.domain.NovexConversationConfiguration.open(
             com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot(
                 conversationId = conversationId,
-                answerIdentity = characterVersionId?.takeIf(String::isNotBlank)?.let {
+                answerIdentity = effectiveCharacterVersionId?.takeIf(String::isNotBlank)?.let {
                     com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion(it)
                 } ?: com.openminis.app.novex.domain.AnswerIdentity.Nova,
                 backgroundSettings = backgrounds,
+                playerIdentity = _immersiveProfile.value.persona?.let { player ->
+                    com.openminis.app.novex.domain.ConversationPlayerIdentity(
+                        id = player.id,
+                        label = player.name,
+                        description = com.openminis.app.data.character.CharacterPromptComposer.compose(
+                            characterSnapshot = null, personaSnapshot = player.toJson().toString(),
+                        ).orEmpty(),
+                    )
+                },
             ),
         ).snapshot
     }
 
-    private fun inheritedEditablePrompt(): String {
+    private fun inheritedEditablePrompt(identity: AnswerIdentity = currentNovexConfiguration().answerIdentity): String {
+        if (identity is AnswerIdentity.PersonaPreset) return identity.instructions
         val profile = _immersiveProfile.value
-        return profile.character?.let {
+        val selectedRole = (identity as? AnswerIdentity.CharacterVersion)?.versionId
+        if (selectedRole != null && selectedRole != profile.characterVersionId && selectedRole != profile.character?.id) return ""
+        return profile.character?.takeIf { selectedRole != null }?.let {
             com.openminis.app.data.character.CharacterPromptComposer.compose(
                 characterSnapshot = it.toJson().toString(),
-                personaSnapshot = profile.persona?.toJson()?.toString(),
-                worldSnapshot = profile.world?.toJson()?.toString(),
+                personaSnapshot = null,
+                worldSnapshot = null,
             )
         } ?: com.openminis.app.agent.SoulStore.load(context)?.let { soul ->
             buildString {
@@ -3433,7 +3441,7 @@ class ChatViewModel(
     }
 
     /** The current source prompt before conversation-level edits are applied. */
-    fun sourceConversationPrompt(): String = inheritedEditablePrompt()
+    fun sourceConversationPrompt(identity: AnswerIdentity = currentNovexConfiguration().answerIdentity): String = inheritedEditablePrompt(identity)
 
     fun conversationSettingsSnapshot(): com.openminis.app.data.ConversationSettingsSnapshot {
         val profile = _immersiveProfile.value
@@ -3451,6 +3459,7 @@ class ChatViewModel(
 
     fun saveConversationSettings(
         settings: com.openminis.app.data.ConversationSettingsSnapshot,
+        expectedConfigurationJson: String? = null,
         onComplete: (Result<Unit>) -> Unit = {},
     ) {
         val normalized = com.openminis.app.data.normalizeConversationSettings(settings)
@@ -3465,24 +3474,33 @@ class ChatViewModel(
                 )
             },
         )
-        _conversationPrompt.value = value.conversationPrompt
-        _imageStylePrompt.value = value.imageStylePrompt
-        _novexConfigurationJson.value = value.novexConfigurationJson
-        refreshNovexRuntimeProjection()
-        _immersiveProfile.value = _immersiveProfile.value.copy(
-            rolePresentationEnabled = value.rolePresentationEnabled,
-            assistantDisplayName = value.assistantDisplayName.ifBlank { null },
-            assistantAvatarPath = value.assistantAvatarPath,
-            playerDisplayName = value.playerDisplayName.ifBlank { null },
-            playerAvatarPath = value.playerAvatarPath,
-        )
-        val sid = realSessionId
-        if (sid.isEmpty()) {
-            onComplete(Result.success(Unit))
-            return
+        fun installSavedSettings(saved: com.openminis.app.data.ConversationSettingsSnapshot) {
+            _conversationPrompt.value = saved.conversationPrompt
+            _imageStylePrompt.value = saved.imageStylePrompt
+            _novexConfigurationJson.value = saved.novexConfigurationJson
+            refreshNovexRuntimeProjection()
+            _immersiveProfile.value = _immersiveProfile.value.copy(
+                rolePresentationEnabled = saved.rolePresentationEnabled,
+                assistantDisplayName = saved.assistantDisplayName.ifBlank { null },
+                assistantAvatarPath = saved.assistantAvatarPath,
+                playerDisplayName = saved.playerDisplayName.ifBlank { null },
+                playerAvatarPath = saved.playerAvatarPath,
+            )
         }
         viewModelScope.launch {
-            val result = runCatching { chatRepository.updateConversationSettings(sid, value) }
+            val result = runCatching {
+                novexConfigurationMutex.withLock {
+                    require(expectedConfigurationJson == null || expectedConfigurationJson == _novexConfigurationJson.value) {
+                        "会话配置或本局状态已在编辑期间更新。请重新打开对话编辑后调整，避免覆盖新内容。"
+                    }
+                    val sid = ensureSession()
+                    val durable = value.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(
+                        NovexConversationConfigurationCodec.decode(value.novexConfigurationJson, sid),
+                    ))
+                    chatRepository.updateConversationSettings(sid, durable)
+                    withContext(Dispatchers.Main) { installSavedSettings(durable) }
+                }
+            }
             withContext(Dispatchers.Main) { onComplete(result) }
         }
     }
@@ -3492,10 +3510,12 @@ class ChatViewModel(
 
     /** Role memory is isolated by world + player identity + role card. */
     private fun activeMemoryRepository(): MemoryRepository? {
-        val profile = _immersiveProfile.value
-        val characterId = profile.character?.id ?: return memoryRepository
-        val worldId = profile.world?.id ?: profile.character?.worldId
-        val personaId = profile.persona?.id
+        val configuration = currentNovexConfiguration()
+        val characterId = (configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
+            ?: return memoryRepository
+        val worldId = configuration.backgroundSettings.filter { it.subject.kind == NovexContentKind.WORLD }
+            .map { it.subject.id }.sorted().joinToString("|").ifBlank { null }
+        val personaId = configuration.playerIdentity?.id
         val key = listOf(worldId, personaId, characterId).joinToString("|")
         if (scopedMemoryKey != key || scopedMemoryRepository == null) {
             scopedMemoryKey = key
@@ -3714,8 +3734,8 @@ class ChatViewModel(
     }
 
     /** Ensure the session exists in the database. Called before first message. */
-    private suspend fun ensureSession(): String {
-        if (realSessionId.isNotEmpty()) return realSessionId
+    private suspend fun ensureSession(): String = sessionCreationMutex.withLock {
+        if (realSessionId.isNotEmpty()) return@withLock realSessionId
         val modelId = currentModel?.id ?: providerRepository.allVisibleEntries().firstOrNull()?.model?.id ?: "unknown"
         // [T-memory-global-toggle-settings-ui-android] Snapshot the
         // current in-memory `_memoryEnabled` into the new row. For a
@@ -3790,7 +3810,7 @@ class ChatViewModel(
         if (binding != null) {
             chatRepository.updateSessionBinding(realSessionId, binding, modelId)
         }
-        return realSessionId
+        realSessionId
     }
 
     /**
@@ -3942,32 +3962,30 @@ class ChatViewModel(
                         rolePresentationEnabled = draftCharacter != null,
                     )
                 }
-                val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
-                    val application = context.applicationContext as? com.openminis.app.MinisApp
-                    application?.novexWorkspace?.interactiveFiction(projectId)?.let { project ->
-                        NovexConversationConfiguration.open(
-                            legacyNovexConfiguration(
-                                conversationId = sessionId,
-                                worldId = _immersiveProfile.value.worldId,
-                                characterVersionId = _immersiveProfile.value.characterVersionId,
-                            ),
-                        ).apply(
-                            com.openminis.app.novex.domain.NovexConversationCommand.ActivateInteractiveFiction(
-                                com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory.create(project),
-                            ),
-                        ).snapshot
-                    }
-                } ?: legacyNovexConfiguration(
+                val startingConfiguration = legacyNovexConfiguration(
                     conversationId = sessionId,
                     worldId = _immersiveProfile.value.worldId,
                     characterVersionId = _immersiveProfile.value.characterVersionId,
                 )
+                val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
+                    val application = context.applicationContext as? com.openminis.app.MinisApp
+                    application?.novexWorkspace?.interactiveFiction(projectId)?.let { project ->
+                        val game = com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory.create(project)
+                        if (game.playerIdentity != null && startingConfiguration.playerIdentity != null &&
+                            game.playerIdentity != startingConfiguration.playerIdentity) {
+                            _error.value = "文游的玩家身份与当前选择不同，尚未启动。请在对话编辑中选择文游并确认使用哪个身份。"
+                            startingConfiguration
+                        } else NovexConversationConfiguration.open(startingConfiguration).apply(
+                            com.openminis.app.novex.domain.NovexConversationCommand.ActivateInteractiveFiction(game),
+                        ).snapshot
+                    }
+                } ?: startingConfiguration
                 val draftConfiguration = applyDraftManagedSubjects(
                     draftId = sessionId,
                     configuration = baseDraftConfiguration,
                 )
                 installNovexConfiguration(draftConfiguration)
-                _conversationPrompt.value = inheritedEditablePrompt()
+                _conversationPrompt.value = inheritedEditablePrompt(startingConfiguration.answerIdentity)
                 val effectiveGroupId = initialGroupId ?: providerRepository.defaultPrimaryGroupId
                 var resolved = false
                 if (effectiveGroupId != null) {
@@ -3986,6 +4004,7 @@ class ChatViewModel(
                     // newest-provider/newest-text-model. Was firstOrNull().
                     applyNewChatDefaultModel()
                 }
+                if (draftConfiguration.hasPersistentConfiguration) ensureSession()
                 return@launch
             }
 
@@ -8895,6 +8914,7 @@ class ChatViewModel(
             )
             "register_controls" -> executeRegisterControlsTool(argsJson, assistantId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
+            "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
@@ -9052,14 +9072,13 @@ class ChatViewModel(
     }
 
     private fun currentNovexMemoryScope(): com.openminis.app.novex.domain.NovexMemoryScope {
-        val profile = _immersiveProfile.value
-        val character = profile.character ?: return com.openminis.app.novex.domain.NovexMemoryScope.nova()
-        val characterVersionId =
-            (currentNovexConfiguration().answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
-                ?: character.id
+        val configuration = currentNovexConfiguration()
+        val characterVersionId = (configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
+            ?: return com.openminis.app.novex.domain.NovexMemoryScope.nova()
         return com.openminis.app.novex.domain.NovexMemoryScope.role(
-            worldId = profile.world?.id ?: character.worldId,
-            playerIdentityId = profile.persona?.id,
+            worldId = configuration.backgroundSettings.filter { it.subject.kind == NovexContentKind.WORLD }
+                .map { it.subject.id }.sorted().joinToString("|").ifBlank { null },
+            playerIdentityId = configuration.playerIdentity?.id,
             characterVersionId = characterVersionId,
         )
     }
@@ -9357,11 +9376,32 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun executeEndInteractiveFictionTool(argsJson: String): ToolExecutionResult = novexConfigurationMutex.withLock {
+        runCatching {
+            val configuration = NovexConversationConfiguration.open(currentNovexConfiguration())
+            val ended = configuration.apply(com.openminis.app.novex.domain.NovexConversationCommand.EndInteractiveFiction(
+                JSONObject(argsJson).getString("playthrough_id"),
+            )).snapshot
+            persistNovexConfiguration(ended)
+            val restoration = when {
+                configuration.snapshot.activeInteractiveFiction == null -> "本局已经结束，没有再次切换身份。"
+                configuration.snapshot.preGameAnswerIdentity != null -> "文游已结束，已恢复启动前的回答身份和玩家身份。"
+                else -> "文游已结束。旧会话没有启动前的恢复点，因此保留现有身份。"
+            }
+            ToolExecutionResult(
+                output = "$restoration 消息、状态、历史局次与存档仍然保留。",
+                success = true, toolTitle = "结束文游",
+            )
+        }.getOrElse { error ->
+            ToolExecutionResult(output = "没有结束文游：${error.message ?: "保存失败"}", success = false, toolTitle = "结束文游")
+        }
+    }
+
     private suspend fun executeRegisterControlsTool(
         argsJson: String,
         replyBranchId: String,
-    ): ToolExecutionResult {
-        return runCatching {
+    ): ToolExecutionResult = novexConfigurationMutex.withLock {
+        runCatching {
             val args = JSONObject(argsJson)
             val controlsJson = args.jsonArrayText("controls")
             val updated = ConversationControlRegistration.registerAiControls(
@@ -9393,8 +9433,8 @@ class ChatViewModel(
     private suspend fun executeUpdatePlaythroughStateTool(
         argsJson: String,
         turnMessageId: String,
-    ): ToolExecutionResult {
-        return runCatching {
+    ): ToolExecutionResult = novexConfigurationMutex.withLock {
+        runCatching {
             val configuration = currentNovexConfiguration()
             require(configuration.activeInteractiveFiction != null) { "当前对话没有活动文游" }
             val updated = PlaythroughStateRegistration.applyUpdates(
@@ -10374,40 +10414,9 @@ class ChatViewModel(
             try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
         } else 0
 
-        val roleProfile = _immersiveProfile.value
-        val role = roleProfile.character
-        if (role != null) {
-            val roleMemory = if (_memoryEnabled.value) {
-                val repository = activeMemoryRepository()
-                listOfNotNull(
-                    activeNovexMemoryFragment(),
-                    repository?.loadGlobalMemoryFragment(),
-                    repository?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites),
-                ).joinToString("\n\n").takeIf { it.isNotBlank() }
-            } else null
-            return com.openminis.app.data.character.CharacterSystemPromptComposer.compose(
-                characterSnapshot = role.toJson().toString(),
-                personaSnapshot = roleProfile.persona?.toJson()?.toString(),
-                worldSnapshot = roleProfile.world?.toJson()?.toString(),
-                enabledTools = agentTools.mapTo(linkedSetOf()) { it.name },
-                memoryContext = roleMemory,
-                conversationPrompt = _conversationPrompt.value,
-            )
-        }
-
-        // [T-soul-md] Layer 1 is rendered by SystemPromptBuilder, which
-        // owns the "You are <name>, a capable AI assistant running on an
-        // Android device ..." identity sentence (parametric on SOUL.md's
-        // `name` field) and optionally appends a clearly-labeled
-        // Personality section from SOUL.md's body. The original wording
-        // is preserved inside SystemPromptBuilder.IDENTITY_TEMPLATE so we
-        // don't regress model behavior that depended on it. When SOUL.md
-        // has no personality body, identitySection() returns the identity
-        // sentence with its original single trailing space — the full
-        // assembled prompt then matches the pre-SOUL prompt byte-for-byte.
-        val identitySection = _conversationPrompt.value?.let {
-            com.openminis.app.agent.SystemPromptBuilder.identitySection(context, it)
-        } ?: com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
+        // The selected identity is assembled by prepareNovexRequestContext. The editable
+        // conversation instructions survive identity changes and never mutate shared cards.
+        val identitySection = _conversationPrompt.value ?: inheritedEditablePrompt()
         // Keep memory prompt injection and the Novex memory tool set behind the
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
@@ -10419,12 +10428,6 @@ class ChatViewModel(
             toolsEnabled = toolsEnabled,
             availableToolNames = agentTools.mapTo(linkedSetOf()) { it.name },
         )
-        val characterFragment = com.openminis.app.data.character.CharacterPromptComposer.compose(
-            characterSnapshot = _immersiveProfile.value.character?.toJson()?.toString(),
-            personaSnapshot = _immersiveProfile.value.persona?.toJson()?.toString(),
-            worldSnapshot = _immersiveProfile.value.world?.toJson()?.toString(),
-        )
-
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
         // appended only when non-null; absent fragments leave no separator.
@@ -10457,10 +10460,6 @@ class ChatViewModel(
 
         return buildString {
             append(base)
-            if (characterFragment != null) {
-                append("\n\n")
-                append(characterFragment)
-            }
             if (skillFragment != null) {
                 append("\n\n")
                 append(skillFragment)
@@ -11960,6 +11959,9 @@ class ChatViewModel(
         if (sid.isEmpty()) return
         if (_isStreaming.value) return
         if (_attachments.value.isNotEmpty()) return
+        if (currentNovexConfiguration().hasPersistentConfiguration) return
+        if (_conversationPrompt.value != null && _conversationPrompt.value != inheritedEditablePrompt()) return
+        if (_imageStylePrompt.value.isNotBlank()) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val count = chatRepository.messageCount(sid)
@@ -12888,6 +12890,7 @@ class ChatViewModel(
         "render_panel", "panel", "present_system_panel" -> "显示资料面板"
         "save_checkpoint" -> "保存文游进度"
         "register_controls" -> "更新快捷操作"
+        "end_interactive_fiction" -> "结束文游"
         "update_playthrough_state" -> "更新本局状态"
         "novex_inspect_content" -> "查看挂载内容"
         "novex_propose_content_changes" -> "提出内容变更"

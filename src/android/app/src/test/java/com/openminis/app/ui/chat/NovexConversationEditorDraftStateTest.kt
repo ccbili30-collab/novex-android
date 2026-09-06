@@ -37,7 +37,7 @@ class NovexConversationEditorDraftStateTest {
             .activateGame(game)
             .activateGame(game.copy(projectId = "game-2", snapshotId = "snapshot-2", title = "新文游"))
 
-        assertEquals(AnswerIdentity.CharacterVersion(role.id), draft.configuration.answerIdentity)
+        assertEquals(com.openminis.app.novex.domain.NovexPersonaPresets.gameHost, draft.configuration.answerIdentity)
         assertEquals("game-2", draft.configuration.activeInteractiveFiction?.projectId)
     }
 
@@ -71,7 +71,7 @@ class NovexConversationEditorDraftStateTest {
 
         val reopened = NovexConversationEditorDraftState.from("chat-1", settings)
 
-        assertEquals(AnswerIdentity.CharacterVersion(role.id), reopened.configuration.answerIdentity)
+        assertEquals(com.openminis.app.novex.domain.NovexPersonaPresets.gameHost, reopened.configuration.answerIdentity)
         assertEquals(listOf(world, role), reopened.configuration.backgroundSettings.map { it.subject })
         assertEquals(game, reopened.configuration.activeInteractiveFiction)
         assertEquals(world, reopened.configuration.managedSubjects.single().subject)

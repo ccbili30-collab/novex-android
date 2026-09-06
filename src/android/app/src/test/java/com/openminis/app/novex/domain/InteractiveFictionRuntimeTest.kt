@@ -14,6 +14,15 @@ import org.junit.Test
 
 class InteractiveFictionRuntimeTest {
     @Test
+    fun launchingFromAStoredProjectUsesItsPlayerIdentitySnapshot() {
+        val runtime = InteractiveFictionRuntimeSnapshotFactory.create(gameSnapshot())
+        val started = NovexConversationConfiguration.empty("chat")
+            .apply(NovexConversationCommand.ActivateInteractiveFiction(runtime)).snapshot
+        assertEquals("外门弟子", started.playerIdentity?.description)
+        assertEquals(runtime.playerIdentity, started.playerIdentity)
+    }
+
+    @Test
     fun projectCreatesAContentAddressedSnapshotWithFullModulesAndPresetControls() {
         val source = gameSnapshot(updatedAt = 20)
 

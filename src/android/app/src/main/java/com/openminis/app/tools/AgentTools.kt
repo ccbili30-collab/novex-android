@@ -45,6 +45,7 @@ object AgentTools {
         }
         if (interactiveFictionActive) {
             add(updatePlaythroughStateDefinition())
+            add(endInteractiveFictionDefinition())
         }
         if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
@@ -138,6 +139,16 @@ object AgentTools {
         ),
         required = listOf("updates"),
         propertyOrdering = listOf("updates"),
+    )
+
+    private fun endInteractiveFictionDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = "end_interactive_fiction",
+        description = "仅在用户明确结束当前文游时调用。恢复启动前的回答身份与玩家身份，保留消息、本局状态、历史局次和存档。返回对话列表不是结束文游。",
+        parameters = mapOf(
+            "playthrough_id" to AgentToolParam("string", "当前文游核心设定中给出的本局编号。原样传入，不使用文游卡编号或快照编号；例如本局编号为 run-123 时传入 run-123。"),
+        ),
+        required = listOf("playthrough_id"),
+        propertyOrdering = listOf("playthrough_id"),
     )
 
     // The browser engine remains an internal adapter. The public schema intentionally excludes

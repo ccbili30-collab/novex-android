@@ -7,6 +7,14 @@ import org.junit.Test
 
 class InteractiveFictionAgentToolsTest {
     @Test
+    fun endingAGameRequiresItsSnapshotAndIsUnavailableOutsidePlay() {
+        assertFalse(AgentTools.makeAgentTools().any { it.name == "end_interactive_fiction" })
+        val tool = AgentTools.makeAgentTools(interactiveFictionActive = true).single { it.name == "end_interactive_fiction" }
+        assertEquals(listOf("playthrough_id"), tool.required)
+        assertTrue(tool.description.contains("明确结束"))
+    }
+
+    @Test
     fun playthroughStateToolIsExposedOnlyWhileAGameIsActive() {
         val ordinary = AgentTools.makeAgentTools(interactiveFictionActive = false)
         val playing = AgentTools.makeAgentTools(interactiveFictionActive = true)

@@ -6,6 +6,15 @@ import org.json.JSONObject
 
 class NovexConversationConfigurationCodecTest {
     @Test
+    fun unreadableOptionalRestorationIdentityDoesNotDiscardTheConversationOrState() {
+        val saved = """{"preGameAnswerIdentity":{"kind":"future-persona"},"activeInteractiveFiction":{"projectId":"game","snapshotId":"v1","title":"生生"},"playthroughStates":[{"branchId":"branch","values":{"health":{"kind":"number","value":72}}}]}"""
+        val restored = NovexConversationConfigurationCodec.decode(saved, "chat")
+        assertEquals("game", restored.activeInteractiveFiction?.projectId)
+        assertEquals(PlaythroughValue.Number(72.0), restored.playthroughStates["branch"]?.values?.get("health"))
+        assertEquals(null, restored.preGameAnswerIdentity)
+    }
+
+    @Test
     fun selectedPersonaSurvivesRestartAndMountingBackgroundWithoutBecomingNova() {
         val saved = """{"version":1,"answerIdentity":{"kind":"personaPreset","presetId":"historian","label":"历史共创者","instructions":"区分历史事实与架空推演。"}}"""
         val restored = NovexConversationConfigurationCodec.decode(saved, "chat-1")

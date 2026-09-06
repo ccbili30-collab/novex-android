@@ -9,21 +9,21 @@ object NovexConversationConfigurationCodec {
         put("version", 1)
         put("conversationId", snapshot.conversationId)
         put("answerIdentity", NovexAnswerIdentityCodec.encode(snapshot.answerIdentity))
+        snapshot.activePlaythroughId?.let { put("activePlaythroughId", it) }
+        snapshot.preGameAnswerIdentity?.let { put("preGameAnswerIdentity", NovexAnswerIdentityCodec.encode(it)) }
+        snapshot.playerIdentity?.let { put("playerIdentity", it.toJson()) }
+        snapshot.preGamePlayerIdentity?.let { put("preGamePlayerIdentity", it.toJson()) }
         put("backgroundSettings", JSONArray(snapshot.backgroundSettings.map { it.subject.toJson() }))
         put("managedSubjects", JSONArray(snapshot.managedSubjects.map { subject ->
             subject.subject.toJson().put("access", subject.access.wireName())
         }))
-        snapshot.activeInteractiveFiction?.let { active ->
-            put(
-                "activeInteractiveFiction",
-                JSONObject()
-                    .put("projectId", active.projectId)
-                    .put("snapshotId", active.snapshotId)
-                    .put("title", active.title)
-                    .put("contentJson", active.contentJson)
-                    .put("presetControls", JSONArray(active.presetControls.map(ConversationControlDefinition::toJson))),
-            )
-        }
+        snapshot.activeInteractiveFiction?.let { put("activeInteractiveFiction", it.toJson()) }
+        put("completedPlaythroughs", JSONArray(snapshot.completedPlaythroughs.map { completed ->
+            JSONObject().put("game", completed.game.toJson())
+                .put("playthroughId", completed.playthroughId)
+                .put("states", JSONArray(completed.states.values.map(PlaythroughState::toJson)))
+                .put("controls", JSONArray(completed.controls.map(ConversationControlDefinition::toJson)))
+        }))
         put("playthroughStates", JSONArray(snapshot.playthroughStates.values.map(PlaythroughState::toJson)))
         put("controls", JSONArray(snapshot.controls.map(ConversationControlDefinition::toJson)))
     }.toString()
@@ -35,10 +35,14 @@ object NovexConversationConfigurationCodec {
             val decodedId = root.optString("conversationId").ifBlank { conversationId }
             val snapshot = NovexConversationConfigurationSnapshot(
                 conversationId = decodedId,
+                activePlaythroughId = root.optString("activePlaythroughId").ifBlank { null },
                 // Preserve the legacy configuration fallback without discarding its other relations.
                 answerIdentity = runCatching {
                     NovexAnswerIdentityCodec.decode(root.optJSONObject("answerIdentity"))
                 }.getOrDefault(AnswerIdentity.Nova),
+                preGameAnswerIdentity = root.optJSONObject("preGameAnswerIdentity")?.optionalIdentity(),
+                playerIdentity = root.optJSONObject("playerIdentity")?.toPlayerIdentity(),
+                preGamePlayerIdentity = root.optJSONObject("preGamePlayerIdentity")?.toPlayerIdentity(),
                 backgroundSettings = root.optJSONArray("backgroundSettings").objects().map { value ->
                     BackgroundSetting(value.toContentAddress())
                 },
@@ -48,15 +52,13 @@ object NovexConversationConfigurationCodec {
                         access = value.optString("access").toManagedAccess(),
                     )
                 },
-                activeInteractiveFiction = root.optJSONObject("activeInteractiveFiction")?.let { value ->
-                    ActiveInteractiveFictionSnapshot(
-                        projectId = value.getString("projectId"),
-                        snapshotId = value.getString("snapshotId"),
-                        title = value.getString("title"),
-                        contentJson = value.optString("contentJson", "{}"),
-                        presetControls = value.optJSONArray("presetControls").objects()
-                            .map(JSONObject::toControl)
-                            .map { it.copy(source = ConversationControlSource.PROJECT_PRESET) },
+                activeInteractiveFiction = root.optJSONObject("activeInteractiveFiction")?.toGameSnapshot(),
+                completedPlaythroughs = root.optJSONArray("completedPlaythroughs").objects().map { value ->
+                    CompletedPlaythrough(
+                        game = value.getJSONObject("game").toGameSnapshot(),
+                        playthroughId = value.optString("playthroughId"),
+                        states = value.optJSONArray("states").objects().map(JSONObject::toPlaythroughState).associateBy(PlaythroughState::branchId),
+                        controls = value.optJSONArray("controls").objects().map(JSONObject::toControl),
                     )
                 },
                 playthroughStates = root.optJSONArray("playthroughStates").objects()
@@ -70,6 +72,32 @@ object NovexConversationConfigurationCodec {
         }.getOrElse { NovexConversationConfiguration.empty(conversationId).snapshot }
     }
 }
+
+private fun ActiveInteractiveFictionSnapshot.toJson() = JSONObject()
+    .put("projectId", projectId).put("snapshotId", snapshotId).put("title", title)
+    .put("contentJson", contentJson).put("playerIdentity", playerIdentity?.toJson())
+    .put("answerIdentity", answerIdentity?.let(NovexAnswerIdentityCodec::encode))
+    .put("presetControls", JSONArray(presetControls.map(ConversationControlDefinition::toJson)))
+
+private fun JSONObject.toGameSnapshot() = ActiveInteractiveFictionSnapshot(
+    projectId = getString("projectId"), snapshotId = getString("snapshotId"), title = getString("title"),
+    contentJson = optString("contentJson", "{}"),
+    playerIdentity = optJSONObject("playerIdentity")?.toPlayerIdentity(),
+    answerIdentity = optJSONObject("answerIdentity")?.optionalIdentity(),
+    presetControls = optJSONArray("presetControls").objects().map(JSONObject::toControl)
+        .map { it.copy(source = ConversationControlSource.PROJECT_PRESET) },
+)
+
+private fun ConversationPlayerIdentity.toJson() = JSONObject()
+    .put("id", id).put("label", label).put("description", description)
+
+private fun JSONObject.optionalIdentity(): AnswerIdentity? =
+    takeIf { optString("kind") in setOf("nova", "personaPreset", "characterVersion") }
+        ?.let { runCatching { NovexAnswerIdentityCodec.decode(it) }.getOrNull() }
+
+private fun JSONObject.toPlayerIdentity(): ConversationPlayerIdentity? = runCatching {
+    ConversationPlayerIdentity(getString("id"), optString("label"), optString("description"))
+}.getOrNull()
 
 private fun NovexContentAddress.toJson() = JSONObject()
     .put("kind", kind.wireName())
