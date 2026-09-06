@@ -19,6 +19,7 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ModuleReferenceTarget
+import com.openminis.app.data.character.ModuleReferenceTargetType
 import com.openminis.app.data.character.NovexCardImportDocument
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardMedia
@@ -1178,7 +1179,7 @@ internal class DefaultNovexWorkspace(
         attach(document.coverPath, owner, MediaAssetSlot.WORLD_COVER)
         attach(document.logoPath, owner, MediaAssetSlot.WORLD_LOGO)
         attach(document.backgroundPath, owner, MediaAssetSlot.WORLD_BACKGROUND)
-        importCardModules(owner, document.modules, card, assets, now)
+        restoreImportedModuleReferences(importCardModules(owner, document.modules, card, assets, now), now)
 
         val versionsBySourceId = catalog.listVersions().mapNotNull { version ->
             version.sourceId()?.let { it to version }
@@ -1213,6 +1214,7 @@ internal class DefaultNovexWorkspace(
             ) to versionDocument
         }
         val assets = mutableMapOf<String, MediaAssetEntity>()
+        val importedModules = mutableListOf<Pair<NovexModuleImportDocument, ContentModuleEntity>>()
         importedVersions.forEach { (version, versionDocument) ->
             val owner = ModuleOwner.characterVersion(version.id)
             suspend fun attach(path: String?, slot: MediaAssetSlot) {
@@ -1222,8 +1224,9 @@ internal class DefaultNovexWorkspace(
             }
             attach(versionDocument.avatarPath, MediaAssetSlot.CHARACTER_AVATAR)
             attach(versionDocument.pageBackgroundPath, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND)
-            importCardModules(owner, versionDocument.modules, card, assets, now)
+            importedModules += importCardModules(owner, versionDocument.modules, card, assets, now)
         }
+        restoreImportedModuleReferences(importedModules, now)
         reconcileImportedCharacterLinks(importedVersions, now)
         return aggregate.character.id
     }
@@ -1251,7 +1254,7 @@ internal class DefaultNovexWorkspace(
         }
         attach(document.coverPath, MediaAssetSlot.INTERACTIVE_FICTION_COVER)
         attach(document.backgroundPath, MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND)
-        importCardModules(owner, document.modules, card, assets, now)
+        restoreImportedModuleReferences(importCardModules(owner, document.modules, card, assets, now), now)
         return project.id
     }
 
@@ -1261,8 +1264,8 @@ internal class DefaultNovexWorkspace(
         card: NovexValidatedCardImport,
         assets: MutableMap<String, MediaAssetEntity>,
         now: Long,
-    ) {
-        modules.forEach { moduleDocument ->
+    ): List<Pair<NovexModuleImportDocument, ContentModuleEntity>> =
+        modules.map { moduleDocument ->
             val module = content.add(
                 owner = owner,
                 type = moduleDocument.type,
@@ -1283,6 +1286,33 @@ internal class DefaultNovexWorkspace(
                     MediaAssetSlot.MODULE_IMAGE,
                     asset.id,
                 )
+            }
+            moduleDocument to module
+        }
+
+    private suspend fun restoreImportedModuleReferences(
+        imported: List<Pair<NovexModuleImportDocument, ContentModuleEntity>>,
+        now: Long,
+    ) {
+        val localIds = imported.associate { (document, module) -> document.sourceId to module.id }
+        require(localIds.size == imported.size) { "卡包模块编号重复，无法安全恢复引用" }
+        imported.forEach { (document, module) ->
+            val pending = JSONArray()
+            val references = JSONArray(document.referencesJson)
+            repeat(references.length()) { index ->
+                val reference = references.optJSONObject(index)
+                val localTarget = reference?.takeIf { it.optString("targetKind") == "module" }
+                    ?.optString("targetId")?.let(localIds::get)
+                if (localTarget != null) {
+                    content.addReference(module.id, ModuleReferenceTarget.module(localTarget), index)
+                } else {
+                    // External or future link kinds are data, not permission to bind local objects.
+                    pending.put(references.get(index))
+                }
+            }
+            if (pending.length() > 0) {
+                val json = JSONObject(module.contentJson).put("_novexPendingReferences", pending)
+                content.save(module.id, module.name, json.toString(), now)
             }
         }
     }
@@ -1595,6 +1625,20 @@ internal class DefaultNovexWorkspace(
             .put("title", module.name)
             .put("presentation", presentation)
             .put("content", content)
+            .put("references", JSONArray().apply {
+                this@DefaultNovexWorkspace.content.references(module.id).forEach { reference ->
+                    put(JSONObject()
+                        .put("targetKind", when (reference.targetType) {
+                            ModuleReferenceTargetType.MODULE -> "module"
+                            ModuleReferenceTargetType.WORLD -> "world"
+                            ModuleReferenceTargetType.CHARACTER_VERSION -> "characterVersion"
+                        })
+                        .put("targetId", reference.targetId))
+                }
+                val pending = runCatching { JSONObject(module.contentJson)
+                    .optJSONArray("_novexPendingReferences") }.getOrNull()
+                if (pending != null) repeat(pending.length()) { put(pending.get(it)) }
+            })
     }
 
     private fun NovexCardImportDocument.kind(): NovexCardKind = when (this) {
