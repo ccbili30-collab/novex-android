@@ -32,6 +32,61 @@ class NovexManagedCardPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun `created character preserves full profile and modules through native exchange and reopen`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val path = File(files.root, "character.db").absolutePath
+        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+            .allowMainThreadQueries().build()
+        var database = openDatabase()
+        val media = File(files.root, "media")
+        var workspace = NovexWorkspaceFactory.create(database, media)
+        try {
+            val service = NovexManagementService(workspace,
+                CreativeArtifactRepository(database, CreativeArtifactFileStore(File(files.root, "artifacts"))),
+                NovexManagementTransaction { work -> database.withTransaction { work() } })
+            val profile = JSONObject("""{"name":"记言人","summary":"保留异议与完整记载。","systemPrompt":"以古代人的经验回答，不预言后世。","customExtension":{"school":"地方私学","rank":3},"customAttributes":[{"name":"记","value":"善于保存不同版本"}],"relationships":[{"characterName":"先生","relationship":"师徒","description":"允许质疑老师"}]}""")
+            val originalText = "记下少数意见，不把临时判断当成永恒答案。\n".repeat(400)
+            val operations = JSONArray().put(JSONObject().put("operation", "create_character")
+                .put("name", "记言人").put("profile_json", profile)
+                .put("modules", JSONArray().put(JSONObject().put("module_type", "custom")
+                    .put("name", "行为与记录").put("content_json", JSONObject()
+                        .put("kind", "article").put("text", originalText)))))
+            val configuration = NovexConversationConfigurationSnapshot("character-creation")
+            val proposal = service.propose(configuration, operations.toString(), "创建角色卡记言人", "character-roundtrip")
+            assertTrue(workspace.characters().isEmpty())
+            val address = service.apply(configuration, proposal, proposal.confirmationPhrase).createdSubjects.single()
+            val created = workspace.characters().single().character
+            assertEquals(created.original.id, address.id)
+            val page = requireNotNull(workspace.character(created.character.id))
+            val beforeProfile = JSONObject(page.character.original.profileJson)
+            assertEquals(profile.getString("systemPrompt"), beforeProfile.getString("systemPrompt"))
+            val modules = page.modulesByVersion.getValue(address.id)
+            assertEquals(originalText, ContentModuleDocumentCodec.decode(modules.single().contentJson).toPlainText())
+            val contextEntries = WorkspaceNovexContextLoader(workspace).load(configuration.copy(
+                backgroundSettings = listOf(BackgroundSetting(address))))
+            assertEquals(originalText, contextEntries.single { it.sourceId == modules.single().id }.content)
+            val exported = workspace.apply(NovexCommand.ExportNativeCharacter(created.character.id)).requireNativeCard()
+            val transfer = NovexCardTransferParser.parse(NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)))
+            val copyId = workspace.apply(NovexCommand.ImportNativeCard(transfer)).requireNativeImport().localId
+            database.close()
+            database = openDatabase()
+            workspace = NovexWorkspaceFactory.create(database, media)
+            val copy = requireNotNull(workspace.character(copyId))
+            assertNotEquals(created.character.id, copy.character.character.id)
+            assertEquals(2, workspace.characters().size)
+            val afterProfile = JSONObject(copy.character.original.profileJson)
+            assertEquals(profile.getString("systemPrompt"), afterProfile.optString("systemPrompt"))
+            assertEquals("地方私学", afterProfile.getJSONObject("customExtension").getString("school"))
+            assertEquals("善于保存不同版本", afterProfile.getJSONArray("customAttributes").getJSONObject(0).getString("value"))
+            assertEquals("允许质疑老师", afterProfile.getJSONArray("relationships").getJSONObject(0).getString("description"))
+            assertEquals(originalText, ContentModuleDocumentCodec.decode(
+                copy.modulesByVersion.getValue(copy.character.original.id).single().contentJson).toPlainText())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun `confirmed world is complete in pages context export and a reopened database`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val databasePath = File(files.root, "cards.db").absolutePath
