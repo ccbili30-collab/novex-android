@@ -195,6 +195,7 @@ fun CatalogCharacterDetailScreen(
                 com.openminis.app.ui.novex.NovexCardReferenceSection(
                     com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenModule = onOpenModule)
                 com.openminis.app.ui.novex.NovexCharacterVersionRelationSection(page.version.id) { selectedVersionId = it }
+                com.openminis.app.ui.novex.NovexCharacterRevisionSection(page.version.id)
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
                     onCreateVariant = onCreateVariant,

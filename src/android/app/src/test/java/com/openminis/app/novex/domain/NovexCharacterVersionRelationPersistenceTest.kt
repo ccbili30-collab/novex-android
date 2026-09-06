@@ -180,7 +180,7 @@ class NovexCharacterVersionRelationPersistenceTest {
     @Test
     fun `migration adds relationship storage without inventing stages for existing variants`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_27_28).allowMainThreadQueries().build()
+            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29).allowMainThreadQueries().build()
         var database = open()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))

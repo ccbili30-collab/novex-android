@@ -46,6 +46,7 @@ import org.json.JSONObject
  * managed files, ordering rules and reference cleanup stay behind this seam.
  */
 interface NovexWorkspace {
+    suspend fun characterRevisions(versionId: String): List<NovexCharacterRevision> = emptyList()
     suspend fun versionRelations(versionId: String): List<NovexCharacterVersionRelation> = emptyList()
     suspend fun referenceStatus(target: NovexReferenceTarget): NovexReferenceTargetStatus = NovexReferenceTargetStatus.MISSING_CARD
     suspend fun referencesFrom(source: NovexContentAddress): List<NovexCardReference> = emptyList()
@@ -502,6 +503,7 @@ internal class DefaultNovexWorkspace(
     private val drafts: NovexDraftOwnershipPort = UnavailableNovexDraftOwnership,
     private val cardReferences: NovexCardReferencePort = UnavailableNovexCardReferences,
     private val versionRelations: NovexCharacterVersionRelationPort = UnavailableNovexVersionRelations,
+    private val characterRevisions: NovexCharacterRevisionPort = UnavailableNovexCharacterRevisions,
 ) : NovexWorkspace {
     private fun referencePackage() = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
@@ -647,8 +649,18 @@ internal class DefaultNovexWorkspace(
     }
 
     override suspend fun apply(command: NovexCommand): NovexChange = transaction {
-        applyInsideTransaction(command)
+        if (characterRevisions === UnavailableNovexCharacterRevisions) return@transaction applyInsideTransaction(command)
+        val history = NovexCharacterRevisionJournal(this, characterRevisions)
+        val targets = history.existingTargets(if (command is NovexCommand.RemoveCardReference && command.expectedSource == null)
+            command.copy(expectedSource = cardReferences.get(command.id)?.source) else command)
+        val at = command.revisionTime()
+        targets.forEach { history.record(it, at) }
+        applyInsideTransaction(command).also { result ->
+            (targets + history.resultingTargets(result)).distinct().forEach { history.record(it, at) }
+        }
     }
+
+    override suspend fun characterRevisions(versionId: String) = characterRevisions.list(versionId)
 
     override suspend fun referenceStatus(target: NovexReferenceTarget) = NovexCardReferences(cardReferences, catalog, interactiveFiction, content).status(target)
 
