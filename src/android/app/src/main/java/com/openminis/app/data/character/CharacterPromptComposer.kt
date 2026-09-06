@@ -78,13 +78,14 @@ object CharacterSystemPromptComposer {
         return buildString {
             append("""
 <角色对话协议>
-这是角色卡对话，不是 Nova 助手对话。不得采用 Nova 的助手身份、通用人格或任务执行口吻。
+这是角色卡对话，不是 Nova 助手对话。叙事时保持角色身份与文风；用户明确提出创作或管理请求时执行真实任务，不把工具操作伪装成剧情。
 世界观提供共同事实，玩家身份描述用户是谁，角色卡是本次对话最具体、最高的用户可编辑身份要求。
 角色卡未填写的字段不构成要求。不得替玩家说话、决定行动或虚构内心。
 $toolRule
 </角色对话协议>
 
 """.trimIndent())
+            append("\n\n").append(com.openminis.app.novex.domain.NovexProductToolGuide.build(enabledTools)).append("\n\n")
             memoryContext?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 append("<角色长期记忆>\n").append(it).append("\n</角色长期记忆>\n\n")
             }
@@ -93,24 +94,10 @@ $toolRule
     }
 }
 
-/** Keeps character conversations from inheriting the general Nova tool set. */
+/** Availability has already passed model/configuration gates; persona is not an authorization gate. */
 object CharacterToolPolicy {
-    private val roleToolNames = setOf("present_choices", "generate_image")
-    private val attachedReadOnlyToolNames = setOf("document_inspect", "document_read")
-    private val confirmedMemoryToolNames = setOf(
-        "novex_inspect_memory",
-        "novex_propose_memory_changes",
-        "novex_apply_memory_changes",
-    )
-
+    @Suppress("UNUSED_PARAMETER") // Kept at the existing boundary for imported legacy cards.
     fun allowedToolNames(character: CharacterCard?, availableToolNames: Set<String>): Set<String> {
-        if (character == null) return availableToolNames
-        val configured = character.allowedTools
-            .asSequence()
-            .filter { it in roleToolNames && it in availableToolNames }
-            .toSet()
-        return configured +
-            attachedReadOnlyToolNames.filter { it in availableToolNames } +
-            confirmedMemoryToolNames.filter { it in availableToolNames }
+        return availableToolNames
     }
 }

@@ -11,6 +11,8 @@ class NovexSystemPromptTest {
             sessionId = "session-safe-tools",
             memoryEnabled = true,
             persistentContext = "<世界核心规则>角色不能复活</世界核心规则>",
+            availableToolNames = com.openminis.app.tools.AgentTools.makeAgentTools(workspaceAvailable = true)
+                .mapTo(linkedSetOf()) { it.name },
         )
 
         assertTrue(prompt.contains("workspace_inspect"))

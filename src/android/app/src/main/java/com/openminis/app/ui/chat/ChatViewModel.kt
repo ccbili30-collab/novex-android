@@ -1002,7 +1002,7 @@ class ChatViewModel(
             workspaceAvailable = true,
         )
 
-    /** Role chats start with no tools and expose only the role card's explicit allow-list. */
+    /** Changing answer persona cannot bypass or remove the actual model/configuration tool gates. */
     private val agentTools: List<AgentToolDefinition>
         get() {
             val all = allAgentTools
@@ -10416,6 +10416,7 @@ class ChatViewModel(
             personalitySection = identitySection,
             memoryEnabled = memoryOn,
             toolsEnabled = toolsEnabled,
+            availableToolNames = agentTools.mapTo(linkedSetOf()) { it.name },
         )
         val characterFragment = com.openminis.app.data.character.CharacterPromptComposer.compose(
             characterSnapshot = _immersiveProfile.value.character?.toJson()?.toString(),

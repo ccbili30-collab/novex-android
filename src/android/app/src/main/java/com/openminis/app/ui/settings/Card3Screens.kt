@@ -398,8 +398,6 @@ fun Card3CharacterEditorScreen(worldId: String, cardId: String?, onBack: () -> U
     var avatarPath by remember { mutableStateOf(seed?.avatarPath) }
     var coverPath by remember { mutableStateOf(seed?.coverPath) }
     var chatBackground by remember { mutableStateOf(seed?.defaultBackgroundPath) }
-    var choicesTool by remember { mutableStateOf(seed?.allowedTools?.contains("present_choices") == true) }
-    var imageTool by remember { mutableStateOf(seed?.allowedTools?.contains("generate_image") == true) }
     var expanded by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -415,12 +413,12 @@ fun Card3CharacterEditorScreen(worldId: String, cardId: String?, onBack: () -> U
         creatorNotes = creatorNotes,
         tags = tags.split(Regex("[、,，\\n]")).map(String::trim).filter(String::isNotEmpty),
         knowledge = knowledge,
-        allowedTools = buildList { if (choicesTool) add("present_choices"); if (imageTool) add("generate_image") },
+        allowedTools = seed?.allowedTools.orEmpty(), // Retained for exchange compatibility, not runtime authorization.
         contentBoundary = contentBoundary, sourceFormat = seed?.sourceFormat, avatarPath = avatarPath,
         coverPath = coverPath, defaultBackgroundPath = chatBackground,
         createdAt = existing?.createdAt ?: draft?.createdAt ?: now, updatedAt = now,
     )
-    LaunchedEffect(name, summary, personality, background, scenario, greeting, exampleDialogue, systemPrompt, postHistory, knowledge, alternateGreetings, creatorNotes, tags, contentBoundary, avatarPath, coverPath, chatBackground, choicesTool, imageTool) {
+    LaunchedEffect(name, summary, personality, background, scenario, greeting, exampleDialogue, systemPrompt, postHistory, knowledge, alternateGreetings, creatorNotes, tags, contentBoundary, avatarPath, coverPath, chatBackground) {
         delay(350)
         prefs.edit().putString(draftKey, value().toJson().toString()).apply()
     }
@@ -468,9 +466,8 @@ fun Card3CharacterEditorScreen(worldId: String, cardId: String?, onBack: () -> U
                 Card3EditorField("历史后置指令", postHistory, { postHistory = it }, minLines = 3)
                 Card3EditorField("角色世界书", knowledge, { knowledge = it }, minLines = 6)
             }
-            SettingsSection(header = "角色工具（默认关闭）") {
-                Card3SwitchRow("呈现剧情选项", choicesTool) { choicesTool = it }
-                Card3SwitchRow("生成图片", imageTool) { imageTool = it }
+            SettingsSection(header = "工具能力") {
+                Text("角色只决定回答身份与表达。工具由当前对话、模型和服务配置决定；共享内容的修改仍需授权和确认。", modifier = Modifier.padding(16.dp))
             }
         }
         Spacer(Modifier.height(32.dp))

@@ -175,15 +175,10 @@ class CharacterPromptComposerTest {
     }
 
     @Test
-    fun `role tool policy defaults closed and never exposes general Nova tools`() {
-        val available = setOf(
-            "present_choices",
-            "generate_image",
-            "shell_execute",
-            "read_file",
-            "document_inspect",
-            "document_read",
-        )
+    fun `role tool policy preserves the already gated standard tool set`() {
+        val available = com.openminis.app.tools.AgentTools.makeAgentTools(
+            documentsAvailable = true, workspaceAvailable = true,
+        ).mapTo(linkedSetOf()) { it.name }
         val closed = CharacterCard(id = "closed", name = "艾琳", createdAt = 1, updatedAt = 1)
         val enabled = closed.copy(
             id = "enabled",
@@ -191,14 +186,16 @@ class CharacterPromptComposerTest {
         )
 
         assertEquals(
-            setOf("document_inspect", "document_read"),
+            available,
             CharacterToolPolicy.allowedToolNames(closed, available),
         )
         assertEquals(
-            setOf("present_choices", "generate_image", "document_inspect", "document_read"),
+            available,
             CharacterToolPolicy.allowedToolNames(enabled, available),
         )
         assertEquals(available, CharacterToolPolicy.allowedToolNames(null, available))
+        assertFalse("shell_execute" in available)
+        assertFalse("generate_image" in available)
     }
 
     @Test
