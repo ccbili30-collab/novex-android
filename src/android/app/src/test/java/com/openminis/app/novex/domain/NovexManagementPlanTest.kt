@@ -13,6 +13,34 @@ class NovexManagementPlanTest {
     private val version = NovexContentAddress.characterVersion("version-1")
 
     @Test
+    fun `an identical card name cannot substitute for the requested card kind`() {
+        val changes = listOf(
+            "世界" to NovexManagedChange.CreateWorld("雾海", ""),
+            "角色" to NovexManagedChange.CreateCharacter("雾海", "{}"),
+            "分身" to NovexManagedChange.CreateCharacterVersion(version.id, "雾海", "{}"),
+            "文游" to NovexManagedChange.CreateInteractiveFiction("雾海", "",
+                com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, ""),
+        )
+        for ((requestedKind, _) in changes) {
+            for ((proposedKind, change) in changes.filter { it.first != requestedKind }) {
+                assertThrows("$requestedKind must not authorize $proposedKind", IllegalArgumentException::class.java) {
+                    NovexManagementPolicy.plan(
+                        configuration = NovexConversationConfigurationSnapshot(
+                            conversationId = "chat-1",
+                            managedSubjects = listOf(ManagedSubject(version, ManagedAccess.EDIT)),
+                        ),
+                        changes = listOf(change),
+                        facts = NovexManagementFacts(versionCharacterIds = mapOf(version.id to "character-1")),
+                        priorUserRequests = listOf("创建${requestedKind}雾海"),
+                        latestUserRequest = "继续",
+                        planId = "proposal-12345678",
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun `read only managed subjects can be inspected but cannot be changed`() {
         val configuration = NovexConversationConfigurationSnapshot(
             conversationId = "chat-1",
