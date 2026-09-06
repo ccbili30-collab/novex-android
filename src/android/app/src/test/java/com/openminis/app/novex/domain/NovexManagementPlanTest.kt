@@ -136,6 +136,23 @@ class NovexManagementPlanTest {
     }
 
     @Test
+    fun `a character variant also retains the creation request across turns`() {
+        val plan = NovexManagementPolicy.plan(
+            configuration = NovexConversationConfigurationSnapshot(
+                conversationId = "chat-1",
+                managedSubjects = listOf(ManagedSubject(version, ManagedAccess.EDIT)),
+            ),
+            changes = listOf(NovexManagedChange.CreateCharacterVersion(version.id, "云岚分身", "{}")),
+            facts = NovexManagementFacts(versionCharacterIds = mapOf(version.id to "character-1")),
+            priorUserRequests = listOf("从这个本体创建一个分身", "名字叫云岚分身"),
+            latestUserRequest = "继续",
+            planId = "proposal-12345678",
+        )
+        assertTrue(plan.requiresConfirmation)
+        assertFalse(plan.isConfirmedBy("继续"))
+    }
+
+    @Test
     fun `cancelled changed or confirmed tasks cannot be resurrected by continue`() {
         for (boundary in listOf("取消", "不要创建世界", "改成角色卡", "先聊聊别的", "确认执行 proposal", "创建角色苏晚晴")) {
             assertThrows(boundary, IllegalArgumentException::class.java) {

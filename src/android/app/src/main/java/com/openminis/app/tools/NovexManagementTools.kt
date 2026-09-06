@@ -37,6 +37,8 @@ object NovexManagementTools {
             name = PROPOSE,
             description = "Validate and present a structured Novex change plan without writing anything. Use only " +
                 "for subjects mounted with edit access, or for a global create explicitly requested by the user. " +
+                "The app retains an explicit creation request across follow-up turns such as 'continue' in the current task; " +
+                "do not ask the user to repeat it. Cancellation or a changed target ends that request. " +
                 "After this succeeds, stop and wait for the user to send the exact confirmation phrase shown in " +
                 "the result. Never call the apply tool in the same assistant turn.",
             parameters = mapOf(

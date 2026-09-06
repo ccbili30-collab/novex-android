@@ -31,7 +31,12 @@ class NovexManagementServiceTest {
             val proposal = service.propose(configuration, org.json.JSONArray().put(org.json.JSONObject()
                 .put("operation", operation).put("name", "西幻 $label")
                 .put("profile_json", org.json.JSONObject().put("name", "西幻 $label"))
-                .put("modules", initialModules)).toString(), "创建 $label 卡", "creation-$operation")
+                .put("modules", initialModules)).toString(), "按刚才的方案做", "creation-$operation",
+                priorUserRequests = listOf("创建 $label 卡", "资料里的章节都要保留"))
+            assertTrue(workspace.applied.isEmpty())
+            assertThrows(IllegalArgumentException::class.java) { runBlocking {
+                service.apply(configuration, proposal, "按刚才的方案做")
+            } }
             assertTrue(workspace.applied.isEmpty())
             service.apply(configuration, proposal, proposal.confirmationPhrase)
             assertEquals(1, transactionCount)

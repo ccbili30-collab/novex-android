@@ -8948,10 +8948,12 @@ class ChatViewModel(
     private suspend fun executeNovexProposeTool(argsJson: String): ToolExecutionResult =
         novexManagementMutex.withLock {
             runCatching {
+                val userRequests = currentNovexUserRequests()
                 val plan = novexManagementService().propose(
                     configuration = currentNovexConfiguration(),
                     changesJson = JSONObject(argsJson).jsonArrayText("changes"),
-                    latestUserRequest = latestExplicitUserText(),
+                    latestUserRequest = userRequests.lastOrNull().orEmpty(),
+                    priorUserRequests = userRequests.dropLast(1),
                     planId = java.util.UUID.randomUUID().toString(),
                 )
                 pendingNovexManagementPlans[plan.id] = plan
@@ -9201,16 +9203,15 @@ class ChatViewModel(
             }
         }
 
-    private fun latestExplicitUserText(): String = agentHistory.asReversed().firstNotNullOfOrNull { message ->
-        if (message.role != LLMMessage.Role.USER ||
-            message.contentParts.any { it is AgentContentPart.ToolResult }
-        ) return@firstNotNullOfOrNull null
-        message.content.trim().ifBlank {
-            message.contentParts.filterIsInstance<AgentContentPart.Text>()
-                .joinToString("\n") { it.text }
-                .trim()
-        }.takeIf(String::isNotEmpty)
-    }.orEmpty()
+    private suspend fun currentNovexUserRequests(): List<String> {
+        val sid = realSessionId.ifEmpty { sessionId }
+        if (sid.isEmpty()) return emptyList()
+        return com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(
+            chatRepository.loadActiveMessages(sid),
+        )
+    }
+
+    private suspend fun latestExplicitUserText(): String = currentNovexUserRequests().lastOrNull().orEmpty()
 
     private fun JSONObject.managementSubjectOrNull(): NovexContentAddress? {
         val kind = optString("subject_kind").trim()
