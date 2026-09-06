@@ -123,6 +123,23 @@ class AgentForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Register with Android before loading repositories, overlays or the tracker.
+        // The deadline belongs to startForegroundService, not onStartCommand: even a
+        // stop-only command or sticky restart must satisfy it before optional work.
+        startTimeMs = SystemClock.elapsedRealtime()
+        createNotificationChannel()
+        val startup = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText("正在准备后台任务")
+            .setOngoing(true)
+            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, startup, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(NOTIFICATION_ID, startup)
+        }
+        Log.i(TAG, "Foreground registered after ${SystemClock.elapsedRealtime() - startTimeMs}ms in onCreate")
         // Safe-mode bail-out. When CrashFrequencyDetector tripped in
         // MinisApp.onCreate, the Application skipped its lateinit init
         // for repositories — but a sticky FG service that was running
@@ -132,14 +149,11 @@ class AgentForegroundService : Service() {
         // UninitializedPropertyAccessException and write a second crash
         // log, which is exactly the "detection logic recursively
         // crashing" pattern. Skip the overlay observer and let
-        // onStartCommand satisfy the FG-deadline + stopSelf.
+        // onStartCommand stopSelf. Foreground registration is already complete.
         if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
             Log.w(TAG, "safe-mode ON — skipping overlay/wake-lock bring-up")
-            createNotificationChannel()
             return
         }
-        createNotificationChannel()
-        startTimeMs = SystemClock.elapsedRealtime()
         acquireWakeLock()
         startOverlayObserver()
         Log.d(TAG, "Service created")
@@ -147,26 +161,12 @@ class AgentForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Safe-mode: system restarted us under START_STICKY (intent==null)
-        // after a crash. Satisfy the 5-second startForeground deadline
-        // with a stub notification, then unwind. The crash share dialog
+        // after a crash. onCreate already registered the foreground notification;
+        // now remove it and unwind. The crash share dialog
         // owns the UX from here; running a background service in this
         // state would re-trip the lateinit access that brought us down.
         if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
             try {
-                val stub = androidx.core.app.NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Minis")
-                    .setSmallIcon(android.R.drawable.stat_sys_warning)
-                    .setOngoing(false)
-                    .build()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        stub,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, stub)
-                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 } else {
@@ -174,7 +174,7 @@ class AgentForegroundService : Service() {
                     stopForeground(true)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "safe-mode stub startForeground failed: ${t.message}")
+                Log.w(TAG, "safe-mode foreground cleanup failed: ${t.message}")
             }
             stopSelf()
             return START_NOT_STICKY

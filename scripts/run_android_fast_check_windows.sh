@@ -136,6 +136,7 @@ case "$plan" in
       --tests 'com.openminis.app.tools.ImageGenerationPolicyTest'
       --tests 'com.openminis.app.tools.NovexRawToolRetirementTest'
       --tests 'com.openminis.app.tools.NovexWorkspaceAgentToolsTest'
+      --tests 'com.openminis.app.service.NovexAgentForegroundServiceTest'
     )
     ;;
   novex-core)
