@@ -425,7 +425,8 @@ fun CatalogInteractiveFictionEditorScreen(
         NovexDestructiveConfirmationDialog(
         title = "删除文游？",
         message = "将删除共享文游及其模块；已经创建的对话快照不会被改写。仍被引用的图片受引用保护。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
-        confirming = deleting || referenceImpact == null,
+        confirming = deleting,
+            confirmEnabled = referenceImpact != null,
         onDismiss = { confirmDelete = false },
         onConfirm = {
             deleting = true

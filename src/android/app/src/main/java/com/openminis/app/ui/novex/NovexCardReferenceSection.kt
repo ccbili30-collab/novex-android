@@ -153,7 +153,10 @@ internal fun rememberNovexReferenceDeletionImpact(subjects: List<NovexContentAdd
     LaunchedEffect(subjects) {
         try {
             val links = subjects.flatMap { workspace.referencesTo(it) }.filterNot { it.source in subjects }.distinctBy { it.id }
-            result = if (links.isEmpty()) "没有其他卡片通过带用途引用使用它。" else buildString {
+            val deletedVersionIds = subjects.filter { it.kind == NovexContentKind.CHARACTER_VERSION }.mapTo(mutableSetOf()) { it.id }
+            val versionLinks = deletedVersionIds.flatMap { workspace.versionRelations(it) }
+                .filter { it.targetVersionId in deletedVersionIds && it.sourceVersionId !in deletedVersionIds }.distinctBy { it.id }
+            val cardImpact = if (links.isEmpty()) "没有其他卡片通过带用途引用使用它。" else buildString {
                 appendLine("另有 ${links.size} 条引用会显示目标缺失；引用它的独立卡片和既有游玩快照会保留：")
                 links.take(12).forEach { reference ->
                     val name = when (reference.source.kind) {
@@ -166,6 +169,13 @@ internal fun rememberNovexReferenceDeletionImpact(subjects: List<NovexContentAdd
                 }
                 if (links.size > 12) append("其余 ${links.size - 12} 条可在引用列表查看。")
             }.trim()
+            result = cardImpact + if (versionLinks.isEmpty()) "" else buildString {
+                appendLine(); appendLine("另有 ${versionLinks.size} 条人物版本关系会显示目标缺失；关联版本及其资料会保留：")
+                versionLinks.take(12).forEach { relation ->
+                    val source = workspace.characterForVersion(relation.sourceVersionId)?.character?.allVersions?.firstOrNull { it.id == relation.sourceVersionId }
+                    appendLine("${source?.label ?: relation.sourceVersionId} · ${relation.kind.label}")
+                }
+            }.trimEnd()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { result = null }
     }

@@ -121,7 +121,7 @@ internal data class CharacterEditorDraftState(
                 sourceVersionId = source.id.takeIf { createVariant },
                 createVariant = createVariant,
                 rootName = aggregate.character.name,
-                label = if (createVariant) "新分身" else source.label,
+                label = if (createVariant) "新版本" else source.label,
                 name = profile.name,
                 tagsText = profile.tags.joinToString("、"),
                 gender = profile.gender,

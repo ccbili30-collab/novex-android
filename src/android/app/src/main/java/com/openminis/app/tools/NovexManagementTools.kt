@@ -79,6 +79,12 @@ object NovexManagementTools {
                         "purpose（用途）为 background（背景）、answer_identity（回答身份）、player_identity（玩家身份）、rules（规则）、management（管理目标）。" +
                         "新增时提供唯一 reference_id（引用编号）；替换已有身份必须沿用原引用编号，不能添加第二个回答身份。回答身份只指向完整角色版本。" +
                         "remove_card_reference（移除卡片引用）使用 {operation,subject_kind,subject_id,reference_id}，保留独立目标。" +
+                        "人物版本关系使用 put_version_relation（设置版本关系）：{operation,relation_id,source_version_id,target_version_id,relation_kind}；" +
+                        "relation_kind（关系类型）为 earlier_stage（目标是更早人生阶段）、later_stage（目标是更晚人生阶段）或 parallel（平行分身）。" +
+                        "只连接同一人物的不同版本；本体是默认版本，编辑修订不会产生新阶段。不会同步各版本的知识、记忆或切换回答身份。" +
+                        "remove_version_relation（移除版本关系）使用 {operation,relation_id,source_version_id}，不删除版本。" +
+                        "只要求来源版本的编辑权限，关联不授予目标正文访问权限。总览返回 version_relations（版本关系）和 version_relation_kinds（合法类型）；" +
+                        "先按 source_version_id（来源版本编号）核对关系归属，替换沿用 relation_id（关系编号）。" +
                         "示例：{\"operation\":\"put_card_reference\",\"subject_kind\":\"game\",\"subject_id\":\"已返回的文游编号\",\"reference_id\":\"独立引用编号\",\"target_kind\":\"world\",\"target_id\":\"已返回的世界编号\",\"purpose\":\"background\"}。" +
                         "不得按重名猜测编号；这些操作不启动游戏、不切换当前对话身份，也不改写已采用的游玩快照。 Create operations: " +
                         "create_world requires {operation, name, overview?, modules?}; create_character requires {operation, " +

@@ -53,8 +53,9 @@ import com.openminis.app.data.creative.CreativeArtifactRevisionEntity
         CreativeArtifactAttachmentEntity::class,
         NovexConversationDraftEntity::class,
         NovexCardReferenceEntity::class,
+        NovexCharacterVersionRelationEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = false,
 )
 @TypeConverters(
@@ -73,10 +74,20 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun creativeArtifactDao(): CreativeArtifactDao
     abstract fun novexConversationDraftDao(): NovexConversationDraftDao
     abstract fun novexCardReferenceDao(): NovexCardReferenceDao
+    abstract fun novexCharacterVersionRelationDao(): NovexCharacterVersionRelationDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS novex_character_version_relations (id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, source_version_id TEXT NOT NULL, target_version_id TEXT NOT NULL, content_json TEXT NOT NULL, FOREIGN KEY(source_version_id) REFERENCES character_versions(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_novex_version_relations_character ON novex_character_version_relations (character_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_novex_version_relations_source ON novex_character_version_relations (source_version_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_novex_version_relations_target ON novex_character_version_relations (target_version_id)")
+            }
+        }
 
         val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -761,7 +772,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -82,6 +82,7 @@ fun NovexCharacterEditorScreen(
         mutableStateOf<CharacterEditorDraftState?>(null)
     }
     var variantCount by remember { mutableStateOf(0) }
+    var allVersionIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var media by remember { mutableStateOf<Map<MediaAssetSlot, MediaAssetEntity>>(emptyMap()) }
     var persistedModuleIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var pendingImages by remember { mutableStateOf<Map<MediaAssetSlot, PendingCharacterImage>>(emptyMap()) }
@@ -141,6 +142,7 @@ fun NovexCharacterEditorScreen(
                 baselineDraft = initial
                 sourceVersion = version
                 variantCount = aggregate.variants.size
+                allVersionIds = aggregate.allVersions.map { it.id }
                 media = snapshot.mediaByVersion[version.id].orEmpty()
                 persistedModuleIds = if (createVariant) emptySet() else modules.mapTo(mutableSetOf()) { it.id }
             } else {
@@ -209,7 +211,7 @@ fun NovexCharacterEditorScreen(
     NovexEditorScaffold(
         title = when {
             characterId == null -> "创建角色"
-            createVariant -> "创建分身"
+            createVariant -> "创建版本"
             else -> "编辑角色"
         },
         onBack = onBack,
@@ -230,7 +232,7 @@ fun NovexCharacterEditorScreen(
                 ) {
                     Text("正在编辑", color = NovexColors.SecondaryText, modifier = Modifier.weight(1f))
                     Text(
-                        if (createVariant) "由${sourceVersion?.label ?: "本体"}创建新分身" else draft.label,
+                        if (createVariant) "由${sourceVersion?.label ?: "本体"}创建新版本" else draft.label,
                         color = NovexColors.Text,
                     )
                 }
@@ -251,7 +253,7 @@ fun NovexCharacterEditorScreen(
                         Text(draft.rootName, color = NovexColors.Text)
                     }
                     NovexInlineField(
-                        label = "分身名称",
+                        label = "版本名称",
                         value = draft.label,
                         placeholder = "例如：医馆时期",
                         onValueChange = { draft = draft.copy(label = it) },
@@ -259,7 +261,7 @@ fun NovexCharacterEditorScreen(
                     NovexInlineField(
                         label = "姓名",
                         value = draft.name,
-                        placeholder = "分身中的姓名",
+                        placeholder = "版本中的姓名",
                         onValueChange = { draft = draft.copy(name = it) },
                     )
                 }
@@ -331,14 +333,19 @@ fun NovexCharacterEditorScreen(
     }
     if (confirmDelete && characterId != null) {
         val deletingVariant = sourceVersion?.kind == CharacterVersionKind.VARIANT
+        val deletedVersionIds = if (deletingVariant) listOfNotNull(sourceVersion?.id) else allVersionIds
+        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(deletedVersionIds.map {
+            com.openminis.app.novex.domain.NovexContentAddress.characterVersion(it)
+        })
         NovexDestructiveConfirmationDialog(
-            title = if (deletingVariant) "删除分身？" else "删除角色？",
-            message = if (deletingVariant) {
-                "将删除这个分身及其世界关联；角色本体和其他分身不会受影响。此操作无法撤销。"
+            title = if (deletingVariant) "删除版本？" else "删除角色？",
+            message = (if (deletingVariant) {
+                "将删除这个版本及其世界关联；角色本体和其他版本不会受影响。此操作无法撤销。"
             } else {
-                "将删除这个角色、本体及全部分身，并解除世界关联。共享图片仍受引用保护。此操作无法撤销。"
-            },
+                "将删除这个角色、本体及全部版本，并解除世界关联。共享图片仍受引用保护。此操作无法撤销。"
+            }) + "\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
             confirming = deleting,
+            confirmEnabled = referenceImpact != null,
             onDismiss = { confirmDelete = false },
             onConfirm = {
                 deleting = true

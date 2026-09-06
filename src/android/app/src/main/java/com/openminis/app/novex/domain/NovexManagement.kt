@@ -12,6 +12,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 sealed interface NovexManagedChange {
+    data class PutVersionRelation(val relation: NovexCharacterVersionRelation) : NovexManagedChange
+    data class RemoveVersionRelation(val sourceVersionId: String, val relationId: String) : NovexManagedChange
     data class PutCardReference(val reference: NovexCardReference) : NovexManagedChange
     data class RemoveCardReference(val source: NovexContentAddress, val referenceId: String) : NovexManagedChange
     data class AddModule(
@@ -240,6 +242,7 @@ data class NovexManagementInspection(
     val cardBacklinks: List<NovexCardReference> = emptyList(),
     val referenceStatuses: Map<String, NovexReferenceTargetStatus> = emptyMap(),
     val privateModuleIds: Map<String, String> = emptyMap(),
+    val versionRelations: List<NovexCharacterVersionRelation> = emptyList(),
 )
 
 data class NovexManagementApplyResult(
@@ -354,6 +357,14 @@ fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
     }))
     put("card_references", JSONArray(cardReferences.map { it.managementJson(referenceStatuses[it.id]) }))
     put("card_backlinks", JSONArray(cardBacklinks.map { it.managementJson(null) }))
+    put("version_relation_kinds", JSONArray(NovexCharacterVersionRelationKind.entries.map {
+        JSONObject().put("value", it.wireName).put("label", it.label)
+    }))
+    put("version_relations", JSONArray(versionRelations.map {
+        JSONObject().put("relation_id", it.id).put("source_version_id", it.sourceVersionId)
+            .put("target_version_id", it.targetVersionId).put("relation_kind", it.kind.wireName)
+            .put("unresolved_target_version_id", it.unresolvedTargetVersionId)
+    }))
     put("game_launch_modes", NovexManagementLaunchModes.toJson())
     put("private_creation_targets", JSONArray(draftTargets.map { card ->
         JSONObject().put("kind", card.subject.kind.managementWireName()).put("id", card.subject.id)
@@ -478,6 +489,8 @@ class NovexManagementService(
             cardBacklinks = backlinks,
             referenceStatuses = references.associate { it.id to workspace.referenceStatus(it.target) },
             privateModuleIds = hiddenModules.associate { it.id to NovexManagementModuleTypeCatalog.wireName(it.ownerType, it.type) },
+            versionRelations = subject?.takeIf { it.kind == NovexContentKind.CHARACTER_VERSION && moduleId == null && profileSection == "public" }
+                ?.let { workspace.versionRelations(it.id) }.orEmpty(),
         )
     }
 
@@ -583,6 +596,11 @@ class NovexManagementService(
     }
 
     private suspend fun factsFor(changes: List<NovexManagedChange>): NovexManagementFacts {
+        changes.filterIsInstance<NovexManagedChange.RemoveVersionRelation>().forEach { change ->
+            require(workspace.versionRelations(change.sourceVersionId).any { it.id == change.relationId && it.sourceVersionId == change.sourceVersionId }) {
+                "版本关系不存在或不属于指定来源版本"
+            }
+        }
         changes.filterIsInstance<NovexManagedChange.RemoveCardReference>().forEach { change ->
             require(workspace.referencesFrom(change.source).any { it.id == change.referenceId }) { "引用不存在或不属于指定来源卡片" }
         }
@@ -717,6 +735,12 @@ object NovexManagementChangeCodec {
         return List(values.length()) { index ->
             val value = values.getJSONObject(index)
             when (value.getString("operation")) {
+                "put_version_relation" -> NovexManagedChange.PutVersionRelation(NovexCharacterVersionRelation(
+                    value.getString("relation_id"), value.getString("source_version_id"), value.getString("target_version_id"),
+                    NovexCharacterVersionRelationKind.entries.firstOrNull { it.wireName == value.getString("relation_kind") }
+                        ?: error("版本关系类型无效；合法值：${NovexCharacterVersionRelationKind.entries.joinToString { it.wireName }}"),
+                ))
+                "remove_version_relation" -> NovexManagedChange.RemoveVersionRelation(value.getString("source_version_id"), value.getString("relation_id"))
                 "put_card_reference" -> NovexManagedChange.PutCardReference(NovexCardReference(
                     id = value.getString("reference_id"), source = value.contentAddress(),
                     target = NovexReferenceTarget(value.cardTargetAddress(),
@@ -874,6 +898,8 @@ private fun requireArtifactModuleOwner(
 }
 
 private fun NovexManagedChange.targets(facts: NovexManagementFacts): List<NovexContentAddress> = when (this) {
+    is NovexManagedChange.PutVersionRelation -> listOf(NovexContentAddress.characterVersion(relation.sourceVersionId))
+    is NovexManagedChange.RemoveVersionRelation -> listOf(NovexContentAddress.characterVersion(sourceVersionId))
     is NovexManagedChange.PutCardReference -> listOf(reference.source)
     is NovexManagedChange.RemoveCardReference -> listOf(source)
     is NovexManagedChange.AddModule -> listOf(owner.toAddress())
@@ -966,6 +992,8 @@ private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
 }
 
 private fun NovexManagedChange.summary(): String = when (this) {
+    is NovexManagedChange.PutVersionRelation -> "设置${relation.kind.label}关系（目标版本 ${relation.targetVersionId}）"
+    is NovexManagedChange.RemoveVersionRelation -> "移除版本关系 $relationId，保留各版本"
     is NovexManagedChange.PutCardReference -> "设置${reference.purpose.label}引用（目标 ${reference.target.subject.id}）"
     is NovexManagedChange.RemoveCardReference -> "移除卡片引用 $referenceId，保留目标卡片"
     is NovexManagedChange.AddModule -> "新增模块“$name”"
@@ -1019,6 +1047,8 @@ private fun NovexManagedChange.toCommand(
     facts: NovexManagementFacts,
     currentModule: com.openminis.app.data.character.ContentModuleEntity? = null,
 ): NovexCommand = when (this) {
+    is NovexManagedChange.PutVersionRelation -> NovexCommand.PutVersionRelation(relation)
+    is NovexManagedChange.RemoveVersionRelation -> NovexCommand.RemoveVersionRelation(relationId, sourceVersionId)
     is NovexManagedChange.PutCardReference -> NovexCommand.PutCardReference(reference)
     is NovexManagedChange.RemoveCardReference -> NovexCommand.RemoveCardReference(referenceId, source)
     is NovexManagedChange.AddModule -> NovexCommand.AddModule(

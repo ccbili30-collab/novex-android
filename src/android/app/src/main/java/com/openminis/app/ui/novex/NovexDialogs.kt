@@ -146,6 +146,7 @@ internal fun NovexDestructiveConfirmationDialog(
     confirming: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    confirmEnabled: Boolean = true,
 ) {
     NovexDecisionDialog(
         title = title,
@@ -153,10 +154,10 @@ internal fun NovexDestructiveConfirmationDialog(
         onDismiss = { if (!confirming) onDismiss() },
         actions = listOf(
             NovexDecisionAction(
-                label = if (confirming) "删除中" else "删除",
+                label = if (confirming) "删除中" else if (confirmEnabled) "删除" else "读取引用中",
                 icon = com.openminis.app.R.drawable.ic_phosphor_trash,
                 tone = NovexDecisionTone.DESTRUCTIVE,
-                enabled = !confirming,
+                enabled = !confirming && confirmEnabled,
                 onClick = onConfirm,
             ),
             NovexDecisionAction(

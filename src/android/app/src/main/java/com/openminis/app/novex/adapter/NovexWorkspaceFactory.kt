@@ -38,6 +38,7 @@ object NovexWorkspaceFactory {
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
             cardReferences = RoomCardReferenceAdapter(database.novexCardReferenceDao()),
+            versionRelations = RoomCharacterVersionRelationAdapter(database.novexCharacterVersionRelationDao()),
             drafts = RoomDraftOwnershipAdapter(database.novexConversationDraftDao(), database.chatDao()),
             interactiveFiction = RoomInteractiveFictionAdapter(interactiveFiction),
             content = RoomContentAdapter(content),
@@ -97,6 +98,7 @@ internal class DeferredNovexWorkspace(
 
     override suspend fun referenceStatus(target: com.openminis.app.novex.domain.NovexReferenceTarget) = workspace().referenceStatus(target)
     override suspend fun referencesFrom(source: com.openminis.app.novex.domain.NovexContentAddress) = workspace().referencesFrom(source)
+    override suspend fun versionRelations(versionId: String) = workspace().versionRelations(versionId)
     override suspend fun referencesTo(target: com.openminis.app.novex.domain.NovexContentAddress) = workspace().referencesTo(target)
     override suspend fun worlds() = workspace().worlds()
     override suspend fun characters() = workspace().characters()

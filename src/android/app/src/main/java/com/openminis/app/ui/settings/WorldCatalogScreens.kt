@@ -608,7 +608,8 @@ fun CatalogWorldEditorScreen(
         com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog(
             title = "删除世界？",
             message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
-            confirming = deleting || referenceImpact == null,
+            confirming = deleting,
+            confirmEnabled = referenceImpact != null,
             onDismiss = { confirmDelete = false },
             onConfirm = {
                 deleting = true

@@ -194,6 +194,7 @@ fun CatalogCharacterDetailScreen(
                 )
                 com.openminis.app.ui.novex.NovexCardReferenceSection(
                     com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenModule = onOpenModule)
+                com.openminis.app.ui.novex.NovexCharacterVersionRelationSection(page.version.id) { selectedVersionId = it }
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
                     onCreateVariant = onCreateVariant,
@@ -255,7 +256,7 @@ fun CatalogCharacterDetailScreen(
             )
         }
         NovexTextActionRow(
-            label = "创建分身",
+            label = "创建另一个版本",
             onClick = {
                 versionSheet = false
                 onCreateVariant()
@@ -270,7 +271,7 @@ fun CatalogCharacterDetailScreen(
         AlertDialog(
         onDismissRequest = { confirmDeleteRoot = false },
         title = { Text("删除整个角色？") },
-        text = { Text("本体、全部分身及其世界关联会一并删除；已有对话中的快照仍保留。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
+        text = { Text("本体、全部版本及其世界关联会一并删除；已有对话中的快照仍保留。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
         confirmButton = {
             Button(enabled = referenceImpact != null, onClick = {
                 confirmDeleteRoot = false
@@ -286,7 +287,7 @@ fun CatalogCharacterDetailScreen(
         AlertDialog(
             onDismissRequest = { confirmDeleteVariant = null },
             title = { Text("删除${version.label}？") },
-            text = { Text("这个分身会从所有世界移除，本体和其他分身不受影响。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
+            text = { Text("这个版本会从所有世界移除，本体和其他版本不受影响。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
             confirmButton = {
                 Button(enabled = referenceImpact != null, onClick = {
                     confirmDeleteVariant = null
@@ -471,10 +472,10 @@ private fun CharacterManagementActions(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
         ) {
-            TextButton(onClick = onCreateVariant) { Text("创建分身") }
+            TextButton(onClick = onCreateVariant) { Text("创建版本") }
             TextButton(onClick = onExport) { Text("导出含依赖") }
             TextButton(onClick = onDuplicate) { Text("复制") }
-            TextButton(onClick = onDelete) { Text(if (isVariant) "删除分身" else "删除角色") }
+            TextButton(onClick = onDelete) { Text(if (isVariant) "删除版本" else "删除角色") }
         }
     }
 }

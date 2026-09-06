@@ -46,6 +46,7 @@ import org.json.JSONObject
  * managed files, ordering rules and reference cleanup stay behind this seam.
  */
 interface NovexWorkspace {
+    suspend fun versionRelations(versionId: String): List<NovexCharacterVersionRelation> = emptyList()
     suspend fun referenceStatus(target: NovexReferenceTarget): NovexReferenceTargetStatus = NovexReferenceTargetStatus.MISSING_CARD
     suspend fun referencesFrom(source: NovexContentAddress): List<NovexCardReference> = emptyList()
     suspend fun referencesTo(target: NovexContentAddress): List<NovexCardReference> = emptyList()
@@ -164,6 +165,8 @@ sealed interface NovexImageChange {
 }
 
 sealed interface NovexCommand {
+    data class PutVersionRelation(val relation: NovexCharacterVersionRelation) : NovexCommand
+    data class RemoveVersionRelation(val id: String, val expectedSourceVersionId: String) : NovexCommand
     data class ReserveConversationDraftWrite(val conversationId: String, val reservation: NovexDraftWriteReservation) : NovexCommand
     data class ReleaseConversationDraftWrite(val conversationId: String, val planId: String) : NovexCommand
     data class AddConversationDraft(val conversationId: String, val kind: NovexContentKind, val now: Long = System.currentTimeMillis()) : NovexCommand
@@ -498,6 +501,7 @@ internal class DefaultNovexWorkspace(
     private val transaction: suspend (suspend () -> NovexChange) -> NovexChange,
     private val drafts: NovexDraftOwnershipPort = UnavailableNovexDraftOwnership,
     private val cardReferences: NovexCardReferencePort = UnavailableNovexCardReferences,
+    private val versionRelations: NovexCharacterVersionRelationPort = UnavailableNovexVersionRelations,
 ) : NovexWorkspace {
     private fun referencePackage() = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
@@ -649,6 +653,7 @@ internal class DefaultNovexWorkspace(
     override suspend fun referenceStatus(target: NovexReferenceTarget) = NovexCardReferences(cardReferences, catalog, interactiveFiction, content).status(target)
 
     override suspend fun referencesFrom(source: NovexContentAddress) = cardReferences.outgoing(source)
+    override suspend fun versionRelations(versionId: String) = versionRelations.forVersion(versionId)
     override suspend fun referencesTo(target: NovexContentAddress) = cardReferences.incoming(target)
 
     override suspend fun characterForVersion(versionId: String): NovexCharacterSnapshot? =
@@ -674,6 +679,22 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.ReleaseConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
             draftLifecycle().release(command.conversationId, command.planId),
         )
+        is NovexCommand.PutVersionRelation -> {
+            val source = requireNotNull(catalog.version(command.relation.sourceVersionId)) { "关系来源版本不存在" }
+            val character = requireNotNull(catalog.character(source.characterId)) { "人物不存在" }
+            val target = catalog.version(command.relation.targetVersionId)
+            val versions = (character.allVersions + listOfNotNull(target)).distinctBy { it.id }
+            versionRelations.get(command.relation.id)?.let { require(it.sourceVersionId == source.id) { "关系编号属于另一来源版本" } }
+            NovexCharacterVersionRelationRules.validate(command.relation, versions, versionRelations.forCharacter(source.characterId))
+            versionRelations.save(source.characterId, command.relation)
+            NovexChange.Completed
+        }
+        is NovexCommand.RemoveVersionRelation -> {
+            val existing = requireNotNull(versionRelations.get(command.id)) { "版本关系不存在" }
+            require(existing.sourceVersionId == command.expectedSourceVersionId) { "关系不属于指定来源版本" }
+            versionRelations.delete(command.id)
+            NovexChange.Completed
+        }
         is NovexCommand.PutCardReference -> NovexChange.CardReferenceSaved(
             NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(command.reference),
         )
@@ -781,9 +802,13 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.DuplicateCharacter -> {
             val source = requireNotNull(catalog.character(command.characterId)) { "角色不存在" }
             val copy = catalog.duplicateCharacter(command.characterId, command.now)
-            source.allVersions.zip(copy.allVersions).forEach { (sourceVersion, copiedVersion) ->
-                copyVersionContents(sourceVersion.id, copiedVersion.id, command.now)
+            val moduleIds = linkedMapOf<String, String>()
+            val versionIds = source.allVersions.zip(copy.allVersions).associate { (old, new) -> old.id to new.id }
+            versionIds.forEach { (sourceId, copiedId) ->
+                moduleIds += copyVersionContents(sourceId, copiedId, command.now)
             }
+            copyVersionReferences(versionIds, moduleIds)
+            restoreVersionRelations(versionRelations.forCharacter(source.character.id), versionIds, copy.character.id)
             NovexChange.CharacterSaved(copy)
         }
         is NovexCommand.ExportCharacter -> {
@@ -1024,7 +1049,10 @@ internal class DefaultNovexWorkspace(
                 source.profileJson,
                 command.now,
             )
-            copyVersionContents(source.id, variant.id, command.now)
+            val moduleIds = copyVersionContents(source.id, variant.id, command.now)
+            copyVersionReferences(mapOf(source.id to variant.id), moduleIds)
+            versionRelations.save(source.characterId, NovexCharacterVersionRelation(
+                UUID.randomUUID().toString(), variant.id, source.id, NovexCharacterVersionRelationKind.PARALLEL))
             catalog.unlink(world.id, source.id)
             catalog.link(world.id, variant.id, position, command.now)
             NovexChange.VersionSaved(variant)
@@ -1199,7 +1227,7 @@ internal class DefaultNovexWorkspace(
         return (worlds + versions + modules).filterNot { it.target == ownerTarget }
     }
 
-    private suspend fun copyVersionContents(sourceVersionId: String, targetVersionId: String, now: Long) {
+    private suspend fun copyVersionContents(sourceVersionId: String, targetVersionId: String, now: Long): Map<String, String> {
         val sourceOwner = ModuleOwner.characterVersion(sourceVersionId)
         val targetOwner = ModuleOwner.characterVersion(targetVersionId)
         val sourceModules = content.list(sourceOwner)
@@ -1226,6 +1254,36 @@ internal class DefaultNovexWorkspace(
         }
         listOf(MediaAssetSlot.CHARACTER_AVATAR, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND).forEach { slot ->
             media.assetFor(sourceOwner, slot)?.let { asset -> media.attach(targetOwner, slot, asset.id) }
+        }
+        return sourceModules.zip(copiedModules).associate { (old, new) -> old.id to new.id }
+    }
+
+    private suspend fun copyVersionReferences(versionIds: Map<String, String>, moduleIds: Map<String, String>) {
+        // All copied modules must exist before cross-version links can be restored.
+        moduleIds.forEach { (sourceId, copiedId) ->
+            content.references(copiedId).forEach { content.removeReference(copiedId, ModuleReferenceTarget(it.targetType, it.targetId)) }
+            content.references(sourceId).forEach { reference ->
+                val targetId = when (reference.targetType) {
+                    ModuleReferenceTargetType.MODULE -> moduleIds[reference.targetId]
+                    ModuleReferenceTargetType.CHARACTER_VERSION -> versionIds[reference.targetId]
+                    else -> null
+                } ?: reference.targetId
+                content.addReference(copiedId, ModuleReferenceTarget(reference.targetType, targetId), reference.position)
+            }
+        }
+        versionIds.forEach { (sourceId, copiedId) ->
+            cardReferences.outgoing(NovexContentAddress.characterVersion(sourceId)).forEach { reference ->
+                val copiedTarget = if (reference.unresolvedTarget == null && reference.target.subject.kind == NovexContentKind.CHARACTER_VERSION)
+                    versionIds[reference.target.subject.id] else null
+                val target = if (copiedTarget == null) reference.target else reference.target.copy(
+                    subject = NovexContentAddress.characterVersion(copiedTarget),
+                    moduleId = reference.target.moduleId?.let { moduleIds[it] ?: it },
+                )
+                NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(reference.copy(
+                    id = UUID.randomUUID().toString(), source = NovexContentAddress.characterVersion(copiedId), target = target,
+                    sourceModuleId = reference.sourceModuleId?.let { moduleIds.getValue(it) },
+                ), allowMissingTarget = true)
+            }
         }
     }
 
@@ -1353,8 +1411,36 @@ internal class DefaultNovexWorkspace(
         restoreImportedModuleReferences(importedModules, now, importedVersions.associate { (version, document) ->
             ModuleReferenceTarget.characterVersion(document.sourceId) to ModuleReferenceTarget.characterVersion(version.id)
         })
+        val relationJson = JSONObject(document.originalJson).optJSONArray("versionRelations") ?: JSONArray()
+        restoreVersionRelations(
+            List(relationJson.length()) { NovexCharacterVersionRelationCodec.decode(relationJson.getJSONObject(it).toString()) },
+            importedVersions.associate { (version, source) -> source.sourceId to version.id },
+            aggregate.character.id,
+        )
         if (reconcileLegacyLinks) reconcileImportedCharacterLinks(importedVersions, now)
         return aggregate.character.id
+    }
+
+    private suspend fun restoreVersionRelations(
+        relations: List<NovexCharacterVersionRelation>,
+        versionIds: Map<String, String>,
+        characterId: String,
+    ) {
+        require(relations.map { it.id }.distinct().size == relations.size) { "版本关系编号重复" }
+        val missingIds = mutableMapOf<String, String>()
+        val versions = requireNotNull(catalog.character(characterId)).allVersions
+        relations.forEach { relation ->
+            val source = requireNotNull(versionIds[relation.sourceVersionId]) { "版本关系来源不属于导入人物" }
+            val target = if (relation.unresolvedTargetVersionId == null) versionIds[relation.targetVersionId] else null
+            val unresolved = if (target == null) relation.unresolvedTargetVersionId ?: relation.targetVersionId else null
+            val restored = relation.copy(
+                id = UUID.randomUUID().toString(), sourceVersionId = source,
+                targetVersionId = target ?: missingIds.getOrPut(requireNotNull(unresolved)) { "missing:${UUID.randomUUID()}" },
+                unresolvedTargetVersionId = unresolved,
+            )
+            NovexCharacterVersionRelationRules.validate(restored, versions, versionRelations.forCharacter(characterId), allowMissingTarget = true)
+            versionRelations.save(characterId, restored)
+        }
     }
 
     private suspend fun importInteractiveFictionCard(
@@ -1559,10 +1645,19 @@ internal class DefaultNovexWorkspace(
             mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
             return path
         }
-        val versionSourceIds = snapshot.character.allVersions.associate { it.id to (it.sourceId() ?: it.id) }
+        val claimedVersionIds = mutableSetOf<String>()
+        val versionSourceIds = snapshot.character.allVersions.associate { version ->
+            val preferred = version.sourceId() ?: version.id
+            var portableId = preferred
+            var suffix = 0
+            while (!claimedVersionIds.add(portableId)) {
+                portableId = "${version.id}-${suffix++}"
+            }
+            version.id to portableId
+        }
         val versionsJson = snapshot.character.allVersions.map { version ->
             val profile = CharacterVersionProfile.fromJson(version.profileJson, snapshot.character.character.name)
-            val sourceVersionId = version.sourceId() ?: version.id
+            val sourceVersionId = versionSourceIds.getValue(version.id)
             val versionMedia = snapshot.mediaByVersion[version.id].orEmpty()
             val mediaJson = JSONObject()
             mediaJson.putMedia(
@@ -1650,6 +1745,14 @@ internal class DefaultNovexWorkspace(
             put("versions", JSONArray(versionsJson))
             put("versionOrder", JSONArray(versionsJson.map { it.getString("id") }))
             put("defaultVersionId", versionsJson.first { it.optString("kind") == "origin" }.getString("id"))
+            put("versionRelations", JSONArray(versionRelations.forCharacter(characterId).map { relation ->
+                JSONObject(NovexCharacterVersionRelationCodec.encode(relation.copy(
+                    sourceVersionId = versionSourceIds.getValue(relation.sourceVersionId),
+                    targetVersionId = versionSourceIds[relation.targetVersionId] ?: relation.targetVersionId,
+                    unresolvedTargetVersionId = if (versionSourceIds.containsKey(relation.targetVersionId)) null
+                        else relation.unresolvedTargetVersionId ?: relation.targetVersionId,
+                )))
+            }))
         }
         return NovexCardPackagePreview(
             kind = NovexCardKind.CHARACTER,

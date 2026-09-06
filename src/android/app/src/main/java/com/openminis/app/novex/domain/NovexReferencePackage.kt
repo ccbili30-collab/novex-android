@@ -172,8 +172,13 @@ internal class NovexReferencePackage(
     private suspend fun addresses(key: Key, preview: NovexCardPackagePreview): Map<NovexContentAddress, String> = when (key.kind) {
         NovexCardKind.WORLD -> mapOf(NovexContentAddress.world(key.id) to JSONObject(preview.documentJson).getString("sourceId"))
         NovexCardKind.GAME -> mapOf(NovexContentAddress.interactiveFiction(key.id) to JSONObject(preview.documentJson).getString("sourceId"))
-        NovexCardKind.CHARACTER -> requireNotNull(workspace.character(key.id)).character.allVersions.associate { version ->
-            NovexContentAddress.characterVersion(version.id) to JSONObject(version.profileJson).optString("_novexSourceId").ifBlank { version.id }
+        NovexCardKind.CHARACTER -> {
+            val versions = requireNotNull(workspace.character(key.id)).character.allVersions
+            val exported = JSONObject(preview.documentJson).getJSONArray("versions").objects()
+            require(versions.size == exported.size) { "导出的版本映射不完整" }
+            versions.zip(exported).associate { (version, document) ->
+                NovexContentAddress.characterVersion(version.id) to document.getString("id")
+            }
         }
     }
 

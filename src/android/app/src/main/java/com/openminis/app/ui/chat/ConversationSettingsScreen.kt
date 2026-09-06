@@ -179,7 +179,7 @@ fun ConversationSettingsScreen(
                     val suffix = if (version.kind == CharacterVersionKind.ORIGINAL) {
                         "本体"
                     } else {
-                        version.label.ifBlank { "分身" }
+                        version.label.ifBlank { "版本" }
                     }
                     ConversationContentOption(
                         NovexContentAddress.characterVersion(version.id),
