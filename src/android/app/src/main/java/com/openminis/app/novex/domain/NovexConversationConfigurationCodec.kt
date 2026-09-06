@@ -8,7 +8,7 @@ object NovexConversationConfigurationCodec {
     fun encode(snapshot: NovexConversationConfigurationSnapshot): String = JSONObject().apply {
         put("version", 1)
         put("conversationId", snapshot.conversationId)
-        put("answerIdentity", snapshot.answerIdentity.toJson())
+        put("answerIdentity", NovexAnswerIdentityCodec.encode(snapshot.answerIdentity))
         put("backgroundSettings", JSONArray(snapshot.backgroundSettings.map { it.subject.toJson() }))
         put("managedSubjects", JSONArray(snapshot.managedSubjects.map { subject ->
             subject.subject.toJson().put("access", subject.access.wireName())
@@ -35,7 +35,10 @@ object NovexConversationConfigurationCodec {
             val decodedId = root.optString("conversationId").ifBlank { conversationId }
             val snapshot = NovexConversationConfigurationSnapshot(
                 conversationId = decodedId,
-                answerIdentity = root.optJSONObject("answerIdentity").toAnswerIdentity(),
+                // Preserve the legacy configuration fallback without discarding its other relations.
+                answerIdentity = runCatching {
+                    NovexAnswerIdentityCodec.decode(root.optJSONObject("answerIdentity"))
+                }.getOrDefault(AnswerIdentity.Nova),
                 backgroundSettings = root.optJSONArray("backgroundSettings").objects().map { value ->
                     BackgroundSetting(value.toContentAddress())
                 },
@@ -66,20 +69,6 @@ object NovexConversationConfigurationCodec {
             ).snapshot
         }.getOrElse { NovexConversationConfiguration.empty(conversationId).snapshot }
     }
-}
-
-private fun AnswerIdentity.toJson(): JSONObject = when (this) {
-    AnswerIdentity.Nova -> JSONObject().put("kind", "nova")
-    is AnswerIdentity.CharacterVersion -> JSONObject()
-        .put("kind", "characterVersion")
-        .put("versionId", versionId)
-}
-
-private fun JSONObject?.toAnswerIdentity(): AnswerIdentity = when (this?.optString("kind")) {
-    "characterVersion" -> optString("versionId").takeIf(String::isNotBlank)
-        ?.let(AnswerIdentity::CharacterVersion)
-        ?: AnswerIdentity.Nova
-    else -> AnswerIdentity.Nova
 }
 
 private fun NovexContentAddress.toJson() = JSONObject()

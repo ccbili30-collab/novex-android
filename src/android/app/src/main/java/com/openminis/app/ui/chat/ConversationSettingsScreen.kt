@@ -205,6 +205,7 @@ fun ConversationSettingsScreen(
     val labels = options.associateBy(ConversationContentOption::address)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
         AnswerIdentity.Nova -> "Nova · 通用人格"
+        is AnswerIdentity.PersonaPreset -> "${identity.label} · 人格预设"
         is AnswerIdentity.CharacterVersion -> labels[NovexContentAddress.characterVersion(identity.versionId)]?.label
             ?: "角色版本 · ${identity.versionId.take(8)}"
     }

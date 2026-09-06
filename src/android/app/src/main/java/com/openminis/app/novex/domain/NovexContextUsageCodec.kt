@@ -11,12 +11,7 @@ object NovexContextUsageCodec {
         put("requestMessageId", record.requestMessageId)
         record.responseMessageId?.let { put("responseMessageId", it) }
         put("branchId", record.branchId)
-        put("answerIdentity", when (val identity = record.answerIdentity) {
-            AnswerIdentity.Nova -> JSONObject().put("kind", "nova")
-            is AnswerIdentity.CharacterVersion -> JSONObject()
-                .put("kind", "characterVersion")
-                .put("versionId", identity.versionId)
-        })
+        put("answerIdentity", NovexAnswerIdentityCodec.encode(record.answerIdentity))
         put("includedSources", JSONArray(record.includedSources.map { source ->
             JSONObject()
                 .put("kind", source.kind.name)
@@ -44,13 +39,7 @@ object NovexContextUsageCodec {
             requestMessageId = root.getString("requestMessageId"),
             responseMessageId = root.optString("responseMessageId").takeIf(String::isNotBlank),
             branchId = root.getString("branchId"),
-            answerIdentity = root.optJSONObject("answerIdentity").let { identity ->
-                if (identity?.optString("kind") == "characterVersion") {
-                    AnswerIdentity.CharacterVersion(identity.getString("versionId"))
-                } else {
-                    AnswerIdentity.Nova
-                }
-            },
+            answerIdentity = NovexAnswerIdentityCodec.decode(root.optJSONObject("answerIdentity")),
             includedSources = root.optJSONArray("includedSources").objects().map { source ->
                 ContextSourceUsage(
                     kind = ContextSourceKind.valueOf(source.getString("kind")),

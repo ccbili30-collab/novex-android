@@ -96,4 +96,14 @@ class NovexConversationConfigurationCodecTest {
         assertEquals(NovexConversationConfiguration.empty("chat-legacy").snapshot, empty)
         assertEquals(empty, broken)
     }
+
+    @Test
+    fun invalidLegacyCharacterIdentityDoesNotDiscardValidBackgroundRelations() {
+        val raw = """{"answerIdentity":{"kind":"characterVersion","versionId":""},"backgroundSettings":[{"kind":"world","id":"world-1"}]}"""
+
+        val restored = NovexConversationConfigurationCodec.decode(raw, "legacy")
+
+        assertEquals(AnswerIdentity.Nova, restored.answerIdentity)
+        assertEquals(listOf(BackgroundSetting(NovexContentAddress.world("world-1"))), restored.backgroundSettings)
+    }
 }

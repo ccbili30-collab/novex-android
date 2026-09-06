@@ -47,6 +47,18 @@ data class ManagedSubject(
 sealed interface AnswerIdentity {
     data object Nova : AnswerIdentity
 
+    /** Conversation-owned snapshot, not a live reference to a mutable preset or character card. */
+    data class PersonaPreset(
+        val presetId: String,
+        val label: String,
+        val instructions: String = "",
+    ) : AnswerIdentity {
+        init {
+            require(presetId.isNotBlank()) { "人格预设编号不能为空" }
+            require(label.isNotBlank()) { "人格名称不能为空" }
+        }
+    }
+
     data class CharacterVersion(val versionId: String) : AnswerIdentity {
         init {
             require(versionId.isNotBlank()) { "回答身份的角色版本编号不能为空" }

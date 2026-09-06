@@ -5,6 +5,27 @@ import org.junit.Test
 
 class NovexContextUsageCodecTest {
     @Test
+    fun historicalUsageKeepsTheSelectedPersonaSnapshotRatherThanOnlyItsPresetId() {
+        val record = ContextUsageRecord(
+            id = "usage-persona",
+            requestMessageId = "request-1",
+            branchId = "branch-1",
+            answerIdentity = AnswerIdentity.PersonaPreset(
+                presetId = "historian",
+                label = "历史共创者",
+                instructions = "区分历史事实与架空推演。\n保留不同意见，不代替玩家决定。",
+            ),
+            includedSources = emptyList(),
+            usedTokens = 0,
+            effectiveWindowTokens = 200_000,
+        )
+
+        val restored = NovexContextUsageCodec.decode(NovexContextUsageCodec.encode(record))
+
+        assertEquals(record, restored)
+    }
+
+    @Test
     fun exactIncludedAndOmittedSourcesSurvivePersistence() {
         val source = ContextUsageRecord(
             id = "usage-1",
