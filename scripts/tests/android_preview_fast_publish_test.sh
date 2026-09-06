@@ -4,9 +4,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PUBLISHER="$SCRIPT_DIR/../publish_android_preview_fast_windows.sh"
+version_base="$(sed -n 's/.*?: "\([0-9][0-9.]*\)"/\1/p' "$SCRIPT_DIR/../../src/android/app/build.gradle.kts" | head -1)"
+[[ "$version_base" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'missing version fixture base' >&2; exit 1; }
+release_tags="$(printf 'v%s-beta.7\nv%s-beta.30\nv0.0.1-beta.99' "$version_base" "$version_base")"
 
 output="$(
-  NOVEX_PREVIEW_RELEASE_TAGS=$'v0.2.12-beta.7\nv0.2.12-beta.30\nv0.2.11-beta.99' \
+  NOVEX_PREVIEW_RELEASE_TAGS="$release_tags" \
   NOVEX_FAST_PUBLISH_STATUS='' \
     "$PUBLISHER" --dry-run --skip-fetch
 )"
@@ -15,8 +18,8 @@ for expected in \
   "channel=preview" \
   "tier=daily" \
   "branch=next" \
-  "version=0.2.12-beta.31" \
-  "tag=v0.2.12-beta.31" \
+  "version=$version_base-beta.31" \
+  "tag=v$version_base-beta.31" \
   "package=com.noven.player.preview" \
   "asset=novex-preview.novex" \
   "publish=false"; do
@@ -33,7 +36,7 @@ fi
 
 set +e
 dirty_output="$(
-  NOVEX_PREVIEW_RELEASE_TAGS='v0.2.12-beta.30' \
+  NOVEX_PREVIEW_RELEASE_TAGS="v$version_base-beta.30" \
   NOVEX_FAST_PUBLISH_STATUS=' M src/android/app/build.gradle.kts' \
     "$PUBLISHER" --dry-run --skip-fetch 2>&1
 )"
@@ -46,7 +49,7 @@ fi
 
 set +e
 branch_output="$(
-  NOVEX_PREVIEW_RELEASE_TAGS='v0.2.12-beta.30' \
+  NOVEX_PREVIEW_RELEASE_TAGS="v$version_base-beta.30" \
   NOVEX_FAST_PUBLISH_BRANCH='main' \
   NOVEX_FAST_PUBLISH_STATUS='' \
     "$PUBLISHER" --dry-run --skip-fetch 2>&1
@@ -64,7 +67,7 @@ tag_fixture="$(mktemp -d)"
 fake_tag_gh="$tag_fixture/fake-tag-gh.sh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  "printf '%s\\n' v0.2.12-beta.30 v0.2.12-beta.26" \
+  "printf '%s\\n' v$version_base-beta.30 v$version_base-beta.26" \
   > "$fake_tag_gh"
 chmod +x "$fake_tag_gh"
 tag_output="$(
@@ -73,7 +76,7 @@ tag_output="$(
     "$PUBLISHER" --dry-run --skip-fetch
 )"
 rm -rf "$tag_fixture"
-if [[ "$tag_output" != *"version=0.2.12-beta.31"* ]]; then
+if [[ "$tag_output" != *"version=$version_base-beta.31"* ]]; then
   echo "published releases, not a stale local tag list, must choose the next preview version" >&2
   exit 1
 fi
@@ -89,7 +92,7 @@ artifact_sha="$(printf '%s' "$artifact_bytes" | shasum -a 256 | awk '{print $1}'
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'printf "Verified channel=preview package=com.noven.player.preview versionName=0.2.12-beta.31\\n"' \
+  "printf 'Verified channel=preview package=com.noven.player.preview versionName=$version_base-beta.31\\n'" \
   'printf "candidate_apk=/remote/app-preview-release.apk\\n"' \
   "printf 'candidate_sha256=$artifact_sha\\n'" \
   "printf 'candidate_cert_sha256=cab4226b416183671281253b5f4000a28885cfa4f48146c0e7798d137e41c6a6\\n'" \
@@ -101,7 +104,7 @@ printf '%s\n' \
 chmod +x "$fake_runner" "$fake_ssh"
 
 candidate_output="$(
-  NOVEX_PREVIEW_RELEASE_TAGS='v0.2.12-beta.30' \
+  NOVEX_PREVIEW_RELEASE_TAGS="v$version_base-beta.30" \
   NOVEX_FAST_PUBLISH_STATUS='' \
   NOVEX_FAST_PUBLISH_CHANGED_FILES='src/android/app/src/main/java/example.kt' \
   NOVEX_FAST_CHECK_RUNNER="$fake_runner" \
@@ -113,7 +116,7 @@ candidate_output="$(
 for expected in \
   "published=false" \
   "candidate_sha256=$artifact_sha" \
-  "candidate_dir=$fixture_dir/output/v0.2.12-beta.31"; do
+  "candidate_dir=$fixture_dir/output/v$version_base-beta.31"; do
   if [[ "$candidate_output" != *"$expected"* ]]; then
     echo "missing staged-candidate output: $expected" >&2
     exit 1
@@ -121,7 +124,7 @@ for expected in \
 done
 
 for asset in novex-preview.novex zz-novex-preview-installer.apk SHA256SUMS.txt release-notes.md; do
-  if [[ ! -s "$fixture_dir/output/v0.2.12-beta.31/$asset" ]]; then
+  if [[ ! -s "$fixture_dir/output/v$version_base-beta.31/$asset" ]]; then
     echo "missing staged preview asset: $asset" >&2
     exit 1
   fi
@@ -152,7 +155,7 @@ chmod +x "$fake_gh"
 
 set +e
 publish_output="$(
-  NOVEX_PREVIEW_RELEASE_TAGS='v0.2.12-beta.30' \
+  NOVEX_PREVIEW_RELEASE_TAGS="v$version_base-beta.30" \
   NOVEX_FAST_PUBLISH_STATUS='' \
   NOVEX_FAST_PUBLISH_CHANGED_FILES='src/android/app/src/main/java/example.kt' \
   NOVEX_FAST_CHECK_RUNNER="$fake_runner" \
