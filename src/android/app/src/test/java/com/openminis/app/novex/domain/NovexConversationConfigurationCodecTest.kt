@@ -2,8 +2,30 @@ package com.openminis.app.novex.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.json.JSONObject
 
 class NovexConversationConfigurationCodecTest {
+    @Test
+    fun selectedPersonaSurvivesRestartAndMountingBackgroundWithoutBecomingNova() {
+        val saved = """{"version":1,"answerIdentity":{"kind":"personaPreset","presetId":"historian","label":"历史共创者","instructions":"区分历史事实与架空推演。"}}"""
+        val restored = NovexConversationConfigurationCodec.decode(saved, "chat-1")
+        val changed = NovexConversationConfiguration.open(restored)
+            .apply(NovexConversationCommand.AddBackground(NovexContentAddress.world("world-1")))
+            .apply(NovexConversationCommand.MountSubject(
+                NovexContentAddress.characterVersion("fusheng"), ManagedAccess.EDIT,
+            ))
+        val persisted = JSONObject(NovexConversationConfigurationCodec.encode(changed.snapshot))
+            .getJSONObject("answerIdentity")
+
+        assertEquals("personaPreset", persisted.getString("kind"))
+        assertEquals("historian", persisted.getString("presetId"))
+        assertEquals("历史共创者", persisted.getString("label"))
+        assertEquals("区分历史事实与架空推演。", persisted.getString("instructions"))
+        assertEquals(changed.snapshot, NovexConversationConfigurationCodec.decode(
+            NovexConversationConfigurationCodec.encode(changed.snapshot), "chat-1",
+        ))
+    }
+
     @Test
     fun everyConversationConfigurationRelationSurvivesPersistenceRoundTrip() {
         val sharedWorld = NovexContentAddress.world("world-1")
