@@ -1479,7 +1479,13 @@ internal class DefaultNovexWorkspace(
                 .put("tags", JSONArray(profile.tags))
                 .put(
                     "profile",
-                    JSONObject()
+                    JSONObject(profile.toJson()).apply {
+                        // Preserve role instructions and provider extensions. These fields
+                        // are represented elsewhere in the portable version or local-only.
+                        listOf("profileSchema", "name", "tags", "summary", "customAttributes", "relationships",
+                            "_novexSourceId", "_novexCharacterSourceId", "_novexCharacterDocument")
+                            .forEach(::remove)
+                    }
                         .put("displayName", profile.name)
                         .put("gender", profile.gender)
                         .put("age", profile.age)
