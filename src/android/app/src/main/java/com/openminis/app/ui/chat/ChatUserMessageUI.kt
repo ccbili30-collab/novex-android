@@ -401,13 +401,16 @@ internal fun UserMessageBubble(
                 }
                 val visibleContextSources = message.novexContextUsage?.includedSources.orEmpty()
                     .filterNot { it.sourceId == "answer-identity:nova" }
-                if (visibleContextSources.isNotEmpty()) {
-                    val preview = visibleContextSources.take(2).joinToString("、") { it.label }
-                    val remaining = (visibleContextSources.size - 2).coerceAtLeast(0)
+                val viewedSourceLabels = message.novexContextUsage?.sourceReads.orEmpty()
+                    .filterNot { it.sourceId == "answer-identity:nova" }.map { it.label }
+                val sourceLabels = (visibleContextSources.map { it.label } + viewedSourceLabels).distinct()
+                if (sourceLabels.isNotEmpty()) {
+                    val preview = sourceLabels.take(2).joinToString("、")
+                    val remaining = (sourceLabels.size - 2).coerceAtLeast(0)
                     Text(
                         text = buildString {
-                            append("引用：").append(preview)
-                            if (remaining > 0) append(" 等 ").append(visibleContextSources.size).append(" 项")
+                            append("资料：").append(preview)
+                            if (remaining > 0) append(" 等 ").append(sourceLabels.size).append(" 项")
                         },
                         color = ChatColors.tertiaryText,
                         fontSize = 11.sp,
@@ -532,7 +535,7 @@ internal fun UserMessageBubble(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    "已引用 ${usage.includedSources.size} 项 · ${usage.usedTokens} 词元",
+                    "请求预置 ${usage.includedSources.size} 项 · ${usage.usedTokens} 词元",
                     color = ChatColors.secondaryText,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -542,8 +545,22 @@ internal fun UserMessageBubble(
                         Text("${source.tokenCount} 词元", color = ChatColors.tertiaryText, fontSize = 12.sp)
                     }
                 }
+                if (usage.sourceReads.isNotEmpty()) {
+                    Text("本轮查看记录", color = ChatColors.primaryText, fontWeight = FontWeight.SemiBold)
+                    com.openminis.app.novex.domain.NovexSourceReadCoverage.from(usage.sourceReads).forEach { coverage ->
+                        val methods = usage.sourceReads.filter { it.sourceId == coverage.sourceId && it.revision == coverage.revision }
+                            .map { it.method.label }.distinct().joinToString("、")
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(coverage.label, color = ChatColors.primaryText, fontWeight = FontWeight.Medium)
+                            Text("$methods · 正文 ${coverage.coveredCharacters}/${coverage.totalCharacters} 字符 · ${if (coverage.complete) "本轮已通读" else "本轮未通读"}",
+                                color = ChatColors.secondaryText, fontSize = 12.sp)
+                            Text("修订 ${coverage.revision.take(12)} · ${coverage.sourceId}", color = ChatColors.tertiaryText, fontSize = 11.sp)
+                        }
+                    }
+                    Text("目录预览和搜索不计入通读；过去读取过的正文仍可按来源重新查阅。", color = ChatColors.tertiaryText, fontSize = 12.sp)
+                }
                 if (usage.omittedSources.isNotEmpty()) {
-                    Text("本轮未引用", color = ChatColors.primaryText, fontWeight = FontWeight.SemiBold)
+                    Text("预置上下文中未引用", color = ChatColors.primaryText, fontWeight = FontWeight.SemiBold)
                     usage.omittedSources.forEach { source ->
                         Text("${source.label} · ${source.reason}", color = ChatColors.secondaryText)
                     }

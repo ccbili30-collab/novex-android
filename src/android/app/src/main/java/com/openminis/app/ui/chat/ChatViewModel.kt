@@ -975,6 +975,7 @@ class ChatViewModel(
     private var conversationExitJob: Job? = null
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
+    private val novexContextUsageMutex = kotlinx.coroutines.sync.Mutex()
     private val novexConfigurationMutex = kotlinx.coroutines.sync.Mutex()
     private val sessionCreationMutex = kotlinx.coroutines.sync.Mutex()
     private val pendingNovexMemoryPlans = linkedMapOf<String, com.openminis.app.novex.domain.NovexMemoryPlan>()
@@ -8432,6 +8433,7 @@ class ChatViewModel(
                     assistantId,
                     accumulatedText,
                     turnMessageId,
+                    novexRequestMessage?.dbMessageId,
                 )
                 val capturedArtifact = captureCreativeArtifact(
                     toolName = name,
@@ -8913,6 +8915,7 @@ class ChatViewModel(
         assistantId: String,
         currentText: String,
         turnMessageId: String,
+        requestMessageId: String?,
     ): ToolExecutionResult {
         // T330: tri-state permission gating moved into the offload IPC
         // handler (OffloadGate). The CLIs land there whether the LLM
@@ -8977,7 +8980,7 @@ class ChatViewModel(
             "register_controls" -> executeRegisterControlsTool(argsJson, assistantId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
-            NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson)
+            NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
@@ -9008,7 +9011,7 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun executeNovexReadContextTool(argsJson: String): ToolExecutionResult = try {
+    private suspend fun executeNovexReadContextTool(argsJson: String, requestMessageId: String?, responseMessageId: String): ToolExecutionResult = try {
         val args = JSONObject(argsJson.ifBlank { "{}" })
         val workspace = requireNotNull((context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace) { "内容工作空间尚未就绪" }
         val profile = _immersiveProfile.value
@@ -9016,14 +9019,29 @@ class ChatViewModel(
             com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
         val configuration = currentNovexConfiguration()
         val offset = args.optInt("offset", 0)
-        val result = when (args.optString("operation", "inspect")) {
+        val operation = args.optString("operation", "inspect")
+        val result = when (operation) {
             "inspect" -> reader.inspect(configuration, offset, args.optInt("limit", 80))
             "search" -> reader.search(configuration, args.getString("query"), offset, args.optInt("limit", 20))
             "read" -> reader.read(configuration, args.getString("source_id"), offset, args.optInt("limit", 12_000),
                 args.optString("revision").ifBlank { null })
             else -> error("操作无效，请选择查看目录、读取或搜索")
         }
-        ToolExecutionResult(result.toString(2), true, toolTitle = "读取当前采用资料")
+        val receipt = novexContextUsageMutex.withLock {
+            com.openminis.app.novex.adapter.NovexContextReadJournal(chatRepository).record(
+                conversationId = activeSessionId,
+                requestMessageId = requireNotNull(requestMessageId) { "当前阅读没有可保存的用户请求编号" },
+                responseMessageId = responseMessageId,
+                activeMessageIds = activeBranchPathIds.toSet(),
+                answerIdentity = configuration.answerIdentity,
+                effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
+                operation = operation, result = result,
+            )
+        }
+        receipt.usage?.let { usage -> withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.map { if (it.id == usage.requestMessageId) it.copy(novexContextUsage = usage) else it }
+        } }
+        ToolExecutionResult(receipt.result.toString(2), true, toolTitle = "读取当前采用资料")
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (failure: Exception) {

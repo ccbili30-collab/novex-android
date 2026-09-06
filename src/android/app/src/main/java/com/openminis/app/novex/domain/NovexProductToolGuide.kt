@@ -10,6 +10,7 @@ object NovexProductToolGuide {
         appendLine("资料尚未通读时不得声称完整理解；关键词命中只是局部查看。无法完成时说明已读范围与未读部分，不用抽样内容冒充全文。")
         if ("novex_read_context" in availableTools) appendLine("- 当前采用资料通过 novex_read_context（读取当前设定）查看目录、按来源读取或搜索；无需把背景卡另行挂载为管理对象。目录预览和搜索命中只是片段；继续读取沿用返回的下一偏移与修订摘要。只依据本局已采用的资料回答，管理区原卡的新修订不自动替换本局快照。")
         if (availableTools.containsAll(setOf("novex_inspect_content", "novex_propose_content_changes", "novex_apply_content_changes"))) {
+            appendLine("- 阅读证据：read_coverage（阅读覆盖）由软件根据真实读取范围持久保存，只合并当前分支同一来源修订；搜索、预览、重复片段和其他分支不能补齐未读部分。依据 complete（完整覆盖）判断是否通读。压缩后的上下文不自动保留所有正文，应依据来源编号、修订和偏移重新读取；不能仅凭‘过去读过’编造原文。")
             appendLine("- 角色使用范围：role_instructions（专属扮演指令）只供当前回答角色；companion_player_identity（配套玩家身份）必须采用后才进入对话。管理角色总览默认只返回公开资料；通过 private_modules（私有模块目录）明确指定 module_id（模块编号）后才读取对应私有模块。旧格式专属字段通过 profile_section=role_instructions（专属扮演资料范围）单独读取，不能从总览、背景搜索或摘要旁路取得。")
             appendLine("- 文游可用 answer_identity（独立回答人格）文章模块保存主持职责，模块名称作为人格名称、text（正文）作为职责指令；不要求先创建世界或角色。具体人物扮演通过 answer_identity（回答身份）卡片引用指定，不能同时声明另一套独立人格。player_identity（玩家身份）引用只采用身份模块，不启动被引用的文游；多来源身份需明确选择，不能擅自覆盖或拼接。")
             appendLine("- 卡片互引用 put_card_reference（设置带用途引用）和 remove_card_reference（移除引用），沿用原生变更提案流程。背景、回答身份、玩家身份、规则、管理目标是不同用途；只改来源卡片，不扩大目标权限。查看 card_references（向外引用）与 card_backlinks（使用来源）中的稳定编号，不按重名连接。已有角色身份必须明确替换；管理文游不启动，修改原卡不改写本局已经采用的快照。")

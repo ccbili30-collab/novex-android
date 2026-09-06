@@ -29,6 +29,10 @@ object NovexContextUsageCodec {
         put("usedTokens", record.usedTokens)
         put("effectiveWindowTokens", record.effectiveWindowTokens)
         put("createdAt", record.createdAt)
+        put("sourceReads", JSONArray(record.sourceReads.map { read ->
+            JSONObject().put("sourceId", read.sourceId).put("label", read.label).put("revision", read.revision)
+                .put("start", read.start).put("end", read.end).put("totalCharacters", read.totalCharacters).put("method", read.method.name)
+        }))
     }.toString()
 
     fun decode(raw: String): ContextUsageRecord {
@@ -59,6 +63,11 @@ object NovexContextUsageCodec {
             usedTokens = root.optInt("usedTokens"),
             effectiveWindowTokens = root.getInt("effectiveWindowTokens"),
             createdAt = root.optLong("createdAt"),
+            sourceReads = root.optJSONArray("sourceReads").objects().map { read ->
+                NovexSourceRead(read.getString("sourceId"), read.getString("label"), read.getString("revision"),
+                    read.getInt("start"), read.getInt("end"), read.getInt("totalCharacters"),
+                    NovexSourceReadMethod.valueOf(read.getString("method")))
+            },
         )
     }
 

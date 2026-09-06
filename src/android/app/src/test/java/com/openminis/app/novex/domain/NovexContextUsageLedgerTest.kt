@@ -2,9 +2,27 @@ package com.openminis.app.novex.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexContextUsageLedgerTest {
+    @Test
+    fun `later tool reads join the user request while remaining on their own reply branches`() {
+        val first = record("initial").copy(responseMessageId = "first", branchId = "first",
+            includedSources = listOf(ContextSourceUsage(ContextSourceKind.ANSWER_IDENTITY, "nova", "诺瓦", 20)))
+        val read = NovexSourceRead("rules", "帝议", "one", 0, 50, 100)
+        val initial = NovexContextUsageLedger.open(NovexContextUsageLedgerSnapshot("chat", listOf(first)))
+            .withSourceReads("message-1", "first", listOf(read), setOf("message-1", "first"), AnswerIdentity.Nova, 4096, 1)
+        val extended = initial.withSourceReads("message-1", "second", listOf(read.copy(start = 50, end = 100)),
+            setOf("message-1", "first", "second"), AnswerIdentity.Nova, 4096, 2)
+        val complete = extended.latestByRequestForActivePath(setOf("message-1", "first", "second")).getValue("message-1")
+        assertEquals(first.includedSources, complete.includedSources)
+        assertEquals(2, complete.sourceReads.size)
+        assertTrue(NovexSourceReadCoverage.from(complete.sourceReads).single().complete)
+        val alternate = extended.latestByRequestForActivePath(setOf("message-1", "first", "other-reply")).getValue("message-1")
+        assertEquals(listOf(read), alternate.sourceReads)
+    }
+
     @Test
     fun `context usage records keep the exact sources for the branch that produced them`() {
         val recorded = ContextUsageRecord(

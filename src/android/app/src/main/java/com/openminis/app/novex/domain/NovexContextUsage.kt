@@ -49,6 +49,7 @@ data class ContextUsageRecord(
     val usedTokens: Int,
     val effectiveWindowTokens: Int,
     val createdAt: Long = 0L,
+    val sourceReads: List<NovexSourceRead> = emptyList(),
 ) {
     init {
         require(id.isNotBlank()) { "上下文引用记录编号不能为空" }
@@ -70,6 +71,25 @@ data class NovexContextUsageLedgerSnapshot(
 class NovexContextUsageLedger private constructor(
     val snapshot: NovexContextUsageLedgerSnapshot,
 ) {
+    fun withSourceReads(requestMessageId: String, responseMessageId: String, reads: List<NovexSourceRead>,
+        activeMessageIds: Set<String>, answerIdentity: AnswerIdentity, effectiveWindowTokens: Int, createdAt: Long): NovexContextUsageLedger {
+        if (reads.isEmpty()) return this
+        val available = visibleRecords(activeMessageIds + responseMessageId).filter { it.requestMessageId == requestMessageId }
+        val existing = available.lastOrNull { it.responseMessageId == responseMessageId }
+        val base = existing ?: available.lastOrNull() ?: ContextUsageRecord(
+            "read:$responseMessageId", requestMessageId, responseMessageId, responseMessageId,
+            answerIdentity, emptyList(), usedTokens = 0, effectiveWindowTokens = effectiveWindowTokens, createdAt = createdAt)
+        val updated = base.copy(
+            id = existing?.id ?: "read:$responseMessageId",
+            responseMessageId = responseMessageId,
+            branchId = responseMessageId,
+            sourceReads = (existing?.sourceReads.orEmpty() + reads).distinct(),
+            createdAt = existing?.createdAt ?: createdAt,
+        )
+        val records = if (existing == null) snapshot.records + updated else snapshot.records.map { if (it.id == existing.id) updated else it }
+        return open(snapshot.copy(records = records))
+    }
+
     fun record(value: ContextUsageRecord): NovexContextUsageLedger {
         require(snapshot.records.none { it.id == value.id }) { "上下文引用记录已经存在" }
         return open(snapshot.copy(records = snapshot.records + value))
@@ -81,10 +101,18 @@ class NovexContextUsageLedger private constructor(
     }
 
     fun latestByRequestForActivePath(activeMessageIds: Set<String>): Map<String, ContextUsageRecord> =
+        visibleRecords(activeMessageIds).groupBy(ContextUsageRecord::requestMessageId).mapValues { (_, records) ->
+            records.last().copy(sourceReads = records.flatMap { it.sourceReads }.distinct())
+        }
+
+    fun readCoverageForActivePath(activeMessageIds: Set<String>): List<NovexSourceReadCoverage> =
+        NovexSourceReadCoverage.from(visibleRecords(activeMessageIds).flatMap { it.sourceReads })
+
+    private fun visibleRecords(activeMessageIds: Set<String>): List<ContextUsageRecord> =
         snapshot.records.filter { record ->
             record.responseMessageId?.let { it in activeMessageIds }
                 ?: (record.branchId in activeMessageIds || record.requestMessageId in activeMessageIds)
-        }.associateBy(ContextUsageRecord::requestMessageId)
+        }
 
     companion object {
         fun empty(conversationId: String): NovexContextUsageLedger {

@@ -21,7 +21,8 @@ object NovexManagementTools {
             name = READ_CONTEXT,
             description = "查看当前对话实际采用的身份、背景与活动文游资料，或按来源编号读取、搜索。" +
                 "只返回当前用途允许的内容；管理挂载不会自动进入此目录。私有扮演指令仅供当前回答角色使用，未采用的配套玩家身份不可读取。" +
-                "活动文游采用已固定的资料，不能用管理区中的新版本替换本局内容。目录预览与搜索片段不代表通读全文。",
+                "活动文游采用已固定的资料，不能用管理区中的新版本替换本局内容。目录预览与搜索片段不代表通读全文。" +
+                "成功返回前保存实际阅读范围；read_coverage（阅读覆盖）累计当前分支同一修订的正文读取，complete（完成）为真才表示这份修订已完整读过。历史覆盖不表示全文仍在当前上下文内，需要时重新读取。",
             parameters = mapOf(
                 "operation" to AgentToolParam("string", "操作：inspect（查看目录，默认）、read（读取来源）、search（搜索当前可用资料）。",
                     enumValues = listOf("inspect", "read", "search")),
