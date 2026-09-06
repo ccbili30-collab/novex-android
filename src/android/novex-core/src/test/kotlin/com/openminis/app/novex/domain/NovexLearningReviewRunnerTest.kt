@@ -7,6 +7,53 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `short line documents use the content budget rather than twenty line batches`() = runTest {
+        val fixture = fixture(500_000, 80_000, List(1154) { "规则 $it：玩家不是世界的中心。" })
+        val reviewer = RecordingReviewer()
+        val result = NovexLearningReviewRunner(
+            NovexDocumentSnapshotStore { fixture.document }, reviewer, {},
+        ).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals(1, reviewer.reviewRequests.size)
+        assertEquals(1154, result.reviewLedger.reviewedBlocks)
+    }
+
+    @Test fun `oversized block is fully read in bounded pieces and partial progress survives restart`() = runTest {
+        val text = ("文游规则🌏\n".repeat(550))
+        val fixture = fixture(500_000, 80_000, listOf(text))
+        var persisted = fixture.state
+        val received = mutableListOf<String>()
+        var interrupt = true
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                if (interrupt && received.isNotEmpty()) throw CancellationException("模拟退出")
+                val body = request.blocks.joinToString("") { it.text }
+                assertTrue("单次不能超出约定正文预算", body.length <= 1000)
+                assertTrue("不能切断表情符号", body.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8) == body)
+                received += body
+                return NovexLearningReviewOutput("片段", "记住本段", request.estimatedInputTokens, 20)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest) =
+                NovexLearningReviewOutput("总结", "完整通读", request.estimatedInputTokens, 20)
+        }
+        fun runner() = NovexLearningReviewRunner(
+            NovexDocumentSnapshotStore { fixture.document }, reviewer,
+            { persisted = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) },
+            maxCharsPerBatch = 1000,
+        )
+        try {
+            runner().run(fixture.state)
+            error("预期发生退出")
+        } catch (_: CancellationException) { }
+        assertEquals("读完片段不等于读完整块", 0, persisted.reviewLedger.reviewedBlocks)
+        assertEquals(1, received.size)
+        interrupt = false
+        val result = runner().run(persisted)
+        assertEquals(text, received.joinToString(""))
+        assertEquals(1, result.reviewLedger.reviewedBlocks)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+    }
+
     @Test
     fun `full review checkpoints coverage and anchored notes after every bounded batch`() = runTest {
         val fixture = fixture(maxInputTokens = 30_000, maxOutputTokens = 8_000)
@@ -149,15 +196,15 @@ class NovexLearningReviewRunnerTest {
         val state: NovexLearningState,
     )
 
-    private fun fixture(maxInputTokens: Int, maxOutputTokens: Int): Fixture {
+    private fun fixture(maxInputTokens: Int, maxOutputTokens: Int, texts: List<String>? = null): Fixture {
         val sha = "f".repeat(64)
-        val blocks = (0 until 5).map { index ->
+        val blocks = (0 until (texts?.size ?: 5)).map { index ->
             val source = NovexDocumentSourceAnchor("word/document.xml", index)
             NovexDocumentBlock(
                 id = NovexDocumentBlockId.from(sha, source),
                 kind = NovexDocumentBlockKind.PARAGRAPH,
                 order = index,
-                text = "第 $index 节 " + "内容".repeat(400),
+                text = texts?.get(index) ?: ("第 $index 节 " + "内容".repeat(400)),
                 source = source,
             )
         }
@@ -192,7 +239,7 @@ class NovexLearningReviewRunnerTest {
                 effectiveContextTokens = 200_000,
                 occupiedContextTokens = 10_000,
                 directReadBudgetTokens = 1_000,
-                proposedBudget = NovexLearningTokenBudget(30_000, 8_000),
+                proposedBudget = NovexLearningTokenBudget(maxOf(30_000, maxInputTokens), maxOf(8_000, maxOutputTokens)),
             ),
         )
         val confirmation = NovexLearningConfirmation(
