@@ -1226,7 +1226,9 @@ internal class DefaultNovexWorkspace(
             attach(versionDocument.pageBackgroundPath, MediaAssetSlot.CHARACTER_PAGE_BACKGROUND)
             importedModules += importCardModules(owner, versionDocument.modules, card, assets, now)
         }
-        restoreImportedModuleReferences(importedModules, now)
+        restoreImportedModuleReferences(importedModules, now, importedVersions.associate { (version, document) ->
+            ModuleReferenceTarget.characterVersion(document.sourceId) to ModuleReferenceTarget.characterVersion(version.id)
+        })
         reconcileImportedCharacterLinks(importedVersions, now)
         return aggregate.character.id
     }
@@ -1293,18 +1295,28 @@ internal class DefaultNovexWorkspace(
     private suspend fun restoreImportedModuleReferences(
         imported: List<Pair<NovexModuleImportDocument, ContentModuleEntity>>,
         now: Long,
+        versionTargets: Map<ModuleReferenceTarget, ModuleReferenceTarget> = emptyMap(),
     ) {
         val localIds = imported.associate { (document, module) -> document.sourceId to module.id }
         require(localIds.size == imported.size) { "卡包模块编号重复，无法安全恢复引用" }
+        val targets = localIds.map { (source, local) ->
+            ModuleReferenceTarget.module(source) to ModuleReferenceTarget.module(local)
+        }.toMap() + versionTargets
         imported.forEach { (document, module) ->
             val pending = JSONArray()
             val references = JSONArray(document.referencesJson)
             repeat(references.length()) { index ->
                 val reference = references.optJSONObject(index)
-                val localTarget = reference?.takeIf { it.optString("targetKind") == "module" }
-                    ?.optString("targetId")?.let(localIds::get)
+                val sourceTarget = reference?.let {
+                    when (it.optString("targetKind")) {
+                        "module" -> ModuleReferenceTarget.module(it.optString("targetId"))
+                        "characterVersion" -> ModuleReferenceTarget.characterVersion(it.optString("targetId"))
+                        else -> null
+                    }
+                }
+                val localTarget = sourceTarget?.let(targets::get)
                 if (localTarget != null) {
-                    content.addReference(module.id, ModuleReferenceTarget.module(localTarget), index)
+                    content.addReference(module.id, localTarget, index)
                 } else {
                     // External or future link kinds are data, not permission to bind local objects.
                     pending.put(references.get(index))
@@ -1423,6 +1435,7 @@ internal class DefaultNovexWorkspace(
             mediaFiles += NovexCardMedia(path, asset.mimeType, media.read(asset))
             return path
         }
+        val versionSourceIds = snapshot.character.allVersions.associate { it.id to (it.sourceId() ?: it.id) }
         val versionsJson = snapshot.character.allVersions.map { version ->
             val profile = CharacterVersionProfile.fromJson(version.profileJson, snapshot.character.character.name)
             val sourceVersionId = version.sourceId() ?: version.id
@@ -1446,6 +1459,7 @@ internal class DefaultNovexWorkspace(
                     itemImages = snapshot.moduleItemImages[module.id].orEmpty(),
                     mediaFiles = mediaFiles,
                     pathPrefix = "media/versions/$sourceVersionId/modules",
+                    versionSourceIds = versionSourceIds,
                 )
             }.toMutableList()
             if (profile.relationships.isNotEmpty()) {
@@ -1578,6 +1592,7 @@ internal class DefaultNovexWorkspace(
         itemImages: Map<String, MediaAssetEntity>,
         mediaFiles: MutableList<NovexCardMedia>,
         pathPrefix: String = "media/modules",
+        versionSourceIds: Map<String, String> = emptyMap(),
     ): JSONObject {
         suspend fun exportAsset(basePath: String, asset: MediaAssetEntity?): String? {
             asset ?: return null
@@ -1639,7 +1654,9 @@ internal class DefaultNovexWorkspace(
                             ModuleReferenceTargetType.WORLD -> "world"
                             ModuleReferenceTargetType.CHARACTER_VERSION -> "characterVersion"
                         })
-                        .put("targetId", reference.targetId))
+                        .put("targetId", if (reference.targetType == ModuleReferenceTargetType.CHARACTER_VERSION) {
+                            versionSourceIds[reference.targetId] ?: reference.targetId
+                        } else reference.targetId))
                 }
                 val pending = runCatching { JSONObject(module.contentJson)
                     .optJSONArray("_novexPendingReferences") }.getOrNull()
