@@ -8,6 +8,7 @@ import com.openminis.app.data.character.ContentModuleDocument
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleReferenceTarget
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardTransferParser
 import com.openminis.app.data.character.toPlainText
@@ -34,6 +35,47 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexManagedCardPersistenceTest {
     @get:Rule val files = TemporaryFolder()
+
+    @Test
+    fun `native character copies remap version and module links on repeated exchange`() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
+            val original = workspace.apply(NovexCommand.CreateCharacter("记言人", """{"name":"记言人"}""")).requireCharacter()
+            val variant = workspace.apply(NovexCommand.CreateVariant(original.character.id, "晚年", """{"name":"晚年记言人"}""")).requireVersion()
+            val first = workspace.apply(NovexCommand.AddModule(ModuleOwner.characterVersion(original.original.id),
+                ContentModuleType.CUSTOM, "早年经历")).requireModule()
+            val second = workspace.apply(NovexCommand.AddModule(ModuleOwner.characterVersion(variant.id),
+                ContentModuleType.CUSTOM, "晚年经历")).requireModule()
+            val externalWorld = workspace.apply(NovexCommand.CreateWorld("包外世界")).requireWorld()
+            workspace.apply(NovexCommand.AddModuleReference(first.id, ModuleReferenceTarget.module(second.id), 0))
+            workspace.apply(NovexCommand.AddModuleReference(first.id, ModuleReferenceTarget.characterVersion(variant.id), 1))
+            workspace.apply(NovexCommand.AddModuleReference(first.id, ModuleReferenceTarget.world(externalWorld.id), 2))
+            var sourceId = original.character.id
+            repeat(2) {
+                val exported = workspace.apply(NovexCommand.ExportNativeCharacter(sourceId)).requireNativeCard()
+                val parsed = NovexCardTransferParser.parse(NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)))
+                val copiedId = workspace.apply(NovexCommand.ImportNativeCard(parsed)).requireNativeImport().localId
+                val copied = requireNotNull(workspace.character(copiedId))
+                val copiedVariant = copied.character.variants.single()
+                val copiedFirst = copied.modulesByVersion.getValue(copied.character.original.id).single()
+                val copiedSecond = copied.modulesByVersion.getValue(copiedVariant.id).single()
+                assertEquals(listOf(ModuleReferenceTarget.module(copiedSecond.id),
+                    ModuleReferenceTarget.characterVersion(copiedVariant.id)),
+                    workspace.module(copiedFirst.id)!!.references.map { it.target })
+                val reexported = workspace.apply(NovexCommand.ExportNativeCharacter(copiedId)).requireNativeCard()
+                val refs = JSONObject(reexported.documentJson).getJSONArray("versions").getJSONObject(0)
+                    .getJSONArray("modules").getJSONObject(0).getJSONArray("references")
+                assertEquals(3, refs.length())
+                assertEquals("world", refs.getJSONObject(2).getString("targetKind"))
+                assertEquals(externalWorld.id, refs.getJSONObject(2).getString("targetId"))
+                sourceId = copiedId
+            }
+        } finally {
+            database.close()
+        }
+    }
 
     @Test
     fun `interrupted confirmed creation leaves no partial cards after database reopen`() = runBlocking {
