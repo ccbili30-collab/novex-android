@@ -64,6 +64,21 @@ class AppThemeColorsTest {
     }
 
     @Test
+    fun `customizing Cloude text does not invalidate its unchanged supported accent`() {
+        val cloude = ThemeColorPresets.cloude.colors
+        val edited = cloude.update(
+            ThemeVariantMode.Dark,
+            cloude.dark.copy(foreground = 0xFFFFFFFF.toInt()),
+        )
+
+        assertTrue("Editing readable dark text must not disable Save because the untouched light accent changed policy",
+            validateThemeColors(edited).isEmpty())
+        val restored = requireNotNull(AppThemeColorPreferences.decode(AppThemeColorPreferences.encode(edited)))
+        assertEquals(edited, restored)
+        assertTrue(validateThemeColors(restored).isEmpty())
+    }
+
+    @Test
     fun `validation rejects unreadable foreground and weak accent`() {
         val colors = AppThemeColors(
             presetId = ThemeColorPresets.CUSTOM_ID,
