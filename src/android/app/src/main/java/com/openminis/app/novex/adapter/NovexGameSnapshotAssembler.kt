@@ -5,10 +5,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Captures the settings adopted by one game without activating linked games or granting edits. */
-class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
+class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private val mediaStore: NovexSnapshotMediaStore? = null) {
     suspend fun create(projectId: String, backgroundSettings: List<BackgroundSetting> = emptyList(),
         adoptedContexts: List<NovexAdoptedContext> = emptyList()): ActiveInteractiveFictionSnapshot {
-        val base = InteractiveFictionRuntimeSnapshotFactory.create(requireNotNull(workspace.interactiveFiction(projectId)) { "文游不存在" })
+        val project = requireNotNull(workspace.interactiveFiction(projectId)) { "文游不存在" }
+        val base = InteractiveFictionRuntimeSnapshotFactory.create(project)
         val root = NovexReferenceTarget(NovexContentAddress.interactiveFiction(projectId))
         val identityReference = workspace.referencesFrom(root.subject).singleOrNull {
             it.sourceModuleId == null && it.purpose == NovexReferencePurpose.ANSWER_IDENTITY
@@ -18,11 +19,14 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
         val reader = NovexReferenceContextReader(workspace)
         val references = linkedMapOf<String, NovexCardReference>()
         val cycles = linkedSetOf<String>()
-        fun addSource(target: NovexReferenceTarget, candidates: List<NovexContextCandidate>, gameOwned: Boolean, conversationRoot: NovexContentAddress?) {
+        fun addSource(target: NovexReferenceTarget, candidates: List<NovexContextCandidate>, gameOwned: Boolean, conversationRoot: NovexContentAddress?,
+            retainedMedia: List<NovexSnapshotMedia>? = null) {
             val prior = frozen[target]
             frozen[target] = NovexFrozenContext(target, prior?.candidates ?: candidates,
                 adoptedByGame = prior?.adoptedByGame == true || gameOwned,
-                conversationRoots = prior?.conversationRoots.orEmpty() + listOfNotNull(conversationRoot))
+                conversationRoots = prior?.conversationRoots.orEmpty() + listOfNotNull(conversationRoot),
+                media = prior?.media ?: retainedMedia.orEmpty(),
+                mediaCaptured = prior?.mediaCaptured ?: (retainedMedia != null))
             require(frozen.size <= 1000) { "本局采用的资料范围超过上限，请缩小引用范围" }
         }
         suspend fun collect(start: NovexReferenceTarget, gameOwned: Boolean, conversationRoot: NovexContentAddress?) {
@@ -42,7 +46,7 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
         backgroundSettings.distinct().forEach { background ->
             val previous = adoptedContexts.singleOrNull { !it.acting && it.root == background.subject }
             if (previous == null) collect(NovexReferenceTarget(background.subject), false, background.subject)
-            else previous.sources.forEach { addSource(it.target, it.candidates, false, background.subject) }
+            else previous.sources.forEach { addSource(it.target, it.candidates, false, background.subject, it.media) }
         }
         val actor = identityReference?.let { reference ->
             require(workspace.referenceStatus(reference.target) == NovexReferenceTargetStatus.AVAILABLE) { "文游回答身份引用缺失，请修复后启动" }
@@ -59,8 +63,13 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace) {
         val referencedPlayers = playerReference?.let { players.read(it.target).also { identities ->
             require(identities.isNotEmpty()) { "玩家身份引用没有可采用的正文，请填写身份模块后启动" }
         } }.orEmpty()
+        val media = NovexSnapshotMediaCapture(workspace, mediaStore)
+        val linked = (frozen.values + listOfNotNull(actor)).map { if (it.mediaCaptured) it else media.capture(it) }
+        val rootMedia = media.capture(root, project.modules.filter { NovexModuleVisibility.allowsContext(it.type, acting = false) }
+            .mapTo(mutableSetOf()) { it.id })
         val content = JSONObject(base.contentJson).apply {
-            put("linkedContext", JSONArray().apply { (frozen.values + listOfNotNull(actor)).forEach { put(NovexFrozenContextCodec.encode(it)) } })
+            put("linkedContext", JSONArray(linked.map(NovexFrozenContextCodec::encode)))
+            put("adoptedMedia", JSONArray(rootMedia.map(NovexSnapshotMediaCodec::encode)))
             put("references", JSONArray().apply { (references.values + listOfNotNull(identityReference, playerReference)).forEach { put(JSONObject(NovexCardReferenceCodec.encode(it))) } })
             put("cycleReferenceIds", JSONArray(cycles.toList()))
         }.toString()

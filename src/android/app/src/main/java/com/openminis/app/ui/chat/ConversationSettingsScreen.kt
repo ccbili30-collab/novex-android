@@ -138,6 +138,7 @@ fun ConversationSettingsScreen(
     var controlPrompt by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var adoptedImagePreview by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(ready) {
         if (ready && !hydrated) {
@@ -227,7 +228,7 @@ fun ConversationSettingsScreen(
             try {
                 val application = context.applicationContext as com.openminis.app.MinisApp
                 val updated = application.database.withTransaction {
-                    val adoption = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace)
+                    val adoption = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore)
                     if (root == null) adoption.refreshGame(expected) else adoption.refresh(expected, root, acting)
                 }
                 require(draft.configuration == expected) { "刷新期间对话设定已改变，请重新刷新" }
@@ -247,6 +248,7 @@ fun ConversationSettingsScreen(
         draft = draft.updateSettings { it.copy(playerAvatarPath = path) }
     }
     val labels = options.associateBy(ConversationContentOption::address)
+    val adoptedImages = com.openminis.app.novex.domain.NovexSnapshotMediaProjection.visible(draft.configuration)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
         AnswerIdentity.Nova -> "Nova（诺瓦） · 通用人格"
         is AnswerIdentity.PersonaPreset -> "${identity.label} · 人格预设"
@@ -388,6 +390,31 @@ fun ConversationSettingsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (adoptedImages.isNotEmpty()) NovexEditorSection(
+            header = "采用的图片",
+            footer = "按当前用途显示，保存后随对话保留。原卡改图或删除不会移除这些副本；刷新资料后再保存可采用新图片。",
+        ) {
+            val sources = com.openminis.app.novex.domain.NovexEffectiveFrozenContext.sources(draft.configuration)
+            adoptedImages.forEach { media ->
+                val source = sources.firstOrNull { it.target.subject == media.owner }
+                val label = media.moduleId?.let { id -> source?.candidates?.firstOrNull {
+                    it.sourceId == id || it.sourceId == "$id:entry:${media.entryId}"
+                }?.label } ?: labels[media.owner]?.label ?: source?.candidates?.firstOrNull()?.label
+                    ?: draft.configuration.activeInteractiveFiction?.title ?: "已采用资料"
+                val slot = when (media.slot) {
+                    com.openminis.app.data.character.MediaAssetSlot.WORLD_COVER -> "世界封面"
+                    com.openminis.app.data.character.MediaAssetSlot.WORLD_LOGO -> "世界标识"
+                    com.openminis.app.data.character.MediaAssetSlot.WORLD_BACKGROUND -> "世界背景图"
+                    com.openminis.app.data.character.MediaAssetSlot.CHARACTER_AVATAR -> "角色头像"
+                    com.openminis.app.data.character.MediaAssetSlot.CHARACTER_PAGE_BACKGROUND -> "角色背景图"
+                    com.openminis.app.data.character.MediaAssetSlot.INTERACTIVE_FICTION_COVER -> "文游封面"
+                    com.openminis.app.data.character.MediaAssetSlot.INTERACTIVE_FICTION_BACKGROUND -> "文游背景图"
+                    com.openminis.app.data.character.MediaAssetSlot.MODULE_IMAGE -> "模块配图"
+                }
+                NovexSummaryRow(label, slot, onClick = { adoptedImagePreview = media.asset.path })
             }
         }
 
@@ -655,8 +682,8 @@ fun ConversationSettingsScreen(
                         try {
                             val application = context.applicationContext as com.openminis.app.MinisApp
                             val (capturedConfiguration, game) = application.database.withTransaction {
-                                val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace).adopt(expected)
-                                captured to NovexGameSnapshotAssembler(workspace).create(projectId, captured.backgroundSettings, captured.adoptedContexts)
+                                val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore).adopt(expected)
+                                captured to NovexGameSnapshotAssembler(workspace, application.novexSnapshotMediaStore).create(projectId, captured.backgroundSettings, captured.adoptedContexts)
                             }
                             require(draft.configuration == expected) { "准备文游期间对话设定已改变，请重新选择文游" }
                             draft = draft.copy(configuration = capturedConfiguration)
@@ -740,6 +767,9 @@ fun ConversationSettingsScreen(
         )
     }
     error?.let { message -> NovexNoticeDialog("操作失败", message) { error = null } }
+    adoptedImagePreview?.let { path ->
+        com.openminis.app.ui.components.FullscreenImageViewer(java.io.File(path)) { adoptedImagePreview = null }
+    }
 }
 
 private fun pickerActions(

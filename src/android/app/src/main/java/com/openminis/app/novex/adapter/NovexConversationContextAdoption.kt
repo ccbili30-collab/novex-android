@@ -8,6 +8,7 @@ import org.json.JSONObject
 class NovexConversationContextAdoption(
     private val workspace: NovexWorkspace,
     private val legacy: NovexLegacyContext = NovexLegacyContext(),
+    private val mediaStore: NovexSnapshotMediaStore? = null,
 ) {
     suspend fun refresh(configuration: NovexConversationConfigurationSnapshot, root: NovexContentAddress,
         acting: Boolean): NovexConversationConfigurationSnapshot {
@@ -18,7 +19,8 @@ class NovexConversationContextAdoption(
         val gameSources = active?.let { NovexFrozenContextCodec.read(it.contentJson) }.orEmpty()
         if (acting && gameSources.any { it.actorVersionId == root.id }) {
             val replaced = gameSources.filterNot { it.actorVersionId == root.id } +
-                NovexFrozenContext(NovexReferenceTarget(root), captured.sources.flatMap { it.candidates }, root.id)
+                NovexFrozenContext(NovexReferenceTarget(root), captured.sources.flatMap { it.candidates }, root.id,
+                    media = captured.sources.flatMap { it.media }, mediaCaptured = true)
             val content = JSONObject(requireNotNull(active).contentJson).put("linkedContext", JSONArray(replaced.map(NovexFrozenContextCodec::encode))).toString()
             return configuration.copy(activeInteractiveFiction = active.copy(contentJson = content, snapshotId = NovexFrozenContextCodec.digest(content)))
         }
@@ -27,7 +29,7 @@ class NovexConversationContextAdoption(
 
     suspend fun refreshGame(configuration: NovexConversationConfigurationSnapshot): NovexConversationConfigurationSnapshot {
         val active = requireNotNull(configuration.activeInteractiveFiction) { "没有活动文游可刷新" }
-        val latest = NovexGameSnapshotAssembler(workspace).create(active.projectId, configuration.backgroundSettings, configuration.adoptedContexts)
+        val latest = NovexGameSnapshotAssembler(workspace, mediaStore).create(active.projectId, configuration.backgroundSettings, configuration.adoptedContexts)
         val old = JSONObject(active.contentJson)
         val content = JSONObject(latest.contentJson).apply {
             listOf("playerIdentity", "playerIdentityChoices", "selectedPlayerIdentityId").forEach { key ->
@@ -88,6 +90,7 @@ class NovexConversationContextAdoption(
         }
         require(!traversal.truncated) { "设定引用展开超过上限，请缩小引用范围" }
         require(traversal.missingTargets.isEmpty()) { "设定包含缺失引用，请修复后采用" }
-        return NovexAdoptedContext(address, acting, sources.values.toList())
+        val media = NovexSnapshotMediaCapture(workspace, mediaStore)
+        return NovexAdoptedContext(address, acting, sources.values.map { media.capture(it) })
     }
 }

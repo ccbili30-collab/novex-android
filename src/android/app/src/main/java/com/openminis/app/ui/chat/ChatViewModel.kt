@@ -3258,8 +3258,12 @@ class ChatViewModel(
     private val initialInteractiveFictionId: String? = draftMarker("game")
 
     private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
-    val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> =
-        _immersiveProfile.asStateFlow()
+    val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> by lazy {
+        combine(_immersiveProfile, _novexConfigurationJson) { profile, configuration ->
+            com.openminis.app.novex.domain.NovexSnapshotMediaProjection.profile(
+                NovexConversationConfigurationCodec.decode(configuration, activeSessionId), profile)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, _immersiveProfile.value)
+    }
     private val _conversationPrompt = MutableStateFlow<String?>(null)
     val conversationPrompt: StateFlow<String?> = _conversationPrompt.asStateFlow()
     private val _imageStylePrompt = MutableStateFlow("")
@@ -3387,7 +3391,7 @@ class ChatViewModel(
         val profile = _immersiveProfile.value
         val adopted = application.database.withTransaction {
             val result = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
-                com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), application.novexSnapshotMediaStore)
                 .adopt(configuration)
             if (result != configuration) chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot().copy(
                 novexConfigurationJson = NovexConversationConfigurationCodec.encode(result)))
@@ -3519,7 +3523,7 @@ class ChatViewModel(
                     val profile = _immersiveProfile.value
                     val durable = application.database.withTransaction {
                         val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
-                            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), application.novexSnapshotMediaStore)
                             .adopt(NovexConversationConfigurationCodec.decode(value.novexConfigurationJson, sid))
                         value.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(captured)).also {
                             chatRepository.updateConversationSettings(sid, it)
@@ -4035,14 +4039,14 @@ class ChatViewModel(
                 startingConfiguration = novexApplication().database.withTransaction {
                     val profile = _immersiveProfile.value
                     com.openminis.app.novex.adapter.NovexConversationContextAdoption(novexApplication().novexWorkspace,
-                        com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                        com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), novexApplication().novexSnapshotMediaStore)
                         .adopt(startingConfiguration)
                 }
                 val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
                     val application = context.applicationContext as? com.openminis.app.MinisApp
                     application?.novexWorkspace?.let { workspace ->
                         val game = try {
-                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(projectId, startingConfiguration.backgroundSettings, startingConfiguration.adoptedContexts)
+                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace, application.novexSnapshotMediaStore).create(projectId, startingConfiguration.backgroundSettings, startingConfiguration.adoptedContexts)
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
                             throw cancelled
                         } catch (failure: Exception) {

@@ -143,6 +143,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
         private set
+    val novexSnapshotMediaStore by lazy {
+        com.openminis.app.novex.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
+    }
     lateinit var creativeArtifactRepository: com.openminis.app.data.creative.CreativeArtifactRepository
         private set
     lateinit var creativeArtifactDeviceDirectory: com.openminis.app.data.creative.CreativeArtifactDeviceDirectory
