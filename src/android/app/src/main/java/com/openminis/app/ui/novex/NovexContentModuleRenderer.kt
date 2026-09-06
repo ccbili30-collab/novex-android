@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.character.ContentModuleDocument
@@ -132,7 +131,7 @@ internal fun NovexContentModuleBlock(
             Text(
                 presentation.title,
                 color = NovexColors.Text,
-                fontSize = 15.sp,
+                fontSize = novexScaledSp(15),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
@@ -220,7 +219,7 @@ private fun WorldGalleryModuleBody(
                 Text(
                     item.name.ifBlank { "未命名条目" },
                     color = NovexColors.Text,
-                    fontSize = 13.sp,
+                    fontSize = novexScaledSp(13),
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -230,8 +229,8 @@ private fun WorldGalleryModuleBody(
                     Text(
                         item.summary,
                         color = NovexColors.SecondaryText,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
+                        fontSize = novexScaledSp(12),
+                        lineHeight = novexScaledSp(17),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
@@ -293,7 +292,7 @@ private fun MapModuleBody(presentation: NovexContentModulePresentation, imageMod
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.weight(1f))
-            Text("尚未添加地图图片", color = NovexColors.SecondaryText, fontSize = 12.sp)
+            Text("尚未添加地图图片", color = NovexColors.SecondaryText, fontSize = novexScaledSp(12))
             Spacer(Modifier.weight(1f))
         }
     }
@@ -342,7 +341,7 @@ private fun TimelineModuleBody(presentation: NovexContentModulePresentation, ima
                     Text(
                         node.time,
                         color = NovexColors.SecondaryText,
-                        fontSize = 11.sp,
+                        fontSize = novexScaledSp(11),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 7.dp),
@@ -351,8 +350,8 @@ private fun TimelineModuleBody(presentation: NovexContentModulePresentation, ima
                 Text(
                     node.title.ifBlank { node.description.ifBlank { "未命名节点" } },
                     color = NovexColors.Text,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontSize = novexScaledSp(12),
+                    lineHeight = novexScaledSp(16),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -381,16 +380,16 @@ private fun CharacterQuotesModuleBody(presentation: NovexContentModulePresentati
                 Text(
                     "“",
                     color = NovexColors.Primary,
-                    fontSize = 26.sp,
-                    lineHeight = 28.sp,
+                    fontSize = novexScaledSp(26),
+                    lineHeight = novexScaledSp(28),
                     modifier = Modifier.width(24.dp),
                 )
                 Column(Modifier.weight(1f)) {
                     Text(
                         item.summary.ifBlank { item.name.ifBlank { "尚未填写语录" } },
                         color = NovexColors.Text,
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
+                        fontSize = novexScaledSp(13),
+                        lineHeight = novexScaledSp(20),
                         maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -398,7 +397,7 @@ private fun CharacterQuotesModuleBody(presentation: NovexContentModulePresentati
                         Text(
                             item.name,
                             color = NovexColors.SecondaryText,
-                            fontSize = 11.sp,
+                            fontSize = novexScaledSp(11),
                             modifier = Modifier.padding(top = 3.dp),
                         )
                     }
@@ -440,14 +439,14 @@ private fun CharacterFactsModuleBody(
                 Text(
                     item.name.ifBlank { "未命名属性" },
                     color = NovexColors.SecondaryText,
-                    fontSize = 12.sp,
+                    fontSize = novexScaledSp(12),
                     modifier = Modifier.weight(0.38f),
                 )
                 Text(
                     item.summary.ifBlank { "未填写" },
                     color = NovexColors.Text,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontSize = novexScaledSp(13),
+                    lineHeight = novexScaledSp(18),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(0.62f),
@@ -502,7 +501,7 @@ private fun CollectionModuleBody(
                         Text(
                             item.name,
                             color = NovexColors.Text,
-                            fontSize = 13.sp,
+                            fontSize = novexScaledSp(13),
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -512,8 +511,8 @@ private fun CollectionModuleBody(
                         Text(
                             item.summary,
                             color = NovexColors.SecondaryText,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
+                            fontSize = novexScaledSp(12),
+                            lineHeight = novexScaledSp(17),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = if (item.name.isBlank()) 0.dp else 2.dp),
@@ -547,8 +546,8 @@ private fun ModuleText(
     Text(
         if (presentation.hasText) presentation.body else "尚未填写内容",
         color = if (presentation.hasText) NovexColors.Text else NovexColors.SecondaryText,
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
+        fontSize = novexScaledSp(13),
+        lineHeight = novexScaledSp(20),
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,

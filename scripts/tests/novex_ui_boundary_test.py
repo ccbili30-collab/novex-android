@@ -7,6 +7,13 @@ boundary = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boundary)
 
 class ComponentBoundaryTest(unittest.TestCase):
+    def test_module_renderer_cannot_bypass_application_font_scale(self):
+        for source in ['Text(fontSize = 15.sp)', 'Text(lineHeight = 20.sp)']:
+            self.assertTrue(boundary.violations(source, 'novex/NovexContentModuleRenderer.kt'))
+        self.assertFalse(boundary.violations(
+            'Text(fontSize = novexScaledSp(15), lineHeight = novexScaledSp(20))',
+            'novex/NovexContentModuleRenderer.kt'))
+
     def test_all_source_spellings_of_legacy_dialog_are_rejected(self):
         for source in ['import androidx.compose.material3.AlertDialog',
                        'import androidx.compose.material3.AlertDialog as OldDialog',

@@ -21,7 +21,10 @@ def violations(source, relative_path):
     pattern = re.compile(r'androidx\.compose\.material3\.(' + '|'.join(sorted(CONTROLS)) + r')\b|import\s+androidx\.compose\.material3\.\*')
     icons = re.compile(r'Icons\.(?:AutoMirrored\.)?(?:Default|Filled|Outlined|Rounded)\.\w+')
     decorations = re.compile(r'OutlinedTextFieldDefaults\.(?:DecorationBox|ContainerBox|Container)\s*\(')
-    return [(source.count('\n', 0, m.start()) + 1, m[0]) for rx in (pattern, icons, decorations) for m in rx.finditer(source)]
+    checks = [pattern, icons, decorations]
+    if relative_path == 'novex/NovexContentModuleRenderer.kt':
+        checks.append(re.compile(r'(?:fontSize|lineHeight)\s*=\s*\d+(?:\.\d+)?\.sp\b'))
+    return [(source.count('\n', 0, m.start()) + 1, m[0]) for rx in checks for m in rx.finditer(source)]
 
 def main():
     root = Path(__file__).resolve().parents[1] / 'src/android/app/src/main/java/com/openminis/app/ui'
