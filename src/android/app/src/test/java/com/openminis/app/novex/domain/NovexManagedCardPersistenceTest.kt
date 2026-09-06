@@ -95,7 +95,9 @@ class NovexManagedCardPersistenceTest {
             assertEquals(sourceIds, restoredSource.modules.map { it.id })
             assertTrue(restoredCopy.modules.none { it.id in sourceIds })
             assertEquals(listOf("核心规则", "制度", "历史"), restoredCopy.modules.map { it.name })
-            assertEquals(restoredSource.modules.map { it.contentJson }, restoredCopy.modules.map { it.contentJson })
+            val expectedDocuments = page.modules.map { ContentModuleDocumentCodec.decode(it.type, it.contentJson) }
+            assertEquals(expectedDocuments, restoredSource.modules.map { ContentModuleDocumentCodec.decode(it.type, it.contentJson) })
+            assertEquals(expectedDocuments, restoredCopy.modules.map { ContentModuleDocumentCodec.decode(it.type, it.contentJson) })
             assertEquals(listOf(restoredCopy.modules[1].id),
                 requireNotNull(workspace.module(restoredCopy.modules[0].id)).references.map { it.targetId })
             assertEquals(listOf(sourceIds[1]), requireNotNull(workspace.module(sourceIds[0])).references.map { it.targetId })
