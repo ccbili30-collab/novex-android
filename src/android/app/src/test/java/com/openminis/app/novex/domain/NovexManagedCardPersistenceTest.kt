@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
 import com.openminis.app.data.character.ContentModuleDocumentCodec
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.MediaAssetSlot
+import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardTransferParser
 import com.openminis.app.data.character.toPlainText
@@ -30,6 +34,58 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexManagedCardPersistenceTest {
     @get:Rule val files = TemporaryFolder()
+
+    @Test
+    fun `native copy retains map item images and unknown content after original deletion`() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
+            val opaque = ContentModuleDocument.Unsupported("institution-v2", "customGrid",
+                """{"council":{"minorityOpinions":["保留未决问题"],"futureField":true}}""")
+            val source = workspace.apply(NovexCommand.SaveWorldPage(
+                worldId = null, name = "图片与未知模块", overview = "", tagsJson = "[]",
+                modules = listOf(
+                    NovexModuleDraft("map", ContentModuleType.MAP, "地图",
+                        ContentModuleDocumentCodec.encode(ContentModuleDocument.SingleImage("山河旧图"))),
+                    NovexModuleDraft("regions", ContentModuleType.REGION, "地区",
+                        """{"kind":"collection","items":[{"id":"mountain","name":"山地","description":"完整地区说明"}]}"""),
+                    NovexModuleDraft("unknown", ContentModuleType.CUSTOM, "制度扩展",
+                        ContentModuleDocumentCodec.encode(opaque)),
+                ),
+            )).requireWorld()
+            val bytes = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=")
+            for ((owner, slot) in listOf(
+                ModuleOwner.world(source.id) to MediaAssetSlot.WORLD_COVER,
+                ModuleOwner.contentModule("map") to MediaAssetSlot.MODULE_IMAGE,
+                ModuleOwner.contentModuleItem("regions", "mountain") to MediaAssetSlot.MODULE_IMAGE,
+            )) workspace.apply(NovexCommand.AttachImage(owner, slot, bytes, "image/png"))
+            val exported = workspace.apply(NovexCommand.ExportNativeWorld(source.id)).requireNativeCard()
+            val parsed = NovexCardTransferParser.parse(NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)))
+            val copyId = workspace.apply(NovexCommand.ImportNativeCard(parsed)).requireNativeImport().localId
+            workspace.apply(NovexCommand.DeleteWorld(source.id))
+            val copy = requireNotNull(workspace.world(copyId))
+            val map = copy.modules.single { it.name == "地图" }
+            val region = copy.modules.single { it.name == "地区" }
+            val images = listOf(copy.media.getValue(MediaAssetSlot.WORLD_COVER),
+                copy.moduleImages.getValue(map.id), copy.moduleItemImages.getValue(region.id).getValue("mountain"))
+            assertEquals(1, images.map { it.id }.distinct().size)
+            images.forEach { assertArrayEquals(bytes, File(it.managedPath).readBytes()) }
+            val restoredOpaque = ContentModuleDocumentCodec.decode(copy.modules.single { it.name == "制度扩展" }.contentJson)
+                as ContentModuleDocument.Unsupported
+            assertEquals(opaque.originalType, restoredOpaque.originalType)
+            assertEquals(opaque.presentation, restoredOpaque.presentation)
+            val council = JSONObject(restoredOpaque.contentJson).getJSONObject("council")
+            assertTrue(council.getBoolean("futureField"))
+            assertEquals("保留未决问题", council.getJSONArray("minorityOpinions").getString(0))
+            val reexported = workspace.apply(NovexCommand.ExportNativeWorld(copyId)).requireNativeCard()
+            assertEquals(3, reexported.media.size)
+            reexported.media.forEach { assertArrayEquals(bytes, it.bytes) }
+        } finally {
+            database.close()
+        }
+    }
 
     @Test
     fun `created game restores long rules identity and usable preset controls after native exchange`() = runBlocking {
