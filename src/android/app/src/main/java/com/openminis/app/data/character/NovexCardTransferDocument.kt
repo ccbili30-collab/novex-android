@@ -267,6 +267,15 @@ object NovexCardTransferParser {
         val itemImagePaths = linkedMapOf<String, String>()
         val document = when (presentation) {
             "article" -> ContentModuleDocument.Article(content.optString("text"))
+            "timeline" -> ContentModuleDocument.Timeline(
+                content.optJSONArray("nodes").objects().map { node ->
+                    ContentModuleTimelineNode(
+                        time = node.optString("time"),
+                        title = node.optString("title"),
+                        description = node.optString("description"),
+                    )
+                },
+            )
             "singleImage" -> {
                 imagePath = content.optJSONObject("image")?.optString("path")?.takeIf(String::isNotBlank)
                 ContentModuleDocument.SingleImage(content.optString("description"))
