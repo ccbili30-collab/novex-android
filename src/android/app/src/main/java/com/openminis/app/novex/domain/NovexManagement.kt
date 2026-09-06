@@ -846,15 +846,19 @@ private fun hasCreationVerb(text: String): Boolean =
 private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
     val normalized = text.trim()
     if (!hasCreationVerb(normalized)) return false
-    return when (this) {
-        is NovexManagedChange.CreateWorld -> normalized.contains("世界") || normalized.contains(name)
-        is NovexManagedChange.CreateCharacter -> normalized.contains("角色") || normalized.contains("人物") || normalized.contains(name)
-        is NovexManagedChange.CreateCharacterVersion ->
-            listOf("分身", "版本", "变体", label).any(normalized::contains)
-        is NovexManagedChange.CreateInteractiveFiction ->
-            listOf("文游", "游戏", "模拟器", name).any(normalized::contains)
-        else -> true
+    val (cardName, kindWords) = when (this) {
+        is NovexManagedChange.CreateWorld -> name to listOf("世界")
+        is NovexManagedChange.CreateCharacter -> name to listOf("角色", "人物")
+        is NovexManagedChange.CreateCharacterVersion -> label to listOf("分身", "版本", "变体")
+        is NovexManagedChange.CreateInteractiveFiction -> name to listOf("文游", "游戏", "模拟器")
+        else -> return false
     }
+    val hasExplicitKind = listOf("世界", "角色", "人物", "分身", "版本", "变体", "文游", "游戏", "模拟器")
+        .any(normalized::contains)
+    // A name is only a fallback when no type was named. A world and character
+    // can share a name; that does not make their creation requests interchangeable.
+    return if (hasExplicitKind) kindWords.any(normalized::contains)
+    else cardName.isNotBlank() && normalized.contains(cardName)
 }
 
 private fun NovexManagedChange.summary(): String = when (this) {
