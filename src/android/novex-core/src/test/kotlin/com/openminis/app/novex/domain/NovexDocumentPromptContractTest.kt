@@ -47,7 +47,7 @@ class NovexDocumentPromptContractTest {
             read.parameters.single { it.name == "page_range" }.kind,
         )
         assertEquals(
-            listOf("max_blocks", "max_chars"),
+            listOf("first_block", "last_block", "max_blocks", "max_chars"),
             read.parameters.filter { it.kind == NovexToolParameterKind.INTEGER }.map { it.name },
         )
     }

@@ -50,6 +50,8 @@ class NovexDocumentToolRouter(
 
     private fun JSONObject.readRequest(): NovexDocumentReadRequest {
         val page = optJSONObject("page_range")
+        val view = optionalString("view") ?: "passages"
+        require(view in setOf("passages", "blocks")) { "view 只支持 passages（紧凑通读）或 blocks（逐块详情）" }
         return NovexDocumentReadRequest(
             documentRef = documentRef(),
             blockIds = optJSONArray("block_ids").stringValues(),
@@ -62,8 +64,11 @@ class NovexDocumentToolRouter(
                 )
             },
             cursor = optionalString("cursor"),
-            maxBlocks = optInt("max_blocks", 20),
-            maxChars = optInt("max_chars", 12_000),
+            maxBlocks = optInt("max_blocks", if (view == "passages") 5_000 else 100),
+            maxChars = optInt("max_chars", 24_000),
+            firstBlock = if (has("first_block")) getInt("first_block") else null,
+            lastBlock = if (has("last_block")) getInt("last_block") else null,
+            compact = view == "passages",
         )
     }
 

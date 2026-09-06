@@ -35,7 +35,7 @@ object NovexToolCatalog {
             add(
                 NovexToolDefinition(
                     name = "document_inspect",
-                    description = "检查文档格式、状态、规模、警告和紧凑目录；不返回全文。",
+                    description = "检查文档格式、状态、规模、警告和紧凑目录；不返回全文。未标注标题样式时可根据明确的中文章节标题生成导航索引，inferred=true 表示推断而非原始标题样式；first_block/last_block 可直接定位读取。",
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
                         NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
@@ -48,7 +48,7 @@ object NovexToolCatalog {
             add(
                 NovexToolDefinition(
                     name = "document_read",
-                    description = "按内容块、标题、关键词、页码或游标有界读取文档。",
+                    description = "按字符预算通读文档，默认将连续短行聚合为有来源位置的 passages（段落组），不再按二十行截断。块位置、内容块编号、标题、关键词、页码与游标定位每次只选一种；返回 truncated=false 才表示本次选定范围已读完，关键词命中不等于通读全文。",
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
                         NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
@@ -56,9 +56,12 @@ object NovexToolCatalog {
                         NovexToolParameter("heading_path", NovexToolParameterKind.STRING_LIST, false, "需要读取的完整标题路径"),
                         NovexToolParameter("query", NovexToolParameterKind.STRING, false, "需要定位的关键词或短语"),
                         NovexToolParameter("page_range", NovexToolParameterKind.PAGE_RANGE, false, "格式可靠支持时使用的页码闭区间"),
-                        NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "继续上次顺序读取的游标"),
-                        NovexToolParameter("max_blocks", NovexToolParameterKind.INTEGER, false, "本次最多返回的内容块数量，一到一百"),
-                        NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次最多返回的字符数，一到四万八千"),
+                        NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样使用上次返回的 next_cursor；不要自己编码、修改或同时传 query 等定位参数"),
+                        NovexToolParameter("first_block", NovexToolParameterKind.INTEGER, false, "从第几个来源块开始读，从 1 计数；可以代替游标重新定位"),
+                        NovexToolParameter("last_block", NovexToolParameterKind.INTEGER, false, "可选闭区间终点，与 first_block 一起使用；省略则读到文末"),
+                        NovexToolParameter("view", NovexToolParameterKind.STRING, false, "passages（默认，紧凑通读）或 blocks（含每个原始块的详情）"),
+                        NovexToolParameter("max_blocks", NovexToolParameterKind.INTEGER, false, "来源块扫描上限，一到五千；紧凑通读默认五千，逐块详情默认一百"),
+                        NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次正文字符预算，默认二万四千，上限四万八千；超出返回续读位置"),
                     ),
                 ),
             )
@@ -168,14 +171,16 @@ object NovexDocumentPromptReceipt {
                     .append("\" format=\"").append(snapshot.format.wireName)
                     .append("\" status=\"").append(snapshot.status.wireName)
                     .append("\" blocks=\"").append(snapshot.blocks.size).append("\">\n")
-                snapshot.blocks.asSequence()
-                    .filter { it.kind == NovexDocumentBlockKind.HEADING }
+                NovexDocumentOutline.entries(snapshot).asSequence()
                     .take(MAX_OUTLINE_ITEMS_PER_DOCUMENT)
                     .forEach { heading ->
-                        append("    <heading block_id=\"").append(heading.id)
-                            .append("\" level=\"").append(heading.headingLevel)
+                        append("    <heading block_id=\"").append(heading.blockId)
+                            .append("\" level=\"").append(heading.level)
+                            .append("\" first_block=\"").append(heading.firstBlock)
+                            .append("\" last_block=\"").append(heading.lastBlock)
+                            .append("\" inferred=\"").append(heading.inferred)
                             .append("\">")
-                            .append(escape(heading.text.take(MAX_OUTLINE_TITLE_CHARS)))
+                            .append(escape(heading.title.take(MAX_OUTLINE_TITLE_CHARS)))
                             .append("</heading>\n")
                     }
                 if (snapshot.warnings.isNotEmpty()) {

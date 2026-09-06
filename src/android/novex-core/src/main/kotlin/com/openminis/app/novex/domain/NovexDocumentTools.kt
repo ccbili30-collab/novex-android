@@ -182,10 +182,17 @@ data class NovexDocumentReadRequest(
     val cursor: String? = null,
     val maxBlocks: Int = 20,
     val maxChars: Int = 12_000,
+    val firstBlock: Int? = null,
+    val lastBlock: Int? = null,
+    val compact: Boolean = false,
 ) {
     init {
-        require(maxBlocks in 1..100) { "单次读取内容块数量必须在一到一百之间" }
+        require(maxBlocks in 1..5_000) { "单次读取来源块数量必须在一到五千之间；优先使用字符预算控制通读" }
         require(maxChars in 1..48_000) { "单次读取字符预算必须在一到四万八千之间" }
+        require(firstBlock == null || firstBlock > 0) { "first_block 从 1 开始" }
+        require(lastBlock == null || (firstBlock != null && lastBlock >= firstBlock)) {
+            "last_block 必须与 first_block 一起提供且不小于它"
+        }
         require(blockIds.none(String::isBlank)) { "内容块编号不能为空" }
         require(headingPath.none(String::isBlank)) { "标题路径不能为空" }
         val locators = listOf(
@@ -194,8 +201,9 @@ data class NovexDocumentReadRequest(
             !query.isNullOrBlank(),
             pageRange != null,
             !cursor.isNullOrBlank(),
+            firstBlock != null,
         ).count { it }
-        require(locators <= 1) { "每次文档读取只能使用一种定位方式" }
+        require(locators <= 1) { "定位方式互斥：cursor、query、block_ids、heading_path、page_range、first_block/last_block 每次只用一组。续读只传原样 next_cursor，不再附带 query 等定位参数；换位置请移除 cursor。" }
     }
 }
 
@@ -205,20 +213,17 @@ class NovexDocumentTools(
 ) {
     fun documentInspect(request: NovexDocumentInspectRequest): NovexToolResult {
         val snapshot = snapshots.find(request.documentRef) ?: return notFound(request.documentRef)
-        val outlineBlocks = snapshot.blocks.asSequence()
-            .filter { block ->
-                block.kind == NovexDocumentBlockKind.HEADING &&
-                    requireNotNull(block.headingLevel) <= request.maxDepth
-            }
-            .toList()
+        val outlineBlocks = NovexDocumentOutline.entries(snapshot).filter { it.level <= request.maxDepth }
         val outline = if (request.includeOutline) {
             outlineBlocks.take(request.maxOutlineItems).map { block ->
-                val level = requireNotNull(block.headingLevel)
                 mapOf(
-                    "block_id" to block.id,
-                    "level" to level,
-                    "title" to block.text,
+                    "block_id" to block.blockId,
+                    "level" to block.level,
+                    "title" to block.title,
                     "heading_path" to block.headingPath,
+                    "first_block" to block.firstBlock,
+                    "last_block" to block.lastBlock,
+                    "inferred" to block.inferred,
                 )
             }
         } else {
@@ -247,6 +252,10 @@ class NovexDocumentTools(
 
     fun documentRead(request: NovexDocumentReadRequest): NovexToolResult {
         val snapshot = snapshots.find(request.documentRef) ?: return notFound(request.documentRef)
+        if (request.firstBlock != null && request.firstBlock > snapshot.blocks.size) {
+            return NovexToolResult.failure(code = "document.invalid_position",
+                summary = "first_block 超出文档范围，当前共 ${snapshot.blocks.size} 块，从 1 开始计数", affectedRefs = listOf(snapshot.ref))
+        }
         val cursor = if (request.cursor == null) {
             CursorPosition(
                 selector = selectorFrom(request),
@@ -256,7 +265,7 @@ class NovexDocumentTools(
         } else {
             decodeCursor(request.cursor, snapshot) ?: return NovexToolResult.failure(
                 code = "document.invalid_cursor",
-                summary = "读取游标已失效，请重新检查文档",
+                summary = "读取游标无效或来源已变化。请原样使用上次返回的 next_cursor，不手工编辑；也可移除 cursor，用 first_block 从已知块位置重读。位置从 1 开始，可用 document_inspect 查看目录。",
                 affectedRefs = listOf(snapshot.ref),
             )
         }
@@ -270,15 +279,17 @@ class NovexDocumentTools(
                 next = cursor.copy(blockIndex = sourceIndex, charOffset = initialOffset)
                 break
             }
-            val available = request.maxChars - chars
+            val separatorChars = if (request.compact && returned.isNotEmpty()) 1 else 0
+            val available = request.maxChars - chars - separatorChars
             if (available <= 0) {
                 next = cursor.copy(blockIndex = sourceIndex, charOffset = initialOffset)
                 break
             }
             val remainingText = block.text.drop(initialOffset)
             val piece = remainingText.take(available)
-            returned += blockPayload(block, piece, initialOffset, piece.length < remainingText.length)
-            chars += piece.length
+            returned += blockPayload(block, piece, initialOffset, piece.length < remainingText.length) +
+                ("position" to sourceIndex + 1)
+            chars += piece.length + separatorChars
             if (piece.length < remainingText.length) {
                 next = cursor.copy(blockIndex = sourceIndex, charOffset = initialOffset + piece.length)
                 break
@@ -287,10 +298,16 @@ class NovexDocumentTools(
 
         val data = linkedMapOf<String, Any?>(
             "document_ref" to snapshot.ref.value,
-            "blocks" to returned,
+            (if (request.compact) "passages" else "blocks") to
+                (if (request.compact) compactPassages(returned) else returned),
+            "source_blocks_read" to returned.size,
+            "position_base" to 1,
             "truncated" to (next != null),
         )
-        next?.let { data["next_cursor"] = encodeCursor(snapshot, it) }
+        next?.let {
+            data["next_cursor"] = encodeCursor(snapshot, it)
+            data["next_position"] = mapOf("block" to it.blockIndex + 1, "char_offset" to it.charOffset)
+        }
         return NovexToolResult.success(
             code = "document.read",
             summary = "已读取《${snapshot.title}》的 ${returned.size} 个内容块",
@@ -304,13 +321,53 @@ class NovexDocumentTools(
         snapshot: NovexDocumentSnapshot,
         cursor: CursorPosition,
     ): List<SelectedBlock> {
+        val inferredRanges = (cursor.selector as? ReadSelector.Heading)?.let { selector ->
+            NovexDocumentOutline.entries(snapshot).filter {
+                it.inferred && it.headingPath.take(selector.path.size) == selector.path
+            }.map { it.firstBlock..it.lastBlock }
+        }.orEmpty()
         return snapshot.blocks.mapIndexedNotNull { index, block ->
             when {
                 index < cursor.blockIndex -> null
-                !cursor.selector.matches(block) -> null
+                !cursor.selector.matches(block, index) && inferredRanges.none { index + 1 in it } -> null
                 index == cursor.blockIndex -> SelectedBlock(index, block, cursor.charOffset)
                 else -> SelectedBlock(index, block, 0)
             }
+        }
+    }
+
+    /** Compact only the response, never rewrite the stored blocks or their source anchors. */
+    private fun compactPassages(blocks: List<Map<String, Any?>>): List<Map<String, Any?>> {
+        val groups = mutableListOf<MutableList<Map<String, Any?>>>()
+        var groupChars = 0
+        for (block in blocks) {
+            val previous = groups.lastOrNull()?.lastOrNull()
+            val text = block["text"] as String
+            val join = previous != null &&
+                (previous["position"] as Int) + 1 == block["position"] &&
+                previous["heading_path"] == block["heading_path"] &&
+                previous["media_ref"] == null && block["media_ref"] == null &&
+                previous["kind"] in setOf("paragraph", "list_item") &&
+                block["kind"] in setOf("paragraph", "list_item") &&
+                groupChars + text.length + 1 <= 3_000
+            if (!join) {
+                groups += mutableListOf<Map<String, Any?>>()
+                groupChars = 0
+            }
+            groups.last().add(block)
+            groupChars += text.length + 1
+        }
+        return groups.map { group ->
+            val first = group.first()
+            val last = group.last()
+            mapOf(
+                "first_block" to first["position"], "last_block" to last["position"],
+                "first_block_id" to first["id"], "last_block_id" to last["id"],
+                "text" to group.joinToString("\n") { it["text"] as String },
+                "heading_path" to first["heading_path"], "source" to first["source"],
+                "kind" to first["kind"], "media_ref" to first["media_ref"],
+                "truncated" to last["truncated"],
+            )
         }
     }
 
@@ -354,33 +411,38 @@ class NovexDocumentTools(
 
     private sealed interface ReadSelector {
         val kind: String
-        fun matches(block: NovexDocumentBlock): Boolean
+        fun matches(block: NovexDocumentBlock, index: Int): Boolean
 
         data object All : ReadSelector {
             override val kind = "all"
-            override fun matches(block: NovexDocumentBlock) = true
+            override fun matches(block: NovexDocumentBlock, index: Int) = true
         }
 
         data class Blocks(val ids: Set<String>) : ReadSelector {
             override val kind = "blocks"
-            override fun matches(block: NovexDocumentBlock) = block.id in ids
+            override fun matches(block: NovexDocumentBlock, index: Int) = block.id in ids
         }
 
         data class Heading(val path: List<String>) : ReadSelector {
             override val kind = "heading"
-            override fun matches(block: NovexDocumentBlock) =
+            override fun matches(block: NovexDocumentBlock, index: Int) =
                 block.headingPath.take(path.size) == path
         }
 
         data class Query(val value: String) : ReadSelector {
             override val kind = "query"
-            override fun matches(block: NovexDocumentBlock) = block.text.contains(value, ignoreCase = true)
+            override fun matches(block: NovexDocumentBlock, index: Int) = block.text.contains(value, ignoreCase = true)
         }
 
         data class Pages(val first: Int, val last: Int) : ReadSelector {
             override val kind = "pages"
-            override fun matches(block: NovexDocumentBlock) =
+            override fun matches(block: NovexDocumentBlock, index: Int) =
                 block.source.page?.let { it in first..last } == true
+        }
+
+        data class Positions(val first: Int, val last: Int) : ReadSelector {
+            override val kind = "positions"
+            override fun matches(block: NovexDocumentBlock, index: Int) = index + 1 in first..last
         }
     }
 
@@ -389,6 +451,7 @@ class NovexDocumentTools(
         request.headingPath.isNotEmpty() -> ReadSelector.Heading(request.headingPath)
         !request.query.isNullOrBlank() -> ReadSelector.Query(request.query)
         request.pageRange != null -> ReadSelector.Pages(request.pageRange.first, request.pageRange.last)
+        request.firstBlock != null -> ReadSelector.Positions(request.firstBlock, request.lastBlock ?: Int.MAX_VALUE)
         else -> ReadSelector.All
     }
 
@@ -400,6 +463,7 @@ class NovexDocumentTools(
             is ReadSelector.Heading -> selector.put("path", JSONArray(value.path))
             is ReadSelector.Query -> selector.put("value", value.value)
             is ReadSelector.Pages -> selector.put("first", value.first).put("last", value.last)
+            is ReadSelector.Positions -> selector.put("first", value.first).put("last", value.last)
         }
         val payload = JSONObject()
             .put("version", 1)
@@ -427,6 +491,7 @@ class NovexDocumentTools(
                 "heading" -> ReadSelector.Heading(selectorJson.getJSONArray("path").stringValues())
                 "query" -> ReadSelector.Query(selectorJson.getString("value"))
                 "pages" -> ReadSelector.Pages(selectorJson.getInt("first"), selectorJson.getInt("last"))
+                "positions" -> ReadSelector.Positions(selectorJson.getInt("first"), selectorJson.getInt("last"))
                 else -> return null
             }
             CursorPosition(selector, blockIndex, charOffset)
