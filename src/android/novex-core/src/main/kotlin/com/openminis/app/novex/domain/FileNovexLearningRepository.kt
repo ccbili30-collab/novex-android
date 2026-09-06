@@ -48,7 +48,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 6
+    private const val VERSION = 7
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -212,6 +212,8 @@ object NovexLearningStateJsonCodec {
         .put("source_count", preflight.sourceCount)
         .put("estimated_source_tokens", preflight.estimatedSourceTokens)
         .put("estimated_model_rounds", preflight.estimatedModelRounds)
+        .put("review_batch_count", preflight.reviewBatchCount)
+        .put("review_input_reservation_tokens", preflight.reviewInputReservationTokens)
         .put("page_count", preflight.pageCount)
         .put("image_count", preflight.imageCount)
         .put("ocr_source_count", preflight.ocrSourceCount)
@@ -242,6 +244,9 @@ object NovexLearningStateJsonCodec {
         .put("task_status", preflight.taskStatus.name)
         .put("prohibited_outcomes", JSONArray(preflight.prohibitedOutcomes.toList().sorted()))
         .put("source_plan_fingerprint", preflight.sourcePlanFingerprint)
+        .put("model_limits", preflight.modelLimits?.let { limits ->
+            JSONObject().put("context_tokens", limits.contextTokens).put("max_output_tokens", limits.maxOutputTokens)
+        })
 
     private fun decodePreflight(json: JSONObject): NovexLearningPreflightSnapshot {
         val budget = json.getJSONObject("confirmed_budget")
@@ -261,6 +266,8 @@ object NovexLearningStateJsonCodec {
             sourceCount = json.getInt("source_count"),
             estimatedSourceTokens = json.getInt("estimated_source_tokens"),
             estimatedModelRounds = estimatedRounds,
+            reviewBatchCount = json.optionalInt("review_batch_count"),
+            reviewInputReservationTokens = json.optionalInt("review_input_reservation_tokens"),
             pageCount = json.getInt("page_count"),
             imageCount = json.getInt("image_count"),
             ocrSourceCount = ocrSourceCount,
@@ -305,6 +312,9 @@ object NovexLearningStateJsonCodec {
             taskStatus = NovexLearningTaskStatus.valueOf(json.getString("task_status")),
             prohibitedOutcomes = json.getJSONArray("prohibited_outcomes").strings().toSet(),
             sourcePlanFingerprint = json.optionalString("source_plan_fingerprint"),
+            modelLimits = json.optionalObject("model_limits")?.let { limits ->
+                NovexLearningModelLimits(limits.optionalInt("context_tokens"), limits.getInt("max_output_tokens"))
+            },
         )
     }
 

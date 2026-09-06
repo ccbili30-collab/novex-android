@@ -53,6 +53,10 @@ class NovexLearningTools(
                 "network_source_count" to preflight.networkSourceCount,
                 "estimated_source_tokens" to preflight.estimatedSourceTokens,
                 "estimated_model_rounds" to preflight.estimatedModelRounds,
+                "review_batch_count" to preflight.reviewBatchCount,
+                "review_input_reservation_tokens" to preflight.reviewInputReservationTokens,
+                "input_reservation_basis" to "utf8_bytes_plus_message_headroom_not_billing",
+                "synthesis_rounds_are_estimated" to true,
                 "estimated_cost" to preflight.estimatedCost?.let { cost ->
                     mapOf(
                         "currency" to cost.currencyCode,

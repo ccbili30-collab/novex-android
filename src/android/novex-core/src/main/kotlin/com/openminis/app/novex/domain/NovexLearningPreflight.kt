@@ -40,6 +40,9 @@ data class NovexLearningPreflightRequest(
     val directReadBudgetTokens: Int,
     val proposedBudget: NovexLearningTokenBudget,
     val sourcePlanFingerprint: String? = null,
+    val modelMaxOutputTokens: Int = 4096,
+    /** Parsed local snapshots keyed by source ref; never sent by preflight itself. */
+    val sourceDocuments: Map<NovexResourceRef, NovexDocumentSnapshot> = emptyMap(),
 ) {
     init {
         require(collectionRef.value.startsWith("novex://source-collections/")) { "学习预检必须属于资料集" }
@@ -135,6 +138,9 @@ data class NovexLearningPreflightSnapshot(
         "modify_original_source",
     ),
     val sourcePlanFingerprint: String? = null,
+    val modelLimits: NovexLearningModelLimits? = null,
+    val reviewBatchCount: Int? = null,
+    val reviewInputReservationTokens: Int? = null,
 ) {
     val requiresConfirmation: Boolean get() = route == NovexLearningRoute.CONFIRMATION_REQUIRED
 }
@@ -144,16 +150,23 @@ object NovexLearningPreflight {
     private const val MAX_DIRECT_FILE_COUNT = 3
 
     fun prepare(request: NovexLearningPreflightRequest): NovexLearningPreflightSnapshot {
-        val totalTokens = request.sources.sumOf { it.estimatedTokens }
+        val limits = NovexLearningModelLimits(request.effectiveContextTokens, request.modelMaxOutputTokens)
+        val documents = request.sources.mapNotNull { request.sourceDocuments[it.ref] }.distinctBy { it.ref }
+        val fullPlan = if (request.effectiveContextTokens != null && documents.isNotEmpty()) documents.flatMap { document ->
+            NovexLearningBatchPlanner.reviewRequests(request.collectionRef, document, limits)
+        } else null
+        val reviewReservation = fullPlan?.sumOf { it.estimatedInputTokens.toLong() }?.saturatedInt()
+        val totalTokens = request.sources.sumOf { it.estimatedTokens.toLong() }.saturatedInt()
         val hasExpensiveCapability = request.sources.any {
             it.requiresNetwork || it.requiresOcr || it.unsupportedReason != null
         }
         val contextRoom = request.effectiveContextTokens?.let {
-            (it - request.occupiedContextTokens).coerceAtLeast(0)
+            (it.toLong() - request.occupiedContextTokens - minOf(4096, request.modelMaxOutputTokens) - 512L)
+                .coerceAtLeast(0).saturatedInt()
         }
         val directBudget = listOfNotNull(request.directReadBudgetTokens, contextRoom).minOrNull()
             ?: request.directReadBudgetTokens
-        val canReadDirectly = request.sources.size <= MAX_DIRECT_FILE_COUNT &&
+        val canReadDirectly = contextRoom != null && request.sources.size <= MAX_DIRECT_FILE_COUNT &&
             totalTokens <= directBudget &&
             !hasExpensiveCapability
         val risks = buildList {
@@ -179,6 +192,12 @@ object NovexLearningPreflight {
                 NovexLearningRisk(
                     code = "learning.model_window_unknown",
                     message = "当前模型上下文上限未知，不能直接承诺一次读完",
+                ),
+            )
+            add(
+                NovexLearningRisk(
+                    code = "learning.reservation_not_billing",
+                    message = "本地输入预算按实际请求文字的字节数保守预留，不是精确词元计数或账单；实际消耗以提供商返回为准。综合轮数与时间是估算，长笔记可能需要额外分层综合",
                 ),
             )
             add(
@@ -210,11 +229,16 @@ object NovexLearningPreflight {
             append(request.collectionRef.value).append('\n')
             append(request.modelId).append('\n')
             append(request.modelProviderName).append('\n')
+            append(request.modelMaxOutputTokens).append('\n')
             append(request.effectiveContextTokens).append(':')
                 .append(request.directReadBudgetTokens).append('\n')
             append(request.proposedBudget.inputTokens).append(':')
                 .append(request.proposedBudget.outputTokens).append('\n')
             append(request.sourcePlanFingerprint.orEmpty()).append('\n')
+            documents.forEach { document ->
+                append(document.ref.value).append(':').append(document.sha256).append(':').append(document.parserVersion).append('\n')
+                append(sha256(NovexLearningPrompt.review(document.title, document.blocks).user)).append('\n')
+            }
             request.sources.forEach { source ->
                 append(source.ref.value).append('|')
                     .append(source.estimatedTokens).append('|')
@@ -225,15 +249,14 @@ object NovexLearningPreflight {
                     .append(source.unsupportedReason.orEmpty()).append('\n')
             }
         }
-        val estimatedModelRounds = ceil(totalTokens.toDouble() / TOKENS_PER_MODEL_ROUND)
-            .toInt()
-            .coerceAtLeast(1)
-        val minimumMinutes = estimatedModelRounds +
+        val estimatedModelRounds = if (canReadDirectly) 1 else fullPlan?.let { it.size.toLong().plus(1).saturatedInt() }
+            ?: ceil(totalTokens.toDouble() / TOKENS_PER_MODEL_ROUND).toInt().coerceAtLeast(1)
+        val minimumMinutes = (estimatedModelRounds.toLong() +
             request.sources.count { it.requiresNetwork } +
-            request.sources.count { it.requiresOcr } * 2
-        val maximumMinutes = estimatedModelRounds * 4 +
+            request.sources.count { it.requiresOcr } * 2L).saturatedInt()
+        val maximumMinutes = (estimatedModelRounds * 4L +
             request.sources.count { it.requiresNetwork } * 5 +
-            request.sources.count { it.requiresOcr } * 10
+            request.sources.count { it.requiresOcr } * 10L).saturatedInt()
         return NovexLearningPreflightSnapshot(
             id = "preflight_" + sha256(canonical).take(24),
             collectionRef = request.collectionRef,
@@ -244,8 +267,8 @@ object NovexLearningPreflight {
             sourceCount = request.sources.size,
             estimatedSourceTokens = totalTokens,
             estimatedModelRounds = estimatedModelRounds,
-            pageCount = request.sources.sumOf { it.pageCount ?: 0 },
-            imageCount = request.sources.sumOf { it.imageCount },
+            pageCount = request.sources.sumOf { (it.pageCount ?: 0).toLong() }.saturatedInt(),
+            imageCount = request.sources.sumOf { it.imageCount.toLong() }.saturatedInt(),
             ocrSourceCount = request.sources.count { it.requiresOcr },
             networkSourceCount = request.sources.count { it.requiresNetwork },
             estimatedCost = null,
@@ -261,8 +284,13 @@ object NovexLearningPreflight {
                 source.unsupportedReason?.let { source.ref to it }
             }.toMap(),
             sourcePlanFingerprint = request.sourcePlanFingerprint,
+            modelLimits = NovexLearningModelLimits(request.effectiveContextTokens, request.modelMaxOutputTokens),
+            reviewBatchCount = fullPlan?.size,
+            reviewInputReservationTokens = reviewReservation,
         )
     }
+
+    private fun Long.saturatedInt(): Int = coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
@@ -325,15 +353,21 @@ class NovexLearningUsageLedger private constructor(
     fun canConsume(inputTokens: Int, outputTokens: Int): Boolean {
         require(inputTokens >= 0 && outputTokens >= 0) { "学习任务词元用量不能为负数" }
         return status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED &&
-            usedInputTokens + inputTokens <= maxInputTokens &&
-            usedOutputTokens + outputTokens <= maxOutputTokens
+            usedInputTokens.toLong() + inputTokens <= maxInputTokens &&
+            usedOutputTokens.toLong() + outputTokens <= maxOutputTokens
     }
 
     fun record(inputTokens: Int, outputTokens: Int): NovexLearningUsageLedger {
         require(canConsume(inputTokens, outputTokens)) { "本次调用会超过用户确认的学习预算" }
-        val nextInput = usedInputTokens + inputTokens
-        val nextOutput = usedOutputTokens + outputTokens
-        val reachesLimit = nextInput == maxInputTokens || nextOutput == maxOutputTokens
+        return recordObserved(inputTokens, outputTokens)
+    }
+
+    /** Completed provider work is a fact, even when its reported usage exceeded a reservation. */
+    fun recordObserved(inputTokens: Int, outputTokens: Int): NovexLearningUsageLedger {
+        require(inputTokens >= 0 && outputTokens >= 0) { "实际模型用量不能为负数" }
+        val nextInput = (usedInputTokens.toLong() + inputTokens).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val nextOutput = (usedOutputTokens.toLong() + outputTokens).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val reachesLimit = nextInput >= maxInputTokens || nextOutput >= maxOutputTokens
         return NovexLearningUsageLedger(
             preflightId = preflightId,
             maxInputTokens = maxInputTokens,
@@ -374,15 +408,15 @@ class NovexLearningUsageLedger private constructor(
             usedOutputTokens: Int,
             status: NovexLearningTaskStatus,
         ): NovexLearningUsageLedger {
-            require(usedInputTokens in 0..maxInputTokens) { "已用输入词元超出学习预算" }
-            require(usedOutputTokens in 0..maxOutputTokens) { "已用输出词元超出学习预算" }
+            require(usedInputTokens >= 0 && usedOutputTokens >= 0) { "实际模型用量不能为负数" }
             return NovexLearningUsageLedger(
                 preflightId = preflightId,
                 maxInputTokens = maxInputTokens,
                 maxOutputTokens = maxOutputTokens,
                 usedInputTokens = usedInputTokens,
                 usedOutputTokens = usedOutputTokens,
-                status = status,
+                status = if (usedInputTokens >= maxInputTokens || usedOutputTokens >= maxOutputTokens)
+                    NovexLearningTaskStatus.PAUSED_BUDGET_REACHED else status,
             )
         }
     }

@@ -158,12 +158,6 @@ class ChatViewModel(
 
     companion object {
         internal const val TAG = "ChatViewModel"
-        private const val NOVEX_LEARNING_REVIEW_SYSTEM_PROMPT =
-            "你正在执行经过用户确认的资料通读。只整理给定内容，保留事实、时间、人物、术语、冲突与不确定性；" +
-                "不要创建或修改世界卡、角色卡、文游、存档或源文件。输出紧凑的分层笔记，并明确无法确认的内容。"
-        private const val NOVEX_LEARNING_SYNTHESIS_SYSTEM_PROMPT =
-            "把给定的来源锚定笔记整合成资料集总览。保留关键事实、矛盾、待核实项和来源边界；" +
-                "不要补写原文不存在的设定，也不要创建或修改任何卡类对象。"
 
         /**
          * [T-android-auto-grouping-injection] Strip the characters that would let
@@ -12325,18 +12319,23 @@ class ChatViewModel(
         providerName: String,
         proposedBudget: NovexLearningTokenBudget? = null,
     ): NovexLearningPreflightSnapshot {
-
+        val sourceDocuments = state.collection.sources.mapNotNull { source ->
+            source.documentRef?.let(novexDocumentRepository::find)?.let { source.ref to it }
+        }.toMap()
         val sourceEstimates = state.collection.sources.map { source ->
-            val snapshot = source.documentRef?.let(novexDocumentRepository::find)
-            val estimatedTokens = snapshot?.blocks.orEmpty()
-                .sumOf { block -> (block.text.length + 2) / 3 }
+            val snapshot = sourceDocuments[source.ref]
+            val estimatedTokens = snapshot?.let {
+                com.openminis.app.novex.domain.NovexLearningBudgetPolicy.inputReservation(
+                    com.openminis.app.novex.domain.NovexLearningPrompt.review(it.title, it.blocks),
+                )
+            } ?: 0
             val pages = snapshot?.blocks.orEmpty()
                 .mapNotNull { block -> block.source.page }
                 .distinct()
                 .size
                 .takeIf { it > 0 }
             val unsupportedReason = when (snapshot?.status) {
-                null -> source.failureCode ?: if (source.documentRef == null) "资料无法解析" else null
+                null -> source.failureCode ?: "找不到可读取的解析资料，请重新导入来源"
                 NovexDocumentStatus.UNSUPPORTED -> "当前版本不支持此文档格式"
                 NovexDocumentStatus.PASSWORD_REQUIRED -> "文档需要密码"
                 NovexDocumentStatus.DAMAGED -> "文档已损坏"
@@ -12372,6 +12371,8 @@ class ChatViewModel(
                 occupiedContextTokens = _lastTurnContextTokens.value,
                 directReadBudgetTokens = 12_000,
                 proposedBudget = budget,
+                sourceDocuments = sourceDocuments,
+                modelMaxOutputTokens = model.maxOutputTokens ?: 4096,
             ),
         )
         return preflight
@@ -12609,23 +12610,15 @@ class ChatViewModel(
     private fun providerNovexLearningReviewer(provider: LLMProvider): NovexLearningReviewer =
         object : NovexLearningReviewer {
             override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
-                val material = request.blocks.joinToString("\n\n") { block ->
-                    buildString {
-                        append("[内容块 ").append(block.id).append("]")
-                        if (block.headingPath.isNotEmpty()) {
-                            append("\n标题：").append(block.headingPath.joinToString(" / "))
-                        }
-                        append('\n').append(block.text)
-                    }
-                }
+                val prompt = request.prompt
                 val response = provider.sendMessage(
                     messages = listOf(
                         LLMMessage(
                             role = LLMMessage.Role.USER,
-                            content = "资料：${request.documentTitle}\n\n$material",
+                            content = prompt.user,
                         ),
                     ),
-                    systemPrompt = NOVEX_LEARNING_REVIEW_SYSTEM_PROMPT,
+                    systemPrompt = prompt.system,
                     maxTokens = request.maxOutputTokens,
                     temperature = null,
                     tools = emptyList(),
@@ -12638,23 +12631,15 @@ class ChatViewModel(
             }
 
             override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
-                val material = request.notes.joinToString("\n\n") { note ->
-                    "[${note.title}]\n${note.body}"
-                }
+                val prompt = request.prompt
                 val response = provider.sendMessage(
                     messages = listOf(
                         LLMMessage(
                             role = LLMMessage.Role.USER,
-                            content = buildString {
-                                append("资料集：${request.collectionTitle}\n")
-                                request.targetCharacters?.let { target ->
-                                    append("本轮只生成阶段笔记，正文不超过 $target 字符；原始笔记仍然保留供回查。\n")
-                                }
-                                append('\n').append(material)
-                            },
+                            content = prompt.user,
                         ),
                     ),
-                    systemPrompt = NOVEX_LEARNING_SYNTHESIS_SYSTEM_PROMPT,
+                    systemPrompt = prompt.system,
                     maxTokens = request.maxOutputTokens,
                     temperature = null,
                     tools = emptyList(),

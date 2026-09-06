@@ -71,8 +71,15 @@ class NovexLearningTaskState internal constructor(
 
     fun recordUsage(inputTokens: Int, outputTokens: Int): NovexLearningTaskState {
         check(status in EXECUTING_STATUSES) { "只有执行中的学习任务可以记录模型用量" }
-        val nextUsage = usage.record(inputTokens, outputTokens)
-        return copy(
+        return withUsage(usage.record(inputTokens, outputTokens))
+    }
+
+    fun recordObservedUsage(inputTokens: Int, outputTokens: Int): NovexLearningTaskState {
+        check(status in EXECUTING_STATUSES) { "只有执行中的学习任务可以记录模型用量" }
+        return withUsage(usage.recordObserved(inputTokens, outputTokens))
+    }
+
+    private fun withUsage(nextUsage: NovexLearningUsageLedger): NovexLearningTaskState = copy(
             status = if (nextUsage.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
                 NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
             } else {
@@ -80,7 +87,6 @@ class NovexLearningTaskState internal constructor(
             },
             usage = nextUsage,
         )
-    }
 
     fun pause(): NovexLearningTaskState {
         check(status in EXECUTING_STATUSES) { "只有执行中的学习任务可以暂停" }

@@ -7,6 +7,102 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `missing planned source blocks cannot be reported as a completed full review`() = runTest {
+        val fixture = fixture(30_000, 8_000)
+        val reviewer = RecordingReviewer()
+        val result = NovexLearningReviewRunner(
+            NovexDocumentSnapshotStore { fixture.document.copy(blocks = fixture.document.blocks.dropLast(1)) },
+            reviewer, {},
+        ).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.PARTIAL_FAILURE, result.task?.status)
+        assertTrue("发现来源结构不一致后不应继续付费读取", reviewer.reviewRequests.isEmpty())
+    }
+
+    @Test fun `paid final summary can finish after an overrun pause without another model call`() = runTest {
+        val fixture = fixture(30_000, 8_000, listOf("完整规则"))
+        var saved = fixture.state
+        var summaries = 0
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest) =
+                NovexLearningReviewOutput("笔记", "规则已读", request.estimatedInputTokens, 20)
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                summaries++
+                return NovexLearningReviewOutput("最终总结", "全部完成", request.estimatedInputTokens + 1, 20)
+            }
+        }
+        val runner = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer,
+            { saved = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) })
+        runCatching { runner.run(fixture.state) }
+        assertEquals(NovexLearningTaskStatus.PAUSED, saved.task?.status)
+        val charged = saved.task!!.usage.usedInputTokens
+        val result = runner.run(saved.copy(task = saved.task!!.resume()))
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals(1, summaries)
+        assertEquals(charged, result.task!!.usage.usedInputTokens)
+        assertEquals("全部完成", result.notes.last().body)
+    }
+
+    @Test fun `provider usage over the reservation is persisted before stopping further paid work`() = runTest {
+        val fixture = fixture(30_000, 8_000, listOf("完整规则"))
+        var saved = fixture.state
+        var calls = 0
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                calls++
+                return NovexLearningReviewOutput("已付费笔记", "规则内容已读", 31_000, 20)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput =
+                error("发现超出保留预算后不能继续付费调用")
+        }
+        runCatching {
+            NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer,
+                { saved = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) }).run(fixture.state)
+        }
+        assertEquals(1, calls)
+        assertEquals("不能因超额而丢弃真实账目", 31_000, saved.task?.usage?.usedInputTokens)
+        assertEquals(NovexLearningTaskStatus.PAUSED_BUDGET_REACHED, saved.task?.status)
+        assertEquals("规则内容已读", saved.notes.single().body)
+        assertEquals(1, saved.reviewLedger.reviewedBlocks)
+    }
+
+    @Test fun `request reservation includes long document and note titles not only body text`() = runTest {
+        val fixture = fixture(500_000, 80_000, listOf("正文"), modelWindow = 8192)
+        val document = fixture.document.copy(title = "T".repeat(6000))
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                assertTrue("标题本身就需要至少六千个单字节位置", request.estimatedInputTokens >= 6000)
+                assertTrue(request.estimatedInputTokens + request.maxOutputTokens <= 8192)
+                return NovexLearningReviewOutput("N".repeat(6000), "已读", request.estimatedInputTokens, 20)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                assertTrue("笔记标题也属于实际输入", request.estimatedInputTokens >= 6000)
+                assertTrue(request.estimatedInputTokens + request.maxOutputTokens <= 8192)
+                return NovexLearningReviewOutput("总览", "完成", request.estimatedInputTokens, 20)
+            }
+        }
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { document }, reviewer, {}).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+    }
+
+    @Test fun `review and synthesis requests fit the confirmed model window with output reserved`() = runTest {
+        val fixture = fixture(500_000, 80_000, listOf("文游规则🌏\n".repeat(1000)), modelWindow = 4096)
+        val received = mutableListOf<String>()
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                assertTrue("请求不能超过模型窗口", request.estimatedInputTokens + request.maxOutputTokens <= 4096)
+                received += request.blocks.joinToString("") { it.text }
+                return NovexLearningReviewOutput("小结", "规则已读", request.estimatedInputTokens, 20)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                assertTrue("总结必须预留输出空间", request.estimatedInputTokens + request.maxOutputTokens <= 4096)
+                return NovexLearningReviewOutput("总览", "规则汇总", request.estimatedInputTokens, 20)
+            }
+        }
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {}).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals(fixture.document.blocks.single().text, received.joinToString(""))
+    }
+
     @Test fun `single huge note is split for synthesis without deleting the original note`() = runTest {
         val fixture = fixture(500_000, 80_000, listOf("x".repeat(800)))
         var summaries = 0
@@ -98,6 +194,15 @@ class NovexLearningReviewRunnerTest {
         assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
         assertEquals(1, reviewer.reviewRequests.size)
         assertEquals(1154, result.reviewLedger.reviewedBlocks)
+    }
+
+    @Test fun `preflight rounds reflect actual short-line review batches plus final synthesis`() = runTest {
+        val fixture = fixture(500_000, 80_000, List(1154) { "规则 $it：玩家不是世界的中心。" })
+        val reviewer = RecordingReviewer()
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {}).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals("预检不能漏掉实际综合请求", reviewer.reviewRequests.size + reviewer.synthesisRequests,
+            fixture.state.preflight?.estimatedModelRounds)
     }
 
     @Test fun `oversized block is fully read in bounded pieces and partial progress survives restart`() = runTest {
@@ -278,7 +383,7 @@ class NovexLearningReviewRunnerTest {
         val state: NovexLearningState,
     )
 
-    private fun fixture(maxInputTokens: Int, maxOutputTokens: Int, texts: List<String>? = null): Fixture {
+    private fun fixture(maxInputTokens: Int, maxOutputTokens: Int, texts: List<String>? = null, modelWindow: Int = 200_000): Fixture {
         val sha = "f".repeat(64)
         val blocks = (0 until (texts?.size ?: 5)).map { index ->
             val source = NovexDocumentSourceAnchor("word/document.xml", index)
@@ -317,8 +422,9 @@ class NovexLearningReviewRunnerTest {
             NovexLearningPreflightRequest(
                 collectionRef = collection.ref,
                 sources = listOf(NovexLearningSourceEstimate(document.ref, 20_000)),
+                sourceDocuments = mapOf(document.ref to document),
                 modelId = "model-a",
-                effectiveContextTokens = 200_000,
+                effectiveContextTokens = modelWindow,
                 occupiedContextTokens = 10_000,
                 directReadBudgetTokens = 1_000,
                 proposedBudget = NovexLearningTokenBudget(maxOf(30_000, maxInputTokens), maxOf(8_000, maxOutputTokens)),

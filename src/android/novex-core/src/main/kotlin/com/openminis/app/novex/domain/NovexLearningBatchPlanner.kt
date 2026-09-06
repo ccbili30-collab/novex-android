@@ -22,12 +22,28 @@ object NovexLearningBatchPlanner {
     const val DEFAULT_MAX_BLOCKS = 5000
     const val DEFAULT_MAX_CHARS = 24_000
 
+    fun reviewRequests(
+        collectionRef: NovexResourceRef,
+        document: NovexDocumentSnapshot,
+        limits: NovexLearningModelLimits,
+        maxBlocks: Int = DEFAULT_MAX_BLOCKS,
+        maxChars: Int = DEFAULT_MAX_CHARS,
+        readRanges: List<NovexLearningReadRange> = emptyList(),
+    ): List<NovexLearningReviewRequest> = plan(document.ref, document.blocks, maxBlocks, maxChars, readRanges) { blocks ->
+        NovexLearningBudgetPolicy.fits(NovexLearningPrompt.review(document.title, blocks), limits)
+    }.map { batch ->
+        val input = NovexLearningBudgetPolicy.inputReservation(NovexLearningPrompt.review(document.title, batch.blocks))
+        NovexLearningReviewRequest(collectionRef, document.ref, document.title, batch.blocks, input,
+            NovexLearningBudgetPolicy.outputReservation(input, limits), batch.ranges)
+    }
+
     fun plan(
         documentRef: NovexResourceRef,
         blocks: List<NovexDocumentBlock>,
         maxBlocks: Int = DEFAULT_MAX_BLOCKS,
         maxChars: Int = DEFAULT_MAX_CHARS,
         readRanges: List<NovexLearningReadRange> = emptyList(),
+        fits: (List<NovexDocumentBlock>) -> Boolean = { true },
     ): List<NovexLearningBatch> {
         require(maxBlocks > 0 && maxChars >= 2)
         val covered = readRanges.filter { it.documentRef == documentRef }.groupBy { it.blockId }
@@ -46,11 +62,27 @@ object NovexLearningBatchPlanner {
             for ((start, end) in unseen) {
                 // A paragraph that fits a fresh batch stays whole. Only oversized
                 // source blocks need a second split, not the last row of every batch.
-                if (end - start <= maxChars && end - start > maxChars - chars) flush()
+                val whole = block.copy(text = block.text.substring(start, end))
+                if (end - start <= maxChars && (end - start > maxChars - chars || !fits(content + whole))) flush()
                 var position = start
                 do {
                     if (content.size >= maxBlocks || maxChars - chars < 2) flush()
-                    val next = splitEnd(block.text, position, end, maxChars - chars)
+                    var next = splitEnd(block.text, position, end, maxChars - chars)
+                    fun fragment(until: Int) = block.copy(text = block.text.substring(position, until))
+                    if (!fits(content + fragment(next)) && content.isNotEmpty()) {
+                        flush()
+                        next = splitEnd(block.text, position, end, maxChars)
+                    }
+                    if (!fits(content + fragment(next))) {
+                        var low = 0
+                        var high = next - position
+                        while (low < high) {
+                            val mid = low + (high - low + 1) / 2
+                            if (fits(content + fragment(position + mid))) low = mid else high = mid - 1
+                        }
+                        next = splitEnd(block.text, position, end, low)
+                        require(next > position) { "资料标题或章节信息已占满模型窗口，无法容纳正文与输出；请使用更大的模型窗口" }
+                    }
                     content += block.copy(text = block.text.substring(position, next))
                     ranges += NovexLearningReadRange(documentRef, block.id, position, next)
                     chars += next - position
