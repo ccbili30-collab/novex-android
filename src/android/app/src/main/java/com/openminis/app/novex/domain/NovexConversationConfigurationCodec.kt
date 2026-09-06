@@ -14,6 +14,8 @@ object NovexConversationConfigurationCodec {
         snapshot.playerIdentity?.let { put("playerIdentity", it.toJson()) }
         snapshot.preGamePlayerIdentity?.let { put("preGamePlayerIdentity", it.toJson()) }
         put("backgroundSettings", JSONArray(snapshot.backgroundSettings.map { it.subject.toJson() }))
+        put("adoptedContexts", JSONArray(snapshot.adoptedContexts.map(NovexAdoptedContextCodec::encode)))
+        snapshot.preGameAdoptedIdentity?.let { put("preGameAdoptedIdentity", NovexAdoptedContextCodec.encode(it)) }
         put("managedSubjects", JSONArray(snapshot.managedSubjects.map { subject ->
             subject.subject.toJson().put("access", subject.access.wireName())
         }))
@@ -46,6 +48,8 @@ object NovexConversationConfigurationCodec {
                 backgroundSettings = root.optJSONArray("backgroundSettings").objects().map { value ->
                     BackgroundSetting(value.toContentAddress())
                 },
+                adoptedContexts = root.optJSONArray("adoptedContexts").objects().map(NovexAdoptedContextCodec::decode),
+                preGameAdoptedIdentity = root.optJSONObject("preGameAdoptedIdentity")?.let(NovexAdoptedContextCodec::decode),
                 managedSubjects = root.optJSONArray("managedSubjects").objects().map { value ->
                     ManagedSubject(
                         subject = value.toContentAddress(),

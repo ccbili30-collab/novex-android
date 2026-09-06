@@ -63,7 +63,7 @@ class CharacterConversationSnapshotFactory(
         val experience = characterModules.withType(ContentModuleType.WORLD_EXPERIENCE)
         val appearance = characterModules.withType(ContentModuleType.APPEARANCE_PERSONALITY)
         val knowledge = characterModules.filterNot {
-            it.type in setOf(
+            com.openminis.app.novex.domain.NovexModuleVisibility.isPrivate(it.type) || it.type in setOf(
                 ContentModuleType.QUOTES,
                 ContentModuleType.WORLD_EXPERIENCE,
                 ContentModuleType.APPEARANCE_PERSONALITY,
@@ -85,6 +85,7 @@ class CharacterConversationSnapshotFactory(
             greeting = quotes.ifBlank { imported?.greeting.orEmpty() },
             knowledge = listOf(imported?.knowledge.orEmpty(), knowledge)
                 .filter(String::isNotBlank).distinct().joinToString("\n\n"),
+            systemPrompt = characterModules.withType(ContentModuleType.ROLE_INSTRUCTIONS).ifBlank { imported?.systemPrompt.orEmpty() },
             tags = profile.tags.ifEmpty { imported?.tags.orEmpty() },
             avatarPath = characterAvatar ?: imported?.avatarPath,
             coverPath = characterBackground ?: imported?.coverPath,
@@ -130,7 +131,7 @@ class CharacterConversationSnapshotFactory(
         filter { it.type == type }.moduleText()
 
     private fun List<ContentModuleEntity>.moduleText(): String = joinToString("\n\n") { module ->
-        val text = runCatching { JSONObject(module.contentJson).optString("text") }
+        val text = runCatching { ContentModuleDocumentCodec.decode(module.type, module.contentJson).toPlainText() }
             .getOrElse { module.contentJson }
             .trim()
         if (text.isBlank()) "" else "${module.name}\n$text"

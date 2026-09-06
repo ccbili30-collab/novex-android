@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.withTransaction
 import com.openminis.app.R
 import com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS
 import com.openminis.app.data.MAX_IMAGE_STYLE_PROMPT_CHARS
@@ -218,6 +219,27 @@ fun ConversationSettingsScreen(
         }
     }
 
+    fun refreshAdoptedSetting(root: NovexContentAddress? = null, acting: Boolean = false) {
+        if (saving || preparingGame) return
+        preparingGame = true
+        val expected = draft.configuration
+        scope.launch {
+            try {
+                val application = context.applicationContext as com.openminis.app.MinisApp
+                val updated = application.database.withTransaction {
+                    val adoption = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace)
+                    if (root == null) adoption.refreshGame(expected) else adoption.refresh(expected, root, acting)
+                }
+                require(draft.configuration == expected) { "刷新期间对话设定已改变，请重新刷新" }
+                draft = draft.copy(configuration = updated)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                error = "资料尚未刷新：${failure.message ?: "读取原卡失败"}"
+            } finally { preparingGame = false }
+        }
+    }
+
     val assistantPicker = conversationImagePicker("conversation-assistant-avatar") { path ->
         draft = draft.updateSettings { it.copy(assistantAvatarPath = path) }
     }
@@ -244,7 +266,7 @@ fun ConversationSettingsScreen(
     ) {
         NovexEditorSection(
             header = "回答身份",
-            footer = "人格决定职责与表达，角色版本决定扮演对象；工具权限与背景设定分别管理。",
+            footer = "人格决定职责与表达，角色版本决定扮演对象；工具权限与背景设定分别管理。角色资料采用后固定，刷新并保存后才更新本对话。",
         ) {
             NovexSummaryRow("当前人格", answerLabel, onClick = { picker = ConversationPicker.ANSWER })
             (draft.configuration.answerIdentity as? AnswerIdentity.PersonaPreset)?.let { persona ->
@@ -254,6 +276,11 @@ fun ConversationSettingsScreen(
                 NovexTextField("职责与表达", persona.instructions, onValueChange = { value ->
                     draft = draft.setAnswerIdentity(persona.copy(instructions = value.take(MAX_CONVERSATION_PROMPT_CHARS)))
                 }, minLines = 4)
+            }
+            (draft.configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.let { role ->
+                NovexTextActionRow("从原卡刷新当前角色资料", onClick = {
+                    refreshAdoptedSetting(NovexContentAddress.characterVersion(role.versionId), acting = true)
+                })
             }
         }
 
@@ -282,7 +309,7 @@ fun ConversationSettingsScreen(
 
         NovexEditorSection(
             header = "背景设定",
-            footer = "可加入多个世界和角色版本，作为只读背景被检索；这不会授予编辑权限。",
+            footer = "可加入多个世界和角色版本，采用的资料会固定保存；需要更新时从原卡刷新。文游自身引用的资料在活动文游中单独刷新。背景用途不会授予编辑权限。",
         ) {
             draft.configuration.backgroundSettings.forEachIndexed { index, setting ->
                 ConversationSubjectRow(
@@ -290,6 +317,7 @@ fun ConversationSettingsScreen(
                     labels[setting.subject]?.kindLabel ?: setting.subject.kind.displayName(),
                     onRemove = { draft = draft.removeBackground(setting.subject) },
                 )
+                NovexTextActionRow("从原卡刷新这项背景", onClick = { refreshAdoptedSetting(setting.subject) })
                 if (index < draft.configuration.backgroundSettings.lastIndex) {
                     NovexDivider(Modifier.padding(horizontal = 16.dp))
                 }
@@ -331,9 +359,11 @@ fun ConversationSettingsScreen(
             header = "活动文游",
             footer = "结束文游后恢复启动前身份，保留消息、状态与存档。返回列表不结束文游。",
         ) {
-            if (preparingGame) NovexSummaryRow("准备文游", "正在固定本局采用的设定…")
+            if (preparingGame) NovexSummaryRow("准备设定", "正在读取本次采用的资料…")
             draft.configuration.activeInteractiveFiction?.let { active ->
                 NovexSummaryRow("正在运行", active.title)
+                NovexTextActionRow("刷新文游正文与背景引用", onClick = { refreshAdoptedSetting() })
+                NovexSummaryRow("刷新范围", "保存后更新采用的资料，保留本局身份、状态与已注册操作")
                 NovexTextActionRow("结束文游并恢复原身份", onClick = { draft = draft.deactivateGame() })
             }
             NovexTextActionRow(
@@ -623,8 +653,13 @@ fun ConversationSettingsScreen(
                     val expected = draft.configuration
                     scope.launch {
                         try {
-                            val game = NovexGameSnapshotAssembler(workspace).create(projectId, expected.backgroundSettings)
+                            val application = context.applicationContext as com.openminis.app.MinisApp
+                            val (capturedConfiguration, game) = application.database.withTransaction {
+                                val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace).adopt(expected)
+                                captured to NovexGameSnapshotAssembler(workspace).create(projectId, captured.backgroundSettings, captured.adoptedContexts)
+                            }
                             require(draft.configuration == expected) { "准备文游期间对话设定已改变，请重新选择文游" }
+                            draft = draft.copy(configuration = capturedConfiguration)
                             val currentPlayer = draft.configuration.playerIdentity
                             if (NovexGamePlayerChoices.needsSelection(game) ||
                                 (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer)) {

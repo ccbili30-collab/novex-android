@@ -169,6 +169,8 @@ data class NovexConversationConfigurationSnapshot(
     val preGamePlayerIdentity: ConversationPlayerIdentity? = null,
     val completedPlaythroughs: List<CompletedPlaythrough> = emptyList(),
     val activePlaythroughId: String? = null,
+    val adoptedContexts: List<NovexAdoptedContext> = emptyList(),
+    val preGameAdoptedIdentity: NovexAdoptedContext? = null,
 ) {
     val effectivePlaythroughId: String?
         get() = activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
@@ -260,6 +262,9 @@ class NovexConversationConfiguration private constructor(
                     preGameAnswerIdentity = if (snapshot.activeInteractiveFiction == null) {
                         snapshot.answerIdentity
                     } else snapshot.preGameAnswerIdentity,
+                    preGameAdoptedIdentity = if (snapshot.activeInteractiveFiction == null) {
+                        snapshot.adoptedContexts.singleOrNull { it.acting && it.isActive(snapshot) }
+                    } else snapshot.preGameAdoptedIdentity,
                     playerIdentity = if (keepsCurrentPlaythrough) snapshot.playerIdentity else requestedPlayer ?: snapshot.playerIdentity,
                     preGamePlayerIdentity = if (snapshot.activeInteractiveFiction == null) {
                         snapshot.playerIdentity
@@ -281,6 +286,10 @@ class NovexConversationConfiguration private constructor(
                 completedPlaythroughs = archiveCurrentPlaythrough(),
                 answerIdentity = snapshot.preGameAnswerIdentity ?: snapshot.answerIdentity,
                 preGameAnswerIdentity = null,
+                adoptedContexts = snapshot.preGameAdoptedIdentity?.let { original ->
+                    snapshot.adoptedContexts.filterNot { it.acting } + original
+                } ?: snapshot.adoptedContexts,
+                preGameAdoptedIdentity = null,
                 playerIdentity = if (snapshot.preGameAnswerIdentity != null) snapshot.preGamePlayerIdentity else snapshot.playerIdentity,
                 preGamePlayerIdentity = null,
                 controls = snapshot.controls.filterNot {
@@ -411,6 +420,9 @@ class NovexConversationConfiguration private constructor(
             require(snapshot.controls.map(ConversationControlDefinition::id).distinct().size == snapshot.controls.size) {
                 "快捷操作编号不能重复"
             }
+            require(snapshot.adoptedContexts.map { it.root to it.acting }.distinct().size == snapshot.adoptedContexts.size) {
+                "同一对象的同一用途只能采用一份快照"
+            }
             require(snapshot.playthroughStates.all { (branchId, state) -> branchId == state.branchId }) {
                 "本局状态必须属于对应的消息分支"
             }
@@ -421,6 +433,9 @@ class NovexConversationConfiguration private constructor(
                     state.copy(values = state.values.toMap())
                 },
                 controls = snapshot.controls.toList(),
+                adoptedContexts = snapshot.adoptedContexts.map { adopted -> adopted.copy(sources = adopted.sources.map { source ->
+                    source.copy(candidates = source.candidates.toList())
+                }) },
                 completedPlaythroughs = snapshot.completedPlaythroughs.map { completed ->
                     completed.copy(states = completed.states.mapValues { (_, state) -> state.copy(values = state.values.toMap()) },
                         controls = completed.controls.toList(), game = completed.game.copy(presetControls = completed.game.presetControls.toList()))

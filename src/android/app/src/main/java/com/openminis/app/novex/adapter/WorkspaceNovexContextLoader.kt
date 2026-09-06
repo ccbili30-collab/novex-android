@@ -34,11 +34,14 @@ class WorkspaceNovexContextLoader(
 ) {
     suspend fun load(configuration: NovexConversationConfigurationSnapshot): List<NovexContextCandidate> {
         val candidates = mutableListOf<NovexContextCandidate>()
+        val adopted = configuration.adoptedContexts.filter { it.isActive(configuration) }
         val frozenContext = configuration.activeInteractiveFiction?.let {
             com.openminis.app.novex.domain.NovexFrozenContextCodec.read(it.contentJson)
-        }.orEmpty()
+        }.orEmpty().filter { source -> source.actorVersionId != null || source.adoptedByGame ||
+            configuration.backgroundSettings.any { it.subject in source.conversationRoots } }
         val frozenBackgrounds = frozenContext.filter { it.actorVersionId == null && it.target.moduleId == null }
             .mapTo(mutableSetOf()) { it.target.subject }
+        frozenBackgrounds += adopted.filterNot { it.acting }.map { it.root }
         when (val identity = configuration.answerIdentity) {
             AnswerIdentity.Nova -> candidates.add(NovexContextCandidate(
                 sourceId = "answer-identity:nova",
@@ -116,7 +119,8 @@ class WorkspaceNovexContextLoader(
             )
         }
 
-        val frozenActor = frozenContext.any { it.actorVersionId != null && it.actorVersionId == identityVersionId }
+        val frozenActor = frozenContext.any { it.actorVersionId != null && it.actorVersionId == identityVersionId } ||
+            adopted.any { it.acting && it.root.id == identityVersionId }
         val requestedVersions = (backgroundVersionIds + listOfNotNull(identityVersionId))
             .filterNot { frozenActor && it == identityVersionId }.distinct()
         if (requestedVersions.isNotEmpty()) {
@@ -200,14 +204,19 @@ class WorkspaceNovexContextLoader(
                 }
             }
         }
+        adopted.filter { context -> context.acting && frozenContext.none { it.actorVersionId == context.root.id } }
+            .forEach { context -> context.sources.forEach { candidates += it.candidates } }
         configuration.activeInteractiveFiction?.let { active ->
-            frozenContext.filter { it.actorVersionId == null || it.actorVersionId == identityVersionId }.forEach { frozen ->
+            frozenContext.filter { it.actorVersionId == identityVersionId && it.actorVersionId != null ||
+                it.actorVersionId == null && it.adoptedByGame }.forEach { frozen ->
                 candidates += frozen.candidates
             }
             candidates += gameCandidates(active.snapshotId, active.title, active.contentJson,
                 includeLegacyPlayer = active.playerIdentity == null && configuration.playerIdentity == null,
                 playthroughId = configuration.effectivePlaythroughId.orEmpty())
         }
+        adopted.filterNot { it.acting }.forEach { context -> context.sources.forEach { candidates += it.candidates } }
+        frozenContext.filter { it.actorVersionId == null && !it.adoptedByGame }.forEach { candidates += it.candidates }
         return candidates.mergeDuplicates()
     }
 

@@ -3291,7 +3291,7 @@ class ChatViewModel(
     ): PreparedNovexRequestContext? {
         val application = context.applicationContext as? com.openminis.app.MinisApp ?: return null
         if (!application.subsystemsReady()) return null
-        val configuration = currentNovexConfiguration()
+        val configuration = adoptedNovexConfiguration()
         val profile = _immersiveProfile.value
         val candidates = WorkspaceNovexContextLoader(application.novexWorkspace,
             com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
@@ -3377,6 +3377,24 @@ class ChatViewModel(
             }
         }
         installNovexConfiguration(configuration)
+    }
+
+    /** Save the captured sources before any request or tool can rely on them. */
+    private suspend fun adoptedNovexConfiguration(): NovexConversationConfigurationSnapshot = novexConfigurationMutex.withLock {
+        val sid = ensureSession()
+        val configuration = currentNovexConfiguration()
+        val application = novexApplication()
+        val profile = _immersiveProfile.value
+        val adopted = application.database.withTransaction {
+            val result = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
+                com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                .adopt(configuration)
+            if (result != configuration) chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot().copy(
+                novexConfigurationJson = NovexConversationConfigurationCodec.encode(result)))
+            result
+        }
+        if (adopted != configuration) installNovexConfiguration(adopted)
+        adopted
     }
 
     private fun legacyNovexConfiguration(
@@ -3497,10 +3515,16 @@ class ChatViewModel(
                         "会话配置或本局状态已在编辑期间更新。请重新打开对话编辑后调整，避免覆盖新内容。"
                     }
                     val sid = ensureSession()
-                    val durable = value.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(
-                        NovexConversationConfigurationCodec.decode(value.novexConfigurationJson, sid),
-                    ))
-                    chatRepository.updateConversationSettings(sid, durable)
+                    val application = novexApplication()
+                    val profile = _immersiveProfile.value
+                    val durable = application.database.withTransaction {
+                        val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
+                            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                            .adopt(NovexConversationConfigurationCodec.decode(value.novexConfigurationJson, sid))
+                        value.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(captured)).also {
+                            chatRepository.updateConversationSettings(sid, it)
+                        }
+                    }
                     withContext(Dispatchers.Main) { installSavedSettings(durable) }
                 }
             }
@@ -3819,6 +3843,7 @@ class ChatViewModel(
     private suspend fun prepareNovexConversationForEntry() {
         try {
             prepareNovexConversationDrafts()
+            adoptedNovexConfiguration()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -4007,11 +4032,17 @@ class ChatViewModel(
                         }
                     }
                 }
+                startingConfiguration = novexApplication().database.withTransaction {
+                    val profile = _immersiveProfile.value
+                    com.openminis.app.novex.adapter.NovexConversationContextAdoption(novexApplication().novexWorkspace,
+                        com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+                        .adopt(startingConfiguration)
+                }
                 val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
                     val application = context.applicationContext as? com.openminis.app.MinisApp
                     application?.novexWorkspace?.let { workspace ->
                         val game = try {
-                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(projectId, startingConfiguration.backgroundSettings)
+                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(projectId, startingConfiguration.backgroundSettings, startingConfiguration.adoptedContexts)
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
                             throw cancelled
                         } catch (failure: Exception) {
@@ -6947,12 +6978,14 @@ class ChatViewModel(
         val preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
             try {
                 prepareNovexRequestContext(systemPrompt, requestId, novexRequestMessage.content)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 AppLogger.error(
                     TAG_STREAM,
                     "Novex context preparation failed ${error::class.java.simpleName}: ${error.message}",
                 )
-                null
+                throw IllegalStateException("本轮设定尚未准备完成，未发送模型请求：${error.message ?: "请重新检查采用的卡片"}", error)
             }
         }
         val requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt
@@ -9017,7 +9050,7 @@ class ChatViewModel(
         val profile = _immersiveProfile.value
         val reader = com.openminis.app.novex.adapter.NovexContextReadService(workspace,
             com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
-        val configuration = currentNovexConfiguration()
+        val configuration = adoptedNovexConfiguration()
         val offset = args.optInt("offset", 0)
         val operation = args.optString("operation", "inspect")
         val result = when (operation) {
@@ -10536,6 +10569,8 @@ class ChatViewModel(
             legacyRoleId = legacyProfile.characterVersionId ?: legacyProfile.character?.id,
             legacyPlayerId = legacyProfile.persona?.id,
             legacyWorldId = legacyProfile.worldId,
+            legacyGeneratedPrompt = com.openminis.app.data.character.CharacterPromptComposer.compose(
+                legacyProfile.character?.toJson()?.toString(), legacyProfile.persona?.toJson()?.toString(), legacyProfile.world?.toJson()?.toString()),
         )
         // Keep memory prompt injection and the Novex memory tool set behind the
         // same per-conversation switch.

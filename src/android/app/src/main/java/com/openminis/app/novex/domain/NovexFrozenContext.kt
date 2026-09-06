@@ -9,6 +9,8 @@ data class NovexFrozenContext(
     val target: NovexReferenceTarget,
     val candidates: List<NovexContextCandidate>,
     val actorVersionId: String? = null,
+    val adoptedByGame: Boolean = true,
+    val conversationRoots: Set<NovexContentAddress> = emptySet(),
 )
 
 object NovexFrozenContextCodec {
@@ -18,6 +20,8 @@ object NovexFrozenContextCodec {
         put("moduleId", value.target.moduleId)
         put("entryId", value.target.entryId)
         put("actorVersionId", value.actorVersionId)
+        put("adoptedByGame", value.adoptedByGame)
+        put("conversationRoots", JSONArray(value.conversationRoots.map { JSONObject().put("kind", it.kind.name).put("id", it.id) }))
         val sources = JSONArray().apply { value.candidates.forEach { candidate -> put(JSONObject().apply {
             put("sourceId", candidate.sourceId); put("label", candidate.label); put("content", candidate.content)
             put("kind", candidate.kind.name); put("aliases", JSONArray(candidate.aliases.toList()))
@@ -43,6 +47,12 @@ object NovexFrozenContextCodec {
                         value.optBoolean("alwaysInclude"), value.optInt("position"))
                 },
                 actorVersionId = row.optionalText("actorVersionId"),
+                adoptedByGame = row.optBoolean("adoptedByGame", true),
+                conversationRoots = row.optJSONArray("conversationRoots")?.let { roots ->
+                    (0 until roots.length()).mapTo(linkedSetOf()) { index -> roots.getJSONObject(index).let {
+                        NovexContentAddress(NovexContentKind.valueOf(it.getString("kind")), it.getString("id"))
+                    } }
+                }.orEmpty(),
             )
         }
     }
