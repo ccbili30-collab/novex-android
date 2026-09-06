@@ -3,11 +3,13 @@ package com.openminis.app.service
 import android.app.Application
 import android.app.Service
 import android.content.Intent
+import com.openminis.app.MinisApp
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
@@ -15,6 +17,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [28])
 class NovexAgentForegroundServiceTest {
+    @Test
+    @Config(application = MinisApp::class)
+    fun processRestartBeforeRuntimeIsReadyDoesNotReadUninitializedRepositories() {
+        val app = RuntimeEnvironment.getApplication<MinisApp>()
+        assertFalse("A restored service must not start the model/tool runtime", app.subsystemsReady())
+        val controller = Robolectric.buildService(AgentForegroundService::class.java).create()
+        try {
+            assertNotNull(shadowOf(controller.get()).lastForegroundNotification)
+            assertFalse("Optional overlay setup must not force runtime initialization", app.subsystemsReady())
+        } finally {
+            controller.destroy()
+        }
+    }
+
     @Test fun serviceIsAlreadyForegroundBeforeAnyStartCommand() {
         val controller = Robolectric.buildService(AgentForegroundService::class.java).create()
         try {
