@@ -136,6 +136,31 @@ class NovexManagementPlanTest {
     }
 
     @Test
+    fun `cancelled changed or confirmed tasks cannot be resurrected by continue`() {
+        for (boundary in listOf("取消", "不要创建世界", "改成角色卡", "先聊聊别的", "确认执行 proposal", "创建角色苏晚晴")) {
+            assertThrows(boundary, IllegalArgumentException::class.java) {
+                NovexManagementPolicy.plan(
+                    configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
+                    changes = listOf(NovexManagedChange.CreateWorld("雾海", "")),
+                    facts = NovexManagementFacts(),
+                    priorUserRequests = listOf("创建雾海世界", boundary),
+                    latestUserRequest = "继续",
+                    planId = "proposal-12345678",
+                )
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementPolicy.plan(
+                configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
+                changes = listOf(NovexManagedChange.CreateWorld("雾海", "")),
+                facts = NovexManagementFacts(),
+                latestUserRequest = "不要创建世界",
+                planId = "proposal-12345678",
+            )
+        }
+    }
+
+    @Test
     fun `only the real following user turn can confirm a plan`() {
         val plan = NovexManagementPlan(
             id = "proposal-12345678",

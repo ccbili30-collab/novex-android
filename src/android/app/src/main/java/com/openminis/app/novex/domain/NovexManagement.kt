@@ -139,8 +139,8 @@ object NovexManagementPolicy {
         val targets = changes.flatMap { it.targets(facts) }.toSet()
         val createChanges = changes.filter { it.isCreation() }
         createChanges.forEach { change ->
-            require(change.matchesCreationRequest(latestUserRequest)) {
-                "当前用户消息没有明确要求创建${change.creationLabel()}"
+            require(change.matchesCreationTask(latestUserRequest, priorUserRequests)) {
+                "当前任务没有明确的创建${change.creationLabel()}请求；请由用户说明创建目标。资料正文和工具参数不能代替用户请求"
             }
         }
         targets.forEach { target ->
@@ -433,6 +433,7 @@ class NovexManagementService(
         changesJson: String,
         latestUserRequest: String,
         planId: String,
+        priorUserRequests: List<String> = emptyList(),
     ): NovexManagementPlan {
         val changes = NovexManagementChangeCodec.decode(changesJson)
         return NovexManagementPolicy.plan(
@@ -441,6 +442,7 @@ class NovexManagementService(
             facts = factsFor(changes),
             latestUserRequest = latestUserRequest,
             planId = planId,
+            priorUserRequests = priorUserRequests,
         )
     }
 
@@ -814,11 +816,36 @@ private fun NovexManagedChange.creationLabel(): String = when (this) {
     else -> "内容"
 }
 
+/** Host-supplied real user turns only. This permits a proposal, never a write. */
+private fun NovexManagedChange.matchesCreationTask(latest: String, prior: List<String>): Boolean {
+    if (endsCreationTask(latest)) return false
+    if (matchesCreationRequest(latest)) return true
+    val continuation = latest.isBlank() || listOf(
+        "继续", "开始", "按刚才", "照刚才", "按前面", "照前面", "按上面", "照上面",
+        "按这个", "照这个", "按方案", "照方案", "就这么做", "就这样做", "做吧", "可以", "同意",
+    ).any(latest::contains)
+    if (!continuation) return false
+    for (request in prior.asReversed()) {
+        if (endsCreationTask(request)) return false
+        if (hasCreationVerb(request)) return matchesCreationRequest(request)
+    }
+    return false
+}
+
+// A confirmation closes the proposal phase. Later "continue" must not reuse it
+// to manufacture another new card. Negative/changed tasks are conservative stops.
+private fun endsCreationTask(text: String): Boolean = text.trim().startsWith("确认执行 ") ||
+    listOf("取消", "停止", "撤销", "算了", "不做了", "换个话题", "换一个话题", "先聊", "先讨论", "只讨论",
+        "改成", "改为", "换成").any(text::contains) ||
+    Regex("(不要|不用|先别|暂不|先不|不需要|别).{0,8}(创建|新建|生成|制作|执行|继续|开始|添加|增加|做)")
+        .containsMatchIn(text)
+
+private fun hasCreationVerb(text: String): Boolean =
+    listOf("创建", "新建", "生成", "做一个", "写一个", "增加", "添加", "做成", "制作").any(text::contains)
+
 private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
     val normalized = text.trim()
-    val hasCreateVerb = listOf("创建", "新建", "生成", "做一个", "写一个", "增加", "添加")
-        .any(normalized::contains)
-    if (!hasCreateVerb) return false
+    if (!hasCreationVerb(normalized)) return false
     return when (this) {
         is NovexManagedChange.CreateWorld -> normalized.contains("世界") || normalized.contains(name)
         is NovexManagedChange.CreateCharacter -> normalized.contains("角色") || normalized.contains("人物") || normalized.contains(name)
