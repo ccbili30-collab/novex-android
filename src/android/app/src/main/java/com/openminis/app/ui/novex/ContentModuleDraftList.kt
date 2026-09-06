@@ -58,7 +58,7 @@ internal class ContentModuleDraftList private constructor(
     ): ContentModuleDraftList = next(
         modules = modules.map { module ->
             if (module.id == moduleId) {
-                module.copy(name = name, contentJson = ContentModuleDocumentCodec.encode(document))
+                module.copy(name = name, contentJson = ContentModuleDocumentCodec.edit(module.contentJson, document))
             } else {
                 module
             }

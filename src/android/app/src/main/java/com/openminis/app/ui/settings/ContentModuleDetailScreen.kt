@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,7 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.openminis.app.data.character.ContentModuleEntity
-import com.openminis.app.data.character.ContentModuleTextCodec
+import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.MediaAssetEntity
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
@@ -43,6 +44,7 @@ import com.openminis.app.novex.domain.NovexCommand
 import com.openminis.app.novex.domain.NovexModuleReferenceOption
 import com.openminis.app.novex.domain.requireMedia
 import com.openminis.app.ui.novex.NovexNoticeDialog
+import com.openminis.app.ui.novex.NovexDraftExitBoundary
 import com.openminis.app.ui.novex.NovexOutlineButton
 import com.openminis.app.ui.novex.NovexPrimaryButton
 import com.openminis.app.ui.novex.NovexSelectionAction
@@ -69,10 +71,12 @@ fun CatalogContentModuleDetailScreen(
     val novex = rememberNovexWorkspace()
     val owner = remember(moduleId) { ModuleOwner.contentModule(moduleId) }
     val scope = rememberCoroutineScope()
-    var module by remember { mutableStateOf<ContentModuleEntity?>(null) }
-    var loaded by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
+    var module by remember(moduleId) { mutableStateOf<ContentModuleEntity?>(null) }
+    var loaded by remember(moduleId) { mutableStateOf(false) }
+    var name by rememberSaveable(moduleId) { mutableStateOf("") }
+    var contentJson by rememberSaveable(moduleId) { mutableStateOf("{}") }
+    var baselineName by rememberSaveable(moduleId) { mutableStateOf<String?>(null) }
+    var baselineContent by rememberSaveable(moduleId) { mutableStateOf<String?>(null) }
     var image by remember { mutableStateOf<MediaAssetEntity?>(null) }
     var references by remember { mutableStateOf<List<ContentModuleReferenceEntity>>(emptyList()) }
     var referenceOptions by remember { mutableStateOf<List<NovexModuleReferenceOption>>(emptyList()) }
@@ -105,8 +109,13 @@ fun CatalogContentModuleDetailScreen(
     LaunchedEffect(moduleId, referenceRefresh) {
         novex.module(moduleId)?.let { detail ->
             module = detail.module
-            name = detail.module.name
-            body = ContentModuleTextCodec.decode(detail.module.contentJson)
+            // Refreshing image/reference metadata must not overwrite unsaved text.
+            if (baselineName == null) {
+                name = detail.module.name
+                contentJson = detail.module.contentJson
+                baselineName = name
+                baselineContent = contentJson
+            }
             image = detail.image
             references = detail.references
             referenceOptions = detail.referenceOptions
@@ -120,7 +129,7 @@ fun CatalogContentModuleDetailScreen(
         scope.launch {
             runCatching {
                 novex.apply(
-                    NovexCommand.SaveModule(moduleId, name, ContentModuleTextCodec.encode(body)),
+                    NovexCommand.SaveModule(moduleId, name, contentJson),
                 )
             }.onSuccess { onBack() }.onFailure {
                 saving = false
@@ -129,16 +138,25 @@ fun CatalogContentModuleDetailScreen(
         }
     }
 
+    NovexDraftExitBoundary(
+        baselineDraft = baselineName?.let { it to baselineContent },
+        currentDraft = name to contentJson,
+        saving = saving,
+        onBack = onBack,
+        onSaveAndExit = ::save,
+    ) { requestBack ->
     SettingsScaffold(
         title = module?.name ?: "模块",
-        onBack = onBack,
+        onBack = requestBack,
         actions = {
             NovexTopAction(
                 icon = R.drawable.ic_phosphor_sparkle,
                 contentDescription = "帮我创作",
                 label = "帮我创作",
                 onClick = {
-                    module?.managementOwnerAddress()?.let(onHelpCreate)
+                    if (name != baselineName || contentJson != baselineContent) {
+                        error = "请先保存当前模块修改，再进入帮我创作。草稿仍保留在此页面。"
+                    } else module?.managementOwnerAddress()?.let(onHelpCreate)
                 },
             )
         },
@@ -179,8 +197,9 @@ fun CatalogContentModuleDetailScreen(
                             danger = true,
                             onClick = {
                                 scope.launch {
-                                    novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
-                                    image = null
+                                    runCatching {
+                                        novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
+                                    }.onSuccess { image = null }.onFailure { error = it.message }
                                 }
                             },
                         )
@@ -199,11 +218,9 @@ fun CatalogContentModuleDetailScreen(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
-                NovexTextField(
-                    label = "内容（可选）",
-                    value = body,
-                    onValueChange = { body = it },
-                    minLines = 12,
+                SharedModuleDocumentFields(
+                    document = ContentModuleDocumentCodec.decode(requireNotNull(module).type, contentJson),
+                    onChange = { contentJson = ContentModuleDocumentCodec.edit(contentJson, it) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
                 NovexPrimaryButton(
@@ -213,7 +230,7 @@ fun CatalogContentModuleDetailScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
                 )
                 Text(
-                    "代表图和内容都可留空；之后仍可随时补充。",
+                    "代表图和内容都可留空。正文点击保存后生效；图片与引用操作即时保存。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 10.dp),
@@ -249,6 +266,7 @@ fun CatalogContentModuleDetailScreen(
                 }
             }
         }
+    }
     }
     if (addReference) {
         val available = referenceOptions.filterNot { option ->

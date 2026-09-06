@@ -20,7 +20,7 @@ object NovexManagementTools {
             name = INSPECT,
             description = "Read Novex worlds, character versions, games and modules mounted in the current " +
                 "conversation management workspace. Omit all parameters to list mounted subjects and legal " +
-                "module types and game_launch_modes, including before creating the first card. This tool " +
+                "module types with writable content_example documents and game_launch_modes, including before creating the first card. This tool " +
                 "never changes content and cannot inspect unmounted subjects.",
             parameters = mapOf(
                 "subject_kind" to AgentToolParam(
@@ -58,7 +58,10 @@ object NovexManagementTools {
                         "{operation, world_id, version_id, position?}. Artifact operations attach_artifact and " +
                         "detach_artifact require {operation, artifact_id, subject_kind, subject_id, module_id?, " +
                         "slot?}. subject_kind is world, character_version, or game. content_json and profile_json " +
-                        "accept a JSON object or its serialized JSON string.",
+                        "accept a JSON object or its serialized JSON string. Use each module's content_example returned by inspect: " +
+                        "article {kind,text}, single_image {kind,description}, timeline {kind,nodes:[{time,title,description}]}, " +
+                        "collection {kind,items:[{id,name,summary,description}]}. Keep full details in description, not only summary. " +
+                        "Images use artifact attachment, never a guessed device path. Blank content may be {}.",
                 ),
             ),
             required = listOf("changes"),

@@ -155,7 +155,7 @@ private fun ModuleDraftRow(
                     value = module.name,
                     onValueChange = { onUpdate(it, document) },
                 )
-                ModuleDocumentFields(
+                SharedModuleDocumentFields(
                     document = document,
                     onChange = { onUpdate(module.name, it) },
                     modifier = Modifier.padding(top = 10.dp),
@@ -188,7 +188,7 @@ private fun ModuleDraftRow(
 }
 
 @Composable
-private fun ModuleDocumentFields(
+internal fun SharedModuleDocumentFields(
     document: ContentModuleDocument,
     onChange: (ContentModuleDocument) -> Unit,
     modifier: Modifier = Modifier,

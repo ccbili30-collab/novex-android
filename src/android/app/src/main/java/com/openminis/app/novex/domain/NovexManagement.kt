@@ -2,6 +2,7 @@ package com.openminis.app.novex.domain
 
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ContentModuleCatalog
+import com.openminis.app.data.character.ContentModuleDocumentContract
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.ModuleReferenceTarget
@@ -347,6 +348,7 @@ fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
                     .put("value", definition.value)
                     .put("label", definition.label)
                     .put("repeatable", definition.repeatable)
+                    .put("content_example", ContentModuleDocumentContract.example(definition.internalType))
             }))
         }
     })
@@ -693,13 +695,13 @@ object NovexManagementChangeCodec {
         when (change) {
             is NovexManagedChange.AddModule -> {
                 require(change.name.isNotBlank()) { "模块名称不能为空" }
-                JSONObject(change.contentJson)
+                ContentModuleDocumentContract.validate(change.contentJson, change.type)
             }
             is NovexManagedChange.UpdateModule -> {
                 require(change.moduleId.isNotBlank()) { "模块编号不能为空" }
                 require(change.name != null || change.contentJson != null) { "至少提供 name 或 content_json；未提供的字段保持原样" }
                 change.name?.let { require(it.isNotBlank()) { "模块名称不能为空" } }
-                change.contentJson?.let(::JSONObject)
+                change.contentJson?.let { ContentModuleDocumentContract.validate(it) }
             }
             is NovexManagedChange.MoveModule -> {
                 require(change.moduleId.isNotBlank()) { "模块编号不能为空" }

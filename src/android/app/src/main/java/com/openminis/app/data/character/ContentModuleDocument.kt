@@ -51,6 +51,17 @@ data class ContentModuleCollectionItem(
 object ContentModuleDocumentCodec {
     private const val CURRENT_VERSION = 1
 
+    /** Editing known fields must not erase extensions retained from an imported card. */
+    fun edit(originalJson: String, document: ContentModuleDocument): String {
+        if (document is ContentModuleDocument.Unsupported) return encode(document)
+        val merged = runCatching { JSONObject(originalJson) }.getOrDefault(JSONObject())
+        listOf("kind", "version", "text", "caption", "description", "nodes", "items",
+            "originalType", "presentation", "contentJson").forEach(merged::remove)
+        val edited = JSONObject(encode(document))
+        edited.keys().forEach { key -> merged.put(key, edited.get(key)) }
+        return merged.toString()
+    }
+
     fun encode(document: ContentModuleDocument): String = JSONObject().apply {
         put("version", CURRENT_VERSION)
         when (document) {
@@ -155,7 +166,12 @@ object ContentModuleDocumentCodec {
                 contentJson = root.optString("contentJson", "{}"),
             )
 
-            "" -> null
+            "" -> if (root.length() == 0 || root.has("text") || root.has("caption")) null else {
+                ContentModuleDocument.Unsupported(
+                    originalType = fallbackType?.name?.lowercase() ?: "unknown",
+                    contentJson = contentJson,
+                )
+            }
             else -> ContentModuleDocument.Unsupported(
                 originalType = fallbackType?.name?.lowercase()
                     ?: root.optString("originalType", "unknown"),
@@ -209,7 +225,7 @@ object ContentModuleDocumentCodec {
     }
 
     private fun legacyText(contentJson: String): String = runCatching {
-        JSONObject(contentJson).optString("text")
+        JSONObject(contentJson).let { it.optString("text", it.optString("caption")) }
     }.getOrElse { contentJson }
 
     private fun JSONArray?.objects(): List<JSONObject> = buildList {
@@ -229,11 +245,12 @@ fun ContentModuleDocument.toPlainText(): String = when (this) {
     }
 
     is ContentModuleDocument.Collection -> items.joinToString("\n") { item ->
-        when {
+        val heading = when {
             item.name.isNotBlank() && item.summary.isNotBlank() -> "${item.name}：${item.summary}"
             item.name.isNotBlank() -> item.name
             else -> item.summary
         }
+        listOf(heading, item.description).filter(String::isNotBlank).joinToString("\n")
     }
     is ContentModuleDocument.Unsupported -> "$originalType 暂不支持，原始内容已保留"
 }
