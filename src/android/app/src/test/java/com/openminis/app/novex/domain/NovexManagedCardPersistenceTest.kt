@@ -32,6 +32,59 @@ class NovexManagedCardPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun `created game restores long rules identity and usable preset controls after native exchange`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val path = File(files.root, "game.db").absolutePath
+        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+            .allowMainThreadQueries().build()
+        var database = openDatabase()
+        val media = File(files.root, "media")
+        var workspace = NovexWorkspaceFactory.create(database, media)
+        try {
+            val service = NovexManagementService(workspace,
+                CreativeArtifactRepository(database, CreativeArtifactFileStore(File(files.root, "artifacts"))),
+                NovexManagementTransaction { work -> database.withTransaction { work() } })
+            val rules = "每次重大选择保留主流与少数意见，不能保证改革必然成功。\n".repeat(400)
+            val operations = JSONArray().put(JSONObject().put("operation", "create_game")
+                .put("name", "记言之旅").put("launch_mode", "fixed_identity").put("player_identity", "年轻记言人")
+                .put("modules", JSONArray()
+                    .put(JSONObject().put("module_type", "game_narrative_rules").put("name", "推演规则")
+                        .put("content_json", JSONObject().put("kind", "article").put("text", rules)))
+                    .put(JSONObject().put("module_type", "game_quick_actions").put("name", "状态操作")
+                        .put("content_json", JSONObject("""{"kind":"collection","items":[{"id":"health","name":"查看体力","behavior":"view","stateKeys":["health"],"actionKey":"show.health"}]}""")))))
+            val configuration = NovexConversationConfigurationSnapshot("game-creation")
+            val proposal = service.propose(configuration, operations.toString(), "创建文游卡记言之旅", "game-roundtrip")
+            assertTrue(workspace.interactiveFictions().isEmpty())
+            val address = service.apply(configuration, proposal, proposal.confirmationPhrase).createdSubjects.single()
+            val before = requireNotNull(workspace.interactiveFiction(address.id))
+            val exported = workspace.apply(NovexCommand.ExportNativeInteractiveFiction(address.id)).requireNativeCard()
+            val transfer = NovexCardTransferParser.parse(NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)))
+            val copyId = workspace.apply(NovexCommand.ImportNativeCard(transfer)).requireNativeImport().localId
+            database.close()
+            database = openDatabase()
+            workspace = NovexWorkspaceFactory.create(database, media)
+            val copy = requireNotNull(workspace.interactiveFiction(copyId))
+            assertNotEquals(address.id, copyId)
+            assertEquals(2, workspace.interactiveFictions().size)
+            assertEquals(before.project.launchMode, copy.project.launchMode)
+            assertEquals("年轻记言人", copy.project.playerIdentity)
+            assertEquals(listOf("推演规则", "状态操作"), copy.modules.map { it.name })
+            assertEquals(rules, ContentModuleDocumentCodec.decode(copy.modules.first().contentJson).toPlainText())
+            assertTrue(workspace.apply(NovexCommand.ExportInteractiveFictionText(copyId)).requireText().contains(rules))
+            val runtime = InteractiveFictionRuntimeSnapshotFactory.create(copy)
+            val candidates = WorkspaceNovexContextLoader(workspace).load(configuration.copy(activeInteractiveFiction = runtime))
+            assertTrue(candidates.any { it.content == rules })
+            val control = runtime.presetControls.single()
+            assertEquals("show.health", control.actionKey)
+            val result = InteractiveFictionRuntime.invoke(control, PlaythroughState("branch", mapOf(
+                "health" to PlaythroughValue.Number(80.0), "secret" to PlaythroughValue.Text("不属于体力面板"))))
+            assertEquals(ConversationControlOutcome.View("查看体力", mapOf("health" to PlaythroughValue.Number(80.0))), result)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun `created character preserves full profile and modules through native exchange and reopen`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "character.db").absolutePath
