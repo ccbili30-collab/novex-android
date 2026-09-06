@@ -30,6 +30,13 @@ class NovexContextReadJournal(private val repository: ChatRepository) {
     }
 
     private fun observations(operation: String, payload: JSONObject): List<NovexSourceRead> = when (operation) {
+        "source_tool" -> payload.getJSONObject("data").getJSONArray("read_observations").objects().flatMap { source ->
+            val method = NovexSourceReadMethod.valueOf(source.getString("method"))
+            source.getJSONArray("ranges").objects().map { range ->
+                NovexSourceRead(source.getString("source_id"), source.getString("label"), source.getString("revision"),
+                    range.getInt("start"), range.getInt("end"), source.getInt("total_characters"), method)
+            }
+        }
         "read" -> listOf(observation(payload, payload.getInt("read_start"), payload.getInt("read_end"),
             payload.getString("text"), NovexSourceReadMethod.READ))
         "inspect" -> payload.getJSONArray("sources").objects().map {

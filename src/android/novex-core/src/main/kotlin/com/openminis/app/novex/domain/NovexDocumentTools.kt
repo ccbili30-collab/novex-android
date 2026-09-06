@@ -240,6 +240,7 @@ class NovexDocumentTools(
                 "block_count" to snapshot.blocks.size,
                 "table_count" to snapshot.blocks.count { it.kind == NovexDocumentBlockKind.TABLE },
                 "image_count" to snapshot.blocks.count { it.kind == NovexDocumentBlockKind.IMAGE },
+                "read_observations" to NovexSourceReadEvidence.document(snapshot, emptyList(), "PREVIEW"),
                 "outline" to outline,
                 "outline_truncated" to (
                     request.includeOutline && outlineBlocks.size > request.maxOutlineItems
@@ -298,6 +299,9 @@ class NovexDocumentTools(
 
         val data = linkedMapOf<String, Any?>(
             "document_ref" to snapshot.ref.value,
+            "read_observations" to NovexSourceReadEvidence.document(snapshot, returned,
+                if (cursor.selector is ReadSelector.Query) "SEARCH" else "READ"),
+            "coverage_scope" to "仅统计已解析文本；图片、无法识别及尚未提取的部分不在全文覆盖范围内",
             (if (request.compact) "passages" else "blocks") to
                 (if (request.compact) compactPassages(returned) else returned),
             "source_blocks_read" to returned.size,

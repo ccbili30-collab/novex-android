@@ -129,7 +129,7 @@ class NovexConversationWorkspaceTools(
                 affectedRefs = listOfNotNull(entry.workspaceRef.asResourceRef(), entry.artifactRef),
             )
         }
-        val text = runCatching { store.readBytes(scope, entry.workspaceRef).toString(Charsets.UTF_8) }
+        val bytes = runCatching { store.readBytes(scope, entry.workspaceRef) }
             .getOrElse {
                 return NovexToolResult.failure(
                     code = "workspace.content_unavailable",
@@ -137,6 +137,11 @@ class NovexConversationWorkspaceTools(
                     affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
                 )
             }
+        if (!sha256(bytes).equals(entry.sha256, ignoreCase = true)) return NovexToolResult.failure(
+            code = "workspace.read_conflict", summary = "文件读取时内容已经变化，请重新检查文件后再读",
+            affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
+        )
+        val text = bytes.toString(Charsets.UTF_8)
         val offset = request.cursor?.let { decodeCursor(it, entry) }
             ?: if (request.cursor == null) 0 else return NovexToolResult.failure(
                 code = "workspace.invalid_cursor",
@@ -159,6 +164,9 @@ class NovexConversationWorkspaceTools(
             "sha256" to entry.sha256,
             "content" to content,
             "char_offset" to offset,
+            "total_characters" to text.length,
+            "read_observations" to listOf(NovexSourceReadEvidence.source(entry.workspaceRef.value,
+                "工作区文件 · ${entry.workspaceRef.relativePath}", entry.sha256, text.length, "READ", listOf(offset to nextOffset))),
             "truncated" to truncated,
         )
         if (truncated) data["next_cursor"] = encodeCursor(entry, nextOffset)

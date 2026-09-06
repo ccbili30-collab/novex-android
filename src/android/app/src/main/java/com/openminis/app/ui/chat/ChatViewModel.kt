@@ -9023,7 +9023,7 @@ class ChatViewModel(
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
-            -> novexDocumentAgentTools.execute(name, argsJson)
+            -> recordNovexFileRead(novexDocumentAgentTools.execute(name, argsJson), requestMessageId, turnMessageId)
             NovexLearningToolRouter.LEARNING_PREPARE,
             NovexLearningToolRouter.LEARNING_READ -> novexLearningAgentTools.execute(name, argsJson)
             in com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter.TOOL_NAMES -> {
@@ -9032,7 +9032,7 @@ class ChatViewModel(
                     visibleBranchIds = activeBranchPathIds,
                     writeBranchId = assistantId,
                 )
-                novexWorkspaceAgentTools.execute(
+                recordNovexFileRead(novexWorkspaceAgentTools.execute(
                     name = name,
                     argumentsJson = argsJson,
                     scope = scope,
@@ -9042,9 +9042,31 @@ class ChatViewModel(
                         messageId = turnMessageId,
                         toolCallId = toolId,
                     ),
-                )
+                ), requestMessageId, turnMessageId)
             }
             else -> ToolExecutionResult("Unknown tool: $name", false)
+        }
+    }
+
+    private suspend fun recordNovexFileRead(result: ToolExecutionResult, requestMessageId: String?, responseMessageId: String): ToolExecutionResult {
+        if (!result.success) return result
+        val payload = runCatching { JSONObject(result.output) }.getOrNull() ?: return result
+        if (payload.optJSONObject("data")?.optJSONArray("read_observations") == null) return result
+        return try {
+            val receipt = novexContextUsageMutex.withLock {
+                com.openminis.app.novex.adapter.NovexContextReadJournal(chatRepository).record(
+                    conversationId = activeSessionId, requestMessageId = requireNotNull(requestMessageId) { "读取没有对应的用户请求" },
+                    responseMessageId = responseMessageId, activeMessageIds = activeBranchPathIds.toSet(),
+                    answerIdentity = currentNovexConfiguration().answerIdentity, effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
+                    operation = "source_tool", result = payload)
+            }
+            receipt.usage?.let { usage -> withContext(Dispatchers.Main) {
+                _messages.value = _messages.value.map { if (it.id == usage.requestMessageId) it.copy(novexContextUsage = usage) else it }
+            } }
+            result.copy(output = receipt.result.toString(2))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            ToolExecutionResult("阅读记录未能保存，本次没有返回正文：${failure.message ?: "请重试读取"}", false, toolTitle = result.toolTitle)
         }
     }
 
