@@ -263,7 +263,7 @@ class NovexConversationDraftPersistenceTest {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "migration.db").absolutePath
         fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_25_26).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27).allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
         try {

@@ -223,6 +223,9 @@ fun CatalogContentModuleDetailScreen(
                     onChange = { contentJson = ContentModuleDocumentCodec.edit(contentJson, it) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
+                module?.managementOwnerAddress()?.let { address ->
+                    com.openminis.app.ui.novex.NovexCardReferenceSection(address, sourceModuleId = moduleId)
+                }
                 NovexPrimaryButton(
                     label = if (saving) "保存中" else "保存",
                     onClick = ::save,

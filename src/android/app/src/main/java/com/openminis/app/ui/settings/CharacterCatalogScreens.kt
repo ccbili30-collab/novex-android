@@ -192,6 +192,8 @@ fun CatalogCharacterDetailScreen(
                     onChooseVersion = { versionSheet = true },
                     onOpenModule = onOpenModule,
                 )
+                com.openminis.app.ui.novex.NovexCardReferenceSection(
+                    com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenModule = onOpenModule)
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
                     onCreateVariant = onCreateVariant,
@@ -262,25 +264,31 @@ fun CatalogCharacterDetailScreen(
         )
         Spacer(Modifier.height(20.dp))
     }
-    if (confirmDeleteRoot && current != null) AlertDialog(
+    if (confirmDeleteRoot && current != null) {
+        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(current.aggregate.allVersions.map {
+            com.openminis.app.novex.domain.NovexContentAddress.characterVersion(it.id) })
+        AlertDialog(
         onDismissRequest = { confirmDeleteRoot = false },
         title = { Text("删除整个角色？") },
-        text = { Text("本体、全部分身及其世界关联会一并删除；已有对话中的快照仍保留。") },
+        text = { Text("本体、全部分身及其世界关联会一并删除；已有对话中的快照仍保留。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
         confirmButton = {
-            Button(onClick = {
+            Button(enabled = referenceImpact != null, onClick = {
                 confirmDeleteRoot = false
                 scope.launch { novex.apply(NovexCommand.DeleteCharacter(characterId)); onBack() }
             }) { Text("删除") }
         },
         dismissButton = { TextButton(onClick = { confirmDeleteRoot = false }) { Text("取消") } },
     )
+    }
     confirmDeleteVariant?.let { version ->
+        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(listOf(
+            com.openminis.app.novex.domain.NovexContentAddress.characterVersion(version.id)))
         AlertDialog(
             onDismissRequest = { confirmDeleteVariant = null },
             title = { Text("删除${version.label}？") },
-            text = { Text("这个分身会从所有世界移除，本体和其他分身不受影响。") },
+            text = { Text("这个分身会从所有世界移除，本体和其他分身不受影响。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}") },
             confirmButton = {
-                Button(onClick = {
+                Button(enabled = referenceImpact != null, onClick = {
                     confirmDeleteVariant = null
                     scope.launch {
                         novex.apply(NovexCommand.DeleteVariant(version.id))
@@ -464,7 +472,7 @@ private fun CharacterManagementActions(
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
         ) {
             TextButton(onClick = onCreateVariant) { Text("创建分身") }
-            TextButton(onClick = onExport) { Text("导出") }
+            TextButton(onClick = onExport) { Text("导出含依赖") }
             TextButton(onClick = onDuplicate) { Text("复制") }
             TextButton(onClick = onDelete) { Text(if (isVariant) "删除分身" else "删除角色") }
         }

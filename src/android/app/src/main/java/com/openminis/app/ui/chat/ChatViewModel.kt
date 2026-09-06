@@ -3993,8 +3993,15 @@ class ChatViewModel(
                 )
                 val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
                     val application = context.applicationContext as? com.openminis.app.MinisApp
-                    application?.novexWorkspace?.interactiveFiction(projectId)?.let { project ->
-                        val game = com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory.create(project)
+                    application?.novexWorkspace?.let { workspace ->
+                        val game = try {
+                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(projectId, startingConfiguration.backgroundSettings)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            _error.value = "文游尚未启动：${failure.message ?: "读取设定失败"}"
+                            return@let startingConfiguration
+                        }
                         if (game.playerIdentity != null && startingConfiguration.playerIdentity != null &&
                             game.playerIdentity != startingConfiguration.playerIdentity) {
                             _error.value = "文游的玩家身份与当前选择不同，尚未启动。请在对话编辑中选择文游并确认使用哪个身份。"

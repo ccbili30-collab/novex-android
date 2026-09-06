@@ -61,6 +61,7 @@ internal class NovexConversationDrafts(
     private val ownership: NovexDraftOwnershipPort,
     private val content: NovexContentPort,
     private val media: NovexMediaPort,
+    private val references: NovexCardReferencePort,
     private val delete: suspend (NovexConversationDraftCard) -> Unit,
 ) {
     suspend fun ensure(conversationId: String, now: Long): NovexConversationDraftSnapshot {
@@ -174,7 +175,7 @@ internal class NovexConversationDrafts(
                     kept += card.copy(isPrivate = false)
                     promoted += card.subject
                 }
-                card.subject in protected || card.subject in incoming || hasCatalogLinks(card) -> kept += card
+                card.subject in protected || card.subject in incoming || references.incoming(card.subject).isNotEmpty() || hasCatalogLinks(card) -> kept += card
                 else -> {
                     delete(card)
                     removed += card.subject
@@ -192,7 +193,7 @@ internal class NovexConversationDrafts(
         else -> false
     }
 
-    private suspend fun hasContent(card: NovexConversationDraftCard): Boolean = when (card.subject.kind) {
+    private suspend fun hasContent(card: NovexConversationDraftCard): Boolean = references.outgoing(card.subject).isNotEmpty() || when (card.subject.kind) {
         NovexContentKind.WORLD -> {
             val world = requireNotNull(catalog.world(card.rootId)) { "私有世界草稿已不存在，未执行清理" }
             world.name != "未命名世界" || world.overview.isNotBlank() || world.tagsJson.trim() != "[]" ||

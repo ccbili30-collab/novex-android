@@ -46,6 +46,9 @@ import org.json.JSONObject
  * managed files, ordering rules and reference cleanup stay behind this seam.
  */
 interface NovexWorkspace {
+    suspend fun referenceStatus(target: NovexReferenceTarget): NovexReferenceTargetStatus = NovexReferenceTargetStatus.MISSING_CARD
+    suspend fun referencesFrom(source: NovexContentAddress): List<NovexCardReference> = emptyList()
+    suspend fun referencesTo(target: NovexContentAddress): List<NovexCardReference> = emptyList()
     suspend fun conversationDrafts(conversationId: String): NovexConversationDraftSnapshot? = null
     suspend fun emptyConversationDrafts(conversationId: String): List<NovexConversationDraftCard> = emptyList()
     suspend fun worlds(): List<NovexWorldCard>
@@ -164,6 +167,8 @@ sealed interface NovexCommand {
     data class ReserveConversationDraftWrite(val conversationId: String, val reservation: NovexDraftWriteReservation) : NovexCommand
     data class ReleaseConversationDraftWrite(val conversationId: String, val planId: String) : NovexCommand
     data class AddConversationDraft(val conversationId: String, val kind: NovexContentKind, val now: Long = System.currentTimeMillis()) : NovexCommand
+    data class PutCardReference(val reference: NovexCardReference) : NovexCommand
+    data class RemoveCardReference(val id: String, val expectedSource: NovexContentAddress? = null) : NovexCommand
     data class FillConversationDraft(val conversationId: String, val subject: NovexContentAddress, val creation: NovexCommand) : NovexCommand
     data class EnsureConversationDrafts(val conversationId: String, val now: Long = System.currentTimeMillis()) : NovexCommand
     data class FinalizeConversationDrafts(val conversationId: String, val protectedSubjects: Set<NovexContentAddress> = emptySet()) : NovexCommand
@@ -348,6 +353,7 @@ sealed interface NovexCommand {
 }
 
 sealed interface NovexChange {
+    data class CardReferenceSaved(val reference: NovexCardReference) : NovexChange
     data class ConversationDraftsPrepared(val snapshot: NovexConversationDraftSnapshot) : NovexChange
     data class ConversationDraftsFinalized(val result: NovexDraftFinalization) : NovexChange
     data class WorldSaved(val world: WorldEntity) : NovexChange
@@ -491,7 +497,21 @@ internal class DefaultNovexWorkspace(
     private val media: NovexMediaPort,
     private val transaction: suspend (suspend () -> NovexChange) -> NovexChange,
     private val drafts: NovexDraftOwnershipPort = UnavailableNovexDraftOwnership,
+    private val cardReferences: NovexCardReferencePort = UnavailableNovexCardReferences,
 ) : NovexWorkspace {
+    private fun referencePackage() = NovexReferencePackage(this,
+        restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
+        exportSingle = { kind, id -> when (kind) {
+            NovexCardKind.WORLD -> exportWorldCard(id)
+            NovexCardKind.CHARACTER -> exportCharacterCard(id)
+            NovexCardKind.GAME -> exportInteractiveFictionCard(id)
+        } },
+        importSingle = { card, now, reconcile -> when (val document = card.document) {
+            is NovexWorldImportDocument -> importWorldCard(document, card, now, reconcile)
+            is NovexCharacterImportDocument -> importCharacterCard(document, card, now, reconcile)
+            is NovexInteractiveFictionImportDocument -> importInteractiveFictionCard(document, card, now)
+        } },
+        restoreLegacyLink = { world, version, position, now -> catalog.link(world, version, position, now) })
     override suspend fun conversationDrafts(conversationId: String) = drafts.load(conversationId)
 
     private suspend fun privateCards() = drafts.list().flatMap { it.cards }.filter { it.isPrivate }
@@ -626,12 +646,17 @@ internal class DefaultNovexWorkspace(
         applyInsideTransaction(command)
     }
 
+    override suspend fun referenceStatus(target: NovexReferenceTarget) = NovexCardReferences(cardReferences, catalog, interactiveFiction, content).status(target)
+
+    override suspend fun referencesFrom(source: NovexContentAddress) = cardReferences.outgoing(source)
+    override suspend fun referencesTo(target: NovexContentAddress) = cardReferences.incoming(target)
+
     override suspend fun characterForVersion(versionId: String): NovexCharacterSnapshot? =
         catalog.version(versionId)?.let { character(it.characterId) }
 
     override suspend fun emptyConversationDrafts(conversationId: String) = draftLifecycle().emptyCards(conversationId)
 
-    private fun draftLifecycle() = NovexConversationDrafts(catalog, interactiveFiction, drafts, content, media) { card ->
+    private fun draftLifecycle() = NovexConversationDrafts(catalog, interactiveFiction, drafts, content, media, cardReferences) { card ->
         val command = when (card.subject.kind) {
             NovexContentKind.WORLD -> NovexCommand.DeleteWorld(card.rootId)
             NovexContentKind.CHARACTER_VERSION -> NovexCommand.DeleteCharacter(card.rootId)
@@ -649,6 +674,16 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.ReleaseConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
             draftLifecycle().release(command.conversationId, command.planId),
         )
+        is NovexCommand.PutCardReference -> NovexChange.CardReferenceSaved(
+            NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(command.reference),
+        )
+        is NovexCommand.RemoveCardReference -> {
+            command.expectedSource?.let { source ->
+                require(cardReferences.get(command.id)?.source == source) { "引用不存在或不属于指定来源卡片" }
+            }
+            cardReferences.delete(command.id)
+            NovexChange.Completed
+        }
         is NovexCommand.AddConversationDraft -> NovexChange.ConversationDraftsPrepared(
             draftLifecycle().add(command.conversationId, command.kind, command.now),
         )
@@ -711,9 +746,11 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.DeleteWorld -> {
             content.list(ModuleOwner.world(command.worldId)).forEach { module ->
                 removeModuleMedia(module)
+                cardReferences.deleteSourceModule(module.id)
                 content.delete(module.id)
             }
             media.removeAll(ModuleOwner.world(command.worldId))
+            cardReferences.deleteSource(NovexContentAddress.world(command.worldId))
             catalog.deleteWorld(command.worldId)
             NovexChange.Completed
         }
@@ -773,22 +810,17 @@ internal class DefaultNovexWorkspace(
             )
         }
         is NovexCommand.ImportNativeCard -> {
-            val localId = when (val document = command.card.document) {
-                is NovexWorldImportDocument -> importWorldCard(document, command.card, command.now)
-                is NovexCharacterImportDocument -> importCharacterCard(document, command.card, command.now)
-                is NovexInteractiveFictionImportDocument ->
-                    importInteractiveFictionCard(document, command.card, command.now)
-            }
+            val localId = referencePackage().import(command.card, command.now)
             NovexChange.NativeCardImported(command.card.document.kind(), localId)
         }
         is NovexCommand.ExportNativeWorld -> NovexChange.NativeCardExported(
-            exportWorldCard(command.worldId),
+            referencePackage().export(NovexCardKind.WORLD, command.worldId),
         )
         is NovexCommand.ExportNativeCharacter -> NovexChange.NativeCardExported(
-            exportCharacterCard(command.characterId),
+            referencePackage().export(NovexCardKind.CHARACTER, command.characterId),
         )
         is NovexCommand.ExportNativeInteractiveFiction -> NovexChange.NativeCardExported(
-            exportInteractiveFictionCard(command.projectId),
+            referencePackage().export(NovexCardKind.GAME, command.projectId),
         )
         is NovexCommand.ExportInteractiveFictionText -> {
             val snapshot = requireNotNull(interactiveFiction(command.projectId)) { "文游不存在" }
@@ -848,9 +880,11 @@ internal class DefaultNovexWorkspace(
             val owner = ModuleOwner.interactiveFiction(command.projectId)
             content.list(owner).forEach { module ->
                 removeModuleMedia(module)
+                cardReferences.deleteSourceModule(module.id)
                 content.delete(module.id)
             }
             media.removeAll(owner)
+            cardReferences.deleteSource(NovexContentAddress.interactiveFiction(command.projectId))
             interactiveFiction.delete(command.projectId)
             NovexChange.Completed
         }
@@ -1020,6 +1054,7 @@ internal class DefaultNovexWorkspace(
         )
         is NovexCommand.DeleteModule -> {
             content.module(command.moduleId)?.let { removeModuleMedia(it) }
+            cardReferences.deleteSourceModule(command.moduleId)
             content.delete(command.moduleId)
             NovexChange.Completed
         }
@@ -1073,6 +1108,7 @@ internal class DefaultNovexWorkspace(
         val desiredIds = drafts.map(NovexModuleDraft::id).toSet()
         existing.values.filter { it.id !in desiredIds }.forEach { removed ->
             removeModuleMedia(removed)
+            cardReferences.deleteSourceModule(removed.id)
             content.delete(removed.id)
         }
         drafts.forEach { draft ->
@@ -1194,9 +1230,11 @@ internal class DefaultNovexWorkspace(
     }
 
     private suspend fun deleteVersionContents(versionId: String) {
+        cardReferences.deleteSource(NovexContentAddress.characterVersion(versionId))
         val owner = ModuleOwner.characterVersion(versionId)
         content.list(owner).forEach { module ->
             removeModuleMedia(module)
+            cardReferences.deleteSourceModule(module.id)
             content.delete(module.id)
         }
         media.removeAll(owner)
@@ -1245,6 +1283,7 @@ internal class DefaultNovexWorkspace(
         document: NovexWorldImportDocument,
         card: NovexValidatedCardImport,
         now: Long,
+        reconcileLegacyLinks: Boolean = true,
     ): String {
         val world = catalog.createWorld(
             name = document.name,
@@ -1268,7 +1307,7 @@ internal class DefaultNovexWorkspace(
         val versionsBySourceId = catalog.listVersions().mapNotNull { version ->
             version.sourceId()?.let { it to version }
         }.toMap()
-        document.characterVersionLinks.forEachIndexed { index, link ->
+        if (reconcileLegacyLinks) document.characterVersionLinks.forEachIndexed { index, link ->
             versionsBySourceId[link.sourceVersionId]?.let { version ->
                 catalog.link(world.id, version.id, index, now)
             }
@@ -1280,6 +1319,7 @@ internal class DefaultNovexWorkspace(
         document: NovexCharacterImportDocument,
         card: NovexValidatedCardImport,
         now: Long,
+        reconcileLegacyLinks: Boolean = true,
     ): String {
         val originalDocument = document.versions.single { it.kind == CharacterVersionKind.ORIGINAL }
         val aggregate = catalog.createCharacter(
@@ -1313,7 +1353,7 @@ internal class DefaultNovexWorkspace(
         restoreImportedModuleReferences(importedModules, now, importedVersions.associate { (version, document) ->
             ModuleReferenceTarget.characterVersion(document.sourceId) to ModuleReferenceTarget.characterVersion(version.id)
         })
-        reconcileImportedCharacterLinks(importedVersions, now)
+        if (reconcileLegacyLinks) reconcileImportedCharacterLinks(importedVersions, now)
         return aggregate.character.id
     }
 

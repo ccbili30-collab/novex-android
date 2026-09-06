@@ -12,6 +12,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 sealed interface NovexManagedChange {
+    data class PutCardReference(val reference: NovexCardReference) : NovexManagedChange
+    data class RemoveCardReference(val source: NovexContentAddress, val referenceId: String) : NovexManagedChange
     data class AddModule(
         val owner: ModuleOwner,
         val type: ContentModuleType,
@@ -174,7 +176,8 @@ object NovexManagementPolicy {
                 it is NovexManagedChange.LinkCharacterVersion ||
                     it is NovexManagedChange.UnlinkCharacterVersion ||
                     it is NovexManagedChange.AddModuleReference ||
-                    it is NovexManagedChange.RemoveModuleReference
+                it is NovexManagedChange.RemoveModuleReference
+                    || it is NovexManagedChange.PutCardReference || it is NovexManagedChange.RemoveCardReference
             } -> NovexManagementRisk.CROSS_PROJECT
             createChanges.any {
                 it is NovexManagedChange.CreateWorld ||
@@ -233,6 +236,9 @@ data class NovexManagementInspection(
     val modules: List<com.openminis.app.data.character.ContentModuleEntity>,
     val selectedModule: NovexModuleDetail?,
     val draftTargets: List<NovexConversationDraftCard> = emptyList(),
+    val cardReferences: List<NovexCardReference> = emptyList(),
+    val cardBacklinks: List<NovexCardReference> = emptyList(),
+    val referenceStatuses: Map<String, NovexReferenceTargetStatus> = emptyMap(),
 )
 
 data class NovexManagementApplyResult(
@@ -333,6 +339,11 @@ object NovexManagementLaunchModes {
 
 /** Provider-neutral inspection payload, including the legal values needed for the next call. */
 fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
+    put("reference_purposes", JSONArray(NovexReferencePurpose.entries.map {
+        JSONObject().put("value", it.wireName).put("label", it.label)
+    }))
+    put("card_references", JSONArray(cardReferences.map { it.managementJson(referenceStatuses[it.id]) }))
+    put("card_backlinks", JSONArray(cardBacklinks.map { it.managementJson(null) }))
     put("game_launch_modes", NovexManagementLaunchModes.toJson())
     put("private_creation_targets", JSONArray(draftTargets.map { card ->
         JSONObject().put("kind", card.subject.kind.managementWireName()).put("id", card.subject.id)
@@ -423,6 +434,11 @@ class NovexManagementService(
                 workspace.modules(subject.toModuleOwner()).modules
             else -> emptyList()
         }
+        val referenceOwner = subject ?: selectedModule?.module?.owner?.toAddress()
+        val references = referenceOwner?.let { workspace.referencesFrom(it) }.orEmpty()
+            .filter { moduleId == null || it.sourceModuleId == moduleId }
+        val backlinks = referenceOwner?.let { workspace.referencesTo(it) }.orEmpty()
+            .filter { moduleId == null || it.target.moduleId == moduleId }
         return NovexManagementInspection(
             subjects = configuration.managedSubjects.map { managed ->
                 NovexManagedSubjectInspection(
@@ -436,6 +452,9 @@ class NovexManagementService(
             modules = modules,
             selectedModule = selectedModule,
             draftTargets = workspace.emptyConversationDrafts(configuration.conversationId),
+            cardReferences = references,
+            cardBacklinks = backlinks,
+            referenceStatuses = references.associate { it.id to workspace.referenceStatus(it.target) },
         )
     }
 
@@ -541,6 +560,9 @@ class NovexManagementService(
     }
 
     private suspend fun factsFor(changes: List<NovexManagedChange>): NovexManagementFacts {
+        changes.filterIsInstance<NovexManagedChange.RemoveCardReference>().forEach { change ->
+            require(workspace.referencesFrom(change.source).any { it.id == change.referenceId }) { "引用不存在或不属于指定来源卡片" }
+        }
         val moduleIds = changes.flatMap { change ->
             when (change) {
                 is NovexManagedChange.UpdateModule -> listOf(change.moduleId)
@@ -667,6 +689,16 @@ object NovexManagementChangeCodec {
         return List(values.length()) { index ->
             val value = values.getJSONObject(index)
             when (value.getString("operation")) {
+                "put_card_reference" -> NovexManagedChange.PutCardReference(NovexCardReference(
+                    id = value.getString("reference_id"), source = value.contentAddress(),
+                    target = NovexReferenceTarget(value.cardTargetAddress(),
+                        value.optString("target_module_id").ifBlank { null }, value.optString("target_entry_id").ifBlank { null }),
+                    purpose = NovexReferencePurpose.entries.firstOrNull { it.wireName == value.getString("purpose") }
+                        ?: error("引用用途无效；合法值：${NovexReferencePurpose.entries.joinToString { it.wireName }}"),
+                    sourceModuleId = value.optString("source_module_id").ifBlank { null },
+                    position = value.optInt("position"), targetLabel = value.optString("target_label"),
+                ))
+                "remove_card_reference" -> NovexManagedChange.RemoveCardReference(value.contentAddress(), value.getString("reference_id"))
                 "add_module" -> value.subjectOwner().let { owner ->
                     NovexManagedChange.AddModule(
                         owner = owner,
@@ -814,6 +846,8 @@ private fun requireArtifactModuleOwner(
 }
 
 private fun NovexManagedChange.targets(facts: NovexManagementFacts): List<NovexContentAddress> = when (this) {
+    is NovexManagedChange.PutCardReference -> listOf(reference.source)
+    is NovexManagedChange.RemoveCardReference -> listOf(source)
     is NovexManagedChange.AddModule -> listOf(owner.toAddress())
     is NovexManagedChange.UpdateModule -> listOf(requireNotNull(facts.moduleOwners[moduleId]) { "模块不存在" }.toAddress())
     is NovexManagedChange.MoveModule -> listOf(requireNotNull(facts.moduleOwners[moduleId]) { "模块不存在" }.toAddress())
@@ -904,6 +938,8 @@ private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
 }
 
 private fun NovexManagedChange.summary(): String = when (this) {
+    is NovexManagedChange.PutCardReference -> "设置${reference.purpose.label}引用（目标 ${reference.target.subject.id}）"
+    is NovexManagedChange.RemoveCardReference -> "移除卡片引用 $referenceId，保留目标卡片"
     is NovexManagedChange.AddModule -> "新增模块“$name”"
     is NovexManagedChange.UpdateModule -> "修改模块“${name ?: moduleId}”"
     is NovexManagedChange.MoveModule -> "调整模块顺序"
@@ -955,6 +991,8 @@ private fun NovexManagedChange.toCommand(
     facts: NovexManagementFacts,
     currentModule: com.openminis.app.data.character.ContentModuleEntity? = null,
 ): NovexCommand = when (this) {
+    is NovexManagedChange.PutCardReference -> NovexCommand.PutCardReference(reference)
+    is NovexManagedChange.RemoveCardReference -> NovexCommand.RemoveCardReference(referenceId, source)
     is NovexManagedChange.AddModule -> NovexCommand.AddModule(
         owner = owner,
         type = type,
@@ -1047,6 +1085,20 @@ private fun JSONObject.referenceTarget(): ModuleReferenceTarget = when (getStrin
     "module" -> ModuleReferenceTarget.module(getString("target_id"))
     else -> error("未知关联对象类型")
 }
+
+private fun JSONObject.cardTargetAddress(): NovexContentAddress = when (getString("target_kind")) {
+    "world" -> NovexContentAddress.world(getString("target_id"))
+    "character_version" -> NovexContentAddress.characterVersion(getString("target_id"))
+    "game" -> NovexContentAddress.interactiveFiction(getString("target_id"))
+    else -> error("卡片引用目标类型无效；合法值：world（世界）、character_version（角色版本）、game（文游）")
+}
+
+private fun NovexCardReference.managementJson(status: NovexReferenceTargetStatus?): JSONObject = JSONObject()
+    .put("reference_id", id).put("subject_kind", source.kind.managementWireName()).put("subject_id", source.id)
+    .put("source_module_id", sourceModuleId).put("target_kind", target.subject.kind.managementWireName())
+    .put("target_id", target.subject.id).put("target_module_id", target.moduleId).put("target_entry_id", target.entryId)
+    .put("purpose", purpose.wireName).put("purpose_label", purpose.label).put("target_label", targetLabel)
+    .put("status", status?.label).put("position", position)
 
 private fun JSONObject.jsonText(key: String): String = when (val value = opt(key)) {
     is JSONObject, is JSONArray -> value.toString()

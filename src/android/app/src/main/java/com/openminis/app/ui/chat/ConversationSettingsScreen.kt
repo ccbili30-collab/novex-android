@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +50,8 @@ import com.openminis.app.novex.domain.NovexPersonaPresets
 import com.openminis.app.novex.domain.ConversationControlBehavior
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlSource
-import com.openminis.app.novex.domain.InteractiveFictionRuntimeSnapshotFactory
+import com.openminis.app.novex.adapter.NovexGameSnapshotAssembler
+import kotlinx.coroutines.launch
 import com.openminis.app.novex.domain.ManagedAccess
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
@@ -120,7 +122,8 @@ fun ConversationSettingsScreen(
     var pendingContentPlans by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var privateOptions by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     var options by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
-    var gameSnapshots by remember { mutableStateOf<Map<String, ActiveInteractiveFictionSnapshot>>(emptyMap()) }
+    val scope = rememberCoroutineScope()
+    var preparingGame by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<ConversationPicker?>(null) }
     var pendingGame by remember { mutableStateOf<ActiveInteractiveFictionSnapshot?>(null) }
     var expandedPlaythrough by remember { mutableStateOf<Int?>(null) }
@@ -199,18 +202,11 @@ fun ConversationSettingsScreen(
                 )
             }
             options = (worlds + characters + games + artifactOptions + privateOptions).distinctBy { it.address }
-            gameSnapshots = gameCards.mapNotNull { card ->
-                workspace.interactiveFiction(card.project.id)?.let { snapshot ->
-                    card.project.id to InteractiveFictionRuntimeSnapshotFactory.create(snapshot)
-                }
-            }.toMap() + ownCards.filter { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.mapNotNull { card ->
-                workspace.interactiveFiction(card.rootId)?.let { card.rootId to InteractiveFictionRuntimeSnapshotFactory.create(it) }
-            }.toMap()
         }.onFailure { error = "读取内容库失败：${it.message ?: "未知错误"}" }
     }
 
     fun save() {
-        if (saving) return
+        if (saving || preparingGame) return
         saving = true
         viewModel.saveConversationSettings(draft.toSettings(), expectedConfigurationJson = baseline?.settings?.novexConfigurationJson) { result ->
             saving = false
@@ -333,6 +329,7 @@ fun ConversationSettingsScreen(
             header = "活动文游",
             footer = "结束文游后恢复启动前身份，保留消息、状态与存档。返回列表不结束文游。",
         ) {
+            if (preparingGame) NovexSummaryRow("准备文游", "正在固定本局采用的设定…")
             draft.configuration.activeInteractiveFiction?.let { active ->
                 NovexSummaryRow("正在运行", active.title)
                 NovexTextActionRow("结束文游并恢复原身份", onClick = { draft = draft.deactivateGame() })
@@ -592,13 +589,25 @@ fun ConversationSettingsScreen(
     picker?.let { active ->
         NovexSelectionSheet(
             title = active.pickerTitle(),
-            actions = pickerActions(active, options, draft, gameSnapshots, onGameSelected = { game ->
-                val currentPlayer = draft.configuration.playerIdentity
-                if (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer) {
-                    pendingGame = game
+            actions = pickerActions(active, options, draft, onGameSelected = { projectId ->
+                if (!preparingGame) {
+                    preparingGame = true
                     picker = null
-                } else {
-                    draft = draft.activateGame(game)
+                    val expected = draft.configuration
+                    scope.launch {
+                        try {
+                            val game = NovexGameSnapshotAssembler(workspace).create(projectId, expected.backgroundSettings)
+                            require(draft.configuration == expected) { "准备文游期间对话设定已改变，请重新选择文游" }
+                            val currentPlayer = draft.configuration.playerIdentity
+                            if (game.playerIdentity != null && currentPlayer != null && game.playerIdentity != currentPlayer) {
+                                pendingGame = game
+                            } else draft = draft.activateGame(game)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            error = "文游尚未启动：${failure.message ?: "读取设定失败"}"
+                        } finally { preparingGame = false }
+                    }
                 }
             }) { updated -> draft = updated },
             onDismissRequest = { picker = null },
@@ -648,8 +657,7 @@ private fun pickerActions(
     picker: ConversationPicker,
     options: List<ConversationContentOption>,
     draft: NovexConversationEditorDraftState,
-    games: Map<String, ActiveInteractiveFictionSnapshot>,
-    onGameSelected: (ActiveInteractiveFictionSnapshot) -> Unit,
+    onGameSelected: (String) -> Unit,
     update: (NovexConversationEditorDraftState) -> Unit,
 ): List<NovexSelectionAction> = when (picker) {
     ConversationPicker.ANSWER -> listOf(
@@ -679,7 +687,7 @@ private fun pickerActions(
         }
     ConversationPicker.GAME -> options.filter { it.address.kind == NovexContentKind.INTERACTIVE_FICTION }.map { option ->
         NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
-            games[option.address.id]?.let(onGameSelected)
+            onGameSelected(option.address.id)
         }
     }
     ConversationPicker.MANAGED -> options

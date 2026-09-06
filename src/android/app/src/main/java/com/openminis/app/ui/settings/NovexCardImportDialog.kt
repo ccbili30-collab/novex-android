@@ -48,6 +48,12 @@ internal fun NovexCardImportPreviewDialog(
             "${preview.media.size} 张图片",
         )
     }
+    val bundle = org.json.JSONObject(preview.document.originalJson).optJSONObject("referenceBundle")
+    val dependencyNames = bundle?.optJSONArray("cards")?.let { cards ->
+        (0 until cards.length()).mapNotNull { index -> cards.optJSONObject(index)?.takeIf {
+            it.optString("key") != bundle.optString("root")
+        }?.optString("name") }
+    }.orEmpty()
     AlertDialog(
         onDismissRequest = { if (!importing) onDismiss() },
         shape = RoundedCornerShape(20.dp),
@@ -63,6 +69,14 @@ internal fun NovexCardImportPreviewDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 summary.forEach { line -> Text(line, modifier = Modifier.padding(top = 8.dp)) }
+                if (bundle != null) {
+                    Text("同时导入 ${dependencyNames.size} 张依赖卡片、${bundle.optJSONArray("references")?.length() ?: 0} 条带用途引用。",
+                        modifier = Modifier.padding(top = 8.dp))
+                    if (dependencyNames.isNotEmpty()) Text(dependencyNames.take(12).joinToString("、") +
+                        if (dependencyNames.size > 12) "等" else "", modifier = Modifier.padding(top = 4.dp))
+                    Text("包内依赖使用新编号相互连接；缺失目标保留为待修复引用，不按重名匹配。",
+                        style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+                }
                 Text(
                     "确认前不会写入数据库；重名默认创建独立副本。导入不会执行模型、工具或其他外部操作。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

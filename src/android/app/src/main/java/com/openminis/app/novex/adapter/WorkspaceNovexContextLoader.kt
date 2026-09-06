@@ -30,9 +30,15 @@ data class NovexLegacyContext(
 class WorkspaceNovexContextLoader(
     private val workspace: NovexWorkspace,
     private val legacy: NovexLegacyContext = NovexLegacyContext(),
+    private val expandReferences: Boolean = true,
 ) {
     suspend fun load(configuration: NovexConversationConfigurationSnapshot): List<NovexContextCandidate> {
         val candidates = mutableListOf<NovexContextCandidate>()
+        val frozenContext = configuration.activeInteractiveFiction?.let {
+            com.openminis.app.novex.domain.NovexFrozenContextCodec.read(it.contentJson)
+        }.orEmpty()
+        val frozenBackgrounds = frozenContext.filter { it.actorVersionId == null && it.target.moduleId == null }
+            .mapTo(mutableSetOf()) { it.target.subject }
         when (val identity = configuration.answerIdentity) {
             AnswerIdentity.Nova -> candidates.add(NovexContextCandidate(
                 sourceId = "answer-identity:nova",
@@ -77,9 +83,11 @@ class WorkspaceNovexContextLoader(
             )
         }
         val backgroundWorldIds = configuration.backgroundSettings
+            .filterNot { it.subject in frozenBackgrounds }
             .filter { it.subject.kind == NovexContentKind.WORLD }
             .map { it.subject.id }
         val backgroundVersionIds = configuration.backgroundSettings
+            .filterNot { it.subject in frozenBackgrounds }
             .filter { it.subject.kind == NovexContentKind.CHARACTER_VERSION }
             .map { it.subject.id }
         val identityVersionId = (configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.versionId
@@ -108,7 +116,9 @@ class WorkspaceNovexContextLoader(
             )
         }
 
-        val requestedVersions = (backgroundVersionIds + listOfNotNull(identityVersionId)).distinct()
+        val frozenActor = frozenContext.any { it.actorVersionId != null && it.actorVersionId == identityVersionId }
+        val requestedVersions = (backgroundVersionIds + listOfNotNull(identityVersionId))
+            .filterNot { frozenActor && it == identityVersionId }.distinct()
         if (requestedVersions.isNotEmpty()) {
             requestedVersions.forEach { versionId ->
                 val identity = versionId == identityVersionId
@@ -167,7 +177,29 @@ class WorkspaceNovexContextLoader(
             }
         }
 
+        if (expandReferences) {
+            val reader = NovexReferenceContextReader(workspace)
+            val roots = backgroundWorldIds.map { com.openminis.app.novex.domain.NovexContentAddress.world(it) } +
+                requestedVersions.map { com.openminis.app.novex.domain.NovexContentAddress.characterVersion(it) }
+            val alreadyRead = roots.mapTo(mutableSetOf()) { com.openminis.app.novex.domain.NovexReferenceTarget(it) }
+            roots.forEach { address ->
+                val root = com.openminis.app.novex.domain.NovexReferenceTarget(address)
+                com.openminis.app.novex.domain.NovexReferenceTraversal.collect(root, setOf(
+                    com.openminis.app.novex.domain.NovexReferencePurpose.BACKGROUND,
+                    com.openminis.app.novex.domain.NovexReferencePurpose.RULES,
+                )) { target ->
+                    if (target == root) reader.references(target)
+                    else reader.read(target)?.let { context ->
+                        if (alreadyRead.add(target)) candidates += context
+                        if (context.isEmpty()) emptyList() else reader.references(target)
+                    }
+                }
+            }
+        }
         configuration.activeInteractiveFiction?.let { active ->
+            frozenContext.filter { it.actorVersionId == null || it.actorVersionId == identityVersionId }.forEach { frozen ->
+                candidates += frozen.candidates
+            }
             candidates += gameCandidates(active.snapshotId, active.title, active.contentJson,
                 includeLegacyPlayer = active.playerIdentity == null && configuration.playerIdentity == null,
                 playthroughId = configuration.effectivePlaythroughId.orEmpty())
@@ -179,7 +211,9 @@ class WorkspaceNovexContextLoader(
         ownerLabel: String,
         modules: List<ContentModuleEntity>,
         kind: ContextSourceKind = ContextSourceKind.BACKGROUND_MODULE,
-    ): List<NovexContextCandidate> = modules.sortedBy(ContentModuleEntity::position).map { module ->
+    ): List<NovexContextCandidate> = modules
+        .filterNot { it.type == com.openminis.app.data.character.ContentModuleType.GAME_PLAYER_IDENTITY }
+        .sortedBy(ContentModuleEntity::position).map { module ->
         val document = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
         val references = workspace.module(module.id)?.references.orEmpty()
         NovexContextCandidate(

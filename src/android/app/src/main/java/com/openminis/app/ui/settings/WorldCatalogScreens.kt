@@ -209,6 +209,7 @@ fun CatalogWorldDetailScreen(
             }
             else -> {
                 WorldPrimaryContent(current, onOpenModule)
+                com.openminis.app.ui.novex.NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
                 WorldCharacterStrip(
                     data = current,
                     onOpenCharacter = onOpenCharacter,
@@ -266,7 +267,7 @@ fun CatalogWorldDetailScreen(
                 }
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
-                        label = "导出 Novex 世界卡",
+                        label = "导出诺文世界卡（含引用依赖）",
                         icon = com.openminis.app.R.drawable.ic_phosphor_arrow_up,
                         onClick = {
                             scope.launch {
@@ -603,10 +604,11 @@ fun CatalogWorldEditorScreen(
         NovexNoticeDialog("保存失败", message ?: "未知错误") { error = null }
     }
     if (confirmDelete && worldId != null) {
+        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(listOf(NovexContentAddress.world(worldId)))
         com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog(
             title = "删除世界？",
-            message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。",
-            confirming = deleting,
+            message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
+            confirming = deleting || referenceImpact == null,
             onDismiss = { confirmDelete = false },
             onConfirm = {
                 deleting = true

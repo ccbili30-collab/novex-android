@@ -159,6 +159,8 @@ fun CatalogInteractiveFictionDetailScreen(
             ) { CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp) }
             else -> {
                 InteractiveFictionPrimaryContent(current, onOpenModule)
+                com.openminis.app.ui.novex.NovexCardReferenceSection(
+                    com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenModule = onOpenModule)
                 NovexContentSection(title = "使用与分享") {
                     NovexTextActionRow(
                         label = "分享到新对话",
@@ -175,7 +177,7 @@ fun CatalogInteractiveFictionDetailScreen(
                         },
                     )
                     NovexTextActionRow(
-                        label = "导出 Novex 文游卡",
+                        label = "导出诺文文游卡（含引用依赖）",
                         icon = R.drawable.ic_phosphor_arrow_up,
                         onClick = {
                             scope.launch {
@@ -417,10 +419,13 @@ fun CatalogInteractiveFictionEditorScreen(
         },
     )
     error?.let { message -> NovexNoticeDialog("操作失败", message) { error = null } }
-    if (confirmDelete && projectId != null) NovexDestructiveConfirmationDialog(
+    if (confirmDelete && projectId != null) {
+        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(listOf(
+            com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId)))
+        NovexDestructiveConfirmationDialog(
         title = "删除文游？",
-        message = "将删除共享文游及其模块；已经创建的对话快照不会被改写。仍被引用的图片受引用保护。此操作无法撤销。",
-        confirming = deleting,
+        message = "将删除共享文游及其模块；已经创建的对话快照不会被改写。仍被引用的图片受引用保护。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
+        confirming = deleting || referenceImpact == null,
         onDismiss = { confirmDelete = false },
         onConfirm = {
             deleting = true
@@ -435,6 +440,7 @@ fun CatalogInteractiveFictionEditorScreen(
             }
         },
     )
+    }
 }
 
 @Composable

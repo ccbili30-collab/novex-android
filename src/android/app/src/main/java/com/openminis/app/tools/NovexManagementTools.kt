@@ -21,7 +21,8 @@ object NovexManagementTools {
             description = "Read Novex worlds, character versions, games and modules mounted in the current " +
                 "conversation management workspace. Omit all parameters to list mounted subjects and legal " +
                 "module types with writable content_example documents and game_launch_modes, including before creating the first card. This tool " +
-                "never changes content and cannot inspect unmounted subjects.",
+                "never changes content and cannot inspect unmounted subjects. " +
+                "同时返回 card_references（向外引用）、card_backlinks（使用来源）、reference_purposes（合法用途）；这些目录不会授予目标卡片的读写权限。",
             parameters = mapOf(
                 "subject_kind" to AgentToolParam(
                     type = "string",
@@ -52,7 +53,15 @@ object NovexManagementTools {
                         "content_json?}; provide at least one field, omitted fields are preserved (content_json replaces the supplied document). " +
                         "move_module requires {operation, module_id, to_index}; delete_module " +
                         "requires {operation, module_id}. Reference operations add_reference and remove_reference " +
-                        "require {operation, module_id, target_kind, target_id, position?}. Create operations: " +
+                        "require {operation, module_id, target_kind, target_id, position?}. " +
+                        "带用途卡片引用使用 put_card_reference（新增或替换引用），参数为 " +
+                        "{operation,subject_kind,subject_id,reference_id,target_kind,target_id,purpose,source_module_id?,target_module_id?,target_entry_id?,target_label?,position?}。" +
+                        "只需来源卡片的编辑权限，不修改目标卡片。target_kind（目标类型）为 world（世界）、character_version（角色版本）、game（文游）；" +
+                        "purpose（用途）为 background（背景）、answer_identity（回答身份）、player_identity（玩家身份）、rules（规则）、management（管理目标）。" +
+                        "新增时提供唯一 reference_id（引用编号）；替换已有身份必须沿用原引用编号，不能添加第二个回答身份。回答身份只指向完整角色版本。" +
+                        "remove_card_reference（移除卡片引用）使用 {operation,subject_kind,subject_id,reference_id}，保留独立目标。" +
+                        "示例：{\"operation\":\"put_card_reference\",\"subject_kind\":\"game\",\"subject_id\":\"已返回的文游编号\",\"reference_id\":\"独立引用编号\",\"target_kind\":\"world\",\"target_id\":\"已返回的世界编号\",\"purpose\":\"background\"}。" +
+                        "不得按重名猜测编号；这些操作不启动游戏、不切换当前对话身份，也不改写已采用的游玩快照。 Create operations: " +
                         "create_world requires {operation, name, overview?, modules?}; create_character requires {operation, " +
                         "name, profile_json, modules?}; create_character_version requires {operation, source_version_id, " +
                         "label, profile_json}; create_game requires {operation, name, summary?, launch_mode?, " +
