@@ -96,6 +96,7 @@ enum class NovexManagementRisk {
     CROSS_PROJECT,
     DESTRUCTIVE,
     CREATE_GLOBAL,
+    CREATE_PRIVATE,
 }
 
 data class NovexManagementPlan(
@@ -106,6 +107,8 @@ data class NovexManagementPlan(
     val risk: NovexManagementRisk,
     val summary: String,
     val impact: List<String> = emptyList(),
+    val draftTargets: Map<Int, NovexContentAddress> = emptyMap(),
+    val authorizedUserRequest: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "变更计划编号不能为空" }
@@ -113,11 +116,13 @@ data class NovexManagementPlan(
         require(changes.isNotEmpty()) { "变更计划不能为空" }
     }
 
-    val requiresConfirmation: Boolean get() = true
+    val requiresConfirmation: Boolean get() = authorizedUserRequest.isNullOrBlank() ||
+        changes.indices.any { it !in draftTargets || changes[it].draftKind() == null }
     val confirmationPhrase: String get() = "确认执行 ${id.take(8)}"
 
     /** Confirmation text is supplied by the real user turn, never by tool arguments. */
-    fun isConfirmedBy(userText: String): Boolean = userText.trim() == confirmationPhrase
+    fun isConfirmedBy(userText: String): Boolean = userText.trim() == confirmationPhrase ||
+        (!requiresConfirmation && userText.trim() == authorizedUserRequest?.trim())
 }
 
 object NovexManagementPolicy {
@@ -227,6 +232,7 @@ data class NovexManagementInspection(
     val selectedSubjectJson: String?,
     val modules: List<com.openminis.app.data.character.ContentModuleEntity>,
     val selectedModule: NovexModuleDetail?,
+    val draftTargets: List<NovexConversationDraftCard> = emptyList(),
 )
 
 data class NovexManagementApplyResult(
@@ -328,6 +334,10 @@ object NovexManagementLaunchModes {
 /** Provider-neutral inspection payload, including the legal values needed for the next call. */
 fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
     put("game_launch_modes", NovexManagementLaunchModes.toJson())
+    put("private_creation_targets", JSONArray(draftTargets.map { card ->
+        JSONObject().put("kind", card.subject.kind.managementWireName()).put("id", card.subject.id)
+            .put("role", "仅作为当前明确创建请求的目标，不自动启用背景或身份")
+    }))
     put("mounted_subjects", JSONArray().apply {
         subjects.forEach { value ->
             put(JSONObject()
@@ -425,6 +435,7 @@ class NovexManagementService(
             selectedSubjectJson = subject?.let { subjectContentJson(it) },
             modules = modules,
             selectedModule = selectedModule,
+            draftTargets = workspace.emptyConversationDrafts(configuration.conversationId),
         )
     }
 
@@ -436,7 +447,7 @@ class NovexManagementService(
         priorUserRequests: List<String> = emptyList(),
     ): NovexManagementPlan {
         val changes = NovexManagementChangeCodec.decode(changesJson)
-        return NovexManagementPolicy.plan(
+        val plan = NovexManagementPolicy.plan(
             configuration = configuration,
             changes = changes,
             facts = factsFor(changes),
@@ -444,7 +455,34 @@ class NovexManagementService(
             planId = planId,
             priorUserRequests = priorUserRequests,
         )
+        val available = workspace.emptyConversationDrafts(configuration.conversationId).toMutableList()
+        val ownsDrafts = workspace.conversationDrafts(configuration.conversationId) != null
+        val targets = changes.mapIndexedNotNull { index, change ->
+            val kind = change.draftKind() ?: return@mapIndexedNotNull null
+            val card = available.firstOrNull { it.subject.kind == kind } ?: if (ownsDrafts) {
+                // Only reached after the real user's creation intent has been validated above.
+                workspace.apply(NovexCommand.AddConversationDraft(configuration.conversationId, kind))
+                    .requireConversationDrafts().cards.last()
+            } else return@mapIndexedNotNull null
+            available.remove(card)
+            index to card.subject
+        }.toMap()
+        val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
+            risk = if (targets.size == changes.size) NovexManagementRisk.CREATE_PRIVATE else plan.risk)
+        if (workspace.conversationDrafts(configuration.conversationId) != null) {
+            workspace.apply(NovexCommand.ReserveConversationDraftWrite(configuration.conversationId,
+                NovexDraftWriteReservation(resolved.id, resolved.targets + targets.values,
+                    NovexManagementPlanCodec.encode(resolved, changesJson))))
+        }
+        return resolved
     }
+
+    suspend fun pendingPlan(configuration: NovexConversationConfigurationSnapshot, id: String): NovexManagementPlan? =
+        workspace.conversationDrafts(configuration.conversationId)?.pendingWrites?.singleOrNull { it.id == id }?.let {
+            NovexManagementPlanCodec.decode(it.planJson).also { plan ->
+                require(plan.conversationId == configuration.conversationId && plan.id == id) { "保存的计划归属不一致" }
+            }
+        }
 
     suspend fun apply(
         configuration: NovexConversationConfigurationSnapshot,
@@ -475,7 +513,7 @@ class NovexManagementService(
         val changes = mutableListOf<NovexChange>()
         val created = mutableListOf<NovexContentAddress>()
         transaction.run {
-            plan.changes.forEach { managed ->
+            plan.changes.forEachIndexed { index, managed ->
                 when (managed) {
                     is NovexManagedChange.AttachArtifact -> artifacts.attach(managed.toAttachment())
                     is NovexManagedChange.DetachArtifact -> artifacts.detach(managed.toAttachment())
@@ -485,11 +523,18 @@ class NovexManagementService(
                         val current = if (managed is NovexManagedChange.UpdateModule) {
                             requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在，请重新生成计划" }.module
                         } else null
-                        val result = workspace.apply(managed.toCommand(facts, current))
+                        val creation = managed.toCommand(facts, current)
+                        val command = plan.draftTargets[index]?.let { target ->
+                            NovexCommand.FillConversationDraft(configuration.conversationId, target, creation)
+                        } ?: creation
+                        val result = workspace.apply(command)
                         changes += result
                         result.createdSubject()?.let(created::add)
                     }
                 }
+            }
+            if (workspace.conversationDrafts(configuration.conversationId) != null) {
+                workspace.apply(NovexCommand.ReleaseConversationDraftWrite(configuration.conversationId, plan.id))
             }
         }
         return NovexManagementApplyResult(changes, created)
@@ -530,11 +575,8 @@ class NovexManagementService(
         } + moduleOwners.values.mapNotNull { owner ->
             owner.id.takeIf { owner.type == ModuleOwnerType.CHARACTER_VERSION }
         }).distinct()
-        val characterCards = if (versionIds.isEmpty()) emptyList() else workspace.characters()
         val versionCharacterIds = versionIds.associateWith { versionId ->
-            characterCards.firstNotNullOfOrNull { card ->
-                card.character.allVersions.firstOrNull { it.id == versionId }?.characterId
-            } ?: error("角色版本不存在：$versionId")
+            workspace.characterForVersion(versionId)?.character?.character?.id ?: error("角色版本不存在：$versionId")
         }
         val versionWorldCounts = versionCharacterIds.entries.associate { (versionId, characterId) ->
             val snapshot = requireNotNull(workspace.character(characterId)) { "角色不存在：$characterId" }
@@ -557,7 +599,7 @@ class NovexManagementService(
 
     private suspend fun subjectLabel(subject: NovexContentAddress): String = when (subject.kind) {
         NovexContentKind.WORLD -> workspace.world(subject.id)?.world?.name ?: "已删除世界"
-        NovexContentKind.CHARACTER_VERSION -> workspace.characters().firstNotNullOfOrNull { card ->
+        NovexContentKind.CHARACTER_VERSION -> workspace.characterForVersion(subject.id)?.let { card ->
             card.character.allVersions.firstOrNull { it.id == subject.id }?.let { version ->
                 "${card.character.character.name} · ${version.label}"
             }
@@ -577,7 +619,7 @@ class NovexManagementService(
             }.toString()
         }
         NovexContentKind.CHARACTER_VERSION -> {
-            val pair = workspace.characters().firstNotNullOfOrNull { card ->
+            val pair = workspace.characterForVersion(subject.id)?.let { card ->
                 card.character.allVersions.firstOrNull { it.id == subject.id }?.let { card to it }
             } ?: error("角色版本不存在：${subject.id}")
             val (card, version) = pair
@@ -1011,4 +1053,58 @@ private fun JSONObject.jsonText(key: String): String = when (val value = opt(key
     is String -> value
     null -> "{}"
     else -> error("$key 必须是结构化内容")
+}
+
+private fun NovexManagedChange.draftKind(): NovexContentKind? = when (this) {
+    is NovexManagedChange.CreateWorld -> NovexContentKind.WORLD
+    is NovexManagedChange.CreateCharacter -> NovexContentKind.CHARACTER_VERSION
+    is NovexManagedChange.CreateInteractiveFiction -> NovexContentKind.INTERACTIVE_FICTION
+    else -> null
+}
+
+/** Local proposal journal; raw source operations preserve complete module documents. */
+internal object NovexManagementPlanCodec {
+    fun encode(plan: NovexManagementPlan, changesJson: String): String = JSONObject().apply {
+        put("id", plan.id); put("conversationId", plan.conversationId); put("changes", JSONArray(changesJson))
+        put("targets", JSONArray(plan.targets.map(::address)))
+        put("moduleIds", JSONArray(plan.changes.map { change -> JSONArray(change.initialModules().map { it.id }) }))
+        put("risk", plan.risk.name); put("summary", plan.summary); put("impact", JSONArray(plan.impact))
+        put("authorizedUserRequest", plan.authorizedUserRequest)
+        put("draftTargets", JSONArray(plan.draftTargets.map { (index, subject) -> address(subject).put("index", index) }))
+    }.toString()
+
+    fun decode(raw: String): NovexManagementPlan {
+        val value = JSONObject(raw)
+        val targets = value.getJSONArray("targets")
+        val drafts = value.getJSONArray("draftTargets")
+        val impact = value.getJSONArray("impact")
+        return NovexManagementPlan(value.getString("id"), value.getString("conversationId"),
+            NovexManagementChangeCodec.decode(value.getJSONArray("changes").toString()).mapIndexed { index, change ->
+                val ids = value.getJSONArray("moduleIds").getJSONArray(index)
+                val modules = change.initialModules()
+                require(ids.length() == modules.size) { "保存的模块编号不完整" }
+                val restored = modules.mapIndexed { i, module -> module.copy(id = ids.getString(i)) }
+                when (change) {
+                    is NovexManagedChange.CreateWorld -> change.copy(modules = restored)
+                    is NovexManagedChange.CreateCharacter -> change.copy(modules = restored)
+                    is NovexManagedChange.CreateInteractiveFiction -> change.copy(modules = restored)
+                    else -> change
+                }
+            },
+            (0 until targets.length()).map { address(targets.getJSONObject(it)) }.toSet(),
+            NovexManagementRisk.valueOf(value.getString("risk")), value.getString("summary"),
+            (0 until impact.length()).map { impact.getString(it) },
+            (0 until drafts.length()).associate { drafts.getJSONObject(it).let { target -> target.getInt("index") to address(target) } },
+            value.optString("authorizedUserRequest").ifBlank { null })
+    }
+
+    private fun NovexManagedChange.initialModules(): List<NovexModuleDraft> = when (this) {
+        is NovexManagedChange.CreateWorld -> modules
+        is NovexManagedChange.CreateCharacter -> modules
+        is NovexManagedChange.CreateInteractiveFiction -> modules
+        else -> emptyList()
+    }
+
+    private fun address(value: NovexContentAddress) = JSONObject().put("kind", value.kind.name).put("id", value.id)
+    private fun address(value: JSONObject) = NovexContentAddress(NovexContentKind.valueOf(value.getString("kind")), value.getString("id"))
 }

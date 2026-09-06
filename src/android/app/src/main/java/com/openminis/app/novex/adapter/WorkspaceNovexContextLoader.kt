@@ -50,6 +50,24 @@ class WorkspaceNovexContextLoader(
             ))
             is AnswerIdentity.CharacterVersion -> Unit
         }
+        workspace.conversationDrafts(configuration.conversationId)?.let { drafts ->
+            if (drafts.cards.isNotEmpty() || drafts.pendingWrites.isNotEmpty()) candidates += NovexContextCandidate(
+                sourceId = "conversation-drafts:${configuration.conversationId}",
+                label = "本对话 · 创作目标目录",
+                content = buildString {
+                    appendLine("本对话工作空间编号：${configuration.conversationId}。文件通过工作空间查看、读取和写入工具定位。")
+                    appendLine("以下是创作目标目录，不是背景正文、角色身份或活动文游；仅按用户创作意图使用，不自动编写空卡。")
+                    drafts.cards.forEach { card -> appendLine("${when (card.subject.kind) {
+                        NovexContentKind.WORLD -> "世界"
+                        NovexContentKind.CHARACTER_VERSION -> "角色版本"
+                        NovexContentKind.INTERACTIVE_FICTION -> "文游"
+                        NovexContentKind.CREATIVE_ARTIFACT -> "创作文件"
+                    }}：${card.subject.id}（${if (card.isPrivate) "本对话私有" else "已归库，来源为本对话"}）") }
+                    drafts.pendingWrites.forEach { appendLine("待执行计划编号：${it.id}，未执行不等于已保存正文。") }
+                },
+                kind = ContextSourceKind.TOOL_DEFINITION, alwaysInclude = true, position = -2,
+            )
+        }
         configuration.playerIdentity?.let { player ->
             candidates += NovexContextCandidate(
                 sourceId = "player-identity:${player.id}",
@@ -92,12 +110,13 @@ class WorkspaceNovexContextLoader(
 
         val requestedVersions = (backgroundVersionIds + listOfNotNull(identityVersionId)).distinct()
         if (requestedVersions.isNotEmpty()) {
-            val versions = workspace.characters().flatMap { card ->
-                card.character.allVersions.map { version -> Triple(card.character.character.name, version, card) }
-            }.associateBy { it.second.id }
             requestedVersions.forEach { versionId ->
                 val identity = versionId == identityVersionId
-                val entry = versions[versionId]
+                val entry = workspace.characterForVersion(versionId)?.let { card ->
+                    card.character.allVersions.firstOrNull { it.id == versionId }?.let { version ->
+                        Triple(card.character.character.name, version, card)
+                    }
+                }
                 if (entry == null) {
                     legacy.character?.takeIf { versionId == (legacy.characterVersionId ?: it.id) }?.let { role ->
                         val text = if (identity) {

@@ -578,6 +578,7 @@ fun AppNavigation(
             }
             ChatScreen(
                 sessionId = sessionId,
+                onBackReturnsToList = navController.previousBackStackEntry?.destination?.route == Routes.SESSION_LIST,
                 chatRepository = chatRepository,
                 providerRepository = providerRepository,
                 memoryRepository = memoryRepository,

@@ -46,10 +46,15 @@ import org.json.JSONObject
  * managed files, ordering rules and reference cleanup stay behind this seam.
  */
 interface NovexWorkspace {
+    suspend fun conversationDrafts(conversationId: String): NovexConversationDraftSnapshot? = null
+    suspend fun emptyConversationDrafts(conversationId: String): List<NovexConversationDraftCard> = emptyList()
     suspend fun worlds(): List<NovexWorldCard>
     suspend fun characters(): List<NovexCharacterCard>
     suspend fun interactiveFictions(): List<NovexInteractiveFictionCard>
     suspend fun world(id: String): NovexWorldSnapshot?
+    suspend fun characterForVersion(versionId: String): NovexCharacterSnapshot? =
+        characters().firstOrNull { card -> card.character.allVersions.any { it.id == versionId } }
+            ?.let { character(it.character.character.id) }
     suspend fun character(id: String): NovexCharacterSnapshot?
     suspend fun interactiveFiction(id: String): NovexInteractiveFictionSnapshot?
     suspend fun modules(owner: ModuleOwner): NovexModuleSnapshot
@@ -156,6 +161,12 @@ sealed interface NovexImageChange {
 }
 
 sealed interface NovexCommand {
+    data class ReserveConversationDraftWrite(val conversationId: String, val reservation: NovexDraftWriteReservation) : NovexCommand
+    data class ReleaseConversationDraftWrite(val conversationId: String, val planId: String) : NovexCommand
+    data class AddConversationDraft(val conversationId: String, val kind: NovexContentKind, val now: Long = System.currentTimeMillis()) : NovexCommand
+    data class FillConversationDraft(val conversationId: String, val subject: NovexContentAddress, val creation: NovexCommand) : NovexCommand
+    data class EnsureConversationDrafts(val conversationId: String, val now: Long = System.currentTimeMillis()) : NovexCommand
+    data class FinalizeConversationDrafts(val conversationId: String, val protectedSubjects: Set<NovexContentAddress> = emptySet()) : NovexCommand
     data class CreateWorld(
         val name: String,
         val overview: String = "",
@@ -337,6 +348,8 @@ sealed interface NovexCommand {
 }
 
 sealed interface NovexChange {
+    data class ConversationDraftsPrepared(val snapshot: NovexConversationDraftSnapshot) : NovexChange
+    data class ConversationDraftsFinalized(val result: NovexDraftFinalization) : NovexChange
     data class WorldSaved(val world: WorldEntity) : NovexChange
     data class CharacterSaved(val character: CharacterAggregate) : NovexChange
     data class InteractiveFictionSaved(val project: InteractiveFictionProjectEntity) : NovexChange
@@ -350,6 +363,9 @@ sealed interface NovexChange {
     data class TextExported(val text: String) : NovexChange
     data object Completed : NovexChange
 }
+
+fun NovexChange.requireConversationDrafts(): NovexConversationDraftSnapshot = (this as NovexChange.ConversationDraftsPrepared).snapshot
+fun NovexChange.requireDraftFinalization(): NovexDraftFinalization = (this as NovexChange.ConversationDraftsFinalized).result
 
 fun NovexChange.requireWorld(): WorldEntity = (this as NovexChange.WorldSaved).world
 
@@ -474,31 +490,46 @@ internal class DefaultNovexWorkspace(
     private val content: NovexContentPort,
     private val media: NovexMediaPort,
     private val transaction: suspend (suspend () -> NovexChange) -> NovexChange,
+    private val drafts: NovexDraftOwnershipPort = UnavailableNovexDraftOwnership,
 ) : NovexWorkspace {
-    override suspend fun worlds(): List<NovexWorldCard> = catalog.listWorlds().map { world ->
-        val owner = ModuleOwner.world(world.id)
-        NovexWorldCard(
-            world = world,
-            image = media.assetFor(owner, MediaAssetSlot.WORLD_COVER)
-                ?: media.assetFor(owner, MediaAssetSlot.WORLD_BACKGROUND),
-            characterCount = catalog.versionsForWorld(world.id).size,
-            moduleCount = content.list(owner).size,
-        )
+    override suspend fun conversationDrafts(conversationId: String) = drafts.load(conversationId)
+
+    private suspend fun privateCards() = drafts.list().flatMap { it.cards }.filter { it.isPrivate }
+
+    override suspend fun worlds(): List<NovexWorldCard> {
+        val all = catalog.listWorlds()
+        val privateIds = privateCards().filter { it.subject.kind == NovexContentKind.WORLD }.mapTo(hashSetOf()) { it.rootId }
+        return all.filterNot { it.id in privateIds }.map { world ->
+            val owner = ModuleOwner.world(world.id)
+            NovexWorldCard(
+                world = world,
+                image = media.assetFor(owner, MediaAssetSlot.WORLD_COVER)
+                    ?: media.assetFor(owner, MediaAssetSlot.WORLD_BACKGROUND),
+                characterCount = catalog.versionsForWorld(world.id).size,
+                moduleCount = content.list(owner).size,
+            )
+        }
     }
 
-    override suspend fun characters(): List<NovexCharacterCard> = catalog.listCharacters().mapNotNull { root ->
-        val aggregate = catalog.character(root.id) ?: return@mapNotNull null
-        NovexCharacterCard(
-            character = aggregate,
-            avatar = media.assetFor(
-                ModuleOwner.characterVersion(aggregate.original.id),
-                MediaAssetSlot.CHARACTER_AVATAR,
-            ),
-        )
+    override suspend fun characters(): List<NovexCharacterCard> {
+        val all = catalog.listCharacters()
+        val privateIds = privateCards().filter { it.subject.kind == NovexContentKind.CHARACTER_VERSION }.mapTo(hashSetOf()) { it.rootId }
+        return all.filterNot { it.id in privateIds }.mapNotNull { root ->
+            val aggregate = catalog.character(root.id) ?: return@mapNotNull null
+            NovexCharacterCard(
+                character = aggregate,
+                avatar = media.assetFor(
+                    ModuleOwner.characterVersion(aggregate.original.id),
+                    MediaAssetSlot.CHARACTER_AVATAR,
+                ),
+            )
+        }
     }
 
-    override suspend fun interactiveFictions(): List<NovexInteractiveFictionCard> =
-        interactiveFiction.list().map { project ->
+    override suspend fun interactiveFictions(): List<NovexInteractiveFictionCard> {
+        val all = interactiveFiction.list()
+        val privateIds = privateCards().filter { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.mapTo(hashSetOf()) { it.rootId }
+        return all.filterNot { it.id in privateIds }.map { project ->
             val owner = ModuleOwner.interactiveFiction(project.id)
             NovexInteractiveFictionCard(
                 project = project,
@@ -507,15 +538,19 @@ internal class DefaultNovexWorkspace(
                 moduleCount = content.list(owner).size,
             )
         }
+    }
 
     override suspend fun world(id: String): NovexWorldSnapshot? {
         val world = catalog.world(id) ?: return null
         val versions = catalog.versionsForWorld(id)
         val modules = content.list(ModuleOwner.world(id))
+        val availableVersions = catalog.listVersions()
+        val privateCharacterIds = privateCards().filter { it.subject.kind == NovexContentKind.CHARACTER_VERSION }
+            .mapTo(hashSetOf()) { it.rootId }
         return NovexWorldSnapshot(
             world = world,
             versions = versions,
-            availableVersions = catalog.listVersions(),
+            availableVersions = availableVersions.filterNot { it.characterId in privateCharacterIds },
             worldsByVersion = versions.associate { it.id to catalog.worldsForVersion(it.id) },
             media = mediaFor(
                 ModuleOwner.world(id),
@@ -591,7 +626,41 @@ internal class DefaultNovexWorkspace(
         applyInsideTransaction(command)
     }
 
+    override suspend fun characterForVersion(versionId: String): NovexCharacterSnapshot? =
+        catalog.version(versionId)?.let { character(it.characterId) }
+
+    override suspend fun emptyConversationDrafts(conversationId: String) = draftLifecycle().emptyCards(conversationId)
+
+    private fun draftLifecycle() = NovexConversationDrafts(catalog, interactiveFiction, drafts, content, media) { card ->
+        val command = when (card.subject.kind) {
+            NovexContentKind.WORLD -> NovexCommand.DeleteWorld(card.rootId)
+            NovexContentKind.CHARACTER_VERSION -> NovexCommand.DeleteCharacter(card.rootId)
+            NovexContentKind.INTERACTIVE_FICTION -> NovexCommand.DeleteInteractiveFiction(card.rootId)
+            NovexContentKind.CREATIVE_ARTIFACT -> error("不清理创作文件")
+        }
+        applyInsideTransaction(command)
+        Unit
+    }
+
     private suspend fun applyInsideTransaction(command: NovexCommand): NovexChange = when (command) {
+        is NovexCommand.ReserveConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
+            draftLifecycle().reserve(command.conversationId, command.reservation),
+        )
+        is NovexCommand.ReleaseConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
+            draftLifecycle().release(command.conversationId, command.planId),
+        )
+        is NovexCommand.AddConversationDraft -> NovexChange.ConversationDraftsPrepared(
+            draftLifecycle().add(command.conversationId, command.kind, command.now),
+        )
+        is NovexCommand.FillConversationDraft -> applyInsideTransaction(
+            draftLifecycle().fillCommand(command.conversationId, command.subject, command.creation),
+        )
+        is NovexCommand.EnsureConversationDrafts -> NovexChange.ConversationDraftsPrepared(
+            draftLifecycle().ensure(command.conversationId, command.now),
+        )
+        is NovexCommand.FinalizeConversationDrafts -> NovexChange.ConversationDraftsFinalized(
+            draftLifecycle().finalize(command.conversationId, command.protectedSubjects),
+        )
         is NovexCommand.CreateWorld -> NovexChange.WorldSaved(
             catalog.createWorld(command.name, command.overview, command.tagsJson, null, command.now),
         )
@@ -1060,10 +1129,18 @@ internal class DefaultNovexWorkspace(
             ModuleOwnerType.INTERACTIVE_FICTION -> null
             ModuleOwnerType.CONTENT_MODULE -> null
         }
-        val worlds = catalog.listWorlds().map { world ->
+        val allWorlds = catalog.listWorlds()
+        val allVersions = catalog.listVersions()
+        val allModules = content.all()
+        val privateCards = privateCards()
+        val privateWorldIds = privateCards.filter { it.subject.kind == NovexContentKind.WORLD }.mapTo(hashSetOf()) { it.rootId }
+        val privateCharacterIds = privateCards.filter { it.subject.kind == NovexContentKind.CHARACTER_VERSION }.mapTo(hashSetOf()) { it.rootId }
+        val privateVersionIds = allVersions.filter { it.characterId in privateCharacterIds }.mapTo(hashSetOf()) { it.id }
+        val privateGameIds = privateCards.filter { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.mapTo(hashSetOf()) { it.rootId }
+        val worlds = allWorlds.filterNot { it.id in privateWorldIds }.map { world ->
             NovexModuleReferenceOption(ModuleReferenceTarget.world(world.id), world.name, "世界")
         }
-        val versions = catalog.listVersions().map { version ->
+        val versions = allVersions.filterNot { it.id in privateVersionIds }.map { version ->
             val name = runCatching {
                 org.json.JSONObject(version.profileJson).optString("name").trim().ifBlank { version.label }
             }.getOrDefault(version.label)
@@ -1073,7 +1150,14 @@ internal class DefaultNovexWorkspace(
                 "角色版本",
             )
         }
-        val modules = content.all().filterNot { it.id == module.id }.map { candidate ->
+        val modules = allModules.filterNot {
+            it.id == module.id || when (it.ownerType) {
+                ModuleOwnerType.WORLD -> it.ownerId in privateWorldIds
+                ModuleOwnerType.CHARACTER_VERSION -> it.ownerId in privateVersionIds
+                ModuleOwnerType.INTERACTIVE_FICTION -> it.ownerId in privateGameIds
+                ModuleOwnerType.CONTENT_MODULE -> false
+            }
+        }.map { candidate ->
             NovexModuleReferenceOption(ModuleReferenceTarget.module(candidate.id), candidate.name, "内容模块")
         }
         return (worlds + versions + modules).filterNot { it.target == ownerTarget }

@@ -971,6 +971,8 @@ class ChatViewModel(
     private val _novexLearningError = MutableStateFlow<String?>(null)
     val novexLearningError: StateFlow<String?> = _novexLearningError.asStateFlow()
     private var novexLearningJob: Job? = null
+    private var conversationVisible = true
+    private var conversationExitJob: Job? = null
     private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
     private val novexConfigurationMutex = kotlinx.coroutines.sync.Mutex()
@@ -3813,6 +3815,28 @@ class ChatViewModel(
         realSessionId
     }
 
+    private suspend fun prepareNovexConversationForEntry() {
+        try {
+            prepareNovexConversationDrafts()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            _error.value = "对话草稿或成果目录尚未准备完成：${error.message}。已有内容仍保留，可稍后重试。"
+        }
+    }
+
+    private suspend fun prepareNovexConversationDrafts() {
+        val sid = ensureSession()
+        novexApplication().novexWorkspace.apply(com.openminis.app.novex.domain.NovexCommand.EnsureConversationDrafts(sid))
+        withContext(Dispatchers.IO) {
+            com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(
+                novexConversationWorkspaceStore, novexApplication().creativeArtifactRepository,
+            ).reconcile(com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                sid, activeBranchPathIds, com.openminis.app.novex.domain.NovexConversationWorkspaceScope.ROOT_BRANCH,
+            ))
+        }
+    }
+
     /**
      * Move every per-session disk resource from the draft directory to the
      * real one, and tear down any shell that was started against the draft id.
@@ -4004,7 +4028,7 @@ class ChatViewModel(
                     // newest-provider/newest-text-model. Was firstOrNull().
                     applyNewChatDefaultModel()
                 }
-                if (draftConfiguration.hasPersistentConfiguration) ensureSession()
+                prepareNovexConversationForEntry()
                 return@launch
             }
 
@@ -4319,6 +4343,8 @@ class ChatViewModel(
                 }
                 applyCompactMarkerGraying(ordered, marker, loaded.messages, historyDbIds)
             }
+
+            prepareNovexConversationForEntry()
 
             // Cold-start interrupt detection: an agent loop that was killed by
             // the OS (or app force-quit) leaves agentHistory in one of two
@@ -8773,6 +8799,19 @@ class ChatViewModel(
         branchMessageId: String,
         result: ToolExecutionResult,
     ): Pair<String, String>? {
+        if (result.success && toolName in setOf("workspace_write", "workspace_edit", "workspace_compute")) {
+            return runCatching {
+                withContext(Dispatchers.IO) {
+                    val app = novexApplication()
+                    val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(activeSessionId, activeBranchPathIds, branchMessageId)
+                    val record = com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(
+                        novexConversationWorkspaceStore, app.creativeArtifactRepository,
+                    ).capture(toolName, result.output, scope) ?: return@withContext null
+                    runCatching { app.creativeArtifactDeviceDirectory.autoCopy(record, app.creativeArtifactRepository.bytes(record.artifact.id)) }
+                    record.artifact.id to record.artifact.title
+                }
+            }.onFailure { AppLogger.warning("CreativeArtifact", "工作空间成果待补登记：${it.message}") }.getOrNull()
+        }
         val capture = com.openminis.app.novex.domain.CreativeArtifactCapturePolicy.fromToolResult(
             toolName = toolName,
             argsJson = argsJson,
@@ -8968,6 +9007,7 @@ class ChatViewModel(
     private suspend fun executeNovexProposeTool(argsJson: String): ToolExecutionResult =
         novexManagementMutex.withLock {
             runCatching {
+                prepareNovexConversationDrafts()
                 val userRequests = currentNovexUserRequests()
                 val plan = novexManagementService().propose(
                     configuration = currentNovexConfiguration(),
@@ -8978,16 +9018,21 @@ class ChatViewModel(
                 )
                 pendingNovexManagementPlans[plan.id] = plan
                 while (pendingNovexManagementPlans.size > 20) {
+                    // Evict only the memory cache; the durable proposal remains recoverable.
                     pendingNovexManagementPlans.remove(pendingNovexManagementPlans.keys.first())
                 }
                 ToolExecutionResult(
                     output = buildString {
                         appendLine("变更计划：${plan.id}")
-                        appendLine("风险：${plan.risk.name}")
+                        appendLine("处理范围：${if (plan.requiresConfirmation) "需要确认的内容变更" else "本对话私有空卡创建"}")
                         appendLine("内容：${plan.summary}")
                         if (plan.impact.isNotEmpty()) appendLine("影响：${plan.impact.joinToString("；")}")
-                        appendLine("尚未执行。请停止本轮工具调用并等待用户确认。")
-                        append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
+                        if (plan.requiresConfirmation) {
+                            appendLine("尚未执行。请等待用户确认。")
+                            append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
+                        } else {
+                            appendLine("尚未写入正文。当前用户已明确授权创建；请立即调用 novex_apply_content_changes（执行内容变更），无需重复询问。")
+                        }
                     },
                     success = true,
                     toolTitle = "提出内容变更",
@@ -9003,9 +9048,11 @@ class ChatViewModel(
 
     private suspend fun executeNovexApplyTool(argsJson: String): ToolExecutionResult =
         novexManagementMutex.withLock {
+            novexConfigurationMutex.withLock {
             runCatching {
                 val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
-                val plan = requireNotNull(pendingNovexManagementPlans[proposalId]) {
+                val plan = requireNotNull(pendingNovexManagementPlans[proposalId]
+                    ?: novexManagementService().pendingPlan(currentNovexConfiguration(), proposalId)) {
                     "变更计划不存在或已失效，请重新提出变更"
                 }
                 val application = novexApplication()
@@ -9053,6 +9100,7 @@ class ChatViewModel(
                     success = false,
                     toolTitle = "执行内容变更",
                 )
+            }
             }
         }
 
@@ -11936,48 +11984,74 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * T-android-new-chat-empty-residue: when the user leaves the chat screen,
-     * drop sessions that were materialised in the DB (e.g. via a thinking /
-     * memory toggle in `ensureSession()`) but never received a real message.
-     * Without this hook, tapping "New chat" → toggling a session-scoped
-     * setting → exiting leaves an empty row at the top of the session list.
-     *
-     * Called from ChatScreen's onDispose. Gates:
-     *   - realSessionId must be non-empty (a row was actually inserted)
-     *   - not currently streaming (background agent work would be lost)
-     *   - persisted message count == 0 (authoritative DB check — `_messages`
-     *     also contains ephemeral system-info bubbles that aren't persisted,
-     *     so a state-only check would over-count).
-     *
-     * Safe to call multiple times; the row-existence + count gates make it
-     * idempotent. After deletion we release the cached VM so a stale entry
-     * doesn't linger in `ChatViewModelStore`.
-     */
-    fun cleanupIfEmptyOnExit() {
-        val sid = realSessionId
-        if (sid.isEmpty()) return
-        if (_isStreaming.value) return
-        if (_attachments.value.isNotEmpty()) return
-        if (currentNovexConfiguration().hasPersistentConfiguration) return
-        if (_conversationPrompt.value != null && _conversationPrompt.value != inheritedEditablePrompt()) return
-        if (_imageStylePrompt.value.isNotBlank()) return
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val count = chatRepository.messageCount(sid)
-                if (count > 0) return@launch
-                AppLogger.info(
-                    TAG,
-                    "cleanupIfEmptyOnExit: deleting empty session $sid (no persisted messages)",
-                )
-                chatRepository.deleteSession(sid)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    ChatViewModelStore.release(sid)
+    fun cancelPendingContentPlan(planId: String, onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = runCatching {
+                novexManagementMutex.withLock {
+                    novexApplication().novexWorkspace.apply(
+                        com.openminis.app.novex.domain.NovexCommand.ReleaseConversationDraftWrite(activeSessionId, planId),
+                    )
+                    pendingNovexManagementPlans.remove(planId)
                 }
-            } catch (t: Throwable) {
-                AppLogger.warning(TAG, "cleanupIfEmptyOnExit failed for $sid: ${t.message}")
+                Unit
+            }
+            onResult(result)
+        }
+    }
+
+    fun markConversationVisible() {
+        conversationVisible = true
+        conversationExitJob?.cancel()
+        conversationExitJob = null
+    }
+
+    /** Only the actual navigation back to the conversation list calls this boundary. */
+    fun returnToConversationList(onReturned: () -> Unit) {
+        conversationVisible = false
+        conversationExitJob?.cancel()
+        conversationExitJob = viewModelScope.launch {
+            try {
+                sessionLoaded.first { it }
+                _isStreaming.first { !it }
+                novexManagementMutex.withLock {
+                    novexConfigurationMutex.withLock finalize@{
+                        if (conversationVisible || _isStreaming.value) return@finalize
+                        val sid = realSessionId.takeIf { it.isNotBlank() } ?: return@finalize
+                        val app = novexApplication()
+                        val drafts = app.novexWorkspace.conversationDrafts(sid)
+                        val protection = if (_canResume.value || _isCompacting.value || novexLearningJob?.isActive == true)
+                            drafts?.subjects.orEmpty().toSet() else emptySet()
+                        val hasFiles = withContext(Dispatchers.IO) {
+                            val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
+                                sid, activeBranchPathIds, com.openminis.app.novex.domain.NovexConversationWorkspaceScope.ROOT_BRANCH,
+                            )
+                            com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(
+                                novexConversationWorkspaceStore, app.creativeArtifactRepository,
+                            ).reconcile(scope)
+                            novexConversationWorkspaceStore.inspect(scope).entries.isNotEmpty()
+                        }
+                        val finalized = app.novexWorkspace.apply(
+                            com.openminis.app.novex.domain.NovexCommand.FinalizeConversationDrafts(sid, protection),
+                        ) as com.openminis.app.novex.domain.NovexChange.ConversationDraftsFinalized
+                        if (finalized.result.snapshot.cards.isNotEmpty() || finalized.result.snapshot.pendingWrites.isNotEmpty()) return@finalize
+                        if (_attachments.value.isNotEmpty() || currentNovexConfiguration().hasPersistentConfiguration) return@finalize
+                        if (_conversationPrompt.value != null && _conversationPrompt.value != inheritedEditablePrompt()) return@finalize
+                        if (_imageStylePrompt.value.isNotBlank() || chatRepository.messageCount(sid) > 0) return@finalize
+                        if (app.creativeArtifactRepository.list(com.openminis.app.data.creative.CreativeArtifactQuery(
+                                conversationId = sid, includeTrashed = true)).isNotEmpty()) return@finalize
+                        if (hasFiles || conversationVisible || _isStreaming.value) return@finalize
+                        chatRepository.deleteSession(sid)
+                        ChatViewModelStore.release(sid)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                // Preserve all remaining records on failure; returning to the list must remain available.
+                AppLogger.warning(TAG, "对话草稿归档未完成：${error.message}")
             }
         }
+        onReturned()
     }
 
     fun clearError() {

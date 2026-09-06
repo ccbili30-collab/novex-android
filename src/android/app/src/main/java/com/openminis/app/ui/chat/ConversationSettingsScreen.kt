@@ -117,6 +117,8 @@ fun ConversationSettingsScreen(
     var baseline by remember(sessionId) { mutableStateOf<NovexConversationEditorDraftState?>(null) }
     var draft by remember(sessionId) { mutableStateOf(seed) }
     var hydrated by remember(sessionId) { mutableStateOf(false) }
+    var pendingContentPlans by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var privateOptions by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     var options by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     var gameSnapshots by remember { mutableStateOf<Map<String, ActiveInteractiveFictionSnapshot>>(emptyMap()) }
     var picker by remember { mutableStateOf<ConversationPicker?>(null) }
@@ -142,8 +144,24 @@ fun ConversationSettingsScreen(
             hydrated = true
         }
     }
-    LaunchedEffect(workspace, artifacts) {
+    LaunchedEffect(workspace, artifacts, ready) {
+        if (!ready) return@LaunchedEffect
         runCatching {
+            val owned = workspace.conversationDrafts(viewModel.activeSessionId)
+            val ownCards = owned?.cards.orEmpty().filter { it.isPrivate }
+            pendingContentPlans = owned?.pendingWrites.orEmpty().map { reservation ->
+                reservation.id to runCatching { org.json.JSONObject(reservation.planJson).getString("summary") }
+                    .getOrDefault("待执行内容变更")
+            }
+            privateOptions = ownCards.mapNotNull { card ->
+                val label = when (card.subject.kind) {
+                    NovexContentKind.WORLD -> workspace.world(card.rootId)?.world?.name
+                    NovexContentKind.CHARACTER_VERSION -> workspace.character(card.rootId)?.character?.character?.name
+                    NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(card.rootId)?.project?.name
+                    NovexContentKind.CREATIVE_ARTIFACT -> null
+                } ?: return@mapNotNull null
+                ConversationContentOption(card.subject, label, "本对话私有${card.subject.kind.displayName()}")
+            }
             val worlds = workspace.worlds().map { card ->
                 ConversationContentOption(NovexContentAddress.world(card.world.id), card.world.name, "世界")
             }
@@ -180,11 +198,13 @@ fun ConversationSettingsScreen(
                     "创作成果",
                 )
             }
-            options = worlds + characters + games + artifactOptions
+            options = (worlds + characters + games + artifactOptions + privateOptions).distinctBy { it.address }
             gameSnapshots = gameCards.mapNotNull { card ->
                 workspace.interactiveFiction(card.project.id)?.let { snapshot ->
                     card.project.id to InteractiveFictionRuntimeSnapshotFactory.create(snapshot)
                 }
+            }.toMap() + ownCards.filter { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.mapNotNull { card ->
+                workspace.interactiveFiction(card.rootId)?.let { card.rootId to InteractiveFictionRuntimeSnapshotFactory.create(it) }
             }.toMap()
         }.onFailure { error = "读取内容库失败：${it.message ?: "未知错误"}" }
     }
@@ -339,6 +359,30 @@ fun ConversationSettingsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (privateOptions.isNotEmpty()) NovexEditorSection(
+            header = "本对话草稿",
+            footer = "三个空卡可一直留空。它们不自动启用背景、扮演或文游；内容写入即保存，返回列表后非空作品归库。点击可选择管理权限。",
+        ) {
+            privateOptions.forEach { option ->
+                NovexSummaryRow(option.label, option.kindLabel, onClick = { managedAction = option.address })
+            }
+        }
+
+        if (pendingContentPlans.isNotEmpty()) NovexEditorSection(
+            header = "待执行变更",
+            footer = "计划与目标已保存，重启后仍可继续。取消只撤销这项待执行计划，不修改已经保存的卡片。",
+        ) {
+            pendingContentPlans.forEach { (id, summary) ->
+                NovexSummaryRow("计划 ${id.take(8)}", summary)
+                NovexTextActionRow("取消这项待执行计划", onClick = {
+                    viewModel.cancelPendingContentPlan(id) { result ->
+                        result.onSuccess { pendingContentPlans = pendingContentPlans.filterNot { it.first == id } }
+                            .onFailure { error = "取消失败：${it.message}" }
+                    }
+                })
             }
         }
 

@@ -35,12 +35,13 @@ object NovexManagementTools {
         ),
         AgentToolDefinition(
             name = PROPOSE,
-            description = "Validate and present a structured Novex change plan without writing anything. Use only " +
+            description = "Validate a structured Novex change plan and persist its pending proposal without changing card content. Use only " +
                 "for subjects mounted with edit access, or for a global create explicitly requested by the user. " +
                 "The app retains an explicit creation request across follow-up turns such as 'continue' in the current task; " +
                 "do not ask the user to repeat it. Cancellation or a changed target ends that request. " +
-                "After this succeeds, stop and wait for the user to send the exact confirmation phrase shown in " +
-                "the result. Never call the apply tool in the same assistant turn.",
+                "Follow the result: a current explicit creation request using this conversation's private empty card " +
+                "can be applied immediately in this turn. Shared, destructive, cross-project or extra global changes " +
+                "require the real user's exact confirmation phrase. Never invent authorization.",
             parameters = mapOf(
                 "changes" to AgentToolParam(
                     type = "string",
@@ -76,7 +77,8 @@ object NovexManagementTools {
         AgentToolDefinition(
             name = APPLY,
             description = "Apply a previously validated Novex proposal atomically. The app, not tool arguments, " +
-                "checks that the latest real user message exactly matches that proposal's confirmation phrase. " +
+                "checks the latest real user message: private empty-card creation retains its original explicit request; " +
+                "other changes require the proposal's exact confirmation phrase. " +
                 "Never invent confirmation and never retry a rejected proposal without the real user.",
             parameters = mapOf(
                 "proposal_id" to AgentToolParam("string", "Proposal id returned by novex_propose_content_changes."),

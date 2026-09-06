@@ -37,6 +37,7 @@ object NovexWorkspaceFactory {
         }
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
+            drafts = RoomDraftOwnershipAdapter(database.novexConversationDraftDao(), database.chatDao()),
             interactiveFiction = RoomInteractiveFictionAdapter(interactiveFiction),
             content = RoomContentAdapter(content),
             media = ManagedMediaAdapter(
@@ -44,14 +45,26 @@ object NovexWorkspaceFactory {
                 ManagedMediaAssetStore(mediaRoot, mediaRepository, fileTransaction::deleteAfterRollback),
             ),
             transaction = { block ->
-                commandMutex.withLock {
-                    fileTransaction.begin()
-                    try {
-                        database.withTransaction { block() }.also { fileTransaction.commit() }
-                    } catch (error: Throwable) {
-                        fileTransaction.rollback()
-                        throw error
+                // Database first, including calls already inside a conversation transaction.
+                // Taking the command lock first can deadlock against an outer Room transaction
+                // that is waiting to apply its next workspace command.
+                var locked = false
+                try {
+                    val result = database.withTransaction {
+                        commandMutex.lock()
+                        locked = true
+                        fileTransaction.begin()
+                        block()
                     }
+                    // An enclosing conversation transaction can still roll back the restored
+                    // image references. Leave physical orphans for later collection in that case.
+                    fileTransaction.commit(deleteFiles = !database.inTransaction())
+                    result
+                } catch (error: Throwable) {
+                    if (locked) fileTransaction.rollback()
+                    throw error
+                } finally {
+                    if (locked) commandMutex.unlock()
                 }
             },
         )
@@ -74,6 +87,9 @@ internal class DeferredNovexWorkspace(
     private var initialized: NovexWorkspace? = null
     private val initializationMutex = Mutex()
 
+    override suspend fun emptyConversationDrafts(conversationId: String) = workspace().emptyConversationDrafts(conversationId)
+    override suspend fun conversationDrafts(conversationId: String) = workspace().conversationDrafts(conversationId)
+
     private suspend fun workspace(): NovexWorkspace = initialized ?: initializationMutex.withLock {
         initialized ?: withContext(dispatcher) { factory() }.also { initialized = it }
     }
@@ -82,6 +98,7 @@ internal class DeferredNovexWorkspace(
     override suspend fun characters() = workspace().characters()
     override suspend fun interactiveFictions() = workspace().interactiveFictions()
     override suspend fun world(id: String) = workspace().world(id)
+    override suspend fun characterForVersion(versionId: String) = workspace().characterForVersion(versionId)
     override suspend fun character(id: String) = workspace().character(id)
     override suspend fun interactiveFiction(id: String) = workspace().interactiveFiction(id)
     override suspend fun modules(owner: ModuleOwner) = workspace().modules(owner)
@@ -147,9 +164,9 @@ private class ManagedMediaFileTransaction(
         }
     }
 
-    fun commit() {
+    fun commit(deleteFiles: Boolean = true) {
         check(active)
-        commitDeletes.forEach(File::delete)
+        if (deleteFiles) commitDeletes.forEach(File::delete)
         finish()
     }
 
@@ -265,4 +282,47 @@ private class ManagedMediaAdapter(
     override suspend fun assetFor(owner: ModuleOwner, slot: MediaAssetSlot) = repository.assetFor(owner, slot)
     override suspend fun read(asset: com.openminis.app.data.character.MediaAssetEntity) =
         File(asset.managedPath).readBytes()
+}
+
+internal class RoomDraftOwnershipAdapter(
+    private val dao: com.openminis.app.data.db.NovexConversationDraftDao,
+    private val chatDao: com.openminis.app.data.db.ChatDao,
+) : com.openminis.app.novex.domain.NovexDraftOwnershipPort {
+    override suspend fun referencedSubjects(): Set<com.openminis.app.novex.domain.NovexContentAddress> {
+        val candidates = list().flatMap { it.cards }.filter { it.isPrivate }
+        val result = linkedSetOf<com.openminis.app.novex.domain.NovexContentAddress>()
+        fun protectId(id: String?) {
+            candidates.filter { it.subject.id == id || it.rootId == id }.forEach { result += it.subject }
+        }
+        // Conservative deletion guard only: exact stored identifiers, including unknown future fields.
+        // This does not grant read/edit access or attach the referenced content to a prompt.
+        fun scan(value: Any?) {
+            when (value) {
+                is org.json.JSONObject -> value.keys().forEach { key ->
+                    val child = value.opt(key)
+                    if (key == "id" || key.endsWith("Id") || key.endsWith("_id")) protectId(child as? String)
+                    if (child is org.json.JSONObject || child is org.json.JSONArray) scan(child)
+                }
+                is org.json.JSONArray -> (0 until value.length()).forEach { scan(value.opt(it)) }
+            }
+        }
+        chatDao.listSessions().forEach { session ->
+            protectId(session.worldId)
+            protectId(session.characterVersionId)
+            protectId(session.characterId)
+            session.novexConfigurationJson?.takeIf { it.isNotBlank() }?.let { raw ->
+                try { scan(org.json.JSONObject(raw)) }
+                catch (_: org.json.JSONException) { result += candidates.map { it.subject } }
+            }
+        }
+        return result
+    }
+    override suspend fun load(conversationId: String) = dao.get(conversationId)?.let {
+        com.openminis.app.novex.domain.NovexConversationDraftCodec.decode(it.contentJson)
+    }
+    override suspend fun list() = dao.list().map { com.openminis.app.novex.domain.NovexConversationDraftCodec.decode(it.contentJson) }
+    override suspend fun save(snapshot: com.openminis.app.novex.domain.NovexConversationDraftSnapshot) {
+        dao.save(com.openminis.app.data.db.NovexConversationDraftEntity(snapshot.conversationId,
+            com.openminis.app.novex.domain.NovexConversationDraftCodec.encode(snapshot)))
+    }
 }

@@ -318,6 +318,7 @@ fun ChatScreen(
     skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
     mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     onBack: () -> Unit,
+    onBackReturnsToList: Boolean = false,
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
      *  navigates to a fresh draft chat (same funnel as the session list's
      *  new-chat button), replacing this chat on the back stack. */
@@ -514,7 +515,12 @@ fun ChatScreen(
     // already used elsewhere in this file via `context`, but DisposableEffect
     // is a non-composable scope so we lift the read up here.
     val tHangDiagAppContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val returnFromConversation = {
+        if (onBackReturnsToList) viewModel.returnToConversationList(onBack) else onBack()
+    }
+    androidx.activity.compose.BackHandler(onBack = returnFromConversation)
     androidx.compose.runtime.DisposableEffect(sessionId) {
+        viewModel.markConversationVisible()
         ChatViewModelStore.setActiveSession(sessionId)
         // [T-HANG-DIAG] enter / dispose markers around the ChatScreen lifetime
         // so we can correlate "user tapped session X" → loadSession timings
@@ -528,17 +534,7 @@ fun ChatScreen(
         onDispose {
             println("[T-HANG-DIAG] ChatScreen UNMOUNT session=$sessionId")
             ChatViewModelStore.setActiveSession(null)
-            // T-android-new-chat-empty-residue: drop sessions materialised by
-            // a settings toggle (ensureSession via /memory, /thinking, etc.)
-            // but never sent a real message. VM guards on streaming + DB count
-            // so an in-flight agent or non-empty session is left alone.
-            // Skip cleanup on configuration changes (e.g. rotation) — the
-            // composable is about to re-mount with the same session and its
-            // pending attachments would be lost if we released the ViewModel.
-            val activity = context as? android.app.Activity
-            if (activity?.isChangingConfigurations != true) {
-                viewModel.cleanupIfEmptyOnExit()
-            }
+
         }
     }
 
@@ -1828,7 +1824,7 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = returnFromConversation) {
                         Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
                     }
                 },

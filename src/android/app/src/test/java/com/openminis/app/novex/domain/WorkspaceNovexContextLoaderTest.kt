@@ -149,7 +149,11 @@ class WorkspaceNovexContextLoaderTest {
             requestedWorldIds += id
             return worlds[id]
         }
-        override suspend fun character(id: String) = null
+        override suspend fun character(id: String) = characters.firstOrNull { it.character.character.id == id }?.let { card ->
+            NovexCharacterSnapshot(card.character, emptyMap(), emptyMap(),
+                card.character.allVersions.associate { version -> version.id to modules[ModuleOwner.characterVersion(version.id)].orEmpty() },
+                emptyMap(), emptyMap())
+        }
         override suspend fun interactiveFiction(id: String) = null
         override suspend fun modules(owner: ModuleOwner) = NovexModuleSnapshot(modules[owner].orEmpty(), emptyMap(), emptyMap())
         override suspend fun module(id: String): NovexModuleDetail? = null
