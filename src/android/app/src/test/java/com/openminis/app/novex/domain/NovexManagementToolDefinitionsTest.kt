@@ -8,6 +8,29 @@ import org.junit.Test
 
 class NovexManagementToolDefinitionsTest {
     @Test
+    fun `published launch modes can all be used without guessing enum spellings`() {
+        val inspection = NovexManagementInspection(emptyList(), null, null, emptyList(), null).toToolJson()
+        val modes = inspection.getJSONArray("game_launch_modes")
+        assertEquals(4, modes.length())
+        repeat(modes.length()) { index ->
+            val mode = modes.getJSONObject(index)
+            val wire = mode.getString("value")
+            assertTrue(mode.getString("label").isNotBlank())
+            val change = NovexManagementChangeCodec.decode(
+                """[{"operation":"create_game","name":"试验","launch_mode":"$wire"}]""",
+            ).single() as NovexManagedChange.CreateInteractiveFiction
+            assertEquals(wire.uppercase(), change.launchMode.name)
+        }
+        val failure = org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementChangeCodec.decode(
+                """[{"operation":"create_game","name":"试验","launch_mode":"guess"}]""",
+            )
+        }
+        assertTrue(failure.message.orEmpty().contains("free_sandbox"))
+        assertFalse(failure.message.orEmpty().contains("No enum constant"))
+    }
+
+    @Test
     fun `management is exposed as inspect propose and confirmed apply`() {
         val definitions = AgentTools.makeAgentTools()
             .filter {

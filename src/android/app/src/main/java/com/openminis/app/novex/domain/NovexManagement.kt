@@ -20,8 +20,8 @@ sealed interface NovexManagedChange {
 
     data class UpdateModule(
         val moduleId: String,
-        val name: String,
-        val contentJson: String,
+        val name: String? = null,
+        val contentJson: String? = null,
     ) : NovexManagedChange
 
     data class MoveModule(val moduleId: String, val toIndex: Int) : NovexManagedChange
@@ -301,8 +301,26 @@ object NovexManagementModuleTypeCatalog {
     }
 }
 
+/** External values are independent from database enum serialization and obfuscation. */
+object NovexManagementLaunchModes {
+    private val modes = linkedMapOf(
+        "fixed_identity" to InteractiveFictionLaunchMode.FIXED_IDENTITY,
+        "user_created_identity" to InteractiveFictionLaunchMode.USER_CREATED_IDENTITY,
+        "co_create_world" to InteractiveFictionLaunchMode.CO_CREATE_WORLD,
+        "free_sandbox" to InteractiveFictionLaunchMode.FREE_SANDBOX,
+    )
+
+    fun decode(value: String): InteractiveFictionLaunchMode = modes[value.trim().lowercase()]
+        ?: throw IllegalArgumentException("启动方式“$value”不受支持；合法值：${modes.keys.joinToString(", ")}")
+
+    fun toJson(): JSONArray = JSONArray(modes.map { (value, mode) ->
+        JSONObject().put("value", value).put("label", mode.displayName)
+    })
+}
+
 /** Provider-neutral inspection payload, including the legal values needed for the next call. */
 fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
+    put("game_launch_modes", NovexManagementLaunchModes.toJson())
     put("mounted_subjects", JSONArray().apply {
         subjects.forEach { value ->
             put(JSONObject()
@@ -452,7 +470,12 @@ class NovexManagementService(
                     is NovexManagedChange.AttachArtifact -> artifacts.attach(managed.toAttachment())
                     is NovexManagedChange.DetachArtifact -> artifacts.detach(managed.toAttachment())
                     else -> {
-                        val result = workspace.apply(managed.toCommand(facts))
+                        // Resolve each partial edit inside the transaction, after earlier changes
+                        // in this plan, rather than filling omitted fields with an empty document.
+                        val current = if (managed is NovexManagedChange.UpdateModule) {
+                            requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在，请重新生成计划" }.module
+                        } else null
+                        val result = workspace.apply(managed.toCommand(facts, current))
                         changes += result
                         result.createdSubject()?.let(created::add)
                     }
@@ -605,8 +628,8 @@ object NovexManagementChangeCodec {
                 }
                 "update_module" -> NovexManagedChange.UpdateModule(
                     moduleId = value.getString("module_id"),
-                    name = value.getString("name").trim(),
-                    contentJson = value.jsonText("content_json"),
+                    name = if (value.has("name")) value.getString("name").trim() else null,
+                    contentJson = if (value.has("content_json")) value.jsonText("content_json") else null,
                 )
                 "move_module" -> NovexManagedChange.MoveModule(
                     value.getString("module_id"),
@@ -638,8 +661,7 @@ object NovexManagementChangeCodec {
                 "create_game" -> NovexManagedChange.CreateInteractiveFiction(
                     name = value.getString("name").trim(),
                     summary = value.optString("summary"),
-                    launchMode = value.optString("launch_mode", InteractiveFictionLaunchMode.FREE_SANDBOX.name)
-                        .let(InteractiveFictionLaunchMode::valueOf),
+                    launchMode = NovexManagementLaunchModes.decode(value.optString("launch_mode", "free_sandbox")),
                     playerIdentity = value.optString("player_identity"),
                 )
                 "link_character_version" -> NovexManagedChange.LinkCharacterVersion(
@@ -675,8 +697,9 @@ object NovexManagementChangeCodec {
             }
             is NovexManagedChange.UpdateModule -> {
                 require(change.moduleId.isNotBlank()) { "模块编号不能为空" }
-                require(change.name.isNotBlank()) { "模块名称不能为空" }
-                JSONObject(change.contentJson)
+                require(change.name != null || change.contentJson != null) { "至少提供 name 或 content_json；未提供的字段保持原样" }
+                change.name?.let { require(it.isNotBlank()) { "模块名称不能为空" } }
+                change.contentJson?.let(::JSONObject)
             }
             is NovexManagedChange.MoveModule -> {
                 require(change.moduleId.isNotBlank()) { "模块编号不能为空" }
@@ -777,7 +800,7 @@ private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
 
 private fun NovexManagedChange.summary(): String = when (this) {
     is NovexManagedChange.AddModule -> "新增模块“$name”"
-    is NovexManagedChange.UpdateModule -> "修改模块“$name”"
+    is NovexManagedChange.UpdateModule -> "修改模块“${name ?: moduleId}”"
     is NovexManagedChange.MoveModule -> "调整模块顺序"
     is NovexManagedChange.DeleteModule -> "删除模块 $moduleId"
     is NovexManagedChange.AddModuleReference -> "增加内容关联"
@@ -820,14 +843,19 @@ private fun NovexManagedChange.DetachArtifact.toAttachment() = CreativeArtifactA
     slot = slot,
 )
 
-private fun NovexManagedChange.toCommand(facts: NovexManagementFacts): NovexCommand = when (this) {
+private fun NovexManagedChange.toCommand(
+    facts: NovexManagementFacts,
+    currentModule: com.openminis.app.data.character.ContentModuleEntity? = null,
+): NovexCommand = when (this) {
     is NovexManagedChange.AddModule -> NovexCommand.AddModule(
         owner = owner,
         type = type,
         name = name,
         contentJson = contentJson,
     )
-    is NovexManagedChange.UpdateModule -> NovexCommand.SaveModule(moduleId, name, contentJson)
+    is NovexManagedChange.UpdateModule -> requireNotNull(currentModule) { "模块不存在" }.let { current ->
+        NovexCommand.SaveModule(moduleId, name ?: current.name, contentJson ?: current.contentJson)
+    }
     is NovexManagedChange.MoveModule -> NovexCommand.MoveModule(moduleId, toIndex)
     is NovexManagedChange.DeleteModule -> NovexCommand.DeleteModule(moduleId)
     is NovexManagedChange.AddModuleReference -> NovexCommand.AddModuleReference(moduleId, target, position)

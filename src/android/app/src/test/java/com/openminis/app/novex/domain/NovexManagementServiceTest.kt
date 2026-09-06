@@ -16,6 +16,39 @@ import org.junit.Test
 
 class NovexManagementServiceTest {
     @Test
+    fun `partial module changes preserve omitted fields through inspection`() = runBlocking {
+        val workspace = FakeManagementWorkspace()
+        val owner = ModuleOwner.world("w1")
+        val original = """{"kind":"single_image","description":"北境旧图"}"""
+        workspace.modulesByOwner[owner] = listOf(module("m1", owner, content = original))
+        val service = NovexManagementService(workspace, FakeArtifactPort())
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(ManagedSubject(NovexContentAddress.world("w1"), ManagedAccess.EDIT)),
+        )
+        val rename = service.propose(
+            configuration,
+            """[{"operation":"update_module","module_id":"m1","name":"北境地图"}]""",
+            "只改名字", "rename-12345678",
+        )
+        service.apply(configuration, rename, rename.confirmationPhrase)
+        val renamed = service.inspect(configuration, null, "m1").modules.single()
+        assertEquals("北境地图", renamed.name)
+        assertEquals(original, renamed.contentJson)
+
+        val newContent = """{"kind":"single_image","description":"新边界"}"""
+        val edit = service.propose(
+            configuration,
+            """[{"operation":"update_module","module_id":"m1","content_json":$newContent}]""",
+            "只改正文", "edit-12345678",
+        )
+        service.apply(configuration, edit, edit.confirmationPhrase)
+        val edited = service.inspect(configuration, null, "m1").modules.single()
+        assertEquals("北境地图", edited.name)
+        assertEquals(newContent, edited.contentJson)
+    }
+
+    @Test
     fun `inspection is limited to mounted subjects`() {
         runBlocking {
             val workspace = FakeManagementWorkspace()
@@ -217,9 +250,14 @@ private class FakeManagementWorkspace : NovexWorkspace {
             is NovexCommand.AddModule -> NovexChange.ModuleSaved(
                 module(command.id, command.owner, command.type, command.name, command.contentJson),
             )
-            is NovexCommand.SaveModule -> NovexChange.ModuleSaved(
-                module(command.moduleId, ModuleOwner.world("w1"), name = command.name, content = command.contentJson),
-            )
+            is NovexCommand.SaveModule -> {
+                val current = requireNotNull(module(command.moduleId)).module
+                val saved = current.copy(name = command.name, contentJson = command.contentJson)
+                modulesByOwner[current.owner] = modulesByOwner[current.owner].orEmpty().map {
+                    if (it.id == saved.id) saved else it
+                }
+                NovexChange.ModuleSaved(saved)
+            }
             is NovexCommand.MoveModule -> NovexChange.ModuleSaved(
                 module(command.moduleId, ModuleOwner.world("w1")),
             )

@@ -19,7 +19,8 @@ object NovexManagementTools {
         AgentToolDefinition(
             name = INSPECT,
             description = "Read Novex worlds, character versions, games and modules mounted in the current " +
-                "conversation management workspace. Omit all parameters to list mounted subjects. This tool " +
+                "conversation management workspace. Omit all parameters to list mounted subjects and legal " +
+                "module types and game_launch_modes, including before creating the first card. This tool " +
                 "never changes content and cannot inspect unmounted subjects.",
             parameters = mapOf(
                 "subject_kind" to AgentToolParam(
@@ -45,13 +46,15 @@ object NovexManagementTools {
                         "Module operations: add_module requires {operation, subject_kind, subject_id, " +
                         "module_type, name, content_json}; module_type must use one of the stable module types returned by inspect for that subject kind. " +
                         "update_module requires {operation, module_id, name?, " +
-                        "content_json?}; move_module requires {operation, module_id, to_index}; delete_module " +
+                        "content_json?}; provide at least one field, omitted fields are preserved (content_json replaces the supplied document). " +
+                        "move_module requires {operation, module_id, to_index}; delete_module " +
                         "requires {operation, module_id}. Reference operations add_reference and remove_reference " +
                         "require {operation, module_id, target_kind, target_id, position?}. Create operations: " +
                         "create_world requires {operation, name, overview?}; create_character requires {operation, " +
                         "name, profile_json}; create_character_version requires {operation, source_version_id, " +
                         "label, profile_json}; create_game requires {operation, name, summary?, launch_mode?, " +
-                        "player_identity?}. World links link_character_version and unlink_character_version require " +
+                        "player_identity?}; launch_mode is fixed_identity, user_created_identity, co_create_world, or " +
+                        "free_sandbox (default); inspect also returns their labels. World links link_character_version and unlink_character_version require " +
                         "{operation, world_id, version_id, position?}. Artifact operations attach_artifact and " +
                         "detach_artifact require {operation, artifact_id, subject_kind, subject_id, module_id?, " +
                         "slot?}. subject_kind is world, character_version, or game. content_json and profile_json " +
