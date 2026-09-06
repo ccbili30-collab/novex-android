@@ -132,6 +132,7 @@ object NovexManagementPolicy {
         facts: NovexManagementFacts,
         latestUserRequest: String,
         planId: String,
+        priorUserRequests: List<String> = emptyList(),
     ): NovexManagementPlan {
         require(changes.isNotEmpty()) { "至少需要一项变更" }
         require(changes.size <= 20) { "一次最多修改二十项内容" }

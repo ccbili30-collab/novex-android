@@ -119,6 +119,23 @@ class NovexManagementPlanTest {
     }
 
     @Test
+    fun `a continued creation task can propose content but still needs exact confirmation`() {
+        val plan = NovexManagementPolicy.plan(
+            configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
+            changes = listOf(NovexManagedChange.CreateWorld("雾海", "被雾包围的群岛")),
+            facts = NovexManagementFacts(),
+            priorUserRequests = listOf("请创建一个叫雾海的世界", "把地图和地区分成两个模块"),
+            latestUserRequest = "按刚才的方案做",
+            planId = "proposal-12345678",
+        )
+
+        assertEquals(NovexManagementRisk.CREATE_GLOBAL, plan.risk)
+        assertTrue(plan.requiresConfirmation)
+        assertFalse(plan.isConfirmedBy("按刚才的方案做"))
+        assertTrue(plan.isConfirmedBy("确认执行 proposal"))
+    }
+
+    @Test
     fun `only the real following user turn can confirm a plan`() {
         val plan = NovexManagementPlan(
             id = "proposal-12345678",
