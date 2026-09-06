@@ -255,12 +255,15 @@ fun formatOpaqueThemeColor(color: Int): String =
     String.format(Locale.ROOT, "#%06X", color and 0x00FFFFFF)
 
 fun validateThemeColors(colors: AppThemeColors): List<ThemeColorIssue> = buildList {
-    val requiredAccentRatio = ThemeColorPresets.find(colors.presetId)
-        ?.takeIf { it.colors == colors }
-        ?.minimumAccentContrast
-        ?: 3.0
     ThemeVariantMode.entries.forEach { mode ->
         val variant = colors.variant(mode)
+        // A bundled decorative accent remains supported when only text or the
+        // opposite mode is edited. Validate the actual accent/background pair,
+        // not a global preset id that changes to "custom" after any local edit.
+        val requiredAccentRatio = ThemeColorPresets.all.firstOrNull { preset ->
+            val bundled = preset.colors.variant(mode)
+            bundled.accent == variant.accent && bundled.background == variant.background
+        }?.minimumAccentContrast ?: 3.0
         val textRatio = contrastRatio(variant.foreground, variant.background)
         if (textRatio < 4.5) {
             add(ThemeColorIssue(mode, ThemeColorField.Foreground, textRatio, 4.5))
