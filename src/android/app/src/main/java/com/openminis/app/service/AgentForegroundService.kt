@@ -207,6 +207,9 @@ class AgentForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        // A service can be restored before the optional runtime is ready. Retry
+        // the overlay on later status updates, without creating duplicate collectors.
+        startOverlayObserver()
         return START_STICKY
     }
 
@@ -291,7 +294,8 @@ class AgentForegroundService : Service() {
      * overlay doesn't draw on top of the chat itself.
      */
     private fun startOverlayObserver() {
-        val app = applicationContext as? MinisApp ?: return
+        if (overlayController != null) return
+        val app = (applicationContext as? MinisApp)?.takeIf { it.subsystemsReady() } ?: return
         overlayController = ToolOverlayController(applicationContext).apply {
             // [T-android-overlay-reply-status-34599] Tap-to-open or X
             // dismissal clears the lingered completion state so the
