@@ -15,6 +15,8 @@ class CharacterPagePolicyTest {
     fun characterVersionOffersExactlyTheConfirmedOptionalModules() {
         assertEquals(
             listOf(
+                ContentModuleType.ROLE_INSTRUCTIONS,
+                ContentModuleType.ROLE_PLAYER_IDENTITY,
                 ContentModuleType.QUOTES,
                 ContentModuleType.WORLD_EXPERIENCE,
                 ContentModuleType.ATTRIBUTE_PANEL,

@@ -132,6 +132,8 @@ case "$plan" in
       --tests 'com.openminis.app.data.character.ContentModule*'
       --tests 'com.openminis.app.ui.novex.ContentModuleDraftListTest'
       --tests 'com.openminis.app.ui.novex.NovexContentModulePresentationTest'
+      --tests 'com.openminis.app.ui.novex.NovexComponentArchitectureTest'
+      --tests 'com.openminis.app.ui.settings.CharacterPagePolicyTest'
       --tests 'com.openminis.app.agent.NovexSystemPromptTest'
       --tests 'com.openminis.app.tools.InteractiveFictionAgentToolsTest'
       --tests 'com.openminis.app.tools.ImageGenerationPolicyTest'
