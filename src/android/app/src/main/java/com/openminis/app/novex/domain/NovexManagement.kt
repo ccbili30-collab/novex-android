@@ -543,7 +543,12 @@ class NovexManagementService(
             planId = planId,
             priorUserRequests = priorUserRequests,
         )
-        val available = workspace.emptyConversationDrafts(configuration.conversationId).toMutableList()
+        val privateSubjects = privateEditableSubjects(configuration)
+        val available = workspace.emptyConversationDrafts(configuration.conversationId).filter { card ->
+            card.subject in privateSubjects && configuration.managedSubjects.none {
+                it.subject == card.subject && it.access == ManagedAccess.READ_ONLY
+            }
+        }.toMutableList()
         val ownsDrafts = workspace.conversationDrafts(configuration.conversationId) != null
         val targets = changes.mapIndexedNotNull { index, change ->
             val kind = change.draftKind() ?: return@mapIndexedNotNull null
@@ -555,7 +560,6 @@ class NovexManagementService(
             available.remove(card)
             index to card.subject
         }.toMap()
-        val privateSubjects = privateEditableSubjects(configuration)
         val directEdits = if (hasRoutineEditRequest(latestUserRequest, priorUserRequests)) changes.indices.filter { index ->
             val change = changes[index]
             val subjects = change.targets(facts)
@@ -606,6 +610,10 @@ class NovexManagementService(
                 "持久化计划不存在或已变化，请重新提出变更"
             }
             require(plan.isConfirmedBy(confirmationText)) { "需要用户发送“${plan.confirmationPhrase}”" }
+            val currentPrivate = privateEditableSubjects(configuration)
+            require(plan.draftTargets.values.all { target -> target in currentPrivate && configuration.managedSubjects.none {
+                it.subject == target && it.access == ManagedAccess.READ_ONLY
+            } }) { "原空卡的管理权限或共享引用已改变，未写入；请重新提出创建计划，使用新的可写空卡" }
             val facts = factsFor(plan.changes)
             val currentTargets = plan.changes.flatMap { it.targets(facts) }.toSet()
             require(currentTargets == plan.targets) { "内容关系已经变化，请重新生成变更计划" }

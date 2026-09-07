@@ -78,14 +78,21 @@ class NovexCardFileServiceTest {
             val management = NovexManagementService(workspace, CreativeArtifactRepository(db, CreativeArtifactFileStore(File(folder.root, "plural-artifacts"))))
             val service = NovexCardFileService(workspace, management, NovexCardFileOperations(NovexCardSourceModules(NovexDocumentSnapshotStore { null }) { false }),
                 NovexManagementTransaction { work -> db.withTransaction { work() } })
-            val config = NovexConversationConfigurationSnapshot("plural")
+            val locked = workspace.conversationDrafts("plural")!!.cards.single { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.subject
+            val config = NovexConversationConfigurationSnapshot("plural", managedSubjects = listOf(ManagedSubject(locked, ManagedAccess.READ_ONLY)))
             val args = JSONObject("""{"kind":"game","name":"相同的文游草稿","modules":[{"name":"规则","text":"保持相同正文"}]}""")
             val users = listOf("创建两张一样的文游卡")
             val first = service.execute(config, "novex_write_card", args, users, "plural-first")
             val second = service.execute(first.configuration, "novex_write_card", args, users, "plural-second")
             assertFalse(second.applied!!.replayed)
             assertNotEquals(first.applied!!.createdSubjects, second.applied.createdSubjects)
-            assertEquals(4, workspace.conversationDrafts("plural")!!.cards.size)
+            assertEquals(5, workspace.conversationDrafts("plural")!!.cards.size)
+            assertNotEquals(locked, first.applied.createdSubjects.single())
+            assertTrue(management.inspect(config, locked, null).modules.isEmpty())
+            assertThrows(IllegalArgumentException::class.java) { runBlocking {
+                service.execute(config, "novex_write_module", JSONObject().put("kind", "game").put("card_id", locked.id)
+                    .put("name", "不得写入").put("text", "不能绕过只读"), listOf("添加这个模块"), "readonly-denied")
+            } }
         } finally { db.close() }
     }
 
