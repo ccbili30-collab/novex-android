@@ -521,7 +521,7 @@ internal class DefaultNovexWorkspace(
     private fun cardCopy() = NovexCardCopy(this, catalog, content, media, interactiveFiction, cardReferences, versionRelations)
     override suspend fun prepareWorldParallel(worldId: String): NovexWorldParallelPlan {
         lateinit var plan: NovexWorldParallelPlan
-        transaction { plan = NovexWorldParallel(this).prepare(worldId); NovexChange.Completed }
+        transaction { plan = NovexWorldParallel(insideTransactionWorkspace()).prepare(worldId); NovexChange.Completed }
         return plan
     }
     override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy): NovexCardCopyPlan {
@@ -529,7 +529,7 @@ internal class DefaultNovexWorkspace(
         transaction { prepared = cardCopy().prepare(root, policy); NovexChange.Completed }
         return prepared
     }
-    private fun referencePackage(selectedCharacterId: String? = null, selectedVersionIds: Set<String>? = null) = NovexReferencePackage(this,
+    private fun referencePackage(selectedCharacterId: String? = null, selectedVersionIds: Set<String>? = null) = NovexReferencePackage(insideTransactionWorkspace(),
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
         exportSingle = { kind, id -> when (kind) {
             NovexCardKind.WORLD -> exportWorldCard(id)
@@ -672,7 +672,17 @@ internal class DefaultNovexWorkspace(
         )
     }
 
-    override suspend fun apply(command: NovexCommand): NovexChange = transaction {
+    // Native compound commands share the outer transaction and command lock. Calling the
+    // public entry recursively would attempt to lock its non-reentrant mutex again.
+    private fun insideTransactionWorkspace(): NovexWorkspace = object : NovexWorkspace by this {
+        override suspend fun apply(command: NovexCommand) = applyRecorded(command)
+        override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy) = cardCopy().prepare(root, policy)
+        override suspend fun prepareWorldParallel(worldId: String) = NovexWorldParallel(this).prepare(worldId)
+    }
+
+    override suspend fun apply(command: NovexCommand): NovexChange = transaction { applyRecorded(command) }
+
+    private suspend fun applyRecorded(command: NovexCommand): NovexChange {
         val historyCommand = if (command is NovexCommand.RemoveCardReference && command.expectedSource == null)
             command.copy(expectedSource = cardReferences.get(command.id)?.source) else command
         val history = NovexCharacterRevisionJournal(this, characterRevisions)
@@ -682,7 +692,7 @@ internal class DefaultNovexWorkspace(
         val at = command.revisionTime()
         targets.forEach { history.record(it, at) }
         cardTargets.forEach { cards.record(it, at) }
-        applyInsideTransaction(command).also { result ->
+        return applyInsideTransaction(command).also { result ->
             if (characterRevisions !== UnavailableNovexCharacterRevisions)
                 (targets + history.resultingTargets(result)).distinct().forEach { history.record(it, at) }
             if (cardRevisions !== UnavailableNovexCardRevisions)
@@ -879,7 +889,7 @@ internal class DefaultNovexWorkspace(
             NovexChange.NativeCardImported(command.card.document.kind(), localId)
         }
         is NovexCommand.CreateParallelWorld -> NovexChange.WorldParallelCreated(
-            NovexWorldParallel(this).create(command.plan, command.name, command.selectedVersionIds, command.now))
+            NovexWorldParallel(insideTransactionWorkspace()).create(command.plan, command.name, command.selectedVersionIds, command.now))
         is NovexCommand.ExportNativeSelection -> {
             require(command.versionIds == null || command.root.kind == NovexCardKind.CHARACTER) { "仅角色卡支持选择版本" }
             NovexChange.NativeCardExported(referencePackage(command.root.id, command.versionIds).export(
