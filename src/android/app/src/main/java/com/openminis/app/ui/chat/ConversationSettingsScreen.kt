@@ -108,6 +108,7 @@ fun ConversationSettingsScreen(
     val workGroups = rememberNovexWorkGroups()
     val works by workGroups.snapshots.collectAsState(initial = null)
     var pickingWork by remember { mutableStateOf(false) }
+    var showingAdoptedSources by remember { mutableStateOf(false) }
     var returnPicker by remember { mutableStateOf<ConversationPicker?>(null) }
     val viewModel: ChatViewModel = viewModel(
         viewModelStoreOwner = ChatViewModelStore.ownerFor(sessionId),
@@ -324,12 +325,18 @@ fun ConversationSettingsScreen(
             header = "背景设定",
             footer = "可加入多个世界和角色版本，采用的资料会固定保存；需要更新时从原卡刷新。文游自身引用的资料在活动文游中单独刷新。背景用途不会授予编辑权限。",
         ) {
+            NovexSummaryRow("查看实际采用来源", "同一修订合并显示用途；不同修订分别保留，不自动选用最新正文",
+                onClick = { showingAdoptedSources = true })
             draft.configuration.backgroundSettings.forEachIndexed { index, setting ->
                 ConversationSubjectRow(
                     labels[setting.subject]?.label ?: setting.subject.fallbackLabel(),
                     labels[setting.subject]?.kindLabel ?: setting.subject.kind.displayName(),
                     onRemove = { draft = draft.removeBackground(setting.subject) },
                 )
+                if (com.openminis.app.novex.domain.NovexEffectiveFrozenContext.gameSources(draft.configuration)
+                        .any { it.adoptedByGame && it.target.subject == setting.subject }) {
+                    NovexSummaryRow("仍有文游来源", "移除上面的直接加入关系后，文游采用的修订仍会继续使用")
+                }
                 NovexTextActionRow("从原卡刷新这项背景", onClick = { refreshAdoptedSetting(setting.subject) })
                 if (index < draft.configuration.backgroundSettings.lastIndex) {
                     NovexDivider(Modifier.padding(horizontal = 16.dp))
@@ -717,6 +724,17 @@ fun ConversationSettingsScreen(
             }) { updated -> draft = updated },
             onDismissRequest = { picker = null },
         )
+    }
+    if (showingAdoptedSources) com.openminis.app.ui.novex.NovexContentDialog("实际采用的来源", onDismiss = { showingAdoptedSources = false },
+        confirmButton = { com.openminis.app.ui.novex.TextButton(onClick = { showingAdoptedSources = false }) { Text("返回对话配置") } }) {
+        val sources = com.openminis.app.novex.domain.NovexAdoptedSourceUsageProjection.read(draft.configuration)
+        if (sources.isEmpty()) Text("当前没有已保存的采用快照；新选择的资料在保存对话配置时采用。")
+        sources.forEach { usage ->
+            Text(usage.source.candidates.firstOrNull()?.label ?: usage.source.target.subject.id)
+            Text("修订 ${usage.revision.take(12)} · ${usage.origins.joinToString("、")}")
+            Text("${usage.source.candidates.size} 个正文或模块 · ${usage.source.target.subject.id}")
+        }
+        Text("这里显示软件实际保存的采用关系，不能把正文存在视为事实核验通过。尚未保存的配置修改不会改变原卡。")
     }
     if (pickingWork) NovexSearchableSelectionSheet("选择候选卡片范围", buildList {
         fun choice(id: String, title: String) = NovexSelectionAction(title, selected = works?.selection == id) {

@@ -207,7 +207,7 @@ class WorkspaceNovexContextLoader(
                 includeLegacyPlayer = active.playerIdentity == null && configuration.playerIdentity == null,
                 playthroughId = configuration.effectivePlaythroughId.orEmpty())
         }
-        return candidates.mergeDuplicates()
+        return com.openminis.app.novex.domain.NovexContextSourceVersions.merge(candidates)
     }
 
     private suspend fun moduleCandidates(
@@ -308,23 +308,6 @@ class WorkspaceNovexContextLoader(
             add("关系 · ${relation.characterName}：${relation.relationship} ${relation.description}".trim())
         }
     }.joinToString("\n")
-
-    private fun List<NovexContextCandidate>.mergeDuplicates(): List<NovexContextCandidate> {
-        val merged = linkedMapOf<String, NovexContextCandidate>()
-        forEach { candidate ->
-            val previous = merged[candidate.sourceId]
-            merged[candidate.sourceId] = if (previous == null) candidate else previous.copy(
-                kind = if (
-                    previous.kind == ContextSourceKind.ANSWER_IDENTITY ||
-                    candidate.kind == ContextSourceKind.ANSWER_IDENTITY
-                ) ContextSourceKind.ANSWER_IDENTITY else previous.kind,
-                aliases = previous.aliases + candidate.aliases,
-                relatedSourceIds = previous.relatedSourceIds + candidate.relatedSourceIds,
-                alwaysInclude = previous.alwaysInclude || candidate.alwaysInclude,
-            )
-        }
-        return merged.values.toList()
-    }
 
     private fun stringArray(raw: String): Set<String> = runCatching {
         val array = JSONArray(raw)

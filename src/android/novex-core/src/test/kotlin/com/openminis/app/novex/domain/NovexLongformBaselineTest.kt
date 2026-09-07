@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -28,7 +29,7 @@ class NovexLongformBaselineTest {
         val useRecovery = System.getenv("NOVEX_BASELINE_USE_RECOVERY") == "true"
         val contextTokens = System.getenv("NOVEX_BASELINE_CONTEXT")?.toInt() ?: 32_768
         require(contextTokens in 16_384..32_768) { "本轮验收窗口必须在已批准测试范围内" }
-        require(mode in setOf("prepare", "offline", "live", "handoff"))
+        require(mode in setOf("prepare", "offline", "live", "handoff", "queries"))
         val documents = FileNovexDocumentSnapshotRepository(File(output, "documents"))
         val pipeline = NovexDocumentSnapshotPipeline(documents)
         val outcomes = NovexBatchDocumentImporter(2, NovexDocumentImportWorker { request ->
@@ -82,6 +83,20 @@ class NovexLongformBaselineTest {
                 .put("status", result.snapshot?.status?.name).put("failure", result.failureCode) }))
         File(output, "plan.json").writeText(plan.toString(2))
         if (mode == "prepare") return@runBlocking
+        if (mode == "queries") {
+            val savedFile = File(requireNotNull(System.getenv("NOVEX_BASELINE_LIVE_RESUME")))
+            val saved = NovexLearningStateJsonCodec.decode(savedFile.readText())
+            require(saved.collection == state.collection) { "只读查询必须采用原资料集" }
+            require(saved.preflight!!.documentRevisions == sourceDocuments.values.associate { it.ref to NovexSourceReadEvidence.documentRevision(it) }) {
+                "查询来源修订不一致，不能以当前解析冒充原记录"
+            }
+            File(output, "query-origin.json").writeText(JSONObject().put("file", savedFile.absolutePath)
+                .put("sha256", hash(savedFile.readBytes())).put("read_only", true)
+                .put("learning_status", saved.task!!.status.name).put("semantic_acceptance", "requires_separate_review").toString(2))
+            runQueries(saved, documents, input, output, "saved-partial-synthesis", null)
+            assertEquals(hash(savedFile.readBytes()), JSONObject(File(output, "query-origin.json").readText()).getString("sha256"))
+            return@runBlocking
+        }
         val initial = state.copy(task = NovexLearningCoordinator().start(preflight, NovexLearningConfirmation(
             preflight.id, preflight.modelId, preflight.sourceRefs, budget.inputTokens, budget.outputTokens, 2_000L)))
         if (mode == "handoff") {

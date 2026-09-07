@@ -15,14 +15,16 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
             it.sourceModuleId == null && it.purpose == NovexReferencePurpose.ANSWER_IDENTITY
         }
         require(identityReference == null || base.answerIdentity == null) { "文游同时指定了独立人格和回答角色，请保留其中一个回答身份后启动" }
-        val frozen = linkedMapOf<NovexReferenceTarget, NovexFrozenContext>()
+        // Each adoption path retains its own revision and media. Text deduplication happens only after adoption.
+        val frozen = linkedMapOf<Pair<NovexReferenceTarget, NovexContentAddress?>, NovexFrozenContext>()
         val reader = NovexReferenceContextReader(workspace)
         val references = linkedMapOf<String, NovexCardReference>()
         val cycles = linkedSetOf<String>()
         fun addSource(target: NovexReferenceTarget, candidates: List<NovexContextCandidate>, gameOwned: Boolean, conversationRoot: NovexContentAddress?,
             retainedMedia: List<NovexSnapshotMedia>? = null) {
-            val prior = frozen[target]
-            frozen[target] = NovexFrozenContext(target, prior?.candidates ?: candidates,
+            val key = target to conversationRoot
+            val prior = frozen[key]
+            frozen[key] = NovexFrozenContext(target, prior?.candidates ?: candidates,
                 adoptedByGame = prior?.adoptedByGame == true || gameOwned,
                 conversationRoots = prior?.conversationRoots.orEmpty() + listOfNotNull(conversationRoot),
                 media = prior?.media ?: retainedMedia.orEmpty(),

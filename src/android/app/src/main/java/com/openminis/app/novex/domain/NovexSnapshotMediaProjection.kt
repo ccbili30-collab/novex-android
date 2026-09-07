@@ -12,7 +12,7 @@ object NovexSnapshotMediaProjection {
             }
         }.orEmpty()
         return (NovexEffectiveFrozenContext.sources(configuration).flatMap { it.media } + gameMedia)
-            .distinctBy { listOf(it.owner, it.slot, it.moduleId, it.entryId) }
+            .distinctBy { listOf(it.owner, it.slot, it.moduleId, it.entryId, it.asset.sha256) }
     }
 
     fun profile(configuration: NovexConversationConfigurationSnapshot, profile: ImmersiveChatProfile): ImmersiveChatProfile {

@@ -25,6 +25,48 @@ class NovexConversationContextAdoptionPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun `direct adoption and game adoption keep different revisions readable after closing and reopening`() = runBlocking {
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+            File(files.root, "parallel-adoption.db").absolutePath).allowMainThreadQueries().build()
+        var database = open()
+        try {
+            var workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
+            val world = workspace.apply(NovexCommand.CreateWorld("双重来源", "旧规则：十取一")).requireWorld()
+            val address = NovexContentAddress.world(world.id)
+            val before = NovexConversationContextAdoption(workspace).adopt(NovexConversationConfigurationSnapshot("chat",
+                backgroundSettings = listOf(BackgroundSetting(address))))
+            workspace.apply(NovexCommand.SaveWorld(world.copy(overview = "新规则：二十取一")))
+            val game = workspace.apply(NovexCommand.SaveInteractiveFictionPage(null, "新局" )).requireInteractiveFiction()
+            workspace.apply(NovexCommand.PutCardReference(NovexCardReference("rules", NovexContentAddress.interactiveFiction(game.id),
+                NovexReferenceTarget(address), NovexReferencePurpose.RULES)))
+            val frozen = com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(game.id, before.backgroundSettings, before.adoptedContexts)
+            val started = NovexConversationConfiguration.open(before).apply(NovexConversationCommand.ActivateInteractiveFiction(frozen)).snapshot
+            val row = com.openminis.app.data.repository.ChatRepository(database.chatDao()).createSession("test-model",
+                novexConfigurationJson = NovexConversationConfigurationCodec.encode(started))
+            database.close(); database = open()
+            workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
+            val restored = NovexConversationConfigurationCodec.decode(database.chatDao().getSession(row.id)!!.novexConfigurationJson, row.id)
+            val candidates = WorkspaceNovexContextLoader(workspace).load(restored).filter { it.content.contains("规则：") }
+            assertEquals(setOf("旧规则：十取一", "新规则：二十取一"), candidates.map { it.content }.toSet())
+            assertEquals(2, candidates.map { it.sourceId }.distinct().size)
+            assertTrue(candidates.all { it.label.contains("并列修订") })
+            val reads = com.openminis.app.novex.adapter.NovexContextReadService(workspace)
+            candidates.forEach { candidate ->
+                assertEquals(candidate.content, reads.read(restored, candidate.sourceId).getString("text"))
+                assertEquals(candidate.content, reads.read(restored, "world:${world.id}:overview",
+                    revision = NovexFrozenContextCodec.digest(candidate.content)).getString("text"))
+            }
+            assertTrue(runCatching { reads.read(restored, "world:${world.id}:overview") }.isFailure)
+            assertEquals(2, NovexAdoptedSourceUsageProjection.read(restored).filter { it.source.target.subject == address }.size)
+            val removed = NovexConversationConfiguration.open(restored).apply(NovexConversationCommand.RemoveBackground(address)).snapshot
+            val remaining = WorkspaceNovexContextLoader(workspace).load(removed).map { it.content }
+            assertFalse("旧规则：十取一" in remaining)
+            assertTrue("新规则：二十取一" in remaining)
+            assertEquals(restored.effectivePlaythroughId, removed.effectivePlaythroughId)
+        } finally { database.close() }
+    }
+
+    @Test
     fun `legacy-compatible role snapshot keeps companion identity out of public knowledge and scopes instructions`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
             .allowMainThreadQueries().build()

@@ -44,8 +44,11 @@ class NovexContextReadService(
     suspend fun read(configuration: NovexConversationConfigurationSnapshot, sourceId: String,
         offset: Int = 0, limit: Int = 12_000, revision: String? = null): JSONObject {
         require(offset >= 0 && limit in 1..24_000) { "读取偏移不能为负，单次长度须为一到两万四千个字符" }
-        val candidate = requireNotNull(candidates(configuration).singleOrNull { it.sourceId == sourceId }) {
-            "来源不可用或不在当前使用范围；请先查看当前资料目录。私有身份模块不能通过猜测编号读取"
+        val candidate = requireNotNull(candidates(configuration).singleOrNull {
+            (it.sourceId == sourceId || (revision != null && it.sourceId == "$sourceId@revision:$revision")) &&
+                (revision == null || NovexFrozenContextCodec.digest(it.content) == revision)
+        }) {
+            "来源不可用、修订不符或存在并列修订；请按当前目录的来源编号和修订读取。私有身份模块不能通过猜测编号读取"
         }
         val currentRevision = NovexFrozenContextCodec.digest(candidate.content)
         require(offset == 0 || !revision.isNullOrBlank()) { "继续读取必须使用上次返回的修订摘要，不能拼接不同版本" }
