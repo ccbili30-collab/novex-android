@@ -26,7 +26,7 @@ class NovexLongformBaselineTest {
         check(output.mkdirs())
         val mode = System.getenv("NOVEX_BASELINE_MODE") ?: "prepare"
         val useRecovery = System.getenv("NOVEX_BASELINE_USE_RECOVERY") == "true"
-        require(mode in setOf("prepare", "offline", "live"))
+        require(mode in setOf("prepare", "offline", "live", "handoff"))
         val documents = FileNovexDocumentSnapshotRepository(File(output, "documents"))
         val pipeline = NovexDocumentSnapshotPipeline(documents)
         val outcomes = NovexBatchDocumentImporter(2, NovexDocumentImportWorker { request ->
@@ -82,6 +82,10 @@ class NovexLongformBaselineTest {
         if (mode == "prepare") return@runBlocking
         val initial = state.copy(task = NovexLearningCoordinator().start(preflight, NovexLearningConfirmation(
             preflight.id, preflight.modelId, preflight.sourceRefs, budget.inputTokens, budget.outputTokens, 2_000L)))
+        if (mode == "handoff") {
+            runHandoff(initial, documents, output, estimates, sourceDocuments)
+            return@runBlocking
+        }
         if (mode == "live") {
             runLive(initial, documents, input, output)
             return@runBlocking
@@ -214,8 +218,18 @@ class NovexLongformBaselineTest {
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-    private fun sendLive(prompt: NovexLearningPrompt, maxOutput: Int, messages: JSONArray? = null, tools: JSONArray? = null): JSONObject {
-        val payload = JSONObject().put("model", "deepseek-v4-flash").put("stream", false)
+    private fun workspacePublisher(output: File, documents: NovexDocumentSnapshotStore): (NovexLearningState) -> Unit {
+        if (System.getenv("NOVEX_BASELINE_PROJECT_WORKSPACE") != "true") return {}
+        val store = FileNovexConversationWorkspaceStore(File(output, "workspace"))
+        val projection = NovexLearningWorkspaceProjection(store, documents)
+        val scope = NovexConversationWorkspaceScope("synthetic-baseline", listOf("attachments"), "attachments")
+        val sources = File(requireNotNull(System.getenv("NOVEX_BASELINE_INPUT")), "sources")
+        return { state -> projection.publish(state, scope, state.collection.sources.associate { it.ref to File(sources, it.title) }); Unit }
+    }
+
+    private fun sendLive(prompt: NovexLearningPrompt, maxOutput: Int, messages: JSONArray? = null, tools: JSONArray? = null,
+        model: String = "deepseek-v4-flash"): JSONObject {
+        val payload = JSONObject().put("model", model).put("stream", false)
             .put("thinking", JSONObject().put("type", "disabled")).put("max_tokens", maxOutput)
             .put("messages", messages ?: JSONArray().put(JSONObject().put("role", "system").put("content", prompt.system))
                 .put(JSONObject().put("role", "user").put("content", prompt.user)))
@@ -231,7 +245,101 @@ class NovexLongformBaselineTest {
         return JSONObject(response)
     }
 
+    private suspend fun runHandoff(initial: NovexLearningState, documents: FileNovexDocumentSnapshotRepository,
+        output: File, estimates: List<NovexLearningSourceEstimate>, sourceDocuments: Map<NovexResourceRef, NovexDocumentSnapshot>) {
+        val root = File(output, "learning")
+        var repo = FileNovexLearningRepository(root)
+        val resumeFile = System.getenv("NOVEX_BASELINE_HANDOFF_RESUME")?.let(::File)
+        val starting = resumeFile?.let { NovexLearningStateJsonCodec.decode(it.readText()) } ?: initial
+        require(starting.collection == initial.collection) { "恢复样本必须与原资料集一致" }
+        repo.save(starting)
+        var observedInput = if (resumeFile == null) 0 else starting.task!!.usage.usedInputTokens
+        var observedOutput = if (resumeFile == null) 0 else starting.task!!.usage.usedOutputTokens
+        var model = if (resumeFile == null) "deepseek-v4-flash" else "deepseek-v4-pro"
+        val ranges = linkedMapOf<String, MutableList<NovexLearningReadRange>>()
+        var calls = 0
+        fun response(title: String, prompt: NovexLearningPrompt, input: Int, out: Int): NovexLearningReviewOutput {
+            val raw = sendLive(prompt, out, model = model)
+            val choice = raw.getJSONArray("choices").getJSONObject(0)
+            val usage = raw.optJSONObject("usage")
+            val result = NovexLearningReviewOutput.fromProvider(title, choice.getJSONObject("message").optString("content"),
+                usage?.optInt("prompt_tokens")?.takeIf { it > 0 }, usage?.optInt("completion_tokens")?.takeIf { it > 0 },
+                input, out, choice.optString("finish_reason").ifBlank { null })
+            observedInput += result.inputTokens; observedOutput += result.outputTokens; calls++
+            return result
+        }
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                ranges.getOrPut(model) { mutableListOf() }.addAll(request.sourceRanges)
+                File(output, "source-requests.jsonl").appendText(JSONObject().put("model", model)
+                    .put("document", request.documentRef.value).put("ranges", JSONArray(request.sourceRanges.map {
+                        JSONObject().put("block", it.blockId).put("start", it.start).put("end", it.end)
+                    })).toString()+"\n")
+                return response(request.documentTitle, request.prompt, request.estimatedInputTokens, request.maxOutputTokens)
+            }
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest) =
+                response("交接后总览", request.prompt, request.estimatedInputTokens, request.maxOutputTokens)
+        }
+        val original: NovexLearningState
+        val next: NovexLearningState
+        if (resumeFile != null) {
+            original = starting
+            require(original.task!!.preflight.modelId == model && original.task!!.status in setOf(
+                NovexLearningTaskStatus.PAUSED, NovexLearningTaskStatus.PAUSED_BUDGET_REACHED))
+            original.notes.flatMap { it.readRanges }.let { ranges["previously-saved"] = it.toMutableList() }
+            next = if (original.task!!.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
+                val prepared = NovexLearningContinuation.prepareState(original, documents, NovexLearningContinuationMode.CURRENT_SOURCES)
+                val p = NovexLearningPreflight.prepare(NovexLearningPreflightRequest(initial.collection.ref, estimates,
+                    model, "DeepSeek", 24_576, 0, 12_000, NovexLearningTokenBudget(200_000, 40_000),
+                    sourcePlanFingerprint = NovexLearningContinuation.originFingerprint(original), sourceDocuments = sourceDocuments), prepared)
+                NovexLearningContinuation.confirm(original, prepared, NovexLearningContinuationMode.CURRENT_SOURCES, p,
+                    NovexLearningConfirmation(p.id, p.modelId, p.sourceRefs, 200_000, 40_000, 4000))
+            } else original.copy(task = original.task!!.resume())
+            File(output, "resume-origin.txt").writeText(resumeFile.absolutePath)
+        } else {
+            val stopped = runCatching { NovexLearningReviewRunner(documents, reviewer, {
+                repo.save(it)
+                if (it.notes.isNotEmpty()) throw CancellationException("QA_HANDOFF:saved_before_ui")
+            }, responseJournal = repo).run(initial) }.exceptionOrNull()
+            check(stopped?.message == "QA_HANDOFF:saved_before_ui") { "首批没有到达预设交接点：${stopped?.message}" }
+            repo = FileNovexLearningRepository(root)
+            val recovered = requireNotNull(repo.find(initial.collection.ref))
+            original = recovered.copy(task = recovered.task!!.pause())
+            repo.save(original)
+            File(output, "before-handoff.json").writeText(NovexLearningStateJsonCodec.encode(original))
+            val prepared = NovexLearningContinuation.prepareState(original, documents, NovexLearningContinuationMode.CURRENT_SOURCES)
+            model = "deepseek-v4-pro"
+            val p = NovexLearningPreflight.prepare(NovexLearningPreflightRequest(initial.collection.ref, estimates,
+                model, "DeepSeek", 24_576, 0, 12_000, initial.preflight!!.confirmedBudget,
+                sourcePlanFingerprint = NovexLearningContinuation.originFingerprint(original), sourceDocuments = sourceDocuments), prepared)
+            next = NovexLearningContinuation.confirm(original, prepared, NovexLearningContinuationMode.CURRENT_SOURCES, p,
+                NovexLearningConfirmation(p.id, p.modelId, p.sourceRefs, p.confirmedBudget.inputTokens, p.confirmedBudget.outputTokens, 3000))
+        }
+        repo.save(next)
+        File(output, "confirmed-handoff.json").writeText(NovexLearningStateJsonCodec.encode(next))
+        val failure = runCatching { NovexLearningReviewRunner(documents, reviewer, repo::save, responseJournal = repo)
+            .run(requireNotNull(FileNovexLearningRepository(root).find(initial.collection.ref))) }.exceptionOrNull()
+        val final = requireNotNull(FileNovexLearningRepository(root).find(initial.collection.ref))
+        File(output, "final-state.json").writeText(NovexLearningStateJsonCodec.encode(final))
+        val oldRanges = ranges["deepseek-v4-flash"].orEmpty() + ranges["previously-saved"].orEmpty()
+        val overlap = ranges["deepseek-v4-pro"].orEmpty().any { b -> oldRanges.any { a ->
+            a.documentRef == b.documentRef && a.blockId == b.blockId && maxOf(a.start, b.start) < minOf(a.end, b.end)
+        } }
+        val pass = failure == null && !overlap && original.notes.all { it in final.notes } &&
+            final.reviewLedger.reviewedBlocks == final.reviewLedger.totalReadableBlocks &&
+            observedInput == final.task!!.usage.usedInputTokens && observedOutput == final.task!!.usage.usedOutputTokens
+        File(output, "handoff-summary.json").writeText(JSONObject().put("passed_storage_and_handoff", pass)
+            .put("semantic_acceptance", "not_scored_by_this_check").put("failure", failure?.message).put("model_calls", calls)
+            .put("observed_input", observedInput).put("observed_output", observedOutput)
+            .put("persisted_input", final.task!!.usage.usedInputTokens).put("persisted_output", final.task!!.usage.usedOutputTokens)
+            .put("status", final.task!!.status.name).put("repeated_completed_ranges", overlap)
+            .put("reviewed_blocks", final.reviewLedger.reviewedBlocks).put("readable_blocks", final.reviewLedger.totalReadableBlocks)
+            .put("scope", "real models through production core and files; native Android provider and UI not executed").toString(2))
+        assertTrue("真实模型交接未通过，失败现场已保留", pass)
+    }
+
     private suspend fun runLive(initial: NovexLearningState, documents: FileNovexDocumentSnapshotRepository, input: File, output: File) {
+        val publish = workspacePublisher(output, documents)
         var repository = FileNovexLearningRepository(File(output, "learning"))
         repository.save(initial)
         var phase = 0
@@ -270,6 +378,7 @@ class NovexLongformBaselineTest {
                 throw IOException("QA_INJECT:after_model_before_save")
             }
             repository.save(checkpoint)
+            publish(checkpoint)
             File(history, "%04d.json".format(++saveNumber)).writeText(NovexLearningStateJsonCodec.encode(checkpoint))
             if (phase == 2 && checkpoint.notes.isNotEmpty()) {
                 phase = 3
@@ -292,6 +401,36 @@ class NovexLongformBaselineTest {
             repository.save(paused)
             state = paused.copy(task = paused.task!!.resume())
             if (phase == 3) runQueries(state, documents, input, output, "during-partial", setOf("Q01"))
+        }
+        if (System.getenv("NOVEX_BASELINE_SCALE") == "true") {
+            val extensions = JSONArray()
+            for (extension in 1..8) {
+                val previous = requireNotNull(state.task)
+                if (failure != null || previous.status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) break
+                val snapshots = state.collection.sources.mapNotNull { source -> source.documentRef?.let { ref ->
+                    previous.preflight.documentRevisions[ref]?.let { documents.findRevision(ref, it) } ?: documents.find(ref)
+                }?.let { source.ref to it } }.toMap()
+                val estimates = state.collection.sources.map { source -> NovexLearningSourceEstimate(source.ref,
+                    snapshots[source.ref]?.let { NovexLearningBudgetPolicy.inputReservation(NovexLearningPrompt.review(it.title, it.blocks)) } ?: 0,
+                    requiresOcr = snapshots[source.ref]?.status == NovexDocumentStatus.OCR_REQUIRED) }
+                val budget = NovexLearningTokenBudget(
+                    (previous.usage.maxInputTokens.toLong() + maxOf(previous.usage.maxInputTokens / 2L, 64_000L)).coerceAtMost(10_000_000).toInt(),
+                    (previous.usage.maxOutputTokens.toLong() + maxOf(previous.usage.maxOutputTokens / 2L, 8_000L)).coerceAtMost(1_000_000).toInt())
+                val p = NovexLearningPreflight.prepare(NovexLearningPreflightRequest(state.collection.ref, estimates,
+                    previous.preflight.modelId, previous.preflight.modelProviderName, previous.preflight.modelLimits!!.contextTokens,
+                    0, 12_000, budget, sourceDocuments = snapshots), state)
+                val confirmed = NovexLearningConfirmation(p.id, p.modelId, p.sourceRefs, budget.inputTokens, budget.outputTokens, 3000L + extension)
+                val nextTask = NovexLearningCoordinator().extendBudget(previous, p, confirmed)
+                state = state.copy(task = nextTask, preflight = p, previousTasks = state.previousTasks + previous)
+                repository.save(state)
+                extensions.put(JSONObject().put("test_user_confirmed", true).put("preflight_id", p.id)
+                    .put("input_limit", budget.inputTokens).put("output_limit", budget.outputTokens)
+                    .put("prior_input", previous.usage.usedInputTokens).put("prior_output", previous.usage.usedOutputTokens)
+                    .put("usd_limit", "shared task-b-scale transport cap remains 5 USD"))
+                File(output, "budget-confirmations.json").writeText(extensions.toString(2))
+                failure = runCatching { runner.run(state) }.exceptionOrNull()
+                state = requireNotNull(FileNovexLearningRepository(File(output, "learning")).find(initial.collection.ref))
+            }
         }
         File(output, "final-state.json").writeText(NovexLearningStateJsonCodec.encode(state))
         File(output, "live-summary.json").writeText(JSONObject().put("completed_model_calls", completedCalls)
@@ -351,12 +490,18 @@ class NovexLongformBaselineTest {
                     "原文目录仅用于定位，不代表读过全文：${JSONArray(inventory)}"))
             val exchanges = JSONArray()
             var complete = false
+            var finishReason: String? = null
             for (turn in 1..6) {
                 val response = sendLive(prompt, 2048, messages, tools)
-                val answer = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+                val choice = response.getJSONArray("choices").getJSONObject(0)
+                finishReason = choice.optString("finish_reason").ifBlank { null }
+                val answer = choice.getJSONObject("message")
                 messages.put(answer)
                 val calls = answer.optJSONArray("tool_calls")
-                if (calls == null || calls.length() == 0) { complete = true; break }
+                if (calls == null || calls.length() == 0) {
+                    complete = finishReason == "stop" && answer.optString("content").isNotBlank()
+                    break
+                }
                 for (i in 0 until calls.length()) {
                     val call = calls.getJSONObject(i)
                     val function = call.getJSONObject("function")
@@ -375,7 +520,7 @@ class NovexLongformBaselineTest {
                     .put("messages", messages).put("tools", exchanges).put("complete", false).toString(2))
             }
             File(directory, "${question.getString("id")}.json").writeText(JSONObject().put("question", question)
-                .put("messages", messages).put("tools", exchanges).put("complete", complete).toString(2))
+                .put("messages", messages).put("tools", exchanges).put("complete", complete).put("finish_reason", finishReason).toString(2))
         }
     }
 }

@@ -975,6 +975,8 @@ class ChatViewModel(
     private var novexLearningResponsePreviewRequest = 0
     private val _novexLearningDetails = MutableStateFlow<NovexLearningState?>(null)
     val novexLearningDetails: StateFlow<NovexLearningState?> = _novexLearningDetails.asStateFlow()
+    private val _novexLearningCollections = MutableStateFlow<List<NovexLearningState>?>(null)
+    val novexLearningCollections: StateFlow<List<NovexLearningState>?> = _novexLearningCollections.asStateFlow()
     private var novexLearningDetailsRequest = 0
     private var pendingNovexLearningContinuation: Pair<String, com.openminis.app.novex.domain.NovexLearningContinuationMode>? = null
     private var novexLearningJob: Job? = null
@@ -12648,6 +12650,7 @@ class ChatViewModel(
             previousJob?.cancelAndJoin()
             runCatching {
                 require(ref.value in activeNovexSourceCollectionRefs) { "当前对话已不再使用这份资料" }
+                pauseCompetingNovexLearningTasks(ref)
                 val original = requireNotNull(novexLearningRepository.find(ref)) { "找不到已保存任务" }
                 val mode = if (recheckSources) com.openminis.app.novex.domain.NovexLearningContinuationMode.RECHECK_SOURCES
                     else com.openminis.app.novex.domain.NovexLearningContinuationMode.CURRENT_SOURCES
@@ -12770,7 +12773,8 @@ class ChatViewModel(
                     } else {
                         coordinator.start(refreshed, confirmation)
                     }
-                    stored.copy(preflight = refreshed, task = task)
+                    stored.copy(preflight = refreshed, task = task,
+                        previousTasks = if (storedTask == null) stored.previousTasks else stored.previousTasks + storedTask)
                 }
             }
                 .getOrElse { failure ->
@@ -12851,6 +12855,27 @@ class ChatViewModel(
     fun closeNovexLearningDetails() {
         novexLearningDetailsRequest++
         _novexLearningDetails.value = null
+        _novexLearningCollections.value = null
+    }
+
+    fun showNovexLearningCollections() {
+        val refs = activeNovexSourceCollectionRefs.toList()
+        val request = ++novexLearningDetailsRequest
+        viewModelScope.launch(Dispatchers.IO) {
+            val states = runCatching { refs.mapNotNull { novexLearningRepository.find(NovexResourceRef(it)) } }
+                .getOrElse { _novexLearningError.value = "资料记录暂不可读：${it.message}"; return@launch }
+            if (request == novexLearningDetailsRequest && activeNovexSourceCollectionRefs.containsAll(refs)) {
+                _novexLearningCollections.value = states
+            }
+        }
+    }
+
+    fun selectNovexLearningCollection(ref: NovexResourceRef) {
+        val selected = _novexLearningCollections.value?.firstOrNull { it.collection.ref == ref } ?: return
+        if (ref.value !in activeNovexSourceCollectionRefs) return
+        _novexLearningCollections.value = null
+        _novexLearningDetails.value = selected
+        _novexLearningError.value = null
     }
 
     fun showNovexLearningDetails() {
@@ -12863,6 +12888,32 @@ class ChatViewModel(
             if (request == novexLearningDetailsRequest && ref.value in activeNovexSourceCollectionRefs) {
                 _novexLearningDetails.value = state
                 _novexLearningError.value = null
+            }
+        }
+    }
+
+    fun prepareNovexLearningFiles(onReady: () -> Unit) {
+        val sid = activeSessionId
+        val refs = activeNovexSourceCollectionRefs.toList()
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val messages = chatRepository.loadActiveMessages(sid)
+                    refs.forEach { value ->
+                        val ref = NovexResourceRef(value)
+                        val state = novexLearningRepository.find(ref) ?: return@forEach
+                        val binding = novexLearningWorkspaceBinding(ref, sid, messages, mediaStore.mediaBaseDir) ?: return@forEach
+                        com.openminis.app.novex.domain.NovexLearningWorkspaceProjection(novexConversationWorkspaceStore, novexDocumentRepository)
+                            .publish(state, binding.scope, binding.originals)
+                        com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(novexConversationWorkspaceStore,
+                            novexApplication().creativeArtifactRepository).reconcile(binding.scope)
+                    }
+                }
+                if (activeSessionId == sid) onReady()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                closeNovexLearningDetails()
+                _novexLearningError.value = "学习笔记仍已保存，工作区文件登记暂未完成：${failure.message}"
             }
         }
     }
@@ -12912,17 +12963,23 @@ class ChatViewModel(
 
     private suspend fun runNovexLearning(initial: NovexLearningState, provider: LLMProvider) {
         try {
+            val binding = novexLearningWorkspaceBinding(initial.collection.ref, activeSessionId,
+                chatRepository.loadActiveMessages(activeSessionId), mediaStore.mediaBaseDir)
+            val projection = com.openminis.app.novex.domain.NovexLearningWorkspaceProjection(novexConversationWorkspaceStore, novexDocumentRepository)
             val runner = NovexLearningReviewRunner(
                 documents = novexDocumentRepository,
                 responseJournal = novexLearningRepository,
                 reviewer = providerNovexLearningReviewer(provider, requireNotNull(initial.task).preflight),
                 saveCheckpoint = { checkpoint ->
                     novexLearningRepository.save(checkpoint)
+                    binding?.let { projection.publish(checkpoint, it.scope, it.originals) }
                     _novexLearningTask.value = checkpoint.task
                     _novexLearningStatus.value = checkpoint.task?.status
                 },
             )
             runner.run(initial)
+            binding?.let { com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(novexConversationWorkspaceStore,
+                novexApplication().creativeArtifactRepository).reconcile(it.scope) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -12944,7 +13001,7 @@ class ChatViewModel(
     }
 
     private fun currentNovexLearningCollectionRef(): NovexResourceRef? =
-        _novexLearningTask.value?.collectionRef
+        _novexLearningDetails.value?.collection?.ref ?: _novexLearningTask.value?.collectionRef
             ?: activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef)
 
     private fun pauseCompetingNovexLearningTasks(except: NovexResourceRef) {

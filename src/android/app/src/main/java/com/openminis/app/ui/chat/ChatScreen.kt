@@ -407,6 +407,7 @@ fun ChatScreen(
     val novexLearningError by viewModel.novexLearningError.collectAsState()
     val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
     val novexLearningDetails by viewModel.novexLearningDetails.collectAsState()
+    val novexLearningCollections by viewModel.novexLearningCollections.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val panelExpansionState = remember(viewModel) { PanelExpansionState() }
 
@@ -1860,9 +1861,11 @@ fun ChatScreen(
                             )
                             add(
                                 NovexMenuAction("本对话文件", R.drawable.ic_phosphor_note_pencil) {
-                                    onBrowseChatFiles()
+                                    viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
                                 },
                             )
+                            add(NovexMenuAction("资料整理进度", R.drawable.ic_phosphor_brain,
+                                onClick = viewModel::showNovexLearningCollections))
                             if (immersiveProfile.usesRolePresentation) {
                                 add(
                                     NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {
@@ -5431,7 +5434,7 @@ fun ChatScreen(
         NovexNoticeDialog(title = "最近一次模型返回", message = message,
             onDismiss = viewModel::closeNovexLearningResponsePreview)
     }
-    if (novexLearningResponsePreview == null && novexLearningDetails == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
+    if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
         NovexDecisionDialog(
             title = "资料整理已停止",
             message = "$message\n已完成的通读进度和笔记仍然保留。",
@@ -5446,12 +5449,23 @@ fun ChatScreen(
     }
 
     if (novexLearningResponsePreview == null && pendingNovexLearningPreflight == null) {
+        novexLearningCollections?.let { states ->
+            if (states.isEmpty()) NovexNoticeDialog("资料整理", "本分支尚无已导入资料集。添加文档后可在这里查看整理记录。",
+                viewModel::closeNovexLearningDetails)
+            else com.openminis.app.ui.novex.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
+                com.openminis.app.ui.novex.NovexSelectionAction(state.collection.title,
+                    description = "已整理 ${state.reviewLedger.reviewedBlocks} / ${state.reviewLedger.totalReadableBlocks} 个可读块") {
+                    viewModel.selectNovexLearningCollection(state.collection.ref)
+                }
+            }, "搜索资料集", onDismissRequest = viewModel::closeNovexLearningDetails)
+        }
         novexLearningDetails?.let { state ->
             NovexLearningDetailsDialog(state, viewModel::closeNovexLearningDetails,
-                viewModel::previewLatestNovexLearningResponse, viewModel::requestNovexLearningContinuation)
+                viewModel::previewLatestNovexLearningResponse, viewModel::requestNovexLearningContinuation,
+                onFiles = { viewModel.prepareNovexLearningFiles { viewModel.closeNovexLearningDetails(); onBrowseChatFiles() } })
         }
     }
-    if (novexLearningError == null && novexLearningResponsePreview == null && novexLearningDetails == null && pendingNovexLearningPreflight == null) {
+    if (novexLearningError == null && novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) {
         novexLearningTask?.let { task ->
             val message = NovexLearningControlPolicy.progressMessage(task)
             val controls = NovexLearningControlPolicy.allowedControls(task.status)

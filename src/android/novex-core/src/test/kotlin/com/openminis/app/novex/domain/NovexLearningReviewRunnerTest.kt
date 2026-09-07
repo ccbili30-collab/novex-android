@@ -39,12 +39,14 @@ class NovexLearningReviewRunnerTest {
     }
 
     @Test fun `long sources reserve the configured output room before selecting each batch`() {
-        val fixture = fixture(500_000, 80_000, listOf("独立记录，保存未知来源与未完成事项。".repeat(3000)), modelWindow = 32_768)
-        val requests = NovexLearningBatchPlanner.reviewRequests(fixture.state.collection.ref, fixture.document,
-            NovexLearningModelLimits(32_768, 4096))
-        assertTrue(requests.size > 1)
-        assertTrue(requests.all { it.maxOutputTokens == 4096 && it.estimatedInputTokens + it.maxOutputTokens <= 32_768 })
-        assertEquals(fixture.document.blocks.single().text, requests.flatMap { it.blocks }.joinToString("") { it.text })
+        for (window in listOf(16_384, 24_576, 32_768)) {
+            val fixture = fixture(500_000, 80_000, listOf("独立记录，保存未知来源与未完成事项。".repeat(3000)), modelWindow = window)
+            val requests = NovexLearningBatchPlanner.reviewRequests(fixture.state.collection.ref, fixture.document,
+                NovexLearningModelLimits(window, 4096))
+            assertTrue(requests.size > 1)
+            assertTrue(requests.all { it.maxOutputTokens == 4096 && it.estimatedInputTokens + it.maxOutputTokens <= window })
+            assertEquals(fixture.document.blocks.single().text, requests.flatMap { it.blocks }.joinToString("") { it.text })
+        }
     }
 
     @Test fun `returned provider work survives failed note commit and replays without another paid request`() = runTest {

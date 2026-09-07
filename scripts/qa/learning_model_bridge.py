@@ -25,9 +25,14 @@ def main():
     parser.add_argument('--ledger',required=True,type=Path)
     args=parser.parse_args()
     authorization=json.loads(args.authorization.read_text())
-    assert authorization['approved'] is True and authorization['scope']=='task-a-small-baseline'
+    assert authorization['approved'] is True and authorization['scope'] in ('task-a-small-baseline', 'task-b-small-handoff', 'task-b-scale')
     payload=json.load(sys.stdin)
-    assert payload['model']==authorization['model']=='deepseek-v4-flash'
+    prices={'deepseek-v4-flash':(0.44,1.32), 'deepseek-v4-pro':(1.32,3.96)}
+    allowed=authorization.get('models',[authorization.get('model')])
+    assert payload['model'] in allowed and payload['model'] in prices
+    if authorization['scope'] in ('task-a-small-baseline', 'task-b-scale'):
+        assert payload['model']=='deepseek-v4-flash'
+    input_price,output_price=prices[payload['model']]
     assert payload.get('thinking')=={'type':'disabled'}
     assert 0 < payload['max_tokens'] <= 4096
     assert payload.get('stream') is False
@@ -39,9 +44,10 @@ def main():
         encoded=json.dumps(payload,ensure_ascii=False).encode('utf-8')
         # Peak, uncached official prices are conservative even during off-peak/cached requests.
         reserved_input=len(encoded)+4096
-        reserved=reserved_input*0.44/1_000_000+payload['max_tokens']*1.32/1_000_000
-        if charged+reserved > min(float(authorization['max_usd']),1.0):
-            raise RuntimeError('任务 A 的开发测试预算已达上限；没有发起本次模型请求')
+        reserved=reserved_input*input_price/1_000_000+payload['max_tokens']*output_price/1_000_000
+        scope_cap=5.0 if authorization['scope']=='task-b-scale' else 1.0
+        if charged+reserved > min(float(authorization['max_usd']),scope_cap):
+            raise RuntimeError('当前开发测试累计预算已达上限；没有发起本次模型请求')
         call=args.ledger/f'call-{len(previous)+1:04d}'
         call.mkdir()
         save(call/'request.json',payload)
@@ -64,7 +70,7 @@ def main():
         actual_input=usage.get('prompt_tokens')
         actual_output=usage.get('completion_tokens')
         estimated=not isinstance(actual_input,int) or not isinstance(actual_output,int)
-        charged_call=reserved if estimated else actual_input*0.44/1_000_000+actual_output*1.32/1_000_000
+        charged_call=reserved if estimated else actual_input*input_price/1_000_000+actual_output*output_price/1_000_000
         receipt.update(status='response_saved',ended_at=time.time(),input_tokens=actual_input,
                        output_tokens=actual_output,usage_estimated=estimated,charged_usd=charged_call,
                        accounting='conservative price estimate, provider token counts retained; not provider billing receipt')

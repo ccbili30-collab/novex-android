@@ -20,7 +20,8 @@ object NovexLearningBudgetPolicy {
         minOf(4096, limits.maxOutputTokens, (window(limits) - inputTokens).coerceAtLeast(0))
 
     fun fits(prompt: NovexLearningPrompt, limits: NovexLearningModelLimits): Boolean =
-        inputReservation(prompt).toLong() + minOf(4096, limits.maxOutputTokens, maxOf(512, window(limits) / 8)) <= window(limits)
+        inputReservation(prompt).toLong() + minOf(4096, limits.maxOutputTokens,
+            if (window(limits) >= 16_384) 4096 else maxOf(512, window(limits) / 8)) <= window(limits)
 
     private fun window(limits: NovexLearningModelLimits): Int = requireNotNull(limits.contextTokens) {
         "模型上下文上限未知，不能安全开始批量学习；请先设置模型窗口"

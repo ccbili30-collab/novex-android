@@ -24,9 +24,27 @@ object NovexLearningContinuation {
         }
         val collection = NovexSourceCollectionBuilder.create(state.collection.ref, state.collection.scopeRef,
             state.collection.title, imports, state.collection.updatedAtMillis).copy(createdAtMillis = state.collection.createdAtMillis)
-        return state.copy(collection = collection, reviewLedger = NovexReviewLedger.start(collection), notes = emptyList(),
+        val currentRevisions = imports.mapNotNull { it.document }.associate { it.ref to NovexSourceReadEvidence.documentRevision(it) }
+        val unchanged = currentRevisions.filter { (ref, revision) ->
+            task.preflight.documentRevisions[ref] == revision &&
+                state.notes.filter { ref in it.sourceDocumentRefs }.all { it.sourceRevisions[ref] == revision }
+        }.keys
+        var retained = state.notes.filter { note -> note.sourceDocumentRefs.all { it in unchanged } }.toSet()
+        while (true) {
+            val refs = retained.map { it.ref }.toSet()
+            val filtered = retained.filter { it.inputNoteRefs.all { ref -> ref in refs } }.toSet()
+            if (filtered == retained) break
+            retained = filtered
+        }
+        var ledger = NovexReviewLedger.start(collection)
+        unchanged.forEach { ref ->
+            val blocks = state.reviewLedger.reviewedBlocksByDocument[ref].orEmpty()
+                .filter { it in ledger.readableBlocksByDocument[ref].orEmpty() }
+            if (blocks.isNotEmpty()) ledger = ledger.recordRead(ref, blocks, NovexDocumentReadMode.FULL_REVIEW)
+        }
+        return state.copy(collection = collection, reviewLedger = ledger, notes = state.notes.filter { it in retained },
             task = null, preflight = null, previousTasks = state.previousTasks + task,
-            historicalNotes = state.historicalNotes + state.notes, lastFailure = null)
+            historicalNotes = state.historicalNotes + state.notes.filterNot { it in retained }, lastFailure = null)
     }
 
     fun confirm(original: NovexLearningState, prepared: NovexLearningState, mode: NovexLearningContinuationMode,

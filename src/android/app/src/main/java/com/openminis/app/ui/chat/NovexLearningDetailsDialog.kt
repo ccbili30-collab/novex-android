@@ -13,6 +13,7 @@ internal fun NovexLearningDetailsDialog(
     onDismiss: () -> Unit,
     onLatestResponse: () -> Unit,
     onContinue: (Boolean) -> Unit,
+    onFiles: () -> Unit,
 ) {
     var notes by remember(state) { mutableStateOf<List<NovexLearningNote>?>(null) }
     var selected by remember(state) { mutableStateOf<NovexLearningNote?>(null) }
@@ -46,6 +47,7 @@ internal fun NovexLearningDetailsDialog(
             state.lastFailure?.let { Text(it) }
             NovexSummaryRow("当前笔记", "${state.notes.size} 条，包含章节与总览", onClick = { notes = state.notes })
             NovexSummaryRow("历史成果", "${state.historicalNotes.size} 条，不计入本次整理覆盖", onClick = { notes = state.historicalNotes })
+            NovexSummaryRow("原文与成果文件", "在本对话文件查看原附件、解析正文、笔记与主题索引", onClick = onFiles)
             NovexSummaryRow("最近一次模型返回", "查看已保存的原始返回与用量", onClick = onLatestResponse)
             val status = state.task?.status
             if (status in setOf(NovexLearningTaskStatus.PAUSED, NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
@@ -54,7 +56,7 @@ internal fun NovexLearningDetailsDialog(
             }
             if (status in setOf(NovexLearningTaskStatus.PAUSED, NovexLearningTaskStatus.PAUSED_BUDGET_REACHED,
                     NovexLearningTaskStatus.PARTIAL_FAILURE, NovexLearningTaskStatus.COMPLETE)) {
-                NovexSummaryRow("重新核对来源", "保留旧笔记为历史成果，确认后重新整理当前解析", onClick = { onContinue(true) })
+                NovexSummaryRow("重新核对来源", "保留旧成果，确认后仅重整变化或修订未知的资料", onClick = { onContinue(true) })
             } else Text("需要续接或重新核对来源时，先返回任务并暂停整理。")
             if (state.previousTasks.isNotEmpty()) {
                 Text("历次采用的模型（用量为当时的累计值，不应相加）")

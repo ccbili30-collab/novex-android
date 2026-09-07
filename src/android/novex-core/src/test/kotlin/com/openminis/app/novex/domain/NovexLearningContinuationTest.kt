@@ -130,4 +130,28 @@ class NovexLearningContinuationTest {
             NovexLearningContinuation.confirm(changed, changed, NovexLearningContinuationMode.CURRENT_SOURCES, p, confirmation(p))
         }
     }
+
+    @Test fun `rechecking one source preserves unrelated notes and invalidates its dependent overview`() = runBlocking {
+        val other = doc.copy(ref = NovexResourceRef("novex://documents/${"b".repeat(64)}"), sha256 = "b".repeat(64),
+            title = "另一份资料", blocks = doc.blocks.map { it.copy(id = NovexDocumentBlockId.from("b".repeat(64), it.source), text = "独立路线的事实。") })
+        val multiple = NovexSourceCollectionBuilder.create(collection.ref, collection.scopeRef, collection.title,
+            listOf(NovexSourceImportResult(collection.sources.first().ref, doc.title, sha, doc),
+                NovexSourceImportResult(NovexResourceRef("novex://sources/b"), other.title, other.sha256, other)), 1000)
+        val state = NovexLearningState(multiple, NovexReviewLedger.start(multiple))
+        val snapshots = listOf(doc, other).associateBy { it.ref }
+        val p = NovexLearningPreflight.prepare(NovexLearningPreflightRequest(multiple.ref,
+            snapshots.keys.map { NovexLearningSourceEstimate(it, 20_000) }, "model-a", effectiveContextTokens = 16_384,
+            occupiedContextTokens = 0, directReadBudgetTokens = 100, proposedBudget = NovexLearningTokenBudget(200_000, 40_000),
+            sourceDocuments = snapshots), state)
+        val completed = NovexLearningReviewRunner(NovexDocumentSnapshotStore { snapshots[it] }, Reviewer(), {}, maxBlocksPerBatch = 1)
+            .run(state.copy(task = NovexLearningCoordinator().start(p, confirmation(p)), preflight = p))
+        val changed = doc.copy(parserVersion = "parser-b", blocks = doc.blocks.map { it.copy(text = it.text + "新增解析内容") })
+        val rechecked = NovexLearningContinuation.prepareState(completed,
+            NovexDocumentSnapshotStore { if (it == doc.ref) changed else other.takeIf { d -> d.ref == it } },
+            NovexLearningContinuationMode.RECHECK_SOURCES)
+        assertEquals(3, rechecked.reviewLedger.reviewedBlocks)
+        assertEquals(completed.notes.filter { it.sourceDocumentRefs == listOf(other.ref) }, rechecked.notes)
+        assertTrue(rechecked.historicalNotes.any { it.level == NovexLearningNoteLevel.COLLECTION })
+        assertTrue(rechecked.historicalNotes.all { doc.ref in it.sourceDocumentRefs })
+    }
 }

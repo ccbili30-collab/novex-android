@@ -193,7 +193,7 @@ object NovexLearningPreflight {
             val prior = progress?.task ?: progress?.previousTasks?.lastOrNull()
             if (prior != null) add(NovexLearningRisk("learning.carried_usage",
                 "保留既有累计用量：输入 ${prior.usage.usedInputTokens}、输出 ${prior.usage.usedOutputTokens} 词元；此前使用 ${prior.preflight.modelProviderName} 的 ${prior.preflight.modelId}。" +
-                    if (progress?.task == null) "旧笔记保留在历史成果中；本次重新核对当前解析，重新计算整理覆盖。"
+                    if (progress?.task == null) "受影响的旧笔记保留在历史成果中；仅重新整理变化或缺少修订依据的资料，未变化来源保留已存笔记与覆盖。"
                     else "已经提交的笔记和覆盖继续使用；尚未提交的批次换模型后可能重新请求，之前的返回和消耗仍保留。"))
             if (continuing) add(NovexLearningRisk("learning.resuming_saved_progress",
                 "本次从已保存的阅读进度继续，已读内容不重复计入剩余通读批次；确认预算是任务累计上限，不是额外可用额度"))

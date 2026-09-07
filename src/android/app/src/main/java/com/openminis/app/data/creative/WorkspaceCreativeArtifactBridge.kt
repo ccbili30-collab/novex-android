@@ -27,7 +27,9 @@ class WorkspaceCreativeArtifactBridge(
 
     suspend fun reconcile(scope: NovexConversationWorkspaceScope) {
         val previous = existing(scope)
-        store.inspect(scope).entries.filter { it.workspaceRef.area.modelWritable }.forEach { entry ->
+        store.inspect(scope).entries.filter { it.workspaceRef.area.modelWritable ||
+            (it.workspaceRef.relativePath.startsWith("learning/") &&
+                it.provenance.sourceRefs.any { ref -> ref.value.startsWith("novex://source-collections/") }) }.forEach { entry ->
             register(entry, scope, previous[entry.workspaceRef.value])
         }
     }
