@@ -70,4 +70,23 @@ class NovexCardFileServiceTest {
             assertEquals(5, workspace.conversationDrafts("mine")!!.completedWrites.size)
         } finally { db.close() }
     }
+    @Test fun `explicit plural request can create identical cards and does not hit a one card ceiling`() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "plural-media"))
+            workspace.apply(NovexCommand.EnsureConversationDrafts("plural"))
+            val management = NovexManagementService(workspace, CreativeArtifactRepository(db, CreativeArtifactFileStore(File(folder.root, "plural-artifacts"))))
+            val service = NovexCardFileService(workspace, management, NovexCardFileOperations(NovexCardSourceModules(NovexDocumentSnapshotStore { null }) { false }),
+                NovexManagementTransaction { work -> db.withTransaction { work() } })
+            val config = NovexConversationConfigurationSnapshot("plural")
+            val args = JSONObject("""{"kind":"game","name":"相同的文游草稿","modules":[{"name":"规则","text":"保持相同正文"}]}""")
+            val users = listOf("创建两张一样的文游卡")
+            val first = service.execute(config, "novex_write_card", args, users, "plural-first")
+            val second = service.execute(first.configuration, "novex_write_card", args, users, "plural-second")
+            assertFalse(second.applied!!.replayed)
+            assertNotEquals(first.applied!!.createdSubjects, second.applied.createdSubjects)
+            assertEquals(4, workspace.conversationDrafts("plural")!!.cards.size)
+        } finally { db.close() }
+    }
+
 }
