@@ -22,6 +22,12 @@ fun rememberNovexWorkspace(): NovexWorkspace {
     return remember(application) { application.novexWorkspace }
 }
 
+@Composable
+internal fun rememberNovexWorkGroups(): com.openminis.app.novex.domain.NovexWorkGroups {
+    val application = LocalContext.current.applicationContext as MinisApp
+    return remember(application) { application.novexWorkGroups }
+}
+
 /** Composition-root bridge for the read-only creative artifact seam. */
 @Composable
 fun rememberNovexCreativeArtifacts(): NovexCreativeArtifactReader {

@@ -39,7 +39,7 @@ class NovexCharacterRevisionPersistenceTest {
     @Test
     fun `migration starts history at first observed edit and a failed page save leaves no revision`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29).allowMainThreadQueries().build()
+            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30).allowMainThreadQueries().build()
         var database = open()
         try {
             val original = NovexWorkspaceFactory.create(database, File(files.root, "media"))

@@ -143,6 +143,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
         private set
+    val novexWorkGroups: com.openminis.app.novex.domain.NovexWorkGroups by lazy {
+        com.openminis.app.data.creative.RoomNovexWorkGroups(database)
+    }
     val novexSnapshotMediaStore by lazy {
         com.openminis.app.novex.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
     }

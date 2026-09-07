@@ -44,7 +44,9 @@ internal fun NovexSearchableSelectionSheet(
     searchPlaceholder: String,
     onDismissRequest: () -> Unit,
     dismissOnSelection: Boolean = true,
-) = NovexSelectionSurface(title, actions, searchPlaceholder, dismissOnSelection, onDismissRequest)
+    onConfirmSelection: (() -> Unit)? = null,
+    confirmLabel: String = "保存选择",
+) = NovexSelectionSurface(title, actions, searchPlaceholder, dismissOnSelection, onDismissRequest, onConfirmSelection, confirmLabel)
 
 /** Short actions, grouped choices and searchable multi-select share one bounded lazy list. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +57,8 @@ private fun NovexSelectionSurface(
     searchPlaceholder: String?,
     dismissOnSelection: Boolean,
     onDismissRequest: () -> Unit,
+    onConfirmSelection: (() -> Unit)? = null,
+    confirmLabel: String = "保存选择",
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val entries = remember(actions) { actions.mapIndexed { index, action ->
@@ -98,7 +102,13 @@ private fun NovexSelectionSurface(
                     if (index < visible.lastIndex) NovexDivider(Modifier.padding(horizontal = 16.dp))
                 }
             }
-            if (!dismissOnSelection) TextButton(onClick = onDismissRequest, modifier = Modifier.fillMaxWidth()) { Text("完成") }
+            if (!dismissOnSelection) {
+                if (onConfirmSelection == null) TextButton(onClick = onDismissRequest, modifier = Modifier.fillMaxWidth()) { Text("完成") }
+                else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismissRequest) { Text("取消") }
+                    TextButton(onClick = onConfirmSelection) { Text(confirmLabel) }
+                }
+            }
         }
     }
 }

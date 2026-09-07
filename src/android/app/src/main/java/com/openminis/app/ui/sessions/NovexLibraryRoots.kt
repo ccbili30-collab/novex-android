@@ -48,6 +48,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
+import com.openminis.app.novex.domain.NovexContentAddress
+import com.openminis.app.novex.domain.NovexWorkGroupSnapshot
+import com.openminis.app.ui.novex.rememberNovexWorkGroups
+import com.openminis.app.ui.novex.TextButton
+import kotlinx.coroutines.launch
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionProfile
 import com.openminis.app.data.character.NovexCardKind
@@ -82,6 +87,7 @@ private data class CharacterRootRow(
     val profile: CharacterVersionProfile,
     val imagePath: String?,
     val variantCount: Int,
+    val versionIds: List<String>,
 )
 
 private data class InteractiveFictionRootRow(
@@ -97,6 +103,8 @@ internal fun NovexWorldLibraryRoot(
     onOpenSettings: () -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
+    val workGroups = rememberNovexWorkGroups()
+    val workGroup by workGroups.snapshots.collectAsState(initial = null)
     val context = LocalContext.current
     val orderStore = remember(context) { NovexManualOrderStore(context) }
     var rows by remember { mutableStateOf<List<WorldRootRow>>(emptyList()) }
@@ -145,14 +153,15 @@ internal fun NovexWorldLibraryRoot(
         ).mapNotNull(byId::get)
         loaded = true
     }
-    val filtered = remember(rows, query) {
+    val filtered = remember(rows, query, workGroup) {
         rows.filter { row ->
-            query.isBlank() || row.world.name.contains(query, ignoreCase = true) ||
-                row.world.overview.contains(query, ignoreCase = true)
+            (workGroup?.includes(NovexContentAddress.world(row.world.id)) == true) && (query.isBlank() || row.world.name.contains(query, ignoreCase = true) ||
+                row.world.overview.contains(query, ignoreCase = true))
         }
     }
 
     NovexLibraryFrame(
+        workGroup = workGroup,
         space = NovexRootSpace.WORLDS,
         searching = searching,
         searchState = searchState,
@@ -166,10 +175,12 @@ internal fun NovexWorldLibraryRoot(
             NovexCreateMenuItem("新建世界", onCreateWorld),
             NovexCreateMenuItem("导入世界卡", importer.launch),
         ),
-    ) {
+    ) { manageGroup ->
         when {
-            !loaded || importer.importing -> NovexLoading()
+            !loaded || importer.importing || workGroup == null -> NovexLoading()
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的世界")
+            filtered.isEmpty() && workGroup?.selection != NovexWorkGroupSnapshot.ALL ->
+                NovexEmptyWorkGroup(requireNotNull(workGroup), "世界", manageGroup, onCreateWorld)
             rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld, importer.launch)
             else -> LazyColumn(
                 state = listState,
@@ -204,6 +215,8 @@ internal fun NovexCharacterLibraryRoot(
     onOpenSettings: () -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
+    val workGroups = rememberNovexWorkGroups()
+    val workGroup by workGroups.snapshots.collectAsState(initial = null)
     val context = LocalContext.current
     val orderStore = remember(context) { NovexManualOrderStore(context) }
     var rows by remember { mutableStateOf<List<CharacterRootRow>>(emptyList()) }
@@ -241,7 +254,7 @@ internal fun NovexCharacterLibraryRoot(
             val aggregate = card.character
             val character = aggregate.character
             val profile = CharacterVersionProfile.fromJson(aggregate.original.profileJson, character.name)
-            CharacterRootRow(character, profile, card.avatar?.managedPath, aggregate.variants.size)
+            CharacterRootRow(character, profile, card.avatar?.managedPath, aggregate.variants.size, aggregate.allVersions.map { it.id })
         }
         val byId = loadedRows.associateBy { it.character.id }
         rows = mergeNovexManualOrder(
@@ -250,14 +263,15 @@ internal fun NovexCharacterLibraryRoot(
         ).mapNotNull(byId::get)
         loaded = true
     }
-    val filtered = remember(rows, query) {
+    val filtered = remember(rows, query, workGroup) {
         rows.filter { row ->
-            query.isBlank() || row.character.name.contains(query, ignoreCase = true) ||
-                row.profile.summary.contains(query, ignoreCase = true)
+            (row.versionIds.any { workGroup?.includes(NovexContentAddress.characterVersion(it)) == true }) && (query.isBlank() || row.character.name.contains(query, ignoreCase = true) ||
+                row.profile.summary.contains(query, ignoreCase = true))
         }
     }
 
     NovexLibraryFrame(
+        workGroup = workGroup,
         space = NovexRootSpace.CHARACTERS,
         searching = searching,
         searchState = searchState,
@@ -271,10 +285,12 @@ internal fun NovexCharacterLibraryRoot(
             NovexCreateMenuItem("新建角色", onCreateCharacter),
             NovexCreateMenuItem("导入角色卡", importer.launch),
         ),
-    ) {
+    ) { manageGroup ->
         when {
-            !loaded || importer.importing -> NovexLoading()
+            !loaded || importer.importing || workGroup == null -> NovexLoading()
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的角色")
+            filtered.isEmpty() && workGroup?.selection != NovexWorkGroupSnapshot.ALL ->
+                NovexEmptyWorkGroup(requireNotNull(workGroup), "角色", manageGroup, onCreateCharacter)
             rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter, importer.launch)
             else -> LazyColumn(
                 state = listState,
@@ -309,6 +325,8 @@ internal fun NovexInteractiveFictionLibraryRoot(
     onOpenSettings: () -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
+    val workGroups = rememberNovexWorkGroups()
+    val workGroup by workGroups.snapshots.collectAsState(initial = null)
     val context = LocalContext.current
     val orderStore = remember(context) { NovexManualOrderStore(context) }
     var rows by remember { mutableStateOf<List<InteractiveFictionRootRow>>(emptyList()) }
@@ -355,14 +373,15 @@ internal fun NovexInteractiveFictionLibraryRoot(
         ).mapNotNull(byId::get)
         loaded = true
     }
-    val filtered = remember(rows, query) {
+    val filtered = remember(rows, query, workGroup) {
         rows.filter { row ->
-            query.isBlank() || row.project.name.contains(query, ignoreCase = true) ||
-                row.project.summary.contains(query, ignoreCase = true)
+            (workGroup?.includes(NovexContentAddress.interactiveFiction(row.project.id)) == true) && (query.isBlank() || row.project.name.contains(query, ignoreCase = true) ||
+                row.project.summary.contains(query, ignoreCase = true))
         }
     }
 
     NovexLibraryFrame(
+        workGroup = workGroup,
         space = NovexRootSpace.INTERACTIVE_FICTION,
         searching = searching,
         searchState = searchState,
@@ -376,10 +395,12 @@ internal fun NovexInteractiveFictionLibraryRoot(
             NovexCreateMenuItem("新建文游", onCreateInteractiveFiction),
             NovexCreateMenuItem("导入文游卡", importer.launch),
         ),
-    ) {
+    ) { manageGroup ->
         when {
-            !loaded || importer.importing -> NovexLoading()
+            !loaded || importer.importing || workGroup == null -> NovexLoading()
             filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的文游")
+            filtered.isEmpty() && workGroup?.selection != NovexWorkGroupSnapshot.ALL ->
+                NovexEmptyWorkGroup(requireNotNull(workGroup), "文游", manageGroup, onCreateInteractiveFiction)
             rows.isEmpty() -> NovexEmptyInteractiveFictionLibrary(
                 onCreateInteractiveFiction,
                 importer.launch,
@@ -418,6 +439,7 @@ internal fun NovexInteractiveFictionLibraryRoot(
 
 @Composable
 private fun NovexLibraryFrame(
+    workGroup: NovexWorkGroupSnapshot?,
     space: NovexRootSpace,
     searching: Boolean,
     searchState: NovexLibrarySearchState,
@@ -425,9 +447,10 @@ private fun NovexLibraryFrame(
     onSearchToggle: () -> Unit,
     onOpenSettings: () -> Unit,
     createItems: List<NovexCreateMenuItem>,
-    content: @Composable () -> Unit,
+    content: @Composable (() -> Unit) -> Unit,
 ) {
     val headerHost = LocalNovexRootHeaderHost.current
+    var groupMembersRequest by remember { mutableStateOf(0) }
     RegisterNovexRootHeader(
         space,
         NovexRootHeaderConfig(
@@ -456,11 +479,30 @@ private fun NovexLibraryFrame(
         if (searching) {
             NovexLibrarySearchInput(searchState, searchDescription)
         }
-        Box(Modifier.fillMaxSize()) { content() }
+        NovexWorkGroupControls(workGroup, groupMembersRequest)
+        Box(Modifier.fillMaxSize()) { content { groupMembersRequest++ } }
     }
 }
 
 /** Reloads both catalogs whenever a detail/editor Activity returns to the root Activity. */
+@Composable
+private fun NovexEmptyWorkGroup(group: NovexWorkGroupSnapshot, kind: String, onManage: () -> Unit, onCreate: () -> Unit) {
+    val groups = rememberNovexWorkGroups()
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth().padding(NovexDimensions.PageHorizontal), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("${group.label}暂无${kind}", color = NovexRootColors.Text)
+        Text("当前只显示这个筛选范围，其他作品中的卡片仍在。", color = NovexRootColors.SecondaryText)
+        TextButton(onClick = onManage) { Text(if (group.selectedGroup == null) "选择和管理作品" else "加入已有卡片") }
+        TextButton(onClick = onCreate) { Text("新建${kind}") }
+        Text("新建后可从作品管理中归类。", color = NovexRootColors.SecondaryText)
+        TextButton(onClick = { scope.launch {
+            runCatching { groups.select(NovexWorkGroupSnapshot.ALL) }.onFailure { error = "清除筛选未完成：${it.message}" }
+        } }) { Text("清除作品筛选") }
+        error?.let { Text(it) }
+    }
+}
+
 @Composable
 private fun rememberNovexCatalogResumeRevision(): Int {
     val lifecycleOwner = LocalLifecycleOwner.current
