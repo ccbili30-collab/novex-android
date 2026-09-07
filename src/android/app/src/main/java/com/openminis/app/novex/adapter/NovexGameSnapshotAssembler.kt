@@ -67,7 +67,8 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
             val identity = AnswerIdentity.CharacterVersion(reference.target.subject.id)
             val context = WorkspaceNovexContextLoader(workspace, expandReferences = false).load(NovexConversationConfigurationSnapshot(
                 "snapshot:$projectId", answerIdentity = identity)).filter { it.kind == ContextSourceKind.ANSWER_IDENTITY }
-            NovexFrozenContext(reference.target, context, identity.versionId)
+            val version = workspace.characterForVersion(identity.versionId)?.character?.allVersions?.singleOrNull { it.id == identity.versionId }
+            NovexFrozenContext(reference.target, context, identity.versionId, tavernWorldbookJson = version?.let { NovexTavernWorldbook.capture(it.profileJson) })
         }
         val players = NovexPlayerIdentityReader(workspace)
         val companions = actor?.let { players.read(it.target) }.orEmpty()

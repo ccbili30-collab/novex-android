@@ -42,6 +42,8 @@ internal fun NovexTavernExchangeSection(versionId: String, profileJson: String) 
     }
     NovexContentSection("酒馆交换", subtitle = "按当前人物版本交换，不含私人对话和本局存档") {
         Text(NovexTavernExchange.sourceSummary(profileJson) ?: NovexTavernExchange.COMPATIBILITY, color = NovexColors.SecondaryText)
+        Text(com.openminis.app.novex.domain.NovexTavernWorldbook.COMPATIBILITY, color = NovexColors.SecondaryText)
+        Text("本轮哪些条目启用或暂停，可从用户消息的资料使用详情查看。旧采用快照需明确刷新后才采用世界书。", color = NovexColors.SecondaryText)
         Text("导出为 JSON（结构化数据），不打包头像。未映射的公开模块转为常驻世界书条目；配套玩家身份不自动导出。", color = NovexColors.SecondaryText)
         if (busy) Text("正在准备导出…", color = NovexColors.SecondaryText)
         NovexTextActionRow("导出当前版本的酒馆角色卡", onClick = { export(false) })

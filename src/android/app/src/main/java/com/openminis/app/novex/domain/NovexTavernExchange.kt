@@ -18,7 +18,7 @@ object NovexTavernExchange {
         "system_prompt" to "角色专属指令",
         "post_history_instructions" to "回复后置要求",
     )
-    const val COMPATIBILITY = "角色定义按用途映射；世界书原始条目、触发条件、停用状态与未知扩展完整保留。当前未执行酒馆世界书触发、宏替换和第三方脚本；不支持 CHARX（第三版资源压缩卡包），附加资源只保留原始声明。原生多卡引用、玩家身份、人生阶段及本局存档不等同于酒馆运行能力。"
+    const val COMPATIBILITY = "角色定义按用途映射；世界书原始条目、触发条件、停用状态与未知扩展完整保留。仅当前回答角色的采用快照执行基础世界书触发，具体范围见条目说明；未执行宏替换和第三方脚本；不支持 CHARX（第三版资源压缩卡包），附加资源只保留原始声明。原生多卡引用、玩家身份、人生阶段及本局存档不等同于酒馆运行能力。"
 
     fun importCharacter(bytes: ByteArray): NovexValidatedCardImport {
         require(bytes.size in 1..64 * 1024 * 1024) { "角色卡文件须在 64 MiB（兆二进制字节）以内" }

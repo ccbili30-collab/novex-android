@@ -56,6 +56,6 @@ object NovexAdoptedSourceUsageProjection {
             listOf(it.owner?.kind?.name, it.owner?.id, it.moduleId, it.entryId, it.slot.name, it.asset.sha256)
         }.map { org.json.JSONArray(it).toString() }.sorted()
         return NovexFrozenContextCodec.digest(encoded.getJSONArray("sources").toString() +
-            org.json.JSONArray(media).toString() + source.mediaCaptured)
+            org.json.JSONArray(media).toString() + source.mediaCaptured + source.tavernWorldbookJson.orEmpty())
     }
 }

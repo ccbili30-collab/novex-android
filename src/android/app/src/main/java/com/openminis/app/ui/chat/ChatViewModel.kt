@@ -3343,12 +3343,25 @@ class ChatViewModel(
         val occupied = maxOf(_lastTurnContextTokens.value, estimateContextTokens())
         val outputReserve = (currentModel?.maxOutputTokens ?: 8_192).coerceIn(1_024, 32_000)
         val budget = NovexContextBudgetPolicy.moduleBudget(window, occupied, outputReserve)
-        val composition = NovexContextComposer.compose(
+        val worldbook = com.openminis.app.novex.domain.NovexTavernWorldbook.adopted(configuration)
+        val worldbookReserve = if(worldbook == null) 0 else minOf(2048, budget / 4)
+        val baseComposition = NovexContextComposer.compose(
             query = query,
-            tokenBudget = budget,
+            tokenBudget = budget - worldbookReserve,
             candidates = candidates,
             estimateTokens = BPETokenizer::countTokens,
         )
+        val worldbookResult = worldbook?.let { (version, book) ->
+            val visibleById = _messages.value.filter { !it.isQueued && it.error == null && it.role in setOf("user", "assistant") }.associateBy { it.id }
+            val visible = (activeBranchPathIds + requestMessageId).distinct().mapNotNull { visibleById[it]?.content }
+                .let { if(requestMessageId !in visibleById) it + query else it }
+            com.openminis.app.novex.domain.NovexTavernWorldbook.evaluate(version, book, visible,
+                (budget - baseComposition.usedTokens).coerceAtLeast(0), BPETokenizer::countTokens)
+        }
+        val worldbookFragments = worldbookResult?.fragments.orEmpty()
+        val composition = baseComposition.copy(fragments = baseComposition.fragments + worldbookFragments,
+            omissions = baseComposition.omissions + worldbookResult?.omissions.orEmpty(),
+            usedTokens = baseComposition.usedTokens + worldbookFragments.sumOf { it.tokenCount })
         val record = composition.toUsageRecord(
             id = java.util.UUID.randomUUID().toString(),
             requestMessageId = requestMessageId,

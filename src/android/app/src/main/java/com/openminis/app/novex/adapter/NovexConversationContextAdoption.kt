@@ -20,7 +20,8 @@ class NovexConversationContextAdoption(
         if (acting && gameSources.any { it.actorVersionId == root.id }) {
             val replaced = gameSources.filterNot { it.actorVersionId == root.id } +
                 NovexFrozenContext(NovexReferenceTarget(root), captured.sources.flatMap { it.candidates }, root.id,
-                    media = captured.sources.flatMap { it.media }, mediaCaptured = true)
+                    media = captured.sources.flatMap { it.media }, mediaCaptured = true,
+                    tavernWorldbookJson = captured.sources.singleOrNull { it.actorVersionId == root.id }?.tavernWorldbookJson)
             val content = JSONObject(requireNotNull(active).contentJson).put("linkedContext", JSONArray(replaced.map(NovexFrozenContextCodec::encode))).toString()
             return configuration.copy(activeInteractiveFiction = active.copy(contentJson = content, snapshotId = NovexFrozenContextCodec.digest(content)))
         }
@@ -85,7 +86,9 @@ class NovexConversationContextAdoption(
         val kind = if (acting) ContextSourceKind.ANSWER_IDENTITY else ContextSourceKind.BACKGROUND_MODULE
         val core = WorkspaceNovexContextLoader(workspace, legacy, expandReferences = false).load(rootConfiguration).filter { it.kind == kind }
         require(core.isNotEmpty()) { "采用的${if (acting) "角色" else "背景"}已不存在，请重新选择" }
-        val sources = linkedMapOf(root to NovexFrozenContext(root, core, if (acting) address.id else null))
+        val worldbook = if(acting) workspace.characterForVersion(address.id)?.character?.allVersions?.singleOrNull { it.id == address.id }
+            ?.let { NovexTavernWorldbook.capture(it.profileJson) } else null
+        val sources = linkedMapOf(root to NovexFrozenContext(root, core, if (acting) address.id else null, tavernWorldbookJson = worldbook))
         val reader = NovexReferenceContextReader(workspace)
         val traversal = NovexReferenceTraversal.collect(root, setOf(NovexReferencePurpose.BACKGROUND, NovexReferencePurpose.RULES)) { target ->
             if (target == root) reader.references(target)

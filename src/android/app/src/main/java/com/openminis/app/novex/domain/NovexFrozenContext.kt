@@ -13,6 +13,7 @@ data class NovexFrozenContext(
     val conversationRoots: Set<NovexContentAddress> = emptySet(),
     val media: List<NovexSnapshotMedia> = emptyList(),
     val mediaCaptured: Boolean = false,
+    val tavernWorldbookJson: String? = null,
 )
 
 object NovexFrozenContextCodec {
@@ -26,6 +27,7 @@ object NovexFrozenContextCodec {
         put("conversationRoots", JSONArray(value.conversationRoots.map { JSONObject().put("kind", it.kind.name).put("id", it.id) }))
         put("media", JSONArray(value.media.map(NovexSnapshotMediaCodec::encode)))
         put("mediaCaptured", value.mediaCaptured)
+        put("tavernWorldbook", value.tavernWorldbookJson)
         val sources = JSONArray().apply { value.candidates.forEach { candidate -> put(JSONObject().apply {
             put("sourceId", candidate.sourceId); put("label", candidate.label); put("content", candidate.content)
             put("kind", candidate.kind.name); put("aliases", JSONArray(candidate.aliases.toList()))
@@ -61,6 +63,7 @@ object NovexFrozenContextCodec {
                     (0 until images.length()).map { NovexSnapshotMediaCodec.decode(images.getJSONObject(it)) }
                 }.orEmpty(),
                 mediaCaptured = row.optBoolean("mediaCaptured", false),
+                tavernWorldbookJson = row.optionalText("tavernWorldbook"),
             )
         }
     }
