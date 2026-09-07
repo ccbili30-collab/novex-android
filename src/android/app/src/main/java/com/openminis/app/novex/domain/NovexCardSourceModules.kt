@@ -18,6 +18,7 @@ class NovexCardSourceModules(
     fun chapters(reference: String, revision: String): JSONArray {
         val source = document(reference, revision)
         require(source.blocks.isNotEmpty()) { "来源没有可复制的正文" }
+        require(source.status == NovexDocumentStatus.READY) { "来源只完成了部分解析，不能把它作为完整原文入卡；请处理未解析部分，或明确选择已解析的块范围" }
         val headings = NovexDocumentOutline.entries(source)
         val level = headings.minOfOrNull { it.level }
         val roots = headings.filter { it.level == level }

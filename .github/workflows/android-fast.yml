@@ -294,7 +294,13 @@ jobs:
         working-directory: src/android
         env:
           NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
-        run: ./gradlew -I ../../scripts/qa/export_card_harness.gradle :app:exportCardHarness --no-daemon
+          NOVEX_VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: >-
+          ./gradlew --daemon --console=plain --max-workers=4
+          -Dorg.gradle.daemon.idletimeout=3600000
+          -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          -I ../../scripts/qa/export_card_harness.gradle :app:exportCardHarness
 
       - name: Upload native card harness
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.export_card_harness }}

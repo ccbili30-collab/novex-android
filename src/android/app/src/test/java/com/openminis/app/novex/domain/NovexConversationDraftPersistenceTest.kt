@@ -193,7 +193,8 @@ class NovexConversationDraftPersistenceTest {
                 CreativeArtifactRepository(database, CreativeArtifactFileStore(File(files.root, "artifacts"))))
             val read = service.inspect(config, role, null)
             assertTrue(read.selectedSubjectJson!!.contains("本体"))
-            assertTrue(read.subjects.single().label.contains("未命名角色"))
+            assertEquals(3, read.subjects.size)
+            assertTrue(read.subjects.single { it.subject == role }.label.contains("未命名角色"))
             assertTrue(workspace.characters().isEmpty())
         } finally { database.close() }
     }

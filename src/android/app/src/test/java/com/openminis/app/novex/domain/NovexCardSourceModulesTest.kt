@@ -31,6 +31,13 @@ class NovexCardSourceModulesTest {
         assertTrue(changes.single() is NovexManagedChange.CreateInteractiveFiction)
         assertEquals(48, (changes.single() as NovexManagedChange.CreateInteractiveFiction).modules.size)
     }
+    @Test fun `partial parsing is not presented as whole source creation`() {
+        val source = source().copy(status = NovexDocumentStatus.OCR_REQUIRED)
+        val revision = NovexDocumentTools(NovexDocumentSnapshotStore { source }).documentInspect(NovexDocumentInspectRequest(source.ref)).data.getValue("source_revision") as String
+        val copier = NovexCardSourceModules(NovexDocumentSnapshotStore { source }) { true }
+        assertThrows(IllegalArgumentException::class.java) { copier.chapters(source.ref.value, revision) }
+        assertEquals(source.blocks.first().text, copier.range(source.ref.value, revision, 1, 1).getString("text"))
+    }
     @Test fun `wrong revision and another conversation source cannot be copied`() {
         val source = source()
         val copier = NovexCardSourceModules(NovexDocumentSnapshotStore { source }) { it == source.ref }

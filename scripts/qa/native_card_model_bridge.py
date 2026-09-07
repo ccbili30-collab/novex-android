@@ -25,6 +25,7 @@ def main():
     guide=(root/'guide.txt').read_text()
     original=(root/'original-formal.txt').read_text()
     system=re.sub(r'<Novex内容与工具协议>.*?</Novex内容与工具协议>',lambda _:guide,original,flags=re.S)
+    system=re.sub(r'<novex-background-data>.*?</novex-background-data>',lambda _: '<novex-background-data>本次隔离回归对话的实际创作目标目录；不是背景设定，不自动启动文游。\n'+json.dumps(ready['directory'],ensure_ascii=False)+'</novex-background-data>',system,flags=re.S)
     assert system!=original and 'novex_write_card' in system
     requests=['说中文，创建文游卡','将47章完整打包为主控说明书（自由沙盒，按资料全篇运行）']
     # Both are the user's existing explicit instructions; no synthesized content choices.
@@ -70,7 +71,7 @@ def main():
     save(root/'result.json',{'verified':True,'module_count':verified['module_count'],'model_calls':len(usage),
         'prompt_tokens':sum(u.get('prompt_tokens',0) for u in usage),'completion_tokens':sum(u.get('completion_tokens',0) for u in usage),
         'transport':'non-streaming provider; same native card service and real Room storage; not phone UI acceptance',
-        'formal_prompt':'original captured formal prompt with current product-tool guide; V6 candidate not used'})
+        'formal_prompt':'original captured formal prompt with current product-tool guide and freshly allocated private directory; V6 candidate not used'})
     print('已通过：原文逐块一致、48 个模块、数据库关闭重开仍在。',flush=True)
 
 if __name__=='__main__': main()

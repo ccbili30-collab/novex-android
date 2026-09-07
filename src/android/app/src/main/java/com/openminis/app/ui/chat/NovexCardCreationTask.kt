@@ -15,6 +15,7 @@ internal object NovexCardCreationTask {
     }
     fun evaluate(requests: List<String>, blocks: List<AssistantBlock>): Outcome? {
         val latest = requests.lastOrNull() ?: return null
+        if (Regex("^(请)?(告诉我|教我|介绍|解释|如何|怎么|怎样)").containsMatchIn(latest.trim())) return null
         val changes = listOf("world" to NovexManagedChange.CreateWorld("", ""),
             "character_version" to NovexManagedChange.CreateCharacter("", "{}"),
             "game" to NovexManagedChange.CreateInteractiveFiction("", "", com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, ""))
