@@ -16,7 +16,8 @@ internal class NovexReferencePackage(
     private data class Key(val kind: NovexCardKind, val id: String)
     private data class Exported(val key: String, val preview: NovexCardPackagePreview, val addresses: Map<NovexContentAddress, String>)
 
-    suspend fun export(kind: NovexCardKind, id: String): NovexCardPackagePreview {
+    suspend fun export(kind: NovexCardKind, id: String, selectedVersionIds: Set<String>? = null,
+        includeDependencies: Boolean = true, explicitScope: Boolean = false): NovexCardPackagePreview {
         val root = Key(kind, id)
         val cards = linkedMapOf<Key, Exported>()
         val references = linkedMapOf<String, NovexCardReference>()
@@ -26,15 +27,47 @@ internal class NovexReferencePackage(
             if (key in cards) continue
             require(cards.size < 100) { "关联卡片超过一百张，请缩小依赖范围再导出" }
             val preview = exportSingle(key.kind, key.id)
-            val addresses = addresses(key, preview)
+            val addresses = addresses(key, preview, selectedVersionIds.takeIf { key == root })
             cards[key] = Exported("card-${cards.size}", preview, addresses)
             addresses.keys.forEach { source -> workspace.referencesFrom(source).forEach { reference ->
                 references[reference.id] = reference
-                keyFor(reference.target.subject)?.let(queue::add)
+                if (includeDependencies && reference.unresolvedTarget == null) keyFor(reference.target.subject)?.let(queue::add)
             } }
+            if (includeDependencies && explicitScope) {
+                val owners = addresses.keys.map { source -> when (source.kind) {
+                    NovexContentKind.WORLD -> ModuleOwner.world(source.id)
+                    NovexContentKind.CHARACTER_VERSION -> ModuleOwner.characterVersion(source.id)
+                    NovexContentKind.INTERACTIVE_FICTION -> ModuleOwner.interactiveFiction(source.id)
+                    NovexContentKind.CREATIVE_ARTIFACT -> error("卡片包不收录创作文件")
+                } }
+                owners.forEach { owner -> workspace.modules(owner).modules.forEach { module ->
+                    workspace.module(module.id)?.references.orEmpty().forEach { ref ->
+                        val target = when(ref.targetType) {
+                            ModuleReferenceTargetType.WORLD -> NovexContentAddress.world(ref.targetId)
+                            ModuleReferenceTargetType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(ref.targetId)
+                            ModuleReferenceTargetType.MODULE -> workspace.module(ref.targetId)?.module?.let { target -> when(target.ownerType) {
+                                ModuleOwnerType.WORLD -> NovexContentAddress.world(target.ownerId)
+                                ModuleOwnerType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(target.ownerId)
+                                ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(target.ownerId)
+                                else -> null
+                            } }
+                        }
+                        target?.let { keyFor(it) }?.let(queue::add)
+                    }
+                } }
+                when(key.kind) {
+                    NovexCardKind.WORLD -> workspace.world(key.id)?.versions.orEmpty().forEach { version ->
+                        keyFor(NovexContentAddress.characterVersion(version.id))?.let(queue::add)
+                    }
+                    NovexCardKind.CHARACTER -> addresses.keys.forEach { source ->
+                        workspace.character(key.id)?.worldsByVersion?.get(source.id).orEmpty().forEach { world -> queue.add(Key(NovexCardKind.WORLD, world.id)) }
+                    }
+                    else -> Unit
+                }
+            }
         }
         val rootCard = cards.getValue(root)
-        if (references.isEmpty()) return rootCard.preview.copy(documentJson =
+        if (references.isEmpty() && !explicitScope) return rootCard.preview.copy(documentJson =
             JSONObject(rootCard.preview.documentJson).apply { remove("referenceBundle") }.toString(2))
         val media = mutableListOf<NovexCardMedia>()
         val records = JSONArray()
@@ -56,7 +89,42 @@ internal class NovexReferencePackage(
                 } })
             })
         }
-        rootDocument.put("referenceBundle", JSONObject().put("version", 1).put("root", rootCard.key)
+        if (explicitScope) {
+            val included = cards.values.flatMap { it.addresses.keys }.toSet()
+            val includedModules = included.flatMap { source -> workspace.modules(source.owner()).modules.map { it.id } }.toSet()
+            val diagnostics = linkedSetOf<String>()
+            references.values.forEach { ref ->
+                if (ref.target.subject !in included || ref.unresolvedTarget != null || workspace.referenceStatus(ref.target) != NovexReferenceTargetStatus.AVAILABLE)
+                    diagnostics += "带用途引用 ${ref.id}：目标未收录或缺失（${ref.target.subject.id}）"
+            }
+            included.forEach { source ->
+                workspace.modules(source.owner()).modules.forEach { module -> workspace.module(module.id)?.references.orEmpty().forEach { ref ->
+                    val present = when(ref.targetType) {
+                        ModuleReferenceTargetType.MODULE -> ref.targetId in includedModules
+                        ModuleReferenceTargetType.WORLD -> NovexContentAddress.world(ref.targetId) in included
+                        ModuleReferenceTargetType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(ref.targetId) in included
+                    }
+                    if(!present) diagnostics += "模块 ${module.name} 的引用未收录或缺失：${ref.targetId}"
+                } }
+                when(source.kind) {
+                    NovexContentKind.WORLD -> workspace.world(source.id)?.versions.orEmpty().forEach { version ->
+                        if(NovexContentAddress.characterVersion(version.id) !in included) diagnostics += "世界配套人物未收录：${version.label}（${version.id}）"
+                    }
+                    NovexContentKind.CHARACTER_VERSION -> {
+                        workspace.characterForVersion(source.id)?.worldsByVersion?.get(source.id).orEmpty().forEach { world ->
+                            if(NovexContentAddress.world(world.id) !in included) diagnostics += "人物所属世界未收录：${world.name}（${world.id}）"
+                        }
+                        workspace.versionRelations(source.id).filter { it.sourceVersionId == source.id }.forEach { relation ->
+                            if(NovexContentAddress.characterVersion(relation.targetVersionId) !in included || relation.unresolvedTargetVersionId != null)
+                                diagnostics += "人物版本关系目标未收录或缺失：${relation.targetVersionId}"
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            rootDocument.put("_novexExportDiagnostics", JSONArray(diagnostics.toList()))
+        }
+        rootDocument.put("referenceBundle", JSONObject().put("version", 1).put("scopedExport", explicitScope).put("root", rootCard.key)
             .put("cards", records).put("references", JSONArray().apply {
                 references.values.forEach { put(JSONObject(NovexCardReferenceCodec.encode(it))) }
             }))
@@ -134,6 +202,42 @@ internal class NovexReferencePackage(
         memberships.groupBy({ it.first }, { it.second }).forEach { (world, versions) ->
             versions.forEachIndexed { position, version -> restoreLegacyLink(world, version, position, now) }
         }
+        if(bundle.optBoolean("scopedExport", false)) {
+            val documents = importedRecords.flatMap { (document, _) -> when(document) {
+                is NovexWorldImportDocument -> document.modules
+                is NovexInteractiveFictionImportDocument -> document.modules
+                is NovexCharacterImportDocument -> document.versions.flatMap { it.modules }
+            } }
+            documents.forEach { document ->
+                val sourceId = moduleMap.getValue(document.sourceId)
+                val restored = mutableSetOf<Pair<String, String>>()
+                JSONArray(document.referencesJson).objects().forEachIndexed { position, reference ->
+                    val kind = reference.optString("targetKind"); val id = reference.optString("targetId")
+                    val target = when(kind) {
+                        "module" -> moduleMap[id]?.let(ModuleReferenceTarget::module)
+                        "world" -> scopedWorlds[id]?.singleOrNull()?.let(ModuleReferenceTarget::world)
+                        "characterVersion" -> scopedVersions[id]?.singleOrNull()?.let(ModuleReferenceTarget::characterVersion)
+                        else -> null
+                    }
+                    if(target != null) {
+                        if(workspace.module(sourceId)?.references.orEmpty().none { it.target == target })
+                            workspace.apply(NovexCommand.AddModuleReference(sourceId, target, position))
+                        restored += kind to id
+                    }
+                }
+                val module = requireNotNull(workspace.module(sourceId)).module
+                val raw = JSONObject(module.contentJson)
+                raw.optJSONArray("_novexPendingReferences")?.let { pending ->
+                    val remaining = (0 until pending.length()).map { pending.get(it) }.filterNot { item ->
+                        item is JSONObject && (item.optString("targetKind") to item.optString("targetId")) in restored
+                    }
+                    if(remaining.size != pending.length()) {
+                        if(remaining.isEmpty()) raw.remove("_novexPendingReferences") else raw.put("_novexPendingReferences", JSONArray(remaining))
+                        workspace.apply(NovexCommand.SaveModule(sourceId, module.name, raw.toString(), now))
+                    }
+                }
+            }
+        }
         val missing = mutableMapOf<NovexContentAddress, NovexContentAddress>()
         references.forEach { reference ->
             val source = requireNotNull(addressMap[reference.source]) { "依赖包引用来源不在包内" }
@@ -169,11 +273,11 @@ internal class NovexReferencePackage(
         }.also { require(it.size == document.versions.size) { "角色版本来源编号重复" } }
     }
 
-    private suspend fun addresses(key: Key, preview: NovexCardPackagePreview): Map<NovexContentAddress, String> = when (key.kind) {
+    private suspend fun addresses(key: Key, preview: NovexCardPackagePreview, selectedVersionIds: Set<String>? = null): Map<NovexContentAddress, String> = when (key.kind) {
         NovexCardKind.WORLD -> mapOf(NovexContentAddress.world(key.id) to JSONObject(preview.documentJson).getString("sourceId"))
         NovexCardKind.GAME -> mapOf(NovexContentAddress.interactiveFiction(key.id) to JSONObject(preview.documentJson).getString("sourceId"))
         NovexCardKind.CHARACTER -> {
-            val versions = requireNotNull(workspace.character(key.id)).character.allVersions
+            val versions = requireNotNull(workspace.character(key.id)).character.allVersions.filter { selectedVersionIds == null || it.id in selectedVersionIds }
             val exported = JSONObject(preview.documentJson).getJSONArray("versions").objects()
             require(versions.size == exported.size) { "导出的版本映射不完整" }
             versions.zip(exported).associate { (version, document) ->
@@ -198,6 +302,13 @@ internal class NovexReferencePackage(
             }
             is JSONArray -> (0 until value.length()).forEach { relocateMedia(value.get(it), paths) }
         }
+    }
+
+    private fun NovexContentAddress.owner(): ModuleOwner = when(kind) {
+        NovexContentKind.WORLD -> ModuleOwner.world(id)
+        NovexContentKind.CHARACTER_VERSION -> ModuleOwner.characterVersion(id)
+        NovexContentKind.INTERACTIVE_FICTION -> ModuleOwner.interactiveFiction(id)
+        NovexContentKind.CREATIVE_ARTIFACT -> error("创作文件不属于卡片包")
     }
 
     private fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }

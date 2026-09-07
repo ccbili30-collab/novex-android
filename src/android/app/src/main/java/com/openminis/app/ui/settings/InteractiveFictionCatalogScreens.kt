@@ -104,6 +104,7 @@ fun CatalogInteractiveFictionDetailScreen(
     val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf<NovexInteractiveFictionSnapshot?>(null) }
     var missing by remember { mutableStateOf(false) }
+    var exportCard by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     LaunchedEffect(projectId) {
@@ -120,6 +121,9 @@ fun CatalogInteractiveFictionDetailScreen(
             }
         }
     }
+
+    if(exportCard) com.openminis.app.ui.novex.NovexCardExportDialog(
+        com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.GAME, projectId)) { exportCard = false }
 
     val current = snapshot
     NovexDetailScaffold(
@@ -182,20 +186,9 @@ fun CatalogInteractiveFictionDetailScreen(
                         },
                     )
                     NovexTextActionRow(
-                        label = "导出诺文文游卡（含引用依赖）",
+                        label = "导出诺文文游卡",
                         icon = R.drawable.ic_phosphor_arrow_up,
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    workspace.apply(
-                                        NovexCommand.ExportNativeInteractiveFiction(projectId),
-                                    ).requireNativeCard()
-                                }.onSuccess { shareNovexCardPackage(context, it) }
-                                    .onFailure {
-                                        notice = "导出失败" to (it.message ?: "无法导出文游卡")
-                                    }
-                            }
-                        },
+                        onClick = { exportCard = true },
                     )
                 }
                 Spacer(Modifier.height(40.dp))

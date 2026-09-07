@@ -147,6 +147,7 @@ fun CatalogCharacterDetailScreen(
     val current = data
     val selected = current?.aggregate?.allVersions?.firstOrNull { it.id == selectedVersionId }
     val profile = selected?.let { CharacterVersionProfile.fromJson(it.profileJson, current.aggregate.character.name) }
+    var exportCard by remember { mutableStateOf(false) }
     var versionSheet by remember { mutableStateOf(false) }
     val page = if (current != null && selected != null && profile != null) CharacterPageData(
         rootName = current.aggregate.character.name,
@@ -204,15 +205,7 @@ fun CatalogCharacterDetailScreen(
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
                     onCreateVariant = onCreateVariant,
-                    onExport = {
-                        scope.launch {
-                            runCatching {
-                                novex.apply(NovexCommand.ExportNativeCharacter(characterId)).requireNativeCard()
-                            }
-                                .onSuccess { shareNovexCardPackage(context, it) }
-                                .onFailure { error = it.message }
-                        }
-                    },
+                    onExport = { exportCard = true },
                     onDuplicate = { copyCard = true },
                     onDelete = {
                         if (page.version.kind == CharacterVersionKind.VARIANT) confirmDeleteVariant = page.version
@@ -223,6 +216,8 @@ fun CatalogCharacterDetailScreen(
             }
         }
     }
+    if(exportCard) com.openminis.app.ui.novex.NovexCardExportDialog(
+        com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.CHARACTER, characterId)) { exportCard = false }
     if(copyCard) com.openminis.app.ui.novex.NovexCardCopyDialog(
         com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.CHARACTER, characterId),
         onDismiss = { copyCard = false }, onCopied = { copyCard = false; onDuplicated(it.root.id) })

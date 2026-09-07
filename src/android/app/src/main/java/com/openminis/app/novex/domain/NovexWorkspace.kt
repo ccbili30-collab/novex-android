@@ -229,6 +229,8 @@ sealed interface NovexCommand {
         val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
+    data class ExportNativeSelection(val root: NovexCardCopyKey, val versionIds: Set<String>? = null,
+        val includeDependencies: Boolean = false) : NovexCommand
     data class ExportNativeWorld(val worldId: String) : NovexCommand
 
     data class ExportNativeCharacter(val characterId: String) : NovexCommand
@@ -518,11 +520,11 @@ internal class DefaultNovexWorkspace(
         transaction { prepared = cardCopy().prepare(root, policy); NovexChange.Completed }
         return prepared
     }
-    private fun referencePackage() = NovexReferencePackage(this,
+    private fun referencePackage(selectedCharacterId: String? = null, selectedVersionIds: Set<String>? = null) = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
         exportSingle = { kind, id -> when (kind) {
             NovexCardKind.WORLD -> exportWorldCard(id)
-            NovexCardKind.CHARACTER -> exportCharacterCard(id)
+            NovexCardKind.CHARACTER -> exportCharacterCard(id, selectedVersionIds.takeIf { id == selectedCharacterId })
             NovexCardKind.GAME -> exportInteractiveFictionCard(id)
         } },
         importSingle = { card, now, reconcile -> when (val document = card.document) {
@@ -866,6 +868,11 @@ internal class DefaultNovexWorkspace(
         is NovexCommand.ImportNativeCard -> {
             val localId = referencePackage().import(command.card, command.now)
             NovexChange.NativeCardImported(command.card.document.kind(), localId)
+        }
+        is NovexCommand.ExportNativeSelection -> {
+            require(command.versionIds == null || command.root.kind == NovexCardKind.CHARACTER) { "仅角色卡支持选择版本" }
+            NovexChange.NativeCardExported(referencePackage(command.root.id, command.versionIds).export(
+                command.root.kind, command.root.id, command.versionIds, command.includeDependencies, explicitScope = true))
         }
         is NovexCommand.ExportNativeWorld -> NovexChange.NativeCardExported(
             referencePackage().export(NovexCardKind.WORLD, command.worldId),
@@ -1661,9 +1668,14 @@ internal class DefaultNovexWorkspace(
         )
     }
 
-    private suspend fun exportCharacterCard(characterId: String): NovexCardPackagePreview {
+    private suspend fun exportCharacterCard(characterId: String, selectedVersionIds: Set<String>? = null): NovexCardPackagePreview {
         val snapshot = requireNotNull(character(characterId)) { "角色不存在" }
-        val originalProfileJson = JSONObject(snapshot.character.original.profileJson)
+        val exportedVersions = snapshot.character.allVersions.filter { selectedVersionIds == null || it.id in selectedVersionIds }
+        require(exportedVersions.isNotEmpty() && (selectedVersionIds == null || exportedVersions.size == selectedVersionIds.size)) {
+            "所选角色版本已不存在，请重新选择导出范围"
+        }
+        val defaultVersion = exportedVersions.firstOrNull { it.kind == CharacterVersionKind.ORIGINAL } ?: exportedVersions.first()
+        val originalProfileJson = JSONObject(defaultVersion.profileJson)
         val original = runCatching { JSONObject(originalProfileJson.optString("_novexCharacterDocument")) }
             .getOrDefault(JSONObject())
         val sourceId = originalProfileJson.optString("_novexCharacterSourceId")
@@ -1676,7 +1688,7 @@ internal class DefaultNovexWorkspace(
             return path
         }
         val claimedVersionIds = mutableSetOf<String>()
-        val versionSourceIds = snapshot.character.allVersions.associate { version ->
+        val versionSourceIds = exportedVersions.associate { version ->
             val preferred = version.sourceId() ?: version.id
             var portableId = preferred
             var suffix = 0
@@ -1685,7 +1697,7 @@ internal class DefaultNovexWorkspace(
             }
             version.id to portableId
         }
-        val versionsJson = snapshot.character.allVersions.map { version ->
+        val versionsJson = exportedVersions.map { version ->
             val profile = CharacterVersionProfile.fromJson(version.profileJson, snapshot.character.character.name)
             val sourceVersionId = versionSourceIds.getValue(version.id)
             val versionMedia = snapshot.mediaByVersion[version.id].orEmpty()
@@ -1737,7 +1749,7 @@ internal class DefaultNovexWorkspace(
             }
             JSONObject()
                 .put("id", sourceVersionId)
-                .put("kind", if (version.kind == CharacterVersionKind.ORIGINAL) "origin" else "variant")
+                .put("kind", if (version.id == defaultVersion.id) "origin" else "variant")
                 .put("name", version.label)
                 .put("tags", JSONArray(profile.tags))
                 .put(
@@ -1771,11 +1783,15 @@ internal class DefaultNovexWorkspace(
             put("schemaVersion", 1)
             put("sourceId", sourceId)
             put("name", snapshot.character.character.name)
-            put("summary", CharacterVersionProfile.fromJson(snapshot.character.original.profileJson).summary)
+            put("summary", CharacterVersionProfile.fromJson(defaultVersion.profileJson).summary)
             put("versions", JSONArray(versionsJson))
             put("versionOrder", JSONArray(versionsJson.map { it.getString("id") }))
             put("defaultVersionId", versionsJson.first { it.optString("kind") == "origin" }.getString("id"))
-            put("versionRelations", JSONArray(versionRelations.forCharacter(characterId).map { relation ->
+            if (selectedVersionIds != null) put("_novexExportSelection", JSONObject()
+                .put("sourceCharacterId", characterId).put("sourceVersionIds", JSONArray(exportedVersions.map { it.id }))
+                .put("defaultSourceVersionId", defaultVersion.id)
+                .put("note", "导入后的默认版本仅用于包内展示，不改写来源人物阶段与分身关系"))
+            put("versionRelations", JSONArray(versionRelations.forCharacter(characterId).filter { it.sourceVersionId in versionSourceIds }.map { relation ->
                 JSONObject(NovexCharacterVersionRelationCodec.encode(relation.copy(
                     sourceVersionId = versionSourceIds.getValue(relation.sourceVersionId),
                     targetVersionId = versionSourceIds[relation.targetVersionId] ?: relation.targetVersionId,

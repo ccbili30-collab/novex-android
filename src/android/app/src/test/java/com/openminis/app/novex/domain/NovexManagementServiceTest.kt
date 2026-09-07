@@ -39,7 +39,8 @@ class NovexManagementServiceTest {
             } }
             assertTrue(workspace.applied.isEmpty())
             service.apply(configuration, proposal, proposal.confirmationPhrase)
-            assertEquals(1, transactionCount)
+            // The rejected attempt also checks authorization inside a transaction.
+            assertEquals(2, transactionCount)
             val modules = when (val command = workspace.applied.single()) {
                 is NovexCommand.SaveWorldPage -> command.modules
                 is NovexCommand.SaveCharacterPage -> command.modules

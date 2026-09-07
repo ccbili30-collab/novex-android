@@ -147,6 +147,7 @@ fun CatalogWorldDetailScreen(
     var selectedPersonaId by remember { mutableStateOf<String?>(null) }
     var selectedVersionId by remember { mutableStateOf<String?>(null) }
     var editVersion by remember { mutableStateOf<CharacterVersionEntity?>(null) }
+    var exportCard by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(worldId, refresh) {
         val snapshot = novex.world(worldId)
@@ -254,22 +255,17 @@ fun CatalogWorldDetailScreen(
                     com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
-                        label = "导出诺文世界卡（含引用依赖）",
+                        label = "导出诺文世界卡",
                         icon = com.openminis.app.R.drawable.ic_phosphor_arrow_up,
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    novex.apply(NovexCommand.ExportNativeWorld(worldId)).requireNativeCard()
-                                }.onSuccess { shareNovexCardPackage(context, it) }
-                                    .onFailure { error = it.message ?: "世界卡导出失败" }
-                            }
-                        },
+                        onClick = { exportCard = true },
                     )
                 }
                 Spacer(Modifier.height(40.dp))
             }
         }
     }
+    if(exportCard) com.openminis.app.ui.novex.NovexCardExportDialog(
+        com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId)) { exportCard = false }
     if (addCharacter && current != null) NovexContentDialog(
         title = "从角色库添加",
         onDismiss = { addCharacter = false },
