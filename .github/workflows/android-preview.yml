@@ -47,6 +47,8 @@ jobs:
       - name: Resolve candidate versions
         id: versions
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           stable_version="$(sed -n 's/.*?: "\([0-9][0-9.]*\)"/\1/p' src/android/app/build.gradle.kts | head -1)"
           if [ -z "$stable_version" ]; then
@@ -57,7 +59,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             stage="${{ inputs.stage }}"
           fi
-          preview_version="${stable_version}-${stage}.${GITHUB_RUN_NUMBER}"
+          published_tags="$(gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName')"
+          preview_version="$(printf '%s\n' "$published_tags" | bash scripts/resolve_android_preview_version.sh "$stable_version" "$stage" "$GITHUB_RUN_NUMBER")"
           {
             echo "stable=$stable_version"
             echo "preview=$preview_version"
@@ -238,16 +241,11 @@ jobs:
           shopt -s nullglob
           assets=(dist/preview/*.apk dist/preview/*.novex dist/preview/SHA256SUMS.txt)
           tag="${{ steps.versions.outputs.preview_tag }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --prerelease --notes-file "$notes_file"
-            gh release upload "$tag" "${assets[@]}" --clobber
-          else
-            gh release create "$tag" "${assets[@]}" \
-              --target "$GITHUB_SHA" \
-              --title "Novex ${{ steps.versions.outputs.preview }}" \
-              --notes-file "$notes_file" \
-              --prerelease
-          fi
+          gh release create "$tag" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "Novex ${{ steps.versions.outputs.preview }}" \
+            --notes-file "$notes_file" \
+            --prerelease
 
       - name: Upload test report after failure
         if: ${{ failure() }}
