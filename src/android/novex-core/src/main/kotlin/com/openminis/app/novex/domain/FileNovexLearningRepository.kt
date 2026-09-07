@@ -68,7 +68,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 10
+    private const val VERSION = 11
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -79,6 +79,8 @@ object NovexLearningStateJsonCodec {
         .put("task", state.task?.let(::encodeTask))
         .put("accounted_responses", JSONArray(state.accountedResponseIds.toList()))
         .put("last_failure", state.lastFailure)
+        .put("previous_tasks", JSONArray(state.previousTasks.map(::encodeTask)))
+        .put("historical_notes", JSONArray(state.historicalNotes.map(::encodeNote)))
         .toString()
 
     fun decode(encoded: String): NovexLearningState {
@@ -94,6 +96,8 @@ object NovexLearningStateJsonCodec {
             task = task,
             accountedResponseIds = json.optJSONArray("accounted_responses")?.strings()?.toSet().orEmpty(),
             lastFailure = json.optionalString("last_failure"),
+            previousTasks = json.optJSONArray("previous_tasks")?.objects()?.map(::decodeTask).orEmpty(),
+            historicalNotes = json.optJSONArray("historical_notes")?.objects()?.map(::decodeNote).orEmpty(),
             preflight = if (version >= 2) {
                 json.optionalObject("preflight")?.let(::decodePreflight)
             } else {

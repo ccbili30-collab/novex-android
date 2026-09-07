@@ -973,6 +973,10 @@ class ChatViewModel(
     private val _novexLearningResponsePreview = MutableStateFlow<String?>(null)
     val novexLearningResponsePreview: StateFlow<String?> = _novexLearningResponsePreview.asStateFlow()
     private var novexLearningResponsePreviewRequest = 0
+    private val _novexLearningDetails = MutableStateFlow<NovexLearningState?>(null)
+    val novexLearningDetails: StateFlow<NovexLearningState?> = _novexLearningDetails.asStateFlow()
+    private var novexLearningDetailsRequest = 0
+    private var pendingNovexLearningContinuation: Pair<String, com.openminis.app.novex.domain.NovexLearningContinuationMode>? = null
     private var novexLearningJob: Job? = null
     private var conversationVisible = true
     private var conversationExitJob: Job? = null
@@ -4362,6 +4366,8 @@ class ChatViewModel(
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
             closeNovexLearningResponsePreview()
+            closeNovexLearningDetails()
+            pendingNovexLearningContinuation = null
             refreshNovexLearningTaskProjection()
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
@@ -5034,6 +5040,8 @@ class ChatViewModel(
         activeNovexDocumentRefs = emptySet()
         activeNovexSourceCollectionRefs = emptySet()
         closeNovexLearningResponsePreview()
+        closeNovexLearningDetails()
+        pendingNovexLearningContinuation = null
         _novexLearningError.value = null
         _pendingNovexLearningPreflight.value = null
         _novexLearningTask.value = null
@@ -5424,6 +5432,8 @@ class ChatViewModel(
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
         activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
         closeNovexLearningResponsePreview()
+        closeNovexLearningDetails()
+        pendingNovexLearningContinuation = null
         _pendingNovexLearningPreflight.value = null
         refreshNovexLearningTaskProjection()
         toolLoopDetector.reset()
@@ -12556,6 +12566,7 @@ class ChatViewModel(
         model: LLMModel,
         providerName: String,
         proposedBudget: NovexLearningTokenBudget? = null,
+        sourcePlanFingerprint: String? = null,
     ): NovexLearningPreflightSnapshot {
         val sourceDocuments = state.collection.sources.mapNotNull { source ->
             source.documentRef?.let { ref ->
@@ -12613,6 +12624,7 @@ class ChatViewModel(
                 directReadBudgetTokens = 12_000,
                 proposedBudget = budget,
                 sourceDocuments = sourceDocuments,
+                sourcePlanFingerprint = sourcePlanFingerprint,
                 modelMaxOutputTokens = model.maxOutputTokens ?: 4096,
             ),
             progress = state,
@@ -12621,11 +12633,44 @@ class ChatViewModel(
     }
 
     fun dismissNovexLearningPreflight() {
+        pendingNovexLearningContinuation = null
         _pendingNovexLearningPreflight.value = null
         refreshNovexLearningTaskProjection()
     }
 
+    fun requestNovexLearningContinuation(recheckSources: Boolean) {
+        val provider = currentProvider ?: return
+        val model = currentModel ?: return
+        val ref = currentNovexLearningCollectionRef() ?: return
+        val previousJob = novexLearningJob
+        closeNovexLearningDetails()
+        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
+            previousJob?.cancelAndJoin()
+            runCatching {
+                require(ref.value in activeNovexSourceCollectionRefs) { "当前对话已不再使用这份资料" }
+                val original = requireNotNull(novexLearningRepository.find(ref)) { "找不到已保存任务" }
+                val mode = if (recheckSources) com.openminis.app.novex.domain.NovexLearningContinuationMode.RECHECK_SOURCES
+                    else com.openminis.app.novex.domain.NovexLearningContinuationMode.CURRENT_SOURCES
+                val prepared = com.openminis.app.novex.domain.NovexLearningContinuation.prepareState(original, novexDocumentRepository, mode)
+                val usage = requireNotNull(original.task).usage
+                val budget = NovexLearningTokenBudget(
+                    maxOf(usage.maxInputTokens, (usage.usedInputTokens.toLong() + 64_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()),
+                    maxOf(usage.maxOutputTokens, (usage.usedOutputTokens.toLong() + 8_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
+                val preflight = buildNovexLearningPreflight(prepared, model, provider.name, budget,
+                    com.openminis.app.novex.domain.NovexLearningContinuation.originFingerprint(original))
+                require(currentProvider === provider && currentModel == model && ref.value in activeNovexSourceCollectionRefs) {
+                    "对话或模型已变化，请重新准备计划"
+                }
+                pendingNovexLearningContinuation = preflight.id to mode
+                _novexLearningTask.value = null
+                _novexLearningError.value = null
+                _pendingNovexLearningPreflight.value = preflight
+            }.onFailure { _novexLearningError.value = it.message ?: "无法准备续接，原任务与成果仍保留" }
+        }
+    }
+
     fun requestNovexLearningBudgetExtension() {
+        pendingNovexLearningContinuation = null
         val provider = currentProvider ?: return
         val model = currentModel ?: return
         val collectionRef = currentNovexLearningCollectionRef() ?: return
@@ -12659,6 +12704,8 @@ class ChatViewModel(
         val preflight = _pendingNovexLearningPreflight.value
             ?.takeIf { it.id == preflightId }
             ?: return
+        val continuationMode = pendingNovexLearningContinuation?.takeIf { it.first == preflightId }?.second
+        pendingNovexLearningContinuation = null
         val provider = currentProvider
         val model = currentModel
         if (provider == null || model == null || model.id != preflight.modelId) {
@@ -12676,15 +12723,21 @@ class ChatViewModel(
                 _novexLearningError.value = "找不到待整理的资料集"
                 return@launch
             }
+            if (preflight.collectionRef.value !in activeNovexSourceCollectionRefs) return@launch
             stored.task?.takeIf { task ->
-                task.status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
+                continuationMode == null && task.status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
             }?.let { task ->
                 _novexLearningTask.value = task
                 _novexLearningStatus.value = task.status
                 return@launch
             }
+            val prepared = runCatching {
+                if (continuationMode == null) stored else
+                    com.openminis.app.novex.domain.NovexLearningContinuation.prepareState(stored, novexDocumentRepository, continuationMode)
+            }.getOrElse { _novexLearningError.value = it.message ?: "原任务已变化"; return@launch }
             val refreshed = runCatching {
-                buildNovexLearningPreflight(stored, model, provider.name, preflight.confirmedBudget)
+                buildNovexLearningPreflight(prepared, model, provider.name, preflight.confirmedBudget,
+                    if (continuationMode == null) null else com.openminis.app.novex.domain.NovexLearningContinuation.originFingerprint(stored))
             }.getOrElse { failure ->
                 _novexLearningError.value = failure.message ?: "无法核对学习计划，已保存进度不变"
                 return@launch
@@ -12693,6 +12746,7 @@ class ChatViewModel(
                 // A budget proposal must not replace the authorization of the saved task.
                 if (stored.task == null) novexLearningRepository.save(stored.copy(preflight = refreshed))
                 _pendingNovexLearningPreflight.value = refreshed.takeIf { it.requiresConfirmation }
+                pendingNovexLearningContinuation = continuationMode?.let { refreshed.id to it }
                 _novexLearningError.value = "资料、模型或预算已经变化，请确认新的整理计划"
                 return@launch
             }
@@ -12706,18 +12760,25 @@ class ChatViewModel(
             )
             val coordinator = NovexLearningCoordinator()
             val storedTask = stored.task
-            val task = runCatching {
-                if (storedTask?.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
-                    coordinator.extendBudget(storedTask, refreshed, confirmation)
+            val nextState = runCatching {
+                requireNovexLearningExecutionContext(refreshed, provider)
+                if (continuationMode != null) {
+                    com.openminis.app.novex.domain.NovexLearningContinuation.confirm(stored, prepared, continuationMode, refreshed, confirmation)
                 } else {
-                    coordinator.start(refreshed, confirmation)
+                    val task = if (storedTask?.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
+                        coordinator.extendBudget(storedTask, refreshed, confirmation)
+                    } else {
+                        coordinator.start(refreshed, confirmation)
+                    }
+                    stored.copy(preflight = refreshed, task = task)
                 }
             }
                 .getOrElse { failure ->
                     _novexLearningError.value = failure.message ?: "学习确认已经失效"
                     return@launch
                 }
-            runNovexLearning(stored.copy(preflight = refreshed, task = task), provider)
+            novexLearningRepository.save(nextState)
+            runNovexLearning(nextState, provider)
         }
     }
 
@@ -12787,6 +12848,25 @@ class ChatViewModel(
         _novexLearningError.value = null
     }
 
+    fun closeNovexLearningDetails() {
+        novexLearningDetailsRequest++
+        _novexLearningDetails.value = null
+    }
+
+    fun showNovexLearningDetails() {
+        val ref = currentNovexLearningCollectionRef() ?: return
+        val request = ++novexLearningDetailsRequest
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = runCatching { novexLearningRepository.find(ref) }.getOrElse {
+                _novexLearningError.value = it.message ?: "已保存任务暂不可读"; return@launch
+            }
+            if (request == novexLearningDetailsRequest && ref.value in activeNovexSourceCollectionRefs) {
+                _novexLearningDetails.value = state
+                _novexLearningError.value = null
+            }
+        }
+    }
+
     fun closeNovexLearningResponsePreview() {
         novexLearningResponsePreviewRequest++
         _novexLearningResponsePreview.value = null
@@ -12854,7 +12934,7 @@ class ChatViewModel(
                     NovexLearningTaskStatus.SYNTHESIZING,
                 )
             ) {
-                val paused = stored.copy(task = runningTask.pause())
+                val paused = stored.copy(task = runningTask.pause(), lastFailure = failure.message ?: "资料通读失败，已保留完成进度")
                 novexLearningRepository.save(paused)
                 _novexLearningTask.value = paused.task
                 _novexLearningStatus.value = paused.task?.status

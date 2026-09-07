@@ -87,6 +87,7 @@ object NovexToolCatalog {
                 parameters = listOf(
                     NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
                     NovexToolParameter("note_ref", NovexToolParameterKind.STRING, false, "可选本工具返回的笔记引用；不能与其他定位方式混用"),
+                    NovexToolParameter("note_set", NovexToolParameterKind.STRING, false, "current（默认，当前成果）或 history（重新核对来源前的历史成果）；历史成果不计入当前整理覆盖，重名引用请使用 first_note 定位"),
                     NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样使用上次 next_cursor；续读时只传这一种定位参数"),
                     NovexToolParameter("query", NovexToolParameterKind.STRING, false, "可选笔记正文关键词，只返回命中笔记，不能冒充完整通读"),
                     NovexToolParameter("first_note", NovexToolParameterKind.INTEGER, false, "从第几条笔记重读，从 1 计数；对应 next_position.block，不与游标混用"),

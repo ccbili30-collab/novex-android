@@ -165,7 +165,7 @@ object NovexLearningPreflight {
             }
         }
         val readRanges = progress?.notes.orEmpty().flatMap { it.readRanges }
-        val continuing = progress?.task != null || progress?.notes?.isNotEmpty() == true ||
+        val continuing = progress?.task != null || progress?.previousTasks?.isNotEmpty() == true || progress?.notes?.isNotEmpty() == true ||
             (progress?.reviewLedger?.reviewedBlocks ?: 0) > 0
         val fullPlan = if (request.effectiveContextTokens != null && documents.isNotEmpty()) documents.filter {
             it.status in setOf(NovexDocumentStatus.READY, NovexDocumentStatus.TRUNCATED)
@@ -190,6 +190,11 @@ object NovexLearningPreflight {
             totalTokens <= directBudget &&
             !hasExpensiveCapability
         val risks = buildList {
+            val prior = progress?.task ?: progress?.previousTasks?.lastOrNull()
+            if (prior != null) add(NovexLearningRisk("learning.carried_usage",
+                "保留既有累计用量：输入 ${prior.usage.usedInputTokens}、输出 ${prior.usage.usedOutputTokens} 词元；此前使用 ${prior.preflight.modelProviderName} 的 ${prior.preflight.modelId}。" +
+                    if (progress?.task == null) "旧笔记保留在历史成果中；本次重新核对当前解析，重新计算整理覆盖。"
+                    else "已经提交的笔记和覆盖继续使用；尚未提交的批次换模型后可能重新请求，之前的返回和消耗仍保留。"))
             if (continuing) add(NovexLearningRisk("learning.resuming_saved_progress",
                 "本次从已保存的阅读进度继续，已读内容不重复计入剩余通读批次；确认预算是任务累计上限，不是额外可用额度"))
             if (hasIncompleteParsing) add(NovexLearningRisk("learning.incomplete_source",
@@ -259,6 +264,10 @@ object NovexLearningPreflight {
             append(request.proposedBudget.inputTokens).append(':')
                 .append(request.proposedBudget.outputTokens).append('\n')
             append(request.sourcePlanFingerprint.orEmpty()).append('\n')
+            (progress?.previousTasks.orEmpty() + listOfNotNull(progress?.task)).forEach { task ->
+                append(task.preflight.id).append(':').append(task.status).append(':')
+                    .append(task.usage.usedInputTokens).append(':').append(task.usage.usedOutputTokens).append('\n')
+            }
             progress?.reviewLedger?.reviewedBlocksByDocument?.entries?.sortedBy { it.key.value }?.forEach { (ref, ids) ->
                 append(ref.value).append(':').append(ids.sorted().joinToString(",")).append('\n')
             }
@@ -365,10 +374,10 @@ object NovexLearningGate {
         limits: NovexLearningModelLimits?,
     ) {
         require(preflight.modelLimits?.contextTokens != null) {
-            "旧学习任务缺少模型窗口记录，请取消后重新确认整理计划；已保存笔记仍可读取"
+            "旧学习任务缺少模型窗口记录，请在资料与整理计划中重新核对来源；已保存笔记仍可读取"
         }
         require(modelId == preflight.modelId && providerName == preflight.modelProviderName && limits == preflight.modelLimits) {
-            "学习模型、提供商或窗口配置已变化。请恢复原配置后继续，或取消后重新确认计划；已保存进度和笔记不会删除"
+            "学习模型、提供商或窗口配置已变化。请恢复原配置后继续，或在资料与整理计划中按当前模型续接；已保存进度和用量会保留"
         }
     }
 

@@ -16,11 +16,15 @@ class NovexLearningTools(
     fun learningRead(collectionRef: NovexResourceRef, arguments: JSONObject): NovexToolResult {
         val state = preflights.readState(collectionRef)?.takeIf { it.collection.ref == collectionRef }
             ?: return NovexToolResult.failure("learning.collection_not_found", "找不到当前对话可读的资料集", affectedRefs = listOf(collectionRef))
-        val notes = state.notes.sortedByDescending { it.level.ordinal }
+        val history = arguments.optString("note_set", "current")
+        require(history in setOf("current", "history")) { "note_set 只能为 current（当前成果）或 history（历史成果）" }
+        val notes = (if (history == "history") state.historicalNotes else state.notes).sortedByDescending { it.level.ordinal }
         if (notes.isEmpty()) return NovexToolResult.success("learning.notes_empty", "尚无已保存的学习笔记；不能声称已经完成通读",
-            data = mapOf("collection_ref" to collectionRef.value, "task_status" to state.task?.status?.name),
+            data = mapOf("collection_ref" to collectionRef.value, "task_status" to state.task?.status?.name,
+                "historical_note_count" to state.historicalNotes.size, "note_set" to history),
             affectedRefs = listOf(collectionRef))
         val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(history.toByteArray(Charsets.UTF_8))
         notes.forEach { note ->
             listOf(note.ref.value, note.title, note.body).forEach { digest.update(it.toByteArray(Charsets.UTF_8)); digest.update(0) }
         }
@@ -33,6 +37,9 @@ class NovexLearningTools(
                     index, note.body, listOf(note.title), source = anchor)
             })
         val selectedRef = arguments.optString("note_ref").trim().ifBlank { null }
+        require(selectedRef == null || notes.count { it.ref.value == selectedRef } <= 1) {
+            "历史成果存在多次同引用整理，请移除 note_ref，按 first_note 返回位置读取，不能凭引用猜测版本"
+        }
         val noteIndex = selectedRef?.let { ref -> notes.indexOfFirst { it.ref.value == ref }.also { index ->
             require(index >= 0) { "note_ref 不属于当前资料集；请使用 learning_read 返回的笔记引用" }
         } }
@@ -50,11 +57,14 @@ class NovexLearningTools(
             else result.summary.replace("first_block", "first_note"), affectedRefs = listOf(collectionRef))
         val returnedIds = (result.data["blocks"] as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }.orEmpty().toSet()
         val returnedNotes = notes.filterIndexed { index, _ -> snapshot.blocks[index].id in returnedIds }
-        return NovexToolResult.success("learning.notes_read", "已读取 ${returnedNotes.size} 条学习笔记；笔记不是原文，通读覆盖以阅读记录为准",
+        return NovexToolResult.success("learning.notes_read", "已读取 ${returnedNotes.size} 条学习笔记；笔记不是原文，通读覆盖以阅读记录为准" +
+            if (history == "history") "。这是旧整理成果，不计入当前解析的覆盖" else "",
             data = (result.data - "document_ref") + mapOf(
                 "collection_ref" to collectionRef.value,
                 "read_via" to "learning_read",
                 "total_notes" to notes.size,
+                "note_set" to history,
+                "historical_note_count" to state.historicalNotes.size,
                 "task_status" to state.task?.status?.name,
                 "reviewed_source_blocks" to state.reviewLedger.reviewedBlocks,
                 "total_source_blocks" to state.reviewLedger.totalReadableBlocks,

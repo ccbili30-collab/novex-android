@@ -341,6 +341,8 @@ data class NovexLearningState(
     val preflight: NovexLearningPreflightSnapshot? = task?.preflight,
     val accountedResponseIds: Set<String> = emptySet(),
     val lastFailure: String? = null,
+    val previousTasks: List<NovexLearningTaskState> = emptyList(),
+    val historicalNotes: List<NovexLearningNote> = emptyList(),
 ) {
     init {
         require(reviewLedger.collectionRef == collection.ref) { "通读账本与资料集不一致" }
@@ -351,6 +353,10 @@ data class NovexLearningState(
         }
         require(task == null || task.collectionRef == collection.ref) { "学习任务与资料集不一致" }
         require(preflight == null || preflight.collectionRef == collection.ref) { "学习预检与资料集不一致" }
+        require(previousTasks.all { it.collectionRef == collection.ref }) { "历史任务不能来自其他资料集" }
+        require(historicalNotes.all { note -> note.sourceDocumentRefs.all { ref ->
+            collection.sources.any { it.documentRef == ref || ref.value == "novex://documents/${it.sha256}" }
+        } }) { "历史成果不能来自资料集以外的原文件" }
         require(task == null || preflight == null || task.preflightId == preflight.id) {
             "学习任务与预检快照不一致"
         }
