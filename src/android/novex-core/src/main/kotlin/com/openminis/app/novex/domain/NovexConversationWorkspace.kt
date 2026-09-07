@@ -225,6 +225,27 @@ class FileNovexConversationWorkspaceStore(
         require(root.isDirectory) { "Novex 会话工作区根目录无效" }
     }
 
+    /** Native archive inventory, including retained sibling branches; never exposed as a model tool. */
+    @Synchronized
+    fun inspectConversation(conversationId: String): List<NovexWorkspaceSnapshot> {
+        validateWorkspaceIdentifier(conversationId, "来源对话")
+        val branches = File(conversationRoot(conversationId), "branches").listFiles().orEmpty().filter { it.isDirectory }
+        return branches.mapNotNull { directory ->
+            val index = File(directory, ".novex-index.json")
+            if(!index.isFile) return@mapNotNull null
+            val json = JSONObject(index.readText(Charsets.UTF_8))
+            require(json.getInt("version") == INDEX_VERSION) { "不支持的工作区索引版本" }
+            val values = json.getJSONArray("entries")
+            if(values.length() == 0) return@mapNotNull null
+            val entries = List(values.length()) { decodeEntry(values.getJSONObject(it)) }
+            val branch = entries.first().workspaceRef.branchId
+            require(directory.name == stableDirectoryName(branch) && entries.all {
+                it.workspaceRef.conversationId == conversationId && it.workspaceRef.branchId == branch
+            }) { "工作区索引归属不符" }
+            NovexWorkspaceSnapshot(NovexConversationWorkspaceScope(conversationId, listOf(branch), branch), entries)
+        }
+    }
+
     @Synchronized
     override fun inspect(scope: NovexConversationWorkspaceScope): NovexWorkspaceSnapshot {
         val visible = linkedMapOf<String, NovexWorkspaceEntry>()

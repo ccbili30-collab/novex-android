@@ -407,6 +407,7 @@ fun ChatScreen(
     val novexLearningError by viewModel.novexLearningError.collectAsState()
     val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
     val novexLearningDetails by viewModel.novexLearningDetails.collectAsState()
+    val novexConversationExport by viewModel.novexConversationExport.collectAsState()
     val novexCheckpoints by viewModel.novexCheckpoints.collectAsState()
     val novexLearningReadCoverage by viewModel.novexLearningReadCoverage.collectAsState()
     val novexLearningCollections by viewModel.novexLearningCollections.collectAsState()
@@ -1868,6 +1869,8 @@ fun ChatScreen(
                             )
                             add(NovexMenuAction("资料整理进度", R.drawable.ic_phosphor_brain,
                                 onClick = viewModel::showNovexLearningCollections))
+                            if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
+                                onClick = viewModel::prepareNovexConversationExport))
                             add(NovexMenuAction("存档与原始依据", R.drawable.ic_phosphor_note_pencil,
                                 onClick = viewModel::showNovexCheckpoints))
                             if (immersiveProfile.usesRolePresentation) {
@@ -5438,6 +5441,8 @@ fun ChatScreen(
         NovexNoticeDialog(title = "最近一次模型返回", message = message,
             onDismiss = viewModel::closeNovexLearningResponsePreview)
     }
+    novexConversationExport?.let { com.openminis.app.ui.novex.NovexConversationExportDialog(it,
+        viewModel::closeNovexConversationExport, viewModel::prepareNovexConversationExport) }
     novexCheckpoints?.let { NovexCheckpointDetails(it, viewModel::closeNovexCheckpoints) }
     if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
         NovexDecisionDialog(

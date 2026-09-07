@@ -975,6 +975,11 @@ class ChatViewModel(
     val novexLearningResponsePreview: StateFlow<String?> = _novexLearningResponsePreview.asStateFlow()
     private var novexLearningResponsePreviewRequest = 0
     private val _novexLearningDetails = MutableStateFlow<NovexLearningState?>(null)
+    private val _novexConversationExport = MutableStateFlow<com.openminis.app.share.NovexConversationExportState?>(null)
+    val novexConversationExport = _novexConversationExport.asStateFlow()
+    private var novexExportJob: Job? = null
+    private var novexExportRequest = 0
+
     private val _novexCheckpoints = MutableStateFlow<List<com.openminis.app.novex.domain.NovexCheckpointRecord>?>(null)
     val novexCheckpoints: StateFlow<List<com.openminis.app.novex.domain.NovexCheckpointRecord>?> = _novexCheckpoints.asStateFlow()
     private var novexCheckpointRequest = 0
@@ -12927,6 +12932,44 @@ class ChatViewModel(
     fun closeNovexCheckpoints() {
         novexCheckpointRequest++
         _novexCheckpoints.value = null
+    }
+
+    fun closeNovexConversationExport() {
+        novexExportRequest++
+        novexExportJob?.cancel()
+        _novexConversationExport.value = null
+    }
+
+    fun prepareNovexConversationExport() {
+        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL != "preview") return
+        if(_isStreaming.value) {
+            _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(error = "当前回答尚未完成，请等待保存后再导出。不会自动终止回答。")
+            return
+        }
+        novexExportJob?.cancel()
+        val request = ++novexExportRequest
+        _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(busy = true)
+        novexExportJob = viewModelScope.launch {
+            try {
+                val sid = ensureSession()
+                val settings = conversationSettingsSnapshot()
+                val runtime = JSONObject().put("conversationId", sid).put("capturedAt", System.currentTimeMillis())
+                    .put("configurationJson", settings.novexConfigurationJson)
+                    .put("conversationPrompt", settings.conversationPrompt).put("imageStylePrompt", settings.imageStylePrompt)
+                    .put("activeBranchPathIds", JSONArray(activeBranchPathIds))
+                    .put("modelId", currentModel?.id).put("modelName", currentModel?.displayName)
+                    .put("contextWindow", currentModel?.contextWindowTokens).put("maxOutputTokens", currentModel?.maxOutputTokens)
+                    .put("providerName", _providerName.value).put("selectedGroupId", _selectedGroupId.value).put("activeEntryId", _activeEntryId.value)
+                    .put("toolDefinitions", JSONArray(agentTools.map { it.toOpenAIJson() }))
+                    .put("scope", "导出时的当前设置和工具；历史实际请求见已保存装配记录")
+                val app = novexApplication()
+                val result = com.openminis.app.share.NovexConversationBundleExporter(context, app.database, app.novexWorkspace).export(sid, runtime)
+                if(request == novexExportRequest && activeSessionId == sid) _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(result = result)
+            } catch(cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch(failure: Exception) {
+                if(request == novexExportRequest) _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(error = failure.message ?: "对话包导出失败")
+            }
+        }
     }
 
     fun showNovexCheckpoints() {
