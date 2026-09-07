@@ -10,6 +10,7 @@ import com.openminis.app.ui.novex.*
 @Composable
 internal fun NovexLearningDetailsDialog(
     state: NovexLearningState,
+    readCoverage: List<NovexSourceReadCoverage>,
     onDismiss: () -> Unit,
     onLatestResponse: () -> Unit,
     onContinue: (Boolean) -> Unit,
@@ -71,7 +72,25 @@ internal fun NovexLearningDetailsDialog(
                     NovexSourceStatus.EXACT_DUPLICATE -> "重复来源，复用已导入文档"
                     else -> "存在未解析或不完整内容"
                 }))
+                val documentRef = source.documentRef
+                if (documentRef != null && source.status != NovexSourceStatus.EXACT_DUPLICATE) {
+                    val currentRevision = state.preflight?.documentRevisions?.get(documentRef)
+                    val observations = readCoverage.filter { it.sourceId == documentRef.value }
+                    Text("学习任务已整理 ${state.reviewLedger.reviewedBlocksByDocument[documentRef].orEmpty().size} / " +
+                        "${state.reviewLedger.readableBlocksByDocument[documentRef].orEmpty().size} 个可读块")
+                    if (observations.isEmpty()) Text("本分支尚无对话工具阅读记录；与学习任务的整理进度分别记录。")
+                    observations.forEach { read ->
+                        val versionLabel = when {
+                            currentRevision == null -> "学习采用修订未知，不合并覆盖"
+                            read.revision == currentRevision -> "与学习采用同一修订"
+                            else -> "另一修订，不补齐当前覆盖"
+                        }
+                        Text("对话工具已阅读 ${read.coveredCharacters} / ${read.totalCharacters} 字符 · $versionLabel\n" +
+                            "修订 ${read.revision.take(12)}")
+                    }
+                }
             }
+            Text("阅读仅表示原文已返回给模型，整理表示已有正常结束的笔记；两者都不证明模型理解或事实核验通过。目录预览、搜索和其他分支不补齐本分支阅读覆盖。")
         }
     }
 }

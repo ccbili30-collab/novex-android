@@ -61,6 +61,9 @@ def main():
                               input=encoded,capture_output=True,timeout=200)
         if result.returncode:
             receipt.update(status='request_failed_or_uncertain',ended_at=time.time(),charged_usd=reserved,
+                           transport_exit_code=result.returncode,
+                           transport_stdout_sha256=hashlib.sha256(result.stdout).hexdigest(),
+                           transport_stderr_sha256=hashlib.sha256(result.stderr).hexdigest(),
                            accounting='reserved estimate; no automatic retry')
             save(call/'receipt.json',receipt)
             raise RuntimeError('模型调用失败或状态不明；已保留本次预算占用，不自动重试')

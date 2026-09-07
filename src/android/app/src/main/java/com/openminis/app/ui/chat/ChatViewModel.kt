@@ -975,6 +975,8 @@ class ChatViewModel(
     private var novexLearningResponsePreviewRequest = 0
     private val _novexLearningDetails = MutableStateFlow<NovexLearningState?>(null)
     val novexLearningDetails: StateFlow<NovexLearningState?> = _novexLearningDetails.asStateFlow()
+    private val _novexLearningReadCoverage = MutableStateFlow<List<com.openminis.app.novex.domain.NovexSourceReadCoverage>>(emptyList())
+    val novexLearningReadCoverage = _novexLearningReadCoverage.asStateFlow()
     private val _novexLearningCollections = MutableStateFlow<List<NovexLearningState>?>(null)
     val novexLearningCollections: StateFlow<List<NovexLearningState>?> = _novexLearningCollections.asStateFlow()
     private var novexLearningDetailsRequest = 0
@@ -12855,6 +12857,7 @@ class ChatViewModel(
     fun closeNovexLearningDetails() {
         novexLearningDetailsRequest++
         _novexLearningDetails.value = null
+        _novexLearningReadCoverage.value = emptyList()
         _novexLearningCollections.value = null
     }
 
@@ -12871,21 +12874,32 @@ class ChatViewModel(
     }
 
     fun selectNovexLearningCollection(ref: NovexResourceRef) {
-        val selected = _novexLearningCollections.value?.firstOrNull { it.collection.ref == ref } ?: return
+        if (_novexLearningCollections.value?.none { it.collection.ref == ref } != false) return
         if (ref.value !in activeNovexSourceCollectionRefs) return
         _novexLearningCollections.value = null
-        _novexLearningDetails.value = selected
-        _novexLearningError.value = null
+        loadNovexLearningDetails(ref)
     }
 
     fun showNovexLearningDetails() {
         val ref = currentNovexLearningCollectionRef() ?: return
+        loadNovexLearningDetails(ref)
+    }
+
+    private fun loadNovexLearningDetails(ref: NovexResourceRef) {
+        val sid = activeSessionId
         val request = ++novexLearningDetailsRequest
         viewModelScope.launch(Dispatchers.IO) {
-            val state = runCatching { novexLearningRepository.find(ref) }.getOrElse {
+            val (state, coverage) = runCatching {
+                val state = novexLearningRepository.find(ref)
+                val messages = chatRepository.loadActiveMessages(sid)
+                val ledger = NovexContextUsageLedger.open(NovexContextUsageLedgerSnapshot(sid, chatRepository.novexContextUsage(sid)))
+                state to ledger.readCoverageForActivePath(messages.map { it.id }.toSet())
+                    .filter { read -> state?.collection?.uniqueDocumentRefs.orEmpty().any { it.value == read.sourceId } }
+            }.getOrElse {
                 _novexLearningError.value = it.message ?: "已保存任务暂不可读"; return@launch
             }
-            if (request == novexLearningDetailsRequest && ref.value in activeNovexSourceCollectionRefs) {
+            if (request == novexLearningDetailsRequest && activeSessionId == sid && ref.value in activeNovexSourceCollectionRefs) {
+                _novexLearningReadCoverage.value = coverage
                 _novexLearningDetails.value = state
                 _novexLearningError.value = null
             }

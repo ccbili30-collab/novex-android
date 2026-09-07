@@ -407,6 +407,7 @@ fun ChatScreen(
     val novexLearningError by viewModel.novexLearningError.collectAsState()
     val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
     val novexLearningDetails by viewModel.novexLearningDetails.collectAsState()
+    val novexLearningReadCoverage by viewModel.novexLearningReadCoverage.collectAsState()
     val novexLearningCollections by viewModel.novexLearningCollections.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val panelExpansionState = remember(viewModel) { PanelExpansionState() }
@@ -5460,7 +5461,7 @@ fun ChatScreen(
             }, "搜索资料集", onDismissRequest = viewModel::closeNovexLearningDetails)
         }
         novexLearningDetails?.let { state ->
-            NovexLearningDetailsDialog(state, viewModel::closeNovexLearningDetails,
+            NovexLearningDetailsDialog(state, novexLearningReadCoverage, viewModel::closeNovexLearningDetails,
                 viewModel::previewLatestNovexLearningResponse, viewModel::requestNovexLearningContinuation,
                 onFiles = { viewModel.prepareNovexLearningFiles { viewModel.closeNovexLearningDetails(); onBrowseChatFiles() } })
         }
