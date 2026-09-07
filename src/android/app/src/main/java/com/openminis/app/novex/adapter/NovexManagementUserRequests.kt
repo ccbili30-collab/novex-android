@@ -5,6 +5,7 @@ import com.openminis.app.data.attachments.containsAgentAttachmentMetadata
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.data.repository.ChatRepository
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Reads host-owned rows from the repository's selected conversation path, not
@@ -61,7 +62,7 @@ object NovexManagementUserRequests {
                 val selectsExecution = caption in offeredChoices &&
                     Regex("(打包|按.{0,40}(运行|制作|生成|整理)|照.{0,40}(制作|整理))").containsMatchIn(caption) &&
                     !caption.startsWith("确认执行 ")
-                requests += if (selectsExecution) "$caption\n继续此前创建任务" else caption
+                requests += if (selectsExecution) "$caption\n继续此前任务" else caption
                 offeredChoices = emptySet()
             }
         }

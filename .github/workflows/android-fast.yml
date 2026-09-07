@@ -292,6 +292,8 @@ jobs:
       - name: Export native card harness
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.export_card_harness }}
         working-directory: src/android
+        env:
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
         run: ./gradlew -I ../../scripts/qa/export_card_harness.gradle :app:exportCardHarness --no-daemon
 
       - name: Upload native card harness

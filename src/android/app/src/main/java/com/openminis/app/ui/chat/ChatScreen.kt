@@ -2082,7 +2082,7 @@ fun ChatScreen(
                 openedProcess?.let { process ->
                     NovexExecutionProcessDialog(process, onDismiss = { openedProcess = null }, onOpenTool = {
                         openedProcess = null
-                        viewModel.openToolDetail(it)
+                        viewModel.openToolDetail(it.id)
                     })
                 }
                 var transcriptViewportReady by remember(viewModel) {
