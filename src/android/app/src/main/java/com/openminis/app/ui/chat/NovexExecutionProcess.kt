@@ -35,8 +35,8 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
         val lastTool = turn.indexOfLast { it is FlatChatItem.AssistantToolUse }
         val folded = turn.filterIndexed { index, row -> index <= lastTool && when (row) {
             is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
-            is FlatChatItem.AssistantText -> !row.isStreaming
-            is FlatChatItem.AssistantMarkdownBlock -> !row.isStreaming
+            is FlatChatItem.AssistantText -> !row.isStreaming && !row.block.content.contains("![")
+            is FlatChatItem.AssistantMarkdownBlock -> !row.isStreaming && !row.rawText.contains("![")
             else -> false
         } }
         val tools = folded.filterIsInstance<FlatChatItem.AssistantToolUse>()
@@ -61,7 +61,7 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
 
 private fun AssistantBlock.canFoldExecution(): Boolean {
     if (toolStatus != ToolBlockStatus.SUCCESS) return false
-    if (toolName in setOf("present_choices", "render_panel", "panel", "present_system_panel")) return false
+    if (toolName in setOf("present_choices", "render_panel", "panel", "present_system_panel", "generate_image")) return false
     // Protected proposals and uncertain writes need a visible action, even when the tool itself succeeded.
     if (toolName in setOf("novex_propose_content_changes", "novex_propose_memory_changes")) return false
     val result = runCatching { JSONObject(content) }.getOrNull()

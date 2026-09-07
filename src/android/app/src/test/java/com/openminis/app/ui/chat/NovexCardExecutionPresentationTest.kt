@@ -23,6 +23,14 @@ class NovexCardExecutionPresentationTest {
         assertEquals(listOf(failed, approval, final), result.drop(1))
         assertEquals(5, raw.size)
     }
+    @Test fun generatedImagesRemainOnTheMainReadingSurface() {
+        val generated = tool("image", "generate_image")
+        val picture = text("picture", "![成果图片](novex://images/example)")
+        val result = foldNovexExecutionProcesses(listOf(tool("read"), generated, picture, tool("save", "save_checkpoint")))
+        assertTrue(result.contains(generated))
+        assertTrue(result.contains(picture))
+        assertEquals(2, result.filterIsInstance<FlatChatItem.AssistantProcess>().single().tools.size)
+    }
     @Test fun userBoundaryAndInteractiveChoicesNeverDisappear() {
         val choice = tool("choice", "present_choices")
         val user = FlatChatItem.UserBubble(ChatMessage("user", "user", "继续"))
