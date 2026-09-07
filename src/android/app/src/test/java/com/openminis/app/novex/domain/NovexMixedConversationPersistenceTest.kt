@@ -75,7 +75,8 @@ class NovexMixedConversationPersistenceTest {
                 "错误摘要：从未借围巾，而且已经喝水。", "{}", 10, NovexCheckpointSourceCapture.capture(session.id, path, repository.loadMessages(session.id)))
             NovexPlaythroughCheckpointWriter(store).save(scope, checkpoint, NovexWorkspaceProvenance(session.id, "answer", "event", "save"))
             workspace.apply(NovexCommand.FinalizeConversationDrafts(session.id))
-            database.chatDao().insertSession(database.chatDao().getSession(session.id)!!.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(configuration)))
+            repository.updateConversationSettings(session.id, com.openminis.app.data.ConversationSettingsSnapshot(
+                conversationPrompt = "", novexConfigurationJson = NovexConversationConfigurationCodec.encode(configuration)))
             database.close(); database = open(); workspace = NovexWorkspaceFactory.create(database, File(files.root, "media")); repository = ChatRepository(database.chatDao())
             val reopened = NovexConversationConfigurationCodec.decode(database.chatDao().getSession(session.id)!!.novexConfigurationJson, session.id)
             assertEquals(playthrough, reopened.effectivePlaythroughId)

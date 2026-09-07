@@ -45,8 +45,11 @@ class NovexConversationBundleExporter(private val context: Context, private val 
         var totalBytes = 0L
         var messageCount = 0
         var traceCount = 0
+        val userTextMessageIds = linkedSetOf<String>()
+        val tracedRequestIds = linkedSetOf<String>()
         fun target(path: String): File {
             exportContext.ensureActive()
+            require(!path.startsWith("/") && '\\' !in path && path.split('/').none { it == ".." || it == "." }) { "导出条目路径不安全" }
             val file = File(stage, path).canonicalFile
             require(file.path.startsWith(stage.canonicalPath + File.separator)) { "导出路径越界" }
             check(!file.exists()) { "导出条目重复：$path" }
@@ -64,7 +67,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             catch(failure: Exception) { file.delete(); throw failure }
         }
         fun json(path: String, value: Any) = write(path, value.toString().toByteArray(Charsets.UTF_8))
-        fun copy(path: String, source: File, expected: String? = null) {
+        fun copy(path: String, source: File, expected: String? = null): Boolean {
             try {
                 require(source.isFile) { "文件已不存在" }
                 require(source.length() <= 1024L * 1024 * 1024 - totalBytes) { "文件超过剩余导出容量" }
@@ -75,10 +78,12 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                 if(saved != before || saved != digest(source)) missing += "$path：导出期间原件变化，保存的是复制时读到的内容"
                 if(expected != null && saved != expected) missing += "$path：文件与记录的修订不符，未当作原修订"
                 register(path, file, source.path)
+                return true
             } catch(cancelled: CancellationException) { throw cancelled }
             catch(failure: Exception) {
                 if(failure is BundleLimitExceeded) throw failure
                 File(stage, path).delete(); missing += "$path：${failure.message}"
+                return false
             }
         }
         fun media(path: String, expected: String? = null) {
@@ -133,7 +138,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             database.withTransaction {
                 table("database/session.jsonl", "SELECT * FROM sessions WHERE id = ?") { row ->
                     // Binding holds routing identifiers. Never add provider repository or credential tables to this export.
-                    row.optString("model_binding").takeIf { it.isNotBlank() }?.let { binding ->
+                    row.optString("model_binding").takeIf { !row.isNull("model_binding") && it.isNotBlank() }?.let { binding ->
                         val raw = runCatching { JSONObject(binding) }.getOrNull()
                         val safe = JSONObject()
                         listOf("type", "groupId", "lastEntryId", "entryId").forEach { key -> raw?.optString(key)?.takeIf { it.isNotBlank() }?.let { safe.put(key, it) } }
@@ -146,7 +151,13 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                     listOf("chat_background_path", "assistant_avatar_path", "player_avatar_path").forEach { media(row.optString(it)) }
                 }
                 require(savedSession != null) { "对话已不存在，未导出其他对话" }
-                messageCount = table("database/messages.jsonl", "SELECT * FROM messages WHERE session_id = ? ORDER BY sort_order, created_at, id", onRow = ::scan)
+                messageCount = table("database/messages.jsonl", "SELECT * FROM messages WHERE session_id = ? ORDER BY sort_order, created_at, id") { row ->
+                    scan(row)
+                    if(row.optString("role") == "user") runCatching {
+                        val parts = JSONArray(row.getString("parts_json"))
+                        if((0 until parts.length()).any { parts.optJSONObject(it)?.optString("type") == "text" }) userTextMessageIds += row.getString("id")
+                    }.onFailure { missing += "消息 ${row.getString("id")} 的部分结构无法解析，原始字段仍保留" }
+                }
                 table("database/context-usage.jsonl", "SELECT * FROM novex_context_usage_records WHERE session_id = ? ORDER BY created_at, id", onRow = ::scan)
                 table("database/drafts-and-writes.jsonl", "SELECT * FROM novex_conversation_drafts WHERE conversation_id = ?", onRow = ::scan)
                 val configuration = NovexConversationConfigurationCodec.decode(runtime.getString("configurationJson"), conversationId)
@@ -225,7 +236,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             json("workspace/index.json", workspaceEntries)
             for(area in listOf("workspace", "attachments")) {
                 val sourceRoot = File(context.filesDir, "minis-sessions/$conversationId/$area").canonicalFile
-                if(sourceRoot.isDirectory) sourceRoot.walkTopDown().onEnter { it.canonicalPath.startsWith(sourceRoot.path) }.filter { it.isFile }.forEach { source ->
+                if(sourceRoot.isDirectory) sourceRoot.walkTopDown().onEnter { it.canonicalPath == sourceRoot.path || it.canonicalPath.startsWith(sourceRoot.path + File.separator) }.filter { it.isFile }.forEach { source ->
                     if(!source.canonicalPath.startsWith(sourceRoot.path + File.separator)) missing += "旧工作区引用越界：${source.path}"
                     else copy("session-files/$area/${source.relativeTo(sourceRoot).invariantSeparatorsPath}", source)
                 }
@@ -237,9 +248,16 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                     require(value.getString("conversationId") == conversationId) { "装配记录归属不符" }
                     runCatching { FileNovexTeachingTraceStore(File(context.filesDir, "novex/teaching-traces"))
                         .read("${NovexFrozenContextCodec.digest(conversationId)}/${source.name}") }.onFailure { missing += "装配记录 ${source.name}：${it.message}，保留原始文件" }
-                    copy("environment/teaching-traces/${source.name}", source); scan(value); traceCount++
+                    if(copy("environment/teaching-traces/${source.name}", source)) {
+                        scan(value); traceCount++
+                        value.optString("requestMessageId").takeIf { it.isNotBlank() }?.let(tracedRequestIds::add)
+                    }
                 } catch(failure: Exception) { if(failure is CancellationException || failure is BundleLimitExceeded) throw failure; missing += "装配记录 ${source.name}：${failure.message}" }
             }
+            val withoutTrace = userTextMessageIds - tracedRequestIds
+            if(withoutTrace.isNotEmpty()) missing += "${withoutTrace.size} 条用户文字消息未找到配套装配记录；可能尚未发起请求或旧版未记录，未用当前环境补造"
+            json("environment/request-index.json", JSONObject().put("recordedRequestIds", JSONArray(tracedRequestIds.toList()))
+                .put("userMessagesWithoutTrace", JSONArray(withoutTrace.toList())))
             for(ref in collectionRefs.toList()) {
                 val stem = NovexFrozenContextCodec.digest(ref)
                 val source = File(context.filesDir, "novex/learning/$stem.json")
@@ -266,13 +284,13 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                 "历史请求环境只保存实际存在的应用装配记录；旧版本未记录内容、提供商转换后报文及工具循环变化不能补造。",
                 "包内不包含模型账户密钥、登录令牌、请求头和提供商凭据配置；原始消息或用户文件中的原话不作替换。",
                 "这是预览测试导出包，当前没有一键导入恢复功能。未登记到原生工作区的旧外部执行环境不保证收录。")
+            write("阅读说明.txt", ("对话原话与已保存环境导出包（预览测试）\n\n" + limits.joinToString("\n") + "\n\n缺项：\n" + missing.joinToString("\n")).toByteArray(Charsets.UTF_8))
             val manifest = JSONObject().put("format", "novex.conversation-bundle").put("version", 1).put("previewOnly", true)
                 .put("conversationId", conversationId).put("startedAt", begun).put("databaseCapturedAt", databaseCaptured).put("completedAt", System.currentTimeMillis())
                 .put("messageCount", messageCount).put("teachingTraceCount", traceCount).put("missing", JSONArray(missing.toList()))
                 .put("limitations", JSONArray(limits)).put("entries", manifestEntries)
             // Manifest deliberately does not contain its own digest.
             target("manifest.json").writeText(manifest.toString(2), Charsets.UTF_8)
-            target("阅读说明.txt").writeText("对话原话与已保存环境导出包（预览测试）\n\n" + limits.joinToString("\n") + "\n\n缺项：\n" + missing.joinToString("\n"), Charsets.UTF_8)
             partial.parentFile.mkdirs()
             ZipOutputStream(partial.outputStream().buffered()).use { zip -> stage.walkTopDown().filter { it.isFile }.forEach { file ->
                 exportContext.ensureActive()

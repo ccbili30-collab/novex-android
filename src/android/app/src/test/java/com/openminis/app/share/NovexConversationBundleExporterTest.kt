@@ -65,7 +65,8 @@ class NovexConversationBundleExporterTest {
             val runtime = JSONObject().put("conversationId", session.id).put("configurationJson", configuration).put("modelId", "model-id")
             val result = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
             assertEquals(3, result.messageCount)
-            assertEquals(emptyList<String>(), result.missing)
+            assertEquals(1, result.missing.size)
+            assertTrue(result.missing.single().contains("未找到配套装配记录"))
             ZipFile(result.file).use { zip ->
                 fun text(name: String) = zip.getInputStream(zip.getEntry(name)).bufferedReader().readText()
                 val rows = text("database/messages.jsonl").lineSequence().filter { it.isNotBlank() }.map { JSONObject(it) }.toList()
