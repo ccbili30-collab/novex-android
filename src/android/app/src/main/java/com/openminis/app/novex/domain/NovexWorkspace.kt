@@ -512,7 +512,11 @@ internal class DefaultNovexWorkspace(
     private val cardRevisions: NovexCardRevisionPort = UnavailableNovexCardRevisions,
 ) : NovexWorkspace {
     private fun cardCopy() = NovexCardCopy(this, catalog, content, media, interactiveFiction, cardReferences, versionRelations)
-    override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy) = transaction { cardCopy().prepare(root, policy) }
+    override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy): NovexCardCopyPlan {
+        lateinit var prepared: NovexCardCopyPlan
+        transaction { prepared = cardCopy().prepare(root, policy); NovexChange.Completed }
+        return prepared
+    }
     private fun referencePackage() = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
         exportSingle = { kind, id -> when (kind) {
