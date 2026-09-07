@@ -11,15 +11,32 @@ def save(path, value):
 def read_when_ready(path, seconds=60):
     end=time.monotonic()+seconds
     while time.monotonic()<end:
-        if path.exists(): return json.loads(path.read_text())
+        if path.exists():
+            try: return json.loads(path.read_text())
+            except json.JSONDecodeError: pass  # A producer may still be publishing the completion marker.
         time.sleep(.1)
     raise RuntimeError(f'原生进程没有返回 {path.name}')
+
+def record_verified_result(root, usage):
+    verified=read_when_ready(root/'verified.json')
+    assert verified.get('exact_source') and verified.get('reopened')
+    save(root/'result.json',{'verified':True,'module_count':verified['module_count'],'model_calls':len(usage),
+        'prompt_tokens':sum(u.get('prompt_tokens',0) for u in usage),'completion_tokens':sum(u.get('completion_tokens',0) for u in usage),
+        'transport':'non-streaming provider; same native card service and real Room storage; not phone UI acceptance',
+        'formal_prompt':'original captured formal prompt with current product-tool guide and freshly allocated private directory; V6 candidate not used'})
+    print('已通过：已解析原文逐块一致、48 个模块、数据库关闭重开仍在。',flush=True)
 
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--directory',type=Path,required=True)
-    p.add_argument('--vault-script',type=Path,required=True)
+    p.add_argument('--vault-script',type=Path)
+    p.add_argument('--verify-existing',action='store_true')
     args=p.parse_args(); root=args.directory
+    if args.verify_existing:
+        assert 'OK (1 test)' in (root/'native-run.log').read_text()
+        record_verified_result(root,json.loads((root/'usage.json').read_text()))
+        return
+    assert args.vault_script is not None
     ready=read_when_ready(root/'ready.json',120)
     tools=json.loads((root/'tools.json').read_text())
     guide=(root/'guide.txt').read_text()
@@ -66,12 +83,6 @@ def main():
                 messages.append({'role':'user','content':requests[1]})
     else: raise RuntimeError('模型调用达到十二轮上限')
     save(root/f'request-{index}.json',{'name':'__verify_and_close'})
-    verified=read_when_ready(root/'verified.json')
-    assert verified.get('exact_source') and verified.get('reopened')
-    save(root/'result.json',{'verified':True,'module_count':verified['module_count'],'model_calls':len(usage),
-        'prompt_tokens':sum(u.get('prompt_tokens',0) for u in usage),'completion_tokens':sum(u.get('completion_tokens',0) for u in usage),
-        'transport':'non-streaming provider; same native card service and real Room storage; not phone UI acceptance',
-        'formal_prompt':'original captured formal prompt with current product-tool guide and freshly allocated private directory; V6 candidate not used'})
-    print('已通过：原文逐块一致、48 个模块、数据库关闭重开仍在。',flush=True)
+    record_verified_result(root,usage)
 
 if __name__=='__main__': main()

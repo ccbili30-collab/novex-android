@@ -152,6 +152,7 @@ private fun Any?.toReadableValue(key: String): String? = when (this) {
         } + if (length() > 4) " 等 ${length()} 项" else ""
     }
     is JSONObject -> when (key) {
+        "verification" -> if (optBoolean("verified")) "通过实际回读核验" else "尚未通过核验"
         "page_range" -> listOf(opt("start"), opt("end"))
             .filterNotNull()
             .joinToString("–") { it.toString() }
@@ -162,7 +163,11 @@ private fun Any?.toReadableValue(key: String): String? = when (this) {
 }
 
 private fun Any?.toCompactText(): String = when (this) {
-    is JSONObject -> optString("operation", optString("title", "一项内容"))
+    is JSONObject -> when {
+        has("name") -> optString("name")
+        has("kind") && has("id") -> optString("kind").translateKnownValue("kind") + " · " + optString("id")
+        else -> optString("operation", optString("title", "一项内容"))
+    }
     JSONObject.NULL, null -> "空"
     else -> toString().ellipsize(120)
 }
@@ -173,10 +178,10 @@ private fun String.translateKnownValue(key: String): String = when (key to lower
     "status" to "saved_verified" -> "已保存并回读核验"
     "status" to "saved_needs_review" -> "已保存，仍需核验"
     "status" to "failed", "status" to "error" -> "失败"
-    "subject_kind" to "world" -> "世界"
-    "subject_kind" to "character" -> "角色"
-    "subject_kind" to "character_version" -> "角色版本"
-    "subject_kind" to "game" -> "文游"
+    "kind" to "world", "subject_kind" to "world" -> "世界"
+    "kind" to "character", "subject_kind" to "character" -> "角色"
+    "kind" to "character_version", "subject_kind" to "character_version" -> "角色版本"
+    "kind" to "game", "subject_kind" to "game" -> "文游"
     else -> this
 }
 
