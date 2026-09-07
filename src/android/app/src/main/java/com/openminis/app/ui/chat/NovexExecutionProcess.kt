@@ -95,10 +95,18 @@ internal fun NovexExecutionProcessDialog(process: FlatChatItem.AssistantProcess,
 }
 
 @Composable
-internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean, onContinue: () -> Unit) {
+internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean, onOpenCard: (String, String) -> Unit, onContinue: () -> Unit) {
     val status = runCatching { JSONObject(block.toolArgs).optString("status") }.getOrDefault("incomplete")
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(block.content, color = ChatColors.secondaryText)
+        val cards = runCatching { JSONObject(block.toolArgs).optJSONArray("cards") }.getOrNull()
+        if (cards != null) for (index in 0 until cards.length()) {
+            val card = cards.optJSONObject(index) ?: continue
+            val kind = card.optString("kind")
+            val id = card.optString("id")
+            val label = when (kind) { "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
+            if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) { Text("打开$label ${index + 1}") }
+        }
         if (canContinue && status in setOf("incomplete", "saved_needs_review")) TextButton(onClick = onContinue) { Text("继续核对与完成") }
     }
 }

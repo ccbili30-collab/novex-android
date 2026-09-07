@@ -340,6 +340,7 @@ fun ChatScreen(
      *  pending transfer in [ChatViewModelStore.stashPendingTransfer]. */
     onMoveToSession: (sessionId: String) -> Unit = {},
     onBrowseChatFiles: () -> Unit = {},
+    onOpenCreatedCard: (kind: String, id: String) -> Unit = { _, _ -> },
     /** T150: open FilePreviewScreen for a non-image attachment in a user bubble. */
     onPreviewAttachment: (com.openminis.app.ui.sandbox.FileItem) -> Unit = {},
     /** [T-android-modelpicker-group-edit] Navigate to the Model Groups
@@ -2925,7 +2926,7 @@ fun ChatScreen(
                                 }
                             }
                             is FlatChatItem.AssistantInfo -> if (item.block.toolName == NovexCardCreationTask.MARKER) {
-                                NovexCardTaskStatusRow(item.block, !isStreaming) {
+                                NovexCardTaskStatusRow(item.block, !isStreaming, onOpenCard = onOpenCreatedCard) {
                                     viewModel.setInputText("继续核对并完成刚才的卡片任务；先检查已有成果，不重复创建。")
                                     inputFocusRequester.requestFocus()
                                 }

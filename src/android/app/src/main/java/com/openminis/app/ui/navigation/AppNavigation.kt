@@ -632,6 +632,15 @@ fun AppNavigation(
                 onBrowseChatFiles = {
                     navController.safeNavigate(Routes.creativeLibrary(sessionId))
                 },
+                onOpenCreatedCard = { kind, id ->
+                    val route = when (kind) {
+                        "world" -> Routes.storyWorld(id)
+                        "character_version" -> Routes.characterCatalogEdit(versionId = id)
+                        "game" -> Routes.interactiveFiction(id)
+                        else -> null
+                    }
+                    if (route != null) navController.safeNavigate(route)
+                },
                 onPreviewAttachment = { item ->
                     FilePreviewHolder.currentItem = item
                     navController.safeNavigate(Routes.FILE_PREVIEW)
