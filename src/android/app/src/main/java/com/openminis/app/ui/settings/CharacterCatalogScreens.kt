@@ -91,6 +91,7 @@ internal data class CharacterPageData(
 @Composable
 fun CatalogCharacterDetailScreen(
     characterId: String,
+    onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
     onEditVersion: (String) -> Unit,
     onHelpCreate: (String) -> Unit,
@@ -196,6 +197,8 @@ fun CatalogCharacterDetailScreen(
                     com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenModule = onOpenModule)
                 com.openminis.app.ui.novex.NovexCharacterVersionRelationSection(page.version.id) { selectedVersionId = it }
                 com.openminis.app.ui.novex.NovexCharacterRevisionSection(page.version.id)
+                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
+                    com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenSession)
                 com.openminis.app.ui.novex.NovexTavernExchangeSection(page.version.id, page.version.profileJson)
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,

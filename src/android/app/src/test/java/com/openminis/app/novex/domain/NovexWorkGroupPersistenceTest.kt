@@ -24,6 +24,25 @@ class NovexWorkGroupPersistenceTest {
     private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
         File(files.root, "groups.db").absolutePath).addMigrations(AppDatabase.MIGRATION_29_30).allowMainThreadQueries().build()
 
+    @Test fun `conversation reverse links separate the answering version from another managed version after reopen`() = runBlocking {
+        var database = open()
+        try {
+            val actor = NovexContentAddress.characterVersion("ru-version")
+            val edited = NovexContentAddress.characterVersion("fa-version")
+            val snapshot = NovexConversationConfiguration.empty("draft").apply(NovexConversationCommand.SetAnswerIdentity(
+                AnswerIdentity.CharacterVersion(actor.id))).apply(NovexConversationCommand.MountSubject(edited, ManagedAccess.EDIT)).snapshot
+            val chat = com.openminis.app.data.repository.ChatRepository(database.chatDao()).createSession("test-model", title = "两个用途",
+                novexConfigurationJson = NovexConversationConfigurationCodec.encode(snapshot))
+            database.close(); database = open()
+            val row = RoomNovexWorkGroups(database).conversations.first().single { it.id == chat.id }
+            assertTrue(actor in row.used)
+            assertFalse(edited in row.used)
+            assertEquals(setOf(edited), row.managed)
+            assertEquals(AnswerIdentity.CharacterVersion(actor.id), NovexConversationConfigurationCodec.decode(
+                database.chatDao().getSession(chat.id)!!.novexConfigurationJson, chat.id).answerIdentity)
+        } finally { database.close() }
+    }
+
     @Test fun `one version can belong to two works without sharing edits or losing the source after dissolving`() = runBlocking {
         var database = open()
         try {

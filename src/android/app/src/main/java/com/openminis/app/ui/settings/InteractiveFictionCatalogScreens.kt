@@ -90,6 +90,7 @@ private data class PendingInteractiveFictionImage(
 @Composable
 fun CatalogInteractiveFictionDetailScreen(
     projectId: String,
+    onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onHelpCreate: () -> Unit,
@@ -159,6 +160,8 @@ fun CatalogInteractiveFictionDetailScreen(
             ) { CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp) }
             else -> {
                 InteractiveFictionPrimaryContent(current, onOpenModule)
+                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
+                    com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenSession)
                 com.openminis.app.ui.novex.NovexCardReferenceSection(
                     com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenModule = onOpenModule)
                 NovexContentSection(title = "使用与分享") {

@@ -541,6 +541,7 @@ fun AppNavigation(
                     navController.safeNavigate(Routes.storyWorld(worldId))
                 },
                 onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
+                onConfigureConversation = { id -> navController.safeNavigate(Routes.conversationSettings(id)) },
                 onOpenCharacter = { characterId ->
                     navController.safeNavigate(Routes.characterDetail(characterId))
                 },
@@ -729,10 +730,8 @@ fun AppNavigation(
             com.openminis.app.data.character.CharacterCardStore.initialize(context)
             val legacyWorlds by com.openminis.app.data.character.CharacterCardStore.worlds.collectAsState()
             val legacyPersonas by com.openminis.app.data.character.CharacterCardStore.personas.collectAsState()
-            val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
             com.openminis.app.ui.settings.CatalogWorldDetailScreen(
                 worldId = worldId,
-                sessions = sessions,
                 hasLegacyWorld = legacyWorlds.any { it.id == worldId },
                 personas = legacyPersonas.filter { it.worldId == worldId }.map { persona ->
                     com.openminis.app.ui.settings.WorldPersonaSummary(
@@ -815,6 +814,7 @@ fun AppNavigation(
             val characterId = entry.arguments?.getString("characterId") ?: return@composable
             com.openminis.app.ui.settings.CatalogCharacterDetailScreen(
                 characterId = characterId,
+                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
                 onBack = { navController.safePopBackStack() },
                 onEditVersion = { versionId ->
                     navController.safeNavigate(
@@ -903,6 +903,7 @@ fun AppNavigation(
             val projectId = entry.arguments?.getString("projectId") ?: return@composable
             com.openminis.app.ui.settings.CatalogInteractiveFictionDetailScreen(
                 projectId = projectId,
+                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
                 onBack = { navController.safePopBackStack() },
                 onEdit = {
                     navController.safeNavigate(Routes.interactiveFictionEdit(projectId))

@@ -22,6 +22,8 @@ interface NovexConversationDraftDao {
 
     @Query("SELECT * FROM novex_conversation_drafts")
     suspend fun list(): List<NovexConversationDraftEntity>
+    @Query("SELECT * FROM novex_conversation_drafts")
+    fun observeList(): kotlinx.coroutines.flow.Flow<List<NovexConversationDraftEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(value: NovexConversationDraftEntity)

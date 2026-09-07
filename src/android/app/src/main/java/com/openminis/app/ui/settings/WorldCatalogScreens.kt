@@ -121,7 +121,6 @@ data class WorldPersonaSummary(
 @Composable
 fun CatalogWorldDetailScreen(
     worldId: String,
-    sessions: List<ChatSessionEntity>,
     hasLegacyWorld: Boolean,
     personas: List<WorldPersonaSummary>,
     onBack: () -> Unit,
@@ -249,22 +248,8 @@ fun CatalogWorldDetailScreen(
                         )
                     }
                 }
-                val worldSessions = sessions.filter { session ->
-                    session.worldId == worldId || session.worldSnapshotJson.worldIdFromSnapshot() == worldId
-                }
-                NovexContentSection(title = "最近对话") {
-                    if (worldSessions.isEmpty()) Text(
-                        "还没有对话",
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ) else worldSessions.take(20).forEach { session ->
-                        NovexSummaryRow(
-                            title = session.title?.ifBlank { null } ?: "新对话",
-                            summary = session.lastMessage?.ifBlank { null } ?: "暂无消息",
-                            onClick = { onOpenSession(session.id) },
-                        )
-                    }
-                }
+                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
+                    com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
                         label = "导出诺文世界卡（含引用依赖）",

@@ -8,6 +8,22 @@ import java.util.UUID
 
 class RoomNovexWorkGroups(private val database: AppDatabase) : NovexWorkGroups {
     private val dao get() = database.novexWorkGroupDao()
+    override val conversations = combine(database.chatDao().observeSessions(), database.novexConversationDraftDao().observeList()) { rows, drafts ->
+        val created = drafts.mapNotNull { runCatching { NovexConversationDraftCodec.decode(it.contentJson) }.getOrNull() }
+            .associate { it.conversationId to it.cards.filterNot { card -> card.isPrivate }.map { card -> card.subject } }
+        rows.sortedByDescending { it.updatedAt }.map { row ->
+            val configuration = NovexConversationConfigurationCodec.decode(row.novexConfigurationJson, row.id)
+            val used = NovexConversationSubjectProjection.used(configuration).toMutableSet()
+            if (row.novexConfigurationJson.isNullOrBlank()) {
+                (row.worldId?.takeIf(String::isNotBlank) ?: row.worldSnapshotJson?.let { raw ->
+                    runCatching { org.json.JSONObject(raw).optString("id").trim().takeIf(String::isNotBlank) }.getOrNull()
+                })?.let { used += NovexContentAddress.world(it) }
+                row.characterVersionId?.takeIf(String::isNotBlank)?.let { used += NovexContentAddress.characterVersion(it) }
+            }
+            NovexWorkConversation(row.id, row.title?.takeIf(String::isNotBlank) ?: "未命名对话", used,
+                configuration.managedSubjects.map { it.subject }.toSet() + created[row.id].orEmpty())
+        }
+    }
     override val snapshots = combine(dao.observeGroups(), dao.observeMembers(), dao.observeSelection()) { groups, members, selection ->
         val selected = selection?.selection ?: NovexWorkGroupSnapshot.ALL
         NovexWorkGroupSnapshot(groups.map { group -> NovexWorkGroup(group.id, group.name,

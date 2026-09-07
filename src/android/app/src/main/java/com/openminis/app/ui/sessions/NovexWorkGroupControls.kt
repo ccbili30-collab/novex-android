@@ -14,7 +14,8 @@ private fun String.memberAddress() = NovexContentAddress(NovexContentKind.valueO
 
 /** One persistent selection shared by all three existing libraries; no content mutation here. */
 @Composable
-internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembersRequest: Int = 0) {
+internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembersRequest: Int = 0,
+    onConfigureConversation: (String) -> Unit) {
     val groups = rememberNovexWorkGroups()
     val workspace = rememberNovexWorkspace()
     val scope = rememberCoroutineScope()
@@ -29,6 +30,7 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val group = snapshot?.groups?.firstOrNull { it.id == groupId }
+    val conversations by groups.conversations.collectAsState(initial = emptyList())
     LaunchedEffect(openMembersRequest) {
         if (openMembersRequest > 0) {
             val selected = snapshot?.selectedGroup
@@ -101,6 +103,8 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
                 NovexSummaryRow("更名", group.name, onClick = {
                     name = group.name; expectedName = group.name; nameReturn = "detail"; page = "name"
                 })
+                NovexSummaryRow("用于已有对话", "先选择对话，再分别选择身份、背景、文游或管理对象；不自动启用整组卡片", onClick = { page = "conversations" })
+                NovexSummaryRow("相关对话", "按实际使用和创作管理关系查找，对话可关联多个作品", onClick = { page = "related" })
                 NovexSummaryRow("解散作品分组", "仅移除这个分组，不删除卡片或其他作品中的收录", onClick = { page = "delete" })
             }
         }
@@ -138,5 +142,19 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
             confirmButton = { TextButton(onClick = { execute { groups.dissolve(groupId); page = "manage" } }, enabled = !busy) { Text("解散分组") } }) {
             Text("解散“${group?.name.orEmpty()}”会移除本分组的 ${group?.members?.size ?: 0} 项收录关系。卡片原件和其他分组中的收录保留。")
         }
+        "conversations" -> NovexSearchableSelectionSheet("选择用于配置的对话", conversations.map { conversation ->
+            NovexSelectionAction(conversation.title, description = "打开对话配置，逐项选择 ${group?.name.orEmpty()} 中的卡片") {
+                execute { groups.select(groupId); page = ""; onConfigureConversation(conversation.id) }
+            }
+        }.ifEmpty { listOf(NovexSelectionAction("尚无对话", description = "先在对话页新建，再回此处选择", enabled = false) {}) },
+            "按对话名称查找", onDismissRequest = { page = "detail" })
+        "related" -> NovexSearchableSelectionSheet("${group?.name.orEmpty()} · 相关对话", buildList {
+            for ((category, related) in listOf("使用设定或身份" to conversations.filter { row -> group?.members.orEmpty().any { it in row.used } },
+                    "创作管理" to conversations.filter { row -> group?.members.orEmpty().any { it in row.managed } })) {
+                related.forEach { row -> add(NovexSelectionAction(row.title, group = category,
+                    description = "查看该对话的实际配置；对话不属于唯一作品目录") { onConfigureConversation(row.id) }) }
+            }
+        }.ifEmpty { listOf(NovexSelectionAction("尚无关联对话", description = "可先通过“用于已有对话”选择具体卡片", enabled = false) {}) },
+            "搜索关联对话", onDismissRequest = { page = "detail" })
     }
 }

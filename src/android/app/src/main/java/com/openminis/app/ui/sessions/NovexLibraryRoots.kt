@@ -101,6 +101,7 @@ internal fun NovexWorldLibraryRoot(
     onOpenWorld: (String) -> Unit,
     onCreateWorld: () -> Unit,
     onOpenSettings: () -> Unit,
+    onConfigureConversation: (String) -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
     val workGroups = rememberNovexWorkGroups()
@@ -162,6 +163,7 @@ internal fun NovexWorldLibraryRoot(
 
     NovexLibraryFrame(
         workGroup = workGroup,
+        onConfigureConversation = onConfigureConversation,
         space = NovexRootSpace.WORLDS,
         searching = searching,
         searchState = searchState,
@@ -213,6 +215,7 @@ internal fun NovexCharacterLibraryRoot(
     onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
     onOpenSettings: () -> Unit,
+    onConfigureConversation: (String) -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
     val workGroups = rememberNovexWorkGroups()
@@ -272,6 +275,7 @@ internal fun NovexCharacterLibraryRoot(
 
     NovexLibraryFrame(
         workGroup = workGroup,
+        onConfigureConversation = onConfigureConversation,
         space = NovexRootSpace.CHARACTERS,
         searching = searching,
         searchState = searchState,
@@ -323,6 +327,7 @@ internal fun NovexInteractiveFictionLibraryRoot(
     onOpenInteractiveFiction: (String) -> Unit,
     onCreateInteractiveFiction: () -> Unit,
     onOpenSettings: () -> Unit,
+    onConfigureConversation: (String) -> Unit,
 ) {
     val novex = rememberNovexWorkspace()
     val workGroups = rememberNovexWorkGroups()
@@ -382,6 +387,7 @@ internal fun NovexInteractiveFictionLibraryRoot(
 
     NovexLibraryFrame(
         workGroup = workGroup,
+        onConfigureConversation = onConfigureConversation,
         space = NovexRootSpace.INTERACTIVE_FICTION,
         searching = searching,
         searchState = searchState,
@@ -446,6 +452,7 @@ private fun NovexLibraryFrame(
     searchDescription: String,
     onSearchToggle: () -> Unit,
     onOpenSettings: () -> Unit,
+    onConfigureConversation: (String) -> Unit,
     createItems: List<NovexCreateMenuItem>,
     content: @Composable (() -> Unit) -> Unit,
 ) {
@@ -479,7 +486,7 @@ private fun NovexLibraryFrame(
         if (searching) {
             NovexLibrarySearchInput(searchState, searchDescription)
         }
-        NovexWorkGroupControls(workGroup, groupMembersRequest)
+        NovexWorkGroupControls(workGroup, groupMembersRequest, onConfigureConversation)
         Box(Modifier.fillMaxSize()) { content { groupMembersRequest++ } }
     }
 }

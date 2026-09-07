@@ -107,6 +107,7 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                 },
                 onOpenWorld = { id -> openLegacy("characters/world/${Uri.encode(id)}") },
                 onCreateWorld = { openLegacy("characters/world/edit") },
+                onConfigureConversation = { id -> openLegacy("conversation_settings/${Uri.encode(id)}") },
                 onOpenCharacter = { id -> openLegacy("characters/card/${Uri.encode(id)}") },
                 onCreateCharacter = { openLegacy("characters/catalog/edit?createVariant=false") },
                 onOpenInteractiveFiction = { id ->

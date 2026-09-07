@@ -75,6 +75,9 @@ import com.openminis.app.ui.novex.NovexTextField
 import com.openminis.app.ui.novex.NovexType
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import com.openminis.app.ui.novex.rememberNovexCreativeArtifacts
+import com.openminis.app.ui.novex.rememberNovexWorkGroups
+import com.openminis.app.ui.novex.NovexSearchableSelectionSheet
+import com.openminis.app.novex.domain.NovexWorkGroupSnapshot
 
 private data class ImageStylePreset(val name: String, val prompt: String)
 
@@ -87,7 +90,7 @@ private val imageStylePresets = listOf(
     ImageStylePreset("像素艺术", "精细像素艺术风格，统一像素密度与有限色板。"),
 )
 
-private enum class ConversationPicker { ANSWER, BACKGROUND, GAME, MANAGED }
+private enum class ConversationPicker { ANSWER, BACKGROUND, GAME, GAME_REFERENCE, MANAGED }
 
 @Composable
 fun ConversationSettingsScreen(
@@ -102,6 +105,10 @@ fun ConversationSettingsScreen(
     val context = LocalContext.current
     val workspace = rememberNovexWorkspace()
     val artifacts = rememberNovexCreativeArtifacts()
+    val workGroups = rememberNovexWorkGroups()
+    val works by workGroups.snapshots.collectAsState(initial = null)
+    var pickingWork by remember { mutableStateOf(false) }
+    var returnPicker by remember { mutableStateOf<ConversationPicker?>(null) }
     val viewModel: ChatViewModel = viewModel(
         viewModelStoreOwner = ChatViewModelStore.ownerFor(sessionId),
         factory = ChatViewModel.factory(
@@ -266,6 +273,10 @@ fun ConversationSettingsScreen(
         onBack = onBack,
         onSave = ::save,
     ) {
+        NovexSummaryRow("选卡范围 · ${works?.label ?: "正在读取"}",
+            "仅筛选下方可选卡片，不改变已采用内容或授权；成果文件仍可单独选择", onClick = {
+                returnPicker = null; pickingWork = true
+            })
         NovexEditorSection(
             header = "回答身份",
             footer = "人格决定职责与表达，角色版本决定扮演对象；工具权限与背景设定分别管理。角色资料采用后固定，刷新并保存后才更新本对话。",
@@ -369,10 +380,11 @@ fun ConversationSettingsScreen(
                 NovexTextActionRow("结束文游并恢复原身份", onClick = { draft = draft.deactivateGame() })
             }
             NovexTextActionRow(
-                if (draft.configuration.activeInteractiveFiction == null) "选择文游" else "更换文游",
+                if (draft.configuration.activeInteractiveFiction == null) "选择并启动文游" else "更换并启动文游",
                 R.drawable.ic_phosphor_puzzle_piece,
                 onClick = { picker = ConversationPicker.GAME },
             )
+            NovexTextActionRow("仅挂载文游为只读资料，不启动", onClick = { picker = ConversationPicker.GAME_REFERENCE })
             draft.configuration.completedPlaythroughs.forEachIndexed { index, completed ->
                 NovexSummaryRow(
                     "历史第 ${index + 1} 局 · ${completed.game.title}",
@@ -646,9 +658,12 @@ fun ConversationSettingsScreen(
     }
 
     picker?.let { active ->
-        NovexSelectionSheet(
-            title = active.pickerTitle(),
-            actions = pickerActions(active, options, draft, onRoleSelected = { versionId ->
+        NovexSearchableSelectionSheet(
+            title = "${active.pickerTitle()} · ${works?.label ?: "全部作品"}",
+            searchPlaceholder = "按卡片名称或角色版本查找",
+            actions = listOf(NovexSelectionAction("更换作品筛选", description = "当前：${works?.label ?: "全部作品"}") {
+                returnPicker = active; picker = null; pickingWork = true
+            }) + pickerActions(active, options.filter { works?.includes(it.address) != false || it.address.kind == NovexContentKind.CREATIVE_ARTIFACT }, draft, onRoleSelected = { versionId ->
                 if (!preparingGame) {
                     preparingGame = true
                     picker = null
@@ -703,6 +718,18 @@ fun ConversationSettingsScreen(
             onDismissRequest = { picker = null },
         )
     }
+    if (pickingWork) NovexSearchableSelectionSheet("选择候选卡片范围", buildList {
+        fun choice(id: String, title: String) = NovexSelectionAction(title, selected = works?.selection == id) {
+            scope.launch {
+                try { workGroups.select(id); pickingWork = false; picker = returnPicker }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: Exception) { error = "筛选尚未切换：${failure.message}" }
+            }
+        }
+        add(choice(NovexWorkGroupSnapshot.ALL, "全部作品"))
+        add(choice(NovexWorkGroupSnapshot.UNCLASSIFIED, "未归类"))
+        works?.groups.orEmpty().forEach { add(choice(it.id, it.name)) }
+    }, "搜索作品", onDismissRequest = { pickingWork = false; picker = returnPicker })
     pendingGame?.let { game ->
         NovexSelectionSheet(
             title = "选择本局玩家身份",
@@ -810,6 +837,12 @@ private fun pickerActions(
             onGameSelected(option.address.id)
         }
     }
+    ConversationPicker.GAME_REFERENCE -> options.filter { it.address.kind == NovexContentKind.INTERACTIVE_FICTION }
+        .filterNot { option -> draft.configuration.managedSubjects.any { it.subject == option.address } }.map { option ->
+            NovexSelectionAction(option.label, description = "只读挂载，可按需查看；不启动、不改回答身份、不授予编辑权限") {
+                update(draft.mount(option.address, ManagedAccess.READ_ONLY))
+            }
+        }
     ConversationPicker.MANAGED -> options
         .filterNot { option -> draft.configuration.managedSubjects.any { it.subject == option.address } }
         .map { option ->
@@ -823,6 +856,7 @@ private fun ConversationPicker.pickerTitle(): String = when (this) {
     ConversationPicker.ANSWER -> "选择回答身份"
     ConversationPicker.BACKGROUND -> "添加背景设定"
     ConversationPicker.GAME -> "选择活动文游"
+    ConversationPicker.GAME_REFERENCE -> "挂载只读文游资料"
     ConversationPicker.MANAGED -> "添加管理挂载"
 }
 
