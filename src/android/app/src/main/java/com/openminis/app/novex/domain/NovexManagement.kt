@@ -115,6 +115,7 @@ data class NovexManagementPlan(
     val authorizedUserRequest: String? = null,
     val directEditIndices: Set<Int> = emptySet(),
     val expectedModuleContents: Map<String, String> = emptyMap(),
+    val creationRequestScope: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "变更计划编号不能为空" }
@@ -439,7 +440,7 @@ class NovexManagementService(
 ) {
     suspend fun readExchangeSource(configuration: NovexConversationConfigurationSnapshot,
         subject: NovexContentAddress, offset: Int, limit: Int, revision: String?): JSONObject {
-        require(subject.kind == NovexContentKind.CHARACTER_VERSION && NovexManagementPolicy.canRead(configuration, subject)) {
+        require(subject.kind == NovexContentKind.CHARACTER_VERSION && NovexManagementPolicy.canRead(privateDirectoryConfiguration(configuration), subject)) {
             "酒馆原始数据只能通过已挂载的角色管理对象读取；背景使用不授予原件读取权限"
         }
         val version = workspace.characterForVersion(subject.id)?.character?.allVersions?.singleOrNull { it.id == subject.id }
@@ -520,6 +521,7 @@ class NovexManagementService(
         latestUserRequest: String,
         planId: String,
         priorUserRequests: List<String> = emptyList(),
+        creationRequestScope: String? = null,
     ): NovexManagementPlan {
         workspace.conversationDrafts(configuration.conversationId)?.let { journal ->
             val previous = journal.pendingWrites.singleOrNull { it.id == planId }?.planJson
@@ -561,7 +563,7 @@ class NovexManagementService(
         }.toSet() else emptySet()
         val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
         val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
-            directEditIndices = directEdits, expectedModuleContents = expectedModules,
+            directEditIndices = directEdits, expectedModuleContents = expectedModules, creationRequestScope = creationRequestScope,
             risk = if (targets.size == changes.size) NovexManagementRisk.CREATE_PRIVATE else plan.risk)
         if (workspace.conversationDrafts(configuration.conversationId) != null) {
             workspace.apply(NovexCommand.ReserveConversationDraftWrite(configuration.conversationId,
@@ -1311,6 +1313,7 @@ internal object NovexManagementPlanCodec {
         put("authorizedUserRequest", plan.authorizedUserRequest)
         put("directEditIndices", JSONArray(plan.directEditIndices.sorted()))
         put("expectedModuleContents", JSONObject(plan.expectedModuleContents))
+        put("creationRequestScope", plan.creationRequestScope)
         put("draftTargets", JSONArray(plan.draftTargets.map { (index, subject) -> address(subject).put("index", index) }))
     }.toString()
 
@@ -1338,7 +1341,8 @@ internal object NovexManagementPlanCodec {
             (0 until drafts.length()).associate { drafts.getJSONObject(it).let { target -> target.getInt("index") to address(target) } },
             value.optString("authorizedUserRequest").ifBlank { null },
             value.optJSONArray("directEditIndices")?.let { indices -> (0 until indices.length()).map { indices.getInt(it) }.toSet() }.orEmpty(),
-            value.optJSONObject("expectedModuleContents")?.let { entries -> entries.keys().asSequence().associateWith { entries.getString(it) } }.orEmpty())
+            value.optJSONObject("expectedModuleContents")?.let { entries -> entries.keys().asSequence().associateWith { entries.getString(it) } }.orEmpty(),
+            value.optString("creationRequestScope").ifBlank { null })
     }
 
     private fun NovexManagedChange.initialModules(): List<NovexModuleDraft> = when (this) {

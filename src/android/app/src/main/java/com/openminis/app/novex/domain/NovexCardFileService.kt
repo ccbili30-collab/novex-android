@@ -26,7 +26,21 @@ class NovexCardFileService(
         }
         var result: Result? = null
         transaction.run {
-            val plan = management.propose(configuration, changes, userRequests.lastOrNull().orEmpty(), operationId, userRequests.dropLast(1))
+            val creation = if (tool == "novex_write_card") NovexManagementChangeCodec.decode(changes).single() else null
+            val origin = if (creation != null && creation.matchesCreationTask(userRequests.lastOrNull().orEmpty(), userRequests.dropLast(1)))
+                userRequests.indexOfLast { creation.matchesCreationTask(it, emptyList()) } else -1
+            val scope = if (origin >= 0) java.security.MessageDigest.getInstance("SHA-256")
+                .digest(JSONArray(userRequests.take(origin + 1)).toString().toByteArray()).joinToString("") { "%02x".format(it) } else null
+            // A provider can retry with a NEW call id after losing the reply. Identical content in the
+            // same user task reuses its durable receipt; an explicit new request has a different scope.
+            val pluralRequest = origin >= 0 && Regex("(多张|多份|一批|若干|几张|分别|每人|各自|[2-9][0-9]*\\s*[张个份]|[二两三四五六七八九十]+\\s*[张个份])").containsMatchIn(userRequests[origin])
+            val duplicate = if (scope == null || pluralRequest) null else workspace.conversationDrafts(configuration.conversationId)?.completedWrites
+                ?.firstOrNull { receipt -> runCatching {
+                    val raw = JSONObject(receipt.planJson)
+                    raw.optString("creationRequestScope") == scope &&
+                        canonicalRevisionJson(raw.getJSONArray("changes")) == canonicalRevisionJson(JSONArray(changes))
+                }.getOrDefault(false) }
+            val plan = management.propose(configuration, changes, userRequests.lastOrNull().orEmpty(), duplicate?.id ?: operationId, userRequests.dropLast(1), scope)
             if (plan.requiresConfirmation) {
                 result = Result(plan, null, configuration, JSONObject().put("status", "waiting_confirmation")
                     .put("proposal_id", plan.id).put("summary", plan.summary).put("impact", JSONArray(plan.impact))
