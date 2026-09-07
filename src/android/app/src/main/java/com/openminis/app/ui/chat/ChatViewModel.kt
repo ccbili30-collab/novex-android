@@ -3292,6 +3292,12 @@ class ChatViewModel(
     private fun currentNovexConfiguration(): NovexConversationConfigurationSnapshot =
         NovexConversationConfigurationCodec.decode(_novexConfigurationJson.value, activeSessionId)
 
+    private data class NovexPromptAuditInput(val prompt: String, val style: String, val persistentContext: String, val extraContext: String)
+    private var novexPromptAuditInput: NovexPromptAuditInput? = null
+    private val novexTeachingTraceStore by lazy {
+        com.openminis.app.novex.domain.FileNovexTeachingTraceStore(java.io.File(context.filesDir, "novex/teaching-traces"))
+    }
+
     private data class PreparedNovexRequestContext(
         val composition: NovexContextComposition,
         val record: ContextUsageRecord,
@@ -3362,7 +3368,7 @@ class ChatViewModel(
         val composition = baseComposition.copy(fragments = baseComposition.fragments + worldbookFragments,
             omissions = baseComposition.omissions + worldbookResult?.omissions.orEmpty(),
             usedTokens = baseComposition.usedTokens + worldbookFragments.sumOf { it.tokenCount })
-        val record = composition.toUsageRecord(
+        var record = composition.toUsageRecord(
             id = java.util.UUID.randomUUID().toString(),
             requestMessageId = requestMessageId,
             branchId = requestMessageId,
@@ -3370,11 +3376,33 @@ class ChatViewModel(
             effectiveWindowTokens = window,
             createdAt = System.currentTimeMillis(),
         )
-        return PreparedNovexRequestContext(
-            composition = composition,
-            record = record,
-            systemPrompt = NovexContextPromptFormatter.appendTo(baseSystemPrompt, composition.fragments),
-        )
+        val formalPrompt = NovexContextPromptFormatter.appendTo(baseSystemPrompt, composition.fragments)
+        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") {
+            try {
+                val definitions = agentTools
+                val audit = novexPromptAuditInput?.takeIf { it.prompt == baseSystemPrompt }
+                val candidate = audit?.let {
+                    val source = context.assets.open("novex/teaching/v6-candidate.md").bufferedReader().use { reader -> reader.readText() }
+                    com.openminis.app.novex.domain.NovexTeachingCandidate.build(source, configuration.answerIdentity,
+                        definitions.mapTo(linkedSetOf()) { definition -> definition.name }, it.style, _imageStylePrompt.value,
+                        it.persistentContext + it.extraContext + "\n" + NovexContextPromptFormatter.appendTo("", composition.fragments))
+                }
+                val payload = JSONObject().put("version", 1).put("conversationId", configuration.conversationId)
+                    .put("recordId", record.id).put("requestMessageId", requestMessageId).put("createdAt", record.createdAt)
+                    .put("stage", "assembled_before_provider").put("candidateSent", false)
+                    .put("formalPrompt", formalPrompt).put("formalRevision", com.openminis.app.novex.domain.NovexFrozenContextCodec.digest(formalPrompt))
+                    .put("toolDefinitions", JSONArray(definitions.map { definition -> definition.toOpenAIJson() }))
+                    .put("configuration", JSONObject(NovexConversationConfigurationCodec.encode(configuration)))
+                    .put("candidate", candidate?.toJson())
+                    .put("candidateUnavailable", if(candidate == null) "当前基础提示词不来自已捕获的诺文装配，未猜测其六部分" else JSONObject.NULL)
+                val reference = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    novexTeachingTraceStore.save(configuration.conversationId, record.id, payload)
+                }
+                record = record.copy(teachingTraceRef = reference)
+            } catch(cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch(failure: Exception) { record = record.copy(teachingTraceError = failure.message ?: "本轮装配记录未保存") }
+        }
+        return PreparedNovexRequestContext(composition, record, formalPrompt)
     }
 
     /** Rebuilds branch-sensitive UI state without executing a control or tool. */
@@ -10665,7 +10693,7 @@ class ChatViewModel(
         // Keep memory prompt injection and the Novex memory tool set behind the
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
-        val base = com.openminis.app.agent.NovexSystemPrompt.build(
+        val preparedTeaching = com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
             sessionId = activeSessionId,
             context = context,
             personalitySection = identitySection,
@@ -10673,6 +10701,7 @@ class ChatViewModel(
             toolsEnabled = toolsEnabled,
             availableToolNames = agentTools.mapTo(linkedSetOf()) { it.name },
         )
+        val base = preparedTeaching.prompt
         // Match iOS order exactly: skills → global memory → recent daily memory.
         // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
         // appended only when non-null; absent fragments leave no separator.
@@ -10740,6 +10769,8 @@ class ChatViewModel(
             } else {
                 append("- Model mode: pure chat; structured tools disabled")
             }
+        }.also { assembled ->
+            novexPromptAuditInput = NovexPromptAuditInput(assembled, identitySection, preparedTeaching.persistentContext, assembled.removePrefix(base))
         }
     }
 

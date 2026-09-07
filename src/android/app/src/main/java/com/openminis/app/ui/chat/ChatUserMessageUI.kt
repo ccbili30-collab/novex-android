@@ -539,6 +539,8 @@ internal fun UserMessageBubble(
                     color = ChatColors.secondaryText,
                     style = MaterialTheme.typography.bodySmall,
                 )
+                usage.teachingTraceRef?.let { com.openminis.app.ui.novex.NovexTeachingTraceSection(it) }
+                usage.teachingTraceError?.let { Text("本轮装配证据未保存：$it", color = ChatColors.secondaryText) }
                 usage.includedSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(source.label, color = ChatColors.primaryText, fontWeight = FontWeight.Medium)

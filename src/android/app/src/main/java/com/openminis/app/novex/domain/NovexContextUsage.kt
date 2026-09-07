@@ -50,6 +50,8 @@ data class ContextUsageRecord(
     val effectiveWindowTokens: Int,
     val createdAt: Long = 0L,
     val sourceReads: List<NovexSourceRead> = emptyList(),
+    val teachingTraceRef: String? = null,
+    val teachingTraceError: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "上下文引用记录编号不能为空" }
