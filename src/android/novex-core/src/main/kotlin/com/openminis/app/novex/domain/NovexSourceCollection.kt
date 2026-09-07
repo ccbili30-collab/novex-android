@@ -335,6 +335,8 @@ data class NovexLearningState(
     val notes: List<NovexLearningNote> = emptyList(),
     val task: NovexLearningTaskState? = null,
     val preflight: NovexLearningPreflightSnapshot? = task?.preflight,
+    val accountedResponseIds: Set<String> = emptySet(),
+    val lastFailure: String? = null,
 ) {
     init {
         require(reviewLedger.collectionRef == collection.ref) { "通读账本与资料集不一致" }

@@ -1,6 +1,7 @@
 package com.openminis.app.novex.domain
 
 import java.security.MessageDigest
+import java.util.UUID
 
 data class NovexLearningReviewRequest(
     val collectionRef: NovexResourceRef,
@@ -31,24 +32,24 @@ data class NovexLearningReviewOutput(
     val inputTokens: Int,
     val outputTokens: Int,
     val usageIsEstimated: Boolean = false,
+    val stopReason: String? = "stop",
 ) {
+    val isComplete: Boolean get() = body.isNotBlank() && stopReason?.lowercase() in setOf("stop", "end_turn", "stop_sequence")
     init {
         require(title.isNotBlank()) { "学习笔记标题不能为空" }
-        require(body.isNotBlank()) { "学习笔记正文不能为空" }
         require(inputTokens >= 0 && outputTokens >= 0) { "学习模型用量不能为负数" }
     }
 
     companion object {
         fun fromProvider(title: String, text: String, inputTokens: Int?, outputTokens: Int?,
-            reservedInputTokens: Int, reservedOutputTokens: Int): NovexLearningReviewOutput {
+            reservedInputTokens: Int, reservedOutputTokens: Int, stopReason: String? = "stop"): NovexLearningReviewOutput {
             val body = text.trim()
-            require(body.isNotEmpty()) { "学习模型没有返回可保存的笔记" }
             require(reservedInputTokens > 0 && reservedOutputTokens > 0) { "请求预留预算无效" }
             val observedInput = inputTokens?.takeIf { it > 0 }
             val observedOutput = outputTokens?.takeIf { it > 0 }
             return NovexLearningReviewOutput(title, body,
                 observedInput ?: reservedInputTokens, observedOutput ?: reservedOutputTokens,
-                usageIsEstimated = observedInput == null || observedOutput == null)
+                usageIsEstimated = observedInput == null || observedOutput == null, stopReason = stopReason)
         }
     }
 }
@@ -69,6 +70,7 @@ class NovexLearningReviewRunner(
     private val saveCheckpoint: (NovexLearningState) -> Unit,
     private val maxBlocksPerBatch: Int = NovexLearningBatchPlanner.DEFAULT_MAX_BLOCKS,
     private val maxCharsPerBatch: Int = NovexLearningBatchPlanner.DEFAULT_MAX_CHARS,
+    private val responseJournal: NovexLearningResponseJournal? = null,
 ) {
     init {
         require(maxBlocksPerBatch in 1..5000) { "学习批次内容块数量必须在一到五千之间" }
@@ -76,7 +78,7 @@ class NovexLearningReviewRunner(
     }
 
     suspend fun run(initial: NovexLearningState): NovexLearningState {
-        var state = initial
+        var state = responseJournal?.let { initial.accountFor(it.responses(initial.collection.ref)) } ?: initial
         var task = requireNotNull(state.task) { "学习任务尚未由原生界面确认启动" }
         val limits = requireNotNull(task.preflight.modelLimits) { "旧学习任务缺少模型窗口记录，请重新确认学习计划" }
         val batchChars = maxCharsPerBatch
@@ -87,6 +89,38 @@ class NovexLearningReviewRunner(
         state = state.copy(task = task)
         saveCheckpoint(state)
         if (state.reviewLedger.totalReadableBlocks == 0) return state.finishPartialFailure()
+
+        suspend fun response(key: String, reservedInput: Int, reservedOutput: Int,
+            acceptCached: (NovexLearningReviewOutput) -> Boolean = { true },
+            call: suspend () -> NovexLearningReviewOutput): NovexLearningReviewOutput? {
+            val cached = responseJournal?.responses(state.collection.ref)?.firstOrNull {
+                it.preflightId == task.preflightId && it.requestKey == key && it.output.isComplete && acceptCached(it.output)
+            }
+            if (cached == null && !task.usage.canConsume(reservedInput, reservedOutput)) {
+                state = state.copy(task = task.pauseForBudget())
+                saveCheckpoint(state)
+                return null
+            }
+            val receipt = cached ?: NovexLearningResponseReceipt(UUID.randomUUID().toString(), task.preflightId, key, call())
+                .also { responseJournal?.recordResponse(state.collection.ref, it) }
+            // Receipts are durable before note persistence; recovery accounts each one exactly once.
+            state = state.copy(task = task).accountFor(listOf(receipt))
+            task = requireNotNull(state.task)
+            val output = receipt.output
+            if (!output.isComplete) {
+                val message = when {
+                    output.body.isBlank() -> "模型未返回可保存正文"
+                    output.stopReason?.lowercase() in setOf("length", "max_tokens") -> "模型输出被截断"
+                    else -> "模型未确认正常结束"
+                } + "；本批未计入已整理，用量和返回结果已保留。继续整理会重新处理未完成批次并产生用量。"
+                state = state.copy(task = if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) task else task.pause(),
+                    lastFailure = message)
+                saveCheckpoint(state)
+                error(message)
+            }
+            state = state.copy(lastFailure = null)
+            return output
+        }
 
         for ((documentRef, readableBlockIds) in state.reviewLedger.readableBlocksByDocument) {
             val snapshot = documents.find(documentRef) ?: return state.finishPartialFailure()
@@ -107,14 +141,11 @@ class NovexLearningReviewRunner(
                 val blocks = request.blocks
                 val estimatedInput = request.estimatedInputTokens
                 val reservedOutput = request.maxOutputTokens
-                if (!task.usage.canConsume(estimatedInput, reservedOutput)) {
-                    state = state.copy(task = task.pauseForBudget())
-                    saveCheckpoint(state)
-                    return state
-                }
-                val output = reviewer.review(request)
+                val output = response(stableNoteRef("response-review", snapshot.parserVersion, request.prompt.system,
+                    request.prompt.user, documentRef.value, request.sourceRanges.toString()).value, estimatedInput, reservedOutput) {
+                    reviewer.review(request)
+                } ?: return state
                 val exceedsReservation = output.inputTokens > estimatedInput || output.outputTokens > reservedOutput
-                task = task.recordObservedUsage(output.inputTokens, output.outputTokens, output.usageIsEstimated)
                 val blockIds = blocks.map { it.id }.distinct()
                 readRanges += request.sourceRanges
                 val rangesByBlock = readRanges.filter { it.documentRef == documentRef }.groupBy { it.blockId }
@@ -207,25 +238,25 @@ class NovexLearningReviewRunner(
                 NovexLearningPrompt.synthesis(state.collection.title, batch, targetCharacters),
             )
             val synthesisOutput = NovexLearningBudgetPolicy.outputReservation(synthesisInput, limits)
-            if (!task.usage.canConsume(synthesisInput, synthesisOutput)) {
-                state = state.copy(task = task.pauseForBudget())
-                saveCheckpoint(state)
-                return state
-            }
-            val synthesis = reviewer.synthesize(NovexLearningSynthesisRequest(
+            val synthesisRequest = NovexLearningSynthesisRequest(
                 collectionRef = state.collection.ref,
                 collectionTitle = state.collection.title,
                 notes = batch,
                 estimatedInputTokens = synthesisInput,
                 maxOutputTokens = synthesisOutput,
                 targetCharacters = targetCharacters,
-            ))
+            )
+            val synthesis = response(stableNoteRef("response-synthesis", synthesisRequest.prompt.system,
+                synthesisRequest.prompt.user, batch.map { it.ref.value }.toString()).value, synthesisInput, synthesisOutput,
+                acceptCached = { final || it.body.length <= requireNotNull(targetCharacters) }) {
+                reviewer.synthesize(synthesisRequest)
+            } ?: return state
             val exceedsReservation = synthesis.inputTokens > synthesisInput || synthesis.outputTokens > synthesisOutput
-            task = task.recordObservedUsage(synthesis.inputTokens, synthesis.outputTokens, synthesis.usageIsEstimated)
             if (!final && synthesis.body.length > requireNotNull(targetCharacters)) {
                 // Charge the completed request, then stop instead of repeatedly paying
                 // for a model that is expanding its intermediate summaries.
-                state = state.copy(task = if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) task else task.pause())
+                state = state.copy(task = if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) task else task.pause(),
+                    lastFailure = "模型未按约定缩短阶段笔记，已保留原笔记和本次用量；继续会重新处理这次综合。")
                 saveCheckpoint(state)
                 error("模型未按约定缩短阶段笔记，已暂停并保留原笔记和本次用量；请检查模型输出后决定是否继续")
             }
@@ -261,6 +292,7 @@ class NovexLearningReviewRunner(
 
     private fun NovexLearningState.pauseAfterObservedOverrun(): NovexLearningState = copy(
         task = requireNotNull(task).let { if (it.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) it else it.pause() },
+        lastFailure = "模型用量超出本批预留，已保存笔记与用量；请核对计费后继续。",
     ).also(saveCheckpoint)
 
     private fun List<NovexLearningNote>.upsert(note: NovexLearningNote): List<NovexLearningNote> =

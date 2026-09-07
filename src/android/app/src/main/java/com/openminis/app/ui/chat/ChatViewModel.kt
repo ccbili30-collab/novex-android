@@ -970,6 +970,9 @@ class ChatViewModel(
     val novexLearningTask: StateFlow<NovexLearningTaskState?> = _novexLearningTask.asStateFlow()
     private val _novexLearningError = MutableStateFlow<String?>(null)
     val novexLearningError: StateFlow<String?> = _novexLearningError.asStateFlow()
+    private val _novexLearningResponsePreview = MutableStateFlow<String?>(null)
+    val novexLearningResponsePreview: StateFlow<String?> = _novexLearningResponsePreview.asStateFlow()
+    private var novexLearningResponsePreviewRequest = 0
     private var novexLearningJob: Job? = null
     private var conversationVisible = true
     private var conversationExitJob: Job? = null
@@ -4358,6 +4361,7 @@ class ChatViewModel(
             agentHistory.addAll(loaded.llmHistory)
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
+            closeNovexLearningResponsePreview()
             refreshNovexLearningTaskProjection()
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
@@ -5029,6 +5033,8 @@ class ChatViewModel(
         agentHistory.clear()
         activeNovexDocumentRefs = emptySet()
         activeNovexSourceCollectionRefs = emptySet()
+        closeNovexLearningResponsePreview()
+        _novexLearningError.value = null
         _pendingNovexLearningPreflight.value = null
         _novexLearningTask.value = null
         _novexLearningStatus.value = null
@@ -5417,6 +5423,7 @@ class ChatViewModel(
         agentHistory.addAll(llmHistory)
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
         activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
+        closeNovexLearningResponsePreview()
         _pendingNovexLearningPreflight.value = null
         refreshNovexLearningTaskProjection()
         toolLoopDetector.reset()
@@ -12777,6 +12784,35 @@ class ChatViewModel(
         _novexLearningError.value = null
     }
 
+    fun closeNovexLearningResponsePreview() {
+        novexLearningResponsePreviewRequest++
+        _novexLearningResponsePreview.value = null
+    }
+
+    fun previewLatestNovexLearningResponse() {
+        val ref = currentNovexLearningCollectionRef() ?: return
+        if (ref.value !in activeNovexSourceCollectionRefs || _novexLearningResponsePreview.value != null) return
+        val request = ++novexLearningResponsePreviewRequest
+        _novexLearningResponsePreview.value = "正在读取已保存的模型返回…"
+        viewModelScope.launch(Dispatchers.IO) {
+            val preview = runCatching {
+                val receipt = novexLearningRepository.responses(ref).maxByOrNull { it.receivedAtMillis }
+                if (receipt == null) "尚无已保存的模型返回记录。旧任务仍可查看原有学习笔记。" else buildString {
+                    val output = receipt.output
+                    append(output.title).append("\n\n")
+                    append(if (output.isComplete) "模型报告本次输出正常结束；内容尚未核验，笔记提交情况以任务进度为准。"
+                        else "本次返回不完整，未计入已整理范围。")
+                    append("\n输入 ${output.inputTokens}、输出 ${output.outputTokens} 个词元")
+                    append(if (output.usageIsEstimated) "（含估算）。" else "（提供商计数）。")
+                    append("\n\n").append(output.body.ifBlank { "模型未返回正文。" })
+                }
+            }.getOrElse { "读取返回记录失败：${it.message ?: "文件不可读"}。任务与原文件未改动。" }
+            if (request == novexLearningResponsePreviewRequest && ref.value in activeNovexSourceCollectionRefs) {
+                _novexLearningResponsePreview.value = preview
+            }
+        }
+    }
+
     fun dismissNovexLearningTaskNotice() {
         val status = _novexLearningTask.value?.status ?: return
         if (status in setOf(
@@ -12795,6 +12831,7 @@ class ChatViewModel(
         try {
             val runner = NovexLearningReviewRunner(
                 documents = novexDocumentRepository,
+                responseJournal = novexLearningRepository,
                 reviewer = providerNovexLearningReviewer(provider, requireNotNull(initial.task).preflight),
                 saveCheckpoint = { checkpoint ->
                     novexLearningRepository.save(checkpoint)
@@ -12876,7 +12913,7 @@ class ChatViewModel(
                 )
                 return NovexLearningReviewOutput.fromProvider("${request.documentTitle} · 通读笔记",
                     response.text, response.usage?.inputTokens, response.usage?.outputTokens,
-                    request.estimatedInputTokens, request.maxOutputTokens)
+                    request.estimatedInputTokens, request.maxOutputTokens, response.stopReason)
             }
 
             override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
@@ -12897,7 +12934,7 @@ class ChatViewModel(
                 )
                 return NovexLearningReviewOutput.fromProvider("${request.collectionTitle} · 总结",
                     response.text, response.usage?.inputTokens, response.usage?.outputTokens,
-                    request.estimatedInputTokens, request.maxOutputTokens)
+                    request.estimatedInputTokens, request.maxOutputTokens, response.stopReason)
             }
         }
 
@@ -12939,6 +12976,7 @@ class ChatViewModel(
                 }
                 _novexLearningTask.value = restored
                 _novexLearningStatus.value = restored?.status
+                _novexLearningError.value = restored?.let { novexLearningRepository.find(it.collectionRef)?.lastFailure }
             }
         }
     }

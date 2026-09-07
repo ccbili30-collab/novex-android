@@ -7,6 +7,85 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `long sources reserve the configured output room before selecting each batch`() {
+        val fixture = fixture(500_000, 80_000, listOf("独立记录，保存未知来源与未完成事项。".repeat(3000)), modelWindow = 32_768)
+        val requests = NovexLearningBatchPlanner.reviewRequests(fixture.state.collection.ref, fixture.document,
+            NovexLearningModelLimits(32_768, 4096))
+        assertTrue(requests.size > 1)
+        assertTrue(requests.all { it.maxOutputTokens == 4096 && it.estimatedInputTokens + it.maxOutputTokens <= 32_768 })
+        assertEquals(fixture.document.blocks.single().text, requests.flatMap { it.blocks }.joinToString("") { it.text })
+    }
+
+    @Test fun `returned provider work survives failed note commit and replays without another paid request`() = runTest {
+        val fixture = fixture(100_000, 20_000, listOf("围巾借出后在傍晚收回；没有记录借出时刻。"))
+        val directory = java.nio.file.Files.createTempDirectory("learning-receipt-recovery").toFile()
+        try {
+            var repository = FileNovexLearningRepository(directory)
+            repository.save(fixture.state)
+            var calls = 0
+            val reviewer = object : NovexLearningReviewer {
+                override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                    calls++
+                    return NovexLearningReviewOutput("围巾", "借出后傍晚收回，借出时刻未知。", 100, 20)
+                }
+                override suspend fun synthesize(request: NovexLearningSynthesisRequest) = review(
+                    NovexLearningReviewRequest(request.collectionRef, fixture.document.ref, "总结", emptyList(), 100, 20))
+            }
+            val failed = runCatching {
+                NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {
+                    if (it.notes.isNotEmpty()) throw java.io.IOException("注入：笔记主文件提交失败")
+                    repository.save(it)
+                }, responseJournal = repository).run(fixture.state)
+            }
+            assertTrue(failed.isFailure)
+            repository = FileNovexLearningRepository(directory)
+            val restored = requireNotNull(repository.find(fixture.state.collection.ref))
+            assertEquals(0, restored.notes.size)
+            assertEquals(100, restored.task!!.usage.usedInputTokens)
+            assertEquals(20, restored.task!!.usage.usedOutputTokens)
+            assertEquals(1, repository.responses(restored.collection.ref).size)
+            val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer,
+                repository::save, responseJournal = repository).run(restored)
+            assertEquals(2, calls) // One source request and one synthesis; the source response was reused.
+            assertEquals(2, result.notes.size)
+            assertEquals(200, result.task!!.usage.usedInputTokens)
+            repository.save(result)
+            assertEquals(200, FileNovexLearningRepository(directory).find(restored.collection.ref)!!.task!!.usage.usedInputTokens)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun `truncated response persists its cost and evidence but never advances organized coverage`() = runTest {
+        val fixture = fixture(100_000, 20_000, listOf("青庐倒水，没有记录饮水。"))
+        val directory = java.nio.file.Files.createTempDirectory("learning-truncation").toFile()
+        try {
+            val repository = FileNovexLearningRepository(directory)
+            repository.save(fixture.state)
+            var calls = 0
+            val reviewer = object : NovexLearningReviewer {
+                override suspend fun review(request: NovexLearningReviewRequest): NovexLearningReviewOutput {
+                    calls++
+                    return NovexLearningReviewOutput.fromProvider("倒水", "尚未完成的表格 |", 100, 20, 1000, 4096, "length")
+                }
+                override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput = error("不得综合")
+            }
+            assertTrue(runCatching {
+                NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer,
+                    repository::save, responseJournal = repository).run(fixture.state)
+            }.isFailure)
+            val restored = requireNotNull(FileNovexLearningRepository(directory).find(fixture.state.collection.ref))
+            assertEquals(1, calls)
+            assertEquals(0, restored.notes.size)
+            assertEquals(0, restored.reviewLedger.reviewedBlocks)
+            assertEquals(100, restored.task!!.usage.usedInputTokens)
+            assertEquals(NovexLearningTaskStatus.PAUSED, restored.task!!.status)
+            assertTrue(restored.lastFailure!!.contains("截断"))
+            assertEquals("尚未完成的表格 |", repository.responses(restored.collection.ref).single().output.body)
+            assertEquals("length", repository.responses(restored.collection.ref).single().output.stopReason)
+            assertTrue(!NovexLearningReviewOutput.fromProvider("空返回", "", 10, 5, 100, 200, "stop").isComplete)
+            assertTrue(!NovexLearningReviewOutput.fromProvider("未知结束", "正文", 10, 5, 100, 200, null).isComplete)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun `progress disclosure preserves estimated and legacy usage and never denies an observed overrun`() {
         val fixture = fixture(30_000, 8_000)
         val overrun = fixture.state.copy(task = fixture.state.task!!.recordObservedUsage(31_000, 20, estimated = true))

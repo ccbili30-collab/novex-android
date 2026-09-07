@@ -405,6 +405,7 @@ fun ChatScreen(
     val pendingNovexLearningPreflight by viewModel.pendingNovexLearningPreflight.collectAsState()
     val novexLearningTask by viewModel.novexLearningTask.collectAsState()
     val novexLearningError by viewModel.novexLearningError.collectAsState()
+    val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val panelExpansionState = remember(viewModel) { PanelExpansionState() }
 
@@ -5425,15 +5426,25 @@ fun ChatScreen(
         )
     }
 
-    novexLearningError?.let { message ->
-        NovexNoticeDialog(
+    novexLearningResponsePreview?.let { message ->
+        NovexNoticeDialog(title = "最近一次模型返回", message = message,
+            onDismiss = viewModel::closeNovexLearningResponsePreview)
+    }
+    if (novexLearningResponsePreview == null) novexLearningError?.let { message ->
+        NovexDecisionDialog(
             title = "资料整理已停止",
             message = "$message\n已完成的通读进度和笔记仍然保留。",
             onDismiss = viewModel::clearNovexLearningError,
+            actions = listOf(
+                NovexDecisionAction("查看最近返回", R.drawable.ic_phosphor_brain,
+                    onClick = viewModel::previewLatestNovexLearningResponse),
+                NovexDecisionAction("返回任务", R.drawable.ic_phosphor_arrow_left,
+                    onClick = viewModel::clearNovexLearningError),
+            ),
         )
     }
 
-    if (novexLearningError == null) {
+    if (novexLearningError == null && novexLearningResponsePreview == null) {
         novexLearningTask?.let { task ->
             val message = NovexLearningControlPolicy.progressMessage(task)
             val controls = NovexLearningControlPolicy.allowedControls(task.status)
@@ -5444,6 +5455,8 @@ fun ChatScreen(
                     if (NovexLearningControl.PAUSE in controls) viewModel.pauseNovexLearning()
                 },
                 actions = buildList {
+                    add(NovexDecisionAction("查看最近返回", R.drawable.ic_phosphor_brain,
+                        onClick = viewModel::previewLatestNovexLearningResponse))
                     if (NovexLearningControl.PAUSE in controls) add(
                         NovexDecisionAction(
                             label = "暂停整理",

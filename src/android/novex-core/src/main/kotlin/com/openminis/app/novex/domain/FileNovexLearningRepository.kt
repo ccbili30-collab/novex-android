@@ -13,32 +13,52 @@ interface NovexLearningRepository {
 /** File-backed, branch-scoped learning state. Writes are atomic and never touch source originals. */
 class FileNovexLearningRepository(
     private val directory: File,
-) : NovexLearningRepository {
+) : NovexLearningRepository, NovexLearningResponseJournal {
     init {
         directory.mkdirs()
     }
 
     @Synchronized
-    override fun find(collectionRef: NovexResourceRef): NovexLearningState? = runCatching {
-        NovexLearningStateJsonCodec.decode(fileFor(collectionRef).readText(Charsets.UTF_8))
-            .takeIf { it.collection.ref == collectionRef }
-    }.getOrNull()
+    override fun find(collectionRef: NovexResourceRef): NovexLearningState? {
+        val state = runCatching {
+            NovexLearningStateJsonCodec.decode(fileFor(collectionRef).readText(Charsets.UTF_8))
+                .takeIf { it.collection.ref == collectionRef }
+        }.getOrNull() ?: return null
+        // A damaged receipt must stop recovery, never silently turn paid work into a missing task.
+        return state.accountFor(responses(collectionRef))
+    }
 
     @Synchronized
     override fun save(state: NovexLearningState) {
-        directory.mkdirs()
-        val target = fileFor(state.collection.ref)
-        val temporary = File(directory, ".${target.name}.${System.nanoTime()}.tmp")
-        try {
-            temporary.writeText(NovexLearningStateJsonCodec.encode(state), Charsets.UTF_8)
-            if (!temporary.renameTo(target)) {
-                temporary.copyTo(target, overwrite = true)
-                check(temporary.delete()) { "无法清理学习状态临时文件" }
-            }
-        } finally {
-            if (temporary.exists()) temporary.delete()
-        }
+        writeNovexLearningFile(fileFor(state.collection.ref),
+            NovexLearningStateJsonCodec.encode(state.accountFor(responses(state.collection.ref))))
     }
+
+    @Synchronized
+    override fun responses(collectionRef: NovexResourceRef): List<NovexLearningResponseReceipt> =
+        responseDirectory(collectionRef).listFiles().orEmpty().filter { it.extension == "json" }.map { file ->
+            val json = JSONObject(file.readText(Charsets.UTF_8))
+            require(json.getString("collection_ref") == collectionRef.value) { "模型回执不属于当前资料集" }
+            NovexLearningResponseReceipt(json.getString("id"), json.getString("preflight_id"), json.getString("request_key"),
+                NovexLearningReviewOutput(json.getString("title"), json.getString("body"), json.getInt("input_tokens"),
+                    json.getInt("output_tokens"), json.getBoolean("usage_estimated"),
+                    if (json.isNull("stop_reason")) null else json.getString("stop_reason")), json.optLong("received_at"))
+        }
+
+    @Synchronized
+    override fun recordResponse(collectionRef: NovexResourceRef, receipt: NovexLearningResponseReceipt) {
+        val output = receipt.output
+        val target = File(responseDirectory(collectionRef), "${sha256(receipt.id)}.json")
+        require(!target.exists()) { "模型回执已经保存，不能覆盖" }
+        writeNovexLearningFile(target, JSONObject().put("collection_ref", collectionRef.value).put("id", receipt.id)
+            .put("preflight_id", receipt.preflightId).put("request_key", receipt.requestKey)
+            .put("received_at", receipt.receivedAtMillis)
+            .put("title", output.title).put("body", output.body).put("input_tokens", output.inputTokens)
+            .put("output_tokens", output.outputTokens).put("usage_estimated", output.usageIsEstimated)
+            .put("stop_reason", output.stopReason ?: JSONObject.NULL).toString())
+    }
+
+    private fun responseDirectory(ref: NovexResourceRef) = File(directory, "${sha256(ref.value)}-responses")
 
     private fun fileFor(ref: NovexResourceRef): File = File(directory, "${sha256(ref.value)}.json")
 
@@ -48,7 +68,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 8
+    private const val VERSION = 9
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -57,6 +77,8 @@ object NovexLearningStateJsonCodec {
         .put("notes", JSONArray(state.notes.map(::encodeNote)))
         .put("preflight", state.preflight?.let(::encodePreflight))
         .put("task", state.task?.let(::encodeTask))
+        .put("accounted_responses", JSONArray(state.accountedResponseIds.toList()))
+        .put("last_failure", state.lastFailure)
         .toString()
 
     fun decode(encoded: String): NovexLearningState {
@@ -70,6 +92,8 @@ object NovexLearningStateJsonCodec {
             reviewLedger = decodeLedger(json.getJSONObject("review_ledger")),
             notes = json.getJSONArray("notes").objects().map(::decodeNote),
             task = task,
+            accountedResponseIds = json.optJSONArray("accounted_responses")?.strings()?.toSet().orEmpty(),
+            lastFailure = json.optionalString("last_failure"),
             preflight = if (version >= 2) {
                 json.optionalObject("preflight")?.let(::decodePreflight)
             } else {

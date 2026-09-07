@@ -156,7 +156,9 @@ object NovexLearningPreflight {
         val readRanges = progress?.notes.orEmpty().flatMap { it.readRanges }
         val continuing = progress?.task != null || progress?.notes?.isNotEmpty() == true ||
             (progress?.reviewLedger?.reviewedBlocks ?: 0) > 0
-        val fullPlan = if (request.effectiveContextTokens != null && documents.isNotEmpty()) documents.flatMap { document ->
+        val fullPlan = if (request.effectiveContextTokens != null && documents.isNotEmpty()) documents.filter {
+            it.status in setOf(NovexDocumentStatus.READY, NovexDocumentStatus.TRUNCATED)
+        }.flatMap { document ->
             val reviewed = progress?.reviewLedger?.reviewedBlocksByDocument?.get(document.ref).orEmpty()
             NovexLearningBatchPlanner.reviewRequests(request.collectionRef,
                 document.copy(blocks = document.blocks.filter { it.id !in reviewed }), limits, readRanges = readRanges)
