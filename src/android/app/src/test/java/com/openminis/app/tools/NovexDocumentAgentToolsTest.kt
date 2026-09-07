@@ -21,6 +21,24 @@ class NovexDocumentAgentToolsTest {
     private val store = NovexDocumentSnapshotStore { requested -> snapshot.takeIf { it.ref == requested } }
     private val tools = NovexDocumentAgentTools(store) { requested -> requested == ref }
 
+    @Test fun `revision reads preserve the same conversation permission gate`() {
+        val inspection = JSONObject(tools.execute("document_inspect", JSONObject().put("document_ref", ref.value).toString()).output)
+        val revision = inspection.getJSONObject("data").getString("source_revision")
+        var revisionLookups = 0
+        val versioned = object : NovexDocumentSnapshotStore {
+            override fun find(ref: NovexResourceRef) = snapshot
+            override fun findRevision(ref: NovexResourceRef, revision: String): NovexDocumentSnapshot {
+                revisionLookups++
+                return snapshot
+            }
+        }
+        val args = JSONObject().put("document_ref", ref.value).put("source_revision", revision).toString()
+        assertFalse(NovexDocumentAgentTools(versioned) { false }.execute("document_read", args).success)
+        assertEquals(0, revisionLookups)
+        assertTrue(NovexDocumentAgentTools(versioned) { it == ref }.execute("document_read", args).success)
+        assertEquals(1, revisionLookups)
+    }
+
     @Test
     fun `document tools are capability gated in the model catalog`() {
         val withoutDocuments = AgentTools.makeAgentTools(documentsAvailable = false)

@@ -40,6 +40,7 @@ object NovexToolCatalog {
                     parameters = listOf(
                         NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
                         NovexToolParameter("include_outline", NovexToolParameterKind.BOOLEAN, false, "是否返回紧凑目录，默认 true"),
+                        NovexToolParameter("source_revision", NovexToolParameterKind.STRING, false, "精确读取已保存的来源修订；原样使用笔记 source_revisions 或文档工具返回的修订编号，缺失时不自动采用新版本"),
                         NovexToolParameter("max_depth", NovexToolParameterKind.INTEGER, false, "目录最大层级，一到六"),
                         NovexToolParameter("max_outline_items", NovexToolParameterKind.INTEGER, false, "目录最大条目数，一到五百"),
                     ),
@@ -53,6 +54,7 @@ object NovexToolCatalog {
                     parameters = listOf(
                         NovexToolParameter("document_ref", NovexToolParameterKind.STRING, true, "Novex 文档引用"),
                         NovexToolParameter("block_ids", NovexToolParameterKind.STRING_LIST, false, "需要读取的稳定内容块编号"),
+                        NovexToolParameter("source_revision", NovexToolParameterKind.STRING, false, "精确读取已保存的来源修订；续读旧笔记来源时同时保留该修订编号。省略则读当前解析，旧游标不能用于新解析"),
                         NovexToolParameter("heading_path", NovexToolParameterKind.STRING_LIST, false, "需要读取的完整标题路径"),
                         NovexToolParameter("query", NovexToolParameterKind.STRING, false, "需要定位的关键词或短语"),
                         NovexToolParameter("page_range", NovexToolParameterKind.PAGE_RANGE, false, "格式可靠支持时使用的页码闭区间"),

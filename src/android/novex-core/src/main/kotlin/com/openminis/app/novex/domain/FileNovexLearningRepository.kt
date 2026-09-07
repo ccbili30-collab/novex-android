@@ -30,7 +30,7 @@ class FileNovexLearningRepository(
 
     @Synchronized
     override fun save(state: NovexLearningState) {
-        writeNovexLearningFile(fileFor(state.collection.ref),
+        writeNovexAtomicFile(fileFor(state.collection.ref),
             NovexLearningStateJsonCodec.encode(state.accountFor(responses(state.collection.ref))))
     }
 
@@ -50,7 +50,7 @@ class FileNovexLearningRepository(
         val output = receipt.output
         val target = File(responseDirectory(collectionRef), "${sha256(receipt.id)}.json")
         require(!target.exists()) { "模型回执已经保存，不能覆盖" }
-        writeNovexLearningFile(target, JSONObject().put("collection_ref", collectionRef.value).put("id", receipt.id)
+        writeNovexAtomicFile(target, JSONObject().put("collection_ref", collectionRef.value).put("id", receipt.id)
             .put("preflight_id", receipt.preflightId).put("request_key", receipt.requestKey)
             .put("received_at", receipt.receivedAtMillis)
             .put("title", output.title).put("body", output.body).put("input_tokens", output.inputTokens)
@@ -68,7 +68,7 @@ class FileNovexLearningRepository(
 }
 
 object NovexLearningStateJsonCodec {
-    private const val VERSION = 9
+    private const val VERSION = 10
 
     fun encode(state: NovexLearningState): String = JSONObject()
         .put("version", VERSION)
@@ -176,6 +176,7 @@ object NovexLearningStateJsonCodec {
         .put("source_documents", JSONArray(note.sourceDocumentRefs.map { it.value }))
         .put("source_blocks", JSONArray(note.sourceBlockIds))
         .put("input_notes", JSONArray(note.inputNoteRefs.map { it.value }))
+        .put("source_revisions", JSONObject(note.sourceRevisions.mapKeys { it.key.value }))
         .put("read_ranges", JSONArray(note.readRanges.map { range ->
             JSONObject().put("document_ref", range.documentRef.value).put("block_id", range.blockId)
                 .put("start", range.start).put("end", range.end)
@@ -189,6 +190,9 @@ object NovexLearningStateJsonCodec {
         sourceDocumentRefs = json.getJSONArray("source_documents").strings().map(::NovexResourceRef),
         sourceBlockIds = json.getJSONArray("source_blocks").strings(),
         inputNoteRefs = json.optJSONArray("input_notes")?.strings()?.map(::NovexResourceRef).orEmpty(),
+        sourceRevisions = json.optJSONObject("source_revisions")?.let { revisions ->
+            revisions.keys().asSequence().associate { NovexResourceRef(it) to revisions.getString(it) }
+        }.orEmpty(),
         readRanges = json.optJSONArray("read_ranges")?.objects()?.map { range ->
             NovexLearningReadRange(NovexResourceRef(range.getString("document_ref")),
                 range.getString("block_id"), range.getInt("start"), range.getInt("end"))
@@ -244,6 +248,7 @@ object NovexLearningStateJsonCodec {
         .put("estimated_model_rounds", preflight.estimatedModelRounds)
         .put("review_batch_count", preflight.reviewBatchCount)
         .put("review_input_reservation_tokens", preflight.reviewInputReservationTokens)
+        .put("document_revisions", JSONObject(preflight.documentRevisions.mapKeys { it.key.value }))
         .put("page_count", preflight.pageCount)
         .put("image_count", preflight.imageCount)
         .put("ocr_source_count", preflight.ocrSourceCount)
@@ -298,6 +303,9 @@ object NovexLearningStateJsonCodec {
             estimatedModelRounds = estimatedRounds,
             reviewBatchCount = json.optionalInt("review_batch_count"),
             reviewInputReservationTokens = json.optionalInt("review_input_reservation_tokens"),
+            documentRevisions = json.optJSONObject("document_revisions")?.let { revisions ->
+                revisions.keys().asSequence().associate { NovexResourceRef(it) to revisions.getString(it) }
+            }.orEmpty(),
             pageCount = json.getInt("page_count"),
             imageCount = json.getInt("image_count"),
             ocrSourceCount = ocrSourceCount,

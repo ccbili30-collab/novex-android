@@ -43,6 +43,7 @@ class NovexDocumentToolRouter(
 
     private fun JSONObject.inspectRequest() = NovexDocumentInspectRequest(
         documentRef = documentRef(),
+        sourceRevision = optionalString("source_revision"),
         includeOutline = optBoolean("include_outline", true),
         maxDepth = optInt("max_depth", 6),
         maxOutlineItems = optInt("max_outline_items", 100),
@@ -54,6 +55,7 @@ class NovexDocumentToolRouter(
         require(view in setOf("passages", "blocks")) { "view 只支持 passages（紧凑通读）或 blocks（逐块详情）" }
         return NovexDocumentReadRequest(
             documentRef = documentRef(),
+            sourceRevision = optionalString("source_revision"),
             blockIds = optJSONArray("block_ids").stringValues(),
             headingPath = optJSONArray("heading_path").stringValues(),
             query = optionalString("query"),

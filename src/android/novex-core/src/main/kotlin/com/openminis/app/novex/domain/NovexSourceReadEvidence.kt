@@ -5,6 +5,9 @@ import org.json.JSONArray
 
 /** Evidence is produced from returned source slices, before compact response formatting. */
 internal object NovexSourceReadEvidence {
+    fun documentRevision(snapshot: NovexDocumentSnapshot): String = sha256((snapshot.sha256 + "\n" + snapshot.parserVersion + "\n" +
+        JSONArray(snapshot.blocks.map { listOf(it.id, it.text) }).toString()).toByteArray(Charsets.UTF_8))
+
     fun document(snapshot: NovexDocumentSnapshot, returned: List<Map<String, Any?>>, method: String): List<Map<String, Any?>> {
         var total = 0
         val offsets = snapshot.blocks.associate { block ->
@@ -12,8 +15,7 @@ internal object NovexSourceReadEvidence {
             total = Math.addExact(total, block.text.length)
             block.id to offset
         }
-        val revision = sha256((snapshot.sha256 + "\n" + snapshot.parserVersion + "\n" +
-            JSONArray(snapshot.blocks.map { listOf(it.id, it.text) }).toString()).toByteArray(Charsets.UTF_8))
+        val revision = documentRevision(snapshot)
         val ranges = returned.map { block ->
             val offset = (block["source"] as Map<*, *>)["char_offset"] as Int
             val start = offsets.getValue(block["id"] as String) + offset

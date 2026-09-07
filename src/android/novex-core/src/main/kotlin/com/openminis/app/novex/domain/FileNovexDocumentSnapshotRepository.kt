@@ -22,7 +22,9 @@ class FileNovexDocumentSnapshotRepository(
         return read(key.sha256)?.takeIf { snapshot ->
             snapshot.sha256.equals(key.sha256, ignoreCase = true) &&
                 snapshot.parserVersion == key.parserVersion
-        }
+        } ?: File(directory, "revisions").listFiles().orEmpty()
+            .filter { it.name.startsWith("${key.sha256.lowercase()}-") && it.extension == "json" }
+            .asSequence().mapNotNull(::readFile).firstOrNull { it.parserVersion == key.parserVersion && it.sha256 == key.sha256.lowercase() }
     }
 
     @Synchronized
@@ -30,6 +32,14 @@ class FileNovexDocumentSnapshotRepository(
         val sha256 = ref.value.removePrefix(DOCUMENT_REF_PREFIX)
         if (ref.value != "$DOCUMENT_REF_PREFIX$sha256" || !isSha256(sha256)) return null
         return read(sha256)?.takeIf { it.ref == ref }
+    }
+
+    @Synchronized
+    override fun findRevision(ref: NovexResourceRef, revision: String): NovexDocumentSnapshot? {
+        val sha = ref.value.removePrefix(DOCUMENT_REF_PREFIX)
+        if (ref.value != "$DOCUMENT_REF_PREFIX$sha" || !isSha256(sha) || !isSha256(revision)) return null
+        val snapshot = readFile(revisionFile(sha, revision)) ?: read(sha)
+        return snapshot?.takeIf { it.ref == ref && NovexSourceReadEvidence.documentRevision(it) == revision }
     }
 
     @Synchronized
@@ -41,23 +51,23 @@ class FileNovexDocumentSnapshotRepository(
         require(snapshot.parserVersion == key.parserVersion) {
             "文档快照解析器版本与缓存键不一致"
         }
-        directory.mkdirs()
-        val target = fileFor(key.sha256)
-        val temporary = File(directory, ".${key.sha256.lowercase()}.${System.nanoTime()}.tmp")
-        try {
-            temporary.writeText(NovexDocumentSnapshotJsonCodec.encode(snapshot), Charsets.UTF_8)
-            if (!temporary.renameTo(target)) {
-                temporary.copyTo(target, overwrite = true)
-                check(temporary.delete()) { "无法清理文档快照临时文件" }
-            }
-        } finally {
-            if (temporary.exists()) temporary.delete()
+        // Preserve a legacy current-only snapshot before replacing the current pointer.
+        read(key.sha256)?.let { previous ->
+            val archived = revisionFile(previous.sha256, NovexSourceReadEvidence.documentRevision(previous))
+            if (!archived.exists()) writeNovexAtomicFile(archived, NovexDocumentSnapshotJsonCodec.encode(previous))
         }
+        val encoded = NovexDocumentSnapshotJsonCodec.encode(snapshot)
+        writeNovexAtomicFile(revisionFile(snapshot.sha256, NovexSourceReadEvidence.documentRevision(snapshot)), encoded)
+        writeNovexAtomicFile(fileFor(key.sha256), encoded)
     }
 
-    private fun read(sha256: String): NovexDocumentSnapshot? = runCatching {
-        NovexDocumentSnapshotJsonCodec.decode(fileFor(sha256).readText(Charsets.UTF_8))
+    private fun read(sha256: String): NovexDocumentSnapshot? = readFile(fileFor(sha256))
+
+    private fun readFile(file: File): NovexDocumentSnapshot? = runCatching {
+        NovexDocumentSnapshotJsonCodec.decode(file.readText(Charsets.UTF_8))
     }.getOrNull()
+
+    private fun revisionFile(sha256: String, revision: String) = File(File(directory, "revisions"), "${sha256.lowercase()}-${revision.lowercase()}.json")
 
     private fun fileFor(sha256: String) = File(directory, "${sha256.lowercase()}.json")
 

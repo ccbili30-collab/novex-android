@@ -123,7 +123,16 @@ class NovexLearningReviewRunner(
         }
 
         for ((documentRef, readableBlockIds) in state.reviewLedger.readableBlocksByDocument) {
-            val snapshot = documents.find(documentRef) ?: return state.finishPartialFailure()
+            val expectedRevision = task.preflight.documentRevisions[documentRef]
+                ?: state.notes.firstNotNullOfOrNull { it.sourceRevisions[documentRef] }
+            require(expectedRevision != null || state.notes.none { documentRef in it.sourceDocumentRefs }) {
+                "旧任务笔记没有记录来源解析修订；请保留旧笔记并重新确认资料计划，不能用当前原文补齐旧覆盖。"
+            }
+            val snapshot = if (expectedRevision == null) documents.find(documentRef)
+                else documents.findRevision(documentRef, expectedRevision)
+            if (snapshot == null) return state.copy(
+                lastFailure = "当前任务采用的来源修订不可读，已停止；不会用新解析替换旧笔记来源。",
+            ).finishPartialFailure()
             if (snapshot.status != NovexDocumentStatus.READY) {
                 state = state.copy(reviewLedger = state.reviewLedger.recordIncompleteSources(
                     state.collection.sources.filter { it.documentRef == documentRef }.map { it.ref },
@@ -153,13 +162,15 @@ class NovexLearningReviewRunner(
                     block.id in blockIds && NovexLearningBatchPlanner.fullyCovered(block.text.length, rangesByBlock[block.id].orEmpty())
                 }.map { it.id }
                 val note = NovexLearningNote(
-                    ref = stableNoteRef("review", documentRef.value, request.sourceRanges.joinToString("\u001f") { "${it.blockId}:${it.start}:${it.end}" }),
+                    ref = stableNoteRef("review", documentRef.value, NovexSourceReadEvidence.documentRevision(snapshot),
+                        request.sourceRanges.joinToString("\u001f") { "${it.blockId}:${it.start}:${it.end}" }),
                     level = if (blockIds.size == 1) NovexLearningNoteLevel.BLOCK else NovexLearningNoteLevel.SECTION,
                     title = output.title,
                     body = output.body,
                     sourceDocumentRefs = listOf(documentRef),
                     sourceBlockIds = blockIds,
                     readRanges = request.sourceRanges,
+                    sourceRevisions = mapOf(documentRef to NovexSourceReadEvidence.documentRevision(snapshot)),
                 )
                 state = state.copy(
                     reviewLedger = if (completed.isEmpty()) state.reviewLedger else state.reviewLedger.recordRead(
@@ -218,6 +229,7 @@ class NovexLearningReviewRunner(
                             sourceDocumentRefs = oversized.sourceDocumentRefs,
                             sourceBlockIds = oversized.sourceBlockIds,
                             inputNoteRefs = listOf(oversized.ref),
+                            sourceRevisions = oversized.sourceRevisions,
                         )
                     }
                 state = state.copy(notes = state.notes + pieces)
@@ -266,9 +278,10 @@ class NovexLearningReviewRunner(
                 level = if (final) NovexLearningNoteLevel.COLLECTION else NovexLearningNoteLevel.FILE,
                 title = synthesis.title,
                 body = synthesis.body,
-                sourceDocumentRefs = if (final) state.collection.uniqueDocumentRefs else batch.flatMap { it.sourceDocumentRefs }.distinct(),
+                sourceDocumentRefs = batch.flatMap { it.sourceDocumentRefs }.distinct(),
                 sourceBlockIds = batch.flatMap { it.sourceBlockIds }.distinct(),
                 inputNoteRefs = batch.map { it.ref },
+                sourceRevisions = batch.flatMap { it.sourceRevisions.entries }.associate { it.key to it.value },
             )
             if (final && !exceedsReservation) {
                 val status = if (state.reviewLedger.reviewedBlocks == state.reviewLedger.totalReadableBlocks &&

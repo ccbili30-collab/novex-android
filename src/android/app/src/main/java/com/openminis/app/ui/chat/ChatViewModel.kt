@@ -12558,7 +12558,10 @@ class ChatViewModel(
         proposedBudget: NovexLearningTokenBudget? = null,
     ): NovexLearningPreflightSnapshot {
         val sourceDocuments = state.collection.sources.mapNotNull { source ->
-            source.documentRef?.let(novexDocumentRepository::find)?.let { source.ref to it }
+            source.documentRef?.let { ref ->
+                val revision = state.task?.preflight?.documentRevisions?.get(ref)
+                if (revision == null) novexDocumentRepository.find(ref) else novexDocumentRepository.findRevision(ref, revision)
+            }?.let { source.ref to it }
         }.toMap()
         val sourceEstimates = state.collection.sources.map { source ->
             val snapshot = sourceDocuments[source.ref]

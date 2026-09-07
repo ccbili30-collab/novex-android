@@ -7,6 +7,37 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class NovexLearningReviewRunnerTest {
+    @Test fun `confirmed source parsing is pinned through reparse and note reload`() = runTest {
+        val fixture = fixture(100_000, 20_000, listOf("原解析：围巾借出与归还，借出时间未知。"))
+        val directory = java.nio.file.Files.createTempDirectory("learning-pinned-sources").toFile()
+        try {
+            val documents = FileNovexDocumentSnapshotRepository(java.io.File(directory, "documents"))
+            documents.store(NovexDocumentSnapshotCacheKey(fixture.document.sha256, fixture.document.parserVersion), fixture.document)
+            val changed = fixture.document.copy(parserVersion = "fixture-v2", blocks = fixture.document.blocks.map { it.copy(text = "新解析，不能替换已确认资料。") })
+            documents.store(NovexDocumentSnapshotCacheKey(changed.sha256, changed.parserVersion), changed)
+            val repository = FileNovexLearningRepository(java.io.File(directory, "learning"))
+            val reviewer = RecordingReviewer()
+            NovexLearningReviewRunner(documents, reviewer, repository::save, responseJournal = repository).run(fixture.state)
+            assertEquals(fixture.document.blocks, reviewer.reviewRequests.single().blocks)
+            val restored = requireNotNull(FileNovexLearningRepository(java.io.File(directory, "learning")).find(fixture.state.collection.ref))
+            val note = restored.notes.first { it.level != NovexLearningNoteLevel.COLLECTION }
+            assertEquals(NovexSourceReadEvidence.documentRevision(fixture.document), note.sourceRevisions[fixture.document.ref])
+            val result = NovexLearningTools(object : NovexLearningPreflightResolver {
+                override fun prepare(collectionRef: NovexResourceRef, modelId: String?) = restored.preflight
+                override fun readState(collectionRef: NovexResourceRef) = restored
+            }).learningRead(restored.collection.ref, org.json.JSONObject().put("note_ref", note.ref.value))
+            assertTrue(result.toJson().contains(note.sourceRevisions.values.single()))
+            assertTrue(runCatching {
+                NovexLearningPreflight.prepare(NovexLearningPreflightRequest(
+                    collectionRef = restored.collection.ref,
+                    sources = listOf(NovexLearningSourceEstimate(changed.ref, 20_000)),
+                    sourceDocuments = mapOf(changed.ref to changed), modelId = "model-a",
+                    effectiveContextTokens = 200_000, occupiedContextTokens = 0, directReadBudgetTokens = 1000,
+                    proposedBudget = NovexLearningTokenBudget(100_000, 20_000)), restored)
+            }.exceptionOrNull()?.message?.contains("旧笔记覆盖") == true)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun `long sources reserve the configured output room before selecting each batch`() {
         val fixture = fixture(500_000, 80_000, listOf("独立记录，保存未知来源与未完成事项。".repeat(3000)), modelWindow = 32_768)
         val requests = NovexLearningBatchPlanner.reviewRequests(fixture.state.collection.ref, fixture.document,

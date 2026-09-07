@@ -141,6 +141,7 @@ data class NovexLearningPreflightSnapshot(
     val modelLimits: NovexLearningModelLimits? = null,
     val reviewBatchCount: Int? = null,
     val reviewInputReservationTokens: Int? = null,
+    val documentRevisions: Map<NovexResourceRef, String> = emptyMap(),
 ) {
     val requiresConfirmation: Boolean get() = route == NovexLearningRoute.CONFIRMATION_REQUIRED
 }
@@ -153,6 +154,16 @@ object NovexLearningPreflight {
         require(progress == null || progress.collection.ref == request.collectionRef) { "学习进度不属于当前资料集" }
         val limits = NovexLearningModelLimits(request.effectiveContextTokens, request.modelMaxOutputTokens)
         val documents = request.sources.mapNotNull { request.sourceDocuments[it.ref] }.distinctBy { it.ref }
+        for (document in documents) {
+            val expectedRevision = progress?.task?.preflight?.documentRevisions?.get(document.ref)
+                ?: progress?.notes?.firstNotNullOfOrNull { it.sourceRevisions[document.ref] }
+            require(expectedRevision == null || expectedRevision == NovexSourceReadEvidence.documentRevision(document)) {
+                "来源解析修订已变化；请读取原任务采用的修订后继续，不能把旧笔记覆盖套用到新解析。"
+            }
+            require(expectedRevision != null || progress?.notes.orEmpty().none { document.ref in it.sourceDocumentRefs }) {
+                "旧笔记未记录来源解析修订；请保留旧成果并重新核对资料，不能将它们计为新解析已整理。"
+            }
+        }
         val readRanges = progress?.notes.orEmpty().flatMap { it.readRanges }
         val continuing = progress?.task != null || progress?.notes?.isNotEmpty() == true ||
             (progress?.reviewLedger?.reviewedBlocks ?: 0) > 0
@@ -310,6 +321,7 @@ object NovexLearningPreflight {
             modelLimits = NovexLearningModelLimits(request.effectiveContextTokens, request.modelMaxOutputTokens),
             reviewBatchCount = fullPlan?.size,
             reviewInputReservationTokens = reviewReservation,
+            documentRevisions = documents.associate { it.ref to NovexSourceReadEvidence.documentRevision(it) },
         )
     }
 

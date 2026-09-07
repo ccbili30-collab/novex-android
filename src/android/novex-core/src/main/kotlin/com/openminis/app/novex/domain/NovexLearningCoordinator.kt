@@ -34,6 +34,7 @@ class NovexLearningCoordinator {
         NovexLearningGate.requireExecutionContext(task.preflight, preflight.modelId,
             preflight.modelProviderName, preflight.modelLimits)
         require(preflight.sourceRefs == task.preflight.sourceRefs) { "扩大预算不能更换资料范围" }
+        require(preflight.documentRevisions == task.preflight.documentRevisions) { "扩大预算不能更换来源解析修订" }
         require(confirmation != null) { "扩大预算前必须由原生界面重新确认" }
         require(NovexLearningGate.authorize(preflight, confirmation) == NovexLearningAuthorization.AUTHORIZED) {
             "扩大预算尚未获得与新预检匹配的用户确认"

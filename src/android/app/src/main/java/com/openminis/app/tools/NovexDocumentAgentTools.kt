@@ -11,8 +11,11 @@ class NovexDocumentAgentTools(
     snapshots: NovexDocumentSnapshotStore,
     isAllowed: (com.openminis.app.novex.domain.NovexResourceRef) -> Boolean,
 ) {
-    private val scopedSnapshots = NovexDocumentSnapshotStore { requested ->
-        snapshots.find(requested).takeIf { isAllowed(requested) }
+    private val scopedSnapshots = object : NovexDocumentSnapshotStore {
+        override fun find(requested: com.openminis.app.novex.domain.NovexResourceRef) =
+            if (isAllowed(requested)) snapshots.find(requested) else null
+        override fun findRevision(requested: com.openminis.app.novex.domain.NovexResourceRef, revision: String) =
+            if (isAllowed(requested)) snapshots.findRevision(requested, revision) else null
     }
     private val router = NovexDocumentToolRouter(NovexDocumentTools(scopedSnapshots))
 

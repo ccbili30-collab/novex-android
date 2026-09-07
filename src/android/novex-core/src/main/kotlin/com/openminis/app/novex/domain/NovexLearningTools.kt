@@ -65,6 +65,8 @@ class NovexLearningTools(
                     "note_ref" to note.ref.value, "title" to note.title, "level" to note.level.wireName,
                     "source_document_refs" to note.sourceDocumentRefs.take(16).map { it.value },
                     "source_document_count" to note.sourceDocumentRefs.size,
+                    "source_revisions" to note.sourceRevisions.entries.take(16).associate { it.key.value to it.value },
+                    "source_revision_status" to if (note.sourceRevisions.keys.containsAll(note.sourceDocumentRefs)) "recorded" else "legacy_unknown",
                     "source_block_ids" to note.sourceBlockIds.take(16), "source_block_count" to note.sourceBlockIds.size,
                     "source_anchors_truncated" to (note.sourceDocumentRefs.size > 16 || note.sourceBlockIds.size > 16),
                 ) },

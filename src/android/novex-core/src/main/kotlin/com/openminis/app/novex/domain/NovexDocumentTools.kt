@@ -153,6 +153,8 @@ data class NovexDocumentSnapshot(
 
 fun interface NovexDocumentSnapshotStore {
     fun find(ref: NovexResourceRef): NovexDocumentSnapshot?
+    fun findRevision(ref: NovexResourceRef, revision: String): NovexDocumentSnapshot? =
+        find(ref)?.takeIf { NovexSourceReadEvidence.documentRevision(it) == revision }
 }
 
 data class NovexDocumentInspectRequest(
@@ -160,6 +162,7 @@ data class NovexDocumentInspectRequest(
     val includeOutline: Boolean = true,
     val maxDepth: Int = 6,
     val maxOutlineItems: Int = 100,
+    val sourceRevision: String? = null,
 ) {
     init {
         require(maxDepth in 1..6) { "目录层级必须在一到六级之间" }
@@ -185,6 +188,7 @@ data class NovexDocumentReadRequest(
     val firstBlock: Int? = null,
     val lastBlock: Int? = null,
     val compact: Boolean = false,
+    val sourceRevision: String? = null,
 ) {
     init {
         require(maxBlocks in 1..5_000) { "单次读取来源块数量必须在一到五千之间；优先使用字符预算控制通读" }
@@ -212,7 +216,8 @@ class NovexDocumentTools(
     private val snapshots: NovexDocumentSnapshotStore,
 ) {
     fun documentInspect(request: NovexDocumentInspectRequest): NovexToolResult {
-        val snapshot = snapshots.find(request.documentRef) ?: return notFound(request.documentRef)
+        val snapshot = requestedSnapshot(request.documentRef, request.sourceRevision)
+            ?: return missingRevisionOrDocument(request.documentRef, request.sourceRevision)
         val outlineBlocks = NovexDocumentOutline.entries(snapshot).filter { it.level <= request.maxDepth }
         val outline = if (request.includeOutline) {
             outlineBlocks.take(request.maxOutlineItems).map { block ->
@@ -234,6 +239,8 @@ class NovexDocumentTools(
             summary = "已检查《${snapshot.title}》，共 ${snapshot.blocks.size} 个内容块",
             data = mapOf(
                 "document_ref" to snapshot.ref.value,
+                "source_revision" to NovexSourceReadEvidence.documentRevision(snapshot),
+                "parser_version" to snapshot.parserVersion,
                 "title" to snapshot.title,
                 "format" to snapshot.format.wireName,
                 "status" to snapshot.status.wireName,
@@ -252,7 +259,8 @@ class NovexDocumentTools(
     }
 
     fun documentRead(request: NovexDocumentReadRequest): NovexToolResult {
-        val snapshot = snapshots.find(request.documentRef) ?: return notFound(request.documentRef)
+        val snapshot = requestedSnapshot(request.documentRef, request.sourceRevision)
+            ?: return missingRevisionOrDocument(request.documentRef, request.sourceRevision)
         if (request.firstBlock != null && request.firstBlock > snapshot.blocks.size) {
             return NovexToolResult.failure(code = "document.invalid_position",
                 summary = "first_block 超出文档范围，当前共 ${snapshot.blocks.size} 块，从 1 开始计数", affectedRefs = listOf(snapshot.ref))
@@ -299,6 +307,8 @@ class NovexDocumentTools(
 
         val data = linkedMapOf<String, Any?>(
             "document_ref" to snapshot.ref.value,
+            "source_revision" to NovexSourceReadEvidence.documentRevision(snapshot),
+            "parser_version" to snapshot.parserVersion,
             "read_observations" to NovexSourceReadEvidence.document(snapshot, returned,
                 if (cursor.selector is ReadSelector.Query) "SEARCH" else "READ"),
             "coverage_scope" to "仅统计已解析文本；图片、无法识别及尚未提取的部分不在全文覆盖范围内",
@@ -396,6 +406,14 @@ class NovexDocumentTools(
         "truncated" to truncated,
     )
 
+    private fun requestedSnapshot(ref: NovexResourceRef, revision: String?): NovexDocumentSnapshot? {
+        require(revision == null || revision.matches(Regex("[0-9a-f]{64}"))) { "来源修订无效；请原样使用工具返回的 source_revision" }
+        return if (revision == null) snapshots.find(ref) else snapshots.findRevision(ref, revision)
+    }
+
+    private fun missingRevisionOrDocument(ref: NovexResourceRef, revision: String?) = if (revision == null) notFound(ref)
+        else NovexToolResult.failure("document.revision_not_found", "指定来源修订不可读；不会用当前版本代替。请核对笔记来源或重新检查文档。", affectedRefs = listOf(ref))
+
     private fun notFound(ref: NovexResourceRef) = NovexToolResult.failure(
         code = "document.not_found",
         summary = "找不到指定文档",
@@ -470,8 +488,9 @@ class NovexDocumentTools(
             is ReadSelector.Positions -> selector.put("first", value.first).put("last", value.last)
         }
         val payload = JSONObject()
-            .put("version", 1)
-            .put("document", snapshot.sha256.take(12).lowercase())
+            .put("version", 2)
+            .put("document", snapshot.sha256.lowercase())
+            .put("source_revision", NovexSourceReadEvidence.documentRevision(snapshot))
             .put("block", position.blockIndex)
             .put("offset", position.charOffset)
             .put("selector", selector)
@@ -482,8 +501,9 @@ class NovexDocumentTools(
     private fun decodeCursor(value: String, snapshot: NovexDocumentSnapshot): CursorPosition? {
         return runCatching {
             val payload = JSONObject(String(Base64.getUrlDecoder().decode(value), Charsets.UTF_8))
-            if (payload.getInt("version") != 1) return null
-            if (payload.getString("document") != snapshot.sha256.take(12).lowercase()) return null
+            if (payload.getInt("version") != 2) return null
+            if (payload.getString("document") != snapshot.sha256.lowercase()) return null
+            if (payload.getString("source_revision") != NovexSourceReadEvidence.documentRevision(snapshot)) return null
             val blockIndex = payload.getInt("block")
             val charOffset = payload.getInt("offset")
             val block = snapshot.blocks.getOrNull(blockIndex) ?: return null
