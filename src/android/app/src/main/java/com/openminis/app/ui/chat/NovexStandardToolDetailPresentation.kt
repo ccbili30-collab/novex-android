@@ -38,6 +38,10 @@ internal data class NovexStandardToolDetailPresentation(
 )
 
 private val standardToolTitles = mapOf(
+    "novex_write_card" to "创建并填写卡片",
+    "novex_write_module" to "保存模块",
+    "novex_move_module" to "调整模块顺序",
+    "novex_link_cards" to "设置卡片引用",
     "document_inspect" to "检查文档",
     "document_read" to "读取文档",
     "workspace_inspect" to "检查工作区",
@@ -58,6 +62,9 @@ private val standardToolTitles = mapOf(
 )
 
 private val detailFieldLabels = mapOf(
+    "kind" to "卡片类型", "name" to "名称", "card_id" to "卡片编号",
+    "saved" to "是否保存", "verification" to "回读核验", "created_cards" to "已创建卡片",
+    "modules" to "模块", "position" to "顺序", "source_revision" to "来源修订",
     "document_ref" to "文档",
     "collection_ref" to "资料集合",
     "block_ids" to "内容块",
@@ -86,6 +93,7 @@ private val detailFieldLabels = mapOf(
 )
 
 private val detailFieldOrder = listOf(
+    "kind", "name", "card_id", "saved", "verification", "created_cards", "modules", "position", "source_revision",
     "document_ref", "collection_ref", "area", "path", "file_ref", "subject_kind", "subject_id",
     "module_id", "query", "page_range", "block_ids", "operation", "changes", "controls", "cursor",
     "status", "type", "title", "summary", "message", "proposal_id", "confirmation_phrase",
@@ -161,7 +169,9 @@ private fun Any?.toCompactText(): String = when (this) {
 
 private fun String.translateKnownValue(key: String): String = when (key to lowercase()) {
     "status" to "ok", "status" to "success", "status" to "completed" -> "成功"
-    "status" to "confirmation_required" -> "等待确认"
+    "status" to "confirmation_required", "status" to "waiting_confirmation" -> "等待确认"
+    "status" to "saved_verified" -> "已保存并回读核验"
+    "status" to "saved_needs_review" -> "已保存，仍需核验"
     "status" to "failed", "status" to "error" -> "失败"
     "subject_kind" to "world" -> "世界"
     "subject_kind" to "character" -> "角色"

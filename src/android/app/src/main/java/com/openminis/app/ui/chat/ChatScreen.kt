@@ -2078,6 +2078,13 @@ fun ChatScreen(
                 var flatItems by remember(sessionId, showAssistantIdentity) {
                     mutableStateOf<List<FlatChatItem>>(emptyList())
                 }
+                var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
+                openedProcess?.let { process ->
+                    NovexExecutionProcessDialog(process, onDismiss = { openedProcess = null }, onOpenTool = {
+                        openedProcess = null
+                        viewModel.openToolDetail(it)
+                    })
+                }
                 var transcriptViewportReady by remember(viewModel) {
                     mutableStateOf(viewModel.isTranscriptViewportPositioned)
                 }
@@ -2278,7 +2285,7 @@ fun ChatScreen(
                                     )
                                 }
                             }
-                            flatItems = if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows
+                            flatItems = foldNovexExecutionProcesses(if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows)
                             com.openminis.app.diagnostics.StreamPerfMonitor.tick(
                                 flattenNanos = System.nanoTime() - tickStartNs,
                                 frozenReused = frozenReused,
@@ -2362,6 +2369,7 @@ fun ChatScreen(
                     id.substringBefore('#')
                 fun FlatChatItem.isCompacted(): Boolean = when (this) {
                     is FlatChatItem.UserBubble -> grayedMap[originalMessageId(message.id)] == true
+                    is FlatChatItem.AssistantProcess -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantHeader -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantText -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantMarkdownBlock -> grayedMap[originalMessageId(messageId)] == true
@@ -2849,6 +2857,7 @@ fun ChatScreen(
                                     )
                                 }
                             }
+                            is FlatChatItem.AssistantProcess -> NovexExecutionProcessRow(item) { openedProcess = item }
                             is FlatChatItem.AssistantToolUse -> {
                                 if (item.block.toolName == "present_choices") {
                                     NovexChoiceButtons(item.block.toolArgs) { choice ->
@@ -2915,7 +2924,12 @@ fun ChatScreen(
                                     inputFocusRequester.requestFocus()
                                 }
                             }
-                            is FlatChatItem.AssistantInfo -> FallbackInfoBlock(
+                            is FlatChatItem.AssistantInfo -> if (item.block.toolName == NovexCardCreationTask.MARKER) {
+                                NovexCardTaskStatusRow(item.block, !isStreaming) {
+                                    viewModel.setInputText("继续核对并完成刚才的卡片任务；先检查已有成果，不重复创建。")
+                                    inputFocusRequester.requestFocus()
+                                }
+                            } else FallbackInfoBlock(
                                 block = item.block,
                                 // Only the compact-divider info block should
                                 // surface a "Revert Compact" button on its

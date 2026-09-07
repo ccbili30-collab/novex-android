@@ -1076,7 +1076,7 @@ private fun NovexManagedChange.creationLabel(): String = when (this) {
 }
 
 /** Host-supplied real user turns only. This permits a proposal, never a write. */
-private fun NovexManagedChange.matchesCreationTask(latest: String, prior: List<String>): Boolean {
+internal fun NovexManagedChange.matchesCreationTask(latest: String, prior: List<String>): Boolean {
     if (endsCreationTask(latest)) return false
     if (matchesCreationRequest(latest)) return true
     val continuation = latest.isBlank() || listOf(

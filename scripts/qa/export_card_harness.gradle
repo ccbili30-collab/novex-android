@@ -1,0 +1,27 @@
+// Exports the real Android unit-test runtime for local private-fixture execution.
+// It contains compiled code and dependencies, never user documents or API credentials.
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.project(':app')
+    def tests = app.tasks.named('testPreviewDebugUnitTest', Test)
+    app.tasks.register('exportCardHarness') {
+        dependsOn('compilePreviewDebugUnitTestKotlin')
+        doLast {
+            def output = new File(app.buildDir, 'card-harness')
+            app.delete(output)
+            output.mkdirs()
+            def paths = []
+            def files = (tests.get().testClassesDirs.files + tests.get().classpath.files).unique()
+            files.eachWithIndex { file, index ->
+                if (file.exists()) {
+                    def name = "classpath/${index}" + (file.isDirectory() ? '' : '.jar')
+                    def dest = new File(output, name)
+                    if (file.isDirectory()) app.copy { from(file); into(dest) }
+                    else { dest.parentFile.mkdirs(); java.nio.file.Files.copy(file.toPath(), dest.toPath()) }
+                    paths.add(name)
+                }
+            }
+            // The macOS runner can resolve the instrumented SDK through Maven on first use.
+            new File(output, 'classpath.txt').text = paths.join('\n')
+        }
+    }
+}

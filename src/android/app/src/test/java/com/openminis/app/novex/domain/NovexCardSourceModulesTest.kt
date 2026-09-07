@@ -18,7 +18,7 @@ class NovexCardSourceModulesTest {
     }
     @Test fun `47 source chapters and preamble preserve every block exactly once`() {
         val source = source()
-        val revision = NovexSourceReadEvidence.documentRevision(source)
+        val revision = NovexDocumentTools(NovexDocumentSnapshotStore { source }).documentInspect(NovexDocumentInspectRequest(source.ref)).data.getValue("source_revision") as String
         val copier = NovexCardSourceModules(NovexDocumentSnapshotStore { source }) { it == source.ref }
         val modules = copier.chapters(source.ref.value, revision)
         assertEquals(48, modules.length())
@@ -35,6 +35,6 @@ class NovexCardSourceModulesTest {
         val source = source()
         val copier = NovexCardSourceModules(NovexDocumentSnapshotStore { source }) { it == source.ref }
         assertThrows(IllegalArgumentException::class.java) { copier.chapters(source.ref.value, "b".repeat(64)) }
-        assertThrows(IllegalArgumentException::class.java) { copier.chapters("novex://documents/" + "c".repeat(64), NovexSourceReadEvidence.documentRevision(source)) }
+        assertThrows(IllegalArgumentException::class.java) { copier.chapters("novex://documents/" + "c".repeat(64), NovexDocumentTools(NovexDocumentSnapshotStore { source }).documentInspect(NovexDocumentInspectRequest(source.ref)).data.getValue("source_revision") as String) }
     }
 }

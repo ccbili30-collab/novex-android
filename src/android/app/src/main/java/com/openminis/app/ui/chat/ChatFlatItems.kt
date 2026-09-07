@@ -301,6 +301,11 @@ internal sealed class FlatChatItem {
         override fun hashCode(): Int = message.hashCode() * 31 + precededByUser.hashCode()
     }
 
+    data class AssistantProcess(val messageId: String, val rows: List<FlatChatItem>, override val key: String) : FlatChatItem() {
+        override val contentType = "execution_process"
+        val tools: List<AssistantToolUse> get() = rows.filterIsInstance<AssistantToolUse>()
+    }
+
     data class AssistantHeader(val messageId: String) : FlatChatItem() {
         override val key = "header:$messageId"
         override val contentType = "header"
@@ -561,6 +566,7 @@ internal fun buildFlatChatItems(
         while (!usedKeys.add("${item.key}#$n")) n++
         return when (item) {
             is FlatChatItem.UserBubble -> FlatChatItem.UserBubble(item.message.copy(id = "${item.message.id}#$n"), item.precededByUser)
+            is FlatChatItem.AssistantProcess -> item.copy(key = "${item.key}#$n")
             is FlatChatItem.AssistantHeader -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantText -> FlatChatItem.AssistantText(
                 messageId = "${item.messageId}#$n",

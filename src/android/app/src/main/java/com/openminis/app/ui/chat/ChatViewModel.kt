@@ -7224,6 +7224,7 @@ class ChatViewModel(
         // Some OpenAI-compatible relays intermittently flatten an explicitly
         // requested present_choices call into prose. Allow exactly one repair
         // request, restricted to that single tool, then stop visibly.
+        var nativeCardRepairAttempted = false
         var choiceRepairAttempted = false
         var forcedChoiceToolOnly = false
         // Keep the request context explicit. The retry reminder mutates the
@@ -8171,7 +8172,7 @@ class ChatViewModel(
                         ),
                     )
                     val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                    val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                    val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
                     persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 }
                 withContext(Dispatchers.Main) {
@@ -8314,6 +8315,23 @@ class ChatViewModel(
             )
 
             if (completionAction == AgentTurnCompletionAction.COMPLETE) {
+                val cardOutcome = currentNovexCardTaskOutcome(allToolBlocks)
+                if (cardOutcome != null) {
+                    allToolBlocks.add(cardOutcome.block("card-task:$turnMessageId"))
+                    if (cardOutcome.mayRepair && !nativeCardRepairAttempted &&
+                        agentTools.any { it.name == "novex_write_card" } && _promptQueue.value.isEmpty()) {
+                        nativeCardRepairAttempted = true
+                        persistAssistantTurn(buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap), lastUsage,
+                            turnReasoningContent, allToolBlocks.associateBy { it.id }, turnMessageId)
+                        agentHistory.add(LLMMessage(role = LLMMessage.Role.USER, content = "",
+                            contentParts = listOf(AgentContentPart.Text(NovexCardCreationTask.REPAIR))))
+                        withContext(Dispatchers.Main) {
+                            updateAssistantMessage(assistantId, accumulatedText, true, allToolBlocks, isAwaitingModelResponse = true)
+                        }
+                        continue
+                    }
+                }
+
                 AppLogger.info(
                     TAG_STREAM,
                     "runAgentLoop complete: model=${currentProvider.model.id} turn=$turn " +
@@ -8323,7 +8341,7 @@ class ChatViewModel(
                     updateAssistantMessage(assistantId, accumulatedText, false, allToolBlocks)
                 }
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
                 persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
@@ -8343,7 +8361,7 @@ class ChatViewModel(
             // iOS overlaying the live VM's last message over the DB value.
             run {
                 val livePreviewParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val liveMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                val liveMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
                 if (livePreviewParts.isNotEmpty()) {
                     chatRepository.updateSessionPreview(
                         realSessionId.ifEmpty { sessionId },
@@ -8675,6 +8693,9 @@ class ChatViewModel(
             // — owns the next move. Do not manufacture a tool result or make an
             // unnecessary follow-up request. Persist the visible tool card as a
             // uiToolUse below, while removing it from provider-facing history.
+            currentNovexCardTaskOutcome(allToolBlocks)?.let {
+                allToolBlocks.add(it.block("card-task:$turnMessageId"))
+            }
             if (terminalUiToolIds.isNotEmpty()) {
                 val lastHistoryIndex = agentHistory.lastIndex
                 if (lastHistoryIndex >= 0) {
@@ -8698,7 +8719,7 @@ class ChatViewModel(
                 }
 
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
                 val assistantDbId = persistAssistantTurn(
                     turnParts,
                     lastUsage,
@@ -8751,7 +8772,7 @@ class ChatViewModel(
             // Capture the persisted DB id so we can back-fill agentHistory's last
             // assistant entry — compact-marker boundary resolution depends on it.
             val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-            val blockMeta = allToolBlocks.filter { it.kind == "tool_use" }.associateBy { it.id }
+            val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
             val assistantDbId = persistAssistantTurn(
                 turnParts,
                 lastUsage,
@@ -8830,6 +8851,7 @@ class ChatViewModel(
                     // (turnStartBlockIndex captures allToolBlocks.size at
                     // iteration top, so clearing means new turn's blocks
                     // span [0..size).
+                    nativeCardRepairAttempted = false
                     assistantId = handled.newAssistantId
                     accumulatedText = ""
                     allToolBlocks.clear()
@@ -9528,6 +9550,30 @@ class ChatViewModel(
         return com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(
             chatRepository.loadActiveMessages(sid),
         )
+    }
+
+    private suspend fun currentNovexCardTaskOutcome(blocks: List<AssistantBlock>): NovexCardCreationTask.Outcome? {
+        val rows = chatRepository.loadActiveMessages(realSessionId.ifEmpty { sessionId })
+        val requests = com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(rows)
+        val start = rows.indexOfLast { row ->
+            row.role == "user" && com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(listOf(row))
+                .singleOrNull()?.let { NovexCardCreationTask.evaluate(listOf(it), emptyList()) != null } == true
+        }
+        val persistedWrites = if (start < 0) emptyList() else rows.drop(start).flatMap { row ->
+            runCatching {
+                val parts = org.json.JSONArray(row.partsJson)
+                (0 until parts.length()).mapNotNull { index ->
+                    val part = parts.getJSONObject(index)
+                    val value = part.optJSONObject("value")
+                    if (part.optString("type") != "toolResult" || value == null ||
+                        value.optString("name") !in (com.openminis.app.tools.NovexCardFileTools.names + NovexManagementTools.APPLY)) null
+                    else AssistantBlock(value.optString("toolUseId"), "tool_use", value.optString("output"),
+                        toolStatus = if (value.optBoolean("success")) ToolBlockStatus.SUCCESS else ToolBlockStatus.FAILED,
+                        toolName = value.optString("name"))
+                }
+            }.getOrDefault(emptyList())
+        }
+        return NovexCardCreationTask.evaluate(requests, persistedWrites + blocks)
     }
 
     private suspend fun latestExplicitUserText(): String = currentNovexUserRequests().lastOrNull().orEmpty()
@@ -10614,6 +10660,10 @@ class ChatViewModel(
                 }
                 else -> { /* tool_result is persisted via persistToolResultMessage */ }
             }
+        }
+        toolBlockMeta.values.lastOrNull { it.toolName == NovexCardCreationTask.MARKER }?.let { task ->
+            if (parts.isNotEmpty()) append(",")
+            append("""{"type":"novexCardTask","value":${task.toolArgs}}""")
         }
         append("]")
     }
@@ -12463,6 +12513,12 @@ class ChatViewModel(
                                     content = t,
                                 ))
                             }
+                        }
+                        "novexCardTask" -> {
+                            val value = obj.optJSONObject("value")
+                            if (entity.role == "assistant" && value != null) blocks.add(AssistantBlock(
+                                id = "card-task:${entity.id}", kind = "info", content = value.optString("label"),
+                                toolName = NovexCardCreationTask.MARKER, toolArgs = value.toString()))
                         }
                         "toolUse", "uiToolUse" -> {
                             val value = obj.getJSONObject("value")
