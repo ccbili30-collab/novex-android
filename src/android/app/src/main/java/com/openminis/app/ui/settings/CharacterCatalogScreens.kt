@@ -114,6 +114,7 @@ fun CatalogCharacterDetailScreen(
     var missing by remember { mutableStateOf(false) }
     var selectedVersionId by rememberSaveable(characterId) { mutableStateOf<String?>(null) }
     var confirmDeleteRoot by remember { mutableStateOf(false) }
+    var copyCard by remember(characterId) { mutableStateOf(false) }
     var confirmDeleteVariant by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var confirmSharedEdit by remember { mutableStateOf<CharacterVersionEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -212,15 +213,7 @@ fun CatalogCharacterDetailScreen(
                                 .onFailure { error = it.message }
                         }
                     },
-                    onDuplicate = {
-                        scope.launch {
-                            runCatching {
-                                novex.apply(NovexCommand.DuplicateCharacter(characterId)).requireCharacter()
-                            }
-                                .onSuccess { onDuplicated(it.character.id) }
-                                .onFailure { error = it.message }
-                        }
-                    },
+                    onDuplicate = { copyCard = true },
                     onDelete = {
                         if (page.version.kind == CharacterVersionKind.VARIANT) confirmDeleteVariant = page.version
                         else confirmDeleteRoot = true
@@ -230,6 +223,9 @@ fun CatalogCharacterDetailScreen(
             }
         }
     }
+    if(copyCard) com.openminis.app.ui.novex.NovexCardCopyDialog(
+        com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.CHARACTER, characterId),
+        onDismiss = { copyCard = false }, onCopied = { copyCard = false; onDuplicated(it.root.id) })
     if (versionSheet && current != null && selected != null) ModalBottomSheet(
         onDismissRequest = { versionSheet = false },
         containerColor = NovexColors.Background,

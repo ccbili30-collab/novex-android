@@ -160,6 +160,7 @@ fun CatalogInteractiveFictionDetailScreen(
             ) { CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp) }
             else -> {
                 InteractiveFictionPrimaryContent(current, onOpenModule)
+                com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.GAME, projectId))
                 com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId))
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(
                     com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenSession)

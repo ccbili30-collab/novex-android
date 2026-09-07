@@ -48,6 +48,7 @@ import org.json.JSONObject
 interface NovexWorkspace {
     suspend fun characterRevisions(versionId: String): List<NovexCharacterRevision> = emptyList()
     suspend fun cardRevisions(subject: NovexContentAddress): List<NovexCardRevision> = emptyList()
+    suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy = NovexCardCopyPolicy.DETACH): NovexCardCopyPlan = error("尚未配置卡片复制")
     suspend fun versionRelations(versionId: String): List<NovexCharacterVersionRelation> = emptyList()
     suspend fun referenceStatus(target: NovexReferenceTarget): NovexReferenceTargetStatus = NovexReferenceTargetStatus.MISSING_CARD
     suspend fun referencesFrom(source: NovexContentAddress): List<NovexCardReference> = emptyList()
@@ -208,6 +209,8 @@ sealed interface NovexCommand {
         val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
+    data class CopyCard(val plan: NovexCardCopyPlan, val now: Long = System.currentTimeMillis()) : NovexCommand
+
     data class DuplicateCharacter(
         val characterId: String,
         val now: Long = System.currentTimeMillis(),
@@ -358,6 +361,7 @@ sealed interface NovexCommand {
 }
 
 sealed interface NovexChange {
+    data class CardsCopied(val result: NovexCardCopyResult) : NovexChange
     data class CardReferenceSaved(val reference: NovexCardReference) : NovexChange
     data class ConversationDraftsPrepared(val snapshot: NovexConversationDraftSnapshot) : NovexChange
     data class ConversationDraftsFinalized(val result: NovexDraftFinalization) : NovexChange
@@ -507,6 +511,8 @@ internal class DefaultNovexWorkspace(
     private val characterRevisions: NovexCharacterRevisionPort = UnavailableNovexCharacterRevisions,
     private val cardRevisions: NovexCardRevisionPort = UnavailableNovexCardRevisions,
 ) : NovexWorkspace {
+    private fun cardCopy() = NovexCardCopy(this, catalog, content, media, interactiveFiction, cardReferences, versionRelations)
+    override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy) = transaction { cardCopy().prepare(root, policy) }
     private fun referencePackage() = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
         exportSingle = { kind, id -> when (kind) {
@@ -820,17 +826,11 @@ internal class DefaultNovexWorkspace(
                 }
             NovexChange.CharacterSaved(CharacterAggregate(created.character, created.original, variants))
         }
+        is NovexCommand.CopyCard -> NovexChange.CardsCopied(cardCopy().execute(command.plan, command.now))
         is NovexCommand.DuplicateCharacter -> {
-            val source = requireNotNull(catalog.character(command.characterId)) { "角色不存在" }
-            val copy = catalog.duplicateCharacter(command.characterId, command.now)
-            val moduleIds = linkedMapOf<String, String>()
-            val versionIds = source.allVersions.zip(copy.allVersions).associate { (old, new) -> old.id to new.id }
-            versionIds.forEach { (sourceId, copiedId) ->
-                moduleIds += copyVersionContents(sourceId, copiedId, command.now)
-            }
-            copyVersionReferences(versionIds, moduleIds)
-            restoreVersionRelations(versionRelations.forCharacter(source.character.id), versionIds, copy.character.id)
-            NovexChange.CharacterSaved(copy)
+            val copy = cardCopy()
+            val result = copy.execute(copy.prepare(NovexCardCopyKey(NovexCardKind.CHARACTER, command.characterId), NovexCardCopyPolicy.DETACH), command.now)
+            NovexChange.CharacterSaved(requireNotNull(catalog.character(result.root.id)))
         }
         is NovexCommand.ExportCharacter -> {
             val aggregate = requireNotNull(catalog.character(command.characterId)) { "角色不存在" }

@@ -87,6 +87,7 @@ internal class NovexCharacterRevisionJournal(
     }
 
     suspend fun resultingTargets(result: NovexChange): List<String> = when (result) {
+        is NovexChange.CardsCopied -> result.result.addresses.values.filter { it.kind == NovexContentKind.CHARACTER_VERSION }.map { it.id }
         is NovexChange.CharacterSaved -> result.character.allVersions.map { it.id }
         is NovexChange.VersionSaved -> listOf(result.version.id)
         is NovexChange.NativeCardImported -> if (result.kind == com.openminis.app.data.character.NovexCardKind.CHARACTER)
@@ -108,6 +109,7 @@ internal class NovexCharacterRevisionJournal(
 }
 
 internal fun NovexCommand.revisionTime(): Long = when (this) {
+    is NovexCommand.CopyCard -> now
     is NovexCommand.CreateWorld -> now
     is NovexCommand.SaveWorld -> now
     is NovexCommand.SaveWorldPage -> now

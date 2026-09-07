@@ -60,6 +60,11 @@ internal class NovexCardRevisionJournal(private val workspace: NovexWorkspace, p
     }
 
     suspend fun existingTargets(command: NovexCommand): List<NovexContentAddress> {
+        if(command is NovexCommand.CopyCard && command.plan.policy == NovexCardCopyPolicy.REUSE)
+            return command.plan.items.filter { it.key.kind == NovexCardKind.CHARACTER }.flatMap { item ->
+                workspace.character(item.key.id)?.worldsByVersion.orEmpty().values.flatten().map { NovexContentAddress.world(it.id) }
+            }.distinct()
+
         fun subject(type: ModuleOwnerType, id: String): NovexContentAddress? = when(type) {
             ModuleOwnerType.WORLD -> NovexContentAddress.world(id)
             ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(id)
@@ -91,6 +96,7 @@ internal class NovexCardRevisionJournal(private val workspace: NovexWorkspace, p
         return listOfNotNull(target).filter { it.kind != NovexContentKind.CHARACTER_VERSION }
     }
     fun resultingTargets(result: NovexChange): List<NovexContentAddress> = when(result) {
+        is NovexChange.CardsCopied -> result.result.addresses.values.filter { it.kind != NovexContentKind.CHARACTER_VERSION }
         is NovexChange.WorldSaved -> listOf(NovexContentAddress.world(result.world.id))
         is NovexChange.InteractiveFictionSaved -> listOf(NovexContentAddress.interactiveFiction(result.project.id))
         is NovexChange.NativeCardImported -> when(result.kind) {
