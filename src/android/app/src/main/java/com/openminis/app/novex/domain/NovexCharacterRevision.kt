@@ -108,6 +108,10 @@ internal class NovexCharacterRevisionJournal(
 }
 
 internal fun NovexCommand.revisionTime(): Long = when (this) {
+    is NovexCommand.CreateWorld -> now
+    is NovexCommand.SaveWorld -> now
+    is NovexCommand.SaveWorldPage -> now
+    is NovexCommand.SaveInteractiveFictionPage -> now
     is NovexCommand.CreateCharacter -> now
     is NovexCommand.SaveCharacterVersion -> now
     is NovexCommand.SaveCharacterPage -> now

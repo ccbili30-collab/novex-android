@@ -47,6 +47,7 @@ import org.json.JSONObject
  */
 interface NovexWorkspace {
     suspend fun characterRevisions(versionId: String): List<NovexCharacterRevision> = emptyList()
+    suspend fun cardRevisions(subject: NovexContentAddress): List<NovexCardRevision> = emptyList()
     suspend fun versionRelations(versionId: String): List<NovexCharacterVersionRelation> = emptyList()
     suspend fun referenceStatus(target: NovexReferenceTarget): NovexReferenceTargetStatus = NovexReferenceTargetStatus.MISSING_CARD
     suspend fun referencesFrom(source: NovexContentAddress): List<NovexCardReference> = emptyList()
@@ -504,6 +505,7 @@ internal class DefaultNovexWorkspace(
     private val cardReferences: NovexCardReferencePort = UnavailableNovexCardReferences,
     private val versionRelations: NovexCharacterVersionRelationPort = UnavailableNovexVersionRelations,
     private val characterRevisions: NovexCharacterRevisionPort = UnavailableNovexCharacterRevisions,
+    private val cardRevisions: NovexCardRevisionPort = UnavailableNovexCardRevisions,
 ) : NovexWorkspace {
     private fun referencePackage() = NovexReferencePackage(this,
         restoreReference = { NovexCardReferences(cardReferences, catalog, interactiveFiction, content).put(it, allowMissingTarget = true) },
@@ -649,18 +651,25 @@ internal class DefaultNovexWorkspace(
     }
 
     override suspend fun apply(command: NovexCommand): NovexChange = transaction {
-        if (characterRevisions === UnavailableNovexCharacterRevisions) return@transaction applyInsideTransaction(command)
+        val historyCommand = if (command is NovexCommand.RemoveCardReference && command.expectedSource == null)
+            command.copy(expectedSource = cardReferences.get(command.id)?.source) else command
         val history = NovexCharacterRevisionJournal(this, characterRevisions)
-        val targets = history.existingTargets(if (command is NovexCommand.RemoveCardReference && command.expectedSource == null)
-            command.copy(expectedSource = cardReferences.get(command.id)?.source) else command)
+        val cards = NovexCardRevisionJournal(this, cardRevisions)
+        val targets = if (characterRevisions === UnavailableNovexCharacterRevisions) emptyList() else history.existingTargets(historyCommand)
+        val cardTargets = if (cardRevisions === UnavailableNovexCardRevisions) emptyList() else cards.existingTargets(historyCommand)
         val at = command.revisionTime()
         targets.forEach { history.record(it, at) }
+        cardTargets.forEach { cards.record(it, at) }
         applyInsideTransaction(command).also { result ->
-            (targets + history.resultingTargets(result)).distinct().forEach { history.record(it, at) }
+            if (characterRevisions !== UnavailableNovexCharacterRevisions)
+                (targets + history.resultingTargets(result)).distinct().forEach { history.record(it, at) }
+            if (cardRevisions !== UnavailableNovexCardRevisions)
+                (cardTargets + cards.resultingTargets(result)).distinct().forEach { cards.record(it, at) }
         }
     }
 
     override suspend fun characterRevisions(versionId: String) = characterRevisions.list(versionId)
+    override suspend fun cardRevisions(subject: NovexContentAddress) = cardRevisions.list(subject)
 
     override suspend fun referenceStatus(target: NovexReferenceTarget) = NovexCardReferences(cardReferences, catalog, interactiveFiction, content).status(target)
 

@@ -29,7 +29,8 @@ class NovexCheckpointSourcePersistenceTest {
             val session = repo.createSession("model")
             repo.appendMessage(session.id, "user", """[{"type":"text","value":"倒水，没有喝水记录。"}]""", messageId = "user")
             repo.appendMessage(session.id, "assistant", """[{"type":"text","value":"另一分支已喝水。"}]""", messageId = "old-reply")
-            repo.forkReplyFrom(session.id, "old-reply")
+            // Reply alternatives share the user parent; forking at a reply continues it.
+            repo.forkReplyFrom(session.id, "user")
             repo.appendMessage(session.id, "assistant", """[{"type":"text","value":"只记录倒水，尚未饮用。"}]""", messageId = "selected-reply")
             db.close(); db = open(); repo = ChatRepository(db.chatDao())
             val path = repo.loadActiveMessages(session.id).map { it.id } + "pending-reply"

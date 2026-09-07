@@ -248,6 +248,7 @@ fun CatalogWorldDetailScreen(
                         )
                     }
                 }
+                com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.world(worldId))
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(
                     com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
                 NovexContentSection(title = "世界管理") {
