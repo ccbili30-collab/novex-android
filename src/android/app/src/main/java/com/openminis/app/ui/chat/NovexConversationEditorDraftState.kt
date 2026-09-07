@@ -58,6 +58,13 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.MountSubject(subject, access),
     )
 
+    /** Both purposes are saved together; identity and active play remain independent. */
+    fun useAndManage(subject: NovexContentAddress): NovexConversationEditorDraftState {
+        require(subject.kind == com.openminis.app.novex.domain.NovexContentKind.WORLD ||
+            subject.kind == com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION)
+        return addBackground(subject).mount(subject, ManagedAccess.EDIT)
+    }
+
     fun unmount(subject: NovexContentAddress) = apply(
         NovexConversationCommand.UnmountSubject(subject),
     )

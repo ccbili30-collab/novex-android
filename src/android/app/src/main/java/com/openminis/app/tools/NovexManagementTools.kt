@@ -16,6 +16,15 @@ object NovexManagementTools {
     const val PROPOSE = "novex_propose_content_changes"
     const val APPLY = "novex_apply_content_changes"
 
+    fun modelDefinitions(): List<AgentToolDefinition> = definitions().map { tool ->
+        if (tool.name != PROPOSE) tool else tool.copy(
+            description = "高级批量变更计划。普通创建、模块写入、排序和索引请使用专用卡片工具。需要删除、人物版本关系或成果附加等高级操作时，先用 novex_inspect_content 的 include_advanced=true 查看参数，再提交计划。受保护变更必须等待真实用户确认。",
+            parameters = mapOf("changes" to AgentToolParam("string", "一到二十项高级变更的结构化数组文本；具体字段按查看工具返回的 advanced_change_guide 填写")),
+        )
+    }
+
+    fun advancedGuide(): String = requireNotNull(definitions().single { it.name == PROPOSE }.parameters["changes"]).description
+
     fun definitions(): List<AgentToolDefinition> = listOf(
         AgentToolDefinition(
             name = READ_CONTEXT,
@@ -36,10 +45,8 @@ object NovexManagementTools {
         ),
         AgentToolDefinition(
             name = INSPECT,
-            description = "Read Novex worlds, character versions, games and modules mounted in the current " +
-                "conversation management workspace. Omit all parameters to list mounted subjects and legal " +
-                "module types with writable content_example documents and game_launch_modes, including before creating the first card. This tool " +
-                "never changes content and cannot inspect unmounted subjects. " +
+            description = "查看当前对话私有卡片和已加入管理区的卡片或模块。无参数列目录、合法模块类型、内容示例和文游启动方式。" +
+                "私有空卡可读，创建时由 novex_write_card 自动承接，填满后可继续创建更多卡；未授权的外部对象不能读取。" +
                 "同时返回 card_references（向外引用）、card_backlinks（使用来源）、reference_purposes（合法用途）；这些目录不会授予目标卡片的读写权限。",
             parameters = mapOf(
                 "subject_kind" to AgentToolParam(
@@ -47,7 +54,8 @@ object NovexManagementTools {
                     description = "Mounted subject kind.",
                     enumValues = listOf("world", "character_version", "game", "artifact"),
                 ),
-                "subject_id" to AgentToolParam("string", "Mounted subject id; required with subject_kind."),
+                "subject_id" to AgentToolParam("string", "本对话私有或已加入管理区的对象编号，与 subject_kind 一起填写。"),
+                "include_advanced" to AgentToolParam("boolean", "仅需要高级批量操作时设为 true，返回其完整参数说明。"),
                 "module_id" to AgentToolParam("string", "Optional module id owned by the selected mounted subject."),
                 "profile_section" to AgentToolParam("string", "角色总览默认只读 public（公开资料）；明确管理旧格式专属扮演资料时选择 role_instructions（专属扮演指令）。私有模块通过 private_modules（私有模块目录）的编号单独读取。明确分析保存的酒馆原件时选择 exchange_source（交换原件），按偏移和修订分段读取；背景用途不能访问原件。", enumValues = listOf("public", "role_instructions", "exchange_source")),
                 "offset" to AgentToolParam("integer", "仅用于交换原件：起始字符偏移，首次为 0，后续使用返回的 next_offset（下一偏移）。"),

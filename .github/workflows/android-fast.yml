@@ -16,6 +16,10 @@ on:
           - novex-ui
           - full
           - skip
+      export_card_harness:
+        description: "Export native card test runtime for local private fixtures"
+        default: false
+        type: boolean
       build_preview:
         description: "Build a signed non-R8 daily preview artifact"
         required: true
@@ -284,6 +288,28 @@ jobs:
           path: dist/preview-daily/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Export native card harness
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.export_card_harness }}
+        working-directory: src/android
+        env:
+          NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
+          NOVEX_VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: >-
+          ./gradlew --daemon --console=plain --max-workers=4
+          -Dorg.gradle.daemon.idletimeout=3600000
+          -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          -I ../../scripts/qa/export_card_harness.gradle :app:exportCardHarness
+
+      - name: Upload native card harness
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.export_card_harness }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-card-harness
+          path: src/android/app/build/card-harness/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Upload test report after failure
         if: ${{ failure() }}

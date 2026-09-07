@@ -78,6 +78,20 @@ class NovexConversationEditorDraftStateTest {
         assertEquals("status", reopened.configuration.controls.single().id)
     }
 
+    @Test fun bothPurposesAndSeveralManagedGamesPreserveIdentityAndSingleActiveGame() {
+        val draft = emptyDraft().useAndManage(world).useAndManage(role)
+            .mount(NovexContentAddress.interactiveFiction("game-1"), ManagedAccess.EDIT)
+            .mount(NovexContentAddress.interactiveFiction("game-2"), ManagedAccess.EDIT)
+        assertEquals(2, draft.configuration.backgroundSettings.size)
+        assertEquals(4, draft.configuration.managedSubjects.size)
+        assertEquals(AnswerIdentity.Nova, draft.configuration.answerIdentity)
+        assertEquals(null, draft.configuration.activeInteractiveFiction)
+        val reopened = NovexConversationEditorDraftState.from("chat-1", draft.toSettings())
+        assertEquals(draft.configuration, reopened.configuration)
+        assertEquals(1, draft.removeBackground(world).configuration.backgroundSettings.size)
+        assertEquals(4, draft.removeBackground(world).configuration.managedSubjects.size)
+    }
+
     private fun emptyDraft() = NovexConversationEditorDraftState.from(
         conversationId = "chat-1",
         settings = ConversationSettingsSnapshot(

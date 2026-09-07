@@ -90,7 +90,7 @@ private val imageStylePresets = listOf(
     ImageStylePreset("像素艺术", "精细像素艺术风格，统一像素密度与有限色板。"),
 )
 
-private enum class ConversationPicker { ANSWER, BACKGROUND, GAME, GAME_REFERENCE, MANAGED }
+private enum class ConversationPicker { ANSWER, BACKGROUND, GAME, GAME_REFERENCE, MANAGED, BOTH }
 
 @Composable
 fun ConversationSettingsScreen(
@@ -348,6 +348,7 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
+            NovexTextActionRow("同时用作背景并允许管理", onClick = { picker = ConversationPicker.BOTH })
             NovexDivider(Modifier.padding(horizontal = 16.dp))
             NovexTextField(
                 label = "玩家身份说明",
@@ -483,6 +484,7 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("挂载世界、角色、文游或文档", onClick = { picker = ConversationPicker.MANAGED })
+            NovexTextActionRow("同时用作背景并允许管理", onClick = { picker = ConversationPicker.BOTH })
         }
 
         NovexEditorSection(
@@ -855,7 +857,7 @@ private fun pickerActions(
         .filter { it.address.kind == NovexContentKind.WORLD || it.address.kind == NovexContentKind.CHARACTER_VERSION }
         .filterNot { option -> draft.configuration.backgroundSettings.any { it.subject == option.address } }
         .map { option ->
-            NovexSelectionAction("${option.kindLabel} · ${option.label}") {
+            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "用于背景；不改变回答身份，不授予编辑权限") {
                 update(draft.addBackground(option.address))
             }
         }
@@ -873,8 +875,17 @@ private fun pickerActions(
     ConversationPicker.MANAGED -> options
         .filterNot { option -> draft.configuration.managedSubjects.any { it.subject == option.address } }
         .map { option ->
-            NovexSelectionAction("${option.kindLabel} · ${option.label}") {
+            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "允许管理原件；不自动采用正文、不切换身份、不启动文游，可挂载多张") {
                 update(draft.mount(option.address, ManagedAccess.EDIT))
+            }
+        }
+    ConversationPicker.BOTH -> options
+        .filter { it.address.kind == NovexContentKind.WORLD || it.address.kind == NovexContentKind.CHARACTER_VERSION }
+        .filterNot { option -> draft.configuration.backgroundSettings.any { it.subject == option.address } &&
+            draft.configuration.managedSubjects.any { it.subject == option.address && it.access == ManagedAccess.EDIT } }
+        .map { option ->
+            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "采用背景并允许管理原件；后续编辑不自动刷新采用内容") {
+                update(draft.useAndManage(option.address))
             }
         }
 }
@@ -885,6 +896,7 @@ private fun ConversationPicker.pickerTitle(): String = when (this) {
     ConversationPicker.GAME -> "选择活动文游"
     ConversationPicker.GAME_REFERENCE -> "挂载只读文游资料"
     ConversationPicker.MANAGED -> "添加管理挂载"
+    ConversationPicker.BOTH -> "同时使用与管理世界或角色"
 }
 
 @Composable
