@@ -23,7 +23,7 @@ import java.io.File
 @Config(application = Application::class, sdk = [28])
 class NovexCardFileServiceTest {
     @get:Rule val folder = TemporaryFolder()
-    @Test(timeout = 60000) fun `private directory supports repeated creation editing order and links with exact readback`() = runBlocking {
+    @Test(timeout = 60000) fun `private directory supports repeated creation editing order and links with exact readback`() = runBlocking<Unit> {
         var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(folder.root, "cards.db").absolutePath).allowMainThreadQueries().build()
         try {
             var workspace = NovexWorkspaceFactory.create(db, File(folder.root, "media"))
@@ -70,7 +70,7 @@ class NovexCardFileServiceTest {
             assertEquals(5, workspace.conversationDrafts("mine")!!.completedWrites.size)
         } finally { db.close() }
     }
-    @Test fun `explicit plural request can create identical cards and does not hit a one card ceiling`() = runBlocking {
+    @Test fun `explicit plural request can create identical cards and does not hit a one card ceiling`() = runBlocking<Unit> {
         val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "plural-media"))
