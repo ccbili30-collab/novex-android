@@ -974,6 +974,9 @@ class ChatViewModel(
     val novexLearningResponsePreview: StateFlow<String?> = _novexLearningResponsePreview.asStateFlow()
     private var novexLearningResponsePreviewRequest = 0
     private val _novexLearningDetails = MutableStateFlow<NovexLearningState?>(null)
+    private val _novexCheckpoints = MutableStateFlow<List<com.openminis.app.novex.domain.NovexCheckpointRecord>?>(null)
+    val novexCheckpoints: StateFlow<List<com.openminis.app.novex.domain.NovexCheckpointRecord>?> = _novexCheckpoints.asStateFlow()
+    private var novexCheckpointRequest = 0
     val novexLearningDetails: StateFlow<NovexLearningState?> = _novexLearningDetails.asStateFlow()
     private val _novexLearningReadCoverage = MutableStateFlow<List<com.openminis.app.novex.domain.NovexSourceReadCoverage>>(emptyList())
     val novexLearningReadCoverage = _novexLearningReadCoverage.asStateFlow()
@@ -3331,6 +3334,9 @@ class ChatViewModel(
                 )
             }
         }
+        com.openminis.app.novex.domain.NovexCheckpointContinuation(novexConversationWorkspaceStore).prepare(configuration,
+            com.openminis.app.novex.domain.NovexConversationWorkspaceScope(configuration.conversationId, activeBranchPathIds, requestMessageId))
+            ?.let { candidates += it }
         if (candidates.isEmpty()) return null
 
         val window = effectiveContextWindowTokens() ?: 128_000
@@ -9511,7 +9517,7 @@ class ChatViewModel(
         }
     }
 
-    private fun executeSaveCheckpointTool(
+    private suspend fun executeSaveCheckpointTool(
         argsJson: String,
         replyBranchId: String,
         sourceMessageId: String,
@@ -9535,15 +9541,19 @@ class ChatViewModel(
                 visibleBranchIds = activeBranchPathIds,
                 writeBranchId = replyBranchId,
             )
+            val configuration = currentNovexConfiguration()
+            val sourceRows = chatRepository.loadMessages(scope.conversationId)
+            val sourcePath = (scope.visibleBranchIds + replyBranchId).distinct()
             val checkpoint = com.openminis.app.novex.domain.NovexPlaythroughCheckpointFactory.create(
-                id = java.util.UUID.randomUUID().toString(),
-                configuration = currentNovexConfiguration(),
-                activePathIds = activeBranchPathIds,
+                id = com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("${scope.conversationId}|$replyBranchId|$toolCallId"),
+                configuration = configuration,
+                activePathIds = sourcePath,
                 writeBranchId = replyBranchId,
                 name = name,
                 summary = summary,
                 stateJson = stateJson,
                 createdAtMillis = System.currentTimeMillis(),
+                sourceEvents = com.openminis.app.novex.adapter.NovexCheckpointSourceCapture.capture(scope.conversationId, sourcePath, sourceRows),
             )
             val entry = com.openminis.app.novex.domain.NovexPlaythroughCheckpointWriter(
                 novexConversationWorkspaceStore,
@@ -9559,11 +9569,13 @@ class ChatViewModel(
             )
             val result = com.openminis.app.novex.domain.NovexToolResult.success(
                 code = "playthrough.checkpoint_saved",
-                summary = "存档“$name”已保存",
+                summary = "存档“$name”已保存；模型摘要尚未核验，续接应核对原始消息与软件状态",
                 data = mapOf(
                     "checkpoint_id" to checkpoint.id,
                     "workspace_ref" to entry.workspaceRef.value,
                     "source_branch" to checkpoint.branchId,
+                    "model_summary_status" to "unverified_auxiliary",
+                    "source_read_tool" to "workspace_read",
                 ),
                 affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
                 sideEffect = com.openminis.app.novex.domain.NovexToolSideEffect.SESSION_REVERSIBLE,
@@ -9574,6 +9586,7 @@ class ChatViewModel(
                 toolTitle = "存档完成",
             )
         }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
             val result = com.openminis.app.novex.domain.NovexToolResult.failure(
                 code = "playthrough.checkpoint_failed",
                 summary = error.message?.takeIf(String::isNotBlank) ?: "存档失败，请稍后重试",
@@ -12855,10 +12868,34 @@ class ChatViewModel(
     }
 
     fun closeNovexLearningDetails() {
+        closeNovexCheckpoints()
         novexLearningDetailsRequest++
         _novexLearningDetails.value = null
         _novexLearningReadCoverage.value = emptyList()
         _novexLearningCollections.value = null
+    }
+
+    fun closeNovexCheckpoints() {
+        novexCheckpointRequest++
+        _novexCheckpoints.value = null
+    }
+
+    fun showNovexCheckpoints() {
+        closeNovexLearningDetails()
+        val request = ++novexCheckpointRequest
+        val sid = activeSessionId
+        val path = activeBranchPathIds.toList()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val records = com.openminis.app.novex.domain.NovexCheckpointContinuation(novexConversationWorkspaceStore).inspect(
+                    com.openminis.app.novex.domain.NovexConversationWorkspaceScope(sid, path,
+                        com.openminis.app.novex.domain.NovexConversationWorkspaceScope.ROOT_BRANCH))
+                if (request == novexCheckpointRequest && activeSessionId == sid && activeBranchPathIds == path) _novexCheckpoints.value = records
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (request == novexCheckpointRequest && activeSessionId == sid) _novexLearningError.value = "存档列表暂不可读：${failure.message}"
+            }
+        }
     }
 
     fun showNovexLearningCollections() {

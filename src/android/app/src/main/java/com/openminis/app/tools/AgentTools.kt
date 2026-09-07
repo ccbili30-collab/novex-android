@@ -95,10 +95,12 @@ object AgentTools {
         name = "save_checkpoint",
         description = "Persist one structured, branch-local Novex checkpoint for the current story. Use when the user " +
             "asks to save, before a rollback, or at a major turning point explicitly allowed by the world's rules. " +
-            "Include all facts needed to continue without relying on old chat context.",
+            "The application captures persisted original branch messages and numeric state automatically. " +
+            "Your summary and state_json remain unverified auxiliary organization; saving does not verify their truth. " +
+            "When continuing, read the saved workspace_ref and compare original messages and current software state before treating a summary as established history.",
         parameters = mapOf(
             "name" to AgentToolParam("string", "Short checkpoint name."),
-            "summary" to AgentToolParam("string", "Concise human-readable continuation summary."),
+            "summary" to AgentToolParam("string", "Concise human-readable auxiliary continuation summary. Preserve uncertainty; do not invent actions, causes or chronology."),
             "state_json" to AgentToolParam(
                 "string",
                 "One JSON object containing time, place, characters, relationships, inventory, world events, " +

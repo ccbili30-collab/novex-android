@@ -179,6 +179,7 @@ class NovexConversationWorkspaceTools(
     }
 
     fun workspaceWrite(request: NovexWorkspaceWriteRequest): NovexToolResult {
+        if (nativeCheckpointPath(request.area, request.relativePath)) return nativeCheckpointOnly()
         if (!request.area.modelWritable) {
             return NovexToolResult.failure(
                 code = "workspace.area_read_only",
@@ -228,6 +229,7 @@ class NovexConversationWorkspaceTools(
 
     fun workspaceEdit(request: NovexWorkspaceEditRequest): NovexToolResult {
         val entry = store.find(scope, request.workspaceRef) ?: return notFound(request.workspaceRef)
+        if (nativeCheckpointPath(entry.workspaceRef.area, entry.workspaceRef.relativePath)) return nativeCheckpointOnly()
         if (!entry.workspaceRef.area.modelWritable) {
             return NovexToolResult.failure(
                 code = "workspace.area_read_only",
@@ -387,6 +389,7 @@ class NovexConversationWorkspaceTools(
     ): NovexToolResult {
         val area = requireNotNull(request.outputArea)
         val path = requireNotNull(request.outputPath)
+        if (nativeCheckpointPath(area, path)) return nativeCheckpointOnly()
         val existing = store.inspect(scope).entries.firstOrNull {
             it.workspaceRef.area == area && it.workspaceRef.relativePath == path
         }
@@ -418,6 +421,15 @@ class NovexConversationWorkspaceTools(
         is JSONArray -> value.toString(indent)
         else -> throw IllegalArgumentException("JSON 根必须是对象或数组")
     }
+
+    private fun nativeCheckpointPath(area: NovexWorkspaceArea, path: String): Boolean =
+        area == NovexWorkspaceArea.SAVES && runCatching { NovexWorkspaceFileRef.create(scope, area, path).relativePath }
+            .getOrDefault(path).let { it.startsWith("checkpoint-") && it.endsWith(".json") && '/' !in it }
+
+    private fun nativeCheckpointOnly() = NovexToolResult.failure(
+        code = "workspace.native_checkpoint_required",
+        summary = "正式存档保留软件状态和原始消息依据，不能用通用文件工具覆盖或伪造；请读取已有存档，另存时使用保存进度工具",
+    )
 
     private fun editConflict(entry: NovexWorkspaceEntry) = NovexToolResult.failure(
         code = "workspace.edit_conflict",

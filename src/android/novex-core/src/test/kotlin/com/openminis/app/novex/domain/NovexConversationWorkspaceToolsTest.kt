@@ -20,6 +20,21 @@ class NovexConversationWorkspaceToolsTest {
     private val secondReply = "assistant-second"
 
     @Test
+    fun `formal checkpoint paths cannot be created or edited through generic model tools`() {
+        val scope = scope(firstReply)
+        val store = FileNovexConversationWorkspaceStore(temporaryFolder.newFolder("native-saves"))
+        val tools = NovexConversationWorkspaceTools(scope, store)
+        assertEquals("workspace.native_checkpoint_required", tools.workspaceWrite(
+            NovexWorkspaceWriteRequest(NovexWorkspaceArea.SAVES, "checkpoint-1.json", "{}")).code)
+        val entry = store.writeText(scope, NovexWorkspaceArea.SAVES, "checkpoint-1.json", "{\"version\":2}", "application/json",
+            NovexWorkspaceProvenance(scope.conversationId, scope.writeBranchId))
+        assertTrue(tools.workspaceRead(NovexWorkspaceReadRequest(entry.workspaceRef)).ok)
+        assertEquals("workspace.native_checkpoint_required", tools.workspaceEdit(
+            NovexWorkspaceEditRequest(entry.workspaceRef, entry.sha256, 0, 1, "9")).code)
+        assertEquals("{\"version\":2}", store.readBytes(scope, entry.workspaceRef).toString(Charsets.UTF_8))
+    }
+
+    @Test
     fun `logical references never expose device paths or allow path escape`() {
         val scope = scope(firstReply)
         val ref = NovexWorkspaceFileRef.create(

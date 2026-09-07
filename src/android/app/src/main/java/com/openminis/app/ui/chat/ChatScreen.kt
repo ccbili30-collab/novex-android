@@ -407,6 +407,7 @@ fun ChatScreen(
     val novexLearningError by viewModel.novexLearningError.collectAsState()
     val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
     val novexLearningDetails by viewModel.novexLearningDetails.collectAsState()
+    val novexCheckpoints by viewModel.novexCheckpoints.collectAsState()
     val novexLearningReadCoverage by viewModel.novexLearningReadCoverage.collectAsState()
     val novexLearningCollections by viewModel.novexLearningCollections.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1867,6 +1868,8 @@ fun ChatScreen(
                             )
                             add(NovexMenuAction("资料整理进度", R.drawable.ic_phosphor_brain,
                                 onClick = viewModel::showNovexLearningCollections))
+                            add(NovexMenuAction("存档与原始依据", R.drawable.ic_phosphor_note_pencil,
+                                onClick = viewModel::showNovexCheckpoints))
                             if (immersiveProfile.usesRolePresentation) {
                                 add(
                                     NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {
@@ -5435,6 +5438,7 @@ fun ChatScreen(
         NovexNoticeDialog(title = "最近一次模型返回", message = message,
             onDismiss = viewModel::closeNovexLearningResponsePreview)
     }
+    novexCheckpoints?.let { NovexCheckpointDetails(it, viewModel::closeNovexCheckpoints) }
     if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
         NovexDecisionDialog(
             title = "资料整理已停止",
