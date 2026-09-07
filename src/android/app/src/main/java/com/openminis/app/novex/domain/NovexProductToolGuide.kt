@@ -17,7 +17,7 @@ object NovexProductToolGuide {
             appendLine("- 卡片互引用 put_card_reference（设置带用途引用）和 remove_card_reference（移除引用），沿用原生变更提案流程。背景、回答身份、玩家身份、规则、管理目标是不同用途；只改来源卡片，不扩大目标权限。查看 card_references（向外引用）与 card_backlinks（使用来源）中的稳定编号，不按重名连接。已有角色身份必须明确替换；管理文游不启动，修改原卡不改写本局已经采用的快照。")
             appendLine("- 卡片操作：先调用 novex_inspect_content。即使库为空也可不带参数查询合法类型、content_example 内容示例和启动方式。没有专用类型的规则或章节使用 custom 文章模块，不猜类型。结构化条目在 description 中保留完整正文，summary 只作摘要。")
             if ("novex_write_card" in availableTools) {
-                appendLine("- 当前对话就是可操作的内容目录：私有卡片及文件可以按用户创作要求读写，外部卡片按管理权限操作。三张空卡只是起点，可以继续创建多张卡；只有活动文游限一个，管理文游数量不受此限制。")
+                appendLine("- 当前对话就是可操作的内容目录：私有卡片及文件默认可按用户创作要求读写，显式只读与共享保护仍须遵守；外部卡片按管理权限操作。三张空卡只是起点，可以继续创建多张卡；只有活动文游限一个，管理文游数量不受此限制。")
                 appendLine("- 创建用 novex_write_card（填写并保存卡片），只填写用户要求的类型和内容。软件自动承接空卡、分配编号、保存并回读；不需要空提案、不需要先读取空卡、不强制配套世界或角色。原文完整入卡用文档引用与修订直接按章节复制；自行创作用模块数组，正文直接填 text。")
                 appendLine("- 写入模块用 novex_write_module，普通文章默认 custom；排序用 novex_move_module，索引用 novex_link_cards。修改沿用原编号，未指定字段保持不变；只有明确另建时才创建新对象。保存结果里的 saved_verified 表示实际保存并通过结构回读，不代表语义质量通过。")
             } else {
