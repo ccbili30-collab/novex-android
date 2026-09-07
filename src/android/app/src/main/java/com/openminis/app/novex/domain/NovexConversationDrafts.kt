@@ -20,10 +20,19 @@ data class NovexDraftWriteReservation(
     val planJson: String,
 )
 
+data class NovexManagementWriteReceipt(
+    val id: String,
+    val planJson: String,
+    val appliedChanges: Int,
+    val createdSubjects: List<NovexContentAddress>,
+    val completedAt: Long,
+)
+
 data class NovexConversationDraftSnapshot(
     val conversationId: String,
     val cards: List<NovexConversationDraftCard>,
     val pendingWrites: List<NovexDraftWriteReservation> = emptyList(),
+    val completedWrites: List<NovexManagementWriteReceipt> = emptyList(),
 ) {
     init {
         require(conversationId.isNotBlank()) { "草稿来源对话不能为空" }
@@ -105,6 +114,10 @@ internal class NovexConversationDrafts(
     suspend fun reserve(conversationId: String, reservation: NovexDraftWriteReservation): NovexConversationDraftSnapshot {
         require(reservation.id.isNotBlank() && reservation.planJson.isNotBlank()) { "待写入计划不能为空" }
         val before = requireNotNull(ownership.load(conversationId)) { "对话草稿尚未准备好" }
+        require(before.completedWrites.none { it.id == reservation.id }) { "此计划已经写入，请读取完成回执；新修改必须使用新计划编号" }
+        before.pendingWrites.singleOrNull { it.id == reservation.id }?.let {
+            require(it == reservation) { "计划编号已被其他内容使用，请生成新计划" }
+        }
         val after = before.copy(pendingWrites = before.pendingWrites.filterNot { it.id == reservation.id } + reservation)
         ownership.save(after)
         return after
@@ -113,6 +126,20 @@ internal class NovexConversationDrafts(
     suspend fun release(conversationId: String, planId: String): NovexConversationDraftSnapshot {
         val before = requireNotNull(ownership.load(conversationId)) { "对话草稿尚未准备好" }
         val after = before.copy(pendingWrites = before.pendingWrites.filterNot { it.id == planId })
+        ownership.save(after)
+        return after
+    }
+
+    suspend fun complete(conversationId: String, receipt: NovexManagementWriteReceipt): NovexConversationDraftSnapshot {
+        val before = requireNotNull(ownership.load(conversationId)) { "对话草稿尚未准备好" }
+        before.completedWrites.singleOrNull { it.id == receipt.id }?.let {
+            require(it == receipt) { "此计划已经完成，不能覆盖完成记录" }
+            return before
+        }
+        val pending = requireNotNull(before.pendingWrites.singleOrNull { it.id == receipt.id }) { "原计划已经失效" }
+        require(pending.planJson == receipt.planJson && receipt.appliedChanges >= 0) { "完成记录与原计划不一致" }
+        val after = before.copy(pendingWrites = before.pendingWrites.filterNot { it.id == receipt.id },
+            completedWrites = before.completedWrites + receipt)
         ownership.save(after)
         return after
     }
@@ -248,6 +275,12 @@ object NovexConversationDraftCodec {
                 .put("subjects", JSONArray(reservation.subjects.map { subject ->
                     JSONObject().put("kind", subject.kind.name).put("id", subject.id)
                 }))
+        })).put("completedWrites", JSONArray(snapshot.completedWrites.map { receipt ->
+            JSONObject().put("id", receipt.id).put("planJson", receipt.planJson)
+                .put("appliedChanges", receipt.appliedChanges).put("completedAt", receipt.completedAt)
+                .put("createdSubjects", JSONArray(receipt.createdSubjects.map { subject ->
+                    JSONObject().put("kind", subject.kind.name).put("id", subject.id)
+                }))
         })).toString()
 
     fun decode(raw: String): NovexConversationDraftSnapshot {
@@ -265,6 +298,13 @@ object NovexConversationDraftCodec {
             NovexDraftWriteReservation(value.getString("id"), (0 until subjects.length()).map { i ->
                 subjects.getJSONObject(i).let { NovexContentAddress(NovexContentKind.valueOf(it.getString("kind")), it.getString("id")) }
             }.toSet(), value.getString("planJson"))
+        } }.orEmpty(), completedWrites = root.optJSONArray("completedWrites")?.let { values -> List(values.length()) { index ->
+            val receipt = values.getJSONObject(index)
+            val subjects = receipt.getJSONArray("createdSubjects")
+            NovexManagementWriteReceipt(receipt.getString("id"), receipt.getString("planJson"), receipt.getInt("appliedChanges"),
+                List(subjects.length()) { i -> subjects.getJSONObject(i).let {
+                    NovexContentAddress(NovexContentKind.valueOf(it.getString("kind")), it.getString("id"))
+                } }, receipt.getLong("completedAt"))
         } }.orEmpty())
     }
 }

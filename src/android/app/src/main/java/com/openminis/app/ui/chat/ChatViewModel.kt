@@ -9088,7 +9088,7 @@ class ChatViewModel(
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
             NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson, requestMessageId, turnMessageId)
-            NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson)
+            NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson, assistantId, toolId)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
@@ -9214,18 +9214,18 @@ class ChatViewModel(
         )
     }
 
-    private suspend fun executeNovexProposeTool(argsJson: String): ToolExecutionResult =
+    private suspend fun executeNovexProposeTool(argsJson: String, replyBranchId: String, toolCallId: String): ToolExecutionResult =
         novexManagementMutex.withLock {
             runCatching {
                 prepareNovexConversationDrafts()
                 val userRequests = currentNovexUserRequests()
-                val plan = novexManagementService().propose(
+                val plan = novexApplication().database.withTransaction { novexManagementService().propose(
                     configuration = currentNovexConfiguration(),
                     changesJson = JSONObject(argsJson).jsonArrayText("changes"),
                     latestUserRequest = userRequests.lastOrNull().orEmpty(),
                     priorUserRequests = userRequests.dropLast(1),
-                    planId = java.util.UUID.randomUUID().toString(),
-                )
+                    planId = com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("$activeSessionId|$replyBranchId|$toolCallId"),
+                ) }
                 pendingNovexManagementPlans[plan.id] = plan
                 while (pendingNovexManagementPlans.size > 20) {
                     // Evict only the memory cache; the durable proposal remains recoverable.
@@ -9237,7 +9237,9 @@ class ChatViewModel(
                         appendLine("处理范围：${if (plan.requiresConfirmation) "需要确认的内容变更" else "本对话私有作品创建或整理"}")
                         appendLine("内容：${plan.summary}")
                         if (plan.impact.isNotEmpty()) appendLine("影响：${plan.impact.joinToString("；")}")
-                        if (plan.requiresConfirmation) {
+                        if (novexApplication().novexWorkspace.conversationDrafts(plan.conversationId)?.completedWrites?.any { it.id == plan.id } == true) {
+                            appendLine("该操作已经写入，请用此计划编号读取执行回执，不要另建卡片；正文仍需回读核验。")
+                        } else if (plan.requiresConfirmation) {
                             appendLine("尚未执行。请等待用户确认。")
                             append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
                         } else {
@@ -9262,7 +9264,7 @@ class ChatViewModel(
             runCatching {
                 val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
                 val plan = requireNotNull(pendingNovexManagementPlans[proposalId]
-                    ?: novexManagementService().pendingPlan(currentNovexConfiguration(), proposalId)) {
+                    ?: novexManagementService().planForExecution(currentNovexConfiguration(), proposalId)) {
                     "变更计划不存在或已失效，请重新提出变更"
                 }
                 val application = novexApplication()
@@ -9273,7 +9275,7 @@ class ChatViewModel(
                         workspace = application.novexWorkspace,
                         artifacts = application.creativeArtifactRepository,
                     ).apply(configuration, plan, confirmation)
-                    val nextConfiguration = applied.createdSubjects.fold(configuration) { value, subject ->
+                    val nextConfiguration = (if (applied.replayed) emptyList() else applied.createdSubjects).fold(configuration) { value, subject ->
                         NovexConversationConfiguration.open(value).apply(
                             NovexConversationCommand.MountSubject(subject, ManagedAccess.EDIT),
                         ).snapshot
@@ -9294,7 +9296,9 @@ class ChatViewModel(
                 ToolExecutionResult(
                     output = JSONObject().apply {
                         put("proposal_id", proposalId)
-                        put("applied_changes", result.changes.size)
+                        put("applied_changes", result.appliedChanges)
+                        put("replayed", result.replayed)
+                        put("readback_status", "已写入，正文尚未回读核验；请用原对象编号读取，不要重复创建")
                         put("created_subjects", org.json.JSONArray().apply {
                             result.createdSubjects.forEach { subject ->
                                 put(JSONObject().put("kind", subject.kind.toolValue()).put("id", subject.id))
@@ -9306,7 +9310,7 @@ class ChatViewModel(
                 )
             }.getOrElse { error ->
                 ToolExecutionResult(
-                    output = "内容没有修改：${error.message ?: "执行失败"}",
+                    output = "变更执行未完成核对：${error.message ?: "执行失败"}。请使用原计划编号核查持久回执；不要据此重复创建卡片。",
                     success = false,
                     toolTitle = "执行内容变更",
                 )

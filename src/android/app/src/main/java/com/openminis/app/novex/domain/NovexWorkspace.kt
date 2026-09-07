@@ -171,6 +171,7 @@ sealed interface NovexCommand {
     data class PutVersionRelation(val relation: NovexCharacterVersionRelation) : NovexCommand
     data class RemoveVersionRelation(val id: String, val expectedSourceVersionId: String) : NovexCommand
     data class ReserveConversationDraftWrite(val conversationId: String, val reservation: NovexDraftWriteReservation) : NovexCommand
+    data class CompleteConversationDraftWrite(val conversationId: String, val receipt: NovexManagementWriteReceipt) : NovexCommand
     data class ReleaseConversationDraftWrite(val conversationId: String, val planId: String) : NovexCommand
     data class AddConversationDraft(val conversationId: String, val kind: NovexContentKind, val now: Long = System.currentTimeMillis()) : NovexCommand
     data class PutCardReference(val reference: NovexCardReference) : NovexCommand
@@ -706,6 +707,9 @@ internal class DefaultNovexWorkspace(
     private suspend fun applyInsideTransaction(command: NovexCommand): NovexChange = when (command) {
         is NovexCommand.ReserveConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
             draftLifecycle().reserve(command.conversationId, command.reservation),
+        )
+        is NovexCommand.CompleteConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
+            draftLifecycle().complete(command.conversationId, command.receipt),
         )
         is NovexCommand.ReleaseConversationDraftWrite -> NovexChange.ConversationDraftsPrepared(
             draftLifecycle().release(command.conversationId, command.planId),

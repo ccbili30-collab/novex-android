@@ -251,9 +251,10 @@ class NovexConversationDraftPersistenceTest {
             assertEquals("帝议规则", saved.modules.single().name)
             assertTrue(saved.modules.single().contentJson.contains("完整规则正文"))
             assertTrue(workspace.interactiveFictions().isEmpty())
-            assertThrows(IllegalArgumentException::class.java) { runBlocking {
-                service.apply(config, plan, "把这些做成文游卡")
-            } }
+            val replay = service.apply(config, plan, "把这些做成文游卡")
+            assertTrue(replay.replayed)
+            assertEquals(listOf(game), replay.createdSubjects)
+            assertTrue(replay.changes.isEmpty())
             assertEquals("生生", workspace.interactiveFiction(game.id)!!.project.name)
         } finally { database.close() }
     }

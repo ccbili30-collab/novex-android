@@ -251,6 +251,8 @@ data class NovexManagementInspection(
 data class NovexManagementApplyResult(
     val changes: List<NovexChange>,
     val createdSubjects: List<NovexContentAddress>,
+    val appliedChanges: Int = changes.size,
+    val replayed: Boolean = false,
 )
 
 data class NovexManagedModuleType(
@@ -514,6 +516,16 @@ class NovexManagementService(
         planId: String,
         priorUserRequests: List<String> = emptyList(),
     ): NovexManagementPlan {
+        workspace.conversationDrafts(configuration.conversationId)?.let { journal ->
+            val previous = journal.pendingWrites.singleOrNull { it.id == planId }?.planJson
+                ?: journal.completedWrites.singleOrNull { it.id == planId }?.planJson
+            if (previous != null) {
+                require(canonicalRevisionJson(JSONObject(previous).getJSONArray("changes")) == canonicalRevisionJson(JSONArray(changesJson))) {
+                    "计划编号已用于其他内容，请用新编号提出变更"
+                }
+                return decodeOwnedPlan(configuration, planId, previous)
+            }
+        }
         val changes = NovexManagementChangeCodec.decode(changesJson)
         val facts = factsFor(changes)
         val plan = NovexManagementPolicy.plan(
@@ -542,9 +554,7 @@ class NovexManagementService(
             val subjects = change.targets(facts)
             change.isRoutinePrivateEdit() && subjects.isNotEmpty() && subjects.all { it in privateSubjects }
         }.toSet() else emptySet()
-        val expectedModules = directEdits.mapNotNull { index ->
-            (changes[index] as? NovexManagedChange.UpdateModule)?.moduleId
-        }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
+        val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
         val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
             directEditIndices = directEdits, expectedModuleContents = expectedModules,
             risk = if (targets.size == changes.size) NovexManagementRisk.CREATE_PRIVATE else plan.risk)
@@ -558,9 +568,16 @@ class NovexManagementService(
 
     suspend fun pendingPlan(configuration: NovexConversationConfigurationSnapshot, id: String): NovexManagementPlan? =
         workspace.conversationDrafts(configuration.conversationId)?.pendingWrites?.singleOrNull { it.id == id }?.let {
-            NovexManagementPlanCodec.decode(it.planJson).also { plan ->
-                require(plan.conversationId == configuration.conversationId && plan.id == id) { "保存的计划归属不一致" }
-            }
+            decodeOwnedPlan(configuration, id, it.planJson)
+        }
+
+    suspend fun planForExecution(configuration: NovexConversationConfigurationSnapshot, id: String): NovexManagementPlan? =
+        pendingPlan(configuration, id) ?: workspace.conversationDrafts(configuration.conversationId)
+            ?.completedWrites?.singleOrNull { it.id == id }?.let { decodeOwnedPlan(configuration, id, it.planJson) }
+
+    private fun decodeOwnedPlan(configuration: NovexConversationConfigurationSnapshot, id: String, raw: String) =
+        NovexManagementPlanCodec.decode(raw).also { plan ->
+            require(plan.conversationId == configuration.conversationId && plan.id == id) { "保存的计划归属不一致" }
         }
 
     suspend fun apply(
@@ -569,40 +586,53 @@ class NovexManagementService(
         confirmationText: String,
     ): NovexManagementApplyResult {
         require(plan.conversationId == configuration.conversationId) { "变更计划不属于当前对话" }
-        require(plan.isConfirmedBy(confirmationText)) { "需要用户发送“${plan.confirmationPhrase}”" }
-        val facts = factsFor(plan.changes)
-        val currentTargets = plan.changes.flatMap { it.targets(facts) }.toSet()
-        require(currentTargets == plan.targets) { "内容关系已经变化，请重新生成变更计划" }
-        currentTargets.forEach { target ->
-            require(configuration.managedSubjects.any {
-                it.subject == target && it.access == ManagedAccess.EDIT
-            }) { "管理授权已经变化，请重新生成变更计划" }
-        }
-        plan.changes.forEach { change ->
-            when (change) {
-                is NovexManagedChange.AttachArtifact -> require(change.artifactId in facts.existingArtifactIds) {
-                    "创作成果已经不存在，请重新生成变更计划"
-                }
-                is NovexManagedChange.DetachArtifact -> require(change.artifactId in facts.existingArtifactIds) {
-                    "创作成果已经不存在，请重新生成变更计划"
-                }
-                else -> Unit
-            }
-        }
-        val changes = mutableListOf<NovexChange>()
-        val created = mutableListOf<NovexContentAddress>()
+        var outcome: NovexManagementApplyResult? = null
         transaction.run {
+            val journal = workspace.conversationDrafts(configuration.conversationId)
+            journal?.completedWrites?.singleOrNull { it.id == plan.id }?.let { receipt ->
+                require(NovexManagementPlanCodec.decode(receipt.planJson) == plan) { "此编号已用于另一份变更，未执行新写入" }
+                outcome = NovexManagementApplyResult(emptyList(), receipt.createdSubjects, receipt.appliedChanges, replayed = true)
+                return@run
+            }
+            val savedPlan = journal?.pendingWrites?.singleOrNull { it.id == plan.id }
+            if (journal != null) require(savedPlan != null && NovexManagementPlanCodec.decode(savedPlan.planJson) == plan) {
+                "持久化计划不存在或已变化，请重新提出变更"
+            }
+            require(plan.isConfirmedBy(confirmationText)) { "需要用户发送“${plan.confirmationPhrase}”" }
+            val facts = factsFor(plan.changes)
+            val currentTargets = plan.changes.flatMap { it.targets(facts) }.toSet()
+            require(currentTargets == plan.targets) { "内容关系已经变化，请重新生成变更计划" }
+            currentTargets.forEach { target ->
+                require(configuration.managedSubjects.any {
+                    it.subject == target && it.access == ManagedAccess.EDIT
+                }) { "管理授权已经变化，请重新生成变更计划" }
+            }
+            plan.changes.forEach { change ->
+                when (change) {
+                    is NovexManagedChange.AttachArtifact -> require(change.artifactId in facts.existingArtifactIds) {
+                        "创作成果已经不存在，请重新生成变更计划"
+                    }
+                    is NovexManagedChange.DetachArtifact -> require(change.artifactId in facts.existingArtifactIds) {
+                        "创作成果已经不存在，请重新生成变更计划"
+                    }
+                    else -> Unit
+                }
+            }
             if (plan.directEditIndices.isNotEmpty() && !plan.requiresConfirmation) {
                 val currentPrivate = privateEditableSubjects(configuration)
                 require(plan.directEditIndices.all { index -> plan.changes[index].targets(facts).all { it in currentPrivate } }) {
                     "作品已进入共享库或被其他对象使用，请重新生成变更计划并确认影响"
                 }
-                plan.expectedModuleContents.forEach { (id, expected) ->
-                    require(workspace.module(id)?.module?.let(::moduleEditFingerprint) == expected) {
-                        "模块在提出计划后已经修改，请读取当前内容并重新生成计划：$id"
-                    }
+            }
+            val editedIds = plan.changes.mapNotNull { it.editedModuleId() }.toSet()
+            require(plan.expectedModuleContents.keys == editedIds) { "旧计划缺少完整模块修订，请读取当前内容并重新生成计划" }
+            plan.expectedModuleContents.forEach { (id, expected) ->
+                require(workspace.module(id)?.module?.let(::moduleEditFingerprint) == expected) {
+                    "模块在提出计划后已经修改，请读取当前内容并重新生成计划：$id"
                 }
             }
+            val changes = mutableListOf<NovexChange>()
+            val created = mutableListOf<NovexContentAddress>()
             plan.changes.forEachIndexed { index, managed ->
                 when (managed) {
                     is NovexManagedChange.AttachArtifact -> artifacts.attach(managed.toAttachment())
@@ -623,11 +653,13 @@ class NovexManagementService(
                     }
                 }
             }
-            if (workspace.conversationDrafts(configuration.conversationId) != null) {
-                workspace.apply(NovexCommand.ReleaseConversationDraftWrite(configuration.conversationId, plan.id))
+            if (savedPlan != null) {
+                workspace.apply(NovexCommand.CompleteConversationDraftWrite(configuration.conversationId,
+                    NovexManagementWriteReceipt(plan.id, savedPlan.planJson, plan.changes.size, created.toList(), System.currentTimeMillis())))
             }
+            outcome = NovexManagementApplyResult(changes, created, plan.changes.size)
         }
-        return NovexManagementApplyResult(changes, created)
+        return requireNotNull(outcome)
     }
 
     private suspend fun privateEditableSubjects(configuration: NovexConversationConfigurationSnapshot): Set<NovexContentAddress> {
@@ -987,8 +1019,15 @@ private fun NovexManagedChange.isRoutinePrivateEdit(): Boolean = when (this) {
     else -> false
 }
 
+private fun NovexManagedChange.editedModuleId(): String? = when (this) {
+    is NovexManagedChange.UpdateModule -> moduleId
+    is NovexManagedChange.MoveModule -> moduleId
+    is NovexManagedChange.DeleteModule -> moduleId
+    else -> null
+}
+
 private fun moduleEditFingerprint(module: com.openminis.app.data.character.ContentModuleEntity): String =
-    java.security.MessageDigest.getInstance("SHA-256").digest((module.name + "\u0000" + module.contentJson).toByteArray(Charsets.UTF_8))
+    java.security.MessageDigest.getInstance("SHA-256").digest(module.toString().toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
 private fun hasRoutineEditRequest(latest: String, prior: List<String>): Boolean {
