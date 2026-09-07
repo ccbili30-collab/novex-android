@@ -44,6 +44,10 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.RemoveBackground(subject),
     )
 
+    fun setSettingEnabled(target: com.openminis.app.novex.domain.NovexReferenceTarget, enabled: Boolean) = apply(
+        NovexConversationCommand.SetSettingEnabled(target, enabled),
+    )
+
     fun activateGame(snapshot: ActiveInteractiveFictionSnapshot, replacePlayerIdentity: Boolean = false) = apply(
         NovexConversationCommand.ActivateInteractiveFiction(snapshot, replacePlayerIdentity),
     )

@@ -10,7 +10,7 @@ data class NovexWorkConversation(val id: String, val title: String,
 object NovexConversationSubjectProjection {
     fun used(configuration: NovexConversationConfigurationSnapshot): Set<NovexContentAddress> = buildSet {
         (configuration.answerIdentity as? AnswerIdentity.CharacterVersion)?.let { add(NovexContentAddress.characterVersion(it.versionId)) }
-        addAll(configuration.backgroundSettings.map { it.subject })
+        addAll(configuration.backgroundSettings.filter { NovexSettingUse.enabled(configuration, NovexReferenceTarget(it.subject)) }.map { it.subject })
         configuration.activeInteractiveFiction?.let { add(NovexContentAddress.interactiveFiction(it.projectId)) }
         addAll(NovexEffectiveFrozenContext.sources(configuration).map { it.target.subject })
     }

@@ -45,10 +45,22 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
             cycles += traversal.cycleReferenceIds
         }
         collect(root, true, null)
+        val gameReferences = references.values.toList()
+        val backgroundAdoptions = mutableListOf<NovexAdoptedContext>()
         backgroundSettings.distinct().forEach { background ->
             val previous = adoptedContexts.singleOrNull { !it.acting && it.root == background.subject }
-            if (previous == null) collect(NovexReferenceTarget(background.subject), false, background.subject)
-            else previous.sources.forEach { addSource(it.target, it.candidates, false, background.subject, it.media) }
+            if (previous == null) {
+                // Keep this root's graph, including edges also used by the game, without mixing revisions.
+                val priorReferences = references.toMap()
+                references.clear()
+                collect(NovexReferenceTarget(background.subject), false, background.subject)
+                backgroundAdoptions += NovexAdoptedContext(background.subject, false,
+                    frozen.filterKeys { it.second == background.subject }.values.toList(), references.values.toList())
+                priorReferences.forEach { (id, reference) -> references.putIfAbsent(id, reference) }
+            } else {
+                previous.sources.forEach { addSource(it.target, it.candidates, false, background.subject, it.media) }
+                backgroundAdoptions += previous
+            }
         }
         val actor = identityReference?.let { reference ->
             require(workspace.referenceStatus(reference.target) == NovexReferenceTargetStatus.AVAILABLE) { "文游回答身份引用缺失，请修复后启动" }
@@ -73,6 +85,11 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
             put("linkedContext", JSONArray(linked.map(NovexFrozenContextCodec::encode)))
             put("adoptedMedia", JSONArray(rootMedia.map(NovexSnapshotMediaCodec::encode)))
             put("references", JSONArray().apply { (references.values + listOfNotNull(identityReference, playerReference)).forEach { put(JSONObject(NovexCardReferenceCodec.encode(it))) } })
+            put("backgroundReferences", JSONArray(gameReferences.map { JSONObject(NovexCardReferenceCodec.encode(it)) }))
+            put("conversationAdoptions", JSONArray(backgroundAdoptions.map { adopted ->
+                // Use retained copies from the media capture above.
+                NovexAdoptedContextCodec.encode(adopted.copy(sources = linked.filter { adopted.root in it.conversationRoots }))
+            }))
             put("cycleReferenceIds", JSONArray(cycles.toList()))
         }.toString()
         return NovexGamePlayerChoices.prepare(base.copy(contentJson = content, snapshotId = NovexFrozenContextCodec.digest(content),

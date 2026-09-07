@@ -65,7 +65,13 @@ class NovexConversationContextAdoption(
         wanted.forEach { (root, acting) ->
             if (retained.none { it.root == root && it.acting == acting }) {
                 val alreadyCaptured = gameSources.filter { !acting && it.actorVersionId == null && root in it.conversationRoots }
-                retained += if (alreadyCaptured.isNotEmpty()) NovexAdoptedContext(root, false, alreadyCaptured) else capture(root, acting)
+                val capturedAdoption = configuration.activeInteractiveFiction?.let { game ->
+                    JSONObject(game.contentJson).optJSONArray("conversationAdoptions")?.let { array ->
+                        (0 until array.length()).map { NovexAdoptedContextCodec.decode(array.getJSONObject(it)) }
+                            .singleOrNull { !acting && !it.acting && it.root == root }
+                    }
+                }
+                retained += capturedAdoption ?: if (alreadyCaptured.isNotEmpty()) NovexAdoptedContext(root, false, alreadyCaptured) else capture(root, acting)
             }
         }
         return configuration.copy(adoptedContexts = retained)
@@ -91,6 +97,6 @@ class NovexConversationContextAdoption(
         require(!traversal.truncated) { "设定引用展开超过上限，请缩小引用范围" }
         require(traversal.missingTargets.isEmpty()) { "设定包含缺失引用，请修复后采用" }
         val media = NovexSnapshotMediaCapture(workspace, mediaStore)
-        return NovexAdoptedContext(address, acting, sources.values.map { media.capture(it) })
+        return NovexAdoptedContext(address, acting, sources.values.map { media.capture(it) }, traversal.references)
     }
 }

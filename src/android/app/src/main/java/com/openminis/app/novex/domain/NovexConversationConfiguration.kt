@@ -171,6 +171,7 @@ data class NovexConversationConfigurationSnapshot(
     val activePlaythroughId: String? = null,
     val adoptedContexts: List<NovexAdoptedContext> = emptyList(),
     val preGameAdoptedIdentity: NovexAdoptedContext? = null,
+    val disabledSettings: Set<NovexReferenceTarget> = emptySet(),
 ) {
     val effectivePlaythroughId: String?
         get() = activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
@@ -179,7 +180,7 @@ data class NovexConversationConfigurationSnapshot(
         get() = answerIdentity != AnswerIdentity.Nova || playerIdentity != null ||
             backgroundSettings.isNotEmpty() || managedSubjects.isNotEmpty() ||
             activeInteractiveFiction != null || completedPlaythroughs.isNotEmpty() ||
-            playthroughStates.isNotEmpty() || controls.isNotEmpty()
+            playthroughStates.isNotEmpty() || controls.isNotEmpty() || disabledSettings.isNotEmpty()
 }
 
 sealed interface NovexConversationCommand {
@@ -211,6 +212,7 @@ sealed interface NovexConversationCommand {
     data class RemoveControl(val controlId: String) : NovexConversationCommand
     data class AddBackground(val subject: NovexContentAddress) : NovexConversationCommand
     data class RemoveBackground(val subject: NovexContentAddress) : NovexConversationCommand
+    data class SetSettingEnabled(val target: NovexReferenceTarget, val enabled: Boolean) : NovexConversationCommand
     data class MountSubject(
         val subject: NovexContentAddress,
         val access: ManagedAccess,
@@ -376,6 +378,12 @@ class NovexConversationConfiguration private constructor(
             ),
         )
 
+        is NovexConversationCommand.SetSettingEnabled -> {
+            NovexSettingUse.validateToggle(snapshot, command.target, command.enabled)
+            withSnapshot(snapshot.copy(disabledSettings = if (command.enabled) snapshot.disabledSettings - command.target
+                else snapshot.disabledSettings + command.target))
+        }
+
         is NovexConversationCommand.MountSubject -> {
             val mounted = ManagedSubject(command.subject, command.access)
             val existingIndex = snapshot.managedSubjects.indexOfFirst {
@@ -428,6 +436,7 @@ class NovexConversationConfiguration private constructor(
             }
             val detached = snapshot.copy(
                 backgroundSettings = snapshot.backgroundSettings.toList(),
+                disabledSettings = snapshot.disabledSettings.toSet(),
                 managedSubjects = snapshot.managedSubjects.toList(),
                 playthroughStates = snapshot.playthroughStates.mapValues { (_, state) ->
                     state.copy(values = state.values.toMap())

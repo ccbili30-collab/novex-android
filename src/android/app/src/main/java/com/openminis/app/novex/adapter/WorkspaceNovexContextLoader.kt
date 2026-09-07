@@ -13,6 +13,10 @@ import com.openminis.app.novex.domain.NovexContentKind
 import com.openminis.app.novex.domain.NovexContextCandidate
 import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
 import com.openminis.app.novex.domain.NovexWorkspace
+import com.openminis.app.novex.domain.NovexSettingUse
+import com.openminis.app.novex.domain.NovexReferenceTarget
+import com.openminis.app.novex.domain.NovexFrozenContext
+import com.openminis.app.novex.domain.NovexContentAddress
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -83,10 +87,12 @@ class WorkspaceNovexContextLoader(
             )
         }
         val backgroundWorldIds = configuration.backgroundSettings
+            .filter { NovexSettingUse.enabled(configuration, NovexReferenceTarget(it.subject)) }
             .filterNot { it.subject in frozenBackgrounds }
             .filter { it.subject.kind == NovexContentKind.WORLD }
             .map { it.subject.id }
         val backgroundVersionIds = configuration.backgroundSettings
+            .filter { NovexSettingUse.enabled(configuration, NovexReferenceTarget(it.subject)) }
             .filterNot { it.subject in frozenBackgrounds }
             .filter { it.subject.kind == NovexContentKind.CHARACTER_VERSION }
             .map { it.subject.id }
@@ -112,7 +118,7 @@ class WorkspaceNovexContextLoader(
             )
             candidates += moduleCandidates(
                 ownerLabel = "世界 · ${snapshot.world.name}",
-                modules = snapshot.modules,
+                modules = snapshot.modules.filter { NovexSettingUse.enabled(configuration, NovexReferenceTarget(NovexContentAddress.world(worldId), it.id)) },
             )
         }
 
@@ -176,7 +182,7 @@ class WorkspaceNovexContextLoader(
                 }
                 candidates += moduleCandidates(
                     ownerLabel = "角色 · $rootName · ${version.label}",
-                    modules = modules,
+                    modules = modules.filter { identity || NovexSettingUse.enabled(configuration, NovexReferenceTarget(NovexContentAddress.characterVersion(versionId), it.id)) },
                     kind = if (identity) ContextSourceKind.ANSWER_IDENTITY else ContextSourceKind.BACKGROUND_MODULE,
                 )
             }
@@ -193,10 +199,15 @@ class WorkspaceNovexContextLoader(
                     com.openminis.app.novex.domain.NovexReferencePurpose.BACKGROUND,
                     com.openminis.app.novex.domain.NovexReferencePurpose.RULES,
                 )) { target ->
-                    if (target == root) reader.references(target)
-                    else reader.read(target)?.let { context ->
-                        if (alreadyRead.add(target)) candidates += context
-                        if (context.isEmpty()) emptyList() else reader.references(target)
+                    val actingRoot = target == root && address.id == identityVersionId && address.kind == NovexContentKind.CHARACTER_VERSION
+                    if (!actingRoot && !NovexSettingUse.enabled(configuration, target)) emptyList()
+                    else {
+                        val links = reader.references(target).filter { reference -> actingRoot || NovexSettingUse.enabled(configuration,
+                            NovexReferenceTarget(reference.source, reference.sourceModuleId)) }
+                        if (target == root) links else reader.read(target)?.let { context ->
+                            if (alreadyRead.add(target)) candidates += NovexSettingUse.filterSource(configuration, NovexFrozenContext(target, context))?.candidates.orEmpty()
+                            if (context.isEmpty()) emptyList() else links
+                        }
                     }
                 }
             }
@@ -205,8 +216,14 @@ class WorkspaceNovexContextLoader(
         configuration.activeInteractiveFiction?.let { active ->
             candidates += gameCandidates(active.snapshotId, active.title, active.contentJson,
                 includeLegacyPlayer = active.playerIdentity == null && configuration.playerIdentity == null,
-                playthroughId = configuration.effectivePlaythroughId.orEmpty())
+                playthroughId = configuration.effectivePlaythroughId.orEmpty(),
+                disabledModules = configuration.disabledSettings.filter { it.subject == NovexContentAddress.interactiveFiction(active.projectId) }.mapNotNull { it.moduleId }.toSet())
         }
+        if (configuration.disabledSettings.isNotEmpty()) candidates += NovexContextCandidate(
+            "settings-use:${configuration.conversationId}", "本对话 · 已关闭设定",
+            "下列设定已由用户关闭，不得通过其他读取路径补回或擅自重开。依赖它们才能执行的玩法须说明缺失，不能编造替代规则：\n" +
+                configuration.disabledSettings.joinToString("\n") { "设定 ${it.subject.id}${it.moduleId?.let { id -> " · 模块 $id" }.orEmpty()}" },
+            kind = ContextSourceKind.TOOL_DEFINITION, alwaysInclude = true, position = -2)
         return com.openminis.app.novex.domain.NovexContextSourceVersions.merge(candidates)
     }
 
@@ -240,7 +257,8 @@ class WorkspaceNovexContextLoader(
         )
     }
 
-    private fun gameCandidates(snapshotId: String, title: String, raw: String, includeLegacyPlayer: Boolean, playthroughId: String): List<NovexContextCandidate> {
+    private fun gameCandidates(snapshotId: String, title: String, raw: String, includeLegacyPlayer: Boolean, playthroughId: String,
+        disabledModules: Set<String> = emptySet()): List<NovexContextCandidate> {
         val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
         val prefix = "game:$snapshotId"
         val core = listOf(
@@ -264,6 +282,7 @@ class WorkspaceNovexContextLoader(
             repeat(modules.length()) { index ->
                 val value = modules.optJSONObject(index) ?: return@repeat
                 val moduleId = value.optString("id").ifBlank { index.toString() }
+                if (moduleId in disabledModules) return@repeat
                 val typeName = value.optString("type")
                 if (typeName == "GAME_ANSWER_IDENTITY") return@repeat
                 if (typeName == "GAME_PLAYER_IDENTITY" && !includeLegacyPlayer) return@repeat

@@ -15,6 +15,7 @@ object NovexConversationConfigurationCodec {
         snapshot.preGamePlayerIdentity?.let { put("preGamePlayerIdentity", it.toJson()) }
         put("backgroundSettings", JSONArray(snapshot.backgroundSettings.map { it.subject.toJson() }))
         put("adoptedContexts", JSONArray(snapshot.adoptedContexts.map(NovexAdoptedContextCodec::encode)))
+        put("disabledSettings", JSONArray(snapshot.disabledSettings.map { it.subject.toJson().put("moduleId", it.moduleId).put("entryId", it.entryId) }))
         snapshot.preGameAdoptedIdentity?.let { put("preGameAdoptedIdentity", NovexAdoptedContextCodec.encode(it)) }
         put("managedSubjects", JSONArray(snapshot.managedSubjects.map { subject ->
             subject.subject.toJson().put("access", subject.access.wireName())
@@ -49,6 +50,9 @@ object NovexConversationConfigurationCodec {
                     BackgroundSetting(value.toContentAddress())
                 },
                 adoptedContexts = root.optJSONArray("adoptedContexts").objects().map(NovexAdoptedContextCodec::decode),
+                disabledSettings = root.optJSONArray("disabledSettings").objects().mapTo(linkedSetOf()) {
+                    NovexReferenceTarget(it.toContentAddress(), it.optString("moduleId").takeIf(String::isNotBlank), it.optString("entryId").takeIf(String::isNotBlank))
+                },
                 preGameAdoptedIdentity = root.optJSONObject("preGameAdoptedIdentity")?.let(NovexAdoptedContextCodec::decode),
                 managedSubjects = root.optJSONArray("managedSubjects").objects().map { value ->
                     ManagedSubject(

@@ -109,6 +109,7 @@ fun ConversationSettingsScreen(
     val works by workGroups.snapshots.collectAsState(initial = null)
     var pickingWork by remember { mutableStateOf(false) }
     var showingAdoptedSources by remember { mutableStateOf(false) }
+    var showingSettingUse by remember { mutableStateOf(false) }
     var returnPicker by remember { mutableStateOf<ConversationPicker?>(null) }
     val viewModel: ChatViewModel = viewModel(
         viewModelStoreOwner = ChatViewModelStore.ownerFor(sessionId),
@@ -322,15 +323,19 @@ fun ConversationSettingsScreen(
         }
 
         NovexEditorSection(
-            header = "背景设定",
+            header = "使用的设定",
             footer = "可加入多个世界和角色版本，采用的资料会固定保存；需要更新时从原卡刷新。文游自身引用的资料在活动文游中单独刷新。背景用途不会授予编辑权限。",
         ) {
+            NovexSummaryRow("设定与模块开关", "停用背景使用并保留原件；父级重新开启后恢复原来的模块选择",
+                onClick = { showingSettingUse = true })
             NovexSummaryRow("查看实际采用来源", "同一修订合并显示用途；不同修订分别保留，不自动选用最新正文",
                 onClick = { showingAdoptedSources = true })
-            draft.configuration.backgroundSettings.forEachIndexed { index, setting ->
+            draft.configuration.backgroundSettings.sortedBy { !com.openminis.app.novex.domain.NovexSettingUse.enabled(draft.configuration,
+                com.openminis.app.novex.domain.NovexReferenceTarget(it.subject)) }.forEachIndexed { index, setting ->
                 ConversationSubjectRow(
                     labels[setting.subject]?.label ?: setting.subject.fallbackLabel(),
-                    labels[setting.subject]?.kindLabel ?: setting.subject.kind.displayName(),
+                    (labels[setting.subject]?.kindLabel ?: setting.subject.kind.displayName()) +
+                        if (com.openminis.app.novex.domain.NovexSettingUse.enabled(draft.configuration, com.openminis.app.novex.domain.NovexReferenceTarget(setting.subject))) " · 直接加入" else " · 已关闭",
                     onRemove = { draft = draft.removeBackground(setting.subject) },
                 )
                 if (com.openminis.app.novex.domain.NovexEffectiveFrozenContext.gameSources(draft.configuration)
@@ -725,6 +730,10 @@ fun ConversationSettingsScreen(
             onDismissRequest = { picker = null },
         )
     }
+    if (showingSettingUse) NovexSettingUseControls(draft.configuration, onToggle = { target, enabled ->
+        try { draft = draft.setSettingEnabled(target, enabled) }
+        catch (failure: IllegalArgumentException) { error = failure.message ?: "设定开关尚未保存" }
+    }, onDismiss = { showingSettingUse = false })
     if (showingAdoptedSources) com.openminis.app.ui.novex.NovexContentDialog("实际采用的来源", onDismiss = { showingAdoptedSources = false },
         confirmButton = { com.openminis.app.ui.novex.TextButton(onClick = { showingAdoptedSources = false }) { Text("返回对话配置") } }) {
         val sources = com.openminis.app.novex.domain.NovexAdoptedSourceUsageProjection.read(draft.configuration)

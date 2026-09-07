@@ -10,7 +10,7 @@ object NovexSnapshotMediaProjection {
             JSONObject(game.contentJson).optJSONArray("adoptedMedia")?.let { images ->
                 (0 until images.length()).map { NovexSnapshotMediaCodec.decode(images.getJSONObject(it)) }
             }
-        }.orEmpty()
+        }.orEmpty().filter { image -> image.owner?.let { NovexSettingUse.enabled(configuration, NovexReferenceTarget(it, image.moduleId)) } != false }
         return (NovexEffectiveFrozenContext.sources(configuration).flatMap { it.media } + gameMedia)
             .distinctBy { listOf(it.owner, it.slot, it.moduleId, it.entryId, it.asset.sha256) }
     }
