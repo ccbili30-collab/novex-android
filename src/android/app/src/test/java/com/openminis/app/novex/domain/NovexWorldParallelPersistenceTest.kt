@@ -24,7 +24,7 @@ class NovexWorldParallelPersistenceTest {
     private fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
         File(files.root, "parallel.db").absolutePath).allowMainThreadQueries().build()
 
-    @Test fun `batch parallel route keeps shared people and remaps selected same person versions after reopen`() = runBlocking {
+    @Test(timeout = 60_000) fun `batch parallel route keeps shared people and remaps selected same person versions after reopen`() = runBlocking {
         var database = openDatabase()
         try {
             var workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -77,7 +77,7 @@ class NovexWorldParallelPersistenceTest {
         } finally { database.close() }
     }
 
-    @Test fun `changed companion aborts old parallel preview before creating a world or series`() = runBlocking {
+    @Test(timeout = 60_000) fun `changed companion aborts old parallel preview before creating a world or series`() = runBlocking {
         val database = openDatabase()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))

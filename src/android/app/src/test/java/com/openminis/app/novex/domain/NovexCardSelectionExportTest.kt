@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 class NovexCardSelectionExportTest {
     @get:Rule val files = TemporaryFolder()
 
-    @Test fun `selected parallel version exports only its content with unresolved source relation and independent import`() = runBlocking {
+    @Test(timeout = 60_000) fun `selected parallel version exports only its content with unresolved source relation and independent import`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -54,7 +54,7 @@ class NovexCardSelectionExportTest {
         } finally { database.close() }
     }
 
-    @Test fun `explicit dependency export remaps legacy cross card module links and preserves chosen version limit through a cycle`() = runBlocking {
+    @Test(timeout = 60_000) fun `explicit dependency export remaps legacy cross card module links and preserves chosen version limit through a cycle`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
