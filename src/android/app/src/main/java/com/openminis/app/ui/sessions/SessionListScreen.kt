@@ -818,6 +818,7 @@ fun SessionListScreen(
                                     selected = homeFilter,
                                     onSelect = { homeFilter = it },
                                 )
+                                com.openminis.app.ui.novex.NovexConversationCardLookup(onSessionClickGuarded)
                             }
                         }
                         // T25: search-active path used to flatten the list and skip

@@ -242,6 +242,7 @@ fun NovexConversationRoot(
             },
             onSelect = { filterName = it.name },
         )
+        com.openminis.app.ui.novex.NovexConversationCardLookup(onOpenSession)
         Spacer(Modifier.height(12.dp))
 
         when {
