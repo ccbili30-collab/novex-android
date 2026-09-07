@@ -37,7 +37,7 @@ internal object NovexCardCreationTask {
         val kindWords = mapOf("world" to "世界", "character_version" to "角色|人物", "game" to "文游|游戏|模拟器")
         fun count(kind: String): Int? {
             if (Regex("(多张|多份|一批|若干|几张)").containsMatchIn(request)) return null
-            val token = Regex("([0-9]+|[一二两三四五六七八九十]+)\\s*[张份个]?\\s*(?:${kindWords.getValue(kind)})").find(request)?.groupValues?.get(1) ?: return 1
+            val token = Regex("([0-9]+|[一二两三四五六七八九十]+)\\s*[张份个]?\\s*(?:(?:一样|相同|不同|独立|全新|额外|空白|新)的?)?\\s*(?:${kindWords.getValue(kind)})").find(request)?.groupValues?.get(1) ?: return 1
             return token.toIntOrNull() ?: mapOf("一" to 1, "二" to 2, "两" to 2, "三" to 3, "四" to 4, "五" to 5, "六" to 6, "七" to 7, "八" to 8, "九" to 9, "十" to 10)[token]
         }
         val allSaved = expected.all { kind -> count(kind)?.let { needed -> verified.count { it.first == kind } >= needed } == true }

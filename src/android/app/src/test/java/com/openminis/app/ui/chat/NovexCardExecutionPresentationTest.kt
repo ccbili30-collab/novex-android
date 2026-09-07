@@ -36,6 +36,7 @@ class NovexCardExecutionPresentationTest {
         assertEquals("incomplete", planOnly.status); assertTrue(planOnly.mayRepair)
         fun saved(id: String) = tool(id, "novex_write_card", content = """{"status":"saved_verified","saved":true,"created_cards":[{"kind":"game","id":"$id"}]}""").block
         assertEquals("saved_needs_review", NovexCardCreationTask.evaluate(request, listOf(saved("one")))!!.status)
+        assertEquals("saved_needs_review", NovexCardCreationTask.evaluate(listOf("创建两张一样的文游卡"), listOf(saved("one")))!!.status)
         assertEquals("saved_verified", NovexCardCreationTask.evaluate(request, listOf(saved("one"), saved("two")))!!.status)
         assertEquals("saved_needs_review", NovexCardCreationTask.evaluate(request, listOf(saved("one"), saved("one")))!!.status)
         assertNull(NovexCardCreationTask.evaluate(listOf("请告诉我怎么创建文游卡？"), emptyList()))
