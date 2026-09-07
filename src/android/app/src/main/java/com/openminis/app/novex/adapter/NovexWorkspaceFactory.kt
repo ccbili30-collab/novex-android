@@ -102,6 +102,7 @@ internal class DeferredNovexWorkspace(
     override suspend fun referencesFrom(source: com.openminis.app.novex.domain.NovexContentAddress) = workspace().referencesFrom(source)
     override suspend fun versionRelations(versionId: String) = workspace().versionRelations(versionId)
     override suspend fun characterRevisions(versionId: String) = workspace().characterRevisions(versionId)
+    override suspend fun prepareWorldParallel(worldId: String) = workspace().prepareWorldParallel(worldId)
     override suspend fun prepareCardCopy(root: com.openminis.app.novex.domain.NovexCardCopyKey, policy: com.openminis.app.novex.domain.NovexCardCopyPolicy) = workspace().prepareCardCopy(root, policy)
     override suspend fun cardRevisions(subject: com.openminis.app.novex.domain.NovexContentAddress) = workspace().cardRevisions(subject)
     override suspend fun referencesTo(target: com.openminis.app.novex.domain.NovexContentAddress) = workspace().referencesTo(target)

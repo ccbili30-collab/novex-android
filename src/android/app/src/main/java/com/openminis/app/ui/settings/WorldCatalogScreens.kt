@@ -249,6 +249,7 @@ fun CatalogWorldDetailScreen(
                         )
                     }
                 }
+                com.openminis.app.ui.novex.NovexWorldParallelSection(worldId, onBack)
                 com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
                 com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.world(worldId))
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(

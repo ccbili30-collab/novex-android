@@ -47,6 +47,7 @@ import org.json.JSONObject
  */
 interface NovexWorkspace {
     suspend fun characterRevisions(versionId: String): List<NovexCharacterRevision> = emptyList()
+    suspend fun prepareWorldParallel(worldId: String): NovexWorldParallelPlan = error("尚未配置平行世界创建")
     suspend fun cardRevisions(subject: NovexContentAddress): List<NovexCardRevision> = emptyList()
     suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy = NovexCardCopyPolicy.DETACH): NovexCardCopyPlan = error("尚未配置卡片复制")
     suspend fun versionRelations(versionId: String): List<NovexCharacterVersionRelation> = emptyList()
@@ -229,6 +230,8 @@ sealed interface NovexCommand {
         val now: Long = System.currentTimeMillis(),
     ) : NovexCommand
 
+    data class CreateParallelWorld(val plan: NovexWorldParallelPlan, val name: String, val selectedVersionIds: Set<String>,
+        val now: Long = System.currentTimeMillis()) : NovexCommand
     data class ExportNativeSelection(val root: NovexCardCopyKey, val versionIds: Set<String>? = null,
         val includeDependencies: Boolean = false) : NovexCommand
     data class ExportNativeWorld(val worldId: String) : NovexCommand
@@ -364,6 +367,7 @@ sealed interface NovexCommand {
 }
 
 sealed interface NovexChange {
+    data class WorldParallelCreated(val result: NovexWorldParallelResult) : NovexChange
     data class CardsCopied(val result: NovexCardCopyResult) : NovexChange
     data class CardReferenceSaved(val reference: NovexCardReference) : NovexChange
     data class ConversationDraftsPrepared(val snapshot: NovexConversationDraftSnapshot) : NovexChange
@@ -515,6 +519,11 @@ internal class DefaultNovexWorkspace(
     private val cardRevisions: NovexCardRevisionPort = UnavailableNovexCardRevisions,
 ) : NovexWorkspace {
     private fun cardCopy() = NovexCardCopy(this, catalog, content, media, interactiveFiction, cardReferences, versionRelations)
+    override suspend fun prepareWorldParallel(worldId: String): NovexWorldParallelPlan {
+        lateinit var plan: NovexWorldParallelPlan
+        transaction { plan = NovexWorldParallel(this).prepare(worldId); NovexChange.Completed }
+        return plan
+    }
     override suspend fun prepareCardCopy(root: NovexCardCopyKey, policy: NovexCardCopyPolicy): NovexCardCopyPlan {
         lateinit var prepared: NovexCardCopyPlan
         transaction { prepared = cardCopy().prepare(root, policy); NovexChange.Completed }
@@ -869,6 +878,8 @@ internal class DefaultNovexWorkspace(
             val localId = referencePackage().import(command.card, command.now)
             NovexChange.NativeCardImported(command.card.document.kind(), localId)
         }
+        is NovexCommand.CreateParallelWorld -> NovexChange.WorldParallelCreated(
+            NovexWorldParallel(this).create(command.plan, command.name, command.selectedVersionIds, command.now))
         is NovexCommand.ExportNativeSelection -> {
             require(command.versionIds == null || command.root.kind == NovexCardKind.CHARACTER) { "仅角色卡支持选择版本" }
             NovexChange.NativeCardExported(referencePackage(command.root.id, command.versionIds).export(
@@ -1383,7 +1394,7 @@ internal class DefaultNovexWorkspace(
             name = document.name,
             overview = document.overview,
             tagsJson = JSONArray(document.tags).toString(),
-            legacySnapshotJson = document.originalJson,
+            legacySnapshotJson = NovexWorldSeriesTransport.imported(document.originalJson),
             now = now,
         )
         val assets = mutableMapOf<String, MediaAssetEntity>()

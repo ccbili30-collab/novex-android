@@ -121,6 +121,11 @@ internal class NovexCardCopy(
         val moduleMap = linkedMapOf<String, String>()
         fun origin(raw: String?, key: NovexCardCopyKey, versionId: String? = null): String =
             (raw?.let { runCatching { JSONObject(it) }.getOrElse { JSONObject().put("_novexOriginalRaw", raw) } } ?: JSONObject())
+                .apply {
+                    if(key.kind == NovexCardKind.WORLD && has("_novexWorldSeries")) {
+                        put("_novexSourceWorldSeries", get("_novexWorldSeries")); remove("_novexWorldSeries")
+                    }
+                }
                 .put("_novexCopyOrigin", JSONObject().put("kind", key.kind.name).put("id", key.id).put("versionId", versionId)
                     .put("revision", plan.sourceRevision).put("policy", plan.policy.name).put("copiedAt", now)
                     .put("missingTargets", org.json.JSONArray(plan.missingTargets)).put("externalReferenceCount", plan.externalReferenceCount)).toString()

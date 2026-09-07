@@ -159,8 +159,14 @@ internal class NovexReferencePackage(
         val moduleMap = linkedMapOf<String, String>()
         val importedRecords = mutableListOf<Pair<NovexCardImportDocument, Map<String, NovexContentAddress>>>()
         var rootId: String? = null
+        val seriesMap = mutableMapOf<String, String>()
         validated.forEach { (row, importedCard) ->
             val localId = importSingle(importedCard, now, false)
+            if(importedCard.document is NovexWorldImportDocument) {
+                val world = requireNotNull(workspace.world(localId)).world
+                val remapped = NovexWorldSeriesTransport.imported(importedCard.document.originalJson, seriesMap)
+                if(remapped != world.legacySnapshotJson) workspace.apply(NovexCommand.SaveWorld(world.copy(legacySnapshotJson = remapped), now))
+            }
             if (row.getString("key") == rootKey) rootId = localId
             val document = importedCard.document
             val importedAddresses = importedAddresses(document, localId)
