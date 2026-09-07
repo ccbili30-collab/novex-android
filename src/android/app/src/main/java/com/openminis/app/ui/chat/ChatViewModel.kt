@@ -8401,7 +8401,8 @@ class ChatViewModel(
                 // partial artifact is silent corruption of user data and is worse
                 // than no write at all; read-only and shell tools keep the
                 // repair-and-run behaviour. Mirrors iOS ConcurrentTools.
-                if (truncationRepairTag != null && (name == "file_write" || name == "file_edit")) {
+                if (truncationRepairTag != null && (name == "file_write" || name == "file_edit" ||
+                    name in com.openminis.app.tools.NovexCardFileTools.names || name in setOf(NovexManagementTools.PROPOSE, NovexManagementTools.APPLY))) {
                     val path = args.optString("path", "").ifBlank { args.optString("file_path", "") }
                     AppLogger.warning(
                         "ToolPreflight",
@@ -9095,6 +9096,7 @@ class ChatViewModel(
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson, assistantId, toolId)
             NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
+            in com.openminis.app.tools.NovexCardFileTools.names -> executeNovexCardFileTool(name, argsJson, assistantId, toolId)
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> recordNovexFileRead(novexDocumentAgentTools.execute(name, argsJson), requestMessageId, turnMessageId)
@@ -9207,7 +9209,9 @@ class ChatViewModel(
             profileSection = args.optString("profile_section").trim().ifBlank { "public" },
         )
         ToolExecutionResult(
-            output = inspection.toToolJson().toString(2),
+            output = inspection.toToolJson().apply {
+                if (args.optBoolean("include_advanced")) put("advanced_change_guide", NovexManagementTools.advancedGuide())
+            }.toString(2),
             success = true,
             toolTitle = "查看挂载内容",
         )
@@ -9218,6 +9222,35 @@ class ChatViewModel(
             toolTitle = "查看挂载内容",
         )
     }
+
+    private suspend fun executeNovexCardFileTool(name: String, argsJson: String, replyBranchId: String, toolCallId: String): ToolExecutionResult =
+        novexManagementMutex.withLock {
+            try {
+                prepareNovexConversationDrafts()
+                val application = novexApplication()
+                val configuration = currentNovexConfiguration()
+                val settings = conversationSettingsSnapshot()
+                val userRequests = currentNovexUserRequests()
+                val service = com.openminis.app.novex.domain.NovexCardFileService(
+                    application.novexWorkspace, novexManagementService(),
+                    com.openminis.app.novex.domain.NovexCardFileOperations(
+                        com.openminis.app.novex.domain.NovexCardSourceModules(novexDocumentRepository) { it.value in activeNovexDocumentRefs }),
+                    com.openminis.app.novex.domain.NovexManagementTransaction { work -> application.database.withTransaction { work() } })
+                val result = application.database.withTransaction {
+                    val saved = service.execute(configuration, name, JSONObject(argsJson), userRequests,
+                        com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("${configuration.conversationId}|$replyBranchId|$toolCallId"))
+                    if (saved.configuration != configuration) chatRepository.updateConversationSettings(configuration.conversationId,
+                        settings.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(saved.configuration)))
+                    saved
+                }
+                if (result.applied == null) pendingNovexManagementPlans[result.plan.id] = result.plan
+                if (currentNovexConfiguration().conversationId == configuration.conversationId) installNovexConfiguration(result.configuration)
+                ToolExecutionResult(result.payload.toString(2), true, toolTitle = if (result.applied == null) "等待确认卡片修改" else "卡片写入与回读")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                ToolExecutionResult("卡片操作未完成：${failure.message ?: "执行失败"}。已提交的历史操作不会重复执行；请按错误说明核对原对象，不要擅自改建其他类型卡片。", false, toolTitle = "卡片操作未完成")
+            }
+        }
 
     private suspend fun executeNovexProposeTool(argsJson: String, replyBranchId: String, toolCallId: String): ToolExecutionResult =
         novexManagementMutex.withLock {
@@ -13441,7 +13474,11 @@ class ChatViewModel(
         "end_interactive_fiction" -> "结束文游"
         "update_playthrough_state" -> "更新本局状态"
         "novex_read_context" -> "读取当前采用资料"
-        "novex_inspect_content" -> "查看挂载内容"
+        "novex_inspect_content" -> "查看卡片目录"
+        "novex_write_card" -> "填写并保存卡片"
+        "novex_write_module" -> "写入卡片模块"
+        "novex_move_module" -> "调整模块顺序"
+        "novex_link_cards" -> "关联卡片"
         "novex_propose_content_changes" -> "提出内容变更"
         "novex_apply_content_changes" -> "执行内容变更"
         "novex_inspect_memory" -> "查看长期记忆"

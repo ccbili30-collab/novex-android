@@ -30,7 +30,8 @@ object AgentTools {
         add(renderPanelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
-        addAll(NovexManagementTools.definitions())
+        addAll(NovexManagementTools.modelDefinitions())
+        addAll(NovexCardFileTools.definitions())
         if (memoryEnabled) {
             addAll(NovexMemoryAgentTools.definitions())
         }

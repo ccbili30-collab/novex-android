@@ -59,8 +59,9 @@ class NovexManagementToolDefinitionsTest {
 
     @Test
     fun `proposal contract tells the model the required fields for structured changes`() {
-        val proposal = AgentTools.makeAgentTools().single { it.name == "novex_propose_content_changes" }
-        val contract = requireNotNull(proposal.parameters["changes"]).description
+        val contract = com.openminis.app.tools.NovexManagementTools.advancedGuide()
+        val compact = AgentTools.makeAgentTools().single { it.name == "novex_propose_content_changes" }
+        assertTrue(requireNotNull(compact.parameters["changes"]).description.length < 200)
 
         assertTrue(contract.contains("add_module"))
         assertTrue(contract.contains("module_type"))

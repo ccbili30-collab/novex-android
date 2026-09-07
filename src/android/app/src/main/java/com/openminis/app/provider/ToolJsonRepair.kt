@@ -54,7 +54,9 @@ object ToolJsonRepair {
                 val parsed = tryParseObject(candidate) ?: continue
                 val keys = parsed.keys().asSequence().toList()
                 for (k in keys) args.put(k, parsed.opt(k))
-                repairs.add("truncation+" + if (suffix.isEmpty()) "noop" else suffix)
+                // A valid raw object (including {}) is not a truncated stream.
+                // Recovering its parsed fields must not warn the model to retry.
+                if (suffix.isNotEmpty()) repairs.add("truncation+" + suffix)
                 break
             }
         }
@@ -133,4 +135,3 @@ object ToolJsonRepair {
         return true
     }
 }
-
