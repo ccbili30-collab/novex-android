@@ -48,6 +48,8 @@ class NovexCardExecutionPresentationTest {
         assertEquals("saved_verified", NovexCardCreationTask.evaluate(request, listOf(saved("one"), saved("two")))!!.status)
         assertEquals("saved_needs_review", NovexCardCreationTask.evaluate(request, listOf(saved("one"), saved("one")))!!.status)
         assertNull(NovexCardCreationTask.evaluate(listOf("请告诉我怎么创建文游卡？"), emptyList()))
+        assertNull(NovexCardCreationTask.evaluate(listOf("生成随机世界"), emptyList()))
+        assertNull(NovexCardCreationTask.evaluate(listOf("生成角色头像"), listOf(tool("avatar", "generate_image").block)))
         assertNull(NovexCardCreationTask.evaluate(listOf("不要创建文游，只讨论格式"), emptyList()))
         assertNull(NovexCardCreationTask.evaluate(listOf("创建文游", "取消", "继续"), emptyList()))
     }

@@ -34,6 +34,12 @@ internal object NovexCardCreationTask {
         val possiblySaved = calls.any { it.toolStatus == ToolBlockStatus.SUCCESS &&
             (it.toolName == "novex_apply_content_changes" || runCatching { JSONObject(it.content).optBoolean("saved") }.getOrDefault(false)) }
         val request = requests.asReversed().firstOrNull { text -> changes.any { it.second.matchesCreationTask(text, emptyList()) } }.orEmpty()
+        // Gameplay/world-building and image requests can say “generate a world/character”.
+        // Missing-write repair requires an explicit native-card task; actual writes remain visible.
+        val explicitCardTask = request.contains("卡") || Regex("(创建|新建|做成|制作).{0,6}文游").containsMatchIn(request)
+        if (!explicitCardTask) return verified.takeIf { it.isNotEmpty() }?.let {
+            Outcome("saved_verified", "已实际保存并回读核验 ${it.size} 张卡片", it, false)
+        }
         val kindWords = mapOf("world" to "世界", "character_version" to "角色|人物", "game" to "文游|游戏|模拟器")
         fun count(kind: String): Int? {
             if (Regex("(多张|多份|一批|若干|几张)").containsMatchIn(request)) return null
