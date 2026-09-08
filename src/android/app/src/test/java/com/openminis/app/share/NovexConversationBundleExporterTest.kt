@@ -58,6 +58,11 @@ class NovexConversationBundleExporterTest {
                 NovexWorkspaceArea.OUTPUTS, "同名文件.md", "$branch 分支成果", "text/markdown", NovexWorkspaceProvenance(session.id, branch, "user", "tool-$branch"))
             val unrelated = repository.createSession("other-model")
             repository.appendMessage(unrelated.id, "user", """[{"type":"text","value":"其他对话不能进入此包"}]""")
+            val journal = NovexOperationJournal(File(context.filesDir, "novex-operations"))
+            val operation = NovexToolOperation(session.id, "new", "write", "novex_write_card", """{ "name" : "原名" }""", "保存卡片")
+            journal.save(NovexOperationRecord(operation, NovexOperationStatus.FAILED,
+                com.openminis.app.tools.ToolExecutionResult("原回执\n未保存", false)))
+            journal.save(NovexOperationRecord(operation.copy(conversationId = unrelated.id), NovexOperationStatus.WAITING))
             File(context.filesDir, "provider-credentials.json").writeText("NEVER_EXPORT_ACCOUNT_SECRET")
             workspace.apply(NovexCommand.SaveWorld(world.copy(overview = "导出时的新正文")))
             database.close(); database = open(); repository = ChatRepository(database.chatDao())
@@ -69,6 +74,8 @@ class NovexConversationBundleExporterTest {
             assertTrue(result.missing.single().contains("未找到配套装配记录"))
             ZipFile(result.file).use { zip ->
                 fun text(name: String) = zip.getInputStream(zip.getEntry(name)).bufferedReader().readText()
+                assertEquals(journal.exportRecords(session.id).getValue(operation.id), text("execution/operations/${operation.id}.json"))
+                assertNull(zip.getEntry("execution/operations/${operation.copy(conversationId = unrelated.id).id}.json"))
                 val rows = text("database/messages.jsonl").lineSequence().filter { it.isNotBlank() }.map { JSONObject(it) }.toList()
                 assertEquals(raw, rows.single { it.getString("id") == "user" }.getString("parts_json"))
                 assertEquals(setOf("user", "old", "new"), rows.map { it.getString("id") }.toSet())

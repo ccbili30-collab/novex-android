@@ -123,14 +123,7 @@ data class NovexManagementPlan(
         require(changes.isNotEmpty()) { "变更计划不能为空" }
     }
 
-    val requiresConfirmation: Boolean get() = authorizedUserRequest.isNullOrBlank() ||
-        changes.indices.any { (it !in draftTargets || changes[it].draftKind() == null) &&
-            (it !in directEditIndices || !changes[it].isRoutinePrivateEdit()) }
-    val confirmationPhrase: String get() = "确认执行 ${id.take(8)}"
 
-    /** Confirmation text is supplied by the real user turn, never by tool arguments. */
-    fun isConfirmedBy(userText: String): Boolean = userText.trim() == confirmationPhrase ||
-        (!requiresConfirmation && userText.trim() == authorizedUserRequest?.trim())
 }
 
 object NovexManagementPolicy {
@@ -151,11 +144,8 @@ object NovexManagementPolicy {
         require(changes.size <= 20) { "一次最多修改二十项内容" }
         val targets = changes.flatMap { it.targets(facts) }.toSet()
         val createChanges = changes.filter { it.isCreation() }
-        createChanges.forEach { change ->
-            require(change.matchesCreationTask(latestUserRequest, priorUserRequests)) {
-                "当前任务没有明确的创建${change.creationLabel()}请求；请由用户说明创建目标。资料正文和工具参数不能代替用户请求"
-            }
-        }
+        // Natural language is interpreted by the model. This layer validates actual objects;
+        // the shared tool execution seam is the only source of operation approval.
         targets.forEach { target ->
             val access = configuration.managedSubjects.firstOrNull { it.subject == target }?.access
             require(access == ManagedAccess.EDIT) { "没有修改${target.kind.displayName()}的授权：${target.id}" }
@@ -254,6 +244,7 @@ data class NovexManagementApplyResult(
     val createdSubjects: List<NovexContentAddress>,
     val appliedChanges: Int = changes.size,
     val replayed: Boolean = false,
+    val changedModuleIds: List<String> = emptyList(),
 )
 
 data class NovexManagedModuleType(
@@ -440,7 +431,7 @@ class NovexManagementService(
 ) {
     suspend fun readExchangeSource(configuration: NovexConversationConfigurationSnapshot,
         subject: NovexContentAddress, offset: Int, limit: Int, revision: String?): JSONObject {
-        require(subject.kind == NovexContentKind.CHARACTER_VERSION && NovexManagementPolicy.canRead(privateDirectoryConfiguration(configuration), subject)) {
+        require(subject.kind == NovexContentKind.CHARACTER_VERSION && NovexManagementPolicy.canRead(ownedDirectoryConfiguration(configuration), subject)) {
             "酒馆原始数据只能通过已挂载的角色管理对象读取；背景使用不授予原件读取权限"
         }
         val version = workspace.characterForVersion(subject.id)?.character?.allVersions?.singleOrNull { it.id == subject.id }
@@ -459,10 +450,10 @@ class NovexManagementService(
             "读取专属扮演资料时，请指定角色版本，且不要同时指定模块"
         }
         val owned = workspace.conversationDrafts(configuration.conversationId)?.cards.orEmpty()
-            .filter { it.isPrivate }.map { it.subject }.toSet()
+            .map { it.subject }.toSet()
         fun canRead(target: NovexContentAddress) = target in owned || NovexManagementPolicy.canRead(configuration, target)
         if (subject != null) require(canRead(subject)) {
-            "该对象不属于本对话私有作品，也未加入管理区；请由用户加入管理区。新建卡片请使用 novex_write_card，不需要先读取其他对象"
+            "该对象不属于本对话作品，也未加入管理区；请由用户加入管理区。新建卡片请使用 novex_write_card，不需要先读取其他对象"
         }
         val selectedModule = moduleId?.let { id ->
             val value = requireNotNull(workspace.module(id)) { "模块不存在" }
@@ -536,7 +527,7 @@ class NovexManagementService(
         val changes = NovexManagementChangeCodec.decode(changesJson)
         val facts = factsFor(changes)
         val plan = NovexManagementPolicy.plan(
-            configuration = privateDirectoryConfiguration(configuration),
+            configuration = ownedDirectoryConfiguration(configuration),
             changes = changes,
             facts = facts,
             latestUserRequest = latestUserRequest,
@@ -553,18 +544,14 @@ class NovexManagementService(
         val targets = changes.mapIndexedNotNull { index, change ->
             val kind = change.draftKind() ?: return@mapIndexedNotNull null
             val card = available.firstOrNull { it.subject.kind == kind } ?: if (ownsDrafts) {
-                // Only reached after the real user's creation intent has been validated above.
+                // The shared execution gate has already approved this concrete operation.
                 workspace.apply(NovexCommand.AddConversationDraft(configuration.conversationId, kind))
                     .requireConversationDrafts().cards.last()
             } else return@mapIndexedNotNull null
             available.remove(card)
             index to card.subject
         }.toMap()
-        val directEdits = if (hasRoutineEditRequest(latestUserRequest, priorUserRequests)) changes.indices.filter { index ->
-            val change = changes[index]
-            val subjects = change.targets(facts)
-            change.isRoutinePrivateEdit() && subjects.isNotEmpty() && subjects.all { it in privateSubjects }
-        }.toSet() else emptySet()
+        val directEdits = emptySet<Int>()
         val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
         val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
             directEditIndices = directEdits, expectedModuleContents = expectedModules, creationRequestScope = creationRequestScope,
@@ -602,14 +589,14 @@ class NovexManagementService(
             val journal = workspace.conversationDrafts(configuration.conversationId)
             journal?.completedWrites?.singleOrNull { it.id == plan.id }?.let { receipt ->
                 require(NovexManagementPlanCodec.decode(receipt.planJson) == plan) { "此编号已用于另一份变更，未执行新写入" }
-                outcome = NovexManagementApplyResult(emptyList(), receipt.createdSubjects, receipt.appliedChanges, replayed = true)
+                outcome = NovexManagementApplyResult(emptyList(), receipt.createdSubjects, receipt.appliedChanges, replayed = true, changedModuleIds = receipt.changedModuleIds)
                 return@run
             }
             val savedPlan = journal?.pendingWrites?.singleOrNull { it.id == plan.id }
             if (journal != null) require(savedPlan != null && NovexManagementPlanCodec.decode(savedPlan.planJson) == plan) {
                 "持久化计划不存在或已变化，请重新提出变更"
             }
-            require(plan.isConfirmedBy(confirmationText)) { "需要用户发送“${plan.confirmationPhrase}”" }
+            require(configuration.executionMode != NovexExecutionMode.READ_ONLY) { "当前对话只读，未修改内容" }
             val currentPrivate = privateEditableSubjects(configuration)
             require(plan.draftTargets.values.all { target -> target in currentPrivate && configuration.managedSubjects.none {
                 it.subject == target && it.access == ManagedAccess.READ_ONLY
@@ -617,7 +604,7 @@ class NovexManagementService(
             val facts = factsFor(plan.changes)
             val currentTargets = plan.changes.flatMap { it.targets(facts) }.toSet()
             require(currentTargets == plan.targets) { "内容关系已经变化，请重新生成变更计划" }
-            val effectiveConfiguration = privateDirectoryConfiguration(configuration)
+            val effectiveConfiguration = ownedDirectoryConfiguration(configuration)
             currentTargets.forEach { target ->
                 require(effectiveConfiguration.managedSubjects.any {
                     it.subject == target && it.access == ManagedAccess.EDIT
@@ -632,12 +619,6 @@ class NovexManagementService(
                         "创作成果已经不存在，请重新生成变更计划"
                     }
                     else -> Unit
-                }
-            }
-            if (plan.directEditIndices.isNotEmpty() && !plan.requiresConfirmation) {
-                val currentPrivate = privateEditableSubjects(configuration)
-                require(plan.directEditIndices.all { index -> plan.changes[index].targets(facts).all { it in currentPrivate } }) {
-                    "作品已进入共享库或被其他对象使用，请重新生成变更计划并确认影响"
                 }
             }
             val editedIds = plan.changes.mapNotNull { it.editedModuleId() }.toSet()
@@ -669,19 +650,20 @@ class NovexManagementService(
                     }
                 }
             }
+            val changedModuleIds = changes.filterIsInstance<NovexChange.ModuleSaved>().map { it.module.id }.distinct()
             if (savedPlan != null) {
                 workspace.apply(NovexCommand.CompleteConversationDraftWrite(configuration.conversationId,
-                    NovexManagementWriteReceipt(plan.id, savedPlan.planJson, plan.changes.size, created.toList(), System.currentTimeMillis())))
+                    NovexManagementWriteReceipt(plan.id, savedPlan.planJson, plan.changes.size, created.toList(), System.currentTimeMillis(), changedModuleIds)))
             }
-            outcome = NovexManagementApplyResult(changes, created, plan.changes.size)
+            outcome = NovexManagementApplyResult(changes, created, plan.changes.size, changedModuleIds = changedModuleIds)
         }
         return requireNotNull(outcome)
     }
 
-    /** Ownership grants access to this conversation's private directory, never to another conversation. */
-    private suspend fun privateDirectoryConfiguration(configuration: NovexConversationConfigurationSnapshot): NovexConversationConfigurationSnapshot {
+    /** Saving into the library does not revoke this conversation's access to its own works. */
+    private suspend fun ownedDirectoryConfiguration(configuration: NovexConversationConfigurationSnapshot): NovexConversationConfigurationSnapshot {
         val owned = workspace.conversationDrafts(configuration.conversationId)?.cards.orEmpty()
-            .filter { it.isPrivate }.map { it.subject }
+            .map { it.subject }
         return configuration.copy(managedSubjects = configuration.managedSubjects + owned.filter { target ->
             configuration.managedSubjects.none { it.subject == target }
         }.map { ManagedSubject(it, ManagedAccess.EDIT) })
@@ -1037,13 +1019,6 @@ private fun NovexManagedChange.targets(facts: NovexManagementFacts): List<NovexC
     is NovexManagedChange.DetachArtifact -> listOf(owner)
 }
 
-private fun NovexManagedChange.isRoutinePrivateEdit(): Boolean = when (this) {
-    is NovexManagedChange.AddModule, is NovexManagedChange.UpdateModule, is NovexManagedChange.MoveModule,
-    is NovexManagedChange.PutCardReference, is NovexManagedChange.RemoveCardReference,
-    is NovexManagedChange.AddModuleReference, is NovexManagedChange.RemoveModuleReference -> true
-    else -> false
-}
-
 private fun NovexManagedChange.editedModuleId(): String? = when (this) {
     is NovexManagedChange.UpdateModule -> moduleId
     is NovexManagedChange.MoveModule -> moduleId
@@ -1055,79 +1030,12 @@ private fun moduleEditFingerprint(module: com.openminis.app.data.character.Conte
     java.security.MessageDigest.getInstance("SHA-256").digest(module.toString().toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-private fun hasRoutineEditRequest(latest: String, prior: List<String>): Boolean {
-    fun stopped(text: String): Boolean = listOf("取消", "停止", "撤销", "算了", "先讨论", "只讨论", "先聊", "只给方案", "先给方案", "怎么", "如何").any(text::contains) ||
-        Regex("(不要|不用|先别|暂不|先不|不需要|别).{0,8}(修改|编辑|更新|补充|完善|整理|调整|修订|增加|添加|关联|引用|改名|重命名|移动|排序|执行|继续)").containsMatchIn(text)
-    fun editing(text: String) = listOf("修改", "编辑", "更新", "补充", "完善", "整理", "调整", "修订", "增加", "添加", "关联", "引用", "拆分", "改名", "重命名", "移动", "排序", "改成", "改为").any(text::contains)
-    if (latest.isBlank() || stopped(latest)) return false
-    if (editing(latest)) return true
-    if (latest.trim() !in setOf("继续", "开始", "按刚才的方案做", "按方案做", "就这么做", "可以", "同意")) return false
-    for (request in prior.asReversed()) {
-        if (stopped(request) || request.startsWith("确认执行 ")) return false
-        if (editing(request) || hasCreationVerb(request)) return true
-    }
-    return false
-}
-
 private fun NovexManagedChange.isCreation(): Boolean = when (this) {
     is NovexManagedChange.CreateWorld,
     is NovexManagedChange.CreateCharacter,
     is NovexManagedChange.CreateCharacterVersion,
     is NovexManagedChange.CreateInteractiveFiction -> true
     else -> false
-}
-
-private fun NovexManagedChange.creationLabel(): String = when (this) {
-    is NovexManagedChange.CreateWorld -> "世界"
-    is NovexManagedChange.CreateCharacter -> "角色"
-    is NovexManagedChange.CreateCharacterVersion -> "角色版本或分身"
-    is NovexManagedChange.CreateInteractiveFiction -> "文游"
-    else -> "内容"
-}
-
-/** Host-supplied real user turns only. This permits a proposal, never a write. */
-internal fun NovexManagedChange.matchesCreationTask(latest: String, prior: List<String>): Boolean {
-    if (endsCreationTask(latest)) return false
-    if (matchesCreationRequest(latest)) return true
-    val continuation = latest.isBlank() || listOf(
-        "继续", "开始", "按刚才", "照刚才", "按前面", "照前面", "按上面", "照上面",
-        "按这个", "照这个", "按方案", "照方案", "就这么做", "就这样做", "做吧", "可以", "同意",
-    ).any(latest::contains)
-    if (!continuation) return false
-    for (request in prior.asReversed()) {
-        if (endsCreationTask(request)) return false
-        if (hasCreationVerb(request)) return matchesCreationRequest(request)
-    }
-    return false
-}
-
-// A confirmation closes the proposal phase. Later "continue" must not reuse it
-// to manufacture another new card. Negative/changed tasks are conservative stops.
-private fun endsCreationTask(text: String): Boolean = text.trim().startsWith("确认执行 ") ||
-    listOf("取消", "停止", "撤销", "算了", "不做了", "换个话题", "换一个话题", "先聊", "先讨论", "只讨论",
-        "改成", "改为", "换成").any(text::contains) ||
-    Regex("(不要|不用|先别|暂不|先不|不需要|别).{0,8}(创建|新建|生成|制作|执行|继续|开始|添加|增加|做)")
-        .containsMatchIn(text)
-
-private fun hasCreationVerb(text: String): Boolean =
-    listOf("创建", "新建", "生成", "做一个", "写一个", "增加", "添加", "做成", "制作").any(text::contains)
-
-private fun NovexManagedChange.matchesCreationRequest(text: String): Boolean {
-    val normalized = text.trim()
-    if (!hasCreationVerb(normalized)) return false
-    val (cardName, kindWords) = when (this) {
-        is NovexManagedChange.CreateWorld -> name to listOf("世界")
-        is NovexManagedChange.CreateCharacter -> name to listOf("角色", "人物")
-        is NovexManagedChange.CreateCharacterVersion -> label to listOf("分身", "版本", "变体")
-        is NovexManagedChange.CreateInteractiveFiction -> name to listOf("文游", "游戏", "模拟器")
-        else -> return false
-    }
-    val hasExplicitKind = listOf("世界", "角色", "人物", "分身", "版本", "变体", "文游", "游戏", "模拟器")
-        .any(normalized::contains)
-    // A name is only a fallback when no type was named. A world and character
-    // can share a name; that does not make their creation requests interchangeable.
-    return if (hasExplicitKind) kindWords.any(normalized::contains)
-    else cardName.isNotBlank() && normalized.contains(cardName)
 }
 
 private fun NovexManagedChange.summary(): String = when (this) {

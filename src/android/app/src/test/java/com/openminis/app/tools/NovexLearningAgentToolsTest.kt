@@ -9,10 +9,11 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class NovexLearningAgentToolsTest {
     @Test
-    fun `adapter returns the standard read-only preflight result without a start command`() {
+    fun `preflight adapter does not start the saved task`() = runBlocking {
         val collectionRef = NovexResourceRef("novex://source-collections/active")
         val preflight = NovexLearningPreflight.prepare(
             NovexLearningPreflightRequest(
@@ -31,9 +32,9 @@ class NovexLearningAgentToolsTest {
                 proposedBudget = NovexLearningTokenBudget(120_000, 12_000),
             ),
         )
-        val tools = NovexLearningAgentTools { requested, _ ->
+        val tools = NovexLearningAgentTools(com.openminis.app.novex.domain.NovexLearningPreflightResolver { requested, _ ->
             preflight.takeIf { requested == collectionRef }
-        }
+        }, start = { _, _ -> error("准备计划不得启动整理") })
 
         val result = tools.execute(
             "learning_prepare",
@@ -43,6 +44,6 @@ class NovexLearningAgentToolsTest {
         assertTrue(result.success)
         assertEquals("准备资料学习", result.toolTitle)
         assertTrue(result.output.contains("learning.preflight_ready"))
-        assertTrue(result.output.contains("wait_for_native_confirmation"))
+        assertTrue(result.output.contains("learning_start"))
     }
 }

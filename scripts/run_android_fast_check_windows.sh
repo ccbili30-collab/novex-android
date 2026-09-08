@@ -124,11 +124,14 @@ case "$plan" in
     )
     ;;
   novex-domain)
-    coverage="preview-domain-tests"
+    coverage="preview-domain-tests,core-tests"
     validation_gradle_args=(
+      :novex-core:test
       :app:testPreviewDebugUnitTest
       --tests 'com.openminis.app.novex.domain.*'
       --tests 'com.openminis.app.ui.chat.NovexConversationEditorDraftStateTest'
+      --tests 'com.openminis.app.ui.chat.NovexCardExecutionPresentationTest'
+      --tests 'com.openminis.app.share.NovexConversationBundleExporterTest'
       --tests 'com.openminis.app.data.character.ContentModule*'
       --tests 'com.openminis.app.ui.novex.ContentModuleDraftListTest'
       --tests 'com.openminis.app.ui.novex.NovexContentModulePresentationTest'
@@ -138,6 +141,8 @@ case "$plan" in
       --tests 'com.openminis.app.tools.InteractiveFictionAgentToolsTest'
       --tests 'com.openminis.app.tools.ImageGenerationPolicyTest'
       --tests 'com.openminis.app.tools.NovexRawToolRetirementTest'
+      --tests 'com.openminis.app.tools.NovexLearningAgentToolsTest'
+      --tests 'com.openminis.app.tools.NovexDocumentAgentToolsTest'
       --tests 'com.openminis.app.tools.NovexWorkspaceAgentToolsTest'
       --tests 'com.openminis.app.service.NovexAgentForegroundServiceTest'
     )

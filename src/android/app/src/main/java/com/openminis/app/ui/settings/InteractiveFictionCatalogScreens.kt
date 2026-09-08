@@ -163,17 +163,21 @@ fun CatalogInteractiveFictionDetailScreen(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator(color = NovexColors.Primary, strokeWidth = 2.dp) }
             else -> {
-                InteractiveFictionPrimaryContent(current, onOpenModule)
-                com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.GAME, projectId))
-                com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId))
+                com.openminis.app.ui.novex.NovexCardDetailSections(
+                    cardId = projectId,
+                    content = { InteractiveFictionPrimaryContent(current, onOpenModule) },
+                    relations = {
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(
                     com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenSession)
                 com.openminis.app.ui.novex.NovexCardReferenceSection(
                     com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenModule = onOpenModule)
+                    },
+                    management = {
+                com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.GAME, projectId))
+                com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId))
                 NovexContentSection(title = "使用与分享") {
                     NovexTextActionRow(
                         label = "分享到新对话",
-                        icon = R.drawable.ic_phosphor_plus,
                         onClick = { withFullText(onShareToConversation) },
                     )
                     NovexTextActionRow(
@@ -191,6 +195,8 @@ fun CatalogInteractiveFictionDetailScreen(
                         onClick = { exportCard = true },
                     )
                 }
+                    },
+                )
                 Spacer(Modifier.height(40.dp))
             }
         }

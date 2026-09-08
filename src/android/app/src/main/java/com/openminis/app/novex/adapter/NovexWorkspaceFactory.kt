@@ -80,12 +80,14 @@ object NovexWorkspaceFactory {
      * repository tests keep using [create] when they need an eager workspace.
      */
     fun createDeferred(database: AppDatabase, mediaRoot: File): NovexWorkspace =
-        DeferredNovexWorkspace { create(database, mediaRoot) }
+        DeferredNovexWorkspace {
+            create(database, mediaRoot).also { (it as DefaultNovexWorkspace).recoverSavedCards() }
+        }
 }
 
 internal class DeferredNovexWorkspace(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val factory: () -> NovexWorkspace,
+    private val factory: suspend () -> NovexWorkspace,
 ) : NovexWorkspace {
     @Volatile
     private var initialized: NovexWorkspace? = null

@@ -300,7 +300,7 @@ class NovexWorkspaceInstrumentedTest {
 
         val failed = runCatching {
             database.withTransaction {
-                service.apply(configuration, proposal, proposal.confirmationPhrase)
+                service.apply(configuration, proposal, "")
             }
         }
 

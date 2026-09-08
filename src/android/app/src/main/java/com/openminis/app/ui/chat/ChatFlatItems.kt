@@ -374,6 +374,7 @@ internal sealed class FlatChatItem {
         val isTurnStart: Boolean = false,
         /** Joined raw markdown of the parent message, used by Copy Markdown. */
         val messageMarkdown: String,
+        val executionText: Boolean = false,
     ) : FlatChatItem() {
         override val key = if (isTurnStart) "assistant-start:$messageId" else "mdblock:$messageId:$parentBlockId:$blockIndex"
         override val contentType = "mdblock"
@@ -387,6 +388,7 @@ internal sealed class FlatChatItem {
                 blockIndex == other.blockIndex &&
                 isLastBlockOfMessage == other.isLastBlockOfMessage &&
                 messageIsStreaming == other.messageIsStreaming &&
+                executionText == other.executionText &&
                 isTurnStart == other.isTurnStart &&
                 rawText.length == other.rawText.length &&
                 messageMarkdown.length == other.messageMarkdown.length
@@ -397,6 +399,7 @@ internal sealed class FlatChatItem {
             h = h * 31 + blockIndex
             h = h * 31 + isLastBlockOfMessage.hashCode()
             h = h * 31 + messageIsStreaming.hashCode()
+            h = h * 31 + executionText.hashCode()
             h = h * 31 + isTurnStart.hashCode()
             h = h * 31 + rawText.length
             h = h * 31 + messageMarkdown.length
@@ -578,6 +581,7 @@ internal fun buildFlatChatItems(
             is FlatChatItem.AssistantMarkdownBlock -> FlatChatItem.AssistantMarkdownBlock(
                 messageId = "${item.messageId}#$n",
                 parentBlockId = item.parentBlockId,
+                executionText = item.executionText,
                 rawText = item.rawText,
                 blockIndex = item.blockIndex,
                 isLastBlockOfMessage = item.isLastBlockOfMessage,
@@ -635,12 +639,7 @@ internal fun buildFlatChatItems(
         // the assistant header so each info block stands on its own. Mirrors
         // iOS systemDividerRow / compactDividerRow.
         val isSystem = message.role == "system"
-        val joinedMarkdown = run {
-            val parts = message.toolBlocks
-                .filter { it.kind == "text" && it.content.isNotEmpty() }
-                .joinToString("\n\n") { it.content }
-            if (parts.isNotEmpty()) parts else message.content
-        }
+        val joinedMarkdown = formalAssistantText(message.toolBlocks, message.content)
         // T83: when Resume creates a fresh assistant bubble after the user
         // stopped a streaming turn, the previous (cancelled) assistant
         // message is right before this one in the list. Visually they should
@@ -754,6 +753,7 @@ internal fun buildFlatChatItems(
                             out.add(dedupe(FlatChatItem.AssistantMarkdownBlock(
                                 messageId = message.id,
                                 parentBlockId = block.id,
+                                executionText = block.executionText,
                                 rawText = block.content,
                                 blockIndex = 0,
                                 isLastBlockOfMessage = isLastText && message.isStreaming,
@@ -767,6 +767,7 @@ internal fun buildFlatChatItems(
                                 out.add(dedupe(FlatChatItem.AssistantMarkdownBlock(
                                     messageId = message.id,
                                     parentBlockId = block.id,
+                                    executionText = block.executionText,
                                     rawText = raw,
                                     blockIndex = fragIdx,
                                     isLastBlockOfMessage = isLastText && isLastFragOfText,

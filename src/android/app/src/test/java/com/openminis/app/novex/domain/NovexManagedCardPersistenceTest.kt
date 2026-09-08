@@ -104,7 +104,7 @@ class NovexManagedCardPersistenceTest {
             val configuration = NovexConversationConfigurationSnapshot("interrupted-creation")
             val proposal = service.propose(configuration, operations.toString(), "创建世界卡、角色卡和文游卡", "interrupted-cards")
             val error = assertThrows(IllegalStateException::class.java) { runBlocking {
-                service.apply(configuration, proposal, proposal.confirmationPhrase)
+                service.apply(configuration, proposal, "")
             } }
             assertEquals("模拟写入后提交前中断", error.message)
             database.close()
@@ -195,7 +195,7 @@ class NovexManagedCardPersistenceTest {
             val configuration = NovexConversationConfigurationSnapshot("game-creation")
             val proposal = service.propose(configuration, operations.toString(), "创建文游卡记言之旅", "game-roundtrip")
             assertTrue(workspace.interactiveFictions().isEmpty())
-            val address = service.apply(configuration, proposal, proposal.confirmationPhrase).createdSubjects.single()
+            val address = service.apply(configuration, proposal, "").createdSubjects.single()
             val before = requireNotNull(workspace.interactiveFiction(address.id))
             val exported = workspace.apply(NovexCommand.ExportNativeInteractiveFiction(address.id)).requireNativeCard()
             val transfer = NovexCardTransferParser.parse(NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)))
@@ -247,7 +247,7 @@ class NovexManagedCardPersistenceTest {
             val configuration = NovexConversationConfigurationSnapshot("character-creation")
             val proposal = service.propose(configuration, operations.toString(), "创建角色卡记言人", "character-roundtrip")
             assertTrue(workspace.characters().isEmpty())
-            val address = service.apply(configuration, proposal, proposal.confirmationPhrase).createdSubjects.single()
+            val address = service.apply(configuration, proposal, "").createdSubjects.single()
             val created = workspace.characters().single().character
             assertEquals(created.original.id, address.id)
             val page = requireNotNull(workspace.character(created.character.id))
@@ -307,7 +307,7 @@ class NovexManagedCardPersistenceTest {
                 .put("overview", "长期创作验收").put("modules", modules)).toString(),
                 "创建世界卡，完整保存这三个模块", "create-complete-world")
             assertTrue(workspace.worlds().isEmpty())
-            val worldAddress = service.apply(configuration, proposal, proposal.confirmationPhrase).createdSubjects.single()
+            val worldAddress = service.apply(configuration, proposal, "").createdSubjects.single()
             val managed = configuration.copy(managedSubjects = listOf(ManagedSubject(worldAddress, ManagedAccess.EDIT)))
             val inspection = service.inspect(managed, worldAddress, null)
             assertEquals(listOf("规则", "制度", "历史"), inspection.modules.map { it.name })
@@ -318,7 +318,7 @@ class NovexManagedCardPersistenceTest {
                 .put(JSONObject().put("operation", "add_reference").put("module_id", sourceIds[0])
                     .put("target_kind", "module").put("target_id", sourceIds[1]))
             val links = service.propose(managed, changes.toString(), "改名并关联制度", "link-complete-world")
-            service.apply(managed, links, links.confirmationPhrase)
+            service.apply(managed, links, "")
 
             val page = requireNotNull(workspace.world(worldAddress.id))
             assertEquals(listOf("核心规则", "制度", "历史"), page.modules.map { it.name })

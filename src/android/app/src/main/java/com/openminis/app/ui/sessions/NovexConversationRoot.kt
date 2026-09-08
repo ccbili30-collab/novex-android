@@ -131,6 +131,12 @@ fun NovexConversationRoot(
         if (availability.contentReady) onContentLoaded()
     }
 
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    deleteTarget?.let { id ->
+        com.openminis.app.ui.chat.NovexDeleteConversationDialog(id,
+            onDismiss = { deleteTarget = null }, onDeleted = { deleteTarget = null })
+    }
+
     var searching by rememberSaveable { mutableStateOf(false) }
     var filterName by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT.name) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -282,6 +288,7 @@ fun NovexConversationRoot(
                                     },
                                 version = session.characterVersionId?.let(catalog.versions::get),
                                 onClick = { onOpenSession(session.id) },
+                                onDelete = { deleteTarget = session.id },
                                 modifier = Modifier.longPressDraggableHandle(),
                             )
                         }
@@ -369,8 +376,10 @@ private fun NovexConversationRow(
     world: ConversationWorldMeta?,
     version: ConversationVersionMeta?,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.Top,
         modifier = modifier
@@ -433,6 +442,12 @@ private fun NovexConversationRow(
             fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
             modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
+        Box {
+            com.openminis.app.ui.novex.TextButton(onClick = { menuOpen = true }) { Text("更多") }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text("删除对话") }, onClick = { menuOpen = false; onDelete() })
+            }
+        }
     }
 }
 

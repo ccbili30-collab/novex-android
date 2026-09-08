@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -121,7 +122,6 @@ data class WorldPersonaSummary(
 @Composable
 fun CatalogWorldDetailScreen(
     worldId: String,
-    hasLegacyWorld: Boolean,
     personas: List<WorldPersonaSummary>,
     onBack: () -> Unit,
     onEditWorld: () -> Unit,
@@ -132,7 +132,7 @@ fun CatalogWorldDetailScreen(
     onEditCharacterVersion: (String, String) -> Unit,
     onOpenSession: (String) -> Unit,
     onStartWorldNovax: (String?) -> Unit,
-    onStartCharacterChat: (String, String) -> Unit,
+    onStartCharacterChat: (String, String?) -> Unit,
     onOpenModule: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -161,16 +161,7 @@ fun CatalogWorldDetailScreen(
     }
     val current = data
     fun beginWorldConversation() {
-        val page = current ?: return
-        when {
-            personas.isEmpty() -> onEditPersona(null)
-            page.versions.isEmpty() -> addCharacter = true
-            else -> {
-                selectedPersonaId = personas.firstOrNull { it.isDefault }?.id ?: personas.first().id
-                selectedVersionId = page.versions.first().id
-                startCharacterChat = true
-            }
-        }
+        if (current != null) onStartWorldNovax(null)
     }
     NovexDetailScaffold(
         title = current?.world?.name ?: "世界",
@@ -208,7 +199,10 @@ fun CatalogWorldDetailScreen(
                 CircularProgressIndicator()
             }
             else -> {
-                WorldPrimaryContent(current, onOpenModule)
+                com.openminis.app.ui.novex.NovexCardDetailSections(
+                    cardId = worldId,
+                    content = { WorldPrimaryContent(current, onOpenModule) },
+                    relations = {
                 com.openminis.app.ui.novex.NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
                 WorldCharacterStrip(
                     data = current,
@@ -236,24 +230,18 @@ fun CatalogWorldDetailScreen(
                         onClick = { onEditPersona(null) },
                     )
                 }
-                if (hasLegacyWorld) {
-                    NovexContentSection(title = "Nova 世界助手") {
-                        NovexSummaryRow(
-                            title = "与 Nova 讨论这个世界",
-                            summary = "沿用升级前的世界观和玩家身份，不扮演角色卡。",
-                            onClick = {
-                                onStartWorldNovax(
-                                    personas.firstOrNull { it.isDefault }?.id ?: personas.firstOrNull()?.id,
-                                )
-                            },
-                        )
-                    }
-                }
+                if (current.versions.isNotEmpty()) NovexTextActionRow(label = "选择角色对话", onClick = {
+                    selectedPersonaId = null
+                    selectedVersionId = current.versions.first().id
+                    startCharacterChat = true
+                })
+                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
+                    com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
+                    },
+                    management = {
                 com.openminis.app.ui.novex.NovexWorldParallelSection(worldId, onBack)
                 com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
                 com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.world(worldId))
-                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
-                    com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
                         label = "导出诺文世界卡",
@@ -261,6 +249,8 @@ fun CatalogWorldDetailScreen(
                         onClick = { exportCard = true },
                     )
                 }
+                    },
+                )
                 Spacer(Modifier.height(40.dp))
             }
         }
@@ -301,9 +291,9 @@ fun CatalogWorldDetailScreen(
         confirmButton = {
             NovexPrimaryButton(
                 label = "开始对话",
-                enabled = selectedPersonaId != null && selectedVersionId != null,
+                enabled = selectedVersionId != null,
                 onClick = start@{
-                    val personaId = selectedPersonaId ?: return@start
+                    val personaId = selectedPersonaId
                     val versionId = selectedVersionId ?: return@start
                     startCharacterChat = false
                     onStartCharacterChat(versionId, personaId)
@@ -316,6 +306,8 @@ fun CatalogWorldDetailScreen(
         },
     ) {
                 Text("玩家身份", fontWeight = FontWeight.Bold)
+                NovexTextActionRow(label = if (selectedPersonaId == null) "✓  不指定" else "不指定",
+                    onClick = { selectedPersonaId = null })
                 personas.forEach { persona ->
                     NovexTextActionRow(
                         label = if (selectedPersonaId == persona.id) {
@@ -670,26 +662,8 @@ private fun WorldCharacterStrip(
                 }
             }
             item(key = "add-character") {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(84.dp).clickable(onClick = onAdd),
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(58.dp).clip(CircleShape).background(NovexColors.PrimarySoft),
-                    ) {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(com.openminis.app.R.drawable.ic_phosphor_plus),
-                            contentDescription = "从角色库添加",
-                            tint = NovexColors.Primary,
-                        )
-                    }
-                    Text(
-                        "从角色库添加",
-                        color = NovexColors.Primary,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
+                TextButton(onClick = onAdd, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("选择角色", color = NovexColors.Primary)
                 }
             }
         }

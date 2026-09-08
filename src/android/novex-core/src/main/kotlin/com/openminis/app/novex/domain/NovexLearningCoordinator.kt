@@ -3,8 +3,8 @@ package com.openminis.app.novex.domain
 /**
  * Application-facing learning control seam.
  *
- * Provider adapters may expose learning_prepare, but this start operation is intentionally absent
- * from the model tool catalog and must only be called after the native UI captures confirmation.
+ * The host supplies an exact budget authorization after the common conversation tool gate
+ * or an explicit native action. This coordinator does not own an additional approval UI.
  */
 class NovexLearningCoordinator {
     fun start(
@@ -12,7 +12,7 @@ class NovexLearningCoordinator {
         confirmation: NovexLearningConfirmation?,
     ): NovexLearningTaskState {
         require(preflight.requiresConfirmation) { "少量资料应直接读取，不应建立长时学习任务" }
-        require(confirmation != null) { "开始学习前必须由原生界面取得用户确认" }
+        require(confirmation != null) { "开始学习前必须取得与当前计划对应的执行授权" }
         val usage = NovexLearningUsageLedger.start(preflight, confirmation)
         return NovexLearningTaskState(
             preflight = preflight,
@@ -35,7 +35,7 @@ class NovexLearningCoordinator {
             preflight.modelProviderName, preflight.modelLimits)
         require(preflight.sourceRefs == task.preflight.sourceRefs) { "扩大预算不能更换资料范围" }
         require(preflight.documentRevisions == task.preflight.documentRevisions) { "扩大预算不能更换来源解析修订" }
-        require(confirmation != null) { "扩大预算前必须由原生界面重新确认" }
+        require(confirmation != null) { "扩大预算前必须取得与新计划对应的执行授权" }
         require(NovexLearningGate.authorize(preflight, confirmation) == NovexLearningAuthorization.AUTHORIZED) {
             "扩大预算尚未获得与新预检匹配的用户确认"
         }

@@ -1,9 +1,5 @@
 package com.openminis.app.novex.domain
 
-import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -113,7 +109,10 @@ data class NovexMemoryEntry(
 data class NovexMemoryInspection(
     val scope: NovexMemoryScope,
     val entries: List<NovexMemoryEntry>,
+    val replayed: Boolean = false,
 )
+
+data class NovexMemoryCommit(val entries: List<NovexMemoryEntry>, val replayed: Boolean)
 
 sealed interface NovexMemoryChange {
     data class Add(val entry: NovexMemoryEntry) : NovexMemoryChange
@@ -147,8 +146,6 @@ data class NovexMemoryPlan(
         require(summary.isNotBlank()) { "记忆变更摘要不能为空" }
     }
 
-    val confirmationPhrase: String get() = "确认执行 ${id.take(8)}"
-
     val affectedRefs: List<NovexResourceRef>
         get() = changes.map { change ->
             when (change) {
@@ -158,109 +155,12 @@ data class NovexMemoryPlan(
             }
         }.distinct()
 
-    fun isConfirmedBy(userText: String): Boolean = userText.trim() == confirmationPhrase
 }
 
 interface NovexMemoryStore {
     fun entries(scope: NovexMemoryScope): List<NovexMemoryEntry>
     fun apply(scope: NovexMemoryScope, changes: List<NovexMemoryChange>): List<NovexMemoryEntry>
-}
-
-/** One-file-per-scope adapter; every change batch is validated and replaced atomically. */
-class FileNovexMemoryStore(
-    private val root: File,
-) : NovexMemoryStore {
-    init {
-        require(root.exists() || root.mkdirs()) { "无法创建 Novex 记忆目录" }
-        require(root.isDirectory) { "Novex 记忆目录无效" }
-    }
-
-    @Synchronized
-    override fun entries(scope: NovexMemoryScope): List<NovexMemoryEntry> = read(scope)
-
-    @Synchronized
-    override fun apply(
-        scope: NovexMemoryScope,
-        changes: List<NovexMemoryChange>,
-    ): List<NovexMemoryEntry> {
-        require(changes.isNotEmpty()) { "记忆变更不能为空" }
-        val current = read(scope).associateByTo(linkedMapOf(), { it.ref.value }, { it })
-        changes.forEach { change ->
-            when (change) {
-                is NovexMemoryChange.Add -> {
-                    require(change.entry.ref.value !in current) { "记忆编号已经存在" }
-                    current[change.entry.ref.value] = change.entry
-                }
-
-                is NovexMemoryChange.Replace -> {
-                    val existing = requireNotNull(current[change.ref.value]) { "记忆已经不存在" }
-                    require(existing.revision == change.expectedRevision) { "记忆已经变化，请重新检查" }
-                    val content = normalizeMemoryContent(change.content)
-                    val tags = normalizeMemoryTags(change.tags)
-                    current[change.ref.value] = existing.copy(
-                        content = content,
-                        tags = tags,
-                        sourceConversationId = change.sourceConversationId,
-                        sourceBranchId = change.sourceBranchId,
-                        sourceMessageId = change.sourceMessageId,
-                        updatedAtMillis = change.updatedAtMillis,
-                        revision = memoryRevision(existing.ref.entryId, content, tags),
-                    )
-                }
-
-                is NovexMemoryChange.Remove -> {
-                    val existing = requireNotNull(current[change.ref.value]) { "记忆已经不存在" }
-                    require(existing.revision == change.expectedRevision) { "记忆已经变化，请重新检查" }
-                    current.remove(change.ref.value)
-                }
-            }
-        }
-        val result = current.values.sortedWith(
-            compareByDescending<NovexMemoryEntry>(NovexMemoryEntry::updatedAtMillis)
-                .thenBy { it.ref.value },
-        )
-        write(scope, result)
-        return result
-    }
-
-    private fun read(scope: NovexMemoryScope): List<NovexMemoryEntry> {
-        val file = scopeFile(scope)
-        if (!file.isFile) return emptyList()
-        return runCatching {
-            val rootJson = JSONObject(file.readText())
-            require(rootJson.getInt("version") == 1) { "不支持的记忆存储版本" }
-            val entries = rootJson.getJSONArray("entries")
-            (0 until entries.length()).map { index -> entries.getJSONObject(index).toMemoryEntry(scope) }
-        }.getOrElse { failure -> throw IllegalStateException("Novex 记忆存储损坏", failure) }
-    }
-
-    private fun write(scope: NovexMemoryScope, entries: List<NovexMemoryEntry>) {
-        val bytes = JSONObject()
-            .put("version", 1)
-            .put("scope", scope.toJson())
-            .put("entries", JSONArray(entries.map(NovexMemoryEntry::toJson)))
-            .toString()
-            .toByteArray(Charsets.UTF_8)
-        val target = scopeFile(scope)
-        val temporary = File(root, ".${target.name}.${System.nanoTime()}.tmp")
-        temporary.writeBytes(bytes)
-        try {
-            try {
-                Files.move(
-                    temporary.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-        } finally {
-            temporary.delete()
-        }
-    }
-
-    private fun scopeFile(scope: NovexMemoryScope): File = File(root, "${scope.storageKey}.json")
+    fun applyPlan(plan: NovexMemoryPlan): NovexMemoryCommit
 }
 
 class NovexMemoryService(
@@ -370,9 +270,9 @@ class NovexMemoryService(
         )
     }
 
-    fun apply(plan: NovexMemoryPlan, confirmationText: String): NovexMemoryInspection {
-        require(plan.isConfirmedBy(confirmationText)) { "需要用户发送“${plan.confirmationPhrase}”" }
-        store.apply(plan.scope, plan.changes)
+    /** The caller passes through the conversation execution gate before reaching this storage service. */
+    fun apply(plan: NovexMemoryPlan): NovexMemoryInspection {
+        val commit = store.applyPlan(plan)
         val changedRefs = plan.changes.map { change ->
             when (change) {
                 is NovexMemoryChange.Add -> change.entry.ref.value
@@ -382,7 +282,8 @@ class NovexMemoryService(
         }.toSet()
         return NovexMemoryInspection(
             plan.scope,
-            store.entries(plan.scope).filter { it.ref.value in changedRefs },
+            commit.entries.filter { it.ref.value in changedRefs },
+            replayed = commit.replayed,
         )
     }
 }
@@ -390,32 +291,32 @@ class NovexMemoryService(
 private const val MAX_MEMORY_CONTENT_CHARS = 8_000
 private const val MAX_MEMORY_TAGS = 20
 
-private fun normalizeMemoryContent(value: String): String = value.trim().also {
+internal fun normalizeMemoryContent(value: String): String = value.trim().also {
     require(it.isNotEmpty()) { "记忆内容不能为空" }
     require(it.length <= MAX_MEMORY_CONTENT_CHARS) { "单条记忆超过字符上限" }
 }
 
-private fun normalizeMemoryTags(values: List<String>): List<String> = values
+internal fun normalizeMemoryTags(values: List<String>): List<String> = values
     .map(String::trim)
     .filter(String::isNotEmpty)
     .distinct()
     .also { require(it.size <= MAX_MEMORY_TAGS) { "单条记忆最多二十个标签" } }
 
-private fun memoryRevision(id: String, content: String, tags: List<String>): String = memorySha256(
+internal fun memoryRevision(id: String, content: String, tags: List<String>): String = memorySha256(
     (id + "\u001f" + content + "\u001f" + tags.joinToString("\u001f")).toByteArray(Charsets.UTF_8),
 )
 
-private fun memorySha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+internal fun memorySha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
     .digest(bytes)
     .joinToString("") { "%02x".format(it) }
 
-private fun NovexMemoryScope.toJson() = JSONObject()
+internal fun NovexMemoryScope.toJson() = JSONObject()
     .put("kind", kind.wireName)
     .put("world_id", worldId)
     .put("player_identity_id", playerIdentityId)
     .put("character_version_id", characterVersionId)
 
-private fun NovexMemoryEntry.toJson() = JSONObject()
+internal fun NovexMemoryEntry.toJson() = JSONObject()
     .put("memory_ref", ref.value)
     .put("content", content)
     .put("tags", JSONArray(tags))
@@ -426,7 +327,7 @@ private fun NovexMemoryEntry.toJson() = JSONObject()
     .put("updated_at_millis", updatedAtMillis)
     .put("revision", revision)
 
-private fun JSONObject.toMemoryEntry(scope: NovexMemoryScope) = NovexMemoryEntry(
+internal fun JSONObject.toMemoryEntry(scope: NovexMemoryScope) = NovexMemoryEntry(
     ref = NovexMemoryRef.parse(scope, getString("memory_ref")),
     content = getString("content"),
     tags = getJSONArray("tags").stringList(),
@@ -438,5 +339,5 @@ private fun JSONObject.toMemoryEntry(scope: NovexMemoryScope) = NovexMemoryEntry
     revision = getString("revision"),
 )
 
-private fun JSONArray?.stringList(): List<String> = if (this == null) emptyList() else
+internal fun JSONArray?.stringList(): List<String> = if (this == null) emptyList() else
     (0 until length()).map { getString(it) }

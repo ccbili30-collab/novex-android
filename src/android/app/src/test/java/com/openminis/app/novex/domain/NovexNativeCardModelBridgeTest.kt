@@ -35,18 +35,21 @@ class NovexNativeCardModelBridgeTest {
         var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
         var workspace = NovexWorkspaceFactory.create(db, File(root, "media"))
         workspace.apply(NovexCommand.EnsureConversationDrafts("original-case"))
-        var configuration = NovexConversationConfigurationSnapshot("original-case")
+        var configuration = NovexConversationConfigurationSnapshot("original-case", executionMode = NovexExecutionMode.FREE)
+        val execution = NovexToolExecution(NovexOperationJournal(File(root, "operations")))
         fun management() = NovexManagementService(workspace, CreativeArtifactRepository(db, CreativeArtifactFileStore(File(root, "artifacts"))))
-        fun service() = NovexCardFileService(workspace, management(), NovexCardFileOperations(NovexCardSourceModules(sourceStore) { it == documentRef }),
+        fun executor() = NovexContentToolExecutor(workspace, management(), NovexCardFileOperations(NovexCardSourceModules(sourceStore) { it == documentRef }),
             NovexManagementTransaction { block -> db.withTransaction { block() } })
         val definitions = NovexManagementTools.modelDefinitions() + NovexCardFileTools.definitions() + NovexDocumentAgentTools.providerDefinitions() +
             AgentTools.makeAgentTools().filter { it.name == "present_choices" }
         File(root, "tools.json").writeText(JSONArray(definitions.map { it.toOpenAIJson() }).toString())
         File(root, "guide.txt").writeText(NovexProductToolGuide.build(definitions.map { it.name }.toSet()))
+        File(root, "formal-builder.txt").writeText(com.openminis.app.agent.NovexSystemPrompt.build(
+            "original-case", RuntimeEnvironment.getApplication(), com.openminis.app.agent.SoulStore.LEGACY_NOVEX_DEFAULT_BODY,
+            false, true, definitions.map { it.name }.toSet()))
         val documentTools = NovexDocumentToolRouter(NovexDocumentTools(sourceStore))
-        val proposals = mutableMapOf<String, NovexManagementPlan>()
         File(root, "ready.json").writeText(JSONObject().put("document", JSONObject(documentTools.execute("document_inspect", JSONObject().put("document_ref", documentRef.value).toString()).toJson()))
-            .put("directory", management().inspect(configuration, null, null).toToolJson()).toString())
+            .put("directory", management().inspect(configuration, null, null).toModelToolJson()).toString())
         try {
             val deadline = System.currentTimeMillis() + 15 * 60_000
             var index = 0
@@ -55,6 +58,30 @@ class NovexNativeCardModelBridgeTest {
                 if (!requestFile.exists()) { Thread.sleep(100); continue }
                 val request = JSONObject(requestFile.readText())
                 val name = request.getString("name")
+                if (name == "__snapshot" || name == "__verify_and_close" && File(root, "matrix-mode").exists()) {
+                    db.close()
+                    db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
+                    workspace = NovexWorkspaceFactory.create(db, File(root, "media"))
+                    File(root, "configuration.json").takeIf { it.exists() }?.let {
+                        configuration = NovexConversationConfigurationCodec.decode(it.readText(), "original-case")
+                    }
+                    val cards = workspace.conversationDrafts("original-case")!!.cards
+                    val snapshot = JSONObject().put("reopened", true)
+                        .put("model_directory", management().inspect(configuration, null, null).toModelToolJson()).put("cards", JSONArray(cards.map { card ->
+                        JSONObject().put("kind", card.subject.kind.managementWireName()).put("id", card.subject.id)
+                            .put("private", card.isPrivate)
+                            .put("detail", management().inspect(configuration, card.subject, null).toToolJson())
+                    })).put("world_count", workspace.worlds().size).put("character_count", workspace.characters().size)
+                        .put("game_count", workspace.interactiveFictions().size)
+                        .put("configuration", JSONObject(NovexConversationConfigurationCodec.encode(configuration)))
+                    if (name == "__verify_and_close") {
+                        File(root, "verified.json").writeText(snapshot.toString())
+                        return@runBlocking
+                    }
+                    File(root, "response-$index.json").writeText(snapshot.toString())
+                    index++
+                    continue
+                }
                 if (name == "__verify_and_close") {
                     db.close()
                     db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
@@ -64,6 +91,8 @@ class NovexNativeCardModelBridgeTest {
                     assertEquals("Exactly the requested game, with no unsolicited filled world or character", 1, games.size)
                     val modules = workspace.modules(ModuleOwner.interactiveFiction(games.single().subject.id)).modules
                     assertEquals(48, modules.size)
+                    assertEquals(games.single().subject.id, workspace.interactiveFictions().single().project.id)
+                    assertFalse(games.single().isPrivate)
                     assertEquals(document.blocks.joinToString("\n") { it.text }, modules.joinToString("\n") { JSONObject(it.contentJson).getString("text") })
                     assertTrue(draft.cards.filter { it.subject.kind != NovexContentKind.INTERACTIVE_FICTION }.all { management().inspect(configuration, it.subject, null).modules.isEmpty() })
                     assertNull(configuration.activeInteractiveFiction)
@@ -73,32 +102,32 @@ class NovexNativeCardModelBridgeTest {
                     return@runBlocking
                 }
                 val result = runCatching {
-                    val args = request.getJSONObject("arguments")
+                    val args = if (request.has("raw_arguments")) runCatching { JSONObject(request.getString("raw_arguments")) }.getOrElse { JSONObject() } else request.getJSONObject("arguments")
                     val users = request.getJSONArray("user_requests").let { a -> (0 until a.length()).map(a::getString) }
-                    when {
-                        name in NovexCardFileTools.names -> service().execute(configuration, name, args, users, request.getString("operation_id")).also { configuration = it.configuration }.payload
+                    val invalid = com.openminis.app.ui.chat.ChatViewModel.preflightValidateToolCallImpl(name, args, definitions)
+                    val executed = if (invalid != null) ToolExecutionResult("Error: Tool call rejected before execution. $invalid Re-issue the call with valid arguments.", false) else execution.execute(NovexToolOperation(configuration.conversationId, "test-reply", request.getString("operation_id"), name, args.toString(), name), { configuration.executionMode }) {
+                    if (name in NovexCardFileTools.names || name in setOf(NovexManagementTools.PROPOSE, NovexManagementTools.APPLY)) {
+                        executor().execute(name, args.toString(), NovexContentToolExecutor.Request(configuration, users,
+                            "test-reply", request.getString("operation_id"), request.optString("request_id", "original-user"))) {}.also { configuration = it.configuration }.tool
+                    } else {
+                    val payload = when {
                         name in NovexDocumentToolRouter.TOOL_NAMES -> JSONObject(documentTools.execute(name, args.toString()).toJson())
                         name == NovexManagementTools.INSPECT -> {
                             val kind = args.optString("subject_kind")
                             val target = if (kind.isBlank()) null else NovexContentAddress(when (kind) {
                                 "world" -> NovexContentKind.WORLD; "character_version" -> NovexContentKind.CHARACTER_VERSION; "game" -> NovexContentKind.INTERACTIVE_FICTION
                                 else -> error("无效对象类型") }, args.getString("subject_id"))
-                            management().inspect(configuration, target, args.optString("module_id").takeIf { it.isNotBlank() }).toToolJson().apply {
+                            management().inspect(configuration, target, args.optString("module_id").takeIf { it.isNotBlank() }).toModelToolJson(args.optBoolean("include_advanced")).apply {
                                 if (args.optBoolean("include_advanced")) put("advanced_change_guide", NovexManagementTools.advancedGuide())
                             }
-                        }
-                        name == NovexManagementTools.PROPOSE -> management().propose(configuration, args.getString("changes"), users.last(), request.getString("operation_id"), users.dropLast(1)).let { plan ->
-                            proposals[plan.id] = plan
-                            JSONObject().put("proposal_id", plan.id).put("requires_confirmation", plan.requiresConfirmation).put("summary", plan.summary)
-                        }
-                        name == NovexManagementTools.APPLY -> {
-                            val plan = requireNotNull(proposals[args.getString("proposal_id")])
-                            management().apply(configuration, plan, users.last())
-                            JSONObject().put("saved", true).put("message", "已执行，请回读核对")
                         }
                         name == "present_choices" -> JSONObject().put("waiting_for_user", true).put("choices", args.get("choices"))
                         else -> error("本次原生测试未启用此工具")
                     }
+                    ToolExecutionResult(payload.toString(), true)
+                    }
+                    }
+                    runCatching { JSONObject(executed.output) }.getOrElse { JSONObject().put("error", executed.output) }
                 }.getOrElse { JSONObject().put("error", it.message ?: it.javaClass.simpleName) }
                 val temporary = File(root, "response-$index.tmp")
                 temporary.writeText(result.toString())

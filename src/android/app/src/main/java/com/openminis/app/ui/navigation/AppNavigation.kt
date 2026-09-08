@@ -737,11 +737,9 @@ fun AppNavigation(
             val worldId = entry.arguments?.getString("worldId") ?: return@composable
             val context = LocalContext.current
             com.openminis.app.data.character.CharacterCardStore.initialize(context)
-            val legacyWorlds by com.openminis.app.data.character.CharacterCardStore.worlds.collectAsState()
             val legacyPersonas by com.openminis.app.data.character.CharacterCardStore.personas.collectAsState()
             com.openminis.app.ui.settings.CatalogWorldDetailScreen(
                 worldId = worldId,
-                hasLegacyWorld = legacyWorlds.any { it.id == worldId },
                 personas = legacyPersonas.filter { it.worldId == worldId }.map { persona ->
                     com.openminis.app.ui.settings.WorldPersonaSummary(
                         id = persona.id,

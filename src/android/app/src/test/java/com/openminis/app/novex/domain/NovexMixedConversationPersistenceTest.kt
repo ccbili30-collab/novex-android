@@ -56,7 +56,7 @@ class NovexMixedConversationPersistenceTest {
                 NovexManagementTransaction { work -> database.withTransaction { work() } })
             val plan = service.propose(configuration,
                 """[{"operation":"update_module","module_id":"${module.id}","content_json":{"kind":"article","text":"法家新制度"}}]""", "修改法家制度", "mixed-plan")
-            service.apply(configuration, plan, plan.confirmationPhrase)
+            service.apply(configuration, plan, "")
             assertTrue(service.inspect(configuration, null, module.id).selectedModule!!.module.contentJson.contains("法家新制度"))
             val runtime = WorkspaceNovexContextLoader(workspace).load(configuration).joinToString("\n") { it.content }
             assertFalse(runtime.contains("法家新制度"))

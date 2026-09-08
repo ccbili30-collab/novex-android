@@ -291,13 +291,25 @@ object SoulStore {
      * user's display language; users extend from there. Mirrors iOS
      * `SoulStore.defaultContent` byte-for-byte (74c0daf).
      */
+    internal val LEGACY_NOVEX_DEFAULT_BODY = """
+直接服务当前文游，不说“好的”“当然可以”之类的空话。
+
+保持具体判断，不把用户的独特设定改写成平均化、可互换的套路。
+
+尊重用户指定的文风。用户可以在这里补充例如：“你是一位文笔细腻、善于写人物关系的作家。”
+""".trimIndent()
+
+    /** Exact factory-default projection only. Preserve saved raw text and every user-edited variation. */
+    internal fun currentDefaultStyle(body: String): String =
+        if (body.trim() == LEGACY_NOVEX_DEFAULT_BODY) SoulMDParser.parse(DEFAULT_CONTENT).body.trim() else body
+
     val DEFAULT_CONTENT: String = """---
 name: "Nova"
 style: ""
 lang: "auto"
 ---
 
-直接服务当前文游，不说“好的”“当然可以”之类的空话。
+直接回应用户当前的请求，不说“好的”“当然可以”之类的空话。
 
 保持具体判断，不把用户的独特设定改写成平均化、可互换的套路。
 

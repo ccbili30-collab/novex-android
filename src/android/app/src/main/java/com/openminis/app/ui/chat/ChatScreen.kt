@@ -376,6 +376,13 @@ fun ChatScreen(
     // Callers needing the full history (compact / fork / regenerate / send)
     // continue to read viewModel.messages directly inside the VM.
     val messages by viewModel.uiMessages.collectAsState()
+    val toolApprovals by viewModel.pendingToolApprovals.collectAsState()
+    LaunchedEffect(sessionId) { viewModel.restoreToolApprovals() }
+    toolApprovals.firstOrNull()?.let { operation ->
+        NovexToolApprovalDialog(operation,
+            onApprove = { viewModel.decideToolOperation(operation, true) },
+            onReject = { viewModel.decideToolOperation(operation, false) })
+    }
     val compactDividerId = remember(messages) {
         messages.lastOrNull { message ->
             message.toolBlocks.firstOrNull()?.toolName == "compact"
@@ -671,6 +678,7 @@ fun ChatScreen(
     var pendingShareText by remember { mutableStateOf<String?>(null) }
     var showNovexControls by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
+    var showConversationRecords by remember { mutableStateOf(false) }
     var pendingDeleteFromMessageId by remember { mutableStateOf<String?>(null) }
     // [T-new-chat-menu-entry] Confirmation gate for "New Chat" while the
     // current session is still streaming — stopping the running task needs
@@ -1863,17 +1871,11 @@ fun ChatScreen(
                                     showTokenUsageSheet = true
                                 },
                             )
-                            add(
-                                NovexMenuAction("本对话文件", R.drawable.ic_phosphor_note_pencil) {
-                                    viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
-                                },
-                            )
-                            add(NovexMenuAction("资料整理进度", R.drawable.ic_phosphor_brain,
-                                onClick = viewModel::showNovexLearningCollections))
-                            if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
-                                onClick = viewModel::prepareNovexConversationExport))
-                            add(NovexMenuAction("存档与原始依据", R.drawable.ic_phosphor_note_pencil,
-                                onClick = viewModel::showNovexCheckpoints))
+                            add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
+                                onClick = { showConversationRecords = true }))
+                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(
+                                NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
+                                    onClick = viewModel::prepareNovexConversationExport))
                             if (immersiveProfile.usesRolePresentation) {
                                 add(
                                     NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {
@@ -1892,26 +1894,7 @@ fun ChatScreen(
                             }
                             add(
                                 NovexMenuAction(
-                                    stringResource(R.string.chat_menu_new_chat),
-                                    R.drawable.ic_phosphor_note_pencil,
-                                ) {
-                                    if (isStreaming) {
-                                        showNewChatStopDialog = true
-                                    } else {
-                                        onNewChat(
-                                            immersiveProfile.world?.id,
-                                            immersiveProfile.character?.id.takeIf {
-                                                immersiveProfile.characterVersionId == null
-                                            },
-                                            immersiveProfile.characterVersionId,
-                                            immersiveProfile.persona?.id,
-                                        )
-                                    }
-                                },
-                            )
-                            add(
-                                NovexMenuAction(
-                                    stringResource(R.string.chat_menu_clear_chat),
+                                    "删除对话",
                                     R.drawable.ic_phosphor_trash,
                                     destructive = true,
                                 ) { showClearChatDialog = true },
@@ -1964,98 +1947,9 @@ fun ChatScreen(
 
             // Messages + scroll-to-bottom button
             Box(modifier = Modifier.weight(1f)) {
-                var toolBarHeightPx by remember { mutableStateOf(0) }
-                val density = LocalDensity.current
-                val toolBarHeightDp = with(density) { toolBarHeightPx.toDp() }
-                // T166 / T170 / T173: bottomReserve must clear the visible
-                // top of the floating tool-status overlay. Layout primitives
-                // come from FloatingToolStatusBar:
-                //   - status bar height = 38 dp
-                //   - thumbnail floats over the bar with overhang = 27 dp
-                //   - thumbnail TOP = bar top - overhang = 65 dp above the
-                //     input bar's upper edge (which is also the LazyColumn
-                //     bottom edge of the transcript viewport).
-                //
-                // `onGloballyPositioned` on the wrapper Box reports ~98 dp
-                // because it includes wrapper padding(bottom=6) + horizontal
-                // padding insets + shadow allowance — none of which are
-                // *visually occluding* the LazyColumn. Using the measured
-                // value + 8 dp left a ~25 dp gap above the thumbnail (red
-                // box in the user's report).
-                //
-                // Pin to the visual constant: thumbnail height (65 dp) + a
-                // visual buffer (18 dp) so the latest row's bottom has clear
-                // breathing room above the thumbnail top.
-                //
-                // T174: an earlier version gated reserve on `toolBarHeightPx
-                // > 0`, but `onGloballyPositioned` fires asynchronously after
-                // the first floating-bar layout pass; for one frame after
-                // toolBlocks appeared the reserve evaluated the small
-                // default (28 dp) and the just-arrived user bubble landed
-                // beneath the bar. Logcat showed the inverse glitch too:
-                // `toolBarHeightPx=258 toolBarHeightDp=0 reserve=28` — the
-                // px state and the dp/reserve values come from different
-                // recomposition snapshots. Drive the reserve directly off
-                // the same predicate used for *whether* the floating bar is
-                // emitted (`hasFloatingTools` below) so reserve and bar
-                // visibility flip on the same frame.
-                // [T-android-chat-cannot-scroll-bottom-many-tools]
-                // Bug 𝙓𝙄𝙉 TG36286: with 7+ tools the user couldn't scroll the
-                // last messages above the floating tool status bar.
-                //
-                // Asymmetry between the bar's render condition and its
-                // bottomReserve gate: [lastToolBlocks] (drives whether to
-                // mount FloatingToolStatusBar) merges `messages` with the
-                // streaming-side-channel `streamingById`, so during a live
-                // turn the in-flight tool's toolStatus shows up there →
-                // bar renders. [hasFloatingTools] (drives bottomReserve)
-                // only read `messages`, which the streaming architecture
-                // intentionally leaves stable during a turn — so the
-                // in-flight tool is invisible to this predicate → reserve
-                // collapsed to 20dp while a 65dp+6dp floating bar covered
-                // the bottom of the LazyColumn. The new arrivals (status
-                // pill, "Minis is thinking" indicator, inline retry banner) landed
-                // behind the bar with no way to scroll them into view.
-                //
-                // Fix: also subscribe to streamingById so the predicate
-                // matches the bar's actual mount condition. The bar's
-                // mount uses `lastToolBlocks.isNotEmpty()` over the merged
-                // view; we mirror that semantically by checking the same
-                // filter on both sources.
-                val streamingById by viewModel.streamingById.collectAsState()
-                val hasFloatingTools = remember(messages, streamingById) {
-                    val merged = if (streamingById.isEmpty()) messages
-                                 else mergeStreamingOverlay(messages, streamingById)
-                    merged.any { msg ->
-                        msg.role == "assistant" && msg.toolBlocks.any { tb ->
-                            tb.toolStatus != null && tb.kind != "thinking" && tb.kind != "info"
-                        }
-                    }
-                }
-                val visualOverlayHeight = 65.dp  // thumbnailHeight in FloatingToolStatusBar
-                // Halve the breathing room above the input bar in both
-                // states — felt too sparse before. The thumbnail's 65dp
-                // physical height is preserved (it has to clear the
-                // floating overlay).
-                //
-                // T245: buffer raised 9dp → 14dp so the gap between the
-                // last LazyColumn tool row and the floating thumbnail's
-                // top reads at least as loose as the inter-tool spacing
-                // (each ToolCallPill carries padding(vertical = 3.dp) +
-                // LazyColumn spacedBy(2.dp) = ~8dp inter-tool gap; the
-                // 9dp buffer combined with the floating bar's internal
-                // overhang was visually tighter than 8dp). 14dp also
-                // matches the no-tool branch — single visual constant
-                // for "row-bottom → bottom chrome" breathing room.
-                // [T-bottom-occluded 0a6d3c92] No-tools branch bumped from
-                // 14dp → 20dp to give the last message bubble a comfortable
-                // gap above the composer's top edge. With 14dp the trailing
-                // line sat too close to the composer shadow / rounded edge
-                // (user reported "the bottom of the text is slightly clipped"). The floating-tools branch
-                // already reserves visualOverlayHeight (65dp) + buffer and
-                // was not part of the report; keep its +14 buffer.
-                val bottomReserve =
-                    if (hasFloatingTools) visualOverlayHeight + 14.dp else 20.dp
+                // Execution has one home: the collapsed transcript process. Do not duplicate
+                // raw tool thumbnails above the composer or reserve space for a hidden overlay.
+                val bottomReserve = 20.dp
                 // Toolbar, tool-card and thinking-indicator remeasurements are
                 // passive layout events. They intentionally never scroll; the
                 // return-to-latest button is the explicit affordance.
@@ -2080,7 +1974,9 @@ fun ChatScreen(
                     mutableStateOf<List<FlatChatItem>>(emptyList())
                 }
                 var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
-                openedProcess?.let { process ->
+                openedProcess?.let { opened ->
+                    val process = flatItems.filterIsInstance<FlatChatItem.AssistantProcess>()
+                        .firstOrNull { it.key == opened.key } ?: opened
                     NovexExecutionProcessDialog(process, onDismiss = { openedProcess = null }, onOpenTool = {
                         openedProcess = null
                         viewModel.openToolDetail(it.id)
@@ -3129,7 +3025,6 @@ fun ChatScreen(
                 // never opens (and its sentinel LaunchedEffect immediately
                 // closes the detail state because the id "doesn't exist").
                 var lastToolBlocks by remember { mutableStateOf<List<AssistantBlock>>(emptyList()) }
-                var showFloatingToolBar by remember { mutableStateOf(false) }
                 LaunchedEffect(messages) {
                     kotlinx.coroutines.flow.combine(
                         kotlinx.coroutines.flow.flowOf(messages),
@@ -3141,83 +3036,19 @@ fun ChatScreen(
                             .filter { it.toolStatus != null && it.kind != "thinking" && it.kind != "info" }
                     }.collect { lastToolBlocks = it }
                 }
-                val floatingToolState = remember(lastToolBlocks) {
-                    lastToolBlocks.joinToString("|") { "${it.id}:${it.toolStatus}:${it.durationMs}" }
-                }
-                LaunchedEffect(floatingToolState) {
-                    if (lastToolBlocks.isEmpty()) {
-                        showFloatingToolBar = false
-                    } else {
-                        val hasActiveTool = lastToolBlocks.any {
-                            it.toolStatus == ToolBlockStatus.RUNNING ||
-                                it.toolStatus == ToolBlockStatus.STREAMING ||
-                                it.toolStatus == ToolBlockStatus.PENDING
-                        }
-                        showFloatingToolBar = true
-                        if (!hasActiveTool) {
-                            kotlinx.coroutines.delay(2_000L)
-                            showFloatingToolBar = false
-                        }
-                    }
-                }
-                val allToolBlocks = lastToolBlocks
-                if (lastToolBlocks.isNotEmpty() && showFloatingToolBar) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .onGloballyPositioned { toolBarHeightPx = it.size.height }
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 6.dp),
-                    ) {
-                        FloatingToolStatusBar(
-                            toolBlocks = lastToolBlocks,
-                            // T14: per-card stop on the floating bar — same
-                            // global cancel as the message-list pill button.
-                            onStop = { viewModel.cancelStream() },
-                            onDismiss = { showFloatingToolBar = false },
-                            onOpenTerminalWithCommand = onOpenTerminalWithCommand,
-                            // T261: route detail open through the same VM
-                            // state as in-list pills so both surfaces share
-                            // one always-mounted sheet instance.
-                            onOpenDetail = { viewModel.openToolDetail(it) },
-                        )
-                    }
-                } else {
-                    SideEffect { toolBarHeightPx = 0 }
-                }
-
-                // [T-android-tts-capsule] Floating speech-player control for
-                // "Read replies" TTS — expand/compact capsule with mute, model
-                // switch and speed cycling. Mounted LAST in this Box so it
-                // draws above the list, the FABs and the floating tool bar
-                // (iOS mounts its SpeechPlayerControl at app root; chat-screen
-                // scope is the Android first pass).
-                // [T-android-tts-capsule-avoid] toolBarHeightPx is the same
-                // measurement bottomReserve uses — the capsule lifts above the
-                // floating tool bar instead of covering its trailing edge.
-                // [T-android-tts-capsule-avoid-fabs] The scroll FABs share the
-                // capsule's bottom-end corner and OVERLAPPED it (user report:
-                // capsule stacked on the jump-to-user-message / scroll-to-
-                // bottom buttons). Mirror their exact placement math — same
-                // visibility predicates, same base offsets as the FAB blocks
-                // below — so the capsule clears the TOP of whatever part of
-                // the FAB stack is currently visible, and drops back when the
-                // FABs hide. This is the Android stand-in for iOS's
-                // protectedRects: derived from the same layout constants
-                // instead of measured rects, which keeps it deterministic.
+                // Speech controls clear only the visible transcript navigation buttons.
                 val upFabVisible = transcriptViewportReady &&
                     messages.isNotEmpty() && !isNearBottom.value
                 val downFabVisible = transcriptViewportReady &&
                     !isNearBottom.value && contentOverflows.value && messages.isNotEmpty()
-                val fabBaseDp = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
+                val fabBaseDp = 8.dp
                 val fabStackTopDp = when {
                     upFabVisible -> fabBaseDp + 46.dp + 36.dp
                     downFabVisible -> fabBaseDp + 36.dp
                     else -> 0.dp
                 }
                 com.openminis.app.ui.chat.voice.SpeechPlayerCapsule(
-                    bottomObstructionPx = toolBarHeightPx,
+                    bottomObstructionPx = 0,
                     additionalObstructionDp = fabStackTopDp,
                 )
 
@@ -3273,7 +3104,7 @@ fun ChatScreen(
                 // spacing). Tapping walks BACK one user turn at a time rather
                 // than jumping to the oldest message.
                 if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value) {
-                    val upBaseBottom = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
+                    val upBaseBottom = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
                             coroutineScope.launch { scrollToPreviousUserTurn() }
@@ -3303,7 +3134,7 @@ fun ChatScreen(
                 if (transcriptViewportReady && !isNearBottom.value &&
                     contentOverflows.value && messages.isNotEmpty()
                 ) {
-                    val fabBottomPadding = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
+                    val fabBottomPadding = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
                             // [T-android-scrollbtn-turn-walk] Jumping to the
@@ -4874,60 +4705,21 @@ fun ChatScreen(
                                 // reply keeps talking and the new one queues
                                 // BEHIND it, minutes late on long replies.
                                 replyTts.stop()
-                                // [T-android-tts-scope-align] Tool-boundary
-                                // flush, from iOS's toolCallStart handler: text
-                                // that streamed just before a tool call and
-                                // never met a terminator must speak BEFORE the
-                                // tool runs, not sit buffered until stream end.
-                                var lastToolCount = 0
+                                // Read the same formal-answer projection as copy and selection.
                                 kotlinx.coroutines.flow.combine(
                                     viewModel.streamingById,
                                     viewModel.isStreaming,
-                                ) { stream, streamingNow ->
+                                    viewModel.messages,
+                                ) { stream, streamingNow, history ->
+                                    val live = stream[lastAssistantId]
+                                    val saved = history.lastOrNull { it.id == lastAssistantId }
                                     Triple(
-                                        stream[lastAssistantId]?.content,
+                                        if (live != null) formalAssistantText(live.toolBlocks, live.content)
+                                        else saved?.let { formalAssistantText(it.toolBlocks, it.content) }.orEmpty(),
                                         streamingNow,
-                                        stream[lastAssistantId]?.toolBlocks ?: emptyList(),
+                                        live != null,
                                     )
-                                }.collect { (live, streamingNow, toolBlocks) ->
-                                    val toolCount = toolBlocks.size
-                                    if (toolCount > lastToolCount) {
-                                        // Flush first so the half-sentence that
-                                        // preceded the tool call is spoken
-                                        // BEFORE the announcement, not after it.
-                                        replyTts.flush()
-                                        // [T-android-tts-tool-announce] Announce
-                                        // each newly-started tool, mirroring iOS
-                                        // (makeToolSpeech + speakQueued). Without
-                                        // this a listener hears the narration stop
-                                        // dead for however long the tool runs,
-                                        // with no cue as to why — the screen shows
-                                        // a pill, but the whole point of read-aloud
-                                        // is not having to look.
-                                        //
-                                        // Queued, never speak(): that would stop
-                                        // playback and cut off the sentence just
-                                        // flushed above.
-                                        for (i in lastToolCount until toolCount) {
-                                            val b = toolBlocks.getOrNull(i) ?: continue
-                                            replyTts.speakQueued(
-                                                com.openminis.app.speech.ToolSpeech.announcement(
-                                                    name = b.toolName,
-                                                    argsJson = b.toolArgs,
-                                                    title = b.toolTitle.takeIf { it.isNotBlank() },
-                                                )
-                                            )
-                                        }
-                                        lastToolCount = toolCount
-                                    }
-                                    // Turn end drains the side-channel AFTER
-                                    // publishing the final list — fall back to
-                                    // the canonical message so the tail past the
-                                    // last delta still gets spoken.
-                                    val text = live
-                                        ?: viewModel.messages.value
-                                            .lastOrNull { it.id == lastAssistantId }?.content
-                                        ?: return@collect
+                                }.collect { (text, streamingNow, live) ->
                                     if (text.length > spokenUpTo) {
                                         // [T-android-tts-diag] Kept: a field log
                                         // must show WHY nothing spoke (or that
@@ -4936,7 +4728,7 @@ fun ChatScreen(
                                         android.util.Log.i(
                                             "ReadReplies",
                                             "feeding tts +${text.length - spokenUpTo} chars " +
-                                                "(total=${text.length}) live=${live != null} " +
+                                                "(total=${text.length}) live=$live " +
                                                 "streaming=$streamingNow",
                                         )
                                         replyTts.appendText(text.substring(spokenUpTo))
@@ -4945,7 +4737,7 @@ fun ChatScreen(
                                     // Stream over and side-channel drained —
                                     // flush the trailing fragment that never got
                                     // a sentence terminator.
-                                    if (!streamingNow && live == null) replyTts.flush()
+                                    if (!streamingNow && !live) replyTts.flush()
                                 }
                             }
                             // [T-android-read-replies-pill-metrics] Balancing
@@ -5162,21 +4954,31 @@ fun ChatScreen(
                 )
             }
 
-            // T137: Clear Chat confirmation. Wipes messages + agent history +
-            // compact markers; the session row, workspace files, attachments,
-            // and offload payloads are intentionally preserved (iOS parity).
+            if (showConversationRecords) {
+                com.openminis.app.ui.novex.NovexSelectionSheet(
+                    title = "资料与存档",
+                    onDismissRequest = { showConversationRecords = false },
+                    actions = listOf(
+                        com.openminis.app.ui.novex.NovexSelectionAction("本对话文件") {
+                            showConversationRecords = false
+                            viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
+                        },
+                        com.openminis.app.ui.novex.NovexSelectionAction("资料整理进度") {
+                            showConversationRecords = false
+                            viewModel.showNovexLearningCollections()
+                        },
+                        com.openminis.app.ui.novex.NovexSelectionAction("文游存档") {
+                            showConversationRecords = false
+                            viewModel.showNovexCheckpoints()
+                        },
+                    ),
+                )
+            }
             if (showClearChatDialog) {
-                MinisAlertDialog(
-                    onDismissRequest = { showClearChatDialog = false },
-                    title = stringResource(R.string.chat_menu_clear_chat),
-                    text = stringResource(R.string.chat_clear_dialog_body),
-                    confirmText = stringResource(R.string.chat_clear_dialog_confirm),
-                    isDestructive = true,
-                    onConfirm = {
-                        viewModel.clearChat()
-                        viewModel.setInputText("")
-                        showClearChatDialog = false
-                    },
+                NovexDeleteConversationDialog(
+                    conversationId = viewModel.activeSessionId,
+                    onDismiss = { showClearChatDialog = false },
+                    onDeleted = { showClearChatDialog = false; onBack() },
                 )
             }
             pendingDeleteFromMessageId?.let { messageId ->

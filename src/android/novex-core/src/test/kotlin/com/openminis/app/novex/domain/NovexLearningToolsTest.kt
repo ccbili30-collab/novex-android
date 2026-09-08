@@ -91,7 +91,7 @@ class NovexLearningToolsTest {
     )
 
     @Test
-    fun preparationToolReturnsAReadOnlyPlanAndTellsTheModelToWaitForNativeConfirmation() {
+    fun preparationToolReturnsAReadOnlyPlanAndPointsToTheCommonStartGate() {
         var prepareCalls = 0
         val router = NovexLearningToolRouter(
             NovexLearningTools { requestedRef, requestedModel ->
@@ -124,9 +124,9 @@ class NovexLearningToolsTest {
         assertTrue(
             data.getJSONObject("data_exposure").getBoolean("source_content_may_leave_device"),
         )
-        assertTrue(data.getBoolean("requires_confirmation"))
-        assertTrue(result.nextActions.any { it.id == "wait_for_native_confirmation" })
-        assertFalse(result.nextActions.any { it.id == "learning_start" })
+        assertTrue(data.getBoolean("requires_background_review"))
+        assertFalse(result.nextActions.any { it.id == "wait_for_native_confirmation" })
+        assertTrue(result.nextActions.any { it.id == "learning_start" })
     }
 
     @Test

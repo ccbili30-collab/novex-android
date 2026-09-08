@@ -98,12 +98,25 @@ class NovexConversationConfigurationCodecTest {
     }
 
     @Test
-    fun emptyOrBrokenLegacyValuesRecoverAsANovaConversation() {
+    fun emptyLegacyValueIsNewButBrokenDataIsPreservedReadOnly() {
         val empty = NovexConversationConfigurationCodec.decode(null, "chat-legacy")
         val broken = NovexConversationConfigurationCodec.decode("{broken", "chat-legacy")
 
         assertEquals(NovexConversationConfiguration.empty("chat-legacy").snapshot, empty)
-        assertEquals(empty, broken)
+        assertEquals("{broken", broken.unreadableConfiguration)
+        assertEquals(NovexExecutionMode.READ_ONLY, broken.executionMode)
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { NovexConversationConfigurationCodec.encode(broken) }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            NovexConversationConfiguration.open(broken).apply(NovexConversationCommand.SetExecutionMode(NovexExecutionMode.FREE))
+        }
+    }
+
+    @Test fun unknownPermissionsDoNotEraseValidBackgroundsOrGrantTools() {
+        val raw = """{"executionMode":"future","backgroundSettings":[{"kind":"world","id":"world-1"}]}"""
+        val restored = NovexConversationConfigurationCodec.decode(raw, "chat")
+        assertEquals(listOf(BackgroundSetting(NovexContentAddress.world("world-1"))), restored.backgroundSettings)
+        assertEquals(NovexExecutionMode.READ_ONLY, restored.executionMode)
+        assertEquals(raw, restored.unreadableConfiguration)
     }
 
     @Test

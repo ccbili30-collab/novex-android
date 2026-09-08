@@ -240,7 +240,7 @@ object NovexLearningStateJsonCodec {
         )
     }
 
-    private fun encodePreflight(preflight: NovexLearningPreflightSnapshot) = JSONObject()
+    fun encodePreflight(preflight: NovexLearningPreflightSnapshot) = JSONObject()
         .put("id", preflight.id)
         .put("collection_ref", preflight.collectionRef.value)
         .put("source_refs", JSONArray(preflight.sourceRefs.map { it.value }))
@@ -287,7 +287,7 @@ object NovexLearningStateJsonCodec {
             JSONObject().put("context_tokens", limits.contextTokens).put("max_output_tokens", limits.maxOutputTokens)
         })
 
-    private fun decodePreflight(json: JSONObject): NovexLearningPreflightSnapshot {
+    fun decodePreflight(json: JSONObject): NovexLearningPreflightSnapshot {
         val budget = json.getJSONObject("confirmed_budget")
         val unsupportedJson = json.getJSONObject("unsupported_sources")
         val estimatedRounds = json.getInt("estimated_model_rounds")

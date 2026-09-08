@@ -48,7 +48,6 @@ import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
 import com.openminis.app.novex.domain.NovexGamePlayerChoices
 import com.openminis.app.novex.domain.AnswerIdentity
 import com.openminis.app.novex.domain.ConversationPlayerIdentity
-import com.openminis.app.novex.domain.NovexPersonaPresets
 import com.openminis.app.novex.domain.ConversationControlBehavior
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlSource
@@ -90,7 +89,7 @@ private val imageStylePresets = listOf(
     ImageStylePreset("像素艺术", "精细像素艺术风格，统一像素密度与有限色板。"),
 )
 
-private enum class ConversationPicker { ANSWER, BACKGROUND, GAME, GAME_REFERENCE, MANAGED, BOTH }
+
 
 @Composable
 fun ConversationSettingsScreen(
@@ -107,6 +106,8 @@ fun ConversationSettingsScreen(
     val artifacts = rememberNovexCreativeArtifacts()
     val workGroups = rememberNovexWorkGroups()
     val works by workGroups.snapshots.collectAsState(initial = null)
+    var localWorkSelection by remember(sessionId) { mutableStateOf(NovexWorkGroupSnapshot.ALL) }
+    val pickerWorks = works?.copy(selection = localWorkSelection)
     var pickingWork by remember { mutableStateOf(false) }
     var showingAdoptedSources by remember { mutableStateOf(false) }
     var showingSettingUse by remember { mutableStateOf(false) }
@@ -130,8 +131,9 @@ fun ConversationSettingsScreen(
     var baseline by remember(sessionId) { mutableStateOf<NovexConversationEditorDraftState?>(null) }
     var draft by remember(sessionId) { mutableStateOf(seed) }
     var hydrated by remember(sessionId) { mutableStateOf(false) }
+    var choosingExecutionMode by remember(sessionId) { mutableStateOf(false) }
     var pendingContentPlans by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-    var privateOptions by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
+    var ownedOptions by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     var options by remember { mutableStateOf<List<ConversationContentOption>>(emptyList()) }
     val scope = rememberCoroutineScope()
     var preparingGame by remember { mutableStateOf(false) }
@@ -162,21 +164,23 @@ fun ConversationSettingsScreen(
     }
     LaunchedEffect(workspace, artifacts, ready) {
         if (!ready) return@LaunchedEffect
+        val database = (context.applicationContext as com.openminis.app.MinisApp).database
+        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect {
         runCatching {
             val owned = workspace.conversationDrafts(viewModel.activeSessionId)
-            val ownCards = owned?.cards.orEmpty().filter { it.isPrivate }
+            val ownCards = owned?.cards.orEmpty()
             pendingContentPlans = owned?.pendingWrites.orEmpty().map { reservation ->
                 reservation.id to runCatching { org.json.JSONObject(reservation.planJson).getString("summary") }
                     .getOrDefault("待执行内容变更")
             }
-            privateOptions = ownCards.mapNotNull { card ->
+            ownedOptions = ownCards.mapNotNull { card ->
                 val label = when (card.subject.kind) {
                     NovexContentKind.WORLD -> workspace.world(card.rootId)?.world?.name
                     NovexContentKind.CHARACTER_VERSION -> workspace.character(card.rootId)?.character?.character?.name
                     NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(card.rootId)?.project?.name
                     NovexContentKind.CREATIVE_ARTIFACT -> null
                 } ?: return@mapNotNull null
-                ConversationContentOption(card.subject, label, "本对话私有${card.subject.kind.displayName()}")
+                ConversationContentOption(card.subject, label, if (card.isPrivate) "空白${card.subject.kind.displayName()}卡" else "本对话创建 · ${card.subject.kind.displayName()}")
             }
             val worlds = workspace.worlds().map { card ->
                 ConversationContentOption(NovexContentAddress.world(card.world.id), card.world.name, "世界")
@@ -214,8 +218,9 @@ fun ConversationSettingsScreen(
                     "创作成果",
                 )
             }
-            options = (worlds + characters + games + artifactOptions + privateOptions).distinctBy { it.address }
+            options = (worlds + characters + games + artifactOptions + ownedOptions).distinctBy { it.address }
         }.onFailure { error = "读取内容库失败：${it.message ?: "未知错误"}" }
+        }
     }
 
     fun save() {
@@ -259,8 +264,8 @@ fun ConversationSettingsScreen(
     val labels = options.associateBy(ConversationContentOption::address)
     val adoptedImages = com.openminis.app.novex.domain.NovexSnapshotMediaProjection.visible(draft.configuration)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
-        AnswerIdentity.Nova -> "Nova（诺瓦） · 通用人格"
-        is AnswerIdentity.PersonaPreset -> "${identity.label} · 人格预设"
+        AnswerIdentity.Nova -> "Nova（诺瓦）"
+        is AnswerIdentity.PersonaPreset -> "自定义 · ${identity.label}"
         is AnswerIdentity.CharacterVersion -> labels[NovexContentAddress.characterVersion(identity.versionId)]?.label
             ?: "角色版本 · ${identity.versionId.take(8)}"
     }
@@ -268,24 +273,26 @@ fun ConversationSettingsScreen(
     NovexEditorScaffold(
         title = "对话编辑",
         loaded = hydrated,
-        canSave = true,
+        canSave = draft.configuration.unreadableConfiguration == null,
         saving = saving,
         baselineDraft = baseline,
         currentDraft = draft,
         onBack = onBack,
         onSave = ::save,
     ) {
-        NovexSummaryRow("选卡范围 · ${works?.label ?: "正在读取"}",
-            "仅筛选下方可选卡片，不改变已采用内容或授权；成果文件仍可单独选择", onClick = {
-                returnPicker = null; pickingWork = true
-            })
+        if (draft.configuration.unreadableConfiguration != null) {
+            NovexSummaryRow("对话设置未能恢复", "原数据已保留。当前只可阅读，暂不能修改设置；可从对话菜单导出记录进行检查。")
+            return@NovexEditorScaffold
+        }
+        NovexSummaryRow("执行权限", draft.configuration.executionMode.label,
+            onClick = { choosingExecutionMode = true })
         NovexEditorSection(
             header = "回答身份",
-            footer = "人格决定职责与表达，角色版本决定扮演对象；工具权限与背景设定分别管理。角色资料采用后固定，刷新并保存后才更新本对话。",
+            footer = "选择由谁回答；背景资料和执行权限分别设置。",
         ) {
-            NovexSummaryRow("当前人格", answerLabel, onClick = { picker = ConversationPicker.ANSWER })
+            NovexSummaryRow("当前身份", answerLabel, onClick = { picker = ConversationPicker.ANSWER })
             (draft.configuration.answerIdentity as? AnswerIdentity.PersonaPreset)?.let { persona ->
-                NovexTextField("人格名称", persona.label, onValueChange = { value ->
+                NovexTextField("身份名称", persona.label, onValueChange = { value ->
                     if (value.isNotBlank()) draft = draft.setAnswerIdentity(persona.copy(label = value.take(80)))
                 })
                 NovexTextField("职责与表达", persona.instructions, onValueChange = { value ->
@@ -324,11 +331,11 @@ fun ConversationSettingsScreen(
 
         NovexEditorSection(
             header = "使用的设定",
-            footer = "可加入多个世界和角色版本，采用的资料会固定保存；需要更新时从原卡刷新。文游自身引用的资料在活动文游中单独刷新。背景用途不会授予编辑权限。",
+            footer = "可加入多个世界和角色作为背景。这里使用已选定的资料，需要更新时手动刷新；编辑权限在可管理内容中设置。",
         ) {
-            NovexSummaryRow("设定与模块开关", "停用背景使用并保留原件；父级重新开启后恢复原来的模块选择",
+            NovexSummaryRow("选择使用哪些模块", "查看并调整本对话使用的设定范围",
                 onClick = { showingSettingUse = true })
-            NovexSummaryRow("查看实际采用来源", "同一修订合并显示用途；不同修订分别保留，不自动选用最新正文",
+            NovexSummaryRow("查看已采用的资料", "查看本对话实际使用的版本和来源",
                 onClick = { showingAdoptedSources = true })
             draft.configuration.backgroundSettings.sortedBy { !com.openminis.app.novex.domain.NovexSettingUse.enabled(draft.configuration,
                 com.openminis.app.novex.domain.NovexReferenceTarget(it.subject)) }.forEachIndexed { index, setting ->
@@ -348,7 +355,6 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
-            NovexTextActionRow("同时用作背景并允许管理", onClick = { picker = ConversationPicker.BOTH })
             NovexDivider(Modifier.padding(horizontal = 16.dp))
             NovexTextField(
                 label = "玩家身份说明",
@@ -443,15 +449,6 @@ fun ConversationSettingsScreen(
             }
         }
 
-        if (privateOptions.isNotEmpty()) NovexEditorSection(
-            header = "本对话草稿",
-            footer = "三个空卡可一直留空。它们不自动启用背景、扮演或文游；内容写入即保存，返回列表后非空作品归库。点击可选择管理权限。",
-        ) {
-            privateOptions.forEach { option ->
-                NovexSummaryRow(option.label, option.kindLabel, onClick = { managedAction = option.address })
-            }
-        }
-
         if (pendingContentPlans.isNotEmpty()) NovexEditorSection(
             header = "待执行变更",
             footer = "计划与目标已保存，重启后仍可继续。取消只撤销这项待执行计划，不修改已经保存的卡片。",
@@ -468,23 +465,26 @@ fun ConversationSettingsScreen(
         }
 
         NovexEditorSection(
-            header = "管理挂载",
-            footer = "挂载表示本对话要查看或编辑这些作品。它与背景注入独立，同一张卡可同时出现。",
+            header = "可管理的内容",
+            footer = "本对话自带三个空卡，可继续创建更多卡片。填写后立即保存到仓库；加入这里表示可管理，不会自动成为背景或启动文游。工具是否执行仍按对话权限处理。",
         ) {
-            draft.configuration.managedSubjects.forEachIndexed { index, subject ->
+            val managedRows = (draft.configuration.managedSubjects + ownedOptions.map {
+                com.openminis.app.novex.domain.ManagedSubject(it.address, ManagedAccess.EDIT)
+            }).distinctBy { it.subject }
+            val ownedAddresses = ownedOptions.map { it.address }.toSet()
+            managedRows.forEachIndexed { index, subject ->
                 ConversationSubjectRow(
                     labels[subject.subject]?.label ?: subject.subject.fallbackLabel(),
                     "${labels[subject.subject]?.kindLabel ?: subject.subject.kind.displayName()} · " +
                         if (subject.access == ManagedAccess.EDIT) "可编辑" else "只读",
                     onClick = { managedAction = subject.subject },
-                    onRemove = { draft = draft.unmount(subject.subject) },
+                    onRemove = if (subject.subject in ownedAddresses) null else ({ draft = draft.unmount(subject.subject) }),
                 )
-                if (index < draft.configuration.managedSubjects.lastIndex) {
+                if (index < managedRows.lastIndex) {
                     NovexDivider(Modifier.padding(horizontal = 16.dp))
                 }
             }
-            NovexTextActionRow("挂载世界、角色、文游或文档", onClick = { picker = ConversationPicker.MANAGED })
-            NovexTextActionRow("同时用作背景并允许管理", onClick = { picker = ConversationPicker.BOTH })
+            NovexTextActionRow("从仓库加入内容", onClick = { picker = ConversationPicker.MANAGED })
         }
 
         NovexEditorSection(
@@ -672,12 +672,14 @@ fun ConversationSettingsScreen(
     }
 
     picker?.let { active ->
-        NovexSearchableSelectionSheet(
-            title = "${active.pickerTitle()} · ${works?.label ?: "全部作品"}",
-            searchPlaceholder = "按卡片名称或角色版本查找",
-            actions = listOf(NovexSelectionAction("更换作品筛选", description = "当前：${works?.label ?: "全部作品"}") {
-                returnPicker = active; picker = null; pickingWork = true
-            }) + pickerActions(active, options.filter { works?.includes(it.address) != false || it.address.kind == NovexContentKind.CREATIVE_ARTIFACT }, draft, onRoleSelected = { versionId ->
+        ConversationSelectionSheet(
+            picker = active,
+            title = if (active == ConversationPicker.ANSWER) active.pickerTitle() else "${active.pickerTitle()} · ${pickerWorks?.label ?: "全部作品"}",
+            actions = (if (active == ConversationPicker.ANSWER) emptyList() else listOf(
+                NovexSelectionAction("按作品筛选", description = pickerWorks?.label ?: "全部作品") {
+                    returnPicker = active; picker = null; pickingWork = true
+                })) + pickerActions(active, options.filter { pickerWorks?.includes(it.address) != false || it.address.kind == NovexContentKind.CREATIVE_ARTIFACT }, draft,
+                onChooseRole = { picker = ConversationPicker.ROLE }, onRoleSelected = { versionId ->
                 if (!preparingGame) {
                     preparingGame = true
                     picker = null
@@ -747,13 +749,11 @@ fun ConversationSettingsScreen(
         }
         Text("这里显示软件实际保存的采用关系，不能把正文存在视为事实核验通过。尚未保存的配置修改不会改变原卡。")
     }
-    if (pickingWork) NovexSearchableSelectionSheet("选择候选卡片范围", buildList {
-        fun choice(id: String, title: String) = NovexSelectionAction(title, selected = works?.selection == id) {
-            scope.launch {
-                try { workGroups.select(id); pickingWork = false; picker = returnPicker }
-                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                catch (failure: Exception) { error = "筛选尚未切换：${failure.message}" }
-            }
+    if (pickingWork) NovexSearchableSelectionSheet("按作品筛选", buildList {
+        fun choice(id: String, title: String) = NovexSelectionAction(title, selected = localWorkSelection == id) {
+            localWorkSelection = id
+            pickingWork = false
+            picker = returnPicker
         }
         add(choice(NovexWorkGroupSnapshot.ALL, "全部作品"))
         add(choice(NovexWorkGroupSnapshot.UNCLASSIFIED, "未归类"))
@@ -799,7 +799,9 @@ fun ConversationSettingsScreen(
         )
     }
     managedAction?.let { address ->
+        val ownedHere = ownedOptions.any { it.address == address }
         val current = draft.configuration.managedSubjects.firstOrNull { it.subject == address }
+            ?: if (ownedHere) com.openminis.app.novex.domain.ManagedSubject(address, ManagedAccess.EDIT) else null
         NovexSelectionSheet(
             title = labels[address]?.label ?: address.fallbackLabel(),
             onDismissRequest = { managedAction = null },
@@ -814,12 +816,25 @@ fun ConversationSettingsScreen(
                         draft = draft.mount(address, ManagedAccess.READ_ONLY)
                     },
                 )
-                add(
-                    NovexSelectionAction("移除挂载", R.drawable.ic_phosphor_trash) {
+                if (!ownedHere) add(
+                    NovexSelectionAction("移出管理范围", R.drawable.ic_phosphor_trash) {
                         draft = draft.unmount(address)
                     },
                 )
             },
+        )
+    }
+    if (choosingExecutionMode) {
+        com.openminis.app.ui.novex.NovexSelectionSheet(
+            title = "执行权限",
+            actions = com.openminis.app.novex.domain.NovexExecutionMode.entries.map { mode ->
+                com.openminis.app.ui.novex.NovexSelectionAction(mode.label,
+                    description = mode.description, selected = mode == draft.configuration.executionMode) {
+                    draft = draft.setExecutionMode(mode)
+                    choosingExecutionMode = false
+                }
+            },
+            onDismissRequest = { choosingExecutionMode = false },
         )
     }
     error?.let { message -> NovexNoticeDialog("操作失败", message) { error = null } }
@@ -828,83 +843,13 @@ fun ConversationSettingsScreen(
     }
 }
 
-private fun pickerActions(
-    picker: ConversationPicker,
-    options: List<ConversationContentOption>,
-    draft: NovexConversationEditorDraftState,
-    onRoleSelected: (String) -> Unit,
-    onGameSelected: (String) -> Unit,
-    update: (NovexConversationEditorDraftState) -> Unit,
-): List<NovexSelectionAction> = when (picker) {
-    ConversationPicker.ANSWER -> listOf(
-        NovexSelectionAction("Nova（诺瓦） · 通用人格", R.drawable.ic_phosphor_sparkle) {
-            update(draft.setAnswerIdentity(AnswerIdentity.Nova))
-        },
-        NovexSelectionAction("游戏主持人 · 独立人格") {
-            update(draft.setAnswerIdentity(NovexPersonaPresets.gameHost))
-        },
-        NovexSelectionAction("自定义独立人格") {
-            update(draft.setAnswerIdentity(AnswerIdentity.PersonaPreset(
-                "custom:${java.util.UUID.randomUUID()}", "自定义人格",
-            )))
-        },
-    ) + options.filter { it.address.kind == NovexContentKind.CHARACTER_VERSION }.map { option ->
-        NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
-            onRoleSelected(option.address.id)
-        }
-    }
-    ConversationPicker.BACKGROUND -> options
-        .filter { it.address.kind == NovexContentKind.WORLD || it.address.kind == NovexContentKind.CHARACTER_VERSION }
-        .filterNot { option -> draft.configuration.backgroundSettings.any { it.subject == option.address } }
-        .map { option ->
-            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "用于背景；不改变回答身份，不授予编辑权限") {
-                update(draft.addBackground(option.address))
-            }
-        }
-    ConversationPicker.GAME -> options.filter { it.address.kind == NovexContentKind.INTERACTIVE_FICTION }.map { option ->
-        NovexSelectionAction(option.label, R.drawable.ic_phosphor_puzzle_piece) {
-            onGameSelected(option.address.id)
-        }
-    }
-    ConversationPicker.GAME_REFERENCE -> options.filter { it.address.kind == NovexContentKind.INTERACTIVE_FICTION }
-        .filterNot { option -> draft.configuration.managedSubjects.any { it.subject == option.address } }.map { option ->
-            NovexSelectionAction(option.label, description = "只读挂载，可按需查看；不启动、不改回答身份、不授予编辑权限") {
-                update(draft.mount(option.address, ManagedAccess.READ_ONLY))
-            }
-        }
-    ConversationPicker.MANAGED -> options
-        .filterNot { option -> draft.configuration.managedSubjects.any { it.subject == option.address } }
-        .map { option ->
-            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "允许管理原件；不自动采用正文、不切换身份、不启动文游，可挂载多张") {
-                update(draft.mount(option.address, ManagedAccess.EDIT))
-            }
-        }
-    ConversationPicker.BOTH -> options
-        .filter { it.address.kind == NovexContentKind.WORLD || it.address.kind == NovexContentKind.CHARACTER_VERSION }
-        .filterNot { option -> draft.configuration.backgroundSettings.any { it.subject == option.address } &&
-            draft.configuration.managedSubjects.any { it.subject == option.address && it.access == ManagedAccess.EDIT } }
-        .map { option ->
-            NovexSelectionAction("${option.kindLabel} · ${option.label}", description = "采用背景并允许管理原件；后续编辑不自动刷新采用内容") {
-                update(draft.useAndManage(option.address))
-            }
-        }
-}
-
-private fun ConversationPicker.pickerTitle(): String = when (this) {
-    ConversationPicker.ANSWER -> "选择回答身份"
-    ConversationPicker.BACKGROUND -> "添加背景设定"
-    ConversationPicker.GAME -> "选择活动文游"
-    ConversationPicker.GAME_REFERENCE -> "挂载只读文游资料"
-    ConversationPicker.MANAGED -> "添加管理挂载"
-    ConversationPicker.BOTH -> "同时使用与管理世界或角色"
-}
 
 @Composable
 private fun ConversationSubjectRow(
     title: String,
     subtitle: String,
     onClick: (() -> Unit)? = null,
-    onRemove: () -> Unit,
+    onRemove: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -923,7 +868,7 @@ private fun ConversationSubjectRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clickable(onClick = onRemove)) {
+        if (onRemove != null) Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp).clickable(onClick = onRemove)) {
             Icon(
                 painterResource(R.drawable.ic_phosphor_trash),
                 contentDescription = "移除$title",

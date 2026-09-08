@@ -16,12 +16,13 @@ class NovexDocumentPromptContractTest {
     }
 
     @Test
-    fun learningCapabilityExposesPreparationAndSavedNotesButNeverLetsTheModelStartOrConfirmWork() {
+    fun learningCapabilitySeparatesReadOnlyPreparationFromGatedStart() {
         val tools = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.LEARNING))
 
-        assertEquals(listOf("learning_prepare", "learning_read"), tools.map { it.name })
-        assertTrue(tools.all { it.risk == NovexToolRisk.READ_ONLY })
-        assertFalse(tools.any { it.name in setOf("learning_start", "learning_confirm") })
+        assertEquals(listOf("learning_prepare", "learning_start", "learning_read"), tools.map { it.name })
+        assertTrue(tools.filterNot { it.name == "learning_start" }.all { it.risk == NovexToolRisk.READ_ONLY })
+        assertEquals(NovexToolRisk.EXTERNAL_SIDE_EFFECT, tools.single { it.name == "learning_start" }.risk)
+        assertFalse(tools.any { it.name == "learning_confirm" })
     }
 
     @Test

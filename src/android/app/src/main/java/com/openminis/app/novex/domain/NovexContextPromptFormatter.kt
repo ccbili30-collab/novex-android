@@ -39,6 +39,7 @@ object NovexContextPromptFormatter {
     private fun StringBuilder.appendFragment(fragment: NovexContextFragment) {
         append("[来源：").append(fragment.label)
             .append("；编号：").append(fragment.sourceId).appendLine("]")
+        if (fragment.partial) appendLine("此来源仅提供了部分内容，不能据此声称通读全文。")
         appendLine(fragment.text)
     }
 }

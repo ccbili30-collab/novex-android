@@ -3,6 +3,9 @@ package com.openminis.app.ui.chat
 import android.util.Log
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /**
  * Process-level cache of ChatViewModels keyed by sessionId. Mirrors iOS
@@ -24,6 +27,44 @@ object ChatViewModelStore {
      * `onCleared`.
      */
     private val stores = mutableMapOf<String, ViewModelStore>()
+    private val runtimeJobs = mutableMapOf<String, Job>()
+    private val closedKeys = mutableSetOf<String>()
+    private val deletionKeys = mutableMapOf<String, Set<String>>()
+
+    @Synchronized
+    fun registerRuntime(sessionId: String, job: Job) {
+        val key = resolveKey(sessionId)
+        if (key in closedKeys || sessionId in closedKeys) job.cancel()
+        else runtimeJobs[key] = job
+    }
+
+    /** Called from a scope outside the conversation being deleted. */
+    suspend fun stopAndJoin(sessionId: String) {
+        val job = withContext(Dispatchers.Main.immediate) {
+            val running = synchronized(this@ChatViewModelStore) {
+                val key = resolveKey(sessionId)
+                val keys = deletionKeys.getOrPut(sessionId) {
+                    aliases.filterValues { it == key }.keys + setOf(key, sessionId)
+                }
+                closedKeys += keys
+                runtimeJobs[key]
+            }
+            release(sessionId)
+            running?.cancel()
+            running
+        }
+        job?.join()
+    }
+
+    /** Keep deleted ids closed; a failed deletion may be reopened with a fresh, usable runtime. */
+    suspend fun finishDeletion(sessionId: String, deleted: Boolean) = withContext(Dispatchers.Main.immediate) {
+        synchronized(this@ChatViewModelStore) {
+            val keys = deletionKeys.remove(sessionId).orEmpty()
+            keys.forEach { key -> runtimeJobs.remove(key)?.cancel(); stores.remove(key)?.clear() }
+            if (!deleted) closedKeys.removeAll(keys)
+        }
+    }
+
 
     /**
      * Draft → canonical mapping. When a draft ("__new__...") session is
@@ -57,6 +98,7 @@ object ChatViewModelStore {
     fun release(sessionId: String) {
         val key = resolveKey(sessionId)
         aliases.entries.removeAll { it.value == key }
+        runtimeJobs.remove(key)
         stores.remove(key)?.let {
             it.clear()
             Log.d(TAG, "release store for $key (remaining=${stores.size})")
@@ -95,6 +137,9 @@ object ChatViewModelStore {
         val store = stores.remove(fromSessionId)
         if (store != null) {
             stores[toSessionId] = store
+        }
+        runtimeJobs.remove(fromSessionId)?.let {
+            if (fromSessionId in closedKeys || toSessionId in closedKeys) it.cancel() else runtimeJobs[toSessionId] = it
         }
         aliases[fromSessionId] = toSessionId
         Log.d(TAG, "rename store $fromSessionId -> $toSessionId (alias kept)")

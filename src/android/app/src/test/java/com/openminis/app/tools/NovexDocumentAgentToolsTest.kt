@@ -58,10 +58,10 @@ class NovexDocumentAgentToolsTest {
 
         assertFalse(withoutCollection.any { it.name.startsWith("learning_") })
         assertEquals(
-            listOf("learning_prepare", "learning_read"),
+            listOf("learning_prepare", "learning_start", "learning_read"),
             withCollection.filter { it.name.startsWith("learning_") }.map { it.name },
         )
-        assertFalse(withCollection.any { it.name in setOf("learning_start", "learning_confirm") })
+        assertFalse(withCollection.any { it.name == "learning_confirm" })
     }
 
     @Test

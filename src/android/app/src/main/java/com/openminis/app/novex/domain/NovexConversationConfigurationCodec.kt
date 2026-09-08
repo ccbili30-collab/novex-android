@@ -6,8 +6,10 @@ import org.json.JSONObject
 /** Stable persistence format for one conversation's Novex configuration snapshot. */
 object NovexConversationConfigurationCodec {
     fun encode(snapshot: NovexConversationConfigurationSnapshot): String = JSONObject().apply {
+        require(snapshot.unreadableConfiguration == null) { "对话设置未能恢复，未覆盖原数据" }
         put("version", 1)
         put("conversationId", snapshot.conversationId)
+        put("executionMode", snapshot.executionMode.wireName)
         put("answerIdentity", NovexAnswerIdentityCodec.encode(snapshot.answerIdentity))
         snapshot.activePlaythroughId?.let { put("activePlaythroughId", it) }
         snapshot.preGameAnswerIdentity?.let { put("preGameAnswerIdentity", NovexAnswerIdentityCodec.encode(it)) }
@@ -36,8 +38,12 @@ object NovexConversationConfigurationCodec {
         return runCatching {
             val root = JSONObject(raw)
             val decodedId = root.optString("conversationId").ifBlank { conversationId }
+            val executionMode = runCatching { NovexExecutionMode.decode(root.optString("executionMode").takeIf { root.has("executionMode") }) }
+            val unsupported = executionMode.isFailure || root.optInt("version", 1) != 1
             val snapshot = NovexConversationConfigurationSnapshot(
                 conversationId = decodedId,
+                executionMode = if (unsupported) NovexExecutionMode.READ_ONLY else executionMode.getOrThrow(),
+                unreadableConfiguration = raw.takeIf { unsupported },
                 activePlaythroughId = root.optString("activePlaythroughId").ifBlank { null },
                 // Preserve the legacy configuration fallback without discarding its other relations.
                 answerIdentity = runCatching {
@@ -77,7 +83,8 @@ object NovexConversationConfigurationCodec {
             NovexConversationConfiguration.open(
                 snapshot.copy(conversationId = conversationId),
             ).snapshot
-        }.getOrElse { NovexConversationConfiguration.empty(conversationId).snapshot }
+        }.getOrElse { NovexConversationConfigurationSnapshot(conversationId,
+            executionMode = NovexExecutionMode.READ_ONLY, unreadableConfiguration = raw) }
     }
 }
 

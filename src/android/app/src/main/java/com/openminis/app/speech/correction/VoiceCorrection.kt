@@ -155,9 +155,9 @@ object VoiceCorrection {
         var text = msg.content
         if (role == CorrectionSourceMessage.Role.ASSISTANT && msg.toolBlocks.isNotEmpty()) {
             val blockText = msg.toolBlocks
-                .filter { it.isText }
+                .filter { it.isText && !it.executionText }
                 .joinToString("\n") { it.content }
-            if (blockText.isNotBlank()) text = blockText
+            text = blockText
         }
         val stripped = TypedVocabularyBuilder.stripAttachmentMarkup(text)
         if (stripped.isBlank()) null else CorrectionSourceMessage(role, stripped)

@@ -155,6 +155,19 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var chatRepository: ChatRepository
         private set
+    val conversationDeletion by lazy {
+        val files = com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(
+            java.io.File(filesDir, "novex/conversation-workspaces"))
+        com.openminis.app.novex.domain.NovexConversationDeletion(
+            chatRepository, novexWorkspace, files,
+            com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(files, creativeArtifactRepository),
+            com.openminis.app.novex.domain.NovexToolExecution(
+                com.openminis.app.novex.domain.NovexOperationJournal(java.io.File(filesDir, "novex-operations"))),
+            com.openminis.app.ui.chat.ChatViewModelStore::stopAndJoin,
+            com.openminis.app.service.SessionBadgeStore::clear,
+            com.openminis.app.ui.chat.ChatViewModelStore::finishDeletion,
+        )
+    }
     lateinit var providerRepository: ProviderRepository
         private set
     lateinit var envVarRepository: EnvVarRepository

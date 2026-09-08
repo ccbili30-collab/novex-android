@@ -8,14 +8,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class NovexManagementUserRequestsTest {
-    @Test fun `real source packing choice continues creation without changing requested kind`() {
+    @Test fun `choice captions remain exact user text without inferred task instructions`() {
         val choice = "将47章完整打包为主控说明书（自由沙盒，按资料全篇运行）"
         val choicePart = JSONObject().put("type", "uiToolUse").put("value", JSONObject().put("name", "present_choices")
             .put("input", JSONObject().put("choices", JSONArray(listOf(choice, "取消")).toString()).toString()))
         val requests = NovexManagementUserRequests.fromActiveMessages(listOf(row("1", text("创建文游卡")), row("2", choicePart, "assistant"), row("3", text(choice))))
-        val game = NovexManagedChange.CreateInteractiveFiction("说明书", "", com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, "")
-        org.junit.Assert.assertTrue(game.matchesCreationTask(requests.last(), requests.dropLast(1)))
-        org.junit.Assert.assertFalse(NovexManagedChange.CreateWorld("说明书", "").matchesCreationTask(requests.last(), requests.dropLast(1)))
+        assertEquals(listOf("创建文游卡", choice), requests)
         assertEquals(choice, NovexManagementUserRequests.fromActiveMessages(listOf(row("1", text("创建文游卡")), row("3", text(choice)))).last())
     }
 
@@ -47,7 +45,6 @@ class NovexManagementUserRequestsTest {
             latestUserRequest = requests.last(), priorUserRequests = requests.dropLast(1),
             planId = "proposal-12345678",
         )
-        org.junit.Assert.assertFalse(plan.isConfirmedBy(requests.last()))
     }
 
     @Test

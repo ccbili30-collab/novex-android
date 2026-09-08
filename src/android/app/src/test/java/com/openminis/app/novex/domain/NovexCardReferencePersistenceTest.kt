@@ -47,7 +47,7 @@ class NovexCardReferencePersistenceTest {
             val raw = """[{"operation":"put_card_reference","subject_kind":"game","subject_id":"${game.id}","reference_id":"world-reference","target_kind":"world","target_id":"${world.id}","purpose":"background"}]"""
             val plan = service.propose(configuration, raw, "将生生之学设为文游背景", "plan")
             assertEquals(setOf(source), plan.targets)
-            service.apply(configuration, plan, plan.confirmationPhrase)
+            service.apply(configuration, plan, "")
             val inspection = service.inspect(configuration, source, null).toToolJson()
             assertEquals("background", inspection.getJSONArray("card_references").getJSONObject(0).getString("purpose"))
             assertEquals(world.id, workspace.referencesFrom(source).single().target.subject.id)

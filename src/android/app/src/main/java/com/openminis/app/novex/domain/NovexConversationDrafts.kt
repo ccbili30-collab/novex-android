@@ -26,6 +26,7 @@ data class NovexManagementWriteReceipt(
     val appliedChanges: Int,
     val createdSubjects: List<NovexContentAddress>,
     val completedAt: Long,
+    val changedModuleIds: List<String> = emptyList(),
 )
 
 data class NovexConversationDraftSnapshot(
@@ -214,6 +215,18 @@ internal class NovexConversationDrafts(
         return NovexDraftFinalization(after, removed, promoted)
     }
 
+    /** Content and library membership commit together; this never cleans up placeholders. */
+    suspend fun publishSavedContent(subjects: Set<NovexContentAddress>? = null) {
+        if (subjects != null && subjects.isEmpty()) return
+        for (before in ownership.list()) {
+            val cards = before.cards.map { card ->
+                if (card.isPrivate && (subjects == null || card.subject in subjects) && hasContent(card))
+                    card.copy(isPrivate = false) else card
+            }
+            if (cards != before.cards) ownership.save(before.copy(cards = cards))
+        }
+    }
+
     private suspend fun hasCatalogLinks(card: NovexConversationDraftCard): Boolean = when (card.subject.kind) {
         NovexContentKind.WORLD -> catalog.versionsForWorld(card.rootId).isNotEmpty()
         NovexContentKind.CHARACTER_VERSION -> catalog.worldsForVersion(card.subject.id).isNotEmpty()
@@ -278,6 +291,7 @@ object NovexConversationDraftCodec {
         })).put("completedWrites", JSONArray(snapshot.completedWrites.map { receipt ->
             JSONObject().put("id", receipt.id).put("planJson", receipt.planJson)
                 .put("appliedChanges", receipt.appliedChanges).put("completedAt", receipt.completedAt)
+                .put("changedModuleIds", JSONArray(receipt.changedModuleIds))
                 .put("createdSubjects", JSONArray(receipt.createdSubjects.map { subject ->
                     JSONObject().put("kind", subject.kind.name).put("id", subject.id)
                 }))
@@ -304,7 +318,8 @@ object NovexConversationDraftCodec {
             NovexManagementWriteReceipt(receipt.getString("id"), receipt.getString("planJson"), receipt.getInt("appliedChanges"),
                 List(subjects.length()) { i -> subjects.getJSONObject(i).let {
                     NovexContentAddress(NovexContentKind.valueOf(it.getString("kind")), it.getString("id"))
-                } }, receipt.getLong("completedAt"))
+                } }, receipt.getLong("completedAt"), receipt.optJSONArray("changedModuleIds")?.let { ids ->
+                    List(ids.length()) { ids.getString(it) } }.orEmpty())
         } }.orEmpty())
     }
 }

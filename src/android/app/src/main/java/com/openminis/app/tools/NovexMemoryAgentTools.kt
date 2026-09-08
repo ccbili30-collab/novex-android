@@ -24,8 +24,8 @@ object NovexMemoryAgentTools {
         ),
         AgentToolDefinition(
             name = PROPOSE,
-            description = "Validate a memory change plan without writing. Stop after success and wait for the user " +
-                "to send the exact confirmation phrase. Never call apply in the same assistant turn. Never propose " +
+            description = "Validate and persist a memory change plan without changing memory. After success call the apply tool. " +
+                "The app uses the conversation execution mode to execute or request popup approval; no text confirmation is needed. Never propose " +
                 "credentials, access tokens, private keys or other secrets as durable memory.",
             parameters = mapOf(
                 "changes" to AgentToolParam(
@@ -40,8 +40,8 @@ object NovexMemoryAgentTools {
         ),
         AgentToolDefinition(
             name = APPLY,
-            description = "Atomically apply one stored memory proposal. The app checks the latest real user message; " +
-                "confirmation is never accepted as a tool argument.",
+            description = "Atomically apply one stored memory proposal in the current conversation, branch and identity scope. " +
+                "Repeated application of the same plan is safe. The conversation execution mode controls popup approval.",
             parameters = mapOf(
                 "proposal_id" to AgentToolParam("string", "Proposal id returned by novex_propose_memory_changes."),
             ),

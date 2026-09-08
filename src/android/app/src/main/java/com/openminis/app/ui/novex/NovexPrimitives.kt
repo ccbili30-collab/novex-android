@@ -184,7 +184,7 @@ internal fun NovexSectionTitle(text: String, modifier: Modifier = Modifier) {
 @Composable
 internal fun NovexTextActionRow(
     label: String,
-    @DrawableRes icon: Int = R.drawable.ic_phosphor_plus,
+    @DrawableRes icon: Int? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -196,13 +196,15 @@ internal fun NovexTextActionRow(
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp),
     ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-            tint = NovexColors.Text,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(12.dp))
+        if (icon != null) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = NovexColors.Text,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+        }
         Text(label, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium)
     }
 }
@@ -215,18 +217,16 @@ internal fun NovexContentSection(
     content: @Composable () -> Unit,
 ) {
     Column(modifier.fillMaxWidth().padding(top = NovexDimensions.SectionGap)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = NovexDimensions.PageHorizontal),
         ) {
-            Text(title, color = NovexColors.Text, style = NovexType.SectionTitle, modifier = Modifier.weight(1f))
+            Text(title, color = NovexColors.Text, style = NovexType.SectionTitle)
             subtitle?.let {
                 Text(
                     it,
                     color = NovexColors.SecondaryText,
                     style = NovexType.Metadata,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
         }

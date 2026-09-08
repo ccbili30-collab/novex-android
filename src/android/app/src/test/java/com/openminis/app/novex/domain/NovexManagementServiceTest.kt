@@ -15,6 +15,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexManagementServiceTest {
+    @Test fun `model directory does not inject every module body and exact module reads preserve text`() = runBlocking {
+        val workspace = FakeManagementWorkspace()
+        val owner = ModuleOwner.world("w1")
+            workspace.worldSnapshots["w1"] = NovexWorldSnapshot(
+                world = WorldEntity("w1", "雾海", "群岛常年被雾包围", "[\"群岛\"]", null, 1, 1),
+                versions = emptyList(),
+                availableVersions = emptyList(),
+                worldsByVersion = emptyMap(),
+                media = emptyMap(),
+                modules = emptyList(),
+                moduleImages = emptyMap(),
+                moduleItemImages = emptyMap(),
+            )
+        val text = "正文标记".repeat(5000)
+        workspace.modulesByOwner[owner] = listOf(module("m1", owner,
+            content = org.json.JSONObject().put("kind", "article").put("text", text).toString()))
+        val service = NovexManagementService(workspace, FakeArtifactPort())
+        val config = NovexConversationConfigurationSnapshot("chat-1",
+            managedSubjects = listOf(ManagedSubject(NovexContentAddress.world("w1"), ManagedAccess.EDIT)))
+        val directory = service.inspect(config, NovexContentAddress.world("w1"), null)
+        val compact = directory.toModelToolJson()
+        org.junit.Assert.assertFalse(compact.toString().contains("正文标记"))
+        org.junit.Assert.assertFalse(compact.has("module_type_catalog"))
+        assertTrue(compact.getJSONArray("modules").getJSONObject(0).getInt("content_chars") > text.length)
+        assertTrue(directory.toModelToolJson(true).has("module_type_catalog"))
+        val selected = service.inspect(config, null, "m1").toModelToolJson()
+        assertEquals(text, selected.getJSONArray("modules").getJSONObject(0).getJSONObject("content").getString("text"))
+        // Page/export snapshots are not changed by model-facing projection.
+        assertEquals(text, directory.toToolJson().getJSONArray("modules").getJSONObject(0).getJSONObject("content").getString("text"))
+    }
+
     @Test
     fun `new cards carry complete ordered modules through the atomic page command`() = runBlocking {
         val initialModules = org.json.JSONArray((1..25).map { index -> org.json.JSONObject()
@@ -34,13 +65,8 @@ class NovexManagementServiceTest {
                 .put("modules", initialModules)).toString(), "按刚才的方案做", "creation-$operation",
                 priorUserRequests = listOf("创建 $label 卡", "资料里的章节都要保留"))
             assertTrue(workspace.applied.isEmpty())
-            assertThrows(IllegalArgumentException::class.java) { runBlocking {
-                service.apply(configuration, proposal, "按刚才的方案做")
-            } }
-            assertTrue(workspace.applied.isEmpty())
-            service.apply(configuration, proposal, proposal.confirmationPhrase)
-            // The rejected attempt also checks authorization inside a transaction.
-            assertEquals(2, transactionCount)
+            service.apply(configuration, proposal, "")
+            assertEquals(1, transactionCount)
             val modules = when (val command = workspace.applied.single()) {
                 is NovexCommand.SaveWorldPage -> command.modules
                 is NovexCommand.SaveCharacterPage -> command.modules
@@ -87,7 +113,7 @@ class NovexManagementServiceTest {
             """[{"operation":"update_module","module_id":"m1","name":"北境地图"}]""",
             "只改名字", "rename-12345678",
         )
-        service.apply(configuration, rename, rename.confirmationPhrase)
+        service.apply(configuration, rename, "")
         val renamed = service.inspect(configuration, null, "m1").modules.single()
         assertEquals("北境地图", renamed.name)
         assertEquals(original, renamed.contentJson)
@@ -98,7 +124,7 @@ class NovexManagementServiceTest {
             """[{"operation":"update_module","module_id":"m1","content_json":$newContent}]""",
             "只改正文", "edit-12345678",
         )
-        service.apply(configuration, edit, edit.confirmationPhrase)
+        service.apply(configuration, edit, "")
         val edited = service.inspect(configuration, null, "m1").modules.single()
         assertEquals("北境地图", edited.name)
         assertEquals(newContent, edited.contentJson)
@@ -171,7 +197,7 @@ class NovexManagementServiceTest {
     }
 
     @Test
-    fun `a proposal is inert until the real user confirms it`() = runBlocking {
+    fun `a proposal is inert until the authorized execution applies it`() = runBlocking {
         val workspace = FakeManagementWorkspace()
         val owner = ModuleOwner.world("w1")
         val service = NovexManagementService(workspace, FakeArtifactPort())
@@ -190,9 +216,10 @@ class NovexManagementServiceTest {
 
         assertTrue(workspace.applied.isEmpty())
         assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { service.apply(configuration, proposal, "确认") }
+            runBlocking { service.apply(configuration.copy(executionMode = NovexExecutionMode.READ_ONLY), proposal, "") }
         }
-        service.apply(configuration, proposal, proposal.confirmationPhrase)
+        assertTrue(workspace.applied.isEmpty())
+        service.apply(configuration, proposal, "")
         assertEquals(owner, (workspace.applied.single() as NovexCommand.AddModule).owner)
     }
 
@@ -226,7 +253,7 @@ class NovexManagementServiceTest {
             planId = "proposal-abcdefgh",
         )
 
-        service.apply(configuration, proposal, proposal.confirmationPhrase)
+        service.apply(configuration, proposal, "")
         assertEquals(1, transactionCount)
         assertEquals(2, workspace.applied.size)
     }
@@ -243,7 +270,7 @@ class NovexManagementServiceTest {
             planId = "proposal-newchar1",
         )
 
-        val result = service.apply(configuration, proposal, proposal.confirmationPhrase)
+        val result = service.apply(configuration, proposal, "")
         assertEquals(
             listOf(NovexContentAddress.characterVersion("version-created")),
             result.createdSubjects,

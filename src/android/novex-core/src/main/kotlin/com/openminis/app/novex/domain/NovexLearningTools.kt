@@ -5,11 +5,15 @@ import java.security.MessageDigest
 
 fun interface NovexLearningPreflightResolver {
     fun prepare(collectionRef: NovexResourceRef, modelId: String?): NovexLearningPreflightSnapshot?
+    fun prepare(collectionRef: NovexResourceRef, modelId: String?, action: NovexLearningPlanAction): NovexLearningPreflightSnapshot? {
+        require(action == NovexLearningPlanAction.START) { "当前环境尚未接入资料续接" }
+        return prepare(collectionRef, modelId)
+    }
     /** Only return state that the current conversation branch is allowed to read. */
     fun readState(collectionRef: NovexResourceRef): NovexLearningState? = null
 }
 
-/** Read-only model seam. Starting and confirming a task remain application-internal operations. */
+/** Read-only preparation and note access; the host starts an exact saved plan through its common execution gate. */
 class NovexLearningTools(
     private val preflights: NovexLearningPreflightResolver,
 ) {
@@ -87,8 +91,9 @@ class NovexLearningTools(
     fun learningPrepare(
         collectionRef: NovexResourceRef,
         modelId: String?,
+        action: NovexLearningPlanAction = NovexLearningPlanAction.START,
     ): NovexToolResult {
-        val preflight = preflights.prepare(collectionRef, modelId) ?: return NovexToolResult.failure(
+        val preflight = preflights.prepare(collectionRef, modelId, action) ?: return NovexToolResult.failure(
             code = "learning.collection_not_found",
             summary = "找不到当前对话可用的资料集",
             affectedRefs = listOf(collectionRef),
@@ -97,7 +102,7 @@ class NovexLearningTools(
             return NovexToolResult.success(
                 code = if (NovexLearningControlPolicy.blocksReplacementPreflight(preflight.taskStatus))
                     "learning.task_active" else "learning.task_saved",
-                summary = "这份资料集已有学习整理记录；先读取已保存笔记，需要继续时使用原生进度界面，不重复建立任务",
+                summary = "这份资料集已有整理记录；先读取已保存笔记。需要续接时用 learning_prepare 的 continue（继续）或 recheck（重新核对来源），不要重复新建任务",
                 data = mapOf(
                     "preflight_id" to preflight.id,
                     "collection_ref" to preflight.collectionRef.value,
@@ -113,7 +118,7 @@ class NovexLearningTools(
         return NovexToolResult.success(
             code = "learning.preflight_ready",
             summary = if (preflight.requiresConfirmation) {
-                "学习预检已准备好，需要等待用户在原生界面确认"
+                "整理计划已保存，尚未启动；调用 learning_start 执行，软件统一按本对话权限处理"
             } else {
                 "资料规模较小，可以在当前对话中按需读取"
             },
@@ -151,12 +156,14 @@ class NovexLearningTools(
                     "content_scope" to preflight.dataExposure.contentScope,
                 ),
                 "planned_steps" to preflight.plannedSteps,
-                "requires_confirmation" to preflight.requiresConfirmation,
+                "requires_background_review" to preflight.requiresConfirmation,
+                "max_input_tokens" to preflight.confirmedBudget.inputTokens,
+                "max_output_tokens" to preflight.confirmedBudget.outputTokens,
                 "prohibited_outcomes" to preflight.prohibitedOutcomes.toList().sorted(),
             ),
             warnings = preflight.risks.map { risk -> NovexToolWarning(risk.code, risk.message) },
             nextActions = if (preflight.requiresConfirmation) {
-                listOf(NovexToolNextAction("wait_for_native_confirmation", "等待用户确认整理计划"))
+                listOf(NovexToolNextAction("learning_start", "执行这份已保存计划；批准模式由软件弹窗，自由模式直接启动"))
             } else {
                 listOf(NovexToolNextAction("read_documents", "按需读取资料"))
             },
@@ -186,6 +193,7 @@ class NovexLearningToolRouter(
             if (name == LEARNING_READ) tools.learningRead(NovexResourceRef(collection), arguments) else tools.learningPrepare(
                 collectionRef = NovexResourceRef(collection),
                 modelId = arguments.optString("model_id").trim().ifBlank { null },
+                action = NovexLearningPlanAction.parse(arguments.optString("action", "start")),
             )
         }.getOrElse { failure ->
             NovexToolResult.failure(
@@ -199,5 +207,6 @@ class NovexLearningToolRouter(
     companion object {
         const val LEARNING_PREPARE = "learning_prepare"
         const val LEARNING_READ = "learning_read"
+        const val LEARNING_START = "learning_start"
     }
 }

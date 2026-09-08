@@ -113,9 +113,11 @@ import com.openminis.app.novex.domain.ManagedAccess
 import com.openminis.app.novex.domain.NovexContentAddress
 import com.openminis.app.novex.domain.NovexContentKind
 import com.openminis.app.novex.domain.NovexConversationCommand
+import com.openminis.app.novex.domain.reviewText
 import com.openminis.app.novex.domain.NovexManagementPlan
 import com.openminis.app.novex.domain.NovexManagementService
 import com.openminis.app.novex.domain.toToolJson
+import com.openminis.app.novex.domain.toModelToolJson
 import com.openminis.app.ui.navigation.applyDraftManagedSubjects
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
@@ -388,9 +390,7 @@ class ChatViewModel(
         private const val COMPACT_KEEP_RECENT_USER_TURNS = 3
         /// Max per-tool-call retained `accumulated` JSON snapshots from
         /// `ToolInputDelta`. Drained on preflight failure for diagnosis.
-        private const val TOOL_INPUT_CHUNK_RING_MAX = 10
         /** Auto-retry backoff schedule (seconds). Mirrors iOS retryDelays, scaled to task spec: 1s → 2s → 4s. */
-        private val AUTO_RETRY_DELAYS_SEC = intArrayOf(1, 2, 4)
 
         /**
          * Factory for use with `viewModel(factory = ...)`. Binds the ChatViewModel
@@ -937,6 +937,12 @@ class ChatViewModel(
             java.io.File(context.filesDir, "novex/learning"),
         )
     }
+    private val novexLearningPlans by lazy {
+        com.openminis.app.novex.domain.NovexLearningExecutionPlans(novexLearningRepository, novexDocumentRepository,
+            java.io.File(context.filesDir, "novex/learning-plans"))
+    }
+    private val novexLearningControlMutex = kotlinx.coroutines.sync.Mutex()
+    private var novexLearningRunningRef: NovexResourceRef? = null
     @Volatile
     private var activeNovexSourceCollectionRefs: Set<String> = emptySet()
     private val _pendingNovexLearningPreflight = MutableStateFlow<NovexLearningPreflightSnapshot?>(null)
@@ -946,11 +952,13 @@ class ChatViewModel(
         NovexLearningAgentTools(object : com.openminis.app.novex.domain.NovexLearningPreflightResolver {
             override fun prepare(collectionRef: NovexResourceRef, modelId: String?) =
                 prepareNovexLearningPreflight(collectionRef, modelId)
+            override fun prepare(collectionRef: NovexResourceRef, modelId: String?, action: com.openminis.app.novex.domain.NovexLearningPlanAction) =
+                prepareNovexLearningPreflight(collectionRef, modelId, action)
             override fun readState(collectionRef: NovexResourceRef): NovexLearningState? {
                 if (collectionRef.value !in activeNovexSourceCollectionRefs) return null
                 return novexLearningRepository.find(collectionRef)?.takeIf { collectionRef.value in activeNovexSourceCollectionRefs }
             }
-        })
+        }, start = { ref, id -> startNovexLearningPlan(NovexResourceRef(ref), id, awaitCompletion = true) })
     }
     private val novexConversationWorkspaceStore by lazy {
         com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(
@@ -989,17 +997,47 @@ class ChatViewModel(
     private val _novexLearningCollections = MutableStateFlow<List<NovexLearningState>?>(null)
     val novexLearningCollections: StateFlow<List<NovexLearningState>?> = _novexLearningCollections.asStateFlow()
     private var novexLearningDetailsRequest = 0
-    private var pendingNovexLearningContinuation: Pair<String, com.openminis.app.novex.domain.NovexLearningContinuationMode>? = null
     private var novexLearningJob: Job? = null
     private var conversationVisible = true
     private var conversationExitJob: Job? = null
-    private val pendingNovexManagementPlans = linkedMapOf<String, NovexManagementPlan>()
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
     private val novexContextUsageMutex = kotlinx.coroutines.sync.Mutex()
     private val novexConfigurationMutex = kotlinx.coroutines.sync.Mutex()
+    private val novexOperationJournal by lazy {
+        com.openminis.app.novex.domain.NovexOperationJournal(java.io.File(context.filesDir, "novex-operations"))
+    }
+    private val novexToolExecution by lazy { com.openminis.app.novex.domain.NovexToolExecution(novexOperationJournal) }
+    val pendingToolApprovals get() = novexToolExecution.pending
+    fun restoreToolApprovals() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try { novexToolExecution.restore(activeSessionId) }
+            catch (failure: Exception) { _error.value = failure.message ?: "执行记录未能恢复" }
+        }
+    }
+    fun decideToolOperation(operation: com.openminis.app.novex.domain.NovexToolOperation, approve: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionLoaded.first { it }
+                val pending = com.openminis.app.novex.domain.NovexPendingToolTurn.find(
+                    chatRepository.loadActiveConversation(activeSessionId).activeMessages)
+                val belongsToPendingTurn = pending?.replyId == operation.replyId && pending.calls.any { it.id == operation.callId }
+                require(!approve || belongsToPendingTurn) {
+                    "这次操作不在当前待续的对话中，请先切回对应分支"
+                }
+                novexToolExecution.decide(operation, approve)
+                withContext(Dispatchers.Main) {
+                    if (belongsToPendingTurn && !_isStreaming.value) { _canResume.value = true; resume() }
+                }
+            }
+            catch (failure: Exception) { _error.value = failure.message ?: "操作批准未保存" }
+        }
+    }
+
     private val sessionCreationMutex = kotlinx.coroutines.sync.Mutex()
-    private val pendingNovexMemoryPlans = linkedMapOf<String, com.openminis.app.novex.domain.NovexMemoryPlan>()
-    private val novexMemoryMutex = kotlinx.coroutines.sync.Mutex()
+    private val novexMemoryExecutor by lazy {
+        com.openminis.app.novex.domain.NovexMemoryToolExecutor(novexMemoryService(),
+            java.io.File(context.filesDir, "novex/memory-plans"))
+    }
 
     /**
      * All agent tool definitions, recomputed on each read so the memory
@@ -1029,13 +1067,8 @@ class ChatViewModel(
     /** Changing answer persona cannot bypass or remove the actual model/configuration tool gates. */
     private val agentTools: List<AgentToolDefinition>
         get() {
-            val all = allAgentTools
-            val role = _immersiveProfile.value.character ?: return all
-            val allowed = com.openminis.app.data.character.CharacterToolPolicy.allowedToolNames(
-                character = role,
-                availableToolNames = all.mapTo(mutableSetOf()) { it.name },
-            )
-            return all.filter { it.name in allowed }
+            if (!currentNovexConfiguration().executionMode.exposesTools) return emptyList()
+            return allAgentTools
         }
 
     /**
@@ -3327,6 +3360,11 @@ class ChatViewModel(
             com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
             .load(configuration)
             .toMutableList()
+        candidates += com.openminis.app.novex.domain.NovexReadOnlyAttachmentContext(novexDocumentRepository).candidates(
+            configuration.executionMode,
+            novexDocumentRefsInHistory(agentHistory.filter { it.role == LLMMessage.Role.USER })
+                .filter { it in activeNovexDocumentRefs }.map(::NovexResourceRef),
+        )
         configuration.activeInteractiveFiction?.let {
             val state = InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
             if (state.values.isNotEmpty()) {
@@ -3382,7 +3420,11 @@ class ChatViewModel(
             effectiveWindowTokens = window,
             createdAt = System.currentTimeMillis(),
         )
-        val formalPrompt = NovexContextPromptFormatter.appendTo(baseSystemPrompt, composition.fragments)
+        val formalPrompt = NovexContextPromptFormatter.appendTo(baseSystemPrompt, composition.fragments) +
+            composition.omissions.takeIf { it.isNotEmpty() }?.joinToString(
+                prefix = "\n<本轮未完整提供的资料>\n", postfix = "\n不能把上述资料视为已通读。\n</本轮未完整提供的资料>",
+                separator = "\n",
+            ) { "${it.label}：${it.reason}" }.orEmpty()
         if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") {
             try {
                 val definitions = agentTools
@@ -3636,6 +3678,7 @@ class ChatViewModel(
     internal var realSessionId: String = if (isDraft) "" else sessionId
 
     init {
+        ChatViewModelStore.registerRuntime(sessionId, requireNotNull(viewModelScope.coroutineContext[Job]))
         loadSession()
         // [T-session-paused-badge-active-false-positive] Drive the session-list
         // PAUSED badge directly off canResume — the authoritative "this session
@@ -4424,7 +4467,6 @@ class ChatViewModel(
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
             closeNovexLearningResponsePreview()
             closeNovexLearningDetails()
-            pendingNovexLearningContinuation = null
             refreshNovexLearningTaskProjection()
             val tHangDiagAfterAgentHistory = System.currentTimeMillis()
             println(
@@ -4974,6 +5016,25 @@ class ChatViewModel(
         val entryId: String,
     )
 
+    private fun installStreamFallback(previous: FallbackCandidate, next: FallbackCandidate) {
+        currentProvider = next.provider
+        _modelName.value = next.provider.model.displayName
+        val entry = providerRepository.config.value.modelEntries.find { it.id == next.entryId }
+        if (entry != null) {
+            _activeEntryId.value = entry.id
+            currentModel = entry.model
+            providerRepository.instance(entry.providerInstanceId)?.let {
+                _providerName.value = it.label.ifEmpty { entry.model.provider }
+            }
+            val binding = JSONObject()
+            val group = _selectedGroupId.value
+            if (group != null) binding.put("type", "group").put("groupId", group).put("lastEntryId", entry.id)
+            else binding.put("type", "entry").put("entryId", entry.id)
+            persistBinding(binding.toString())
+        }
+        if (previous.provider.model.id != next.provider.model.id) _fallbackTrigger.value++
+    }
+
     private fun buildFallbackProviders(primaryProvider: LLMProvider): List<FallbackCandidate> {
         val groupId = _selectedGroupId.value ?: return emptyList()
         val config = providerRepository.config.value
@@ -5098,7 +5159,6 @@ class ChatViewModel(
         activeNovexSourceCollectionRefs = emptySet()
         closeNovexLearningResponsePreview()
         closeNovexLearningDetails()
-        pendingNovexLearningContinuation = null
         _novexLearningError.value = null
         _pendingNovexLearningPreflight.value = null
         _novexLearningTask.value = null
@@ -5490,7 +5550,6 @@ class ChatViewModel(
         activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
         closeNovexLearningResponsePreview()
         closeNovexLearningDetails()
-        pendingNovexLearningContinuation = null
         _pendingNovexLearningPreflight.value = null
         refreshNovexLearningTaskProjection()
         toolLoopDetector.reset()
@@ -6718,15 +6777,6 @@ class ChatViewModel(
         }
     }
 
-    private fun unwrapFlowException(e: Throwable): Throwable {
-        var cause: Throwable? = e
-        while (cause != null) {
-            if (cause is com.openminis.app.data.model.LLMError) return cause
-            cause = cause.cause
-        }
-        return e
-    }
-
     /**
      * Compute max output tokens that fits within the remaining context window.
      * Logic mirrors iOS's dynamicMaxTokens():
@@ -7053,6 +7103,15 @@ class ChatViewModel(
             message.role == LLMMessage.Role.USER && message.dbMessageId != null &&
                 (message.content.isNotBlank() || message.imageParts.isNotEmpty())
         }
+        if (recoveryOrigin == AgentRunRecoveryOrigin.RESUME) {
+            if (recoverPendingToolTurn()) return
+            if (agentHistory.lastOrNull()?.role == LLMMessage.Role.ASSISTANT) {
+                val reminder = "<system-reminder>用户要求继续此前未完成的回复。已经完成的操作以真实回执为准，不重复执行。</system-reminder>"
+                val partsJson = JSONArray().put(JSONObject().put("type", "text").put("value", reminder)).toString()
+                chatRepository.appendMessage(activeSessionId, "user", partsJson)
+                withContext(Dispatchers.Main) { installActiveConversation(chatRepository.loadActiveConversation(activeSessionId)) }
+            }
+        }
         val preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
             try {
                 prepareNovexRequestContext(systemPrompt, requestId, novexRequestMessage.content)
@@ -7126,64 +7185,14 @@ class ChatViewModel(
         // (turnStartBlockIndex is captured at iteration start to 0 after reset).
         var assistantId = "assistant_${System.currentTimeMillis()}"
         val allToolBlocks = mutableListOf<AssistantBlock>()
-        // Per-tool ring of the most recent `accumulated` JSON snapshots emitted
-        // by `LLMStreamChunk.ToolInputDelta`. Capped at TOOL_INPUT_CHUNK_RING_MAX
-        // entries per tool id so memory stays bounded even on long streams.
-        // The preflight validator below drains this on a blocked call so we
-        // can reconstruct how the model assembled (or failed to assemble) the
-        // args.
-        val toolInputChunkRings: MutableMap<String, MutableList<String>> = mutableMapOf()
         var accumulatedText = ""
-        var lastContextTokens = 0  // updated each turn from API usage
-
-        // T94 fix 2: throttle text-delta UI updates to ~20fps (50ms).
-        // Pre-T94 the LLMStreamChunk.Text branch hopped to Dispatchers.Main
-        // for every chunk — Anthropic SSE on a slow turn fires 50-100 deltas
-        // per second, each one triggering a full _messages.value reassignment
-        // and a Compose recomposition of the whole chat list. The combined
-        // Main-thread cost is what saturated the touch-event queue and
-        // produced the "Waited 5001ms for MotionEvent" ANRs we saw on
-        // host.example.com. We coalesce deltas in `pendingChunkText` and only
-        // flip the UI on a 50ms timer; the per-stream end and per-retry
-        // rollback paths flush whatever's pending so no characters are lost.
-        // T256: tiered streaming throttle, mirrors iOS AIChatViewModel.swift
-        // 6135-6155. The fixed 50ms window saturated the Pixel 4a UI thread
-        // (95p frame 77ms / 29% janky). 6-segment ladder lets short replies
-        // stay snappy (150ms ≈ 6.5 fps which is fine for <500-char snippets)
-        // while long-form output (>32k chars) drops to 0.5-2s gates.
-        // Newline fast-path keeps short messages flowing at human-readable
-        // pace while still avoiding the per-token recompose storm.
-        var lastUiUpdateMs = 0L
-        var lastFlushedLen = 0
-        // T307: per-delta String += chunk.text on Pixel-class heaps was O(n²)
-        // — every SSE chunk allocated a fresh String the size of turnText so
-        // far, then GC walked the entire char[]. DeepSeek V4 emitting long
-        // multilingual + emoji turns blew past the 256 MB heap on Pixel 4a,
-        // showing up as `AbstractStringBuilder.append:548` in
-        // `ChatViewModel$runAgentLoop$5.emit`. Switch the three hot per-delta
-        // accumulators (`pendingChunkText`, `turnText`, and the trailing
-        // text-block's growing `content`) to StringBuilder so growth is
-        // amortised O(n). Cross-turn `accumulatedText` is unaffected — it
-        // grows per turn, not per delta.
-        val pendingChunkSb = StringBuilder()
-        // T256 tier 2: per-tool-kind input-delta gates. file_write/file_edit
-        // pills churn JSON the user can't read anyway — 1Hz update is plenty;
-        // other tools get 5Hz so command/url previews stay legible.
-        var lastFileToolInputMs = 0L
-        var lastOtherToolInputMs = 0L
-        fun textDeltaThrottleMs(len: Int): Long = when {
-            len < 500     -> 150L
-            len < 2_000   -> 300L
-            len < 32_000  -> 500L
-            len < 64_000  -> 1_000L
-            len < 128_000 -> 1_500L
-            else          -> 2_000L
-        }
+        var lastContextTokens = 0
 
         // Fallback state — mirrors iOS streamWithGroupFallback
         var currentProvider = provider
-        val remainingFallbacks = fallbackProviders.toMutableList()
-        val fallbackReasons = mutableListOf<String>()
+        val streamRecovery = com.openminis.app.novex.domain.NovexModelStreamRecovery(
+            FallbackCandidate(provider, _activeEntryId.value.orEmpty()), fallbackProviders, fallbackStrategy,
+            label = { it.provider.model.displayName })
 
         // Accumulate tool inputs across all turns (so persist includes all, not just current turn)
         val allToolInputs = mutableMapOf<String, String>()
@@ -7224,7 +7233,6 @@ class ChatViewModel(
         // Some OpenAI-compatible relays intermittently flatten an explicitly
         // requested present_choices call into prose. Allow exactly one repair
         // request, restricted to that single tool, then stop visibly.
-        var nativeCardRepairAttempted = false
         var choiceRepairAttempted = false
         var forcedChoiceToolOnly = false
         // Keep the request context explicit. The retry reminder mutates the
@@ -7374,106 +7382,22 @@ class ChatViewModel(
             // only the NEW parts from this turn (not the full accumulated history).
             // Matches iOS's per-turn RawMessage persistence.
             val turnStartBlockIndex = allToolBlocks.size
-            // T307: per-delta StringBuilder for the running turn text + the
-            // currently-open trailing text block. `turnText` snapshots are
-            // taken (via .toString()) at flush boundaries only, never per
-            // delta. `currentTextBlockSb` mirrors the trailing text block's
-            // growing content; reset to a fresh builder whenever a new text
-            // block opens (which happens after a tool_use / thinking break
-            // interrupts the text run).
-            val turnTextSb = StringBuilder()
-            var currentTextBlockSb: StringBuilder? = null
-            // [T-android-tool-splits-reply-fix] Index (into allToolBlocks) of
-            // THIS turn's single text block, used only when the provider's
-            // streamed content is monolithic (streamTextIsMonolithic — OpenAI
-            // Chat Completions). -1 until the turn's first text delta. The
-            // merge scope is ONE streamed response: text arriving after a
-            // tool RESULT round-trip belongs to the NEXT agent-loop turn,
-            // which is a separate assistant message — so genuine
-            // multi-segment turns are unaffected by the merge.
-            var turnTextBlockIdx = -1
-            // One-shot observability: future endpoints that adopt qwen-style
-            // post-tool_calls content chunking show up in the log.
-            var loggedPostToolTextMerge = false
-            // Materialise the active text block's StringBuilder into its
-            // immutable content. Monolithic mode targets the tracked turn
-            // text block — which may NOT be the last block once trailing
-            // content arrived after tool_calls; ordered mode keeps the
-            // original trailing-block behaviour.
-            fun materializeActiveTextBlock() {
-                val sb = currentTextBlockSb ?: return
-                val idx = if (currentProvider.streamTextIsMonolithic) turnTextBlockIdx else allToolBlocks.lastIndex
-                if (idx >= 0 && idx < allToolBlocks.size && allToolBlocks[idx].kind == "text") {
-                    allToolBlocks[idx] = allToolBlocks[idx].copy(content = sb.toString())
+            val streamedTurn = AssistantStreamTurn(turn, agentTools.isNotEmpty(), ::friendlyToolTitle)
+            suspend fun publishStream(snapshot: AssistantStreamTurn.Snapshot) {
+                while (allToolBlocks.size > turnStartBlockIndex) allToolBlocks.removeAt(allToolBlocks.lastIndex)
+                allToolBlocks.addAll(snapshot.blocks)
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(assistantId, accumulatedText + snapshot.text, true, allToolBlocks)
                 }
             }
-            val turnThinking = StringBuilder()
-            // Opaque reasoning_content blob captured from the provider's
-            // ReasoningContent stream chunk. When set (including empty string),
-            // takes precedence over turnThinking concatenation so the exact
-            // server-emitted value round-trips on the next request — DeepSeek V4
-            // emits "" legitimately and fabricated text would be in-context-learned.
-            var turnReasoningBlob: String? = null
-            // T321: capture finish_reason from LLMStreamChunk.Finished so we can
-            // log it at turn-end alongside the empty-turn warning.
-            var turnFinishReason: String? = null
-            var lastUsage: LLMUsage? = null
             val maxTokens = dynamicMaxTokens(provider, lastContextTokens)
-            val toolCalls = mutableListOf<Triple<String, String, JSONObject>>() // id, name, args
-            // [T-android-gemini3-thoughtsig / #179] toolCallId -> Gemini 3.x
-            // thoughtSignature for this turn's calls (null for other providers).
-            val toolCallSignatures = mutableMapOf<String, String>()
             val thisTurnIsForcedChoiceRepair = forcedChoiceToolOnly
             forcedChoiceToolOnly = false
 
-            // [T-dedupe-toolcallid 03fbcbfd] Per-turn dedupe of tool_call_id.
-            // Some upstream OpenAI-compatible gateways occasionally emit
-            // multiple parallel tool_calls with the SAME id but different
-            // name/args. Sending both back unchanged trips the receiver's
-            // uniqueness check (HTTP 400 "duplicate tool_call_id"). Mirror
-            // the iOS fix: the FIRST occurrence keeps the raw id, second
-            // becomes "<id>-2", third "<id>-3", etc.
-            //
-            // Three pieces of state because Android routes ToolInputDelta
-            // by chunk.id (iOS routes by name) and OpenAI emits ALL completes
-            // together after finish_reason — so we can't drop the
-            // "currently in-flight" map by the time completes arrive.
-            //
-            //   dedupeStartCounts    raw id → # ToolUseStart events seen
-            //   dedupeCompleteCounts raw id → # ToolCallComplete events seen
-            //   inFlightRenamedId    raw id → renamed id of the tool currently
-            //                        streaming deltas (overwritten on each start)
-            //
-            // Start/complete ordering match: OpenAI streams emit tools in
-            // `index` order at finish_reason, mirroring start order.
-            val dedupeStartCounts = mutableMapOf<String, Int>()
-            val dedupeCompleteCounts = mutableMapOf<String, Int>()
-            val inFlightRenamedId = mutableMapOf<String, String>()
-            fun dedupeToolStartId(raw: String): String {
-                val n = (dedupeStartCounts[raw] ?: 0) + 1
-                dedupeStartCounts[raw] = n
-                val renamed = if (n == 1) raw else "$raw-$n"
-                if (n > 1) {
-                    AppLogger.warning(TAG_STREAM, "[ToolDedupe] duplicate tool_call id on stream start: '$raw' #$n -> renamed '$renamed'")
-                }
-                inFlightRenamedId[raw] = renamed
-                return renamed
-            }
-            fun dedupeToolInputId(raw: String): String =
-                inFlightRenamedId[raw] ?: raw
-            fun dedupeToolCompleteId(raw: String): String {
-                val n = (dedupeCompleteCounts[raw] ?: 0) + 1
-                dedupeCompleteCounts[raw] = n
-                return if (n == 1) raw else "$raw-$n"
-            }
-
-            // Stream the response — with auto-retry on transient errors, then fallback.
-            // callbackFlow wraps throws into CancellationException(cause=LLMError),
-            // so we catch at collect level and unwrap.
-            var collectDone = false
-            var retryAttempt = 0  // per-turn auto-retry counter (resets on each new turn)
-            while (!collectDone) {
-                try {
+            var failedAttemptVisibleText = ""
+            streamRecovery.collect(
+                attempt = { endpoint ->
+                    currentProvider = endpoint.provider
                     // [T-android-enhanced-cache] Stamp the per-turn Enhanced
                     // Cache flag onto the active provider here — the single
                     // choke point every turn passes through, regardless of how
@@ -7500,571 +7424,50 @@ class ChatViewModel(
                         tools = if (requestToolsEnabled) conversationTools else emptyList(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
-                when (chunk) {
-                    is LLMStreamChunk.ThinkingDelta -> {
-                        turnThinking.append(chunk.text)
-                        // Update thinking block in UI
-                        val thinkIdx = allToolBlocks.indexOfFirst { it.kind == "thinking" && it.id == "thinking_$turn" }
-                        if (thinkIdx < 0) {
-                            allToolBlocks.add(AssistantBlock(
-                                id = "thinking_$turn",
-                                kind = "thinking",
-                                content = turnThinking.toString(),
-                                toolTitle = "Thinking",
-                            ))
-                        } else {
-                            allToolBlocks[thinkIdx] = allToolBlocks[thinkIdx].copy(content = turnThinking.toString())
-                        }
-                        withContext(Dispatchers.Main) {
-                            updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                        }
-                    }
-                    is LLMStreamChunk.Text -> {
-                        // Mark thinking block as done when text starts flowing
-                        val thinkIdx = allToolBlocks.indexOfFirst { it.kind == "thinking" && it.id == "thinking_$turn" }
-                        if (thinkIdx >= 0 && allToolBlocks[thinkIdx].toolStatus != ToolBlockStatus.SUCCESS) {
-                            allToolBlocks[thinkIdx] = allToolBlocks[thinkIdx].copy(toolStatus = ToolBlockStatus.SUCCESS)
-                        }
-                        // T307: append-only on the StringBuilder; .toString()
-                        // is taken once below at flush time, not per delta.
-                        turnTextSb.append(chunk.text)
-                        // Append to the trailing text block — or open a new one if the last
-                        // block isn't a text block (i.e. a tool call or thinking was in between).
-                        // This preserves the chronological interleaving of text and tool calls
-                        // across a single assistant turn. The block's `content` field stays
-                        // immutable String — we keep a parallel StringBuilder for the active
-                        // block and materialise via .toString() only on flush.
-                        val lastIdx = allToolBlocks.lastIndex
-                        val monolithic = currentProvider.streamTextIsMonolithic
-                        val activeSb = if (monolithic && turnTextBlockIdx >= 0 && currentTextBlockSb != null) {
-                            // [T-android-tool-splits-reply-fix] Chat Completions
-                            // content is ONE string per response — a content
-                            // delta arriving after tool_calls deltas (qwen
-                            // chunking artifact) is still part of the same
-                            // pre-tool sentence. Merge it back instead of
-                            // fabricating a post-tool text block, which split
-                            // sentences mid-word in the chat UI. Scope: this
-                            // streamed response only (see turnTextBlockIdx).
-                            if (!loggedPostToolTextMerge &&
-                                allToolBlocks.subList(turnTextBlockIdx + 1, allToolBlocks.size).any { it.kind == "tool_use" }
-                            ) {
-                                loggedPostToolTextMerge = true
-                                AppLogger.info(
-                                    TAG_STREAM,
-                                    "[T-android-tool-splits-reply-fix] post-tool_calls content delta merged into pre-tool text block (model=${currentProvider.model.id})",
-                                )
-                            }
-                            currentTextBlockSb!!.append(chunk.text)
-                            currentTextBlockSb!!
-                        } else if (!monolithic && lastIdx >= 0 && allToolBlocks[lastIdx].kind == "text" && currentTextBlockSb != null) {
-                            currentTextBlockSb!!.append(chunk.text)
-                            currentTextBlockSb!!
-                        } else {
-                            // New text run — either first text after a tool_use/thinking
-                            // break, or first text in this turn. Open a fresh block AND
-                            // a fresh accumulator. The new block's content carries the
-                            // first delta verbatim; subsequent deltas append to the SB.
-                            val freshSb = StringBuilder(chunk.text)
-                            currentTextBlockSb = freshSb
-                            val block = AssistantBlock(
-                                id = "text_${turn}_${allToolBlocks.size}",
-                                kind = "text",
-                                content = chunk.text,
-                            )
-                            if (monolithic) {
-                                // Single text block per response. If tool blocks
-                                // already arrived (content-after-tool_calls
-                                // chunking with no preface text), insert BEFORE
-                                // the first tool block of this turn so the
-                                // persisted order matches the canonical
-                                // {content, tool_calls} message shape.
-                                val firstToolIdx = (turnStartBlockIndex until allToolBlocks.size)
-                                    .firstOrNull { allToolBlocks[it].kind == "tool_use" }
-                                if (firstToolIdx != null) {
-                                    allToolBlocks.add(firstToolIdx, block)
-                                    turnTextBlockIdx = firstToolIdx
-                                } else {
-                                    allToolBlocks.add(block)
-                                    turnTextBlockIdx = allToolBlocks.lastIndex
-                                }
-                            } else {
-                                allToolBlocks.add(block)
-                            }
-                            freshSb
-                        }
-                        // T94 fix 2 + T256: tiered text-delta throttle. Mutate local
-                        // state every delta (above) so block boundaries stay correct
-                        // for ToolUseStart / ToolInputDelta which read allToolBlocks
-                        // directly. Only push to _messages when the length-aware gate
-                        // opens (or a newline lands during a short reply). Pending
-                        // text lives in `pendingChunkSb` so the stream-end final
-                        // flush at line ~3580 can drain it.
-                        pendingChunkSb.append(chunk.text)
-                        val len = turnTextSb.length
-                        val unflushed = len - lastFlushedLen
-                        val throttle = textDeltaThrottleMs(len)
-                        val newlineFlush = len < 5_000 && chunk.text.contains('\n') && unflushed >= 50
-                        val nowMs = System.currentTimeMillis()
-                        if (nowMs - lastUiUpdateMs >= throttle || newlineFlush) {
-                            lastUiUpdateMs = nowMs
-                            lastFlushedLen = len
-                            pendingChunkSb.setLength(0)
-                            // Materialise SB → String for both the active block's
-                            // content (so Compose sees an immutable snapshot) and
-                            // for the assistant message body. These are O(n) calls
-                            // but happen at throttled cadence, not per delta.
-                            // (activeSb === currentTextBlockSb by construction.)
-                            materializeActiveTextBlock()
-                            val turnSnap = turnTextSb.toString()
-                            withContext(Dispatchers.Main) {
-                                updateAssistantMessage(assistantId, accumulatedText + turnSnap, true, allToolBlocks)
-                            }
-                        }
-                    }
-                    is LLMStreamChunk.ToolUseStart -> {
-                        // [T-dedupe-toolcallid] Rewrite duplicate id ASAP — the
-                        // renamed value drives the AssistantBlock.id used by
-                        // ToolCallComplete / ToolInputDelta lookups and ends
-                        // up as the persisted tool_call_id on the next request.
-                        val toolUseId = dedupeToolStartId(chunk.id)
-                        android.util.Log.d("ToolChain[VM]", "[turn=$turn] ToolUseStart id=$toolUseId name=${chunk.name}")
-                        // Mark thinking block as done when tool use starts
-                        val thinkIdx = allToolBlocks.indexOfFirst { it.kind == "thinking" && it.id == "thinking_$turn" }
-                        if (thinkIdx >= 0 && allToolBlocks[thinkIdx].toolStatus != ToolBlockStatus.SUCCESS) {
-                            allToolBlocks[thinkIdx] = allToolBlocks[thinkIdx].copy(toolStatus = ToolBlockStatus.SUCCESS)
-                        }
-                        // T154: when the last few text deltas landed inside the 50ms throttle
-                        // window, the UI hadn't yet been pushed with the trailing text — and
-                        // adding the tool_use block before that push freezes the preceding
-                        // text fragment in StreamingMarkdownText (its `messageIsStreaming`
-                        // flag flips off the next layout pass) with chars chopped off the
-                        // end. Mirror iOS AnthropicAgentProvider.swift Step 1 / Step 2:
-                        // first push the latest accumulated text *unthrottled* so the text
-                        // block freezes at its complete value, yield to let Compose render
-                        // it, then add the tool_use block in a separate transaction. The
-                        // pendingChunkText/lastUiUpdateMs reset mirrors the throttle path
-                        // so the next text delta doesn't try to flush stale state.
-                        if (turnTextSb.isNotEmpty() && pendingChunkSb.isNotEmpty()) {
-                            pendingChunkSb.setLength(0)
-                            lastUiUpdateMs = System.currentTimeMillis()
-                            lastFlushedLen = turnTextSb.length
-                            // T307: pre-tool-use flush also materialises the
-                            // active text block + a turn-text snapshot.
-                            materializeActiveTextBlock()
-                            // [T-android-tool-splits-reply-fix] Ordered mode:
-                            // the tool block breaks the text run, so the next
-                            // text delta opens a new block. Monolithic mode
-                            // keeps the accumulator alive — same-response
-                            // content deltas arriving after tool_calls merge
-                            // back into the pre-tool text block instead.
-                            if (!currentProvider.streamTextIsMonolithic) {
-                                currentTextBlockSb = null
-                            }
-                            val turnSnap = turnTextSb.toString()
-                            withContext(Dispatchers.Main) {
-                                updateAssistantMessage(assistantId, accumulatedText + turnSnap, true, allToolBlocks)
-                            }
-                            yield()
-                        }
-                        // T256 tier 2: force the next ToolInputDelta to flush
-                        // immediately by zeroing both gate timestamps. iOS does the
-                        // same in .startToolUse (AIChatViewModel.swift:6075-6116) so
-                        // the user sees the pill name/title arrive without waiting
-                        // out the 1s/200ms gate.
-                        lastFileToolInputMs = 0L
-                        lastOtherToolInputMs = 0L
-                        // Guard: only add if not already present (prevent duplicate blocks from repeated ToolUseStart)
-                        if (allToolBlocks.none { it.id == toolUseId }) {
-                            allToolBlocks.add(AssistantBlock(
-                                id = toolUseId,
-                                kind = "tool_use",
-                                toolName = chunk.name,
-                                toolStatus = ToolBlockStatus.STREAMING,
-                                toolTitle = friendlyToolTitle(chunk.name),
-                                startTimeMs = System.currentTimeMillis(),
-                            ))
-                            withContext(Dispatchers.Main) {
-                                updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                            }
-                        }
-                    }
-                    is LLMStreamChunk.ToolInputDelta -> {
-                        // [T-dedupe-toolcallid] Translate to the currently-in-flight
-                        // renamed id so the per-tool ring + block lookup match
-                        // the block that ToolUseStart created.
-                        val toolInputId = dedupeToolInputId(chunk.id)
-                        android.util.Log.d("ToolChain[VM]", "[turn=$turn] ToolInputDelta id=$toolInputId len=${chunk.accumulated.length}")
-                        // Maintain a per-tool ring of the most recent `accumulated`
-                        // snapshots so the preflight validator below can dump them
-                        // when an empty/invalid call is detected. Cheap (single
-                        // append + bounded trim) and lives outside any throttle so
-                        // every delta lands here.
-                        val ring = toolInputChunkRings.getOrPut(toolInputId) { mutableListOf() }
-                        ring.add(chunk.accumulated)
-                        if (ring.size > TOOL_INPUT_CHUNK_RING_MAX) {
-                            // Drop from the front so we keep the most recent N.
-                            ring.subList(0, ring.size - TOOL_INPUT_CHUNK_RING_MAX).clear()
-                        }
-                        val idx = allToolBlocks.indexOfFirst { it.id == toolInputId }
-                        if (idx >= 0) {
-                            val prev = allToolBlocks[idx]
-                            // Stream-parse partial JSON (mirrors iOS extractPartialStringValue):
-                            //   - pull "tool_title" out early so the pill header updates live
-                            //   - keep the raw accumulated JSON in toolArgs so detail-sheet
-                            //     renderers (extractShellCommand, args.optString("command"), …)
-                            //     can pick up fields as they appear.
-                            //   - leave content empty during streaming (real output arrives
-                            //     after ToolCallComplete).
-                            val partialTitle = extractPartialStringValue("tool_title", chunk.accumulated)
-                            val liveTitle = when {
-                                !partialTitle.isNullOrEmpty() -> partialTitle
-                                prev.toolTitle.isNotEmpty() && prev.toolTitle != prev.toolName -> prev.toolTitle
-                                else -> friendlyToolTitle(prev.toolName)
-                            }
-                            allToolBlocks[idx] = prev.copy(
-                                toolArgs = chunk.accumulated,
-                                toolTitle = liveTitle,
-                                content = "",
-                            )
-                            // T256 tier 2: gate UI push by tool kind. file_write/file_edit
-                            // pump multi-KB JSON through the SSE — pushing every delta
-                            // pegs the UI thread for no readable benefit (the user can't
-                            // skim a partial JSON blob anyway). Mirrors iOS
-                            // AIChatViewModel.swift:6229-6259 (1s file / 200ms other).
-                            // Local state above is mutated unconditionally so when the
-                            // gate eventually opens — or ToolCallComplete force-flushes —
-                            // the latest accumulated args are pushed.
-                            val toolName = prev.toolName
-                            val isHeavyFileTool = toolName == "file_write" || toolName == "file_edit"
-                            val gateMs = if (isHeavyFileTool) 1_000L else 200L
-                            val nowMs = System.currentTimeMillis()
-                            val lastTs = if (isHeavyFileTool) lastFileToolInputMs else lastOtherToolInputMs
-                            if (nowMs - lastTs >= gateMs) {
-                                if (isHeavyFileTool) lastFileToolInputMs = nowMs
-                                else lastOtherToolInputMs = nowMs
-                                withContext(Dispatchers.Main) {
-                                    updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                                }
-                            }
-                        }
-                    }
-                    is LLMStreamChunk.ToolCallComplete -> {
-                        // [T-dedupe-toolcallid] Rewrite duplicate id so the
-                        // persisted tool_calls list, the block lookup, and
-                        // the downstream tool-result join all key on the
-                        // same value (matches the rename applied at start).
-                        val toolCompleteId = dedupeToolCompleteId(chunk.id)
-                        android.util.Log.d("ToolChain[VM]", "[turn=$turn] ToolCallComplete id=$toolCompleteId name=${chunk.name} args=${chunk.args.toString().take(300)}")
-                        toolCalls.add(Triple(toolCompleteId, chunk.name, chunk.args))
-                        // [T-android-gemini3-thoughtsig / #179] Stash the Gemini
-                        // 3.x thought signature keyed by the (deduped) tool call id.
-                        chunk.thoughtSignature?.let { toolCallSignatures[toolCompleteId] = it }
-                        val idx = allToolBlocks.indexOfFirst { it.id == toolCompleteId }
-                        if (idx >= 0) {
-                            val providedTitle = chunk.args.optString("tool_title", "").takeIf { it.isNotEmpty() }
-                            val title = providedTitle ?: friendlyToolTitle(chunk.name)
-                            // PENDING — JSON params fully received, waiting for execution
-                            // dispatcher to invoke the tool. executeTool() flips to RUNNING.
-                            allToolBlocks[idx] = allToolBlocks[idx].copy(
-                                toolStatus = ToolBlockStatus.PENDING,
-                                toolTitle = title,
-                                toolArgs = chunk.args.toString(),
-                                content = "", // Clear ToolInputDelta JSON accumulation before real output arrives
-                                // [T-android-gemini3-thoughtsig / #179] Persist the
-                                // signature onto the block so buildTurnParts (the DB
-                                // path) round-trips it. Preserve any prior value if
-                                // this chunk lacked one.
-                                thoughtSignature = chunk.thoughtSignature ?: allToolBlocks[idx].thoughtSignature,
-                            )
-                            withContext(Dispatchers.Main) {
-                                updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                            }
-                        }
-                    }
-                    is LLMStreamChunk.Usage -> {
-                        lastUsage = chunk.usage
-                        // Update context token count for next turn's dynamicMaxTokens()
-                        // and publish to _lastTurnContextTokens so the ContextPolicy
-                        // gate in [checkContextBeforeSend] can see the latest pressure
-                        // without a DB round-trip.
-                        if (chunk.usage.latestContextTokens > 0) {
-                            lastContextTokens = chunk.usage.latestContextTokens
-                        } else if (chunk.usage.inputTokens > 0) {
-                            // Fallback when a provider omits latestContextTokens: inputTokens is
-                            // now fresh-only (cached portion subtracted in the parser), so add the
-                            // cache back to recover the true context size — otherwise a high
-                            // cache-hit turn would under-report context pressure and skip offload.
-                            lastContextTokens = chunk.usage.inputTokens +
-                                (chunk.usage.cacheReadInputTokens ?: 0) +
-                                (chunk.usage.cacheCreationInputTokens ?: 0)
-                        }
-                        if (lastContextTokens > 0) {
+                        streamedTurn.accept(chunk, currentProvider.streamTextIsMonolithic, ::publishStream)
+                        if (chunk is LLMStreamChunk.Usage && streamedTurn.contextTokens > 0) {
+                            lastContextTokens = streamedTurn.contextTokens
                             _lastTurnContextTokens.value = lastContextTokens
                         }
                     }
-                    is LLMStreamChunk.ReasoningContent -> {
-                        // Opaque reasoning blob (DeepSeek/Kimi reasoning_content) — record
-                        // on the last assistant turn so it echoes back on the next request.
-                        // Empty strings are preserved (DeepSeek V4 emits "" on non-thinking
-                        // turns and we must round-trip exactly that). No live UI surface;
-                        // the thinking panel is driven by ThinkingDelta events above.
-                        turnReasoningBlob = chunk.content
+                    streamedTurn.finish(::publishStream)
+                },
+                rollback = {
+                    val failed = streamedTurn.reset()
+                    failedAttemptVisibleText = failed.text
+                    publishStream(AssistantStreamTurn.Snapshot(failed.text, emptyList()))
+                },
+                retrying = { failure, attempt, limit ->
+                    withContext(Dispatchers.Main) {
+                        _autoRetryAttempt.value = attempt
+                        setTransientInlineError("模型连接暂时中断，正在重试（$attempt/$limit）")
                     }
-                    is LLMStreamChunk.Finished -> {
-                        // T321: stash for empty-turn diagnostic logging below.
-                        turnFinishReason = chunk.stopReason
-                    }
-                    is LLMStreamChunk.Started -> { /* no-op */ }
-                    is LLMStreamChunk.MediaAttachment -> {
-                        // [T-codex-gpt-image2-oauth-android] Model-generated
-                        // media (gpt-image-2 image). Inline chat display is out
-                        // of scope for this change — the image is delivered via
-                        // sendMessage→LLMResponse.mediaAttachments for the
-                        // minis-model-use CLI path. No-op here so the chat agent
-                        // loop compiles with the new chunk variant.
-                    }
-                }
-                    }  // end collect
-                    // T94 fix 2: flush any text that landed in the throttle
-                    // window after the last UI tick. The retry-rollback /
-                    // turn-finalize paths below assume _messages reflects all
-                    // accumulated text-deltas, so we must not leave the last
-                    // 0-50ms worth on the floor.
-                    if (pendingChunkSb.isNotEmpty()) {
-                        pendingChunkSb.setLength(0)
-                        // T307: also flush the active text block's pending
-                        // tail and snapshot turnText.
-                        materializeActiveTextBlock()
-                        val turnSnap = turnTextSb.toString()
-                        withContext(Dispatchers.Main) {
-                            updateAssistantMessage(assistantId, accumulatedText + turnSnap, true, allToolBlocks)
-                        }
-                    }
-                    // T256: reset throttle bookkeeping for the next turn so the
-                    // first delta of the next assistant message fires immediately
-                    // rather than coalescing against this turn's stale baseline.
-                    lastFlushedLen = 0
-                    lastUiUpdateMs = 0L
-                    lastFileToolInputMs = 0L
-                    lastOtherToolInputMs = 0L
-                    collectDone = true
-                    // Stream completed without error — clear any lingering retry UI state.
-                    if (_autoRetryAttempt.value != 0 || _autoRetryCountdown.value != 0) {
-                        _autoRetryAttempt.value = 0
-                        _autoRetryCountdown.value = 0
-                    }
-                } catch (e: Exception) {
-                    if (e is CancellationException && e.cause == null) throw e  // real job cancellation
-                    val actual = unwrapFlowException(e)
-                    val isRateLimit = actual is com.openminis.app.data.model.LLMError.RateLimited
-                    val is5xx = actual is com.openminis.app.data.model.LLMError.ProviderError &&
-                        actual.detail.contains(Regex("[5][0-9]{2}"))
-                    // Auto-retry on transient network/5xx/transient errors on the SAME provider
-                    // before considering a fallback (mirrors iOS streamWithAutoRetry).
-                    // Rate limits are provider-level signals that should trigger fallback immediately,
-                    // not retry on the same provider.
-                    val isTransient = actual is com.openminis.app.data.model.LLMError.NetworkError ||
-                        actual is com.openminis.app.data.model.LLMError.TransientError ||
-                        is5xx
-                    if (isTransient && retryAttempt < AUTO_RETRY_DELAYS_SEC.size) {
-                        val delaySec = AUTO_RETRY_DELAYS_SEC[retryAttempt]
-                        retryAttempt += 1
-                        val errDesc = actual.message ?: actual.javaClass.simpleName
-                        Log.w(TAG, "🔁 Transient error on ${currentProvider.model.displayName}, retry $retryAttempt/${AUTO_RETRY_DELAYS_SEC.size} in ${delaySec}s: $errDesc")
-                        withContext(Dispatchers.Main) {
-                            _autoRetryAttempt.value = retryAttempt
-                            // Show the error inline on the streaming assistant message during countdown.
-                            // Keeps isStreaming=true so the UI doesn't tear down the streaming state.
-                            setTransientInlineError("$errDesc — retrying ($retryAttempt/${AUTO_RETRY_DELAYS_SEC.size})…")
-                        }
-                        try {
-                            for (remaining in delaySec downTo 1) {
-                                _autoRetryCountdown.value = remaining
-                                kotlinx.coroutines.delay(1000)
-                            }
-                        } finally {
-                            _autoRetryCountdown.value = 0
-                        }
-                        // Clear inline error so the retry attempt can start cleanly.
-                        withContext(Dispatchers.Main) {
-                            clearInlineError()
-                        }
-                        // Roll back partial blocks from the failed stream attempt so the retried
-                        // stream's deltas don't double-append on top of stale content. Previous
-                        // turns (everything before turnStartBlockIndex) are preserved.
-                        if (allToolBlocks.size > turnStartBlockIndex) {
-                            while (allToolBlocks.size > turnStartBlockIndex) {
-                                allToolBlocks.removeAt(allToolBlocks.size - 1)
-                            }
-                            // [T-android-fallback-text-rewind] Keep this turn's
-                            // already-streamed text on screen across the rollback.
-                            // `accumulatedText` only folds in `turnTextSb` after the
-                            // while loop completes successfully, so passing bare
-                            // `accumulatedText` here would visibly rewind everything
-                            // the user already read this turn. The next attempt
-                            // streams into a fresh `turnTextSb` and re-publishes
-                            // `accumulatedText + newTurnText`, so this transient
-                            // value is overwritten cleanly (no duplication).
-                            withContext(Dispatchers.Main) {
-                                updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                            }
-                        }
-                        // T307: SB-based per-turn accumulators reset.
-                        turnTextSb.setLength(0)
-                        currentTextBlockSb = null
-                        // [T-android-tool-splits-reply-fix] The tracked turn
-                        // text block was just rolled back with the rest of
-                        // this turn's partial blocks.
-                        turnTextBlockIdx = -1
-                        turnThinking.clear()
-                        toolCalls.clear()
-                        toolCallSignatures.clear()  // [T-android-gemini3-thoughtsig / #179]
-                        // T94 fix 2 + T256: throttle bookkeeping is per-stream
-                        // attempt; reset alongside the partial-block rollback so
-                        // the next attempt's first delta fires through immediately
-                        // rather than coalescing against stale baselines.
-                        pendingChunkSb.setLength(0)
-                        lastUiUpdateMs = 0L
-                        lastFlushedLen = 0
-                        lastFileToolInputMs = 0L
-                        lastOtherToolInputMs = 0L
-                        continue  // retry on same provider
-                    }
-                    // Retries exhausted or non-retryable — proceed to fallback / throw.
+                    AppLogger.warning(TAG_STREAM, "Stream retry $attempt/$limit: ${failure.message}")
+                },
+                countdown = { _autoRetryCountdown.value = it },
+                settled = {
                     _autoRetryAttempt.value = 0
                     _autoRetryCountdown.value = 0
-                    // [T-android-timeout-while-running] Clear any transient
-                    // inline error from the prior retry attempts before we
-                    // either fall back (loop continues with a new provider)
-                    // or throw (terminal setInlineError below re-sets it
-                    // with the final non-retryable message). Without this,
-                    // a transient banner from the previous attempt could
-                    // linger as the new provider starts streaming — the
-                    // updateAssistantMessage(isStreaming=true) defense
-                    // catches it on the next delta, but clearing here
-                    // makes the intent explicit and avoids a one-frame
-                    // flash of the stale banner.
                     withContext(Dispatchers.Main) { clearInlineError() }
-                    val shouldFallback = isRateLimit || is5xx ||
-                        fallbackStrategy == com.openminis.app.data.model.FallbackStrategy.always
-                    val nextCandidate = if (shouldFallback) remainingFallbacks.removeFirstOrNull() else null
-                    val next = nextCandidate?.provider
-                    if (next != null && nextCandidate != null) {
-                        val reason = when {
-                            isRateLimit -> "Rate limited"
-                            actual is com.openminis.app.data.model.LLMError.ProviderError -> actual.detail
-                            else -> actual.message ?: "Error"
-                        }
-                        // [T-android-model-indicator-flash-on-endpoint-retry]
-                        // Same-model recovery is a TRANSPARENT retry, not a real
-                        // model switch. A model group can hold several entries
-                        // for the SAME modelId behind different provider
-                        // instances/endpoints (e.g. deepseek-v4-flash via a dead
-                        // hub.oaifree.com key + via api.deepseek.com). When the
-                        // first 401s, group-fallback moves to the next instance —
-                        // same modelId, different endpoint — which should recover
-                        // silently. Only flash the model capsule when the
-                        // resolved modelId ACTUALLY changes; an endpoint/instance-
-                        // only change must not surface to the UI.
-                        val isRealModelChange = next.model.id != currentProvider.model.id
-                        fallbackReasons.add("⚠️ ${currentProvider.model.displayName}: $reason")
-                        Log.i(TAG, "🔀 $reason on ${currentProvider.model.displayName}, switching to ${next.model.displayName} (realModelChange=$isRealModelChange)")
-                        currentProvider = next
-                        // Also update class-level provider so the next sendMessage() starts from here
-                        this@ChatViewModel.currentProvider = next
-                        // Update top bar model info + active entry. (For a same-
-                        // model endpoint recovery these are no-ops on the visible
-                        // model name, but still keep activeEntryId / provider name
-                        // in sync with the instance we actually used.)
-                        _modelName.value = currentProvider.model.displayName
-                        // Update activeEntryId so model picker reflects the switch.
-                        // [T-android-fallback-entry-identity] Look the entry up by
-                        // its OWN id, carried on the candidate. The previous
-                        // `find { it.model.id == currentProvider.model.id }` was
-                        // ambiguous: two instances can expose the same model id, so
-                        // it returned whichever entry sits earlier in modelEntries.
-                        // Observed in the field — falling back onto
-                        // `deepseek-v4-flash` served by "DeekSeak" showed the
-                        // provider as "Bailian OpenAI", because Bailian also has a
-                        // `deepseek-v4-flash` entry and happened to be found first.
-                        // That also poisoned activeEntryId and the persisted
-                        // binding, so re-entering the session resumed on the WRONG
-                        // instance.
-                        val newEntry = providerRepository.config.value.modelEntries.find {
-                            it.id == nextCandidate.entryId
-                        }
-                        if (newEntry != null) {
-                            _activeEntryId.value = newEntry.id
-                            currentModel = newEntry.model
-                            val newInstance = providerRepository.instance(newEntry.providerInstanceId)
-                            if (newInstance != null) {
-                                _providerName.value = newInstance.label.ifEmpty { newEntry.model.provider }
-                            }
-                        }
-                        // Flash ONLY on a genuine model switch — never on a
-                        // transparent same-model endpoint retry.
-                        if (isRealModelChange) _fallbackTrigger.value++
-                        // Persist the fallback model so re-entering the session starts from here
-                        val groupId = _selectedGroupId.value
-                        if (groupId != null && newEntry != null) {
-                            persistBinding("""{"type":"group","groupId":"$groupId","lastEntryId":"${newEntry.id}"}""")
-                        } else if (newEntry != null) {
-                            persistBinding("""{"type":"entry","entryId":"${newEntry.id}"}""")
-                        }
-                        val infoText = fallbackReasons.joinToString("\n") + "\n🔄 Switched to ${currentProvider.model.displayName}"
-                        allToolBlocks.removeAll { it.kind == "info" }
-                        allToolBlocks.add(0, AssistantBlock(
-                            id = "fallback_info_$turn",
-                            kind = "info",
-                            content = infoText,
-                            toolTitle = "Switched model",
-                            toolStatus = ToolBlockStatus.SUCCESS,
-                        ))
-                        // [T-android-fallback-text-rewind] Same as the retry-
-                        // rollback path above: preserve this turn's streamed text
-                        // (`turnTextSb`) on screen while we switch providers.
-                        // `accumulatedText` hasn't folded it in yet, so bare
-                        // `accumulatedText` would rewind the visible reply. The new
-                        // provider streams into a fresh `turnTextSb` (reset just
-                        // below) and re-publishes `accumulatedText + newTurnText`.
-                        withContext(Dispatchers.Main) {
-                            updateAssistantMessage(assistantId, accumulatedText + turnTextSb.toString(), true, allToolBlocks)
-                        }
-                        // Reset turn state for retry with new provider
-                        turnTextSb.setLength(0)
-                        currentTextBlockSb = null
-                        // [T-android-tool-splits-reply-fix] Fresh stream from a
-                        // different provider — and the add(0, info) above
-                        // shifted every block index anyway.
-                        turnTextBlockIdx = -1
-                        turnThinking.clear()
-                        toolCalls.clear()
-                        toolCallSignatures.clear()  // [T-android-gemini3-thoughtsig / #179]
-                        // loop continues — will retry collect with currentProvider
-                    } else {
-                        // All fallbacks exhausted. Surface the trail of tried
-                        // models AND the group members that were silently
-                        // skipped (disabled / not logged in / hidden) so the
-                        // user can see why fallback never reached them —
-                        // mirrors iOS streamWithGroupFallback exhausted path.
-                        if (shouldFallback) {
-                            val skipped = unavailableGroupMembers()
-                            if (fallbackReasons.isNotEmpty() || skipped.isNotEmpty()) {
-                                val trail = (fallbackReasons + skipped).joinToString("\n")
-                                val finalDesc = actual.message ?: actual.toString()
-                                throw com.openminis.app.data.model.LLMError.ProviderError("$trail\n$finalDesc")
-                            }
-                        }
-                        throw actual  // re-throw unwrapped, all fallbacks exhausted
-                    }
-                }
-            }  // end while (!collectDone)
+                },
+                switched = { previous, next, reasons ->
+                    currentProvider = next.provider
+                    withContext(Dispatchers.Main) { installStreamFallback(previous, next) }
+                    streamedTurn.addConnectionNotice(AssistantBlock(
+                        id = "fallback_info_$turn", kind = "info",
+                        content = reasons.joinToString("\n") + "\n已切换到 ${next.provider.model.displayName}",
+                        toolTitle = "模型连接恢复", toolStatus = ToolBlockStatus.SUCCESS))
+                    publishStream(streamedTurn.snapshot().copy(text = failedAttemptVisibleText))
+                },
+                unavailable = ::unavailableGroupMembers,
+            )
 
-            // T307: materialise the per-turn StringBuilder ONCE at the
-            // turn boundary. After this point everything is plain String
-            // semantics — `turnText` participates in cross-turn accumulation
-            // and gets persisted into agentHistory below.
-            val turnText = turnTextSb.toString()
+            val completedStream = streamedTurn.snapshot()
+            val turnText = completedStream.text
+            val toolCalls = streamedTurn.toolCalls
+            val toolCallSignatures = streamedTurn.toolSignatures
+            val turnFinishReason = streamedTurn.finishReason
+            val lastUsage = streamedTurn.usage
             val latestVisibleUserRequest = agentHistory.asReversed()
                 .firstOrNull { message ->
                     message.role == LLMMessage.Role.USER &&
@@ -8148,13 +7551,7 @@ class ChatViewModel(
             // Map toolUseId -> input JSON string for persistence (accumulated across turns)
             toolCalls.forEach { (id, _, args) -> allToolInputs[id] = args.toString() }
             val toolInputMap = allToolInputs
-            // Prefer the opaque blob from LLMStreamChunk.ReasoningContent when the
-            // provider emitted one — that path preserves empty strings (DeepSeek V4
-            // `reasoning_content: ""` on non-thinking turns). Fall back to the
-            // ThinkingDelta concatenation only when no blob arrived; in that case
-            // an empty buffer becomes null (no field to round-trip).
-            val turnReasoningContent: String? = turnReasoningBlob
-                ?: turnThinking.toString().takeIf { it.isNotEmpty() }
+            val turnReasoningContent = streamedTurn.reasoningContent
 
             if (choiceRecoveryAction == MissingChoiceToolRecoveryAction.FAIL_AFTER_RETRY) {
                 AppLogger.error(
@@ -8172,7 +7569,7 @@ class ChatViewModel(
                         ),
                     )
                     val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                    val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
+                    val blockMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }
                     persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 }
                 withContext(Dispatchers.Main) {
@@ -8218,6 +7615,7 @@ class ChatViewModel(
                         safeParts,
                         lastUsage,
                         turnReasoningContent,
+                        toolBlockMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id },
                         messageId = turnMessageId,
                     )
                     agentHistory.add(
@@ -8315,21 +7713,14 @@ class ChatViewModel(
             )
 
             if (completionAction == AgentTurnCompletionAction.COMPLETE) {
+                for (index in turnStartBlockIndex until allToolBlocks.size) {
+                    val block = allToolBlocks[index]
+                    if (block.isText) allToolBlocks[index] = block.copy(executionText = false)
+                }
                 val cardOutcome = currentNovexCardTaskOutcome(allToolBlocks)
                 if (cardOutcome != null) {
                     allToolBlocks.add(cardOutcome.block("card-task:$turnMessageId"))
-                    if (cardOutcome.mayRepair && !nativeCardRepairAttempted &&
-                        agentTools.any { it.name == "novex_write_card" } && _promptQueue.value.isEmpty()) {
-                        nativeCardRepairAttempted = true
-                        persistAssistantTurn(buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap), lastUsage,
-                            turnReasoningContent, allToolBlocks.associateBy { it.id }, turnMessageId)
-                        agentHistory.add(LLMMessage(role = LLMMessage.Role.USER, content = "",
-                            contentParts = listOf(AgentContentPart.Text(NovexCardCreationTask.REPAIR))))
-                        withContext(Dispatchers.Main) {
-                            updateAssistantMessage(assistantId, accumulatedText, true, allToolBlocks, isAwaitingModelResponse = true)
-                        }
-                        continue
-                    }
+
                 }
 
                 AppLogger.info(
@@ -8341,7 +7732,7 @@ class ChatViewModel(
                     updateAssistantMessage(assistantId, accumulatedText, false, allToolBlocks)
                 }
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
+                val blockMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }
                 persistAssistantTurn(turnParts, lastUsage, turnReasoningContent, blockMeta, turnMessageId)
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
@@ -8361,19 +7752,24 @@ class ChatViewModel(
             // iOS overlaying the live VM's last message over the DB value.
             run {
                 val livePreviewParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val liveMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
+                val liveMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }
                 if (livePreviewParts.isNotEmpty()) {
                     chatRepository.updateSessionPreview(
                         realSessionId.ifEmpty { sessionId },
-                        buildAssistantPartsJson(livePreviewParts, liveMeta),
+                        encodeAssistantTurnParts(livePreviewParts, liveMeta),
                     )
                 }
             }
 
+            // Persist the call before approval or execution can suspend. Later checkpoints update this same row.
+            persistAssistantTurn(buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap), lastUsage,
+                turnReasoningContent, allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }, turnMessageId)
+
             // Execute all tool calls
             val resultParts = mutableListOf<AgentContentPart>()
             val terminalUiToolIds = linkedSetOf<String>()
-            for ((id, name, args) in toolCalls) {
+            for ((id, name, rawArgs) in toolCalls) {
+                val args = JSONObject(rawArgs.toString())
                 // [T-android-overlay-tool-title] Pull tool_title uniformly
                 // from args for ALL tools — without this browser_use's
                 // tool_title never reached the overlay (only shell_execute
@@ -8391,20 +7787,21 @@ class ChatViewModel(
                 )
                 // JSON repair (T-tool-json-repair b2c4f8a6): salvage truncated /
                 // type-mismatched / typo'd args BEFORE preflight rejects them.
-                // Mutates `args` in place; downstream argsStr and preflight see
-                // the repaired payload. Mirrors iOS repairToolArgs in
+                // Repairs a copy; raw model history and persisted input remain unchanged.
+                // Downstream argsStr and preflight see the effective payload. Mirrors iOS repairToolArgs in
                 // AIChatViewModel.swift.
                 val repairs = com.openminis.app.provider.ToolJsonRepair.repair(
-                    name, args, toolInputChunkRings[id]?.lastOrNull(), agentTools,
+                    name, args, streamedTurn.inputTail(id), agentTools,
                 )
                 if (repairs.isNotEmpty()) {
                     AppLogger.warning(
                         "ToolPreflight",
                         "[ToolRepair] REPAIRED tool=$name id=$id strategies=[${repairs.joinToString(", ")}] " +
                             "argsKeys=[${args.keys().asSequence().toList().sorted().joinToString(",")}] " +
-                            "rawTail=<<<${toolInputChunkRings[id]?.lastOrNull()?.take(500) ?: ""}>>>"
+                            "rawTail=<<<${streamedTurn.inputTail(id)?.take(500) ?: ""}>>>"
                     )
                 }
+
                 // [T-truncated-args-visibility #119] Non-null when THIS call's
                 // arguments arrived truncated and were auto-closed. Only the
                 // truncation strategy means the VALUE was cut short; coercion
@@ -8456,7 +7853,7 @@ class ChatViewModel(
                         content = modelMessage,
                         isError = true,
                     ))
-                    toolInputChunkRings.remove(id)
+                    streamedTurn.takeInputHistory(id)
                     continue
                 }
                 val argsStr = args.toString()
@@ -8510,7 +7907,7 @@ class ChatViewModel(
                 // shells or touching the filesystem on `{}` args.
                 val preflightError = preflightValidateToolCall(name, args, agentTools)
                 if (preflightError != null) {
-                    val chunkRing: List<String> = toolInputChunkRings.remove(id) ?: emptyList()
+                    val chunkRing: List<String> = streamedTurn.takeInputHistory(id)
                     AppLogger.warning(
                         "ToolPreflight",
                         "BLOCKED tool=$name id=$id reason=\"$preflightError\" " +
@@ -8553,6 +7950,16 @@ class ChatViewModel(
                     }
                     continue
                 }
+
+                val preparedIndex = allToolBlocks.indexOfFirst { it.id == id }
+                if (preparedIndex >= 0) {
+                    allToolBlocks[preparedIndex] = allToolBlocks[preparedIndex].copy(executionArgs = args.toString())
+                }
+                // Approval and replay must use exactly the same effective arguments. Keep the
+                // original provider input beside this host metadata, never rewrite the transcript.
+                persistAssistantTurn(buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap), lastUsage,
+                    turnReasoningContent, allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }, turnMessageId)
+
 
                 android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool START name=$name args=${argsStr.take(200)}")
                 val result = executeTool(
@@ -8697,6 +8104,12 @@ class ChatViewModel(
                 allToolBlocks.add(it.block("card-task:$turnMessageId"))
             }
             if (terminalUiToolIds.isNotEmpty()) {
+                if (isCompletedPresentationTurn(allToolBlocks.drop(turnStartBlockIndex))) {
+                    for (index in turnStartBlockIndex until allToolBlocks.size) {
+                        val block = allToolBlocks[index]
+                        if (block.isText) allToolBlocks[index] = block.copy(executionText = false)
+                    }
+                }
                 val lastHistoryIndex = agentHistory.lastIndex
                 if (lastHistoryIndex >= 0) {
                     val lastMessage = agentHistory[lastHistoryIndex]
@@ -8719,7 +8132,7 @@ class ChatViewModel(
                 }
 
                 val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-                val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
+                val blockMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }
                 val assistantDbId = persistAssistantTurn(
                     turnParts,
                     lastUsage,
@@ -8772,7 +8185,7 @@ class ChatViewModel(
             // Capture the persisted DB id so we can back-fill agentHistory's last
             // assistant entry — compact-marker boundary resolution depends on it.
             val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
-            val blockMeta = allToolBlocks.filter { it.kind == "tool_use" || it.toolName == NovexCardCreationTask.MARKER }.associateBy { it.id }
+            val blockMeta = allToolBlocks.drop(turnStartBlockIndex).associateBy { it.id }
             val assistantDbId = persistAssistantTurn(
                 turnParts,
                 lastUsage,
@@ -8851,12 +8264,10 @@ class ChatViewModel(
                     // (turnStartBlockIndex captures allToolBlocks.size at
                     // iteration top, so clearing means new turn's blocks
                     // span [0..size).
-                    nativeCardRepairAttempted = false
                     assistantId = handled.newAssistantId
                     accumulatedText = ""
                     allToolBlocks.clear()
                     allToolInputs.clear()
-                    toolInputChunkRings.clear()
                     _canResume.value = false
                     continue
                 }
@@ -9041,6 +8452,37 @@ class ChatViewModel(
         else -> "application/octet-stream"
     }
 
+    private suspend fun recoverPendingToolTurn(): Boolean {
+        val conversation = chatRepository.loadActiveConversation(activeSessionId)
+        val pending = com.openminis.app.novex.domain.NovexPendingToolTurn.find(conversation.activeMessages) ?: return false
+        val reply = conversation.activeMessages.filter { it.id == pending.replyId }.toChatMessages().singleOrNull()
+        val blocks = reply?.toolBlocks.orEmpty().toMutableList()
+        val terminal = pending.recover(invoke = { call ->
+            val operation = com.openminis.app.novex.domain.NovexToolOperation(activeSessionId, pending.replyId,
+                call.id, call.name, call.arguments, friendlyToolTitle(call.name))
+            val receipt = novexToolExecution.recordedResult(operation)
+            val validation = preflightValidateToolCall(call.name, JSONObject(call.arguments), agentTools)
+            val result = receipt ?: if (validation != null) novexToolExecution.retireUnexecutable(operation, validation)
+            else executeTool(call.name, call.arguments, call.id, blocks, pending.replyId,
+                reply?.content.orEmpty(), pending.replyId, pending.requestId)
+            captureCreativeArtifact(call.name, call.arguments, call.id, pending.replyId, result)
+            val index = blocks.indexOfFirst { it.id == call.id }
+            if (index >= 0) blocks[index] = blocks[index].copy(
+                toolStatus = if (result.success) ToolBlockStatus.SUCCESS else ToolBlockStatus.FAILED,
+                content = result.output, toolTitle = result.toolTitle,
+                imageFilePath = result.imageFilePath ?: blocks[index].imageFilePath)
+            result
+        }, persist = { call, result ->
+            persistToolResultMessage(listOf(AgentContentPart.ToolResult(
+                id = call.id, name = call.name, content = result.output, isError = !result.success,
+                imageData = result.imageData, imageMimeType = result.imageMimeType, imageLinuxPath = result.imageLinuxPath,
+            )))
+        })
+        if (terminal && isCompletedPresentationTurn(blocks)) chatRepository.markAssistantTextFormal(pending.replyId)
+        withContext(Dispatchers.Main) { installActiveConversation(chatRepository.loadActiveConversation(activeSessionId)) }
+        return terminal
+    }
+
     private suspend fun executeTool(
         name: String,
         argsJson: String,
@@ -9050,6 +8492,41 @@ class ChatViewModel(
         currentText: String,
         turnMessageId: String,
         requestMessageId: String?,
+    ): ToolExecutionResult {
+        val baseOperation = com.openminis.app.novex.domain.NovexToolOperation(activeSessionId, turnMessageId,
+            toolId, name, argsJson, friendlyToolTitle(name))
+        if (currentNovexConfiguration().executionMode != com.openminis.app.novex.domain.NovexExecutionMode.READ_ONLY) {
+            novexToolExecution.recordedResult(baseOperation)?.let { return it }
+        }
+        val details = runCatching {
+            when (name) {
+                com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> novexMemoryExecutor.review(
+                    currentNovexMemoryScope(), currentNovexMemoryReadContext(), JSONObject(argsJson).getString("proposal_id"))
+                NovexManagementTools.APPLY -> {
+                    val plan = novexManagementService().planForExecution(currentNovexConfiguration(),
+                        JSONObject(argsJson).getString("proposal_id"))
+                    requireNotNull(plan) { "变更计划不存在，请重新准备" }.reviewText()
+                }
+                NovexLearningToolRouter.LEARNING_START -> {
+                    val args = JSONObject(argsJson)
+                    novexLearningPlans.review(activeSessionId, NovexResourceRef(args.getString("collection_ref")),
+                        args.getString("preflight_id")) { it.value in activeNovexSourceCollectionRefs }
+                }
+                else -> ""
+            }
+        }.getOrElse {
+            return novexToolExecution.retireUnexecutable(baseOperation, it.message ?: "无法读取本次变更，请重新准备")
+        }
+        val operation = com.openminis.app.novex.domain.NovexToolOperation(
+            activeSessionId, turnMessageId, toolId, name, argsJson, friendlyToolTitle(name), details)
+        return novexToolExecution.execute(operation, { currentNovexConfiguration().executionMode }) {
+            executeAuthorizedTool(name, argsJson, toolId, toolBlocks, assistantId, currentText, turnMessageId, requestMessageId)
+        }
+    }
+
+    private suspend fun executeAuthorizedTool(
+        name: String, argsJson: String, toolId: String, toolBlocks: MutableList<AssistantBlock>,
+        assistantId: String, currentText: String, turnMessageId: String, requestMessageId: String?,
     ): ToolExecutionResult {
         // T330: tri-state permission gating moved into the offload IPC
         // handler (OffloadGate). The CLIs land there whether the LLM
@@ -9094,13 +8571,13 @@ class ChatViewModel(
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
-            com.openminis.app.tools.NovexMemoryAgentTools.INSPECT -> executeNovexMemoryInspectTool(argsJson)
-            com.openminis.app.tools.NovexMemoryAgentTools.PROPOSE -> executeNovexMemoryProposeTool(
-                argsJson = argsJson,
-                proposalBranchId = assistantId,
-                sourceMessageId = turnMessageId,
-            )
-            com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> executeNovexMemoryApplyTool(argsJson)
+            com.openminis.app.tools.NovexMemoryAgentTools.INSPECT -> novexMemoryExecutor.inspect(
+                currentNovexMemoryScope(), currentNovexMemoryReadContext(), argsJson)
+            com.openminis.app.tools.NovexMemoryAgentTools.PROPOSE -> novexMemoryExecutor.propose(
+                currentNovexMemoryScope(), currentNovexMemoryReadContext(turnMessageId), turnMessageId,
+                requestMessageId, argsJson)
+            com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> novexMemoryExecutor.apply(
+                currentNovexMemoryScope(), currentNovexMemoryReadContext(), argsJson)
             "present_choices" -> executePresentChoicesTool(argsJson)
             "render_panel", "panel" -> executePanelTool(argsJson)
             // Compatibility for tool calls already stored by earlier Novex builds.
@@ -9116,13 +8593,14 @@ class ChatViewModel(
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
             NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson, requestMessageId, turnMessageId)
-            NovexManagementTools.PROPOSE -> executeNovexProposeTool(argsJson, assistantId, toolId)
-            NovexManagementTools.APPLY -> executeNovexApplyTool(argsJson)
-            in com.openminis.app.tools.NovexCardFileTools.names -> executeNovexCardFileTool(name, argsJson, assistantId, toolId)
+            NovexManagementTools.PROPOSE -> executeNovexContentTool(name, argsJson, turnMessageId, toolId, requestMessageId)
+            NovexManagementTools.APPLY -> executeNovexContentTool(name, argsJson, turnMessageId, toolId, requestMessageId)
+            in com.openminis.app.tools.NovexCardFileTools.names -> executeNovexContentTool(name, argsJson, turnMessageId, toolId, requestMessageId)
             NovexDocumentToolRouter.DOCUMENT_INSPECT,
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> recordNovexFileRead(novexDocumentAgentTools.execute(name, argsJson), requestMessageId, turnMessageId)
             NovexLearningToolRouter.LEARNING_PREPARE,
+            NovexLearningToolRouter.LEARNING_START,
             NovexLearningToolRouter.LEARNING_READ -> novexLearningAgentTools.execute(name, argsJson)
             in com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter.TOOL_NAMES -> {
                 val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
@@ -9231,7 +8709,7 @@ class ChatViewModel(
             profileSection = args.optString("profile_section").trim().ifBlank { "public" },
         )
         ToolExecutionResult(
-            output = inspection.toToolJson().apply {
+            output = inspection.toModelToolJson(args.optBoolean("include_advanced")).apply {
                 if (args.optBoolean("include_advanced")) put("advanced_change_guide", NovexManagementTools.advancedGuide())
             }.toString(2),
             success = true,
@@ -9245,138 +8723,26 @@ class ChatViewModel(
         )
     }
 
-    private suspend fun executeNovexCardFileTool(name: String, argsJson: String, replyBranchId: String, toolCallId: String): ToolExecutionResult =
-        novexManagementMutex.withLock {
-            try {
-                prepareNovexConversationDrafts()
-                val application = novexApplication()
-                val configuration = currentNovexConfiguration()
-                val settings = conversationSettingsSnapshot()
-                val userRequests = currentNovexUserRequests()
-                val service = com.openminis.app.novex.domain.NovexCardFileService(
-                    application.novexWorkspace, novexManagementService(),
-                    com.openminis.app.novex.domain.NovexCardFileOperations(
-                        com.openminis.app.novex.domain.NovexCardSourceModules(novexDocumentRepository) { it.value in activeNovexDocumentRefs }),
-                    com.openminis.app.novex.domain.NovexManagementTransaction { work -> application.database.withTransaction { work() } })
-                val result = application.database.withTransaction {
-                    val saved = service.execute(configuration, name, JSONObject(argsJson), userRequests,
-                        com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("${configuration.conversationId}|$replyBranchId|$toolCallId"))
-                    if (saved.configuration != configuration) chatRepository.updateConversationSettings(configuration.conversationId,
-                        settings.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(saved.configuration)))
-                    saved
-                }
-                if (result.applied == null) pendingNovexManagementPlans[result.plan.id] = result.plan
-                if (currentNovexConfiguration().conversationId == configuration.conversationId) installNovexConfiguration(result.configuration)
-                ToolExecutionResult(result.payload.toString(2), true, toolTitle = if (result.applied == null) "等待确认卡片修改" else "卡片写入与回读")
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (failure: Exception) {
-                ToolExecutionResult("卡片操作未完成：${failure.message ?: "执行失败"}。已提交的历史操作不会重复执行；请按错误说明核对原对象，不要擅自改建其他类型卡片。", false, toolTitle = "卡片操作未完成")
+    private suspend fun executeNovexContentTool(name: String, argsJson: String, replyId: String, callId: String,
+        requestId: String?): ToolExecutionResult = novexManagementMutex.withLock {
+        prepareNovexConversationDrafts()
+        novexConfigurationMutex.withLock {
+            val app = novexApplication()
+            val configuration = currentNovexConfiguration()
+            val settings = conversationSettingsSnapshot()
+            val executor = com.openminis.app.novex.domain.NovexContentToolExecutor(app.novexWorkspace, novexManagementService(),
+                com.openminis.app.novex.domain.NovexCardFileOperations(
+                    com.openminis.app.novex.domain.NovexCardSourceModules(novexDocumentRepository) { it.value in activeNovexDocumentRefs }),
+                com.openminis.app.novex.domain.NovexManagementTransaction { work -> app.database.withTransaction { work() } })
+            val result = executor.execute(name, argsJson,
+                com.openminis.app.novex.domain.NovexContentToolExecutor.Request(configuration, currentNovexUserRequests(), replyId, callId, requestId)) { next ->
+                chatRepository.updateConversationSettings(configuration.conversationId,
+                    settings.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(next)))
             }
+            if (result.configuration != configuration) installNovexConfiguration(result.configuration)
+            result.tool
         }
-
-    private suspend fun executeNovexProposeTool(argsJson: String, replyBranchId: String, toolCallId: String): ToolExecutionResult =
-        novexManagementMutex.withLock {
-            runCatching {
-                prepareNovexConversationDrafts()
-                val userRequests = currentNovexUserRequests()
-                val plan = novexApplication().database.withTransaction { novexManagementService().propose(
-                    configuration = currentNovexConfiguration(),
-                    changesJson = JSONObject(argsJson).jsonArrayText("changes"),
-                    latestUserRequest = userRequests.lastOrNull().orEmpty(),
-                    priorUserRequests = userRequests.dropLast(1),
-                    planId = com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("$activeSessionId|$replyBranchId|$toolCallId"),
-                ) }
-                pendingNovexManagementPlans[plan.id] = plan
-                while (pendingNovexManagementPlans.size > 20) {
-                    // Evict only the memory cache; the durable proposal remains recoverable.
-                    pendingNovexManagementPlans.remove(pendingNovexManagementPlans.keys.first())
-                }
-                ToolExecutionResult(
-                    output = buildString {
-                        appendLine("变更计划：${plan.id}")
-                        appendLine("处理范围：${if (plan.requiresConfirmation) "需要确认的内容变更" else "本对话私有作品创建或整理"}")
-                        appendLine("内容：${plan.summary}")
-                        if (plan.impact.isNotEmpty()) appendLine("影响：${plan.impact.joinToString("；")}")
-                        if (novexApplication().novexWorkspace.conversationDrafts(plan.conversationId)?.completedWrites?.any { it.id == plan.id } == true) {
-                            appendLine("该操作已经写入，请用此计划编号读取执行回执，不要另建卡片；正文仍需回读核验。")
-                        } else if (plan.requiresConfirmation) {
-                            appendLine("尚未执行。请等待用户确认。")
-                            append("用户若同意，必须单独发送：${plan.confirmationPhrase}")
-                        } else {
-                            appendLine("尚未写入正文。当前用户已授权本对话私有作品的这项创建或整理；请立即调用 novex_apply_content_changes（执行内容变更），无需重复询问。")
-                        }
-                    },
-                    success = true,
-                    toolTitle = "提出内容变更",
-                )
-            }.getOrElse { error ->
-                ToolExecutionResult(
-                    output = "无法生成变更计划：${error.message ?: "请求无效"}",
-                    success = false,
-                    toolTitle = "提出内容变更",
-                )
-            }
-        }
-
-    private suspend fun executeNovexApplyTool(argsJson: String): ToolExecutionResult =
-        novexManagementMutex.withLock {
-            novexConfigurationMutex.withLock {
-            runCatching {
-                val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
-                val plan = requireNotNull(pendingNovexManagementPlans[proposalId]
-                    ?: novexManagementService().planForExecution(currentNovexConfiguration(), proposalId)) {
-                    "变更计划不存在或已失效，请重新提出变更"
-                }
-                val application = novexApplication()
-                val configuration = currentNovexConfiguration()
-                val confirmation = latestExplicitUserText()
-                val (result, updated) = application.database.withTransaction {
-                    val applied = NovexManagementService(
-                        workspace = application.novexWorkspace,
-                        artifacts = application.creativeArtifactRepository,
-                    ).apply(configuration, plan, confirmation)
-                    val nextConfiguration = (if (applied.replayed) emptyList() else applied.createdSubjects).fold(configuration) { value, subject ->
-                        NovexConversationConfiguration.open(value).apply(
-                            NovexConversationCommand.MountSubject(subject, ManagedAccess.EDIT),
-                        ).snapshot
-                    }
-                    val sid = realSessionId
-                    if (sid.isNotEmpty() && nextConfiguration != configuration) {
-                        chatRepository.updateConversationSettings(
-                            sid,
-                            conversationSettingsSnapshot().copy(
-                                novexConfigurationJson = NovexConversationConfigurationCodec.encode(nextConfiguration),
-                            ),
-                        )
-                    }
-                    applied to nextConfiguration
-                }
-                installNovexConfiguration(updated)
-                pendingNovexManagementPlans.remove(proposalId)
-                ToolExecutionResult(
-                    output = JSONObject().apply {
-                        put("proposal_id", proposalId)
-                        put("applied_changes", result.appliedChanges)
-                        put("replayed", result.replayed)
-                        put("readback_status", "已写入，正文尚未回读核验；请用原对象编号读取，不要重复创建")
-                        put("created_subjects", org.json.JSONArray().apply {
-                            result.createdSubjects.forEach { subject ->
-                                put(JSONObject().put("kind", subject.kind.toolValue()).put("id", subject.id))
-                            }
-                        })
-                    }.toString(2),
-                    success = true,
-                    toolTitle = "执行内容变更",
-                )
-            }.getOrElse { error ->
-                ToolExecutionResult(
-                    output = "变更执行未完成核对：${error.message ?: "执行失败"}。请使用原计划编号核查持久回执；不要据此重复创建卡片。",
-                    success = false,
-                    toolTitle = "执行内容变更",
-                )
-            }
-            }
-        }
+    }
 
     private fun novexApplication(): com.openminis.app.MinisApp {
         val application = context.applicationContext as? com.openminis.app.MinisApp
@@ -9438,112 +8804,6 @@ class ChatViewModel(
         }.getOrNull()
     }
 
-    private fun executeNovexMemoryInspectTool(argsJson: String): ToolExecutionResult = runCatching {
-        val args = JSONObject(argsJson.ifBlank { "{}" })
-        val inspection = novexMemoryService().inspect(
-            scope = currentNovexMemoryScope(),
-            source = currentNovexMemoryReadContext(),
-            keywords = args.optString("keywords").trim(),
-            limit = args.optInt("limit", 100),
-        )
-        val result = com.openminis.app.novex.domain.NovexToolResult.success(
-            code = "memory.ready",
-            summary = "当前记忆空间有 ${inspection.entries.size} 条可见记忆",
-            data = mapOf(
-                "scope" to inspection.scope.kind.wireName,
-                "entries" to inspection.entries.map { entry ->
-                    mapOf(
-                        "memory_ref" to entry.ref.value,
-                        "content" to entry.content,
-                        "tags" to entry.tags,
-                        "revision" to entry.revision,
-                        "updated_at_millis" to entry.updatedAtMillis,
-                    )
-                },
-            ),
-            affectedRefs = inspection.entries.map { it.ref.asResourceRef() },
-        )
-        ToolExecutionResult(result.toJson(), true, toolTitle = "查看长期记忆")
-    }.getOrElse { error ->
-        val result = com.openminis.app.novex.domain.NovexToolResult.failure(
-            code = "memory.inspect_failed",
-            summary = error.message?.takeIf(String::isNotBlank) ?: "无法查看长期记忆",
-        )
-        ToolExecutionResult(result.toJson(), false, toolTitle = "查看长期记忆")
-    }
-
-    private suspend fun executeNovexMemoryProposeTool(
-        argsJson: String,
-        proposalBranchId: String,
-        sourceMessageId: String,
-    ): ToolExecutionResult = novexMemoryMutex.withLock {
-        runCatching {
-            val plan = novexMemoryService().propose(
-                scope = currentNovexMemoryScope(),
-                changesJson = JSONObject(argsJson).jsonArrayText("changes"),
-                source = currentNovexMemoryReadContext(proposalBranchId),
-                sourceBranchId = proposalBranchId,
-                sourceMessageId = sourceMessageId,
-                planId = java.util.UUID.randomUUID().toString(),
-            )
-            pendingNovexMemoryPlans[plan.id] = plan
-            while (pendingNovexMemoryPlans.size > 20) {
-                pendingNovexMemoryPlans.remove(pendingNovexMemoryPlans.keys.first())
-            }
-            val result = com.openminis.app.novex.domain.NovexToolResult.success(
-                code = "memory.proposal_ready",
-                summary = plan.summary,
-                data = mapOf(
-                    "proposal_id" to plan.id,
-                    "confirmation_phrase" to plan.confirmationPhrase,
-                    "applied" to false,
-                ),
-                nextActions = listOf(
-                    com.openminis.app.novex.domain.NovexToolNextAction(
-                        id = "confirm_memory_plan",
-                        label = "用户单独发送：${plan.confirmationPhrase}",
-                    ),
-                ),
-            )
-            ToolExecutionResult(result.toJson(), true, toolTitle = "提出记忆变更")
-        }.getOrElse { error ->
-            val result = com.openminis.app.novex.domain.NovexToolResult.failure(
-                code = "memory.proposal_failed",
-                summary = error.message?.takeIf(String::isNotBlank) ?: "无法生成记忆变更计划",
-            )
-            ToolExecutionResult(result.toJson(), false, toolTitle = "提出记忆变更")
-        }
-    }
-
-    private suspend fun executeNovexMemoryApplyTool(argsJson: String): ToolExecutionResult =
-        novexMemoryMutex.withLock {
-            runCatching {
-                val proposalId = JSONObject(argsJson).getString("proposal_id").trim()
-                val plan = requireNotNull(pendingNovexMemoryPlans[proposalId]) {
-                    "记忆变更计划不存在或已失效，请重新提出变更"
-                }
-                novexMemoryService().apply(plan, latestExplicitUserText())
-                pendingNovexMemoryPlans.remove(proposalId)
-                val result = com.openminis.app.novex.domain.NovexToolResult.success(
-                    code = "memory.applied",
-                    summary = "记忆变更已原子应用",
-                    data = mapOf(
-                        "proposal_id" to proposalId,
-                        "changed_entries" to plan.changes.size,
-                    ),
-                    affectedRefs = plan.affectedRefs,
-                    sideEffect = com.openminis.app.novex.domain.NovexToolSideEffect.SHARED_WRITE,
-                )
-                ToolExecutionResult(result.toJson(), true, toolTitle = "更新长期记忆")
-            }.getOrElse { error ->
-                val result = com.openminis.app.novex.domain.NovexToolResult.failure(
-                    code = "memory.apply_failed",
-                    summary = error.message?.takeIf(String::isNotBlank) ?: "长期记忆没有修改",
-                )
-                ToolExecutionResult(result.toJson(), false, toolTitle = "更新长期记忆")
-            }
-        }
-
     private suspend fun currentNovexUserRequests(): List<String> {
         val sid = realSessionId.ifEmpty { sessionId }
         if (sid.isEmpty()) return emptyList()
@@ -9554,10 +8814,9 @@ class ChatViewModel(
 
     private suspend fun currentNovexCardTaskOutcome(blocks: List<AssistantBlock>): NovexCardCreationTask.Outcome? {
         val rows = chatRepository.loadActiveMessages(realSessionId.ifEmpty { sessionId })
-        val requests = com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(rows)
         val start = rows.indexOfLast { row ->
             row.role == "user" && com.openminis.app.novex.adapter.NovexManagementUserRequests.fromActiveMessages(listOf(row))
-                .singleOrNull()?.let { NovexCardCreationTask.evaluate(listOf(it), emptyList()) != null } == true
+                .isNotEmpty()
         }
         val persistedWrites = if (start < 0) emptyList() else rows.drop(start).flatMap { row ->
             runCatching {
@@ -9573,7 +8832,7 @@ class ChatViewModel(
                 }
             }.getOrDefault(emptyList())
         }
-        return NovexCardCreationTask.evaluate(requests, persistedWrites + blocks)
+        return NovexCardCreationTask.evaluate(persistedWrites + blocks)
     }
 
     private suspend fun latestExplicitUserText(): String = currentNovexUserRequests().lastOrNull().orEmpty()
@@ -9593,13 +8852,6 @@ class ChatViewModel(
             },
             id = id,
         )
-    }
-
-    private fun NovexContentKind.toolValue(): String = when (this) {
-        NovexContentKind.WORLD -> "world"
-        NovexContentKind.CHARACTER_VERSION -> "character_version"
-        NovexContentKind.INTERACTIVE_FICTION -> "game"
-        NovexContentKind.CREATIVE_ARTIFACT -> "artifact"
     }
 
     private fun executePresentChoicesTool(argsJson: String): ToolExecutionResult {
@@ -10582,92 +9834,6 @@ class ChatViewModel(
      * original stream order is preserved by the list slice order. Thinking and info
      * blocks are skipped (they're persisted via `reasoningContent` or not at all).
      */
-    private fun buildTurnParts(
-        allToolBlocks: List<AssistantBlock>,
-        turnStartBlockIndex: Int,
-        toolCallInputs: Map<String, String>,
-    ): List<AgentContentPart> {
-        if (turnStartBlockIndex >= allToolBlocks.size) return emptyList()
-        val out = mutableListOf<AgentContentPart>()
-        for (i in turnStartBlockIndex until allToolBlocks.size) {
-            val block = allToolBlocks[i]
-            when (block.kind) {
-                "text" -> if (block.content.isNotEmpty()) {
-                    out.add(AgentContentPart.Text(block.content))
-                }
-                "tool_use" -> {
-                    val name = block.toolName
-                    if (name.isBlank()) continue
-                    val inputStr = toolCallInputs[block.id] ?: "{}"
-                    val inputJson = try { JSONObject(inputStr) } catch (_: Exception) { JSONObject() }
-                    // [T-android-gemini3-thoughtsig / #179] Carry the block's
-                    // signature into the persisted/replayed ToolUse.
-                    out.add(AgentContentPart.ToolUse(block.id, name, inputJson, thoughtSignature = block.thoughtSignature))
-                }
-                // "thinking" / "info" → not persisted in parts
-                else -> { /* skip */ }
-            }
-        }
-        return out
-    }
-
-    /**
-     * Persist a single agent turn: the ordered list of AgentContentParts produced
-     * in this turn (text segments and tool_use blocks interleaved in the order they
-     * were emitted). Mirrors iOS's per-turn `persistAgentMessage` — one DB row per
-     * turn, no cross-turn accumulation, preserving `parts` array order.
-     *
-     * This is the right entry point for the agent loop; the legacy
-     * `persistAssistantMessage(text, usage, toolBlocks, ...)` accumulated all history
-     * on every call, which caused:
-     *   - Duplicate tool_use rows across turns (crashed LazyColumn key uniqueness)
-     *   - Orphan tool_result detection thrashing (sanitize injecting placeholders)
-     *   - Lost chronological text ↔ tool_use ordering within a single turn
-     */
-    /**
-     * Serialize a turn's [AgentContentPart] list into the on-disk parts_json
-     * shape (text + toolUse blocks). Shared by [persistAssistantTurn] (the
-     * authoritative per-turn row write) and the live session-list preview
-     * update ([T-android-session-last-message-live-tool-call]) so both produce
-     * an identical payload that [ChatRepository.extractTextPreview] understands.
-     */
-    private fun buildAssistantPartsJson(
-        parts: List<AgentContentPart>,
-        toolBlockMeta: Map<String, AssistantBlock>,
-    ): String = buildString {
-        append("[")
-        parts.forEachIndexed { index, part ->
-            if (index > 0) append(",")
-            when (part) {
-                is AgentContentPart.Text -> {
-                    append("""{"type":"text","value":${escapeJson(part.text)}}""")
-                }
-                is AgentContentPart.ToolUse -> {
-                    // Skip tool_use with blank name — upstream bug guard.
-                    val name = part.name
-                    if (name.isBlank()) return@forEachIndexed
-                    val inputStr = part.input.toString()
-                    val meta = toolBlockMeta[part.id]
-                    val desc = meta?.toolTitle ?: ""
-                    val pageURL = meta?.browserURL ?: ""
-                    val imgPath = meta?.imageFilePath ?: ""
-                    // [T-android-gemini3-thoughtsig / #179] Persist the captured
-                    // signature (null-literal when absent) so it survives a session
-                    // reload and can be replayed on the historical functionCall.
-                    val sigJson = part.thoughtSignature?.let { escapeJson(it) } ?: "null"
-                    val persistedType = if (name == PRESENT_CHOICES_TOOL) "uiToolUse" else "toolUse"
-                    append("""{"type":"$persistedType","value":{"toolUseId":${escapeJson(part.id)},"name":${escapeJson(name)},"input":${escapeJson(inputStr)},"description":${escapeJson(desc)},"pageURL":${escapeJson(pageURL)},"imageFilePath":${escapeJson(imgPath)},"thoughtSignature":$sigJson}}""")
-                }
-                else -> { /* tool_result is persisted via persistToolResultMessage */ }
-            }
-        }
-        toolBlockMeta.values.lastOrNull { it.toolName == NovexCardCreationTask.MARKER }?.let { task ->
-            if (parts.isNotEmpty()) append(",")
-            append("""{"type":"novexCardTask","value":${task.toolArgs}}""")
-        }
-        append("]")
-    }
-
     private suspend fun persistAssistantTurn(
         parts: List<AgentContentPart>,
         usage: LLMUsage?,
@@ -10676,7 +9842,7 @@ class ChatViewModel(
         messageId: String = java.util.UUID.randomUUID().toString(),
     ): String? {
         if (parts.isEmpty()) return null
-        val partsJson = buildAssistantPartsJson(parts, toolBlockMeta)
+        val partsJson = encodeAssistantTurnParts(parts, toolBlockMeta)
         val tokenJson = usage?.let {
             """{"inputTokens":${it.inputTokens},"outputTokens":${it.outputTokens},"cacheCreationTokens":${it.cacheCreationInputTokens ?: 0},"cacheReadTokens":${it.cacheReadInputTokens ?: 0},"latestContextTokens":${it.latestContextTokens}}"""
         }
@@ -12183,7 +11349,7 @@ class ChatViewModel(
     fun resume() {
         if (_isStreaming.value || !_canResume.value) return
         val provider = currentProvider ?: run {
-            _error.value = "No provider configured"
+            _error.value = "请先选择可用的模型"
             return
         }
         _canResume.value = resumeEligibilityAfterRecoveryAction(RecoveryAction.RESUME)
@@ -12198,31 +11364,15 @@ class ChatViewModel(
         // once, then let the reply grow without moving the viewport.
         _forceScrollToBottom.tryEmit(Unit)
 
-        // If history ends with assistant (Case 2: text-cancel committed a
-        // partial assistant turn), append a continue reminder as a user
-        // message. If it ends with user tool_result (Case 1), it's already
-        // a valid starting point for the next API call — no reminder needed.
-        val historyEndsWithAssistant =
-            agentHistory.lastOrNull()?.role == LLMMessage.Role.ASSISTANT
-        if (historyEndsWithAssistant) {
-            val reminder =
-                "<system-reminder>The user stopped the previous response but now wants to continue. Pick up exactly where you left off.</system-reminder>"
-            val parts = listOf<AgentContentPart>(AgentContentPart.Text(reminder))
-            agentHistory.add(
-                LLMMessage(
-                    role = LLMMessage.Role.USER,
-                    content = reminder,
-                    contentParts = parts,
-                )
-            )
-            viewModelScope.launch(Dispatchers.IO) {
-                val partsJson = """[{"type":"text","value":${escapeJson(reminder)}}]"""
-                chatRepository.appendMessage(activeSessionId, "user", partsJson)
-            }
-        }
+        _isStreaming.value = true
 
         viewModelScope.launch {
-            val baseSystemPrompt = buildSystemPrompt()
+            val baseSystemPrompt = try { buildSystemPrompt() } catch (failure: Exception) {
+                _isStreaming.value = false
+                _canResume.value = true
+                _error.value = failure.message ?: "恢复对话前准备失败"
+                return@launch
+            }
             val systemPrompt =
                 if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
                     val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
@@ -12263,7 +11413,8 @@ class ChatViewModel(
                     } catch (e: Exception) {
                         AppLogger.error(TAG_STREAM, "resume runAgentLoop EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                         Log.e(TAG, "Agent loop error (resume)", e)
-                        setInlineError(e.message ?: "Unknown error")
+                        setInlineError(e.message ?: "恢复执行未完成")
+                        _canResume.value = true
                     } finally {
                         AppLogger.info(TAG_STREAM, "resume streamJob FINALLY enter")
                         // [T-android-overlay-reply-status-34599] Surface
@@ -12312,7 +11463,6 @@ class ChatViewModel(
                     novexApplication().novexWorkspace.apply(
                         com.openminis.app.novex.domain.NovexCommand.ReleaseConversationDraftWrite(activeSessionId, planId),
                     )
-                    pendingNovexManagementPlans.remove(planId)
                 }
                 Unit
             }
@@ -12340,7 +11490,10 @@ class ChatViewModel(
                         val sid = realSessionId.takeIf { it.isNotBlank() } ?: return@finalize
                         val app = novexApplication()
                         val drafts = app.novexWorkspace.conversationDrafts(sid)
-                        val protection = if (_canResume.value || _isCompacting.value || novexLearningJob?.isActive == true)
+                        val protection = if (_canResume.value || _isCompacting.value || novexLearningJob?.isActive == true ||
+                            novexOperationJournal.list(sid).any { it.status in setOf(
+                                com.openminis.app.novex.domain.NovexOperationStatus.WAITING,
+                                com.openminis.app.novex.domain.NovexOperationStatus.APPROVED) })
                             drafts?.subjects.orEmpty().toSet() else emptySet()
                         val hasFiles = withContext(Dispatchers.IO) {
                             val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
@@ -12511,6 +11664,7 @@ class ChatViewModel(
                                     id = "text_restored_${entity.id}_${textBlockCounter++}",
                                     kind = "text",
                                     content = t,
+                                    executionText = obj.optBoolean("execution", false),
                                 ))
                             }
                         }
@@ -12526,7 +11680,14 @@ class ChatViewModel(
                             if (toolId.startsWith("thinking_")) continue
                             val toolInput = value.optString("input", "")
                             // Merge tool result output (iOS: block.content = tr.output)
-                            val result = toolResultMap[toolId]
+                            val operationRecord = runCatching {
+                                val operation = com.openminis.app.novex.domain.NovexToolOperation(
+                                    entity.sessionId, entity.id, toolId, value.optString("name"), toolInput, "")
+                                novexOperationJournal.read(operation.id)
+                            }.getOrNull()
+                            val result = toolResultMap[toolId] ?: operationRecord?.result?.let {
+                                ToolResultData(it.output, it.success)
+                            }
                             val pageURL = value.optString("pageURL", "").ifEmpty { null }
                             val imgPath = value.optString("imageFilePath", "").ifEmpty { null }
                             blocks.add(AssistantBlock(
@@ -12535,9 +11696,11 @@ class ChatViewModel(
                                 toolName = value.optString("name", ""),
                                 toolTitle = value.optString("description", ""),
                                 toolArgs = toolInput,
-                                content = result?.output?.lines()?.takeLast(80)?.joinToString("\n") ?: "",
+                                content = result?.output?.lines()?.takeLast(80)?.joinToString("\n")
+                                    ?: restoredOperationNotice(operationRecord),
                                 toolStatus = when {
-                                    result == null -> ToolBlockStatus.SUCCESS
+                                    result == null && obj.optString("type") == "uiToolUse" -> ToolBlockStatus.SUCCESS
+                                    result == null -> restoredOperationStatus(operationRecord)
                                     !result.success && (
                                         result.output.startsWith(CANCELLED_MARKER) ||
                                             result.output.startsWith(LEGACY_CANCELLED_MARKER)
@@ -12550,6 +11713,7 @@ class ChatViewModel(
                                 // [T-android-gemini3-thoughtsig / #179] Restore the
                                 // persisted signature onto the rebuilt block.
                                 thoughtSignature = value.optString("thoughtSignature", "").ifEmpty { null },
+                                executionArgs = if (value.has("executionInput") && !value.isNull("executionInput")) value.getString("executionInput") else null,
                             ))
                         }
                         "mediaRef" -> {
@@ -12698,311 +11862,162 @@ class ChatViewModel(
     private fun prepareNovexLearningPreflight(
         collectionRef: NovexResourceRef,
         requestedModelId: String?,
+        action: com.openminis.app.novex.domain.NovexLearningPlanAction = com.openminis.app.novex.domain.NovexLearningPlanAction.START,
     ): NovexLearningPreflightSnapshot? {
         if (collectionRef.value !in activeNovexSourceCollectionRefs) return null
-        val state = novexLearningRepository.find(collectionRef) ?: return null
         val model = currentModel ?: return null
+        val provider = currentProvider ?: return null
         if (requestedModelId != null && requestedModelId != model.id) return null
-
-        state.task?.let { task ->
-            _pendingNovexLearningPreflight.value = null
-            _novexLearningTask.value = task
-            _novexLearningStatus.value = task.status
-            return task.preflight.copy(taskStatus = task.status)
+        return novexLearningPlans.prepare(activeSessionId, collectionRef, action,
+            { it.value in activeNovexSourceCollectionRefs }) { state, budget, fingerprint ->
+            require(currentProvider === provider && currentModel == model) { "当前模型已变化，请重新准备计划" }
+            buildNovexLearningPreflight(state, model, provider.name, budget, fingerprint)
         }
-
-        val preflight = buildNovexLearningPreflight(
-            state = state,
-            model = model,
-            providerName = currentProvider?.name ?: model.provider,
-        )
-        novexLearningRepository.save(state.copy(preflight = preflight))
-        _pendingNovexLearningPreflight.value = preflight.takeIf { it.requiresConfirmation }
-        return preflight
     }
 
-    private fun buildNovexLearningPreflight(
-        state: NovexLearningState,
-        model: LLMModel,
-        providerName: String,
-        proposedBudget: NovexLearningTokenBudget? = null,
-        sourcePlanFingerprint: String? = null,
-    ): NovexLearningPreflightSnapshot {
-        val sourceDocuments = state.collection.sources.mapNotNull { source ->
-            source.documentRef?.let { ref ->
-                val revision = state.task?.preflight?.documentRevisions?.get(ref)
-                if (revision == null) novexDocumentRepository.find(ref) else novexDocumentRepository.findRevision(ref, revision)
-            }?.let { source.ref to it }
-        }.toMap()
-        val sourceEstimates = state.collection.sources.map { source ->
-            val snapshot = sourceDocuments[source.ref]
-            val estimatedTokens = snapshot?.let {
-                com.openminis.app.novex.domain.NovexLearningBudgetPolicy.inputReservation(
-                    com.openminis.app.novex.domain.NovexLearningPrompt.review(it.title, it.blocks),
-                )
-            } ?: 0
-            val pages = snapshot?.blocks.orEmpty()
-                .mapNotNull { block -> block.source.page }
-                .distinct()
-                .size
-                .takeIf { it > 0 }
-            val unsupportedReason = when (snapshot?.status) {
-                null -> source.failureCode ?: "找不到可读取的解析资料，请重新导入来源"
-                NovexDocumentStatus.UNSUPPORTED -> "当前版本不支持此文档格式"
-                NovexDocumentStatus.PASSWORD_REQUIRED -> "文档需要密码"
-                NovexDocumentStatus.DAMAGED -> "文档已损坏"
-                NovexDocumentStatus.EMPTY -> "文档没有可读取内容"
-                else -> null
-            }
-            NovexLearningSourceEstimate(
-                ref = source.ref,
-                estimatedTokens = estimatedTokens,
-                pageCount = pages,
-                imageCount = snapshot?.blocks.orEmpty().count { it.kind == NovexDocumentBlockKind.IMAGE },
-                requiresOcr = snapshot?.status == NovexDocumentStatus.OCR_REQUIRED,
-                requiresNetwork = false,
-                unsupportedReason = unsupportedReason,
-            )
-        }
-        val totalEstimatedTokens = sourceEstimates.sumOf { it.estimatedTokens.toLong() }
-        val budget = proposedBudget ?: NovexLearningTokenBudget(
-            inputTokens = (totalEstimatedTokens * 2)
-                .coerceIn(16_000L, 2_000_000L)
-                .toInt(),
-            outputTokens = (totalEstimatedTokens / 5)
-                .coerceIn(8_000L, 128_000L)
-                .toInt(),
-        )
-        val preflight = NovexLearningPreflight.prepare(
-            NovexLearningPreflightRequest(
-                collectionRef = state.collection.ref,
-                sources = sourceEstimates,
-                modelId = model.id,
-                modelProviderName = providerName,
-                effectiveContextTokens = effectiveContextWindowTokens(),
-                occupiedContextTokens = _lastTurnContextTokens.value,
-                directReadBudgetTokens = 12_000,
-                proposedBudget = budget,
-                sourceDocuments = sourceDocuments,
-                sourcePlanFingerprint = sourcePlanFingerprint,
-                modelMaxOutputTokens = model.maxOutputTokens ?: 4096,
-            ),
-            progress = state,
-        )
-        return preflight
-    }
+    private fun buildNovexLearningPreflight(state: NovexLearningState, model: LLMModel, providerName: String,
+        proposedBudget: NovexLearningTokenBudget? = null, sourcePlanFingerprint: String? = null): NovexLearningPreflightSnapshot =
+        com.openminis.app.novex.domain.NovexLearningPreflightBuilder(novexDocumentRepository).build(state,
+            com.openminis.app.novex.domain.NovexLearningPlanningModel(model.id, providerName,
+                effectiveContextWindowTokens(), model.maxOutputTokens ?: 4096, _lastTurnContextTokens.value),
+            proposedBudget, sourcePlanFingerprint)
 
     fun dismissNovexLearningPreflight() {
-        pendingNovexLearningContinuation = null
         _pendingNovexLearningPreflight.value = null
         refreshNovexLearningTaskProjection()
     }
 
     fun requestNovexLearningContinuation(recheckSources: Boolean) {
-        val provider = currentProvider ?: return
-        val model = currentModel ?: return
         val ref = currentNovexLearningCollectionRef() ?: return
-        val previousJob = novexLearningJob
         closeNovexLearningDetails()
-        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
-            previousJob?.cancelAndJoin()
-            runCatching {
-                require(ref.value in activeNovexSourceCollectionRefs) { "当前对话已不再使用这份资料" }
-                pauseCompetingNovexLearningTasks(ref)
-                val original = requireNotNull(novexLearningRepository.find(ref)) { "找不到已保存任务" }
-                val mode = if (recheckSources) com.openminis.app.novex.domain.NovexLearningContinuationMode.RECHECK_SOURCES
-                    else com.openminis.app.novex.domain.NovexLearningContinuationMode.CURRENT_SOURCES
-                val prepared = com.openminis.app.novex.domain.NovexLearningContinuation.prepareState(original, novexDocumentRepository, mode)
-                val usage = requireNotNull(original.task).usage
-                val budget = NovexLearningTokenBudget(
-                    maxOf(usage.maxInputTokens, (usage.usedInputTokens.toLong() + 64_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()),
-                    maxOf(usage.maxOutputTokens, (usage.usedOutputTokens.toLong() + 8_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
-                val preflight = buildNovexLearningPreflight(prepared, model, provider.name, budget,
-                    com.openminis.app.novex.domain.NovexLearningContinuation.originFingerprint(original))
-                require(currentProvider === provider && currentModel == model && ref.value in activeNovexSourceCollectionRefs) {
-                    "对话或模型已变化，请重新准备计划"
-                }
-                pendingNovexLearningContinuation = preflight.id to mode
-                _novexLearningTask.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val action = if (recheckSources) com.openminis.app.novex.domain.NovexLearningPlanAction.RECHECK
+                    else com.openminis.app.novex.domain.NovexLearningPlanAction.CONTINUE
+                _pendingNovexLearningPreflight.value = prepareNovexLearningPreflight(ref, null, action)
                 _novexLearningError.value = null
-                _pendingNovexLearningPreflight.value = preflight
-            }.onFailure { _novexLearningError.value = it.message ?: "无法准备续接，原任务与成果仍保留" }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _novexLearningError.value = failure.message ?: "无法准备续接，原进度保留" }
         }
     }
 
-    fun requestNovexLearningBudgetExtension() {
-        pendingNovexLearningContinuation = null
-        val provider = currentProvider ?: return
-        val model = currentModel ?: return
-        val collectionRef = currentNovexLearningCollectionRef() ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            val state = novexLearningRepository.find(collectionRef) ?: return@launch
-            val task = state.task?.takeIf {
-                it.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
-            } ?: return@launch
-            val expandedBudget = NovexLearningTokenBudget(
-                inputTokens = (task.usage.maxInputTokens.toLong() +
-                    maxOf(task.usage.maxInputTokens / 2L, 64_000L))
-                    .coerceAtMost(10_000_000L)
-                    .toInt(),
-                outputTokens = (task.usage.maxOutputTokens.toLong() +
-                    maxOf(task.usage.maxOutputTokens / 2L, 8_000L))
-                    .coerceAtMost(1_000_000L)
-                    .toInt(),
-            )
-            val preflight = runCatching {
-                buildNovexLearningPreflight(state, model, provider.name, expandedBudget)
-            }.getOrElse { failure ->
-                _novexLearningError.value = failure.message ?: "无法准备新的学习预算，已保存进度不变"
-                return@launch
-            }
-            _novexLearningTask.value = null
-            _pendingNovexLearningPreflight.value = preflight
-        }
-    }
+    fun requestNovexLearningBudgetExtension() = requestNovexLearningContinuation(false)
 
     fun confirmNovexLearning(preflightId: String) {
-        val preflight = _pendingNovexLearningPreflight.value
-            ?.takeIf { it.id == preflightId }
-            ?: return
-        val continuationMode = pendingNovexLearningContinuation?.takeIf { it.first == preflightId }?.second
-        pendingNovexLearningContinuation = null
-        val provider = currentProvider
-        val model = currentModel
-        if (provider == null || model == null || model.id != preflight.modelId) {
-            _novexLearningError.value = "当前模型已经变化，请重新准备资料学习计划"
-            _pendingNovexLearningPreflight.value = null
-            return
-        }
+        val preflight = _pendingNovexLearningPreflight.value?.takeIf { it.id == preflightId } ?: return
         _pendingNovexLearningPreflight.value = null
-        _novexLearningError.value = null
-        val previousLearningJob = novexLearningJob
-        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
-            previousLearningJob?.cancelAndJoin()
-            pauseCompetingNovexLearningTasks(preflight.collectionRef)
-            val stored = novexLearningRepository.find(preflight.collectionRef) ?: run {
-                _novexLearningError.value = "找不到待整理的资料集"
-                return@launch
+        viewModelScope.launch(Dispatchers.IO) {
+            try { startNovexLearningPlan(preflight.collectionRef, preflightId) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _novexLearningError.value = failure.message ?: "资料整理未启动，原进度保留" }
+        }
+    }
+
+    /** Native confirmation and authorized model calls share this save-before-schedule path. */
+    private suspend fun startNovexLearningPlan(ref: NovexResourceRef, id: String, awaitCompletion: Boolean = false): com.openminis.app.novex.domain.NovexToolResult {
+        val (receipt, run) = novexLearningControlMutex.withLock {
+            val provider = requireNotNull(currentProvider) { "当前没有可用模型连接" }
+            val model = requireNotNull(currentModel) { "当前没有可用模型" }
+            val committed = novexLearningPlans.commit(activeSessionId, ref, id,
+                { it.value in activeNovexSourceCollectionRefs },
+                { state, budget, fingerprint -> buildNovexLearningPreflight(state, model, provider.name, budget, fingerprint) },
+                { requireNovexLearningExecutionContext(it, provider) })
+            val task = requireNotNull(committed.state.task)
+            val runnable = task.preflight.id == id && task.status in setOf(NovexLearningTaskStatus.INDEXING,
+                NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)
+            _novexLearningTask.value = task
+            _novexLearningStatus.value = task.status
+            if (runnable) {
+                requireNovexLearningExecutionContext(task.preflight, provider)
+                if (novexLearningJob?.isActive != true || novexLearningRunningRef != ref) {
+                    novexLearningJob?.cancelAndJoin()
+                    pauseCompetingNovexLearningTasks(ref)
+                    novexLearningRunningRef = ref
+                    _novexLearningError.value = null
+                    novexLearningJob = viewModelScope.launch(Dispatchers.IO) { runNovexLearning(committed.state, provider) }
+                }
             }
-            if (preflight.collectionRef.value !in activeNovexSourceCollectionRefs) return@launch
-            stored.task?.takeIf { task ->
-                continuationMode == null && task.status != NovexLearningTaskStatus.PAUSED_BUDGET_REACHED
-            }?.let { task ->
-                _novexLearningTask.value = task
-                _novexLearningStatus.value = task.status
-                return@launch
-            }
-            val prepared = runCatching {
-                if (continuationMode == null) stored else
-                    com.openminis.app.novex.domain.NovexLearningContinuation.prepareState(stored, novexDocumentRepository, continuationMode)
-            }.getOrElse { _novexLearningError.value = it.message ?: "原任务已变化"; return@launch }
-            val refreshed = runCatching {
-                buildNovexLearningPreflight(prepared, model, provider.name, preflight.confirmedBudget,
-                    if (continuationMode == null) null else com.openminis.app.novex.domain.NovexLearningContinuation.originFingerprint(stored))
-            }.getOrElse { failure ->
-                _novexLearningError.value = failure.message ?: "无法核对学习计划，已保存进度不变"
-                return@launch
-            }
-            if (refreshed.id != preflight.id) {
-                // A budget proposal must not replace the authorization of the saved task.
-                if (stored.task == null) novexLearningRepository.save(stored.copy(preflight = refreshed))
-                _pendingNovexLearningPreflight.value = refreshed.takeIf { it.requiresConfirmation }
-                pendingNovexLearningContinuation = continuationMode?.let { refreshed.id to it }
-                _novexLearningError.value = "资料、模型或预算已经变化，请确认新的整理计划"
-                return@launch
-            }
-            val confirmation = NovexLearningConfirmation(
-                preflightId = preflight.id,
-                modelId = preflight.modelId,
-                sourceRefs = preflight.sourceRefs,
-                maxInputTokens = preflight.confirmedBudget.inputTokens,
-                maxOutputTokens = preflight.confirmedBudget.outputTokens,
-                confirmedAtMillis = System.currentTimeMillis(),
-            )
-            val coordinator = NovexLearningCoordinator()
-            val storedTask = stored.task
-            val nextState = runCatching {
-                requireNovexLearningExecutionContext(refreshed, provider)
-                if (continuationMode != null) {
-                    com.openminis.app.novex.domain.NovexLearningContinuation.confirm(stored, prepared, continuationMode, refreshed, confirmation)
-                } else {
-                    val task = if (storedTask?.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) {
-                        coordinator.extendBudget(storedTask, refreshed, confirmation)
-                    } else {
-                        coordinator.start(refreshed, confirmation)
+            com.openminis.app.novex.domain.NovexToolResult.success("learning.task_saved",
+                if (runnable) "整理任务已保存并启动，将分批保存笔记；尚未完成通读，可在资料整理进度中查看或暂停。"
+                else "这份计划已有执行记录；保留当前进度与状态，没有重复开始。",
+                data = mapOf("collection_ref" to ref.value, "preflight_id" to id, "task_status" to task.status.name,
+                    "replayed" to committed.replayed, "reviewed_blocks" to committed.state.reviewLedger.reviewedBlocks,
+                    "total_blocks" to committed.state.reviewLedger.totalReadableBlocks),
+                affectedRefs = listOf(ref)) to novexLearningJob.takeIf { runnable && novexLearningRunningRef == ref }
+        }
+
+        if (!awaitCompletion) return receipt
+        return com.openminis.app.novex.domain.NovexLearningRunCompletion.await(ref, id, run,
+            readState = { novexLearningControlMutex.withLock {
+                novexLearningRepository.find(ref)?.takeIf { ref.value in activeNovexSourceCollectionRefs }
+            } },
+            stopOwnedRun = {
+                novexLearningControlMutex.withLock {
+                    if (run != null && novexLearningJob === run) {
+                        run.cancelAndJoin()
+                        novexLearningJob = null
+                        novexLearningRunningRef = null
+                        val state = novexLearningRepository.find(ref)
+                        val task = state?.task
+                        if (task?.preflight?.id == id && task.status in setOf(NovexLearningTaskStatus.INDEXING,
+                                NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)) {
+                            val paused = state.copy(task = task.pause())
+                            novexLearningRepository.save(paused)
+                            _novexLearningTask.value = paused.task
+                            _novexLearningStatus.value = paused.task?.status
+                        }
                     }
-                    stored.copy(preflight = refreshed, task = task,
-                        previousTasks = if (storedTask == null) stored.previousTasks else stored.previousTasks + storedTask)
                 }
-            }
-                .getOrElse { failure ->
-                    _novexLearningError.value = failure.message ?: "学习确认已经失效"
-                    return@launch
-                }
-            novexLearningRepository.save(nextState)
-            runNovexLearning(nextState, provider)
-        }
+            })
     }
 
-    fun pauseNovexLearning() {
-        val collectionRef = currentNovexLearningCollectionRef() ?: return
-        val runningJob = novexLearningJob
-        novexLearningJob = null
-        viewModelScope.launch(Dispatchers.IO) {
-            runningJob?.cancelAndJoin()
-            val state = novexLearningRepository.find(collectionRef) ?: return@launch
-            val task = state.task ?: return@launch
-            if (task.status in setOf(
-                    NovexLearningTaskStatus.INDEXING,
-                    NovexLearningTaskStatus.REVIEWING,
-                    NovexLearningTaskStatus.SYNTHESIZING,
-                )
-            ) {
-                val paused = state.copy(task = task.pause())
-                novexLearningRepository.save(paused)
-                _novexLearningTask.value = paused.task
-                _novexLearningStatus.value = paused.task?.status
-            }
-        }
-    }
+    fun pauseNovexLearning() = stopNovexLearningRun(cancel = false)
 
-    fun cancelNovexLearning() {
-        val collectionRef = currentNovexLearningCollectionRef() ?: return
-        val runningJob = novexLearningJob
-        novexLearningJob = null
+    fun cancelNovexLearning() = stopNovexLearningRun(cancel = true)
+
+    private fun stopNovexLearningRun(cancel: Boolean) {
+        val ref = currentNovexLearningCollectionRef() ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            runningJob?.cancelAndJoin()
-            val state = novexLearningRepository.find(collectionRef) ?: return@launch
-            val task = state.task ?: return@launch
-            if (task.status !in setOf(
-                    NovexLearningTaskStatus.CANCELLED,
-                    NovexLearningTaskStatus.COMPLETE,
-                    NovexLearningTaskStatus.PARTIAL_FAILURE,
-                )
-            ) {
-                val cancelled = state.copy(task = task.cancel())
-                novexLearningRepository.save(cancelled)
-                _novexLearningTask.value = cancelled.task
-                _novexLearningStatus.value = cancelled.task?.status
+            novexLearningControlMutex.withLock {
+                if (novexLearningRunningRef == ref) {
+                    novexLearningJob?.cancelAndJoin()
+                    novexLearningJob = null
+                    novexLearningRunningRef = null
+                }
+                val state = novexLearningRepository.find(ref) ?: return@withLock
+                val task = state.task ?: return@withLock
+                val controls = com.openminis.app.novex.domain.NovexLearningControlPolicy.allowedControls(task.status)
+                val control = if (cancel) com.openminis.app.novex.domain.NovexLearningControl.CANCEL
+                    else com.openminis.app.novex.domain.NovexLearningControl.PAUSE
+                if (control !in controls) return@withLock
+                val stopped = state.copy(task = if (cancel) task.cancel() else task.pause())
+                novexLearningRepository.save(stopped)
+                _novexLearningTask.value = stopped.task
+                _novexLearningStatus.value = stopped.task?.status
             }
         }
     }
 
     fun resumeNovexLearning() {
         val provider = currentProvider ?: return
-        val collectionRef = currentNovexLearningCollectionRef() ?: return
-        val previousLearningJob = novexLearningJob
-        novexLearningJob = viewModelScope.launch(Dispatchers.IO) {
-            previousLearningJob?.cancelAndJoin()
-            val state = novexLearningRepository.find(collectionRef) ?: return@launch
-            val task = state.task ?: return@launch
-            if (task.status != NovexLearningTaskStatus.PAUSED) return@launch
-            runCatching { requireNovexLearningExecutionContext(task.preflight, provider) }
-                .getOrElse { failure ->
-                    _novexLearningError.value = failure.message ?: "学习配置已变化，请重新确认"
-                    return@launch
+        val ref = currentNovexLearningCollectionRef() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                novexLearningControlMutex.withLock {
+                    val state = novexLearningRepository.find(ref) ?: return@withLock
+                    val task = state.task?.takeIf { it.status == NovexLearningTaskStatus.PAUSED } ?: return@withLock
+                    requireNovexLearningExecutionContext(task.preflight, provider)
+                    novexLearningJob?.cancelAndJoin()
+                    pauseCompetingNovexLearningTasks(ref)
+                    val resumed = state.copy(task = task.resume())
+                    novexLearningRepository.save(resumed)
+                    _novexLearningTask.value = resumed.task
+                    _novexLearningStatus.value = resumed.task?.status
+                    novexLearningRunningRef = ref
+                    novexLearningJob = viewModelScope.launch(Dispatchers.IO) { runNovexLearning(resumed, provider) }
                 }
-            runNovexLearning(state.copy(task = task.resume()), provider)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { _novexLearningError.value = failure.message ?: "资料整理未恢复，已保存进度保留" }
         }
     }
 
@@ -13321,6 +12336,7 @@ class ChatViewModel(
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
+            if (novexLearningJob?.isActive == true && novexLearningRunningRef?.value in refs) return@launch
             val restored = refs.asReversed().asSequence()
                 .mapNotNull { value -> novexLearningRepository.find(NovexResourceRef(value))?.task }
                 .firstOrNull { task ->
@@ -13464,50 +12480,6 @@ class ChatViewModel(
             reasoningContent = reasoningContent,
         )
     }
-
-    /**
-     * Extract a string value for `key` from *partial* (possibly truncated) JSON
-     * without needing a complete, parseable object. Mirrors iOS
-     * `extractPartialStringValue(_:from:)` in AIChatViewModel.swift.
-     *
-     * Returns content up to the first unescaped `"`, or the remaining buffer
-     * if the closing quote has not streamed yet.
-     */
-    private fun extractPartialStringValue(key: String, json: String): String? {
-        val patterns = listOf("\"$key\": \"", "\"$key\":\"")
-        for (p in patterns) {
-            val at = json.indexOf(p)
-            if (at < 0) continue
-            val after = json.substring(at + p.length)
-            return unescapePartialJsonString(findUnescapedEnd(after))
-        }
-        return null
-    }
-
-    /** Return substring up to the first unescaped `"`, or the whole string if none. */
-    private fun findUnescapedEnd(s: String): String {
-        var i = 0
-        val n = s.length
-        while (i < n) {
-            val c = s[i]
-            if (c == '\\') {
-                // Skip escaped character (could be `\"`, `\\`, `\n`, etc.)
-                i += 2
-                continue
-            }
-            if (c == '"') return s.substring(0, i)
-            i++
-        }
-        return s
-    }
-
-    /** Unescape common JSON string escapes. */
-    private fun unescapePartialJsonString(s: String): String =
-        s.replace("\\n", "\n")
-            .replace("\\t", "\t")
-            .replace("\\\"", "\"")
-            .replace("\\/", "/")
-            .replace("\\\\", "\\")
 
     /**
      * Humanize a snake_case tool name into a Title-Case label for pill headers

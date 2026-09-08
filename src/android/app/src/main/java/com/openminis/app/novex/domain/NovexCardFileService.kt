@@ -15,7 +15,7 @@ class NovexCardFileService(
         val configuration: NovexConversationConfigurationSnapshot, val payload: JSONObject)
 
     suspend fun execute(configuration: NovexConversationConfigurationSnapshot, tool: String, arguments: JSONObject,
-        userRequests: List<String>, operationId: String): Result {
+        userRequests: List<String>, operationId: String, requestId: String? = null): Result {
         // Resolve a bounded, immutable source before opening the write transaction.
         val changes = when (tool) {
             "novex_write_card" -> operations.create(arguments)
@@ -26,40 +26,54 @@ class NovexCardFileService(
         }
         var result: Result? = null
         transaction.run {
-            val creation = if (tool == "novex_write_card") NovexManagementChangeCodec.decode(changes).single() else null
-            val origin = if (creation != null && creation.matchesCreationTask(userRequests.lastOrNull().orEmpty(), userRequests.dropLast(1)))
-                userRequests.indexOfLast { creation.matchesCreationTask(it, emptyList()) } else -1
-            val scope = if (origin >= 0) java.security.MessageDigest.getInstance("SHA-256")
-                .digest(JSONArray(userRequests.take(origin + 1)).toString().toByteArray()).joinToString("") { "%02x".format(it) } else null
-            // A provider can retry with a NEW call id after losing the reply. Identical content in the
-            // same user task reuses its durable receipt; an explicit new request has a different scope.
-            val pluralRequest = origin >= 0 && Regex("(多张|多份|一批|若干|几张|分别|每人|各自|[2-9][0-9]*\\s*[张个份]|[二两三四五六七八九十]+\\s*[张个份])").containsMatchIn(userRequests[origin])
-            val duplicate = if (scope == null || pluralRequest) null else workspace.conversationDrafts(configuration.conversationId)?.completedWrites
-                ?.firstOrNull { receipt -> runCatching {
-                    val raw = JSONObject(receipt.planJson)
-                    raw.optString("creationRequestScope") == scope &&
-                        canonicalRevisionJson(raw.getJSONArray("changes")) == canonicalRevisionJson(JSONArray(changes))
-                }.getOrDefault(false) }
-            val plan = management.propose(configuration, changes, userRequests.lastOrNull().orEmpty(), duplicate?.id ?: operationId, userRequests.dropLast(1), scope)
-            if (plan.requiresConfirmation) {
-                result = Result(plan, null, configuration, JSONObject().put("status", "waiting_confirmation")
-                    .put("proposal_id", plan.id).put("summary", plan.summary).put("impact", JSONArray(plan.impact))
-                    .put("confirmation", plan.confirmationPhrase).put("saved", false))
-            } else {
+            // A stable output key distinguishes intended copies from retries; words and content
+            // equality never decide how many cards the user is allowed to create.
+            val scope = requestId?.takeIf(String::isNotBlank) ?: NovexFrozenContextCodec.digest(JSONArray(userRequests).toString())
+            val outputKey = arguments.optString("creation_key").takeIf(String::isNotBlank)
+            val planId = if (tool == "novex_write_card" && outputKey != null)
+                NovexFrozenContextCodec.digest("${configuration.conversationId}|$scope|$outputKey") else operationId
+            val plan = management.propose(configuration, changes, userRequests.lastOrNull().orEmpty(), planId, userRequests.dropLast(1), scope)
+            run {
                 val applied = management.apply(configuration, plan, userRequests.lastOrNull().orEmpty())
                 val updated = (if (applied.replayed) emptyList() else applied.createdSubjects).fold(configuration) { current, target ->
                     NovexConversationConfiguration.open(current).apply(NovexConversationCommand.MountSubject(target, ManagedAccess.EDIT)).snapshot
                 }
                 val checks = verify(plan, applied)
                 if (!applied.replayed) require(checks.optBoolean("verified")) { "写入后的回读核验未通过，事务未提交" }
+                val cards = applied.createdSubjects.map { savedCardReceipt(it) }
+                val modules = applied.changedModuleIds.mapNotNull { workspace.module(it)?.module }.map { module ->
+                    JSONObject().put("module_id", module.id).put("name", module.name).put("position", module.position)
+                        .put("card_id", module.ownerId)
+                }
+                val references = plan.changes.filterIsInstance<NovexManagedChange.PutCardReference>().map { change ->
+                    val ref = change.reference
+                    JSONObject().put("reference_id", ref.id).put("source_id", ref.source.id)
+                        .put("target_id", ref.target.subject.id).put("purpose", ref.purpose.wireName)
+                }
+                val userMessage = if (modules.isNotEmpty()) modules.joinToString("\n") {
+                    "模块《${it.getString("name")}》已保存，当前排在第 ${it.getInt("position") + 1} 位。"
+                } else if (cards.isEmpty()) "卡片修改已保存，可以打开查看。"
+                    else cards.joinToString("\n") { "《${it.getString("name")}》已保存到卡片仓库，可以打开查看。" }
                 result = Result(plan, applied, updated, JSONObject().put("status", if (checks.optBoolean("verified")) "saved_verified" else "saved_needs_review")
                     .put("saved", true).put("proposal_id", plan.id).put("replayed", applied.replayed)
-                    .put("verification", checks).put("created_cards", JSONArray(applied.createdSubjects.map { target ->
-                        JSONObject().put("kind", target.kind.managementWireName()).put("id", target.id)
-                    })).put("message", "实际保存与结构回读结果；不证明内容语义正确。修改原卡不会刷新本局采用。"))
+                    .put("verification", checks).put("created_cards", JSONArray(cards))
+                    .put("saved_modules", JSONArray(modules)).put("saved_references", JSONArray(references)).put("message", userMessage))
             }
         }
         return requireNotNull(result)
+    }
+
+    /** Read the committed object's current name; the initial empty-card directory is stale after saving. */
+    private suspend fun savedCardReceipt(target: NovexContentAddress): JSONObject {
+        val name = when (target.kind) {
+            NovexContentKind.WORLD -> workspace.world(target.id)?.world?.name
+            NovexContentKind.CHARACTER_VERSION -> workspace.characterForVersion(target.id)?.character?.character?.name
+            NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(target.id)?.project?.name
+            else -> null
+        }
+        return JSONObject().put("kind", target.kind.managementWireName()).put("id", target.id)
+            .put("name", requireNotNull(name) { "已保存卡片暂不可读" })
+            .put("location", "卡片仓库").put("open_in_app", true)
     }
 
     private suspend fun verify(plan: NovexManagementPlan, applied: NovexManagementApplyResult): JSONObject {
@@ -87,8 +101,7 @@ class NovexCardFileService(
                     expected.name == actual.name && expected.type == actual.type && same(expected.contentJson, actual.contentJson)
                 }
                 verified = verified && matches
-                cards.put(JSONObject().put("id", target?.id).put("modules", modules.size).put("verified", matches)
-                    .put("module_directory", JSONArray(modules.map { JSONObject().put("id", it.id).put("name", it.name).put("position", it.position) })))
+                cards.put(JSONObject().put("id", target?.id).put("modules", modules.size).put("verified", matches))
             }
             is NovexManagedChange.UpdateModule -> {
                 val actual = workspace.module(change.moduleId)?.module
@@ -97,7 +110,7 @@ class NovexCardFileService(
             }
             is NovexManagedChange.MoveModule -> verified = verified && workspace.module(change.moduleId)?.module?.position == change.toIndex
             is NovexManagedChange.AddModule -> {
-                val id = applied.changes.filterIsInstance<NovexChange.ModuleSaved>().firstOrNull()?.module?.id
+                val id = applied.changedModuleIds.firstOrNull()
                 val actual = id?.let { workspace.module(it)?.module }
                 verified = verified && actual != null && actual.name == change.name && same(actual.contentJson, change.contentJson)
             }

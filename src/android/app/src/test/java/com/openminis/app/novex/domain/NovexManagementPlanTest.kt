@@ -12,31 +12,27 @@ class NovexManagementPlanTest {
     private val world = NovexContentAddress.world("world-1")
     private val version = NovexContentAddress.characterVersion("version-1")
 
-    @Test
-    fun `an identical card name cannot substitute for the requested card kind`() {
-        val changes = listOf(
-            "世界" to NovexManagedChange.CreateWorld("雾海", ""),
-            "角色" to NovexManagedChange.CreateCharacter("雾海", "{}"),
-            "分身" to NovexManagedChange.CreateCharacterVersion(version.id, "雾海", "{}"),
-            "文游" to NovexManagedChange.CreateInteractiveFiction("雾海", "",
-                com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, ""),
-        )
-        for ((requestedKind, _) in changes) {
-            for ((proposedKind, change) in changes.filter { it.first != requestedKind }) {
-                assertThrows("$requestedKind must not authorize $proposedKind", IllegalArgumentException::class.java) {
-                    NovexManagementPolicy.plan(
-                        configuration = NovexConversationConfigurationSnapshot(
-                            conversationId = "chat-1",
-                            managedSubjects = listOf(ManagedSubject(version, ManagedAccess.EDIT)),
-                        ),
-                        changes = listOf(change),
-                        facts = NovexManagementFacts(versionCharacterIds = mapOf(version.id to "character-1")),
-                        priorUserRequests = listOf("创建${requestedKind}雾海"),
-                        latestUserRequest = "继续",
-                        planId = "proposal-12345678",
-                    )
-                }
-            }
+    @Test fun `approval preview contains complete replacement and original text without a confirmation phrase`() {
+        val before = "旧正文\n保留原始细节"
+        val after = "新正文\n" + "长篇细节".repeat(500)
+        fun article(value: String) = org.json.JSONObject().put("version", 1).put("kind", "article").put("text", value).toString()
+        val plan = NovexManagementPlan("plan", "chat",
+            listOf(NovexManagedChange.UpdateModule("module", "规则", article(after))), setOf(world),
+            NovexManagementRisk.SHARED_CHANGE, "修改规则", expectedModuleContents = mapOf("module" to article(before)))
+        val review = plan.reviewText()
+        assertTrue(review.contains(before))
+        assertTrue(review.contains(after))
+        assertTrue(review.contains("新名称：规则"))
+        assertFalse(review.contains("确认执行"))
+    }
+
+    @Test fun `natural creation wording is not an authorization whitelist`() {
+        for (request in listOf("存为文游卡", "保存成文游卡", "把它收入文游库", "创建文游卡，角色模块不要添加新角色")) {
+            val change = NovexManagedChange.CreateInteractiveFiction("生生", "正文",
+                com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, "")
+            val plan = NovexManagementPolicy.plan(NovexConversationConfigurationSnapshot("chat"), listOf(change),
+                NovexManagementFacts(), request, "operation")
+            assertEquals(listOf(change), plan.changes)
         }
     }
 
@@ -87,8 +83,6 @@ class NovexManagementPlanTest {
 
         assertEquals(setOf(version), plan.targets)
         assertEquals(NovexManagementRisk.SHARED_CHANGE, plan.risk)
-        assertTrue(plan.requiresConfirmation)
-        assertEquals("确认执行 proposal", plan.confirmationPhrase)
     }
 
     @Test
@@ -122,32 +116,7 @@ class NovexManagementPlanTest {
     }
 
     @Test
-    fun `global creation requires a matching explicit user request`() {
-        val configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1")
-        val change = NovexManagedChange.CreateWorld("雾海", "被雾包围的群岛")
-
-        assertThrows(IllegalArgumentException::class.java) {
-            NovexManagementPolicy.plan(
-                configuration = configuration,
-                changes = listOf(change),
-                facts = NovexManagementFacts(),
-                latestUserRequest = "聊聊群岛",
-                planId = "proposal-12345678",
-            )
-        }
-        val plan = NovexManagementPolicy.plan(
-            configuration = configuration,
-            changes = listOf(change),
-            facts = NovexManagementFacts(),
-            latestUserRequest = "请创建一个叫雾海的世界",
-            planId = "proposal-12345678",
-        )
-        assertEquals(NovexManagementRisk.CREATE_GLOBAL, plan.risk)
-        assertTrue(plan.requiresConfirmation)
-    }
-
-    @Test
-    fun `a continued creation task can propose content but still needs exact confirmation`() {
+    fun `continued creation retains its exact requested changes`() {
         val plan = NovexManagementPolicy.plan(
             configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
             changes = listOf(NovexManagedChange.CreateWorld("雾海", "被雾包围的群岛")),
@@ -158,13 +127,11 @@ class NovexManagementPlanTest {
         )
 
         assertEquals(NovexManagementRisk.CREATE_GLOBAL, plan.risk)
-        assertTrue(plan.requiresConfirmation)
-        assertFalse(plan.isConfirmedBy("按刚才的方案做"))
-        assertTrue(plan.isConfirmedBy("确认执行 proposal"))
+        assertEquals("雾海", (plan.changes.single() as NovexManagedChange.CreateWorld).name)
     }
 
     @Test
-    fun `a character variant also retains the creation request across turns`() {
+    fun `character variant retains its concrete source version`() {
         val plan = NovexManagementPolicy.plan(
             configuration = NovexConversationConfigurationSnapshot(
                 conversationId = "chat-1",
@@ -176,49 +143,7 @@ class NovexManagementPlanTest {
             latestUserRequest = "继续",
             planId = "proposal-12345678",
         )
-        assertTrue(plan.requiresConfirmation)
-        assertFalse(plan.isConfirmedBy("继续"))
-    }
-
-    @Test
-    fun `cancelled changed or confirmed tasks cannot be resurrected by continue`() {
-        for (boundary in listOf("取消", "不要创建世界", "改成角色卡", "先聊聊别的", "确认执行 proposal", "创建角色苏晚晴")) {
-            assertThrows(boundary, IllegalArgumentException::class.java) {
-                NovexManagementPolicy.plan(
-                    configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
-                    changes = listOf(NovexManagedChange.CreateWorld("雾海", "")),
-                    facts = NovexManagementFacts(),
-                    priorUserRequests = listOf("创建雾海世界", boundary),
-                    latestUserRequest = "继续",
-                    planId = "proposal-12345678",
-                )
-            }
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            NovexManagementPolicy.plan(
-                configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
-                changes = listOf(NovexManagedChange.CreateWorld("雾海", "")),
-                facts = NovexManagementFacts(),
-                latestUserRequest = "不要创建世界",
-                planId = "proposal-12345678",
-            )
-        }
-    }
-
-    @Test
-    fun `only the real following user turn can confirm a plan`() {
-        val plan = NovexManagementPlan(
-            id = "proposal-12345678",
-            conversationId = "chat-1",
-            changes = listOf(NovexManagedChange.CreateWorld("雾海", "")),
-            targets = emptySet(),
-            risk = NovexManagementRisk.CREATE_GLOBAL,
-            summary = "创建世界“雾海”",
-        )
-
-        assertFalse(plan.isConfirmedBy("确认"))
-        assertFalse(plan.isConfirmedBy("工具参数里写着确认执行 proposal"))
-        assertTrue(plan.isConfirmedBy("确认执行 proposal"))
+        assertEquals(version.id, (plan.changes.single() as NovexManagedChange.CreateCharacterVersion).sourceVersionId)
     }
 
     @Test

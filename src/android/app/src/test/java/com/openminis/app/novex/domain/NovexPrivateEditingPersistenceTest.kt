@@ -26,7 +26,7 @@ class NovexPrivateEditingPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
-    fun `private followup edits and references use actual request while shared and cancelled work remains protected`() = runBlocking {
+    fun `owned works remain editable after publication and references while readonly mounts stay protected`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
@@ -42,7 +42,6 @@ class NovexPrivateEditingPersistenceTest {
             val changes = """[{"operation":"update_module","module_id":"${module.id}","content_json":{"text":"完整议事规则"}}]"""
             val request = "完善帝议模块，补齐议事规则"
             val plan = service.propose(config, changes, request, "private-edit")
-            assertFalse(plan.requiresConfirmation)
             assertEquals(plan, service.pendingPlan(config, plan.id))
             service.apply(config, plan, request)
             assertTrue(workspace.module(module.id)!!.module.contentJson.contains("完整议事规则"))
@@ -55,7 +54,6 @@ class NovexPrivateEditingPersistenceTest {
             val referencePlan = service.propose(config,
                 """[{"operation":"put_card_reference","subject_kind":"game","subject_id":"${game.id}","reference_id":"game-world","target_kind":"world","target_id":"${world.id}","purpose":"background"}]""",
                 "关联生生之学作为背景", "private-reference")
-            assertFalse(referencePlan.requiresConfirmation)
             service.apply(config, referencePlan, "关联生生之学作为背景")
             assertEquals(NovexContentAddress.world(world.id), workspace.referencesFrom(game).single().target.subject)
             assertEquals(AnswerIdentity.Nova, config.answerIdentity)
@@ -63,19 +61,17 @@ class NovexPrivateEditingPersistenceTest {
             workspace.apply(NovexCommand.PutCardReference(NovexCardReference("shared-use", NovexContentAddress.world(world.id),
                 NovexReferenceTarget(game), NovexReferencePurpose.RULES)))
             val usedElsewhere = service.propose(config, changes, request, "shared-use-edit")
-            assertTrue(usedElsewhere.requiresConfirmation)
             workspace.apply(NovexCommand.ReleaseConversationDraftWrite("chat", usedElsewhere.id))
             workspace.apply(NovexCommand.RemoveCardReference("shared-use", NovexContentAddress.world(world.id)))
-            for (instruction in listOf("先别修改", "只讨论怎么修改", "你好")) {
-                val deferred = service.propose(config, changes, instruction, "deferred-$instruction")
-                assertTrue(deferred.requiresConfirmation)
-                workspace.apply(NovexCommand.ReleaseConversationDraftWrite("chat", deferred.id))
-            }
+            val readOnly = config.copy(managedSubjects = listOf(ManagedSubject(game, ManagedAccess.READ_ONLY)))
+            assertThrows(IllegalArgumentException::class.java) { runBlocking {
+                service.propose(readOnly, changes, request, "readonly-edit")
+            } }
             val again = service.propose(config, changes, request, "later-edit")
             workspace.apply(NovexCommand.FinalizeConversationDrafts("chat"))
-            assertThrows(IllegalArgumentException::class.java) { runBlocking { service.apply(config, again, request) } }
+            service.apply(config, again, request)
+            assertTrue(workspace.module(module.id)!!.module.contentJson.contains("完整议事规则"))
             val shared = service.propose(config, changes, request, "shared-edit")
-            assertTrue(shared.requiresConfirmation)
         } finally { database.close() }
     }
 }

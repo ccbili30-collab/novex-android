@@ -77,9 +77,19 @@ object NovexToolCatalog {
                     parameters = listOf(
                         NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
                         NovexToolParameter("model_id", NovexToolParameterKind.STRING, false, "拟用于学习的模型编号；省略时使用当前对话模型"),
+                        NovexToolParameter("action", NovexToolParameterKind.STRING, false, "start（默认，首次整理）；continue（保留已存进度和用量继续）；recheck（核对新解析，保留旧成果）。计划只预检，不启动。"),
                     ),
                 ),
             )
+            add(NovexToolDefinition(
+                name = "learning_start",
+                description = "执行 learning_prepare 返回的已保存整理计划，持久保存任务后启动分批通读。遵循当前对话权限，无文字口令或二次批准。本调用等待整理结束或暂停，分批成果持续保存；根据返回的实际覆盖和状态判断完成，再用 learning_read 读取成果并继续用户原任务。无需轮询。",
+                risk = NovexToolRisk.EXTERNAL_SIDE_EFFECT,
+                parameters = listOf(
+                    NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "准备计划返回的本对话资料集引用"),
+                    NovexToolParameter("preflight_id", NovexToolParameterKind.STRING, true, "原样使用准备计划返回的编号；资料、模型或预算变化时重新准备"),
+                ),
+            ))
             add(NovexToolDefinition(
                 name = "learning_read",
                 description = "只读访问当前分支资料集已保存的学习笔记与来源、覆盖进度；总览优先，正文有界分页。不会重新启动学习，不会创建卡片。",

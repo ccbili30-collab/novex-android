@@ -172,6 +172,9 @@ data class NovexConversationConfigurationSnapshot(
     val adoptedContexts: List<NovexAdoptedContext> = emptyList(),
     val preGameAdoptedIdentity: NovexAdoptedContext? = null,
     val disabledSettings: Set<NovexReferenceTarget> = emptySet(),
+    val executionMode: NovexExecutionMode = NovexExecutionMode.DEFAULT,
+    /** Preserve unreadable or newer data verbatim; never save an empty replacement over it. */
+    val unreadableConfiguration: String? = null,
 ) {
     val effectivePlaythroughId: String?
         get() = activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
@@ -180,10 +183,12 @@ data class NovexConversationConfigurationSnapshot(
         get() = answerIdentity != AnswerIdentity.Nova || playerIdentity != null ||
             backgroundSettings.isNotEmpty() || managedSubjects.isNotEmpty() ||
             activeInteractiveFiction != null || completedPlaythroughs.isNotEmpty() ||
-            playthroughStates.isNotEmpty() || controls.isNotEmpty() || disabledSettings.isNotEmpty()
+            playthroughStates.isNotEmpty() || controls.isNotEmpty() || disabledSettings.isNotEmpty() ||
+            executionMode != NovexExecutionMode.DEFAULT
 }
 
 sealed interface NovexConversationCommand {
+    data class SetExecutionMode(val mode: NovexExecutionMode) : NovexConversationCommand
     data class SetPlayerIdentity(val identity: ConversationPlayerIdentity?) : NovexConversationCommand
     data class SetAnswerIdentity(val identity: AnswerIdentity) : NovexConversationCommand
     data class ActivateInteractiveFiction(
@@ -227,7 +232,13 @@ class NovexConversationConfiguration private constructor(
         snapshot.completedPlaythroughs + CompletedPlaythrough(game, snapshot.playthroughStates, snapshot.controls, snapshot.effectivePlaythroughId.orEmpty())
     } ?: snapshot.completedPlaythroughs
 
-    fun apply(command: NovexConversationCommand): NovexConversationConfiguration = when (command) {
+    fun apply(command: NovexConversationCommand): NovexConversationConfiguration {
+        require(snapshot.unreadableConfiguration == null) { "对话设置未能恢复，原数据已保留，暂不能修改设置" }
+        return applyReadable(command)
+    }
+
+    private fun applyReadable(command: NovexConversationCommand): NovexConversationConfiguration = when (command) {
+        is NovexConversationCommand.SetExecutionMode -> withSnapshot(snapshot.copy(executionMode = command.mode))
         is NovexConversationCommand.EndInteractiveFiction -> {
             require(command.playthroughId.isNotBlank()) { "结束文游需要本局编号" }
             if (snapshot.activeInteractiveFiction == null && snapshot.completedPlaythroughs.lastOrNull()?.playthroughId == command.playthroughId) {

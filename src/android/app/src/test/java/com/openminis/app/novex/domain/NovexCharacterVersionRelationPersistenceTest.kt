@@ -90,7 +90,7 @@ class NovexCharacterVersionRelationPersistenceTest {
             val service = NovexManagementService(workspace, artifacts)
             val changes = """[{"operation":"put_version_relation","relation_id":"stages","source_version_id":"${person.original.id}","target_version_id":"${young.id}","relation_kind":"earlier_stage"}]"""
             val plan = service.propose(configuration, changes, "把青年设为更早人生阶段", "plan")
-            service.apply(configuration, plan, plan.confirmationPhrase)
+            service.apply(configuration, plan, "")
             val receipt = service.inspect(configuration, source, null).toToolJson()
             assertEquals(1, receipt.getJSONArray("version_relations").length())
             assertFalse(receipt.toString().contains("青年私有经历"))
@@ -98,7 +98,7 @@ class NovexCharacterVersionRelationPersistenceTest {
                 service.inspect(configuration, NovexContentAddress.characterVersion(young.id), null)
             } }
             val remove = service.propose(configuration, """[{"operation":"remove_version_relation","relation_id":"stages","source_version_id":"${person.original.id}"}]""", "移除这项关系", "remove")
-            service.apply(configuration, remove, remove.confirmationPhrase)
+            service.apply(configuration, remove, "")
             assertTrue(workspace.versionRelations(person.original.id).isEmpty())
             assertNotNull(workspace.characterForVersion(young.id))
         } finally { database.close() }

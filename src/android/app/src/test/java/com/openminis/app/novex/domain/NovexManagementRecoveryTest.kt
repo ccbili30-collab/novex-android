@@ -61,7 +61,7 @@ class NovexManagementRecoveryTest {
             assertEquals(first.appliedChanges, replay.appliedChanges)
             assertEquals(first.createdSubjects, replay.createdSubjects)
             assertTrue(replay.changes.isEmpty())
-            assertEquals(before, workspace.conversationDrafts("chat")!!.cards)
+            assertEquals(before.map { if (it.subject == target) it.copy(isPrivate = false) else it }, workspace.conversationDrafts("chat")!!.cards)
             assertEquals(revisions, workspace.cardRevisions(target))
             assertEquals(1, workspace.conversationDrafts("chat")!!.completedWrites.size)
             val managed = config.copy(managedSubjects = listOf(ManagedSubject(target, ManagedAccess.READ_ONLY)))
@@ -74,7 +74,7 @@ class NovexManagementRecoveryTest {
             assertThrows(IllegalArgumentException::class.java) { runBlocking {
                 service(database, workspace).propose(config, """[{"operation":"create_game","name":"另一内容"}]""", "创建文游", plan.id)
             } }
-            assertEquals(before, workspace.conversationDrafts("chat")!!.cards)
+            assertEquals(before.map { if (it.subject == target) it.copy(isPrivate = false) else it }, workspace.conversationDrafts("chat")!!.cards)
             assertNull(service(database, workspace).planForExecution(config.copy(conversationId = "other"), plan.id))
         } finally { database.close() }
     }
@@ -93,17 +93,14 @@ class NovexManagementRecoveryTest {
             fun change(text: String) = """[{"operation":"update_module","module_id":"${module.id}","content_json":{"kind":"article","text":"$text"}}]"""
             val first = service.propose(a, change("甲修改"), "修改规则", "first")
             val stale = service.propose(b, change("乙旧覆盖"), "修改规则", "stale")
-            assertTrue(first.requiresConfirmation)
-            assertThrows(IllegalArgumentException::class.java) { runBlocking { service.apply(a, first, "修改规则") } }
-            assertEquals(module.contentJson, workspace.module(module.id)!!.module.contentJson)
-            service.apply(a, first, first.confirmationPhrase)
+            service.apply(a, first, "")
             val after = workspace.module(module.id)!!.module
-            assertThrows(IllegalArgumentException::class.java) { runBlocking { service.apply(b, stale, stale.confirmationPhrase) } }
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { service.apply(b, stale, "") } }
             assertEquals(after, workspace.module(module.id)!!.module)
             assertTrue(workspace.conversationDrafts("b")!!.completedWrites.isEmpty())
             assertNotNull(service.pendingPlan(b, stale.id))
             val fresh = service.propose(b, change("乙根据新文修改"), "修改规则", "fresh")
-            service.apply(b, fresh, fresh.confirmationPhrase)
+            service.apply(b, fresh, "")
             assertEquals("乙根据新文修改", JSONObject(workspace.module(module.id)!!.module.contentJson).getString("text"))
         } finally { database.close() }
     }

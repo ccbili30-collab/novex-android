@@ -379,26 +379,33 @@ class SessionListViewModel(
         isSelecting.value = false
     }
 
+    private suspend fun deleteConversation(id: String) {
+        withContext(Dispatchers.IO) {
+            (context.applicationContext as com.openminis.app.MinisApp).conversationDeletion.delete(id)
+        }
+    }
+
+    private fun reportDeleteFailure(failure: Exception) {
+        android.widget.Toast.makeText(context, "删除未完成：${failure.message.orEmpty()}",
+            android.widget.Toast.LENGTH_LONG).show()
+    }
+
     fun deleteSelected() {
         val ids = selectedIds.value.toList()
         viewModelScope.launch {
-            ids.forEach {
-                chatRepository.deleteSession(it)
-                ChatViewModelStore.release(it)
-                // [T-android-session-paused-badge] Drop badges for the
-                // deleted session so persisted PAUSED entries don't leak
-                // forever in SharedPreferences.
-                com.openminis.app.service.SessionBadgeStore.clear(it)
-            }
+            try {
+                ids.forEach { id -> deleteConversation(id); selectedIds.value = selectedIds.value - id }
+                clearSelection()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportDeleteFailure(failure) }
         }
-        clearSelection()
     }
 
     fun deleteSession(id: String) {
         viewModelScope.launch {
-            chatRepository.deleteSession(id)
-            ChatViewModelStore.release(id)
-            com.openminis.app.service.SessionBadgeStore.clear(id)
+            try { deleteConversation(id) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportDeleteFailure(failure) }
         }
     }
 
@@ -705,11 +712,10 @@ class SessionListViewModel(
      */
     fun deleteFolderWithSessions(folderId: String) {
         viewModelScope.launch {
+            try {
             val memberIds = chatRepository.sessionIdsInFolder(folderId)
             for (id in memberIds) {
-                chatRepository.deleteSession(id)
-                ChatViewModelStore.release(id)
-                com.openminis.app.service.SessionBadgeStore.clear(id)
+                deleteConversation(id)
             }
             chatRepository.dissolveFolder(folderId)
             setCollapsedFolders(collapsedFolderIds.value - folderId)
@@ -717,6 +723,8 @@ class SessionListViewModel(
                 TAG,
                 "[Group] deleted folder ${folderId.take(8)} with ${memberIds.size} session(s)",
             )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportDeleteFailure(failure) }
         }
     }
 

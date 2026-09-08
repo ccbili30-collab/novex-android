@@ -212,6 +212,17 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             }
             val databaseCaptured = System.currentTimeMillis()
             json("environment/current-runtime.json", runtime); scan(runtime)
+            NovexMemoryToolExecutor.exportPlans(File(context.filesDir, "novex/memory-plans"), conversationId)
+                .forEach { (name, raw) -> write("execution/memory-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
+            com.openminis.app.novex.domain.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
+                .forEach { (name, raw) -> write("execution/learning-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
+            NovexOperationJournal(File(context.filesDir, "novex-operations")).exportRecords(conversationId)
+                .forEach { (operationId, raw) ->
+                    write("execution/operations/$operationId.json", raw.toByteArray(Charsets.UTF_8))
+                    val record = JSONObject(raw)
+                    scan(record)
+                    record.optJSONObject("result")?.optString("imageFilePath")?.let { media(it) }
+                }
             val store = FileNovexConversationWorkspaceStore(File(context.filesDir, "novex/conversation-workspaces"))
             val workspaceEntries = JSONArray()
             try {

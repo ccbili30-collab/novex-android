@@ -187,9 +187,19 @@ class ChatRepository(internal val dao: ChatDao) {
         dao.updateSessionBinding(sessionId, binding, modelId)
     }
 
+    suspend fun markAssistantTextFormal(messageId: String) {
+        val row = dao.findMessage(messageId) ?: return
+        require(row.role == "assistant")
+        val parts = org.json.JSONArray(row.partsJson)
+        for (index in 0 until parts.length()) {
+            val part = parts.getJSONObject(index)
+            if (part.optString("type") == "text") part.put("execution", false)
+        }
+        dao.updateAssistantTurnBody(messageId, parts.toString(), row.tokenUsage, row.reasoningContent)
+    }
+
     suspend fun deleteSession(id: String) {
-        dao.deleteMessages(id)
-        dao.deleteSession(id)
+        dao.deleteConversation(id)
     }
 
     // ─── Session groups ("folders") ────────────────────────────────────────
@@ -536,7 +546,8 @@ class ChatRepository(internal val dao: ChatDao) {
             reasoningContent = reasoningContent,
         )
         val preview = extractTextPreview(capped)
-        return dao.appendMessageOnActivePath(message, preview, now)
+        return if (role == "assistant") dao.checkpointAssistantTurn(message, preview, now)
+        else dao.appendMessageOnActivePath(message, preview, now)
     }
 
     /**

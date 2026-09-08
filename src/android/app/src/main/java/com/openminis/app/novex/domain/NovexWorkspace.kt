@@ -693,6 +693,7 @@ internal class DefaultNovexWorkspace(
         targets.forEach { history.record(it, at) }
         cardTargets.forEach { cards.record(it, at) }
         return applyInsideTransaction(command).also { result ->
+            draftLifecycle().publishSavedContent(NovexSavedCardTargets(this).resolve(command, result))
             if (characterRevisions !== UnavailableNovexCharacterRevisions)
                 (targets + history.resultingTargets(result)).distinct().forEach { history.record(it, at) }
             if (cardRevisions !== UnavailableNovexCardRevisions)
@@ -713,6 +714,12 @@ internal class DefaultNovexWorkspace(
         catalog.version(versionId)?.let { character(it.characterId) }
 
     override suspend fun emptyConversationDrafts(conversationId: String) = draftLifecycle().emptyCards(conversationId)
+
+    /** Upgrade old nonempty drafts without deleting empty or reserved targets. */
+    suspend fun recoverSavedCards() = transaction {
+        draftLifecycle().publishSavedContent()
+        NovexChange.Completed
+    }
 
     private fun draftLifecycle() = NovexConversationDrafts(catalog, interactiveFiction, drafts, content, media, cardReferences) { card ->
         val command = when (card.subject.kind) {

@@ -28,6 +28,10 @@ internal data class NovexConversationEditorDraftState(
         edit: (ConversationSettingsSnapshot) -> ConversationSettingsSnapshot,
     ) = copy(settings = edit(settings))
 
+    fun setExecutionMode(mode: com.openminis.app.novex.domain.NovexExecutionMode) = apply(
+        NovexConversationCommand.SetExecutionMode(mode),
+    )
+
     fun setAnswerIdentity(identity: AnswerIdentity) = apply(
         NovexConversationCommand.SetAnswerIdentity(identity),
     )

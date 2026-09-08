@@ -20,12 +20,16 @@ class NovexTeachingAssemblyTest {
     @get:Rule val files = TemporaryFolder()
     private val context: Application get() = RuntimeEnvironment.getApplication()
     private fun source() = context.assets.open("novex/teaching/v6-candidate.md").bufferedReader().use { it.readText() }
-    @Test fun `prepared formal prompt remains byte identical to the prior builder for tools and pure chat`() {
+    @Test fun `formal repair preserves custom conversation instructions and excludes v6`() {
         val tools = setOf("novex_inspect_content", "novex_propose_content_changes", "novex_apply_content_changes", "save_checkpoint", "render_panel")
         for(enabled in listOf(true, false)) for(memory in listOf(true, false)) {
             val old = NovexPreviousSystemPromptControl.build("audit", context, "保留用户原有风格", memory, enabled, tools)
             val current = NovexSystemPrompt.buildPrepared("audit", context, "保留用户原有风格", memory, enabled, tools)
-            assertEquals(old, current.prompt)
+            assertTrue(old.contains("保留用户原有风格"))
+            assertTrue(current.prompt.contains("保留用户原有风格"))
+            assertTrue(current.prompt.contains("普通交流、保存资料、编辑卡片不会因此进入游玩"))
+            if (enabled) assertTrue(current.prompt.contains("创作或修改请求完成后自然结束"))
+            else assertTrue(current.prompt.contains("当前对话未启用工具"))
             assertFalse(current.prompt.contains("候选第六版"))
         }
     }

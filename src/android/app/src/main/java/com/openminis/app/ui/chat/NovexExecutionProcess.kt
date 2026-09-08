@@ -16,64 +16,20 @@ import com.openminis.app.ui.novex.TextButton
 import com.openminis.app.ui.theme.ChatColors
 import org.json.JSONObject
 
-/** Presentation only: raw messages, tool results and the incremental flatten cache stay intact. */
-internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatChatItem> {
-    // A merged assistant run contains a persisted checkpoint per model turn. Show only its latest state.
-    var latestTask: FlatChatItem.AssistantInfo? = null
-    val retainedTasks = mutableSetOf<String>()
-    input.forEach { row ->
-        if (row is FlatChatItem.UserBubble) { latestTask?.let { retainedTasks += it.key }; latestTask = null }
-        if (row is FlatChatItem.AssistantInfo && row.block.toolName == NovexCardCreationTask.MARKER) latestTask = row
-    }
-    latestTask?.let { retainedTasks += it.key }
-    val rows = input.filterNot { it is FlatChatItem.AssistantInfo && it.block.toolName == NovexCardCreationTask.MARKER && it.key !in retainedTasks }
-
-    val output = mutableListOf<FlatChatItem>()
-    var start = 0
-    fun flush(end: Int) {
-        val turn = rows.subList(start, end)
-        val lastTool = turn.indexOfLast { it is FlatChatItem.AssistantToolUse }
-        val folded = turn.filterIndexed { index, row -> index <= lastTool && when (row) {
-            is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
-            is FlatChatItem.AssistantText -> !row.isStreaming && !row.block.content.contains("![")
-            is FlatChatItem.AssistantMarkdownBlock -> !row.isStreaming && !row.rawText.contains("![")
-            else -> false
-        } }
-        val tools = folded.filterIsInstance<FlatChatItem.AssistantToolUse>()
-        if (tools.isEmpty()) output += turn
-        else {
-            val keys = folded.map { it.key }.toSet()
-            val first = folded.first()
-            val process = FlatChatItem.AssistantProcess(tools.first().messageId, folded, first.key)
-            turn.forEach { row ->
-                if (row === first) output += process
-                else if (row.key !in keys) output += row
-            }
-        }
-        start = end
-    }
-    rows.forEachIndexed { index, row ->
-        if (row is FlatChatItem.UserBubble || row is FlatChatItem.BranchSwitcher || row is FlatChatItem.AssistantInfo) flush(index)
-    }
-    flush(rows.size)
-    return output
-}
-
-private fun AssistantBlock.canFoldExecution(): Boolean {
-    if (toolStatus != ToolBlockStatus.SUCCESS) return false
-    if (toolName in setOf("present_choices", "render_panel", "panel", "present_system_panel", "generate_image")) return false
-    // Protected proposals and uncertain writes need a visible action, even when the tool itself succeeded.
-    if (toolName in setOf("novex_propose_content_changes", "novex_propose_memory_changes")) return false
-    val result = runCatching { JSONObject(content) }.getOrNull()
-    val status = result?.optString("status").orEmpty()
-    if (status in setOf("waiting_confirmation", "confirmation_required", "saved_needs_review")) return false
-    if (result?.optBoolean("requires_confirmation") == true) return false
-    return true
+private fun ToolBlockStatus?.displayLabel(): String = when (this) {
+    ToolBlockStatus.STREAMING -> "准备中"
+    ToolBlockStatus.PENDING -> "等待执行"
+    ToolBlockStatus.RUNNING -> "执行中"
+    ToolBlockStatus.SUCCESS -> "已完成"
+    ToolBlockStatus.FAILED -> "未完成"
+    ToolBlockStatus.CANCELLED -> "已停止"
+    ToolBlockStatus.TIMEOUT -> "已超时"
+    null -> "记录"
 }
 
 @Composable
 internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
-    Text("执行过程 · ${process.tools.size} 项已执行操作 ›", color = ChatColors.secondaryText,
+    Text("执行过程 · ${process.statusLabel()}${if (process.tools.isEmpty()) "" else " · ${process.tools.size} 项操作"} ›", color = ChatColors.secondaryText,
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onOpen).padding(horizontal = 8.dp, vertical = 14.dp))
 }
 
@@ -85,8 +41,9 @@ internal fun NovexExecutionProcessDialog(process: FlatChatItem.AssistantProcess,
             process.rows.forEach { row -> when (row) {
                 is FlatChatItem.AssistantText -> Text(row.block.content, modifier = Modifier.padding(vertical = 6.dp))
                 is FlatChatItem.AssistantMarkdownBlock -> Text(row.rawText, modifier = Modifier.padding(vertical = 6.dp))
+                is FlatChatItem.AssistantThinking -> Text(row.block.content, modifier = Modifier.padding(vertical = 6.dp))
                 is FlatChatItem.AssistantToolUse -> TextButton(onClick = { onOpenTool(row.block) }) {
-                    Text(row.block.toolTitle.ifBlank { buildNovexStandardToolDetailPresentation(row.block.toolName, row.block.toolArgs, row.block.content)?.title ?: "查看操作详情" })
+                    Text("${row.block.toolStatus.displayLabel()} · " + row.block.toolTitle.ifBlank { buildNovexStandardToolDetailPresentation(row.block.toolName, row.block.toolArgs, row.block.content)?.title ?: "查看操作详情" })
                 }
                 else -> Unit
             } }
@@ -105,7 +62,9 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
             val kind = card.optString("kind")
             val id = card.optString("id")
             val label = when (kind) { "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
-            if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) { Text("打开$label ${index + 1}") }
+            if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) {
+                Text(card.optString("name").takeIf(String::isNotBlank)?.let { "打开《$it》" } ?: "打开$label ${index + 1}")
+            }
         }
         if (canContinue && status in setOf("incomplete", "saved_needs_review")) TextButton(onClick = onContinue) { Text("继续核对与完成") }
     }

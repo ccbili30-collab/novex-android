@@ -21,7 +21,7 @@ import com.openminis.app.R
 
 internal data class NovexSelectionAction(
     val label: String,
-    @DrawableRes val icon: Int = R.drawable.ic_phosphor_plus,
+    @DrawableRes val icon: Int? = null,
     val description: String = "",
     val group: String = "",
     val selected: Boolean? = null,
@@ -91,7 +91,7 @@ private fun NovexSelectionSurface(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(painterResource(action.icon), null, Modifier.size(22.dp), tint = NovexColors.Primary)
+                        action.icon?.let { Icon(painterResource(it), null, Modifier.size(22.dp), tint = NovexColors.Primary) }
                         Column(Modifier.weight(1f)) {
                             Text(action.label, style = NovexType.Body, color = NovexColors.Text)
                             val detail = if (!action.enabled && action.disabledReason.isNotBlank()) action.disabledReason else action.description

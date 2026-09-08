@@ -54,12 +54,16 @@ class NovexCardFileOperations(private val sources: NovexCardSourceModules) {
     fun link(args: JSONObject): String {
         val row = JSONObject().put("operation", if (args.optBoolean("remove")) "remove_card_reference" else "put_card_reference")
             .put("subject_kind", args.getString("kind")).put("subject_id", args.getString("card_id"))
-            .put("reference_id", args.getString("reference_id"))
         if (!args.optBoolean("remove")) {
             row.put("target_kind", args.getString("target_kind")).put("target_id", args.getString("target_id"))
                 .put("purpose", args.getString("purpose"))
             listOf("source_module_id", "target_module_id", "target_entry_id").forEach { if (args.has(it)) row.put(it, args.getString(it)) }
         }
+        val suppliedId = args.optString("reference_id").takeIf(String::isNotBlank)
+        require(!args.optBoolean("remove") || suppliedId != null) { "删除关联需要原 reference_id（引用编号），请从卡片关系列表读取" }
+        // A new edge is identified by stable source/target addresses and purpose, never names.
+        // Different source cards cannot collide, and retrying the same edge produces the same id.
+        row.put("reference_id", suppliedId ?: NovexFrozenContextCodec.digest(row.toString()))
         return JSONArray().put(row).toString()
     }
 

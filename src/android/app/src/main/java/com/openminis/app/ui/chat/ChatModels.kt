@@ -278,6 +278,15 @@ data class AssistantBlock(
      * Null for non-Gemini providers and thinking-off Gemini calls.
      */
     val thoughtSignature: String? = null,
+    /** Host-assigned channel; text accompanying a tool turn is execution, not a final answer. */
+    val executionText: Boolean = false,
+    /** Host-prepared effective parameters; raw toolArgs and persisted input remain verbatim. */
+    val executionArgs: String? = null,
 ) {
     val isText: Boolean get() = kind == "text"
 }
+
+/** Visible answer consumers share this projection; raw/export/provider content remains untouched. */
+internal fun formalAssistantText(blocks: List<AssistantBlock>, fallback: String): String =
+    if (blocks.isEmpty()) fallback else blocks.filter { it.isText && !it.executionText }
+        .joinToString("\n\n") { it.content }

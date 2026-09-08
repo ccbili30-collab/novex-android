@@ -95,6 +95,12 @@ interface ChatDao {
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteSession(id: String)
 
+    @Transaction
+    suspend fun deleteConversation(id: String) {
+        deleteMessages(id)
+        deleteSession(id)
+    }
+
     // Full-text search across session titles and message content
     @Query("""
         SELECT DISTINCT s.* FROM sessions s
@@ -186,6 +192,25 @@ interface ChatDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
+
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    suspend fun findMessage(messageId: String): MessageEntity?
+
+    @Query("UPDATE messages SET parts_json = :parts, token_usage = :usage, reasoning_content = :reasoning WHERE id = :messageId")
+    suspend fun updateAssistantTurnBody(messageId: String, parts: String, usage: String?, reasoning: String?)
+
+    /** A running assistant turn keeps its original graph position as results arrive. */
+    @Transaction
+    suspend fun checkpointAssistantTurn(message: MessageEntity, preview: String?, updatedAt: Long): MessageEntity {
+        require(message.role == "assistant")
+        val existing = findMessage(message.id) ?: return appendMessageOnActivePath(message, preview, updatedAt)
+        require(existing.sessionId == message.sessionId && existing.role == "assistant") { "对话记录归属不一致" }
+        updateAssistantTurnBody(message.id, message.partsJson, message.tokenUsage, message.reasoningContent)
+        if (conversationBranchState(message.sessionId)?.activeLeafMessageId == message.id) {
+            updateLastMessage(message.sessionId, preview, updatedAt)
+        }
+        return existing.copy(partsJson = message.partsJson, tokenUsage = message.tokenUsage, reasoningContent = message.reasoningContent)
+    }
 
     @Query(
         "SELECT active_root_message_id, active_leaf_message_id FROM sessions " +

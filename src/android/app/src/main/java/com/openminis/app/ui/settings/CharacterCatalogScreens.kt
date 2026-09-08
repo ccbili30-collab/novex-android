@@ -190,17 +190,24 @@ fun CatalogCharacterDetailScreen(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
             else -> {
+                com.openminis.app.ui.novex.NovexCardDetailSections(
+                    cardId = page.version.id,
+                    content = {
                 CharacterPrimaryContent(
                     data = page,
                     onChooseVersion = { versionSheet = true },
                     onOpenModule = onOpenModule,
                 )
+                    },
+                    relations = {
                 com.openminis.app.ui.novex.NovexCardReferenceSection(
                     com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenModule = onOpenModule)
                 com.openminis.app.ui.novex.NovexCharacterVersionRelationSection(page.version.id) { selectedVersionId = it }
-                com.openminis.app.ui.novex.NovexCharacterRevisionSection(page.version.id)
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(
                     com.openminis.app.novex.domain.NovexContentAddress.characterVersion(page.version.id), onOpenSession)
+                    },
+                    management = {
+                com.openminis.app.ui.novex.NovexCharacterRevisionSection(page.version.id)
                 com.openminis.app.ui.novex.NovexTavernExchangeSection(page.version.id, page.version.profileJson)
                 CharacterManagementActions(
                     isVariant = page.version.kind == CharacterVersionKind.VARIANT,
@@ -210,6 +217,8 @@ fun CatalogCharacterDetailScreen(
                     onDelete = {
                         if (page.version.kind == CharacterVersionKind.VARIANT) confirmDeleteVariant = page.version
                         else confirmDeleteRoot = true
+                    },
+                )
                     },
                 )
                 Spacer(Modifier.height(40.dp))

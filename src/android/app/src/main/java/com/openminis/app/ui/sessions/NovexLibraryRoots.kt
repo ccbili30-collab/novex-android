@@ -513,7 +513,11 @@ private fun NovexEmptyWorkGroup(group: NovexWorkGroupSnapshot, kind: String, onM
 @Composable
 private fun rememberNovexCatalogResumeRevision(): Int {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val database = (LocalContext.current.applicationContext as com.openminis.app.MinisApp).database
     var revision by remember { mutableStateOf(0) }
+    LaunchedEffect(database) {
+        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect { revision++ }
+    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) revision++

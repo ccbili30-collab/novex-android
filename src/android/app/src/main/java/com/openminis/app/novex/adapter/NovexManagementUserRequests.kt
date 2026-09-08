@@ -16,24 +16,7 @@ object NovexManagementUserRequests {
     fun fromActiveMessages(rows: List<MessageEntity>): List<String> {
         require(rows.all { it.sessionId == rows.first().sessionId }) { "用户请求不能跨对话合并" }
         val requests = mutableListOf<String>()
-        var offeredChoices = emptySet<String>()
         for (row in rows) {
-            if (row.role == "assistant") {
-                offeredChoices = runCatching {
-                    val parts = JSONArray(row.partsJson)
-                    (0 until parts.length()).flatMap { index ->
-                        val part = parts.getJSONObject(index)
-                        val value = part.optJSONObject("value")
-                        if (part.optString("type") !in setOf("toolUse", "uiToolUse") || value?.optString("name") != "present_choices") emptyList()
-                        else {
-                            val args = JSONObject(value.getString("input"))
-                            val choices = JSONArray(args.getString("choices"))
-                            (0 until choices.length()).map { choices.getString(it).trim() }
-                        }
-                    }.toSet()
-                }.getOrDefault(emptySet())
-                continue
-            }
             if (row.role != "user") continue
             val values = runCatching {
                 val parts = JSONArray(row.partsJson)
@@ -57,13 +40,7 @@ object NovexManagementUserRequests {
             val reminderOnly = caption.isEmpty() && texts.any { it.contains("<system-reminder>") } &&
                 values.all { it.optString("type") == "text" } && texts.none(::containsAgentAttachmentMetadata)
             if (!reminderOnly) {
-                // Only a real user's exact selection can continue the existing creation scope.
-                // This host interpretation is never written back over the user's original message.
-                val selectsExecution = caption in offeredChoices &&
-                    Regex("(打包|按.{0,40}(运行|制作|生成|整理)|照.{0,40}(制作|整理))").containsMatchIn(caption) &&
-                    !caption.startsWith("确认执行 ")
-                requests += if (selectsExecution) "$caption\n继续此前任务" else caption
-                offeredChoices = emptySet()
+                requests += caption
             }
         }
         return requests

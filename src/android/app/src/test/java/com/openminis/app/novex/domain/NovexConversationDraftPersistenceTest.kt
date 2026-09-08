@@ -66,12 +66,11 @@ class NovexConversationDraftPersistenceTest {
             for (name in listOf("生生", "山海")) {
                 val request = "创建文游卡$name"
                 val plan = service.propose(config, """[{"operation":"create_game","name":"$name","summary":"规则"}]""", request, name)
-                assertFalse(plan.requiresConfirmation)
                 created += service.apply(config, plan, request).createdSubjects.single()
             }
             assertEquals(2, created.distinct().size)
             assertEquals(listOf("生生", "山海"), created.map { workspace.interactiveFiction(it.id)!!.project.name })
-            assertTrue(workspace.interactiveFictions().isEmpty())
+            assertEquals(created.map { it.id }.toSet(), workspace.interactiveFictions().map { it.project.id }.toSet())
             assertEquals(4, workspace.conversationDrafts("chat")!!.cards.size)
             workspace.apply(NovexCommand.FinalizeConversationDrafts("chat"))
             assertEquals(2, workspace.interactiveFictions().size)
@@ -244,14 +243,13 @@ class NovexConversationDraftPersistenceTest {
             val plan = service.propose(config,
                 """[{"operation":"create_game","name":"生生","modules":[{"module_type":"custom","name":"帝议规则","content_json":{"kind":"article","text":"完整规则正文"}}]}]""",
                 "把这些做成文游卡", "create-game")
-            assertFalse(plan.requiresConfirmation)
             val result = service.apply(config, plan, "把这些做成文游卡")
             assertEquals(listOf(game), result.createdSubjects)
             val saved = workspace.interactiveFiction(game.id)!!
             assertEquals("生生", saved.project.name)
             assertEquals("帝议规则", saved.modules.single().name)
             assertTrue(saved.modules.single().contentJson.contains("完整规则正文"))
-            assertTrue(workspace.interactiveFictions().isEmpty())
+            assertEquals(listOf(game.id), workspace.interactiveFictions().map { it.project.id })
             val replay = service.apply(config, plan, "把这些做成文游卡")
             assertTrue(replay.replayed)
             assertEquals(listOf(game), replay.createdSubjects)
@@ -341,10 +339,10 @@ class NovexConversationDraftPersistenceTest {
             database = openDatabase()
             workspace = NovexWorkspaceFactory.create(database, media)
             assertEquals("帝议原文已经写入", workspace.world(world.id)!!.world.overview)
-            assertEquals(listOf(shared.id), workspace.worlds().map { it.world.id })
+            assertEquals(setOf(shared.id, world.id), workspace.worlds().map { it.world.id }.toSet())
 
             val result = workspace.apply(NovexCommand.FinalizeConversationDrafts("chat", setOf(game))).requireDraftFinalization()
-            assertEquals(setOf(world), result.promotedSubjects)
+            assertTrue(result.promotedSubjects.isEmpty()) // The save already entered the library.
             assertEquals(setOf(character.subject), result.removedSubjects)
             assertEquals(setOf(shared.id, world.id), workspace.worlds().map { it.world.id }.toSet())
             assertNull(workspace.character(character.rootId))
@@ -357,7 +355,7 @@ class NovexConversationDraftPersistenceTest {
     }
 
     @Test
-    fun `shared card relationship pickers do not disclose private drafts or their modules`() = runBlocking {
+    fun `relationship pickers include saved works while empty placeholders remain hidden`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
@@ -368,8 +366,11 @@ class NovexConversationDraftPersistenceTest {
             val shared = workspace.apply(NovexCommand.CreateWorld("共享世界")).requireWorld()
             val sharedModule = workspace.apply(NovexCommand.AddModule(ModuleOwner.world(shared.id), ContentModuleType.CUSTOM, "公开章节")).requireModule()
             assertTrue(workspace.world(shared.id)!!.availableVersions.isEmpty())
-            val hiddenIds = drafts.subjects.map { it.id }.toSet() + privateModule.id
-            assertTrue(workspace.module(sharedModule.id)!!.referenceOptions.none { it.target.id in hiddenIds })
+            val hiddenIds = drafts.subjects.filterNot { it == privateWorld }.map { it.id }.toSet()
+            val options = workspace.module(sharedModule.id)!!.referenceOptions
+            assertTrue(options.none { it.target.id in hiddenIds })
+            assertTrue(options.any { it.target.id == privateWorld.id })
+            assertTrue(options.any { it.target.id == privateModule.id })
         } finally {
             database.close()
         }
