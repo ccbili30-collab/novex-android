@@ -157,7 +157,10 @@ object VoiceCorrection {
             val blockText = msg.toolBlocks
                 .filter { it.isText && !it.executionText }
                 .joinToString("\n") { it.content }
-            text = blockText
+            // A turn can contain only tool/thinking blocks. Keep the persisted
+            // content as the fallback instead of dropping an otherwise valid
+            // assistant reply just because no conversational text block exists.
+            if (blockText.isNotBlank()) text = blockText
         }
         val stripped = TypedVocabularyBuilder.stripAttachmentMarkup(text)
         if (stripped.isBlank()) null else CorrectionSourceMessage(role, stripped)
