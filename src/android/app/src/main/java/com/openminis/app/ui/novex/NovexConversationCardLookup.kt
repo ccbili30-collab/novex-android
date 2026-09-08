@@ -39,11 +39,11 @@ internal fun NovexConversationCardLookup(onOpenSession: (String) -> Unit) {
         NovexSelectionAction("创作管理它", description = "管理、编辑或创建此卡；不代表已作为背景") { mode = "managed" },
     ), "选择查找用途", onDismissRequest = { open = false }, dismissOnSelection = false)
     else if (target == null) {
-        val addresses = (labels.orEmpty().keys + conversations.orEmpty().flatMap { subjects(it) }).distinct()
-        val choices = addresses.map { address ->
-            val label = labels?.get(address) ?: "原卡已不可用 · ${address.id}"
+        val addresses = labels.orEmpty().keys.toList()
+        val choices = addresses.mapNotNull { address ->
+            val label = labels?.get(address) ?: return@mapNotNull null
             val count = conversations.orEmpty().count { address in subjects(it) }
-            NovexSelectionAction(label, description = "$count 个对话 · 编号 ${address.id}") {
+            NovexSelectionAction(label, description = "$count 个对话") {
                 kind = address.kind.name; targetId = address.id; targetLabel = label
             }
         }.ifEmpty { listOf(NovexSelectionAction(if (conversations == null || labels == null) "正在读取卡片与对话" else "当前没有可查找的卡片", enabled = false) {}) }
@@ -53,7 +53,7 @@ internal fun NovexConversationCardLookup(onOpenSession: (String) -> Unit) {
                 labels == null || conversations == null -> listOf(NovexSelectionAction("正在读取卡片与对话", enabled = false) {})
                 else -> choices
             },
-            "搜索卡片名称或编号", onDismissRequest = { mode = null }, dismissOnSelection = false)
+            "搜索卡片名称", onDismissRequest = { mode = null }, dismissOnSelection = false)
     } else {
         val rows = conversations.orEmpty().filter { target in subjects(it) }
         NovexSearchableSelectionSheet("${if (mode == "used") "使用" else "创作管理"} · $targetLabel",

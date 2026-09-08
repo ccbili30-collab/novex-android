@@ -263,13 +263,14 @@ class NovexConversationDraftPersistenceTest {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "migration.db").absolutePath
         fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
         try {
             var workspace = NovexWorkspaceFactory.create(database, media)
             val shared = workspace.apply(NovexCommand.CreateWorld("迁移前世界", "原文保留")).requireWorld()
             database.openHelper.writableDatabase.execSQL("DROP TABLE novex_conversation_drafts")
+            restoreVersion31LibraryTable(database.openHelper.writableDatabase)
             database.openHelper.writableDatabase.version = 25
             database.close()
             database = openDatabase()

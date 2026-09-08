@@ -7,7 +7,10 @@ import org.json.JSONObject
 
 data class NovexWorkspaceInspectRequest(
     val area: NovexWorkspaceArea? = null,
-    val maxEntries: Int = 200,
+    val maxEntries: Int = 50,
+    val path: String? = null,
+    val query: String? = null,
+    val cursor: String? = null,
 ) {
     init {
         require(maxEntries in 1..500) { "工作区清单上限必须在一到五百之间" }
@@ -18,8 +21,11 @@ data class NovexWorkspaceReadRequest(
     val workspaceRef: NovexWorkspaceFileRef,
     val cursor: String? = null,
     val maxChars: Int = 12_000,
+    val startChar: Int? = null,
 ) {
     init {
+        require(startChar == null || startChar >= 0) { "起始字符位置不能为负数" }
+        require(cursor == null || startChar == null) { "续读游标与起始字符位置不能同时使用" }
         require(maxChars in 1..48_000) { "单次读取字符预算必须在一到四万八千之间" }
     }
 }
@@ -91,31 +97,21 @@ class NovexConversationWorkspaceTools(
         branchId = scope.writeBranchId,
     ),
 ) {
-    fun workspaceInspect(request: NovexWorkspaceInspectRequest): NovexToolResult {
-        val allEntries = store.inspect(scope).entries
-            .filter { request.area == null || it.workspaceRef.area == request.area }
-        val returned = allEntries.take(request.maxEntries)
-        return NovexToolResult.success(
-            code = "workspace.ready",
-            summary = "工作区共有 ${allEntries.size} 个可见文件",
-            data = mapOf(
-                "scope" to "current_conversation_branch",
-                "areas" to NovexWorkspaceArea.entries.map { area ->
-                    mapOf(
-                        "name" to area.wireName,
-                        "model_writable" to area.modelWritable,
-                        "entry_count" to allEntries.count { it.workspaceRef.area == area },
-                    )
-                },
-                "entries" to returned.map(::entryPayload),
-                "truncated" to (returned.size < allEntries.size),
-            ),
-            affectedRefs = returned.map { it.workspaceRef.asResourceRef() },
-        )
-    }
+    fun workspaceInspect(request: NovexWorkspaceInspectRequest): NovexToolResult =
+        NovexWorkspaceBrowser(scope, store).browse(request.area, request.path, request.query, request.cursor, request.maxEntries)
+
+    fun workspaceSearch(area: NovexWorkspaceArea?, path: String?, query: String, cursor: String?, maxEntries: Int): NovexToolResult =
+        NovexWorkspaceBrowser(scope, store).browse(area, path, query, cursor, maxEntries, searchContent = true)
 
     fun workspaceRead(request: NovexWorkspaceReadRequest): NovexToolResult {
-        val entry = store.find(scope, request.workspaceRef) ?: return notFound(request.workspaceRef)
+        val requested = store.find(scope, request.workspaceRef) ?: return notFound(request.workspaceRef)
+        val original = if (requested.workspaceRef.relativePath.startsWith(NovexWorkspaceBrowser.PARSED_PREFIX)) {
+            requested.provenance.sourceRefs.firstNotNullOfOrNull { ref ->
+                runCatching { store.find(scope, NovexWorkspaceFileRef.parse(ref.value)) }.getOrNull()
+            } ?: requested
+        } else requested
+        val displayPath = original.workspaceRef.relativePath.removePrefix("imports/")
+        val entry = NovexWorkspaceBrowser.readableEntry(original, store.inspect(scope).entries) ?: original
         if (!isTextMimeType(entry.mimeType)) {
             return NovexToolResult.failure(
                 code = "workspace.binary_requires_artifact",
@@ -143,7 +139,7 @@ class NovexConversationWorkspaceTools(
         )
         val text = bytes.toString(Charsets.UTF_8)
         val offset = request.cursor?.let { decodeCursor(it, entry) }
-            ?: if (request.cursor == null) 0 else return NovexToolResult.failure(
+            ?: if (request.cursor == null) (request.startChar ?: 0) else return NovexToolResult.failure(
                 code = "workspace.invalid_cursor",
                 summary = "工作区读取游标已失效，请重新检查文件",
                 affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
@@ -160,19 +156,21 @@ class NovexConversationWorkspaceTools(
         val truncated = nextOffset < text.length
         val data = linkedMapOf<String, Any?>(
             "workspace_ref" to entry.workspaceRef.value,
+            "original_workspace_ref" to original.workspaceRef.value,
+            "reading_note" to if (entry != original) "本次读取解析文本；不包含未识别的图片或排版，不代表原件已通读" else null,
             "mime_type" to entry.mimeType,
             "sha256" to entry.sha256,
             "content" to content,
             "char_offset" to offset,
             "total_characters" to text.length,
             "read_observations" to listOf(NovexSourceReadEvidence.source(entry.workspaceRef.value,
-                "工作区文件 · ${entry.workspaceRef.relativePath}", entry.sha256, text.length, "READ", listOf(offset to nextOffset))),
+                "工作区文件 · $displayPath", entry.sha256, text.length, "READ", listOf(offset to nextOffset))),
             "truncated" to truncated,
         )
         if (truncated) data["next_cursor"] = encodeCursor(entry, nextOffset)
         return NovexToolResult.success(
             code = "workspace.read",
-            summary = "已读取 ${entry.workspaceRef.relativePath} 的 ${content.length} 个字符",
+            summary = "已读取 $displayPath 的 ${content.length} 个字符",
             data = data,
             affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
         )
@@ -501,14 +499,22 @@ class NovexConversationWorkspaceToolRouter(
                 WORKSPACE_INSPECT -> tools.workspaceInspect(
                     NovexWorkspaceInspectRequest(
                         area = arguments.optionalString("area")?.let(NovexWorkspaceArea::fromWireName),
-                        maxEntries = arguments.optInt("max_entries", 200),
+                        maxEntries = arguments.optInt("max_entries", 50),
+                        path = arguments.optionalString("path"),
+                        query = arguments.optionalString("query"),
+                        cursor = arguments.optionalString("cursor"),
                     ),
                 )
+                WORKSPACE_SEARCH -> tools.workspaceSearch(
+                    arguments.optionalString("area")?.let(NovexWorkspaceArea::fromWireName),
+                    arguments.optionalString("path"), arguments.requiredString("query"),
+                    arguments.optionalString("cursor"), arguments.optInt("max_entries", 25))
                 WORKSPACE_READ -> tools.workspaceRead(
                     NovexWorkspaceReadRequest(
                         workspaceRef = arguments.workspaceRef(),
                         cursor = arguments.optionalString("cursor"),
                         maxChars = arguments.optInt("max_chars", 12_000),
+                        startChar = if (arguments.has("start_char") && !arguments.isNull("start_char")) arguments.getInt("start_char") else null,
                     ),
                 )
                 WORKSPACE_WRITE -> tools.workspaceWrite(
@@ -581,12 +587,14 @@ class NovexConversationWorkspaceToolRouter(
 
     companion object {
         const val WORKSPACE_INSPECT = "workspace_inspect"
+        const val WORKSPACE_SEARCH = "workspace_search"
         const val WORKSPACE_READ = "workspace_read"
         const val WORKSPACE_WRITE = "workspace_write"
         const val WORKSPACE_EDIT = "workspace_edit"
         const val WORKSPACE_COMPUTE = "workspace_compute"
         val TOOL_NAMES = listOf(
             WORKSPACE_INSPECT,
+            WORKSPACE_SEARCH,
             WORKSPACE_READ,
             WORKSPACE_WRITE,
             WORKSPACE_EDIT,

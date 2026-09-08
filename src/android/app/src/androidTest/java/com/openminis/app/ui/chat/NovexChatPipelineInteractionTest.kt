@@ -29,9 +29,10 @@ import org.junit.runner.RunWith
 
 /** Real ChatScreen -> streamed provider -> common gate -> Room -> UI, using an isolated local endpoint.
  * This tests product wiring, not a model's ability to understand arbitrary natural language. */
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class NovexChatPipelineInteractionTest {
-    @get:Rule val ui = createComposeRule()
+    @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
 
     @Test fun approvalFromChatPersistsCardAndReopensBeforeRealMenuDeletion() = exercise(NovexExecutionMode.APPROVAL)
     @Test fun freeConversationSavesWithoutApproval() = exercise(NovexExecutionMode.FREE)
@@ -114,8 +115,16 @@ class NovexChatPipelineInteractionTest {
             ui.waitUntil(30_000) { ui.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
             ui.onNodeWithContentDescription("更多操作").performTouchInput { click() }
             ui.onNodeWithText("对话设置").performTouchInput { click() }
-            ui.waitUntil(30_000) { ui.onAllNodesWithText("执行权限").fetchSemanticsNodes().isNotEmpty() }
-            ui.onNodeWithText("执行权限").performTouchInput { click() }
+            ui.waitUntil(30_000) { ui.onAllNodesWithText("工具权限").fetchSemanticsNodes().isNotEmpty() }
+            if (mode == NovexExecutionMode.APPROVAL) {
+                ui.onNodeWithText("我的身份").performTouchInput { click() }
+                ui.onAllNodes(hasSetTextAction())[1].performTextInput("验收玩家")
+                ui.onNodeWithContentDescription("返回").performTouchInput { click() }
+                ui.onNodeWithText("验收玩家").assertExists()
+                ui.onNodeWithText("保存更改").assertDoesNotExist()
+                screenshot(app, "settings-groups")
+            }
+            ui.onNodeWithText("工具权限").performScrollTo().performTouchInput { click() }
             NovexExecutionMode.entries.forEach { ui.onNode(hasText(it.label) and isSelectable()).assertExists() }
             ui.onNode(hasText(mode.label) and isSelectable()).performTouchInput { click() }
             ui.onNodeWithText("保存").performTouchInput { click() }
@@ -193,9 +202,11 @@ class NovexChatPipelineInteractionTest {
                 }.map { it.getJSONObject("value") }.single { it.getString("toolUseId") == "fixture-sort" }
                 assertTrue(JSONObject(sortValues.getString("input")).get("position") is Int)
                 assertTrue(JSONObject(sortValues.getString("executionInput")).get("position") is Int)
-                // The existing transcript policy preserves reading position until explicit navigation.
-                // Exercise the real latest button and verify the whole answer clears the composer.
-                ui.onNodeWithContentDescription("Scroll to bottom").performTouchInput { click() }
+                // On taller screens the reply can already fit without a latest button.
+                // Navigate when needed, then always verify the complete reply clears the composer.
+                if (ui.onAllNodesWithContentDescription("Scroll to bottom").fetchSemanticsNodes().isNotEmpty()) {
+                    ui.onNodeWithContentDescription("Scroll to bottom").performTouchInput { click() }
+                }
                 try {
                     ui.waitUntil(15_000) {
                         ui.onAllNodesWithContentDescription("Scroll to bottom").fetchSemanticsNodes().isEmpty()

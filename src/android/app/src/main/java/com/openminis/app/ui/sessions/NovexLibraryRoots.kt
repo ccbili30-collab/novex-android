@@ -199,12 +199,7 @@ internal fun NovexWorldLibraryRoot(
                         )
                     }
                 }
-                item(key = "create_world") {
-                    NovexCreateRow(label = "新建世界", onClick = onCreateWorld)
-                }
-                item(key = "import_world") {
-                    NovexImportRow(label = "导入世界卡", onClick = importer.launch)
-                }
+
             }
         }
     }
@@ -311,12 +306,7 @@ internal fun NovexCharacterLibraryRoot(
                         )
                     }
                 }
-                item(key = "create_character") {
-                    NovexCreateRow(label = "新建角色", onClick = onCreateCharacter)
-                }
-                item(key = "import_character") {
-                    NovexImportRow(label = "导入角色卡", onClick = importer.launch)
-                }
+
             }
         }
     }
@@ -432,12 +422,7 @@ internal fun NovexInteractiveFictionLibraryRoot(
                         )
                     }
                 }
-                item(key = "create_game") {
-                    NovexCreateRow("新建文游", onCreateInteractiveFiction)
-                }
-                item(key = "import_game") {
-                    NovexImportRow("导入文游卡", importer.launch)
-                }
+
             }
         }
     }
@@ -500,12 +485,12 @@ private fun NovexEmptyWorkGroup(group: NovexWorkGroupSnapshot, kind: String, onM
     Column(Modifier.fillMaxWidth().padding(NovexDimensions.PageHorizontal), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${group.label}暂无${kind}", color = NovexRootColors.Text)
         Text("当前只显示这个筛选范围，其他作品中的卡片仍在。", color = NovexRootColors.SecondaryText)
-        TextButton(onClick = onManage) { Text(if (group.selectedGroup == null) "选择和管理作品" else "加入已有卡片") }
+        TextButton(onClick = onManage) { Text(if (group.selectedGroup == null) "管理创作库" else "加入已有卡片") }
         TextButton(onClick = onCreate) { Text("新建${kind}") }
-        Text("新建后可从作品管理中归类。", color = NovexRootColors.SecondaryText)
+        Text("可从创作库管理中加入已有卡片。", color = NovexRootColors.SecondaryText)
         TextButton(onClick = { scope.launch {
             runCatching { groups.select(NovexWorkGroupSnapshot.ALL) }.onFailure { error = "清除筛选未完成：${it.message}" }
-        } }) { Text("清除作品筛选") }
+        } }) { Text("显示全部作品") }
         error?.let { Text(it) }
     }
 }
@@ -609,7 +594,7 @@ private fun NovexVisualCatalogCard(
                 color = Color.White,
                 fontSize = com.openminis.app.ui.novex.novexScaledSp(17),
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             if (summary.isNotBlank()) {

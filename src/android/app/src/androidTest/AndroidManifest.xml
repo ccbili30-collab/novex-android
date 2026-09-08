@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Only installed with the instrumentation APK; exposes generated test fixtures, never user files. -->
+        <provider android:name="com.openminis.app.data.creative.RepositoryFixtureProvider"
+            android:authorities="com.noven.repository.testfixtures" android:exported="true" android:grantUriPermissions="true" />
+    </application>
+</manifest>

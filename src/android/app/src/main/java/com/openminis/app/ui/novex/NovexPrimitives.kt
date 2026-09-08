@@ -249,23 +249,20 @@ internal fun NovexSummaryRow(
             .fillMaxWidth()
             .padding(horizontal = NovexDimensions.PageHorizontal, vertical = 11.dp),
     ) {
-        Text(
-            title,
-            color = NovexColors.Text,
-            style = NovexType.Body,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(104.dp),
-        )
-        Text(
-            summary,
-            color = NovexColors.SecondaryText,
-            style = NovexType.Metadata,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        if (summary.length > 18) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(summary, color = NovexColors.SecondaryText, style = NovexType.Metadata,
+                    modifier = Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        } else {
+            Text(title, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.2f))
+            Text(summary, color = NovexColors.SecondaryText, style = NovexType.Metadata,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.weight(1f).padding(start = 12.dp))
+        }
         if (onClick != null) {
             Icon(
                 painterResource(R.drawable.ic_phosphor_caret_right),

@@ -1,5 +1,7 @@
 package com.openminis.app.ui.navigation
 
+import kotlinx.coroutines.launch
+
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
@@ -710,16 +712,29 @@ fun AppNavigation(
             ),
         ) { entry ->
             val app = LocalContext.current.applicationContext as com.openminis.app.MinisApp
+            val libraryScope = androidx.compose.runtime.rememberCoroutineScope()
             CreativeLibraryScreen(
                 repository = app.creativeArtifactRepository,
                 deviceDirectory = app.creativeArtifactDeviceDirectory,
                 workspace = app.novexWorkspace,
                 conversationId = entry.arguments?.getString("sessionId"),
+                onConfigureConversation = { navController.safeNavigate(Routes.conversationSettings(it)) },
+                onOpenCard = { address -> libraryScope.launch {
+                    val route = when (address.kind) {
+                        com.openminis.app.novex.domain.NovexContentKind.WORLD -> Routes.storyWorld(address.id)
+                        com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION -> Routes.interactiveFiction(address.id)
+                        com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION -> app.novexWorkspace.characterForVersion(address.id)?.let {
+                            Routes.characterDetail(it.character.character.id)
+                        }
+                        else -> null
+                    }
+                    route?.let { navController.safeNavigate(it) }
+                } },
                 onBack = { navController.safePopBackStack() },
                 onOpenArtifact = { record, file ->
                     FilePreviewHolder.currentItem = FileItem(
                         file = file,
-                        name = record.artifact.title,
+                        name = com.openminis.app.novex.domain.NovexDisplayName.file(record.artifact.title),
                         isDirectory = false,
                         isSymlink = false,
                         size = file.length(),

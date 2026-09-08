@@ -39,12 +39,13 @@ class NovexCharacterRevisionPersistenceTest {
     @Test
     fun `migration starts history at first observed edit and a failed page save leaves no revision`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31).allowMainThreadQueries().build()
+            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
         var database = open()
         try {
             val original = NovexWorkspaceFactory.create(database, File(files.root, "media"))
                 .apply(NovexCommand.CreateCharacter("旧角色", """{"summary":"已有资料"}""")).requireCharacter()
             database.openHelper.writableDatabase.execSQL("DROP TABLE novex_character_revisions")
+            restoreVersion31LibraryTable(database.openHelper.writableDatabase)
             database.openHelper.writableDatabase.version = 28
             database.close()
             database = open()

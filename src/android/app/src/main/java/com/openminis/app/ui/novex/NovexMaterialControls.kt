@@ -325,7 +325,9 @@ internal fun ModalBottomSheet(
 ) {
     MaterialModalBottomSheet(
         onDismissRequest = onDismissRequest,
-        modifier = modifier.border(NovexDimensions.Hairline, NovexColors.Divider, shape),
+        // An outer border is drawn before the sheet's animated offset and can leave
+        // a rectangle in the scrim. The sheet surface already owns its rounded shape.
+        modifier = modifier,
         sheetState = sheetState,
         shape = shape,
         containerColor = containerColor,

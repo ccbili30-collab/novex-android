@@ -2,6 +2,8 @@ package com.openminis.app.ui.sessions
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
+import com.openminis.app.ui.novex.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,13 +51,15 @@ internal fun NovexRootPageHeader(
                 contentDescription = if (searching) "关闭$searchDescription" else searchDescription,
                 onClick = onSearchToggle,
             )
-            Box(Modifier.size(48.dp)) {
+            Box(Modifier.size(width = if (space == NovexRootSpace.CONVERSATIONS) 48.dp else 64.dp, height = 48.dp)) {
                 if (createItems.isNotEmpty()) {
-                    NovexIconAction(
+                    if (space == NovexRootSpace.CONVERSATIONS) NovexIconAction(
                         icon = R.drawable.ic_phosphor_plus,
                         contentDescription = "新建",
                         onClick = { createMenuExpanded = true },
-                    )
+                    ) else TextButton(onClick = { createMenuExpanded = true }, modifier = Modifier.size(width = 64.dp, height = 48.dp)) {
+                        Text("新建", maxLines = 1)
+                    }
                     NovexActionMenu(
                         expanded = createMenuExpanded,
                         onDismissRequest = { createMenuExpanded = false },

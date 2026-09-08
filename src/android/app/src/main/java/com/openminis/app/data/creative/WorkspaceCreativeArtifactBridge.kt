@@ -25,6 +25,14 @@ class WorkspaceCreativeArtifactBridge(
         return register(entry, scope, existing(scope)[ref.value])
     }
 
+    suspend fun registerImported(entry: NovexWorkspaceEntry): CreativeArtifactRecord {
+        require(entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.SOURCES)
+        val scope = com.openminis.app.novex.domain.NovexWorkspaceImport.scope(entry.workspaceRef.conversationId)
+        val previous = artifacts.bySource(scope.conversationId, entry.workspaceRef.value)
+        if (previous?.artifact?.isTrashed == true) artifacts.restore(previous.artifact.id)
+        return register(entry, scope, previous)
+    }
+
     suspend fun reconcile(scope: NovexConversationWorkspaceScope) {
         val previous = existing(scope)
         store.inspect(scope).entries.filter { it.workspaceRef.area.modelWritable ||
@@ -52,6 +60,8 @@ class WorkspaceCreativeArtifactBridge(
         return artifacts.capture(name, kind, bytes, entry.mimeType,
             CreativeArtifactOrigin(entry.provenance.conversationId, entry.provenance.branchId,
                 entry.provenance.messageId, entry.provenance.toolCallId),
-            sourcePath = entry.workspaceRef.value)
+            sourcePath = entry.workspaceRef.value,
+            allowEmpty = entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.SOURCES &&
+                entry.workspaceRef.relativePath.startsWith("imports/"))
     }
 }

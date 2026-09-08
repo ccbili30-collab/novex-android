@@ -17,9 +17,11 @@ class NovexWorkspaceAgentTools(
         argumentsJson: String,
         scope: NovexConversationWorkspaceScope,
         provenance: NovexWorkspaceProvenance,
+        visibleImports: Set<String>? = null,
     ): ToolExecutionResult {
         val router = NovexConversationWorkspaceToolRouter(
-            NovexConversationWorkspaceTools(scope, store, provenance),
+            NovexConversationWorkspaceTools(scope,
+                if (visibleImports == null) store else com.openminis.app.novex.domain.NovexWorkspaceVisibility(store, visibleImports), provenance),
         )
         val result = router.execute(name, argumentsJson)
         return ToolExecutionResult(
@@ -27,6 +29,7 @@ class NovexWorkspaceAgentTools(
             success = result.ok,
             toolTitle = when (name) {
                 NovexConversationWorkspaceToolRouter.WORKSPACE_INSPECT -> "检查工作区"
+                NovexConversationWorkspaceToolRouter.WORKSPACE_SEARCH -> "查找仓库资料"
                 NovexConversationWorkspaceToolRouter.WORKSPACE_READ -> "读取工作区"
                 NovexConversationWorkspaceToolRouter.WORKSPACE_WRITE -> "写入工作区"
                 NovexConversationWorkspaceToolRouter.WORKSPACE_EDIT -> "编辑工作区"

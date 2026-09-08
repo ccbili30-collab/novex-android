@@ -3,7 +3,35 @@ package com.openminis.app.novex.domain
 import kotlinx.coroutines.flow.Flow
 
 /** Library organization only. Membership never adopts content or grants editing rights. */
-data class NovexWorkGroup(val id: String, val name: String, val members: Set<NovexContentAddress>)
+data class NovexLibraryFolder(val id: String, val name: String, val parentId: String? = null)
+
+data class NovexWorkGroup(
+    val id: String,
+    val name: String,
+    val members: Set<NovexContentAddress>,
+    val folders: List<NovexLibraryFolder> = emptyList(),
+    val locations: Map<NovexContentAddress, String> = emptyMap(),
+) {
+    fun contents(folderId: String? = null, recursive: Boolean = false): Set<NovexContentAddress> {
+        if (recursive && folderId == null) return members
+        val scope = mutableSetOf(folderId)
+        if (recursive) {
+            var changed: Boolean
+            do { changed = false; folders.forEach { if (it.parentId in scope && scope.add(it.id)) changed = true } } while (changed)
+        }
+        return members.filterTo(linkedSetOf()) { locations[it] in scope }
+    }
+    fun folderPath(folderId: String?): String {
+        val names = mutableListOf<String>()
+        val visited = mutableSetOf<String>()
+        var cursor = folderId
+        while (cursor != null && visited.add(cursor)) {
+            val folder = folders.firstOrNull { it.id == cursor } ?: break
+            names.add(0, folder.name); cursor = folder.parentId
+        }
+        return (listOf(name) + names).joinToString(" / ")
+    }
+}
 data class NovexWorkConversation(val id: String, val title: String,
     val used: Set<NovexContentAddress> = emptySet(), val managed: Set<NovexContentAddress> = emptySet())
 
@@ -37,6 +65,11 @@ interface NovexWorkGroups {
     suspend fun select(id: String)
     suspend fun create(name: String): String
     suspend fun rename(id: String, expectedName: String, name: String)
-    suspend fun replaceMembers(id: String, expected: Set<NovexContentAddress>, members: Set<NovexContentAddress>)
+    suspend fun replaceMembers(id: String, expected: Set<NovexContentAddress>, members: Set<NovexContentAddress>, newMemberFolderId: String? = null)
+    suspend fun createFolder(id: String, parentId: String?, name: String): String
+    suspend fun renameFolder(id: String, folderId: String, expectedName: String, name: String)
+    /** Empty folders only. Removing a library/folder never deletes a source artifact. */
+    suspend fun removeFolder(id: String, folderId: String)
+    suspend fun moveMembers(id: String, members: Set<NovexContentAddress>, expectedFolderId: String?, folderId: String?)
     suspend fun dissolve(id: String)
 }

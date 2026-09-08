@@ -49,8 +49,9 @@ class CreativeArtifactRepository(
         origin: CreativeArtifactOrigin,
         sourcePath: String? = null,
         now: Long = System.currentTimeMillis(),
+        allowEmpty: Boolean = false,
     ): CreativeArtifactRecord {
-        val blob = files.put(bytes, mimeType)
+        val blob = files.put(bytes, mimeType, allowEmpty)
         val artifactId = sourcePath?.let { dao.artifactBySource(origin.conversationId, it)?.id }
             ?: UUID.randomUUID().toString()
         database.withTransaction {
@@ -103,10 +104,16 @@ class CreativeArtifactRepository(
         return requireNotNull(artifact(artifactId))
     }
 
+    suspend fun bySource(conversationId: String, sourcePath: String): CreativeArtifactRecord? =
+        dao.artifactBySource(conversationId, sourcePath)?.let { artifact(it.id) }
+
     suspend fun artifact(id: String): CreativeArtifactRecord? = dao.artifact(id)?.toDomain()
 
+    suspend fun visibleSourcePaths(conversationId: String): Set<String> = dao.visibleSourcePaths(conversationId).toSet()
+
     suspend fun list(query: CreativeArtifactQuery = CreativeArtifactQuery()): List<CreativeArtifactRecord> =
-        filterCreativeArtifactRecords(dao.all().map { value -> value.toDomain() }, query)
+        filterCreativeArtifactRecords((query.conversationId?.let { dao.forConversation(it) } ?: dao.all())
+            .map { value -> value.toDomain() }, query)
 
     /** Resolves the current image attached to each module of one world, role version or game. */
     override suspend fun availableArtifacts(): List<NovexCreativeArtifactSummary> = list().map { record ->
