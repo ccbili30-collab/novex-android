@@ -46,6 +46,7 @@ private val standardToolTitles = mapOf(
     "document_read" to "读取文档",
     "workspace_inspect" to "检查工作区",
     "workspace_read" to "读取工作区",
+    "workspace_search" to "查找仓库资料",
     "workspace_write" to "写入工作区",
     "workspace_edit" to "编辑工作区",
     "workspace_compute" to "处理工作区",

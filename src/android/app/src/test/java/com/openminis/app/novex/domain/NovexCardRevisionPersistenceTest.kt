@@ -64,7 +64,7 @@ class NovexCardRevisionPersistenceTest {
     }
     @Test fun `migration does not invent old revisions and failed edit rolls baseline back`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_30_31).allowMainThreadQueries().build()
+            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
         var db = open()
         try {
             var workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
@@ -72,6 +72,7 @@ class NovexCardRevisionPersistenceTest {
             val game = workspace.apply(NovexCommand.SaveInteractiveFictionPage(null, "旧文游", "旧规则")).requireInteractiveFiction()
             db.openHelper.writableDatabase.execSQL("DROP TABLE novex_world_revisions")
             db.openHelper.writableDatabase.execSQL("DROP TABLE novex_game_revisions")
+            restoreVersion31LibraryTable(db.openHelper.writableDatabase)
             db.openHelper.writableDatabase.version = 30
             db.close(); db = open(); workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
             val address = NovexContentAddress.world(world.id)

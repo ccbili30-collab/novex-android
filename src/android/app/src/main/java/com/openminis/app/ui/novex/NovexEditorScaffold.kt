@@ -38,6 +38,7 @@ internal fun <Draft> NovexEditorScaffold(
     baselineDraft: Draft?,
     currentDraft: Draft,
     onBack: () -> Unit,
+    onInternalBack: (() -> Unit)? = null,
     onPreview: (() -> Unit)? = null,
     onSave: () -> Unit,
     onDeleteRequest: (() -> Unit)? = null,
@@ -48,9 +49,10 @@ internal fun <Draft> NovexEditorScaffold(
         baselineDraft = baselineDraft, currentDraft = currentDraft, saving = saving,
         onBack = onBack, onSaveAndExit = onSave,
     ) { requestBack ->
+        BackHandler(enabled = onInternalBack != null) { onInternalBack?.invoke() }
         NovexDetailScaffold(
             title = title,
-            onBack = requestBack,
+            onBack = onInternalBack ?: requestBack,
             pageTone = NovexPageTone.EDITOR,
             actions = {
                 onDeleteRequest?.let { delete ->

@@ -31,11 +31,12 @@ class NovexConversationWorkspaceToolRouterTest {
         val definitions = NovexToolCatalog.forCapabilities(setOf(NovexToolCapability.WORKSPACE))
 
         assertEquals(
-            listOf("workspace_inspect", "workspace_read", "workspace_write", "workspace_edit", "workspace_compute"),
+            listOf("workspace_inspect", "workspace_search", "workspace_read", "workspace_write", "workspace_edit", "workspace_compute"),
             definitions.map { it.name },
         )
         assertEquals(
             listOf(
+                NovexToolRisk.READ_ONLY,
                 NovexToolRisk.READ_ONLY,
                 NovexToolRisk.READ_ONLY,
                 NovexToolRisk.SESSION_REVERSIBLE,

@@ -20,9 +20,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Native rendering/touch tests. Run in the isolated QA emulator, never against a user's library. */
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class NovexFoundationInteractionTest {
-    @get:Rule val ui = createComposeRule()
+    @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
 
     private fun screenshot(name: String) {
         ui.waitForIdle()
@@ -86,6 +87,7 @@ class NovexFoundationInteractionTest {
             }
         }
         ui.onNodeWithText("internal-plan", substring = true).assertDoesNotExist()
+        ui.waitUntil(15_000) { ui.onNodeWithText("拒绝").isDisplayed() }
         ui.onNodeWithText("拒绝").assertIsDisplayed()
         screenshot("permission")
         ui.onNode(isToggleable()).performTouchInput { click() }

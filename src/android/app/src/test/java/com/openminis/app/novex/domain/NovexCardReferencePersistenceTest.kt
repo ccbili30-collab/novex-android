@@ -71,12 +71,13 @@ class NovexCardReferencePersistenceTest {
     fun `migration from version 26 adds reference storage while preserving existing cards`() = runBlocking {
         val path = File(files.root, "migration.db").absolutePath
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
         var database = open()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
             val world = workspace.apply(NovexCommand.CreateWorld("已有世界", "迁移前正文")).requireWorld()
             database.openHelper.writableDatabase.execSQL("DROP TABLE novex_card_references")
+            restoreVersion31LibraryTable(database.openHelper.writableDatabase)
             database.openHelper.writableDatabase.version = 26
             database.close()
             database = open()

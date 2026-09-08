@@ -46,7 +46,8 @@ internal fun NovexSearchableSelectionSheet(
     dismissOnSelection: Boolean = true,
     onConfirmSelection: (() -> Unit)? = null,
     confirmLabel: String = "保存选择",
-) = NovexSelectionSurface(title, actions, searchPlaceholder, dismissOnSelection, onDismissRequest, onConfirmSelection, confirmLabel)
+    onCancelSelection: (() -> Unit)? = null,
+) = NovexSelectionSurface(title, actions, searchPlaceholder, dismissOnSelection, onDismissRequest, onConfirmSelection, confirmLabel, onCancelSelection)
 
 /** Short actions, grouped choices and searchable multi-select share one bounded lazy list. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +60,7 @@ private fun NovexSelectionSurface(
     onDismissRequest: () -> Unit,
     onConfirmSelection: (() -> Unit)? = null,
     confirmLabel: String = "保存选择",
+    onCancelSelection: (() -> Unit)? = null,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val entries = remember(actions) { actions.mapIndexed { index, action ->
@@ -93,7 +95,7 @@ private fun NovexSelectionSurface(
                     ) {
                         action.icon?.let { Icon(painterResource(it), null, Modifier.size(22.dp), tint = NovexColors.Primary) }
                         Column(Modifier.weight(1f)) {
-                            Text(action.label, style = NovexType.Body, color = NovexColors.Text)
+                            Text(action.label, style = NovexType.Body, color = NovexColors.Text, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             val detail = if (!action.enabled && action.disabledReason.isNotBlank()) action.disabledReason else action.description
                             if (detail.isNotBlank()) Text(detail, style = NovexType.Metadata, color = NovexColors.SecondaryText)
                         }
@@ -103,9 +105,9 @@ private fun NovexSelectionSurface(
                 }
             }
             if (!dismissOnSelection) {
-                if (onConfirmSelection == null) TextButton(onClick = onDismissRequest, modifier = Modifier.fillMaxWidth()) { Text("完成") }
+                if (onConfirmSelection == null) TextButton(onClick = onCancelSelection ?: onDismissRequest, modifier = Modifier.fillMaxWidth()) { Text("完成") }
                 else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismissRequest) { Text("取消") }
+                    TextButton(onClick = onCancelSelection ?: onDismissRequest) { Text("取消") }
                     TextButton(onClick = onConfirmSelection) { Text(confirmLabel) }
                 }
             }

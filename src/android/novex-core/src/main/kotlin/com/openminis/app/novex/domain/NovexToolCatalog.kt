@@ -113,17 +113,33 @@ object NovexToolCatalog {
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
                         NovexToolParameter("area", NovexToolParameterKind.STRING, false, "可选目录：sources、notes、drafts、outputs、saves 或 derived"),
-                        NovexToolParameter("max_entries", NovexToolParameterKind.INTEGER, false, "最多返回的文件数量，一到五百"),
+                        NovexToolParameter("max_entries", NovexToolParameterKind.INTEGER, false, "最多返回的文件数量，一到五百，默认五十"),
+                        NovexToolParameter("path", NovexToolParameterKind.STRING, false, "可选相对文件夹路径，包含其子文件夹"),
+                        NovexToolParameter("query", NovexToolParameterKind.STRING, false, "按文件名或路径查找，最多二百字"),
+                        NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样传回 next_cursor（下一页游标），并保留相同查找条件；目录变化后从第一页重查"),
                     ),
                 ),
             )
+            add(NovexToolDefinition(
+                name = "workspace_search",
+                description = "在本对话仓库搜索正文关键词；每批最多返回二十五个命中文件，每个文件返回首个片段；扫描有时间和字节预算；即使本批无命中，有 next_cursor（下一页游标）仍须继续。不计入通读覆盖。",
+                risk = NovexToolRisk.READ_ONLY,
+                parameters = listOf(
+                    NovexToolParameter("query", NovexToolParameterKind.STRING, true, "要查找的关键词，一到二百字"),
+                    NovexToolParameter("area", NovexToolParameterKind.STRING, false, "可选目录：sources、notes、drafts、outputs、saves 或 derived"),
+                    NovexToolParameter("path", NovexToolParameterKind.STRING, false, "可选相对文件夹路径，包含子文件夹"),
+                    NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样传回 next_cursor（下一页游标）并保留相同查找条件"),
+                    NovexToolParameter("max_entries", NovexToolParameterKind.INTEGER, false, "本批返回的命中文件数量，默认二十五，最多二十五"),
+                ),
+            ))
             add(
                 NovexToolDefinition(
                     name = "workspace_read",
                     description = "通过 Novex 工作区引用有界读取文本；二进制成果只返回成果引用。",
                     risk = NovexToolRisk.READ_ONLY,
                     parameters = listOf(
-                        NovexToolParameter("workspace_ref", NovexToolParameterKind.STRING, true, "workspace_inspect 返回的 Novex 工作区引用"),
+                        NovexToolParameter("workspace_ref", NovexToolParameterKind.STRING, true, "workspace_inspect（查看仓库）或 workspace_search（搜索正文）返回的文件引用"),
+                        NovexToolParameter("start_char", NovexToolParameterKind.INTEGER, false, "可用搜索返回的 char_offset（字符位置）直接定位，从零计数；不能与 cursor（续读游标）同时使用"),
                         NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "继续上次读取的游标"),
                         NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次最多返回的字符数，一到四万八千"),
                     ),

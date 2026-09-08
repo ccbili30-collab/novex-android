@@ -961,9 +961,7 @@ class ChatViewModel(
         }, start = { ref, id -> startNovexLearningPlan(NovexResourceRef(ref), id, awaitCompletion = true) })
     }
     private val novexConversationWorkspaceStore by lazy {
-        com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(
-            java.io.File(context.filesDir, "novex/conversation-workspaces"),
-        )
+        novexApplication().conversationWorkspaceStore
     }
     private val novexWorkspaceAgentTools by lazy {
         NovexWorkspaceAgentTools(novexConversationWorkspaceStore)
@@ -8609,6 +8607,7 @@ class ChatViewModel(
                     writeBranchId = assistantId,
                 )
                 recordNovexFileRead(novexWorkspaceAgentTools.execute(
+                    visibleImports = novexApplication().creativeArtifactRepository.visibleSourcePaths(activeSessionId),
                     name = name,
                     argumentsJson = argsJson,
                     scope = scope,
@@ -11489,6 +11488,8 @@ class ChatViewModel(
                         if (conversationVisible || _isStreaming.value) return@finalize
                         val sid = realSessionId.takeIf { it.isNotBlank() } ?: return@finalize
                         val app = novexApplication()
+                        // A first file may still be copying: keep the empty conversation until import settles.
+                        if (app.conversationRepositoryImporter.status(sid).value.running) return@finalize
                         val drafts = app.novexWorkspace.conversationDrafts(sid)
                         val protection = if (_canResume.value || _isCompacting.value || novexLearningJob?.isActive == true ||
                             novexOperationJournal.list(sid).any { it.status in setOf(
@@ -12517,6 +12518,7 @@ class ChatViewModel(
         "learning_prepare" -> "准备资料学习"
         "workspace_inspect" -> "检查工作区"
         "workspace_read" -> "读取工作区"
+        "workspace_search" -> "查找仓库资料"
         "workspace_write" -> "写入工作区"
         "workspace_edit" -> "编辑工作区"
         "workspace_compute" -> "处理工作区"

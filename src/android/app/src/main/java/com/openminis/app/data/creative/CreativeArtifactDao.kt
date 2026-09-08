@@ -37,6 +37,13 @@ interface CreativeArtifactDao {
     @Query("SELECT * FROM creative_artifacts ORDER BY updated_at DESC, id ASC")
     suspend fun all(): List<CreativeArtifactWithRelations>
 
+    @Transaction
+    @Query("SELECT * FROM creative_artifacts WHERE origin_conversation_id = :conversationId ORDER BY updated_at DESC, id ASC")
+    suspend fun forConversation(conversationId: String): List<CreativeArtifactWithRelations>
+
+    @Query("SELECT source_path FROM creative_artifacts WHERE origin_conversation_id = :conversationId AND trashed_at IS NULL AND source_path IS NOT NULL")
+    suspend fun visibleSourcePaths(conversationId: String): List<String>
+
     @Query(
         "SELECT * FROM creative_artifacts WHERE origin_conversation_id = :conversationId AND " +
             "source_path = :sourcePath ORDER BY updated_at DESC LIMIT 1",

@@ -1,44 +1,38 @@
 package com.openminis.app.ui.sessions
 
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.openminis.app.novex.domain.*
 import com.openminis.app.ui.novex.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private data class WorkMemberOption(val address: NovexContentAddress, val title: String, val category: String)
-private fun NovexContentAddress.selectionKey() = "${kind.name}:$id"
-private fun String.memberAddress() = NovexContentAddress(NovexContentKind.valueOf(substringBefore(':')), substringAfter(':'))
-
-/** One persistent selection shared by all three existing libraries; no content mutation here. */
+/** Existing work-group IDs become user libraries; all three catalogs keep the same filter. */
 @Composable
 internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembersRequest: Int = 0,
-    onConfigureConversation: (String) -> Unit) {
+    onConfigureConversation: (String) -> Unit = {}, onOpenContent: ((NovexContentAddress) -> Unit)? = null) {
     val groups = rememberNovexWorkGroups()
     val workspace = rememberNovexWorkspace()
+    val artifacts = rememberNovexCreativeArtifacts()
     val scope = rememberCoroutineScope()
     var page by rememberSaveable { mutableStateOf("") }
     var groupId by rememberSaveable { mutableStateOf("") }
+    var folderId by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
     var expectedName by rememberSaveable { mutableStateOf("") }
-    var nameReturn by rememberSaveable { mutableStateOf("select") }
-    var draft by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var expected by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var options by remember { mutableStateOf<List<WorkMemberOption>?>(null) }
+    var naming by rememberSaveable { mutableStateOf("") }
+    var entries by remember { mutableStateOf<List<NovexLibraryEntry>>(emptyList()) }
+    var expectedMembers by remember { mutableStateOf(emptySet<NovexContentAddress>()) }
+    var subject by remember { mutableStateOf<NovexContentAddress?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val group = snapshot?.groups?.firstOrNull { it.id == groupId }
     val conversations by groups.conversations.collectAsState(initial = emptyList())
-    LaunchedEffect(openMembersRequest) {
-        if (openMembersRequest > 0) {
-            val selected = snapshot?.selectedGroup
-            if (selected == null) page = "select" else {
-                groupId = selected.id; expected = selected.members.map { it.selectionKey() }; draft = expected; page = "members"
-            }
-        }
-    }
+    val visible = entries.associateBy { it.address }
     fun execute(action: suspend () -> Unit) {
         if (busy) return
         busy = true
@@ -48,113 +42,121 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
             finally { busy = false }
         }
     }
-    LaunchedEffect(page) {
-        if (page == "detail" || page == "members") {
-            try {
-                options = workspace.worlds().map { WorkMemberOption(NovexContentAddress.world(it.world.id), it.world.name, "世界") } +
-                    workspace.characters().flatMap { card -> card.character.allVersions.map { version ->
-                        WorkMemberOption(NovexContentAddress.characterVersion(version.id),
-                            "${card.character.character.name} · ${version.label}", "角色版本")
-                    } } + workspace.interactiveFictions().map {
-                        WorkMemberOption(NovexContentAddress.interactiveFiction(it.project.id), it.project.name, "文游")
-                    }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = failure.message ?: "卡片列表暂不可读" }
+    LaunchedEffect(openMembersRequest, snapshot != null) {
+        if (openMembersRequest > 0 && snapshot != null) {
+            val selected = snapshot?.selectedGroup
+            if (selected == null) page = "select" else { groupId = selected.id; folderId = null; page = "browse" }
         }
     }
-    NovexSummaryRow("作品 · ${snapshot?.label ?: "正在读取"}", "跨世界、角色与文游筛选 · 选择和管理作品",
-        onClick = { if (snapshot != null) page = "select" })
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(page) {
+        if (page.isNotEmpty()) {
+            val database = (context.applicationContext as com.openminis.app.MinisApp).database
+            com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect {
+                try { entries = workspace.libraryDirectory(artifacts) }
+                catch (failure: Exception) { if (failure is CancellationException) throw failure; error = "读取仓库失败：${failure.message}" }
+            }
+        }
+    }
+    TextButton(onClick = { if (snapshot != null) page = "select" }, modifier = Modifier.padding(horizontal = 8.dp)) {
+        Text("${snapshot?.label ?: "正在读取"} ▾", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
     if (error != null) {
         NovexContentDialog("操作未完成", onDismiss = { error = null },
             confirmButton = { TextButton(onClick = { error = null }) { Text("返回") } }) { Text(error.orEmpty()) }
         return
     }
     when (page) {
-        "select" -> NovexSearchableSelectionSheet("选择作品", buildList {
+        "select" -> NovexSearchableSelectionSheet("按创作库筛选", buildList {
             add(NovexSelectionAction("全部作品", selected = snapshot?.selection == NovexWorkGroupSnapshot.ALL) {
-                execute { groups.select(NovexWorkGroupSnapshot.ALL) }
+                execute { groups.select(NovexWorkGroupSnapshot.ALL); page = "" }
             })
             add(NovexSelectionAction("未归类", selected = snapshot?.selection == NovexWorkGroupSnapshot.UNCLASSIFIED) {
-                execute { groups.select(NovexWorkGroupSnapshot.UNCLASSIFIED) }
+                execute { groups.select(NovexWorkGroupSnapshot.UNCLASSIFIED); page = "" }
             })
-            snapshot?.groups.orEmpty().forEach { item -> add(NovexSelectionAction(item.name,
-                description = "收录 ${item.members.size} 个世界、角色版本或文游", selected = snapshot?.selection == item.id) {
-                execute { groups.select(item.id) }
+            snapshot?.groups.orEmpty().forEach { item -> add(NovexSelectionAction(item.name, selected = snapshot?.selection == item.id) {
+                execute { groups.select(item.id); page = "" }
             }) }
-            add(NovexSelectionAction("新建作品", group = "管理") {
-                groupId = ""; name = ""; nameReturn = "select"; page = "name"
+            add(NovexSelectionAction("新建创作库", group = "管理") { groupId = ""; name = ""; naming = "create"; page = "name" })
+            add(NovexSelectionAction("管理创作库", group = "管理") { page = "manage" })
+        }, "搜索创作库", onDismissRequest = { page = "" }, dismissOnSelection = false)
+        "manage" -> NovexSearchableSelectionSheet("管理创作库", snapshot?.groups.orEmpty().map { item ->
+            NovexSelectionAction(item.name, description = "${item.members.count { it in visible }} 项内容") {
+                groupId = item.id; folderId = null; page = "browse"
+            }
+        } + NovexSelectionAction("新建创作库") { groupId = ""; name = ""; naming = "create"; page = "name" },
+            "搜索创作库", onDismissRequest = { page = "select" }, dismissOnSelection = false)
+        "browse" -> if (group != null) NovexSearchableSelectionSheet(group.folderPath(folderId), buildList {
+            add(NovexSelectionAction("返回上一级", com.openminis.app.R.drawable.ic_phosphor_arrow_left) {
+                if (folderId == null) page = "manage" else folderId = group.folders.firstOrNull { it.id == folderId }?.parentId
             })
-            add(NovexSelectionAction("管理作品", group = "管理") { page = "manage" })
-        }, "搜索作品", onDismissRequest = { page = "" })
-        "manage" -> NovexSearchableSelectionSheet("管理作品", snapshot?.groups.orEmpty().map { item ->
-            NovexSelectionAction(item.name, description = "收录 ${item.members.size} 项 · 更名、批量归类、解散分组") {
-                groupId = item.id; options = null; page = "detail"
+            group.folders.filter { it.parentId == folderId }.forEach { folder ->
+                add(NovexSelectionAction(folder.name, description = "文件夹", group = "文件夹") { folderId = folder.id })
             }
-        }, "搜索作品", onDismissRequest = { page = "select" })
-        "detail" -> NovexContentDialog(group?.name ?: "作品已不存在", onDismiss = { page = "manage" },
-            confirmButton = { TextButton(onClick = { page = "manage" }) { Text("返回作品管理") } }) {
-            if (group != null) {
-                val available = options?.map { it.address }?.toSet()
-                Text(if (available == null) "正在核对收录卡片" else
-                    "收录 ${group.members.size} 项，其中 ${group.members.count { it in available }} 项当前可用。角色按具体版本收录。")
-                NovexSummaryRow("批量加入或移出", "勾选世界、具体角色版本和文游；保存后只改变本作品归类", onClick = {
-                    expected = group.members.map { it.selectionKey() }; draft = expected; page = "members"
+            group.contents(folderId).mapNotNull { visible[it] }.forEach { entry ->
+                add(NovexSelectionAction(entry.title, description = entry.type, group = "内容") { subject = entry.address; page = "item" })
+            }
+            add(NovexSelectionAction("加入内容", group = "管理") { expectedMembers = group.members; page = "add" })
+            add(NovexSelectionAction("新建文件夹", group = "管理") { name = ""; naming = "folder"; page = "name" })
+            add(NovexSelectionAction("重命名", group = "管理") {
+                name = if (folderId == null) group.name else group.folders.first { it.id == folderId }.name
+                expectedName = name; naming = if (folderId == null) "rename" else "renameFolder"; page = "name"
+            })
+            if (folderId == null) {
+                add(NovexSelectionAction("用于对话", group = "管理") { page = "conversations" })
+                add(NovexSelectionAction("相关对话", group = "管理") { page = "related" })
+                add(NovexSelectionAction("移除创作库", group = "管理") { page = "delete" })
+            } else add(NovexSelectionAction("删除空文件夹", group = "管理") {
+                execute { val parent = group.folders.first { it.id == folderId }.parentId; groups.removeFolder(groupId, folderId!!); folderId = parent }
+            })
+        }, "搜索当前文件夹", onDismissRequest = {
+            if (folderId == null) page = "manage" else folderId = group.folders.firstOrNull { it.id == folderId }?.parentId
+        }, dismissOnSelection = false)
+        "add" -> NovexLibraryPicker("选择加入的内容", entries.filterNot { it.address in expectedMembers }, snapshot?.groups.orEmpty(),
+            onDismiss = { page = "browse" }, onConfirm = { selected -> execute {
+                groups.replaceMembers(groupId, expectedMembers, expectedMembers + selected, folderId)
+                page = "browse"
+            } })
+        "item" -> NovexSelectionSheet(visible[subject]?.title ?: "内容已不可用", buildList {
+            if (onOpenContent != null && subject in visible) add(NovexSelectionAction("打开") { subject?.let(onOpenContent); page = "browse" })
+            add(NovexSelectionAction("移动到文件夹") { page = "move" })
+            add(NovexSelectionAction("从此库移出") { execute {
+                val current = requireNotNull(group); groups.replaceMembers(groupId, current.members, current.members - requireNotNull(subject)); page = "browse"
+            } })
+        }, onDismissRequest = { page = "browse" })
+        "move" -> NovexSearchableSelectionSheet("移动到", buildList {
+            add(NovexSelectionAction(group?.name ?: "库根目录") { execute { groups.moveMembers(groupId, setOf(requireNotNull(subject)), folderId, null); page = "browse" } })
+            group?.folders.orEmpty().forEach { target -> add(NovexSelectionAction(group!!.folderPath(target.id)) {
+                execute { groups.moveMembers(groupId, setOf(requireNotNull(subject)), folderId, target.id); page = "browse" }
+            }) }
+        }, "搜索文件夹", onDismissRequest = { page = "item" }, dismissOnSelection = false)
+        "name" -> NovexContentDialog(when (naming) { "create" -> "新建创作库"; "folder" -> "新建文件夹"; else -> "重命名" },
+            onDismiss = { page = if (groupId.isEmpty()) "manage" else "browse" }, confirmButton = {
+                TextButton(enabled = !busy && name.isNotBlank(), onClick = { execute {
+                    when (naming) {
+                        "create" -> { groupId = groups.create(name); folderId = null }
+                        "folder" -> groups.createFolder(groupId, folderId, name)
+                        "rename" -> groups.rename(groupId, expectedName, name)
+                        "renameFolder" -> groups.renameFolder(groupId, requireNotNull(folderId), expectedName, name)
+                    }
+                    page = "browse"
+                } }) { Text(if (busy) "正在保存" else "保存") }
+            }) { NovexTextField("名称", name, { name = it.take(120) }, placeholder = "简短、容易辨认的名称") }
+        "delete" -> NovexContentDialog("移除创作库", onDismiss = { page = "browse" }, confirmButton = {
+            TextButton(enabled = !busy, onClick = { execute { groups.dissolve(groupId); page = "manage" } }) { Text("移除") }
+        }) { Text("移除“${group?.name.orEmpty()}”及其文件夹。卡片和文件原件保留，其他库中的收录不受影响。") }
+        "related" -> NovexSearchableSelectionSheet("相关对话", buildList {
+            conversations.forEach { conversation ->
+                val used = group?.members.orEmpty().any { it in conversation.used }
+                val managed = group?.members.orEmpty().any { it in conversation.managed }
+                if (used || managed) add(NovexSelectionAction(conversation.title,
+                    description = listOfNotNull(if (used) "使用设定" else null, if (managed) "创作管理" else null).joinToString(" · ")) {
+                    page = ""; onConfigureConversation(conversation.id)
                 })
-                NovexSummaryRow("更名", group.name, onClick = {
-                    name = group.name; expectedName = group.name; nameReturn = "detail"; page = "name"
-                })
-                NovexSummaryRow("用于已有对话", "先选择对话，再分别选择身份、背景、文游或管理对象；不自动启用整组卡片", onClick = { page = "conversations" })
-                NovexSummaryRow("相关对话", "按实际使用和创作管理关系查找，对话可关联多个作品", onClick = { page = "related" })
-                NovexSummaryRow("解散作品分组", "仅移除这个分组，不删除卡片或其他作品中的收录", onClick = { page = "delete" })
             }
-        }
-        "name" -> NovexContentDialog(if (groupId.isEmpty()) "新建作品" else "更名作品", onDismiss = { page = nameReturn },
-            confirmButton = { TextButton(onClick = { execute {
-                if (groupId.isEmpty()) groupId = groups.create(name) else groups.rename(groupId, expectedName, name)
-                page = "detail"
-            } }, enabled = !busy && name.isNotBlank()) { Text(if (busy) "正在保存" else "保存") } }) {
-            NovexTextField(label = "作品名称", value = name, onValueChange = { name = it }, placeholder = "作品名称")
-            Text("分组用于收纳卡片；选择作品不会自动启用设定或授予编辑权限。")
-        }
-        "members" -> {
-            val available = options
-            if (available == null) NovexContentDialog("读取卡片列表", onDismiss = { page = "detail" },
-                confirmButton = { TextButton(onClick = { page = "detail" }) { Text("返回") } }) { Text("正在读取") }
-            else NovexSearchableSelectionSheet("${group?.name ?: "作品"} · 批量归类", buildList {
-                available.forEach { option ->
-                    val key = option.address.selectionKey()
-                    add(NovexSelectionAction(option.title, group = option.category, selected = key in draft, enabled = !busy) {
-                        draft = if (key in draft) draft - key else draft + key
-                    })
-                }
-                expected.filter { key -> available.none { it.address.selectionKey() == key } }.forEach { key ->
-                    add(NovexSelectionAction("原收录卡片目前不可用", description = key, group = "缺失来源", selected = key in draft, enabled = !busy) {
-                        draft = if (key in draft) draft - key else draft + key
-                    })
-                }
-            }, "搜索世界、角色版本或文游", onDismissRequest = { if (!busy) page = "detail" }, dismissOnSelection = false,
-                onConfirmSelection = { execute {
-                    groups.replaceMembers(groupId, expected.map { it.memberAddress() }.toSet(), draft.map { it.memberAddress() }.toSet())
-                    page = "detail"
-                } }, confirmLabel = if (busy) "正在保存" else "保存 ${draft.size} 项收录")
-        }
-        "delete" -> NovexContentDialog("解散作品分组", onDismiss = { page = "detail" },
-            confirmButton = { TextButton(onClick = { execute { groups.dissolve(groupId); page = "manage" } }, enabled = !busy) { Text("解散分组") } }) {
-            Text("解散“${group?.name.orEmpty()}”会移除本分组的 ${group?.members?.size ?: 0} 项收录关系。卡片原件和其他分组中的收录保留。")
-        }
-        "conversations" -> NovexSearchableSelectionSheet("选择用于配置的对话", conversations.map { conversation ->
-            NovexSelectionAction(conversation.title, description = "打开对话配置，逐项选择 ${group?.name.orEmpty()} 中的卡片") {
-                execute { groups.select(groupId); page = ""; onConfigureConversation(conversation.id) }
-            }
-        }.ifEmpty { listOf(NovexSelectionAction("尚无对话", description = "先在对话页新建，再回此处选择", enabled = false) {}) },
-            "按对话名称查找", onDismissRequest = { page = "detail" })
-        "related" -> NovexSearchableSelectionSheet("${group?.name.orEmpty()} · 相关对话", buildList {
-            for ((category, related) in listOf("使用设定或身份" to conversations.filter { row -> group?.members.orEmpty().any { it in row.used } },
-                    "创作管理" to conversations.filter { row -> group?.members.orEmpty().any { it in row.managed } })) {
-                related.forEach { row -> add(NovexSelectionAction(row.title, group = category,
-                    description = "查看该对话的实际配置；对话不属于唯一作品目录") { onConfigureConversation(row.id) }) }
-            }
-        }.ifEmpty { listOf(NovexSelectionAction("尚无关联对话", description = "可先通过“用于已有对话”选择具体卡片", enabled = false) {}) },
-            "搜索关联对话", onDismissRequest = { page = "detail" })
+        }, "搜索对话", onDismissRequest = { page = "browse" }, dismissOnSelection = false)
+        "conversations" -> NovexSearchableSelectionSheet("选择对话", conversations.map { conversation ->
+            NovexSelectionAction(conversation.title) { page = ""; onConfigureConversation(conversation.id) }
+        }, "搜索对话", onDismissRequest = { page = "browse" }, dismissOnSelection = false)
     }
 }

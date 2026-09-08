@@ -1,5 +1,13 @@
 package com.openminis.app.ui.creative
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
+import com.openminis.app.ui.novex.NovexSearchField
+import com.openminis.app.ui.novex.NovexTextActionRow
+import com.openminis.app.ui.novex.NovexSummaryRow
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
@@ -21,6 +29,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import com.openminis.app.novex.domain.NovexContentAddress
+import com.openminis.app.novex.domain.NovexDisplayName
+import com.openminis.app.novex.domain.NovexLibraryEntry
+import com.openminis.app.novex.domain.libraryDirectory
+import com.openminis.app.ui.novex.rememberNovexWorkGroups
+import com.openminis.app.ui.sessions.NovexWorkGroupControls
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,7 +124,16 @@ fun CreativeLibraryScreen(
     conversationId: String?,
     onBack: () -> Unit,
     onOpenArtifact: (CreativeArtifactRecord, File) -> Unit,
+    onOpenCard: ((NovexContentAddress) -> Unit)? = null,
+    onConfigureConversation: (String) -> Unit = {},
 ) {
+    var repositoryFolder by rememberSaveable(conversationId) { mutableStateOf("") }
+    var repositoryQuery by rememberSaveable(conversationId) { mutableStateOf("") }
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    fun parentFolder() { repositoryFolder = repositoryFolder.substringBeforeLast('/', "") }
+    BackHandler(conversationId != null && repositoryFolder.isNotEmpty() && !keyboardVisible) { parentFolder() }
+    val libraries = rememberNovexWorkGroups()
+    val librarySnapshot by libraries.snapshots.collectAsState(initial = null)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var libraryScope by remember { mutableStateOf(LibraryScope.ALL) }
@@ -117,6 +141,7 @@ fun CreativeLibraryScreen(
     var associationFilter by remember { mutableStateOf(ArtifactAssociationFilter.ALL) }
     var ownerFilter by remember { mutableStateOf<NovexCreativeArtifactOwnerOption?>(null) }
     var ownerOptions by remember { mutableStateOf<List<NovexCreativeArtifactOwnerOption>>(emptyList()) }
+    var libraryEntries by remember { mutableStateOf<List<NovexLibraryEntry>>(emptyList()) }
     var records by remember { mutableStateOf<List<CreativeArtifactRecord>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -189,13 +214,32 @@ fun CreativeLibraryScreen(
         }
     }
 
+    LaunchedEffect(repository) {
+        val database = (context.applicationContext as com.openminis.app.MinisApp).database
+        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect { refresh() }
+    }
+
     LaunchedEffect(workspace) {
         runCatching { withContext(Dispatchers.IO) { workspace.creativeArtifactOwnerOptions() } }
             .onSuccess { ownerOptions = it }
     }
 
-    LaunchedEffect(conversationId, libraryScope, kindFilter, associationFilter, ownerFilter, refreshKey) {
-        loading = true
+    LaunchedEffect(librarySnapshot, refreshKey) {
+        if (conversationId == null) runCatching { workspace.libraryDirectory(repository) }
+            .onSuccess { libraryEntries = it }.onFailure { error = "读取创作库失败：${it.message}" }
+    }
+    fun openLibraryContent(address: NovexContentAddress) {
+        if (address.kind == NovexContentKind.CREATIVE_ARTIFACT) scope.launch {
+            runCatching {
+                val record = repository.list().first { it.artifact.id == address.id }
+                val file = withContext(Dispatchers.IO) { repository.file(address.id) }
+                onOpenArtifact(record, file)
+            }.onFailure { error = it.message ?: "文件未能打开" }
+        } else onOpenCard?.invoke(address)
+    }
+
+    LaunchedEffect(conversationId, libraryScope, kindFilter, associationFilter, ownerFilter, refreshKey, librarySnapshot) {
+        loading = records.isEmpty()
         error = null
         runCatching {
             withContext(Dispatchers.IO) {
@@ -215,14 +259,29 @@ fun CreativeLibraryScreen(
                     ),
                 )
             }
-        }.onSuccess { records = it }
+        }.onSuccess { loaded -> records = if (conversationId != null) loaded else loaded.filter {
+            librarySnapshot?.includes(NovexContentAddress(NovexContentKind.CREATIVE_ARTIFACT, it.artifact.id)) != false
+        } }
             .onFailure { error = it.message ?: "无法读取创作成果" }
         loading = false
     }
 
+    fun relativePath(record: CreativeArtifactRecord): String = runCatching {
+        val ref = com.openminis.app.novex.domain.NovexWorkspaceFileRef.parse(record.sourcePath.orEmpty())
+        if (ref.relativePath.startsWith("imports/")) ref.relativePath.removePrefix("imports/") else record.artifact.title
+    }.getOrDefault(record.artifact.title)
+    val folderPrefix = repositoryFolder.takeIf { it.isNotEmpty() }?.let { "$it/" }.orEmpty()
+    val inFolder = if (conversationId == null) records else records.filter { relativePath(it).startsWith(folderPrefix) }
+    val folderNames = if (conversationId == null || repositoryQuery.isNotBlank()) emptyList() else inFolder.map {
+        relativePath(it).removePrefix(folderPrefix)
+    }.filter { '/' in it }.map { it.substringBefore('/') }.distinct().sorted()
+    val visibleRecords = if (conversationId == null) records else inFolder.filter {
+        val path = relativePath(it).removePrefix(folderPrefix)
+        if (repositoryQuery.isBlank()) '/' !in path else path.contains(repositoryQuery, ignoreCase = true)
+    }
     NovexSettingsScaffold(
-        title = if (conversationId == null) "创作库" else "本对话文件",
-        onBack = onBack,
+        title = if (conversationId == null) "创作库" else "对话仓库",
+        onBack = { if (conversationId != null && repositoryFolder.isNotEmpty()) parentFolder() else onBack() },
         scrollable = false,
         actions = {
             Box {
@@ -336,6 +395,13 @@ fun CreativeLibraryScreen(
             }
         },
     ) {
+        if (conversationId == null) NovexWorkGroupControls(librarySnapshot,
+            onConfigureConversation = onConfigureConversation,
+            onOpenContent = ::openLibraryContent)
+        if (conversationId != null) {
+            ConversationImportControls(conversationId)
+            NovexSearchField(repositoryQuery, { repositoryQuery = it }, "查找文件名称")
+        }
         NovexFilterTabs(
             items = LibraryScope.entries,
             selected = libraryScope,
@@ -344,6 +410,8 @@ fun CreativeLibraryScreen(
             modifier = Modifier.padding(top = 5.dp, bottom = 10.dp),
         )
         when {
+            conversationId == null && librarySnapshot?.selectedGroup != null && libraryScope == LibraryScope.ALL && kindFilter.kind == null && ownerFilter == null && associationFilter == ArtifactAssociationFilter.ALL ->
+                NovexLibraryContents(librarySnapshot!!.selectedGroup!!, libraryEntries, ::openLibraryContent)
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(
                     color = NovexColors.Primary,
@@ -364,27 +432,32 @@ fun CreativeLibraryScreen(
                 message = if (conversationId == null) {
                     "由工具生成的文档、图片和卡片会自动收录在这里。"
                 } else {
-                    "本对话生成的文档、图片和卡片会自动出现在这里。"
+                    "可以导入资料，或在对话中创作；保存的文件会出现在这里。"
                 },
             )
             else -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = NovexDimensions.PageHorizontal)
-                        .clip(RoundedCornerShape(NovexDimensions.SectionRadius))
-                        .background(NovexColors.Surface)
-                        .border(
-                            NovexDimensions.Hairline,
-                            NovexColors.Divider,
-                            RoundedCornerShape(NovexDimensions.SectionRadius),
-                        ),
+                        .padding(horizontal = NovexDimensions.PageHorizontal),
                 ) {
-                    items(records.size, key = { records[it].artifact.id }) { index ->
-                        val record = records[index]
+                    if (conversationId != null && repositoryFolder.isNotEmpty()) item {
+                        NovexTextActionRow("返回上一级", R.drawable.ic_phosphor_arrow_left, onClick = ::parentFolder)
+                        Text(repositoryFolder, style = NovexType.Metadata, color = NovexColors.SecondaryText)
+                    }
+                    items(folderNames.size, key = { "folder:" + folderNames[it] }) { index ->
+                        val name = folderNames[index]
+                        NovexSummaryRow(name, "文件夹", onClick = { repositoryFolder = folderPrefix + name })
+                    }
+                    if (visibleRecords.isEmpty() && folderNames.isEmpty()) item {
+                        Text("没有找到文件", style = NovexType.Body, color = NovexColors.SecondaryText,
+                            modifier = Modifier.padding(vertical = 20.dp))
+                    }
+                    items(visibleRecords.size, key = { visibleRecords[it].artifact.id }) { index ->
+                        val record = visibleRecords[index]
                         ArtifactRow(
                             record = record,
-                            showDivider = index < records.lastIndex,
+                            showDivider = index < visibleRecords.lastIndex,
                             onOpen = {
                                 scope.launch {
                                     runCatching {
@@ -491,14 +564,11 @@ private fun ArtifactRow(
     val revision = record.revisions.lastOrNull()
     val metadata = buildList {
         add(kindLabel(record.artifact.kind))
-        val ownerKinds = record.attachments.map { it.owner.kind }.distinct()
-        if (ownerKinds.isEmpty()) add("仅对话") else add(ownerKinds.joinToString("+") { it.ownerLabel() })
-        add("v${record.revisions.size.coerceAtLeast(1)}")
         revision?.let { add(Formatter.formatShortFileSize(LocalContext.current, it.sizeBytes)) }
-        add(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(record.artifact.updatedAt)))
+        add(DateFormat.getDateInstance(DateFormat.SHORT).format(Date(record.artifact.updatedAt)))
     }.joinToString(" · ")
     NovexSettingsCustomRow(
-        title = record.artifact.title,
+        title = NovexDisplayName.file(record.artifact.title),
         subtitle = metadata,
         showChevron = false,
         showDivider = showDivider,

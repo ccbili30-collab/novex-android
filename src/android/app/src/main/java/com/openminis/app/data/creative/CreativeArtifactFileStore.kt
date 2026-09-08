@@ -14,8 +14,9 @@ data class StoredCreativeArtifactBlob(
 class CreativeArtifactFileStore(
     private val root: File,
 ) {
-    fun put(bytes: ByteArray, mimeType: String): StoredCreativeArtifactBlob {
-        require(bytes.isNotEmpty()) { "创作成果内容不能为空" }
+    @Synchronized
+    fun put(bytes: ByteArray, mimeType: String, allowEmpty: Boolean = false): StoredCreativeArtifactBlob {
+        require(allowEmpty || bytes.isNotEmpty()) { "创作成果内容不能为空" }
         val hash = MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { byte -> "%02x".format(byte) }

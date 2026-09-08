@@ -77,8 +77,8 @@ internal fun ConversationPicker.pickerTitle(): String = when (this) {
     ConversationPicker.ROLE -> "选择扮演的角色"
     ConversationPicker.BACKGROUND -> "添加背景设定"
     ConversationPicker.GAME -> "选择活动文游"
-    ConversationPicker.GAME_REFERENCE -> "挂载只读文游资料"
-    ConversationPicker.MANAGED -> "添加管理挂载"
+    ConversationPicker.GAME_REFERENCE -> "选择文游资料"
+    ConversationPicker.MANAGED -> "选择管理内容"
     ConversationPicker.BOTH -> "同时使用与管理世界或角色"
 }
 
