@@ -192,6 +192,8 @@ internal fun SharedModuleDocumentFields(
     document: ContentModuleDocument,
     onChange: (ContentModuleDocument) -> Unit,
     modifier: Modifier = Modifier,
+    allowWorldbookConditions: Boolean = false,
+    itemImageContent: (@Composable (ContentModuleCollectionItem) -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
         when (document) {
@@ -208,7 +210,7 @@ internal fun SharedModuleDocumentFields(
                 minLines = 3,
             )
             is ContentModuleDocument.Timeline -> TimelineFields(document, onChange)
-            is ContentModuleDocument.Collection -> CollectionFields(document, onChange)
+            is ContentModuleDocument.Collection -> CollectionFields(document, onChange, allowWorldbookConditions, itemImageContent)
             is ContentModuleDocument.Unsupported -> Text(
                 "当前版本暂不识别这个模块的内部结构；原始内容会保留，可重命名和排序。",
                 color = NovexColors.SecondaryText,
@@ -256,6 +258,8 @@ private fun TimelineFields(
 private fun CollectionFields(
     document: ContentModuleDocument.Collection,
     onChange: (ContentModuleDocument) -> Unit,
+    allowWorldbookConditions: Boolean,
+    itemImageContent: (@Composable (ContentModuleCollectionItem) -> Unit)?,
 ) {
     document.items.forEachIndexed { index, item ->
         Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
@@ -272,9 +276,22 @@ private fun CollectionFields(
             NovexTextField("名称", item.name, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(name = value))))
             })
+            if (allowWorldbookConditions) {
+                val conditionDocument = org.json.JSONObject().apply {
+                    item.contextTriggerJson?.let { put("contextTrigger", org.json.JSONTokener(it).nextValue()) }
+                }.toString()
+                com.openminis.app.ui.novex.NovexWorldbookConditionField(
+                    conditionDocument, com.openminis.app.data.character.ContentModuleType.CUSTOM,
+                ) { updated ->
+                    onChange(document.copy(items = document.items.replaceAt(index, item.copy(
+                        contextTriggerJson = com.openminis.app.novex.domain.NovexWorldbookConditions.read(updated),
+                    ))))
+                }
+            }
             NovexTextField("摘要", item.summary, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(summary = value))))
             }, modifier = Modifier.padding(top = 2.dp))
+            itemImageContent?.invoke(item)
             NovexTextField("详细说明", item.description, { value ->
                 onChange(document.copy(items = document.items.replaceAt(index, item.copy(description = value))))
             }, minLines = 2, modifier = Modifier.padding(top = 2.dp))

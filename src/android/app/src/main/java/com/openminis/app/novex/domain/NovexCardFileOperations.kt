@@ -5,13 +5,33 @@ import org.json.JSONObject
 
 /** Small file-like interface; all writes still cross the existing management transaction/permission seam. */
 class NovexCardFileOperations(private val sources: NovexCardSourceModules) {
+    internal fun prepare(tool: String, args: JSONObject): String = when (tool) {
+        "novex_write_card" -> create(args)
+        "novex_update_card" -> updateCard(args)
+        "novex_write_module" -> writeModule(args)
+        "novex_move_module" -> moveModule(args)
+        "novex_link_cards" -> link(args)
+        else -> error("未知卡片操作")
+    }
+
+    /** Recheck visibility after preparation, without reopening or reparsing immutable source bytes. */
+    internal fun requireSourceAccess(args: JSONObject) {
+        if (args.has("document_ref")) sources.requireAccess(args.getString("document_ref"))
+        args.optJSONObject("source")?.let { sources.requireAccess(it.getString("document_ref")) }
+        args.optJSONArray("modules")?.let { modules ->
+            repeat(modules.length()) { index -> modules.getJSONObject(index).optJSONObject("source")?.let {
+                sources.requireAccess(it.getString("document_ref"))
+            } }
+        }
+    }
+
     fun create(args: JSONObject): String {
         val kind = args.getString("kind")
         require(kind in setOf("world", "character", "game")) { "kind（卡片类型）请选择 world（世界）、character（角色）或 game（文游）" }
         val operation = JSONObject().put("operation", "create_$kind").put("name", args.getString("name"))
         when (kind) {
             "world" -> operation.put("overview", args.optString("summary", ""))
-            "character" -> operation.put("profile_json", JSONObject().put("name", args.getString("name")))
+            "character" -> operation.put("profile_json", JSONObject().put("name", args.getString("name")).put("summary", args.optString("summary")))
             "game" -> {
                 operation.put("summary", args.optString("summary", ""))
                 operation.put("launch_mode", args.optString("launch_mode", "free_sandbox"))
@@ -33,14 +53,27 @@ class NovexCardFileOperations(private val sources: NovexCardSourceModules) {
         return JSONArray().put(operation).toString()
     }
 
+    fun updateCard(args: JSONObject): String {
+        val row = JSONObject().put("operation", "update_card")
+            .put("subject_kind", args.getString("kind")).put("subject_id", args.getString("card_id"))
+        listOf("name", "summary", "launch_mode").forEach { if (args.has(it)) row.put(it, args.get(it)) }
+        return JSONArray().put(row).toString()
+    }
+
     fun writeModule(args: JSONObject): String {
         val row = JSONObject()
+        val mode = args.optString("mode", "replace")
+        require(mode in setOf("replace", "append")) { "写入方式请选择 replace（替换正文）或 append（追加文本）" }
         if (args.has("module_id")) {
             row.put("operation", "update_module").put("module_id", args.getString("module_id"))
             if (args.has("name")) row.put("name", args.getString("name"))
-            if (listOf("text", "content", "source").any(args::has)) row.put("content_json", moduleContent(args))
-            require(row.has("name") || row.has("content_json")) { "请提供新名称或正文；未指定字段保持不变" }
+            if (mode == "append") {
+                require(args.has("text") && !args.has("content") && !args.has("source")) { "追加使用 text（新增的文本），不要重复发送原正文" }
+                row.put("append_text", args.getString("text"))
+            } else if (listOf("text", "content", "source").any(args::has)) row.put("content_json", moduleContent(args))
+            require(row.has("name") || row.has("content_json") || row.has("append_text")) { "请提供新名称或正文；未指定字段保持不变" }
         } else {
+            require(mode == "replace") { "追加正文需要已有 module_id（模块编号）" }
             row.put("operation", "add_module").put("subject_kind", args.getString("kind"))
                 .put("subject_id", args.getString("card_id")).put("module_type", args.optString("type", "custom"))
                 .put("name", args.getString("name")).put("content_json", moduleContent(args))

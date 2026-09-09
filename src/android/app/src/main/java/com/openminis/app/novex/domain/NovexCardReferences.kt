@@ -40,11 +40,16 @@ data class NovexCardReference(
     val unresolvedTarget: NovexReferenceTarget? = null,
     /** Unknown transport metadata is retained but never interpreted as an instruction or permission. */
     val preservedJson: String = "{}",
+    /** Default use of this path, retained in the adopted reference graph. */
+    val enabled: Boolean = true,
 ) {
     init {
         require(id.isNotBlank()) { "引用编号不能为空" }
         require(sourceModuleId == null || sourceModuleId.isNotBlank()) { "来源模块编号不能为空" }
         require(position >= 0) { "引用顺序不能为负数" }
+        require(enabled || purpose in setOf(NovexReferencePurpose.BACKGROUND, NovexReferencePurpose.RULES)) {
+            "仅背景和规则引用可停用；回答身份请在身份设置中调整"
+        }
         require(source.kind != NovexContentKind.CREATIVE_ARTIFACT && target.subject.kind != NovexContentKind.CREATIVE_ARTIFACT) {
             "卡片互引适用于世界、角色版本和文游；文件沿用成果附加关系"
         }
@@ -81,10 +86,12 @@ internal class NovexCardReferences(
     suspend fun put(reference: NovexCardReference, allowMissingTarget: Boolean = false): NovexCardReference {
         require(exists(reference.source)) { "引用来源卡片不存在" }
         val status = status(reference.target)
-        require(allowMissingTarget || status == NovexReferenceTargetStatus.AVAILABLE) { "${status.label}；请按编号选择，不能按重名连接" }
-        links.get(reference.id)?.let { require(it.source == reference.source) { "引用编号属于另一张来源卡片" } }
+        val previous = links.get(reference.id)
+        previous?.let { require(it.source == reference.source) { "引用编号属于另一张来源卡片" } }
+        val retainingDisabled = !reference.enabled && previous?.target == reference.target
+        require(allowMissingTarget || retainingDisabled || status == NovexReferenceTargetStatus.AVAILABLE) { "${status.label}；请按编号选择，不能按重名连接" }
         reference.sourceModuleId?.let { requireModule(it, reference.source) }
-        reference.target.moduleId?.let { if (!allowMissingTarget || content.module(it) != null) requireModule(it, reference.target.subject) }
+        reference.target.moduleId?.let { if ((!allowMissingTarget && !retainingDisabled) || content.module(it) != null) requireModule(it, reference.target.subject) }
         if (reference.purpose == NovexReferencePurpose.ANSWER_IDENTITY) {
             require(reference.target.subject.kind == NovexContentKind.CHARACTER_VERSION && reference.target.moduleId == null) {
                 "回答身份必须指向完整的具体角色版本"
@@ -146,6 +153,7 @@ internal object NovexCardReferenceCodec {
         put("target", address(value.target.subject, optJSONObject("target")).put("moduleId", value.target.moduleId).put("entryId", value.target.entryId))
         put("purpose", value.purpose.name); put("sourceModuleId", value.sourceModuleId)
         put("position", value.position); put("targetLabel", value.targetLabel)
+        put("enabled", value.enabled)
         put("unresolvedTarget", value.unresolvedTarget?.let {
             address(it.subject, optJSONObject("unresolvedTarget")).put("moduleId", it.moduleId).put("entryId", it.entryId)
         })
@@ -159,7 +167,10 @@ internal object NovexCardReferenceCodec {
             NovexReferencePurpose.valueOf(value.getString("purpose")), value.optionalText("sourceModuleId"),
             value.optInt("position"), value.optString("targetLabel"), value.optJSONObject("unresolvedTarget")?.let {
                 NovexReferenceTarget(address(it), it.optionalText("moduleId"), it.optionalText("entryId"))
-            }, preservedJson = extensions(value))
+            }, preservedJson = extensions(value), enabled = if (value.has("enabled")) {
+                require(value.get("enabled") is Boolean) { "引用启用状态必须为布尔值" }
+                value.getBoolean("enabled")
+            } else true)
     }
 
     private fun JSONObject.optionalText(key: String) = optString(key).takeIf { it.isNotBlank() }
@@ -168,7 +179,7 @@ internal object NovexCardReferenceCodec {
     private fun address(value: JSONObject) = NovexContentAddress(NovexContentKind.valueOf(value.getString("kind")), value.getString("id"))
 
     private fun extensions(value: JSONObject): String = JSONObject(value.toString()).apply {
-        listOf("id", "purpose", "sourceModuleId", "position", "targetLabel").forEach(::remove)
+        listOf("id", "purpose", "sourceModuleId", "position", "targetLabel", "enabled").forEach(::remove)
         listOf("source", "target", "unresolvedTarget").forEach { key ->
             optJSONObject(key)?.let { nested ->
                 listOf("kind", "id", "moduleId", "entryId").forEach(nested::remove)

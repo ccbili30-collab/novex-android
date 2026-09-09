@@ -48,16 +48,15 @@ internal fun NovexPanel(
     val title = args.optString("title").trim().ifEmpty { "资料" }
     val summary = args.optString("summary").trim()
     val icon = semanticIcon(args.optString("icon"))
-    val blocks = remember(argsJson) { parseArray(args.optString("blocks")) }
-    val actions = remember(argsJson) {
-        parseArray(args.optString("actions")).mapNotNull { item ->
-            val label = item.optString("label").trim()
-            val prompt = item.optString("prompt").trim()
-            if (label.isEmpty() || prompt.isEmpty()) null else PanelAction(label, prompt)
-        }.ifEmpty { parseLegacyActions(args) }
+    val parsed = remember(argsJson) { runCatching { NovexPanelContent.parse(args) } }
+    val panel = parsed.getOrNull()
+    if (panel == null) {
+        Text("这份面板缺少有效内容，请重新生成。", color = MaterialTheme.colorScheme.error)
+        return
     }
-    val legacyContent = args.optString("content").trim()
-    if (blocks.isEmpty() && actions.isEmpty() && legacyContent.isEmpty()) return
+    val blocks = panel.blocks
+    val actions = panel.actions
+    val legacyContent = panel.content
     val expanded = expansionState.value(panelKey, panelInitiallyExpanded(argsJson))
 
     Card(
@@ -99,7 +98,7 @@ internal fun NovexPanel(
                     modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (legacyContent.isNotEmpty()) Markdown(content = legacyContent)
+                    if (legacyContent.isNotEmpty()) Markdown(content = legacyContent, modifier = Modifier.fillMaxWidth())
                     blocks.forEachIndexed { index, block ->
                         PanelBlock(block, "$panelKey:block:$index", expansionState)
                     }
@@ -122,7 +121,7 @@ private fun PanelBlock(
     expansionState: PanelExpansionState,
 ) {
     when (block.optString("type")) {
-        "markdown" -> Markdown(content = block.optString("content"))
+        "markdown" -> Markdown(content = block.optString("content"), modifier = Modifier.fillMaxWidth())
         "image" -> {
             AsyncImage(
                 model = block.optString("src"),
@@ -194,7 +193,7 @@ private fun PanelDetails(
             Text(block.optString("title", "详细内容"), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Icon(if (open) com.openminis.app.ui.novex.NovexIcons.ExpandLess else com.openminis.app.ui.novex.NovexIcons.ExpandMore, contentDescription = null)
         }
-        AnimatedVisibility(open) { Markdown(content = block.optString("content")) }
+        AnimatedVisibility(open) { Markdown(content = block.optString("content"), modifier = Modifier.fillMaxWidth()) }
     }
 }
 
@@ -212,24 +211,6 @@ private fun TableRow(values: JSONArray, header: Boolean) {
         }
     }
 }
-
-private data class PanelAction(val label: String, val prompt: String)
-
-private fun parseArray(raw: String): List<JSONObject> = runCatching {
-    val values = JSONArray(raw.ifBlank { "[]" })
-    (0 until values.length()).mapNotNull(values::optJSONObject)
-}.getOrDefault(emptyList())
-
-private fun parseLegacyActions(args: JSONObject): List<PanelAction> = runCatching {
-    val raw = args.optString("buttons").ifBlank { "[]" }
-    val values = JSONArray(raw)
-    (0 until values.length()).mapNotNull { index ->
-        val item = values.optJSONObject(index) ?: return@mapNotNull null
-        val label = item.optString("label").trim()
-        val prompt = item.optString("value", label).trim()
-        if (label.isEmpty() || prompt.isEmpty()) null else PanelAction(label, prompt)
-    }
-}.getOrDefault(emptyList())
 
 private fun semanticIcon(value: String): String = when (value) {
     "character" -> "人"

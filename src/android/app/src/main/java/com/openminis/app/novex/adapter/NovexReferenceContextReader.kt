@@ -18,13 +18,15 @@ internal class NovexReferenceContextReader(private val workspace: NovexWorkspace
                 val collection = document as? ContentModuleDocument.Collection ?: return null
                 collection.copy(items = collection.items.filter { it.id == entry })
             } ?: document
-            return listOf(NovexContextCandidate(
+            val candidate = NovexContextCandidate(
                 sourceId = moduleId + (target.entryId?.let { ":entry:$it" } ?: ""),
                 label = "${module.name}${target.entryId?.let { " · 条目 $it" }.orEmpty()}",
                 content = scoped.toPlainText(),
+                alwaysInclude = NovexExternalCardImport.isVerbatimModule(module.contentJson),
                 aliases = setOf(module.name).filterTo(linkedSetOf(), String::isNotBlank),
                 position = module.position,
-            ))
+            )
+            return NovexWorldbookConditions.candidates(candidate, module.type, module.contentJson, target.entryId)
         }
         return when (target.subject.kind) {
             NovexContentKind.WORLD, NovexContentKind.CHARACTER_VERSION ->

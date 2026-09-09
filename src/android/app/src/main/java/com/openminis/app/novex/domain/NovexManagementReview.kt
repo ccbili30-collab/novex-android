@@ -18,11 +18,17 @@ fun NovexManagementPlan.reviewText(): String = buildString {
         values.forEachIndexed { index, module -> body("${index + 1}. ${module.name}", module.contentJson) }
     }
     changes.forEach { change -> when (change) {
+        is NovexManagedChange.UpdateCard -> {
+            change.name?.let { appendLine("新名称：$it") }
+            change.summary?.let { appendLine("新简介：$it") }
+            change.launchMode?.let { appendLine("启动方式：${it.name}") }
+        }
         is NovexManagedChange.AddModule -> body("新增模块：${change.name}", change.contentJson)
         is NovexManagedChange.UpdateModule -> {
-            body("原正文", expectedModuleContents[change.moduleId])
+            body("原正文", originalModuleDocuments[change.moduleId])
             change.name?.let { appendLine("新名称：$it") }
             body("修改后的正文", change.contentJson)
+            change.appendText?.let { appendLine("追加内容：\n$it") }
         }
         is NovexManagedChange.CreateWorld -> { body("世界介绍：${change.name}", change.overview); modules(change.modules) }
         is NovexManagedChange.CreateCharacter -> { body("角色资料：${change.name}", change.profileJson); modules(change.modules) }

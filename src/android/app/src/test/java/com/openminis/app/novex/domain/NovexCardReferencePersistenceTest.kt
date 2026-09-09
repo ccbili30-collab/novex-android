@@ -10,7 +10,7 @@ import com.openminis.app.data.character.ContentModuleCollectionItem
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardTransferParser
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -71,7 +71,7 @@ class NovexCardReferencePersistenceTest {
     fun `migration from version 26 adds reference storage while preserving existing cards`() = runBlocking {
         val path = File(files.root, "migration.db").absolutePath
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35).allowMainThreadQueries().build()
         var database = open()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))

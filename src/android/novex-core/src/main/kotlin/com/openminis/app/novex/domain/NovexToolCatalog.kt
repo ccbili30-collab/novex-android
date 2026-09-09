@@ -56,7 +56,7 @@ object NovexToolCatalog {
                         NovexToolParameter("block_ids", NovexToolParameterKind.STRING_LIST, false, "需要读取的稳定内容块编号"),
                         NovexToolParameter("source_revision", NovexToolParameterKind.STRING, false, "精确读取已保存的来源修订；续读旧笔记来源时同时保留该修订编号。省略则读当前解析，旧游标不能用于新解析"),
                         NovexToolParameter("heading_path", NovexToolParameterKind.STRING_LIST, false, "需要读取的完整标题路径"),
-                        NovexToolParameter("query", NovexToolParameterKind.STRING, false, "需要定位的关键词或短语"),
+                        NovexToolParameter("query", NovexToolParameterKind.STRING, false, "一个按原文连续匹配的关键词或短语；不是空格分隔的关键词列表。不同词分别查询；零命中只表示该短语未匹配，不代表文件或事实不存在"),
                         NovexToolParameter("page_range", NovexToolParameterKind.PAGE_RANGE, false, "格式可靠支持时使用的页码闭区间"),
                         NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样使用上次返回的 next_cursor；不要自己编码、修改或同时传 query 等定位参数"),
                         NovexToolParameter("first_block", NovexToolParameterKind.INTEGER, false, "从第几个来源块开始读，从 1 计数；可以代替游标重新定位"),
@@ -92,16 +92,16 @@ object NovexToolCatalog {
             ))
             add(NovexToolDefinition(
                 name = "learning_read",
-                description = "只读访问当前分支资料集已保存的学习笔记与来源、覆盖进度；总览优先，正文有界分页。不会重新启动学习，不会创建卡片。",
+                description = "只读访问当前分支已保存笔记，并同时回读其记录修订的有界原文依据。笔记不是已核验事实；核对 source_evidence 中的原文，未返回区间沿原文引用继续读取。正文与原文共用字符预算，笔记分页不重新启动学习或创建卡片。",
                 risk = NovexToolRisk.READ_ONLY,
                 parameters = listOf(
                     NovexToolParameter("collection_ref", NovexToolParameterKind.STRING, true, "当前对话分支中的资料集引用"),
                     NovexToolParameter("note_ref", NovexToolParameterKind.STRING, false, "可选本工具返回的笔记引用；不能与其他定位方式混用"),
                     NovexToolParameter("note_set", NovexToolParameterKind.STRING, false, "current（默认，当前成果）或 history（重新核对来源前的历史成果）；历史成果不计入当前整理覆盖，重名引用请使用 first_note 定位"),
                     NovexToolParameter("cursor", NovexToolParameterKind.STRING, false, "原样使用上次 next_cursor；续读时只传这一种定位参数"),
-                    NovexToolParameter("query", NovexToolParameterKind.STRING, false, "可选笔记正文关键词，只返回命中笔记，不能冒充完整通读"),
+                    NovexToolParameter("query", NovexToolParameterKind.STRING, false, "可选的单个连续关键词或短语，按正文原样匹配；不要把多个独立关键词拼成一条。只返回命中笔记，零命中不代表资料不存在，不能冒充完整通读"),
                     NovexToolParameter("first_note", NovexToolParameterKind.INTEGER, false, "从第几条笔记重读，从 1 计数；对应 next_position.block，不与游标混用"),
-                    NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次正文字符预算，一到四万八千，默认二万四千；最多二十条笔记，剩余内容返回游标"),
+                    NovexToolParameter("max_chars", NovexToolParameterKind.INTEGER, false, "本次笔记与原文合计字符预算，一到四万八千，默认二万四千；最多二十条笔记，剩余笔记返回游标。原文另有截取范围与剩余标记"),
                 ),
             ))
         }

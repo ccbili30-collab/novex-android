@@ -38,6 +38,7 @@ data class CreativeArtifactRecord(
 class CreativeArtifactRepository(
     private val database: AppDatabase,
     private val files: CreativeArtifactFileStore,
+    private val cardWorkspace: com.openminis.app.novex.domain.NovexWorkspace? = null,
 ) : NovexManagementArtifactPort, NovexCreativeArtifactReader {
     private val dao get() = database.creativeArtifactDao()
 
@@ -132,7 +133,8 @@ class CreativeArtifactRepository(
             ),
         )
         return selectAttachedModuleImageIds(records, owner).mapNotNull { (moduleId, artifactId) ->
-            runCatching { moduleId to file(artifactId) }.getOrNull()
+            if (cardWorkspace?.module(moduleId)?.module?.contentJson?.let(com.openminis.app.novex.domain.NovexModuleImageOrigins::ownsMainImage) == true) null
+            else runCatching { moduleId to file(artifactId) }.getOrNull()
         }.toMap()
     }
 
@@ -152,13 +154,41 @@ class CreativeArtifactRepository(
     }
 
     override suspend fun attach(attachment: CreativeArtifactAttachment) {
-        requireNotNull(dao.artifact(attachment.artifactId)) { "创作成果不存在" }
-        dao.attach(attachment.toEntity())
+        database.withTransaction {
+            val record = requireNotNull(artifact(attachment.artifactId)) { "创作成果不存在" }
+            cardWorkspace?.let { workspace ->
+                if (attachment.moduleId != null && record.artifact.kind in setOf(CreativeArtifactKind.IMAGE, CreativeArtifactKind.MAP))
+                    CreativeArtifactCardImages(workspace).attach(attachment, record, file(attachment.artifactId))
+            }
+            dao.attach(attachment.toEntity())
+        }
     }
 
     override suspend fun detach(attachment: CreativeArtifactAttachment) {
-        val value = attachment.toEntity()
-        dao.detach(value.artifactId, value.ownerKind, value.ownerId, value.moduleId, value.slot)
+        database.withTransaction {
+            val value = attachment.toEntity()
+            dao.detach(value.artifactId, value.ownerKind, value.ownerId, value.moduleId, value.slot)
+            // Removing a source-library association does not delete the independently owned card copy.
+        }
+    }
+
+    /** Restartable backfill of the image actually shown by the old module projection. */
+    suspend fun migrateCardImages(): Int {
+        val workspace = cardWorkspace ?: return 0
+        val records = list(CreativeArtifactQuery(kinds = setOf(CreativeArtifactKind.IMAGE, CreativeArtifactKind.MAP)))
+        val owners = records.flatMap { it.attachments }.filter { it.moduleId != null }.map { it.owner }.distinct()
+        var failures = 0
+        for (owner in owners) for ((moduleId, artifactId) in selectAttachedModuleImageIds(records, owner)) {
+            try {
+                database.withTransaction {
+                    val record = requireNotNull(artifact(artifactId))
+                    CreativeArtifactCardImages(workspace).attach(CreativeArtifactAttachment(artifactId, owner, moduleId), record, file(artifactId), onlyMissing = true)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { failures++ }
+            kotlinx.coroutines.yield()
+        }
+        return failures
     }
 
     suspend fun setFavorite(artifactId: String, favorite: Boolean) {

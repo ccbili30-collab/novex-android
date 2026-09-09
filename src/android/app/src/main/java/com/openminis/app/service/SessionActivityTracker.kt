@@ -192,13 +192,13 @@ object SessionActivityTracker {
     private var appContext: Context? = null
 
     /**
-     * The service should run iff at least one session is streaming OR
-     * the user is currently present in at least one chat. Both inputs
+     * Run for a streaming task or presence in a saved conversation.
+     * Merely opening an unsent draft must not start a background service. Both inputs
      * are independently mutated, so we always recompute from the live
      * state flows rather than tracking a derived flag.
      */
     private fun shouldRunService(): Boolean =
-        _activeSessions.value.isNotEmpty() || _presentSessions.value.isNotEmpty()
+        _activeSessions.value.isNotEmpty() || _presentSessions.value.any { !it.startsWith("__new__") }
 
     /**
      * T50: per-session stream-cancel callbacks. Each ChatViewModel
@@ -407,6 +407,9 @@ object SessionActivityTracker {
         val wasIdle = !shouldRunService()
         _presentSessions.value = _presentSessions.value + sessionId
         Log.d(TAG, "Presence set: $sessionId (present total: ${_presentSessions.value.size})")
+        // An unsent draft has no background task. Do not create a foreground-service
+        // deadline merely by opening New conversation (including an unconfigured install).
+        if (!shouldRunService()) return
         if (wasIdle) {
             startServiceIfNeeded()
         } else {

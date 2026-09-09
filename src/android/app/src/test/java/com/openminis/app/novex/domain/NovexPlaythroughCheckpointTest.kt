@@ -15,6 +15,28 @@ class NovexPlaythroughCheckpointTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
+    @Test fun `name only save reopens with originals and software state without generated narrative`() {
+        val input = NovexCheckpointInput.parse("""{"name":"邮局断点"}""")
+        val event = NovexCheckpointSourceEvent("user", "user", "暮色，桌上有蓝色信封，尚未打开。", null, 1, null)
+        val config = NovexConversationConfigurationSnapshot("chat", activePlaythroughId = "play",
+            playthroughStates = mapOf("user" to PlaythroughState("user", mapOf("地点" to PlaythroughValue.Text("邮局")))))
+        val scope = NovexConversationWorkspaceScope("chat", listOf("user"), "reply")
+        val checkpoint = NovexPlaythroughCheckpointFactory.create("save", config, listOf("user"), "reply",
+            input.name, input.summary, input.stateJson, 2, listOf(event))
+        val root = temporaryFolder.newFolder("name-only")
+        NovexPlaythroughCheckpointWriter(FileNovexConversationWorkspaceStore(root)).save(scope, checkpoint,
+            NovexWorkspaceProvenance("chat", "reply", "user", "save"))
+        val loaded = NovexCheckpointContinuation(FileNovexConversationWorkspaceStore(root)).inspect(scope).single().checkpoint!!
+        assertEquals(listOf(event), loaded.sourceEvents)
+        assertEquals("{}", loaded.stateJson)
+        assertEquals(PlaythroughValue.Text("邮局"), loaded.playthroughValues["地点"])
+        assertEquals(NovexConversationConfigurationCodec.encode(config), loaded.adoptedConfigurationJson)
+        assertThrows(IllegalArgumentException::class.java) { NovexCheckpointInput.parse("""{"name":"断点","state_json":"[]"}""") }
+        val legacy = NovexCheckpointInput.parse("""{"name":"旧断点","state":"原有补充"}""")
+        assertEquals("原有补充", legacy.summary)
+        assertEquals("原有补充", JSONObject(legacy.stateJson).getString("legacy_markdown"))
+    }
+
     @Test
     fun `reopened checkpoint supplies exact branch events rather than unsupported model conclusions`() {
         val root = temporaryFolder.newFolder("evidence")
@@ -153,6 +175,32 @@ class NovexPlaythroughCheckpointTest {
         assertTrue(JSONObject(saved).getString("summary").contains("离开村庄"))
         assertFalse(entry.workspaceRef.value.contains("/var/minis"))
         assertFalse(saved.contains(root.absolutePath))
+    }
+
+    @Test
+    fun longConversationCheckpointRetainsOriginalEvidenceAfterRestart() {
+        val root = temporaryFolder.newFolder("large-checkpoint")
+        val store = FileNovexConversationWorkspaceStore(root)
+        val text = "中文原始设定，不能用摘要替换。".repeat(35000)
+        val source = NovexCheckpointSourceEvent("message", "user",
+            JSONArray().put(JSONObject().put("type", "text").put("value", text)).toString(), null, 1, null)
+        val checkpoint = NovexPlaythroughCheckpoint("large", "chat", "reply", "长对话存档", "当前在邮局", "{}", emptyMap(), "game", "snapshot", 1,
+            playthroughId = "play", sourceEvents = listOf(source), sourceCaptureRecorded = true)
+        val scope = NovexConversationWorkspaceScope("chat", listOf("message"), "reply")
+        val provenance = NovexWorkspaceProvenance("chat", "reply", "message", "save")
+        val entry = NovexPlaythroughCheckpointWriter(store).save(scope, checkpoint, provenance)
+        assertTrue(entry.byteCount > FileNovexConversationWorkspaceStore.MAX_MODEL_TEXT_BYTES)
+        val reopened = FileNovexConversationWorkspaceStore(root)
+        val restored = NovexCheckpointContinuation(reopened).inspect(scope).single()
+        assertEquals(checkpoint, restored.checkpoint)
+        assertEquals(source.partsJson, restored.checkpoint!!.sourceEvents.single().partsJson)
+        assertEquals(entry, NovexPlaythroughCheckpointWriter(reopened).save(scope, checkpoint, provenance))
+        assertEquals(1, reopened.inspect(scope).entries.size)
+        // The model-facing arbitrary text tool retains its independent limit.
+        assertThrows(IllegalArgumentException::class.java) {
+            reopened.writeText(scope, NovexWorkspaceArea.SAVES, "large-arbitrary.txt", text, "text/plain", provenance)
+        }
+        assertTrue(NovexCheckpointContinuation(reopened).inspect(scope.copy(writeBranchId = "sibling")).isEmpty())
     }
 
     @Test

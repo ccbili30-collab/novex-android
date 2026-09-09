@@ -69,6 +69,9 @@ internal fun NovexCardImportPreviewDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 summary.forEach { line -> Text(line, modifier = Modifier.padding(top = 8.dp)) }
+                if (org.json.JSONObject(preview.document.originalJson).has(com.openminis.app.novex.domain.NovexExternalCardImport.SOURCE)) {
+                    Text("按原文导入，可直接使用。以后需要时再让人工智能整理。", modifier = Modifier.padding(top = 8.dp))
+                }
                 (preview.document as? NovexCharacterImportDocument)?.versions?.firstOrNull()?.let { version ->
                     com.openminis.app.novex.domain.NovexTavernExchange.sourceSummary(version.profileJson)?.let { message ->
                         Text(message, modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)

@@ -21,13 +21,15 @@ import androidx.compose.ui.unit.dp
 import com.openminis.app.novex.domain.NovexToolOperation
 import org.json.JSONObject
 
-/** The checkbox approves this immutable operation only, never a tool category or future calls. */
+/** Selection is inert; only explicit confirmation resolves this immutable operation once. */
 @Composable
 internal fun NovexToolApprovalDialog(operation: NovexToolOperation, onApprove: () -> Unit, onReject: () -> Unit) {
     var checked by remember(operation.id, operation.fingerprint) { mutableStateOf(false) }
+    var resolved by remember(operation.id, operation.fingerprint) { mutableStateOf(false) }
     var details by remember(operation.id) { mutableStateOf(false) }
+    val reject = { if (!resolved) { resolved = true; onReject() } }
     AlertDialog(
-        onDismissRequest = onReject,
+        onDismissRequest = reject,
         title = { Text(operation.title) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
@@ -41,12 +43,14 @@ internal fun NovexToolApprovalDialog(operation: NovexToolOperation, onApprove: (
                 TextButton(onClick = { details = !details }) { Text(if (details) "收起操作详情" else "查看完整操作") }
                 if (details) Text(args.toString(2))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = checked, onCheckedChange = { checked = it; if (it) onApprove() })
+                    Checkbox(checked = checked, enabled = !resolved, onCheckedChange = { checked = it })
                     Text("同意执行这一次")
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onApprove) { Text("执行") } },
-        dismissButton = { TextButton(onClick = onReject) { Text("拒绝") } },
+        confirmButton = { TextButton(enabled = checked && !resolved, onClick = {
+            if (checked && !resolved) { resolved = true; onApprove() }
+        }) { Text("确认执行") } },
+        dismissButton = { TextButton(enabled = !resolved, onClick = reject) { Text("拒绝") } },
     )
 }

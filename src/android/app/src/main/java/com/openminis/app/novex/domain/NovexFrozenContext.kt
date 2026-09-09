@@ -33,6 +33,7 @@ object NovexFrozenContextCodec {
             put("kind", candidate.kind.name); put("aliases", JSONArray(candidate.aliases.toList()))
             put("relatedSourceIds", JSONArray(candidate.relatedSourceIds.toList()))
             put("alwaysInclude", candidate.alwaysInclude); put("position", candidate.position)
+            put("worldbookConditions", JSONArray(candidate.worldbookConditions))
         }) } }
         put("sources", sources)
         put("revision", digest(sources.toString()))
@@ -50,7 +51,8 @@ object NovexFrozenContextCodec {
                     val value = sources.getJSONObject(sourceIndex)
                     NovexContextCandidate(value.getString("sourceId"), value.getString("label"), value.getString("content"),
                         ContextSourceKind.valueOf(value.getString("kind")), value.strings("aliases"), value.strings("relatedSourceIds"),
-                        value.optBoolean("alwaysInclude"), value.optInt("position"))
+                        value.optBoolean("alwaysInclude"), value.optInt("position"),
+                        value.optJSONArray("worldbookConditions")?.let { conditions -> (0 until conditions.length()).map { conditions.getString(it) } }.orEmpty())
                 },
                 actorVersionId = row.optionalText("actorVersionId"),
                 adoptedByGame = row.optBoolean("adoptedByGame", true),

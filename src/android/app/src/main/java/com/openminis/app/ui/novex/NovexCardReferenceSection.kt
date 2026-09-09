@@ -43,7 +43,7 @@ internal fun NovexCardReferenceSection(
         }
         NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(address.id)?.project?.name
         NovexContentKind.CREATIVE_ARTIFACT -> null
-    } ?: "缺失卡片 · ${address.id}"
+    } ?: "缺失卡片"
 
     LaunchedEffect(source, sourceModuleId, revision) {
         try {
@@ -51,10 +51,10 @@ internal fun NovexCardReferenceSection(
                 val status = workspace.referenceStatus(reference.target)
                 val name = if (status == NovexReferenceTargetStatus.MISSING_CARD && reference.targetLabel.isNotBlank()) reference.targetLabel
                     else label(reference.target.subject)
-                reference to "$name · ${status.label}"
+                reference to "$name · ${if (reference.enabled) status.label else "已关闭 · ${status.label}"}"
             }
             incoming = workspace.referencesTo(source).filter { sourceModuleId == null || it.target.moduleId == sourceModuleId }
-                .map { it to label(it.source) }
+                .map { it to (label(it.source) + if (it.enabled) "" else " · 已关闭") }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { failure = error.message ?: "读取引用失败" }
     }
@@ -64,7 +64,7 @@ internal fun NovexCardReferenceSection(
         perform {
             workspace.apply(NovexCommand.PutCardReference(NovexCardReference(
                 replacing?.id ?: UUID.randomUUID().toString(), source, target, purpose, sourceModuleId,
-                replacing?.position ?: outgoing.size, title)))
+                replacing?.position ?: outgoing.size, title, enabled = if (purpose in setOf(NovexReferencePurpose.BACKGROUND, NovexReferencePurpose.RULES)) replacing?.enabled ?: true else true)))
             revision++
         }
     }

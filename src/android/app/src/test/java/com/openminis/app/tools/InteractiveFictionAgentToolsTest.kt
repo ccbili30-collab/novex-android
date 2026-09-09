@@ -25,12 +25,14 @@ class InteractiveFictionAgentToolsTest {
     }
 
     @Test
-    fun checkpointToolRequiresOneStructuredSnapshotInsteadOfRawMarkdown() {
+    fun ordinaryCheckpointRequiresOnlyNameAndKeepsOptionalStructuredNotes() {
         val definition = AgentTools.makeAgentTools()
             .single { it.name == "save_checkpoint" }
 
-        assertEquals(listOf("name", "summary", "state_json"), definition.required)
-        assertEquals(definition.required, definition.propertyOrdering)
+        assertEquals(listOf("name"), definition.required)
+        assertEquals(listOf("name", "summary", "state_json"), definition.propertyOrdering)
+        assertTrue(definition.parameters.keys.containsAll(listOf("summary", "state_json")))
+        assertTrue(definition.description.contains("application captures original branch messages"))
         assertTrue(definition.description.contains("structured", ignoreCase = true))
         assertFalse(definition.parameters.containsKey("state"))
     }

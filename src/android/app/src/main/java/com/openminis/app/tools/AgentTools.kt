@@ -30,6 +30,9 @@ object AgentTools {
         add(renderPanelDefinition())
         add(saveCheckpointDefinition())
         add(registerControlsDefinition())
+        addAll(NovexConversationActionTools.definitions())
+        addAll(NovexWorldbookTools.definitions())
+        addAll(NovexIllustrationTools.definitions())
         addAll(NovexManagementTools.modelDefinitions())
         addAll(NovexCardFileTools.definitions())
         if (memoryEnabled) {
@@ -85,7 +88,7 @@ object AgentTools {
             "summary" to AgentToolParam("string", "One-line summary visible while collapsed."),
             "icon" to AgentToolParam("string", "Semantic icon: character, save, world, document, timeline, map, system, or none."),
             "collapsed" to AgentToolParam("boolean", "Whether the panel starts collapsed."),
-            "blocks" to AgentToolParam("string", "JSON array of ordered content blocks. Supported types: markdown, image, gallery, table, stats, timeline, details, divider, html."),
+            "blocks" to AgentToolParam("string", "JSON array of ordered content blocks. Every block must contain visible content. Examples: {type:markdown,content:actual text}; {type:stats,items:[{label:地点,value:邮局}]}; {type:image,src:image URL}; {type:table,columns:[name],rows:[[value]]}; {type:details,title:details,content:actual text}. Also supports gallery with images:[{src:URL}], timeline with items:[{time:time,title:event,description:text}], html with content, and divider. Empty blocks or unknown types fail; title and summary alone are not content."),
             "actions" to AgentToolParam("string", "Optional JSON array of {label,prompt}. Tapping fills the composer and never sends automatically."),
         ),
         required = listOf("title", "summary", "blocks"),
@@ -96,19 +99,19 @@ object AgentTools {
         name = "save_checkpoint",
         description = "Persist one structured, branch-local Novex checkpoint for the current story. Use when the user " +
             "asks to save, before a rollback, or at a major turning point explicitly allowed by the world's rules. " +
-            "The application captures persisted original branch messages and numeric state automatically. " +
+            "Normally pass only name: the application captures original branch messages, adopted settings and saved software state automatically, without advancing the story. Do not reconstruct these into invented scenes or chronology. " +
             "Your summary and state_json remain unverified auxiliary organization; saving does not verify their truth. " +
             "When continuing, read the saved workspace_ref and compare original messages and current software state before treating a summary as established history.",
         parameters = mapOf(
             "name" to AgentToolParam("string", "Short checkpoint name."),
-            "summary" to AgentToolParam("string", "Concise human-readable auxiliary continuation summary. Preserve uncertainty; do not invent actions, causes or chronology."),
+            "summary" to AgentToolParam("string", "Optional auxiliary notes only when needed. Omit for a normal save. Preserve uncertainty; do not invent actions, causes or chronology."),
             "state_json" to AgentToolParam(
                 "string",
-                "One JSON object containing time, place, characters, relationships, inventory, world events, " +
+                "Optional JSON object for explicitly requested additional organization, not a required checklist. Include only supported facts about time, place, characters, relationships, inventory, world events, " +
                     "unresolved threads and applicable rules. Do not return Markdown or a file path.",
             ),
         ),
-        required = listOf("name", "summary", "state_json"),
+        required = listOf("name"),
         propertyOrdering = listOf("name", "summary", "state_json"),
     )
 

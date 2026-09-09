@@ -15,17 +15,13 @@ class NovexCardFileService(
         val configuration: NovexConversationConfigurationSnapshot, val payload: JSONObject)
 
     suspend fun execute(configuration: NovexConversationConfigurationSnapshot, tool: String, arguments: JSONObject,
-        userRequests: List<String>, operationId: String, requestId: String? = null): Result {
+        userRequests: List<String>, operationId: String, requestId: String? = null,
+        preparedChanges: String? = null): Result {
         // Resolve a bounded, immutable source before opening the write transaction.
-        val changes = when (tool) {
-            "novex_write_card" -> operations.create(arguments)
-            "novex_write_module" -> operations.writeModule(arguments)
-            "novex_move_module" -> operations.moveModule(arguments)
-            "novex_link_cards" -> operations.link(arguments)
-            else -> error("未知卡片操作")
-        }
+        val changes = preparedChanges ?: operations.prepare(tool, arguments)
         var result: Result? = null
         transaction.run {
+            operations.requireSourceAccess(arguments)
             // A stable output key distinguishes intended copies from retries; words and content
             // equality never decide how many cards the user is allowed to create.
             val scope = requestId?.takeIf(String::isNotBlank) ?: NovexFrozenContextCodec.digest(JSONArray(userRequests).toString())
@@ -34,47 +30,40 @@ class NovexCardFileService(
                 NovexFrozenContextCodec.digest("${configuration.conversationId}|$scope|$outputKey") else operationId
             val plan = management.propose(configuration, changes, userRequests.lastOrNull().orEmpty(), planId, userRequests.dropLast(1), scope)
             run {
-                val applied = management.apply(configuration, plan, userRequests.lastOrNull().orEmpty())
-                val updated = (if (applied.replayed) emptyList() else applied.createdSubjects).fold(configuration) { current, target ->
-                    NovexConversationConfiguration.open(current).apply(NovexConversationCommand.MountSubject(target, ManagedAccess.EDIT)).snapshot
+                val completed = workspace.conversationDrafts(configuration.conversationId)?.completedWrites?.any { it.id == plan.id } == true
+                if (!completed && !arguments.optBoolean("allow_duplicate_name")) {
+                    plan.changes.filterIsInstance<NovexManagedChange.AddModule>().forEach { added ->
+                        val sameNames = workspace.modules(added.owner).modules.filter { it.name == added.name }
+                        require(sameNames.isEmpty()) {
+                            "已有同名模块“${added.name}”（${sameNames.joinToString { it.id }}）。补充或整理请读取后用原 module_id（模块编号）更新；确实需要另一份同名模块时设置 allow_duplicate_name（允许另建同名）为 true。"
+                        }
+                    }
                 }
+                val applied = management.apply(configuration, plan, userRequests.lastOrNull().orEmpty())
+                val updated = management.configurationAfterWrite(configuration, plan, applied)
                 val checks = verify(plan, applied)
                 if (!applied.replayed) require(checks.optBoolean("verified")) { "写入后的回读核验未通过，事务未提交" }
-                val cards = applied.createdSubjects.map { savedCardReceipt(it) }
-                val modules = applied.changedModuleIds.mapNotNull { workspace.module(it)?.module }.map { module ->
-                    JSONObject().put("module_id", module.id).put("name", module.name).put("position", module.position)
-                        .put("card_id", module.ownerId)
-                }
-                val references = plan.changes.filterIsInstance<NovexManagedChange.PutCardReference>().map { change ->
-                    val ref = change.reference
-                    JSONObject().put("reference_id", ref.id).put("source_id", ref.source.id)
-                        .put("target_id", ref.target.subject.id).put("purpose", ref.purpose.wireName)
-                }
-                val userMessage = if (modules.isNotEmpty()) modules.joinToString("\n") {
+                val receipt = NovexSavedContentReceipt(workspace).fields(plan, applied)
+                val cards = receipt.getJSONArray("created_cards").objects()
+                val updatedCards = receipt.getJSONArray("updated_cards").objects()
+                val modules = receipt.getJSONArray("saved_modules").objects()
+                val references = receipt.getJSONArray("saved_references").objects()
+                val userMessage = if (applied.replayed && !checks.optBoolean("verified")) "这次操作此前已保存，原内容后来已有变更；本次没有再次写入，请读取当前内容。"
+                else if (modules.isNotEmpty()) modules.joinToString("\n") {
                     "模块《${it.getString("name")}》已保存，当前排在第 ${it.getInt("position") + 1} 位。"
-                } else if (cards.isEmpty()) "卡片修改已保存，可以打开查看。"
+                } else if (updatedCards.isNotEmpty()) updatedCards.joinToString("\n") { "《${it.getString("name")}》已更新。" }
+                else if (cards.isEmpty()) "卡片修改已保存，可以打开查看。"
                     else cards.joinToString("\n") { "《${it.getString("name")}》已保存到卡片仓库，可以打开查看。" }
                 result = Result(plan, applied, updated, JSONObject().put("status", if (checks.optBoolean("verified")) "saved_verified" else "saved_needs_review")
                     .put("saved", true).put("proposal_id", plan.id).put("replayed", applied.replayed)
                     .put("verification", checks).put("created_cards", JSONArray(cards))
-                    .put("saved_modules", JSONArray(modules)).put("saved_references", JSONArray(references)).put("message", userMessage))
+                    .put("updated_cards", JSONArray(updatedCards)).put("saved_modules", JSONArray(modules)).put("saved_references", JSONArray(references)).put("message", userMessage))
             }
         }
         return requireNotNull(result)
     }
 
-    /** Read the committed object's current name; the initial empty-card directory is stale after saving. */
-    private suspend fun savedCardReceipt(target: NovexContentAddress): JSONObject {
-        val name = when (target.kind) {
-            NovexContentKind.WORLD -> workspace.world(target.id)?.world?.name
-            NovexContentKind.CHARACTER_VERSION -> workspace.characterForVersion(target.id)?.character?.character?.name
-            NovexContentKind.INTERACTIVE_FICTION -> workspace.interactiveFiction(target.id)?.project?.name
-            else -> null
-        }
-        return JSONObject().put("kind", target.kind.managementWireName()).put("id", target.id)
-            .put("name", requireNotNull(name) { "已保存卡片暂不可读" })
-            .put("location", "卡片仓库").put("open_in_app", true)
-    }
+    private fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
 
     private suspend fun verify(plan: NovexManagementPlan, applied: NovexManagementApplyResult): JSONObject {
         var verified = true
@@ -103,10 +92,18 @@ class NovexCardFileService(
                 verified = verified && matches
                 cards.put(JSONObject().put("id", target?.id).put("modules", modules.size).put("verified", matches))
             }
+            is NovexManagedChange.UpdateCard -> verified = verified && NovexCardHeaderEdit.matches(workspace, change)
             is NovexManagedChange.UpdateModule -> {
                 val actual = workspace.module(change.moduleId)?.module
+                val expectedContent = change.contentJson?.let { incoming ->
+                    plan.originalModuleDocuments[change.moduleId]?.let { original ->
+                        com.openminis.app.data.character.ContentModuleDocumentCodec.preserveTransferSource(original,
+                            NovexModuleImageOrigins.preserve(original, incoming, requireNotNull(actual).type))
+                    } ?: incoming
+                }
                 verified = verified && actual != null && (change.name == null || actual.name == change.name) &&
-                    (change.contentJson == null || same(requireNotNull(actual).contentJson, change.contentJson))
+                    (expectedContent == null || same(requireNotNull(actual).contentJson, expectedContent)) &&
+                    (change.appendText == null || JSONObject(requireNotNull(actual).contentJson).optString("text").endsWith("\n" + change.appendText))
             }
             is NovexManagedChange.MoveModule -> verified = verified && workspace.module(change.moduleId)?.module?.position == change.toIndex
             is NovexManagedChange.AddModule -> {

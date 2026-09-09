@@ -39,6 +39,7 @@ internal data class NovexStandardToolDetailPresentation(
 
 private val standardToolTitles = mapOf(
     "novex_write_card" to "创建并填写卡片",
+    "novex_update_card" to "修改卡片资料",
     "novex_write_module" to "保存模块",
     "novex_move_module" to "调整模块顺序",
     "novex_link_cards" to "设置卡片引用",
@@ -52,6 +53,13 @@ private val standardToolTitles = mapOf(
     "workspace_compute" to "处理工作区",
     "learning_prepare" to "准备整理资料",
     "save_checkpoint" to "保存进度",
+    "select_answer_identity" to "选择回答身份",
+    "start_interactive_fiction" to "启动文游",
+    "inspect_story_images" to "查看剧情插图",
+    "select_story_image" to "选择剧情插图",
+    "inspect_worldbook_choices" to "查看世界书选择",
+    "set_game_worldbooks" to "设置文游世界书",
+    "set_current_worldbooks" to "调整本局世界书",
     "register_controls" to "更新快捷操作",
     "update_playthrough_state" to "更新本局状态",
     "novex_inspect_content" to "查看挂载内容",
@@ -64,7 +72,7 @@ private val standardToolTitles = mapOf(
 
 private val detailFieldLabels = mapOf(
     "kind" to "卡片类型", "name" to "名称", "card_id" to "卡片编号",
-    "saved" to "是否保存", "verification" to "回读核验", "created_cards" to "已创建卡片",
+    "saved" to "是否保存", "verification" to "回读核验", "created_cards" to "已创建卡片", "updated_cards" to "已更新卡片", "mode" to "写入方式", "allow_duplicate_name" to "另建同名模块",
     "modules" to "模块", "position" to "顺序", "source_revision" to "来源修订",
     "document_ref" to "文档",
     "collection_ref" to "资料集合",
@@ -94,7 +102,7 @@ private val detailFieldLabels = mapOf(
 )
 
 private val detailFieldOrder = listOf(
-    "kind", "name", "card_id", "saved", "verification", "created_cards", "modules", "position", "source_revision",
+    "kind", "name", "card_id", "saved", "verification", "created_cards", "updated_cards", "modules", "position", "source_revision",
     "document_ref", "collection_ref", "area", "path", "file_ref", "subject_kind", "subject_id",
     "module_id", "query", "page_range", "block_ids", "operation", "changes", "controls", "cursor",
     "status", "type", "title", "summary", "message", "proposal_id", "confirmation_phrase",

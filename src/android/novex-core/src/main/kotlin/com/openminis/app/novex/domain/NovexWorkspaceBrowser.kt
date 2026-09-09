@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 /** Paged inventory and bounded keyword retrieval share the same branch visibility boundary. */
 class NovexWorkspaceBrowser(private val scope: NovexConversationWorkspaceScope,
-    private val store: NovexConversationWorkspaceStore) {
+    private val store: NovexConversationWorkspaceStore,
+    private val projectText: (NovexWorkspaceEntry, String) -> NovexWorkspaceTextProjection? = { _, _ -> null }) {
     fun browse(area: NovexWorkspaceArea?, path: String?, query: String?, cursor: String?,
         limit: Int, searchContent: Boolean = false): NovexToolResult {
         require(limit in 1..if (searchContent) 25 else 500) { if (searchContent) "搜索每批应返回 1 到 25 个命中文件" else "每页数量应在 1 到 500 之间" }
@@ -23,7 +24,9 @@ class NovexWorkspaceBrowser(private val scope: NovexConversationWorkspaceScope,
                 !entry.workspaceRef.relativePath.startsWith(PARSED_PREFIX)
         }
         val signature = digest(buildString {
-            append(scope.conversationId).append(scope.orderedBranches()).append(area).append(prefix).append(query).append(searchContent)
+            // Tool replies add message ancestors without changing the visible files.
+            // Bind paging to the effective inventory, not those empty branches.
+            append(scope.conversationId).append(area).append(prefix).append(query).append(searchContent)
             all.forEach { append(it.workspaceRef.value).append(it.sha256) }
         })
         val start = if (cursor == null) 0 else runCatching {
@@ -54,15 +57,18 @@ class NovexWorkspaceBrowser(private val scope: NovexConversationWorkspaceScope,
             if (!searchContent) { entries += payload; continue }
             if (readable == null) { unreadable += original.workspaceRef.value; continue }
             scannedBytes += readable.byteCount
-            val text = runCatching { store.readBytes(scope, readable.workspaceRef).also {
+            val originalText = runCatching { store.readBytes(scope, readable.workspaceRef).also {
                 require(digestBytes(it) == readable.sha256)
             }.toString(Charsets.UTF_8) }.getOrNull()
-            if (text == null) { unreadable += original.workspaceRef.value; continue }
+            if (originalText == null) { unreadable += original.workspaceRef.value; continue }
+            val projection = projectText(readable, originalText)
+            val text = projection?.text ?: originalText
             val match = text.indexOf(query!!, ignoreCase = true)
             if (match < 0) continue
             payload["char_offset"] = match
             payload["snippet"] = text.substring(maxOf(0, match - 100), minOf(text.length, match + query.length + 220))
-            payload["readable_sha256"] = readable.sha256
+            payload["readable_sha256"] = if (projection == null) readable.sha256 else digest(text)
+            if (projection != null) payload["reading_note"] = projection.label
             entries += payload
         }
         val next = start + examined

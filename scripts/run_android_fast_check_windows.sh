@@ -228,6 +228,14 @@ mkdir -p "$report_dir"
     } | LC_ALL=C sort -u > "$manifest"
   fi
 
+  # Tracked paths can be deleted or moved in the current worktree. Only
+  # existing inputs belong in the new manifest; the remote stale-file pass
+  # removes paths absent from it.
+  while IFS= read -r path; do
+    if [[ -f "$path" ]]; then printf '%s\n' "$path"; fi
+  done < "$manifest" > "$changed_manifest"
+  mv "$changed_manifest" "$manifest"
+
   tr '\n' '\0' < "$manifest" | xargs -0 shasum -a 256 -- | while read -r hash path; do
     printf '%s\t%s\n' "$path" "$hash"
   done | LC_ALL=C sort > "$hash_manifest"
@@ -344,7 +352,7 @@ ssh "$host" "
   # build output in a remote file, then replay it after the Gradle client exits.
   remote_gradle_log='$remote_gradle_log'
   set +e
-  $quoted_gradle > "\$remote_gradle_log" 2>&1
+  $quoted_gradle < /dev/null > "\$remote_gradle_log" 2>&1
   gradle_status=\$?
   set -e
   cat "\$remote_gradle_log"

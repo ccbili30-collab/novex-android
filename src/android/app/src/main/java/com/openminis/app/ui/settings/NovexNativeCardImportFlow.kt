@@ -38,9 +38,13 @@ internal fun novexNativeCardImportSpec(kind: NovexCardKind): NovexNativeCardImpo
             NovexCardKind.CHARACTER -> "导入角色卡"
             NovexCardKind.GAME -> "导入文游卡"
         },
-        extensionLabel = if (kind == NovexCardKind.CHARACTER) ".${kind.extension} 或酒馆 PNG（便携式网络图像）／JSON（结构化数据）" else ".${kind.extension}",
+        extensionLabel = when (kind) {
+            NovexCardKind.WORLD -> ".${kind.extension} 或任意可读设定文本"
+            NovexCardKind.CHARACTER -> ".${kind.extension}、酒馆图片卡或任意可读角色文本"
+            NovexCardKind.GAME -> ".${kind.extension}"
+        },
         mimeTypes = listOf("application/zip", "application/octet-stream") +
-            if (kind == NovexCardKind.CHARACTER) listOf("image/png", "application/json", "text/plain") else emptyList(),
+            if (kind != NovexCardKind.GAME) listOf("*/*", "image/png", "application/json", "text/plain") else emptyList(),
     )
 
 internal data class NovexNativeCardImporter(
@@ -85,14 +89,10 @@ internal fun rememberNovexNativeCardImporter(
                         output.toByteArray()
                     }
                         ?: error("无法读取${spec.label.removePrefix("导入")}")
-                    if (kind == NovexCardKind.CHARACTER && !(bytes.size >= 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte())) {
-                        return@withContext com.openminis.app.novex.domain.NovexTavernExchange.importCharacter(bytes)
+                    val fileName = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                        if (it.moveToFirst()) it.getString(0) else null
                     }
-                    val packagePreview = NovexCardPackageCodec.decode(bytes)
-                    require(packagePreview.kind == spec.kind) {
-                        "请选择 ${spec.extensionLabel} ${spec.label.removePrefix("导入")}"
-                    }
-                    NovexCardTransferParser.parse(packagePreview)
+                    com.openminis.app.novex.domain.NovexExternalCardImport.decode(kind, bytes, fileName.orEmpty())
                 }
             }.onSuccess {
                 preview = it

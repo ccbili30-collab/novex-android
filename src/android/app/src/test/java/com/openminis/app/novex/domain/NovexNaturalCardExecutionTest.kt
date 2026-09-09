@@ -6,7 +6,7 @@ import androidx.room.withTransaction
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject

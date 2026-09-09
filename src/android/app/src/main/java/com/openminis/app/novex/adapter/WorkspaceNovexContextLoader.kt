@@ -202,8 +202,8 @@ class WorkspaceNovexContextLoader(
                     val actingRoot = target == root && address.id == identityVersionId && address.kind == NovexContentKind.CHARACTER_VERSION
                     if (!actingRoot && !NovexSettingUse.enabled(configuration, target)) emptyList()
                     else {
-                        val links = reader.references(target).filter { reference -> actingRoot || NovexSettingUse.enabled(configuration,
-                            NovexReferenceTarget(reference.source, reference.sourceModuleId)) }
+                        val links = reader.references(target).filter { reference -> reference.enabled && (actingRoot || NovexSettingUse.enabled(configuration,
+                            NovexReferenceTarget(reference.source, reference.sourceModuleId))) }
                         if (target == root) links else reader.read(target)?.let { context ->
                             if (alreadyRead.add(target)) candidates += NovexSettingUse.filterSource(configuration, NovexFrozenContext(target, context))?.candidates.orEmpty()
                             if (context.isEmpty()) emptyList() else links
@@ -233,10 +233,10 @@ class WorkspaceNovexContextLoader(
         kind: ContextSourceKind = ContextSourceKind.BACKGROUND_MODULE,
     ): List<NovexContextCandidate> = modules
         .filter { com.openminis.app.novex.domain.NovexModuleVisibility.allowsContext(it.type, kind == ContextSourceKind.ANSWER_IDENTITY) }
-        .sortedBy(ContentModuleEntity::position).map { module ->
+        .sortedBy(ContentModuleEntity::position).flatMap { module ->
         val document = ContentModuleDocumentCodec.decode(module.type, module.contentJson)
         val references = workspace.module(module.id)?.references.orEmpty()
-        NovexContextCandidate(
+        val candidate = NovexContextCandidate(
             sourceId = module.id,
             label = "$ownerLabel · ${module.name}",
             content = document.toPlainText(),
@@ -252,9 +252,11 @@ class WorkspaceNovexContextLoader(
                     ModuleReferenceTargetType.CHARACTER_VERSION -> characterCoreId(reference.targetId)
                 }
             },
-            alwaysInclude = module.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS,
+            alwaysInclude = module.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS ||
+                com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(module.contentJson),
             position = if (module.type == com.openminis.app.data.character.ContentModuleType.ROLE_INSTRUCTIONS) Int.MIN_VALUE + 2 else module.position,
         )
+        com.openminis.app.novex.domain.NovexWorldbookConditions.candidates(candidate, module.type, module.contentJson)
     }
 
     private fun gameCandidates(snapshotId: String, title: String, raw: String, includeLegacyPlayer: Boolean, playthroughId: String,

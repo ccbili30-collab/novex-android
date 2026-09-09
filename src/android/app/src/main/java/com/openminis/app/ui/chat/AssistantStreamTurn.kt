@@ -10,7 +10,6 @@ import org.json.JSONObject
  * A new response after tool results gets a new instance, so text cannot merge across response boundaries. */
 internal class AssistantStreamTurn(
     private val turn: Int,
-    private val toolsAvailable: Boolean,
     private val toolTitle: (String) -> String,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -79,7 +78,7 @@ internal class AssistantStreamTurn(
                     materializeText()
                     textBlock = StringBuilder(chunk.text)
                     val block = AssistantBlock("text_${turn}_${blocks.size}", "text", chunk.text,
-                        executionText = toolsAvailable || sawTool)
+                        executionText = sawTool)
                     // Chat Completions content is one string, including content arriving after tool_calls.
                     val beforeTool = if (monolithic) blocks.indexOfFirst { it.kind == "tool_use" } else -1
                     if (beforeTool >= 0) { blocks.add(beforeTool, block); textIndex = beforeTool }

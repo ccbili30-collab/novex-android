@@ -134,6 +134,7 @@ fun CatalogWorldDetailScreen(
     onStartWorldNovax: (String?) -> Unit,
     onStartCharacterChat: (String, String?) -> Unit,
     onOpenModule: (String) -> Unit,
+    onOrganizeImportedCard: () -> Unit = onHelpCreate,
 ) {
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
@@ -160,6 +161,9 @@ fun CatalogWorldDetailScreen(
         }
     }
     val current = data
+    val isImportedSource = current?.modules?.any {
+        com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+    } == true
     fun beginWorldConversation() {
         if (current != null) onStartWorldNovax(null)
     }
@@ -170,9 +174,9 @@ fun CatalogWorldDetailScreen(
             if (current != null) {
                 NovexTopAction(
                     icon = com.openminis.app.R.drawable.ic_phosphor_sparkle,
-                    contentDescription = "帮我创作",
-                    label = "帮我创作",
-                    onClick = onHelpCreate,
+                    contentDescription = if (isImportedSource) "帮我整理" else "帮我创作",
+                    label = if (isImportedSource) "帮我整理" else "帮我创作",
+                    onClick = if (isImportedSource) onOrganizeImportedCard else onHelpCreate,
                 )
                 NovexTopAction(
                     icon = com.openminis.app.R.drawable.ic_phosphor_pencil_simple,

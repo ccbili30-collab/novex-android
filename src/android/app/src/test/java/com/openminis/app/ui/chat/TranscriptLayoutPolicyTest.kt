@@ -7,6 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TranscriptLayoutPolicyTest {
+    @org.junit.Test fun delayedSubmissionCannotOverrideNewerManualReading() {
+        org.junit.Assert.assertFalse(SubmittedUserTurn("saved-late", 100).canNavigateAfter(101))
+        org.junit.Assert.assertFalse(SubmittedUserTurn("same-tick", 100).canNavigateAfter(100))
+        org.junit.Assert.assertTrue(SubmittedUserTurn("next-send", 102).canNavigateAfter(101))
+        org.junit.Assert.assertTrue(SubmittedUserTurn("first-send", 0).canNavigateAfter(Long.MIN_VALUE))
+    }
+
     @Test
     fun `streaming transcript uses chronological non-reversed layout`() {
         assertFalse(
@@ -56,12 +63,16 @@ class TranscriptLayoutPolicyTest {
     }
 
     @Test
-    fun `stream completion releases temporary follow after one final move`() {
+    fun `stream completion retains follow through persisted row settlement`() {
         val following = TranscriptFollowState().after(TranscriptFollowEvent.UserRequestedLatest)
         val completed = following.after(TranscriptFollowEvent.StreamCompleted)
 
         assertTrue(following.shouldMoveFor(TranscriptViewportMove.StreamCompleted))
-        assertFalse(completed.isFollowingLatest)
+        assertTrue(completed.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+        assertTrue(completed.shouldMoveFor(TranscriptViewportMove.ToolCardMeasured))
+        val readingHistory = following.after(TranscriptFollowEvent.UserDragStarted)
+            .after(TranscriptFollowEvent.StreamCompleted)
+        assertFalse(readingHistory.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
     }
 
     @Test

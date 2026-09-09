@@ -3,10 +3,11 @@ package com.openminis.app.novex.domain
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
+import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -23,6 +24,89 @@ import java.io.File
 @Config(application = Application::class, sdk = [28])
 class NovexCardFileServiceTest {
     @get:Rule val folder = TemporaryFolder()
+    @Test fun `filling an owned blank card retains its address across an identity change`() = runBlocking<Unit> {
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "promoted-media"))
+            val executor = NovexContentToolExecutor(workspace,
+                NovexManagementService(workspace, CreativeArtifactRepository(db, CreativeArtifactFileStore(File(folder.root, "promoted-artifacts")))),
+                NovexCardFileOperations(NovexCardSourceModules(NovexDocumentSnapshotStore { null }) { false }),
+                NovexManagementTransaction { work -> db.withTransaction { work() } })
+            for (kind in listOf(NovexContentKind.WORLD, NovexContentKind.INTERACTIVE_FICTION)) {
+                val chat = "promote-$kind"
+                workspace.apply(NovexCommand.EnsureConversationDrafts(chat))
+                val card = workspace.conversationDrafts(chat)!!.cards.single { it.subject.kind == kind }
+                val request = NovexContentToolExecutor.Request(NovexConversationConfigurationSnapshot(chat),
+                    listOf("把本对话的空卡填成邮局设定"), "reply", "fill", "user")
+                val args = JSONObject().put("kind", kind.managementWireName()).put("card_id", card.subject.id)
+                    .put("name", "邮局设定").put("summary", "替亡者送信的邮局").toString()
+                val failed = executor.execute("novex_update_card", args, request) { error("模拟设置保存中断") }
+                assertFalse(failed.tool.success)
+                assertTrue(workspace.conversationDrafts(chat)!!.cards.single { it.subject == card.subject }.isPrivate)
+                val saved = executor.execute("novex_update_card", args, request) {}
+                assertTrue(saved.tool.output, saved.tool.success)
+                assertEquals(listOf(ManagedSubject(card.subject, ManagedAccess.EDIT)), saved.configuration.managedSubjects)
+                assertNull(saved.configuration.activeInteractiveFiction)
+                assertEquals(AnswerIdentity.Nova, saved.configuration.answerIdentity)
+                assertEquals(2, workspace.conversationDrafts(chat)!!.cards.count { it.isPrivate })
+                val next = saved.configuration.copy(playerIdentity = ConversationPlayerIdentity("player", "我", "新邮差"))
+                val receipt = com.openminis.app.novex.adapter.NovexPublicWriteReceipt.project(
+                    com.openminis.app.data.model.AgentContentPart.ToolResult("fill", "novex_update_card", saved.tool.output),
+                    NovexHistoryAccessScope.key(next))
+                assertTrue(receipt.joinToString().contains(card.subject.id))
+                val unmounted = saved.configuration.copy(managedSubjects = emptyList())
+                val replayed = executor.execute("novex_update_card", args, request.copy(configuration = unmounted)) {}
+                assertTrue(replayed.tool.success)
+                assertTrue(replayed.configuration.managedSubjects.isEmpty())
+            }
+        } finally { db.close() }
+    }
+
+    @Test fun `source preparation stays outside commit and revoked sources cannot be committed`() = runBlocking<Unit> {
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "prepared-media"))
+            workspace.apply(NovexCommand.EnsureConversationDrafts("prepared-chat"))
+            val source = NovexDocumentSnapshot(NovexResourceRef("novex://documents/" + "a".repeat(64)),
+                "a".repeat(64), "fixture", "长来源", NovexDocumentFormat.TEXT, NovexDocumentStatus.READY,
+                (0 until 300).map { i -> NovexDocumentBlock("block_$i", NovexDocumentBlockKind.PARAGRAPH,
+                    i, "第 $i 个测试段落：" + "仅用于来源准备与原文校验。".repeat(30),
+                    source = NovexDocumentSourceAnchor("body", i)) })
+            var reads = 0
+            var allowed = true
+            val operations = NovexCardFileOperations(NovexCardSourceModules(NovexDocumentSnapshotStore {
+                assertFalse("Source bytes must not be read inside the save transaction", db.inTransaction())
+                reads++
+                source
+            }) { allowed })
+            val executor = NovexContentToolExecutor(workspace,
+                NovexManagementService(workspace, CreativeArtifactRepository(db, CreativeArtifactFileStore(File(folder.root, "prepared-artifacts")))),
+                operations, NovexManagementTransaction { work -> db.withTransaction { work() } })
+            val arguments = JSONObject().put("kind", "world").put("name", "来源入卡")
+                .put("document_ref", source.ref.value).put("source_revision", JSONObject(
+                    NovexDocumentTools(NovexDocumentSnapshotStore { source }).documentInspect(
+                        NovexDocumentInspectRequest(source.ref)).toJson()).getJSONObject("data").getString("source_revision"))
+            val prepared = executor.prepare("novex_write_card", arguments.toString())
+            assertEquals(1, reads)
+            val request = NovexContentToolExecutor.Request(NovexConversationConfigurationSnapshot("prepared-chat"),
+                listOf("按原文导入"), "reply", "call", "user")
+            allowed = false
+            val rejected = db.withTransaction { executor.execute(prepared, request) { error("Must not save") } }
+            assertFalse(rejected.tool.success)
+            assertTrue(workspace.worlds().isEmpty())
+            allowed = true
+            val rolledBack = db.withTransaction { executor.execute(prepared, request) { error("模拟配置保存失败") } }
+            assertFalse(rolledBack.tool.success)
+            assertTrue(workspace.worlds().isEmpty())
+            val saved = db.withTransaction { executor.execute(prepared, request) {} }
+            assertTrue(saved.tool.output, saved.tool.success)
+            assertEquals(1, reads)
+            val world = workspace.worlds().single().world
+            val body = workspace.modules(ModuleOwner.world(world.id)).modules.single().contentJson
+            assertEquals(source.blocks.joinToString("\n") { it.text }, JSONObject(body).getString("text"))
+        } finally { db.close() }
+    }
+
     @Test fun `content executor rolls back cards with failed configuration save and replays committed receipt`() = runBlocking<Unit> {
         val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
         try {

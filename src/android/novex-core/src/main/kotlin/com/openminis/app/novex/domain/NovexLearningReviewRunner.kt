@@ -246,6 +246,10 @@ class NovexLearningReviewRunner(
             require(batch.isNotEmpty()) { "没有可综合的笔记，请检查资料读取状态和模型窗口" }
             val final = batch.size == frontier.size
             val targetCharacters = if (final) null else (chars / 2).coerceAtLeast(1)
+            // Half length is a writing target, not the convergence invariant.
+            // Require at least a quarter reduction so useful summaries are kept
+            // while repeated near-identical or expanding outputs still stop.
+            val maximumIntermediateCharacters = (chars.toLong() * 3 / 4).toInt()
             val synthesisInput = NovexLearningBudgetPolicy.inputReservation(
                 NovexLearningPrompt.synthesis(state.collection.title, batch, targetCharacters),
             )
@@ -260,11 +264,11 @@ class NovexLearningReviewRunner(
             )
             val synthesis = response(stableNoteRef("response-synthesis", synthesisRequest.prompt.system,
                 synthesisRequest.prompt.user, batch.map { it.ref.value }.toString()).value, synthesisInput, synthesisOutput,
-                acceptCached = { final || it.body.length <= requireNotNull(targetCharacters) }) {
+                acceptCached = { final || it.body.length <= maximumIntermediateCharacters }) {
                 reviewer.synthesize(synthesisRequest)
             } ?: return state
             val exceedsReservation = synthesis.inputTokens > synthesisInput || synthesis.outputTokens > synthesisOutput
-            if (!final && synthesis.body.length > requireNotNull(targetCharacters)) {
+            if (!final && synthesis.body.length > maximumIntermediateCharacters) {
                 // Charge the completed request, then stop instead of repeatedly paying
                 // for a model that is expanding its intermediate summaries.
                 state = state.copy(task = if (task.status == NovexLearningTaskStatus.PAUSED_BUDGET_REACHED) task else task.pause(),

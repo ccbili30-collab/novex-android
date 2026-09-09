@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.openminis.app.data.creative.*
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -36,7 +36,7 @@ internal fun restoreVersion31LibraryTable(db: SupportSQLiteDatabase) {
 class NovexLibraryOrganizationTest {
     @get:Rule val files = TemporaryFolder()
     private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-        File(files.root, "library.db").absolutePath).addMigrations(AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
+        File(files.root, "library.db").absolutePath).addMigrations(AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35).allowMainThreadQueries().build()
 
     @Test fun `folders files and shared cards persist and removal preserves originals`() = runBlocking<Unit> {
         var db = open()

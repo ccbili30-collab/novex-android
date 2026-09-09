@@ -18,6 +18,11 @@ internal fun isAtTranscriptLatest(canScrollForward: Boolean): Boolean = !canScro
 internal fun latestTranscriptItemIndex(totalItemsCount: Int): Int? =
     (totalItemsCount - 1).takeIf { it >= 0 }
 
+/** Persistence may finish after the user has already started reading history. */
+data class SubmittedUserTurn(val messageId: String, val requestedAtMs: Long) {
+    fun canNavigateAfter(lastUserDragAtMs: Long): Boolean = requestedAtMs > lastUserDragAtMs
+}
+
 internal data class SubmittedTurnNavigation(
     val pendingMessageId: String? = null,
 ) {
@@ -73,16 +78,16 @@ internal enum class TranscriptFollowEvent {
 }
 
 /**
- * A tap on “latest” is a temporary follow request, not a distance threshold.
- * It follows passive layout growth until the stream ends or the user drags.
+ * Explicit navigation to the live conversation follows layout growth until the user drags.
+ * Stream completion can precede persistence and final row measurement, so it cannot revoke follow.
  */
 internal data class TranscriptFollowState(
     val isFollowingLatest: Boolean = false,
 ) {
     fun after(event: TranscriptFollowEvent): TranscriptFollowState = when (event) {
         TranscriptFollowEvent.UserRequestedLatest -> copy(isFollowingLatest = true)
-        TranscriptFollowEvent.UserDragStarted,
-        TranscriptFollowEvent.StreamCompleted -> copy(isFollowingLatest = false)
+        TranscriptFollowEvent.UserDragStarted -> copy(isFollowingLatest = false)
+        TranscriptFollowEvent.StreamCompleted -> this
     }
 
     fun shouldMoveFor(reason: TranscriptViewportMove): Boolean =

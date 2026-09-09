@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -39,7 +39,7 @@ class NovexCharacterRevisionPersistenceTest {
     @Test
     fun `migration starts history at first observed edit and a failed page save leaves no revision`() = runBlocking {
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32).allowMainThreadQueries().build()
+            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35).allowMainThreadQueries().build()
         var database = open()
         try {
             val original = NovexWorkspaceFactory.create(database, File(files.root, "media"))

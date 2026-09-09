@@ -256,6 +256,7 @@ data class LLMModel(
             if (lid.contains("gpt-4")) return 8_000
             if (lid.contains("o3") || lid.contains("o4")) return 200_000
             if (lid.contains("codex")) return 200_000
+            if (NovexDeepSeekModelMetadata.isKnownV4(id)) return NovexDeepSeekModelMetadata.CONTEXT_TOKENS
             if (lid.contains("deepseek")) return 128_000
             // xAI Grok. [T-android-grok-context-underestimate] Without this
             // branch a Grok id missing from the models.dev catalog fell through

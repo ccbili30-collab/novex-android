@@ -88,7 +88,9 @@ internal fun NovexLibraryPicker(
     }
     // Re-key only the browser's search field on navigation; selection remains outside it.
     key(source, libraryId, folderId) {
-        NovexSearchableSelectionSheet(caption, actions, "搜索名称", onDismissRequest = ::back,
+        // Dismissal happens after Material hides its window. It must finish this
+        // picker; directory back navigation belongs to the explicit row above.
+        NovexSearchableSelectionSheet(caption, actions, "搜索名称", onDismissRequest = onDismiss,
             dismissOnSelection = false, onConfirmSelection = if (multiple) ({ onConfirm(selection.intersect(available)) }) else null,
             confirmLabel = "完成（已选 ${selection.intersect(available).size} 项）", onCancelSelection = onDismiss)
     }

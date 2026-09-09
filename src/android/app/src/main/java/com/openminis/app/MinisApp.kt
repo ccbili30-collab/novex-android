@@ -64,6 +64,7 @@ class MinisApp : Application(), ImageLoaderFactory {
     lateinit var startupCoordinator: NovexStartupCoordinator
         private set
     private val postHomeLock = Any()
+    private val cardDirectoryMigrationStarted = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile
     private var postHomeReady = false
 
@@ -314,6 +315,7 @@ class MinisApp : Application(), ImageLoaderFactory {
             com.openminis.app.data.creative.CreativeArtifactFileStore(
                 java.io.File(filesDir, "novex-artifacts"),
             ),
+            cardWorkspace = novexWorkspace,
         )
         creativeArtifactDeviceDirectory = com.openminis.app.data.creative.CreativeArtifactDeviceDirectory(this)
         chatRepository = ChatRepository(database.chatDao())
@@ -321,7 +323,14 @@ class MinisApp : Application(), ImageLoaderFactory {
 
     /** Start diagnostics and update checks only after the Novex home is usable. */
     fun startPostHomeMaintenance() {
-        startupScope.launch { ensurePostHomeMaintenance() }
+        startupScope.launch {
+            ensurePostHomeMaintenance()
+            if (cardDirectoryMigrationStarted.compareAndSet(false, true)) {
+                runCatching { creativeArtifactRepository.migrateCardImages() + novexWorkspace.migrateCardDirectories() }
+                    .onSuccess { count -> if (count > 0) Log.w("NovexCardDirectories", "$count card directories need retry") }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w("NovexCardDirectories", "Card directory migration will retry next launch") }
+            }
+        }
     }
 
     private fun ensurePostHomeMaintenance() = synchronized(postHomeLock) {

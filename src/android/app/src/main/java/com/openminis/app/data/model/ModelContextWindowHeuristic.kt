@@ -14,6 +14,7 @@ package com.openminis.app.data.model
  */
 internal fun inferContextWindowTokens(model: LLMModel): Int {
     model.contextWindow?.takeIf { it > 0 }?.let { return it }
+    if (NovexDeepSeekModelMetadata.isKnownV4(model.id)) return NovexDeepSeekModelMetadata.CONTEXT_TOKENS
     val idLower = model.id.lowercase()
 
     // 1M-class models — match before the generic claude-* / gemini-* fall-throughs.

@@ -4,6 +4,11 @@ package com.openminis.app.novex.domain
 object NovexContextSourceVersions {
     fun merge(candidates: List<NovexContextCandidate>): List<NovexContextCandidate> {
         val bySource = candidates.groupBy { it.sourceId }
+        bySource.values.forEach { versions ->
+            if (versions.any { it.worldbookConditions.isNotEmpty() }) require(versions.map { it.content to it.worldbookConditions }.distinct().size <= 1) {
+                "世界书存在不同采用修订，请在对话设置中明确刷新来源后再继续"
+            }
+        }
         val ids = bySource.mapValues { (id, values) ->
             val bodies = values.map { it.content }.distinct()
             bodies.map { body ->

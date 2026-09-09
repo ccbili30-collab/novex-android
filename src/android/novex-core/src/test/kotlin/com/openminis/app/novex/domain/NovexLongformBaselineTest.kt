@@ -501,6 +501,9 @@ class NovexLongformBaselineTest {
         val learning = NovexLearningTools(object : NovexLearningPreflightResolver {
             override fun prepare(collectionRef: NovexResourceRef, modelId: String?) = state.preflight
             override fun readState(collectionRef: NovexResourceRef) = state.takeIf { it.collection.ref == collectionRef }
+            override fun readSource(collectionRef: NovexResourceRef, documentRef: NovexResourceRef, revision: String) =
+                if (collectionRef == state.collection.ref && documentRef in state.collection.uniqueDocumentRefs)
+                    documents.findRevision(documentRef, revision) else null
         })
         val allowed = state.collection.uniqueDocumentRefs.toSet()
         val documentTools = NovexDocumentToolRouter(NovexDocumentTools(NovexDocumentSnapshotStore { ref ->

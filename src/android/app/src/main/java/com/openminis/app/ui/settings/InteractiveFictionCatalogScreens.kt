@@ -165,7 +165,10 @@ fun CatalogInteractiveFictionDetailScreen(
             else -> {
                 com.openminis.app.ui.novex.NovexCardDetailSections(
                     cardId = projectId,
-                    content = { InteractiveFictionPrimaryContent(current, onOpenModule) },
+                    content = {
+                        InteractiveFictionPrimaryContent(current, onOpenModule)
+                        com.openminis.app.ui.novex.NovexGameWorldbookSection(projectId)
+                    },
                     relations = {
                 com.openminis.app.ui.novex.NovexSubjectConversationLinks(
                     com.openminis.app.novex.domain.NovexContentAddress.interactiveFiction(projectId), onOpenSession)

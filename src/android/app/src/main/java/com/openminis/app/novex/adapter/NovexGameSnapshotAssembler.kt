@@ -40,7 +40,7 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
                 }
             }
             require(!traversal.truncated) { "引用展开超过上限，请缩小本局引用范围" }
-            require(traversal.missingTargets.isEmpty()) { "文游引用的卡片、模块或条目缺失，请修复引用后启动" }
+            require(NovexWorldbookUse.requiredMissing(start, traversal).isEmpty()) { "启用的文游设定缺少卡片、模块或条目，请修复引用后启动" }
             references += traversal.references.associateBy { it.id }
             cycles += traversal.cycleReferenceIds
         }

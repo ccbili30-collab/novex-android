@@ -122,7 +122,10 @@ internal fun NovexTopBarSurface(
                 val loose = constraints.copy(minWidth = 0, minHeight = 0)
                 val leading = measurables[0].measure(loose)
                 val trailing = measurables[1].measure(loose.copy(maxWidth = (constraints.maxWidth - leading.width).coerceAtLeast(0)))
-                val heading = measurables[2].measure(loose.copy(maxWidth = (constraints.maxWidth - leading.width - trailing.width).coerceAtLeast(0)))
+                // Reserve the wider action slot on both sides so a full-width title
+                // stays on the screen center rather than the remaining-space center.
+                val titleWidth = (constraints.maxWidth - 2 * maxOf(leading.width, trailing.width)).coerceAtLeast(0)
+                val heading = measurables[2].measure(loose.copy(maxWidth = titleWidth))
                 layout(constraints.maxWidth, constraints.maxHeight) {
                     leading.placeRelative(0, (constraints.maxHeight - leading.height) / 2)
                     trailing.placeRelative(constraints.maxWidth - trailing.width, (constraints.maxHeight - trailing.height) / 2)

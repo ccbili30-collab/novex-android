@@ -79,4 +79,6 @@ data class ChatSessionEntity(
     /** Root and leaf of the activity path restored after process death. */
     @ColumnInfo(name = "active_root_message_id") val activeRootMessageId: String? = null,
     @ColumnInfo(name = "active_leaf_message_id") val activeLeafMessageId: String? = null,
+    /** Unsent composer text; never included in message history or model context. */
+    @ColumnInfo(name = "composer_draft") val composerDraft: String? = null,
 )

@@ -168,7 +168,7 @@ object Routes {
     const val SOUL = "soul"
     const val STORY_WORLD = "characters/world/{worldId}"
     const val STORY_WORLD_EDIT = "characters/world/edit?worldId={worldId}"
-    const val CHARACTER_DETAIL = "characters/card/{characterId}"
+    const val CHARACTER_DETAIL = "characters/card/{characterId}?versionId={versionId}"
     const val CONTENT_MODULE_DETAIL = "characters/module/{moduleId}"
     const val CHARACTER_EDIT = "characters/edit?worldId={worldId}&characterId={characterId}"
     const val PERSONA_EDIT = "characters/persona/edit?worldId={worldId}&personaId={personaId}"
@@ -218,7 +218,10 @@ object Routes {
     fun storyWorld(worldId: String) = "characters/world/${android.net.Uri.encode(worldId)}"
     fun storyWorldEdit(worldId: String? = null) =
         if (worldId == null) "characters/world/edit" else "characters/world/edit?worldId=${android.net.Uri.encode(worldId)}"
-    fun characterDetail(characterId: String) = "characters/card/${android.net.Uri.encode(characterId)}"
+    fun characterDetail(characterId: String, versionId: String? = null) = buildString {
+        append("characters/card/${android.net.Uri.encode(characterId)}")
+        versionId?.let { append("?versionId=${android.net.Uri.encode(it)}") }
+    }
     fun contentModuleDetail(moduleId: String) = "characters/module/${android.net.Uri.encode(moduleId)}"
     fun characterEdit(worldId: String, characterId: String? = null) = buildString {
         append("characters/edit?worldId=").append(android.net.Uri.encode(worldId))
@@ -287,9 +290,11 @@ fun AppNavigation(
     initialRoute: String? = null,
 ) {
     val context = LocalContext.current
+    val cardNavigationScope = androidx.compose.runtime.rememberCoroutineScope()
 
-    fun openCreationWorkspace(subject: NovexContentAddress) {
-        DeepLinkCoordinator.setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL)
+    fun openCreationWorkspace(subject: NovexContentAddress, organizeImported: Boolean = false) {
+        DeepLinkCoordinator.setPendingChatAction(if (organizeImported) DeepLinkCoordinator.ChatAction.ORGANIZE_IMPORTED_CARD
+            else DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL)
         val draftId = buildChatDraftId(
             draftId = java.util.UUID.randomUUID().toString(),
             context = ChatDraftContext(managedSubjects = listOf(subject)),
@@ -631,18 +636,22 @@ fun AppNavigation(
                         popUpTo(Routes.SESSION_LIST) { inclusive = false }
                     }
                 },
-                onBrowseChatFiles = {
-                    navController.safeNavigate(Routes.creativeLibrary(sessionId))
+                onBrowseChatFiles = { savedSessionId ->
+                    navController.safeNavigate(Routes.creativeLibrary(savedSessionId))
                 },
-                onOpenCreatedCard = { kind, id ->
+                onOpenCreatedCard = { kind, id -> cardNavigationScope.launch {
+                    val workspace = (context.applicationContext as com.openminis.app.MinisApp).novexWorkspace
                     val route = when (kind) {
                         "world" -> Routes.storyWorld(id)
-                        "character_version" -> Routes.characterCatalogEdit(versionId = id)
+                        "character_version" -> workspace.characterForVersion(id)?.let {
+                            Routes.characterDetail(it.character.character.id, versionId = id)
+                        }
                         "game" -> Routes.interactiveFiction(id)
                         else -> null
                     }
-                    if (route != null) navController.safeNavigate(route)
-                },
+                    if (route != null) navController.safeNavigate(route) { launchSingleTop = true }
+                    else android.widget.Toast.makeText(context, "这张卡片已不存在，请到卡片库查看", android.widget.Toast.LENGTH_LONG).show()
+                } },
                 onPreviewAttachment = { item ->
                     FilePreviewHolder.currentItem = item
                     navController.safeNavigate(Routes.FILE_PREVIEW)
@@ -766,6 +775,7 @@ fun AppNavigation(
                 onBack = { navController.safePopBackStack() },
                 onEditWorld = { navController.safeNavigate(Routes.storyWorldEdit(worldId)) },
                 onHelpCreate = { openCreationWorkspace(NovexContentAddress.world(worldId)) },
+                onOrganizeImportedCard = { openCreationWorkspace(NovexContentAddress.world(worldId), true) },
                 onEditPersona = { navController.safeNavigate(Routes.personaEdit(worldId, it)) },
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit(worldId = worldId))
@@ -831,11 +841,15 @@ fun AppNavigation(
 
         composable(
             route = Routes.CHARACTER_DETAIL,
-            arguments = listOf(navArgument("characterId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("characterId") { type = NavType.StringType },
+                navArgument("versionId") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
         ) { entry ->
             val characterId = entry.arguments?.getString("characterId") ?: return@composable
             com.openminis.app.ui.settings.CatalogCharacterDetailScreen(
                 characterId = characterId,
+                initialVersionId = entry.arguments?.getString("versionId"),
                 onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
                 onBack = { navController.safePopBackStack() },
                 onEditVersion = { versionId ->
@@ -846,6 +860,7 @@ fun AppNavigation(
                 onHelpCreate = { versionId ->
                     openCreationWorkspace(NovexContentAddress.characterVersion(versionId))
                 },
+                onOrganizeImportedCard = { versionId -> openCreationWorkspace(NovexContentAddress.characterVersion(versionId), true) },
                 onCreateVariant = {
                     navController.safeNavigate(
                         Routes.characterCatalogEdit(characterId = characterId, createVariant = true),
@@ -864,7 +879,7 @@ fun AppNavigation(
             com.openminis.app.ui.settings.CatalogContentModuleDetailScreen(
                 moduleId = moduleId,
                 onBack = { navController.safePopBackStack() },
-                onHelpCreate = ::openCreationWorkspace,
+                onHelpCreate = { openCreationWorkspace(it) },
             )
         }
 

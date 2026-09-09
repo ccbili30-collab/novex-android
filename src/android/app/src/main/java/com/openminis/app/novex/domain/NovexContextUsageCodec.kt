@@ -31,6 +31,7 @@ object NovexContextUsageCodec {
         put("createdAt", record.createdAt)
         put("teachingTraceRef", record.teachingTraceRef)
         put("teachingTraceError", record.teachingTraceError)
+        put("historyScopeKey", record.historyScopeKey)
         put("sourceReads", JSONArray(record.sourceReads.map { read ->
             JSONObject().put("sourceId", read.sourceId).put("label", read.label).put("revision", read.revision)
                 .put("start", read.start).put("end", read.end).put("totalCharacters", read.totalCharacters).put("method", read.method.name)
@@ -67,6 +68,7 @@ object NovexContextUsageCodec {
             createdAt = root.optLong("createdAt"),
             teachingTraceRef = root.optString("teachingTraceRef").takeIf(String::isNotBlank),
             teachingTraceError = root.optString("teachingTraceError").takeIf(String::isNotBlank),
+            historyScopeKey = root.optString("historyScopeKey").takeIf(String::isNotBlank),
             sourceReads = root.optJSONArray("sourceReads").objects().map { read ->
                 NovexSourceRead(read.getString("sourceId"), read.getString("label"), read.getString("revision"),
                     read.getInt("start"), read.getInt("end"), read.getInt("totalCharacters"),

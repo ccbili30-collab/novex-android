@@ -11,6 +11,7 @@ data class NovexContextCandidate(
     val relatedSourceIds: Set<String> = emptySet(),
     val alwaysInclude: Boolean = false,
     val position: Int = 0,
+    val worldbookConditions: List<String> = emptyList(),
 ) {
     init {
         require(sourceId.isNotBlank()) { "上下文候选来源编号不能为空" }
@@ -84,6 +85,7 @@ object NovexContextComposer {
         candidates: List<NovexContextCandidate>,
         estimateTokens: (String) -> Int = ::estimateTokens,
     ): NovexContextComposition {
+        require(candidates.none { it.worldbookConditions.isNotEmpty() }) { "按条件使用的资料须先通过世界书评估，不能直接送入普通资料装配" }
         require(tokenBudget >= 0) { "上下文模块预算不能为负数" }
         require(candidates.map(NovexContextCandidate::sourceId).distinct().size == candidates.size) {
             "上下文候选来源编号不能重复"

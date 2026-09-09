@@ -10,20 +10,21 @@ import org.json.JSONObject
 /** One sheet at a time; child switches stay stored when their card is turned off. */
 @Composable
 internal fun NovexSettingUseControls(configuration: NovexConversationConfigurationSnapshot,
-    onToggle: (NovexReferenceTarget, Boolean) -> Unit, onDismiss: () -> Unit) {
+    onToggle: (NovexReferenceTarget, Boolean) -> Unit, onReferenceToggle: (String, Boolean) -> Unit = { _, _ -> }, onDismiss: () -> Unit) {
     var selectedKind by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = selectedKind?.let { kind -> selectedId?.let { NovexContentAddress(NovexContentKind.valueOf(kind), it) } }
     val usages = NovexAdoptedSourceUsageProjection.read(configuration).filter { it.source.actorVersionId == null }
-    val addresses = (configuration.backgroundSettings.map { it.subject } + usages.map { it.source.target.subject } +
+    val references = NovexWorldbookUse.references(configuration)
+    val addresses = (references.map { it.target.subject } + configuration.backgroundSettings.map { it.subject } + usages.map { it.source.target.subject } +
         listOfNotNull(configuration.activeInteractiveFiction?.let { NovexContentAddress.interactiveFiction(it.projectId) })).distinct()
     val active = NovexEffectiveFrozenContext.sources(configuration).map { it.target.subject }.toSet()
     fun isGame(address: NovexContentAddress) = address.kind == NovexContentKind.INTERACTIVE_FICTION && configuration.activeInteractiveFiction?.projectId == address.id
     fun label(address: NovexContentAddress) = if (isGame(address)) configuration.activeInteractiveFiction!!.title else
-        usages.firstOrNull { it.source.target.subject == address }?.source?.candidates?.firstOrNull()?.label ?: address.id
+        usages.firstOrNull { it.source.target.subject == address }?.source?.candidates?.firstOrNull()?.label ?: references.firstOrNull { it.target.subject == address }?.targetLabel?.takeIf { it.isNotBlank() } ?: "未命名设定"
     if (selected == null) {
         NovexSearchableSelectionSheet("使用的设定与开关", addresses.sortedBy { !NovexSettingUse.enabled(configuration, NovexReferenceTarget(it)) }.map { address ->
-            val status = if (!NovexSettingUse.enabled(configuration, NovexReferenceTarget(address))) "已关闭" else if (address in active || isGame(address)) "使用中" else "待采用或来源已暂停"
+            val status = if (!NovexSettingUse.enabled(configuration, NovexReferenceTarget(address))) "已关闭" else if (address in active || isGame(address)) "使用中" else if (references.any { it.target.subject == address && !it.enabled }) "已关闭" else "待采用或来源已暂停"
             NovexSelectionAction(label(address), description = "$status · 查看模块与采用来源") {
                 selectedKind = address.kind.name; selectedId = address.id
             }
@@ -47,6 +48,15 @@ internal fun NovexSettingUseControls(configuration: NovexConversationConfigurati
         fun back() { selectedKind = null; selectedId = null }
         NovexContentDialog(label(selected), onDismiss = ::back,
             confirmButton = { TextButton(onClick = ::back) { Text("返回设定列表") } }) {
+            val incoming = references.filter { it.target.subject == selected }
+            if (incoming.isNotEmpty()) {
+                Text("本局使用的引用；保存对话设置后生效。")
+                incoming.forEach { reference ->
+                    NovexSettingsVectorToggleRow(reference.targetLabel.ifBlank { label(selected) },
+                        if (!reference.enabled && selected in active) "此引用已关闭，另一来源仍在使用" else if (reference.enabled) "已启用" else "已关闭",
+                        checked = reference.enabled, onCheckedChange = { onReferenceToggle(reference.id, it) })
+                }
+            }
             if (!isGame(selected)) NovexSettingsVectorToggleRow("使用这张卡的背景设定",
                 "关闭会停用本对话所有背景来源中的该卡，保留模块开关；回答身份和管理权限分别设置。",
                 checked = parentEnabled, onCheckedChange = { onToggle(parent, it) })

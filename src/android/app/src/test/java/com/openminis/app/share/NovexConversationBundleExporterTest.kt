@@ -7,7 +7,7 @@ import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.novex.adapter.NovexConversationContextAdoption
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import com.openminis.app.novex.domain.*
 import java.io.File
 import java.util.zip.ZipFile
@@ -27,6 +27,45 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexConversationBundleExporterTest {
     @get:Rule val files = TemporaryFolder()
+    @Test(timeout = 60_000) fun `story image versions from both reply branches remain in the export`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val repository = ChatRepository(database.chatDao())
+            val session = repository.createSession("model")
+            repository.appendMessage(session.id, "user", """[{"type":"text","value":"看看镇口"}]""", messageId = "root")
+            val media = listOf("old", "new").map { branch ->
+                val picture = File(context.filesDir, "novex/adopted-media/${session.id}-$branch.media").apply {
+                    parentFile.mkdirs(); writeText("$branch 图片的原字节")
+                }
+                val hash = java.security.MessageDigest.getInstance("SHA-256").digest(picture.readBytes()).joinToString("") { "%02x".format(it) }
+                val image = NovexSnapshotMedia(NovexRetainedMedia(branch, picture.absolutePath, "image/png", hash),
+                    com.openminis.app.data.character.MediaAssetSlot.MODULE_IMAGE, moduleId = "module", label = "镇口")
+                if (branch == "new") repository.forkReplyFrom(session.id, "root")
+                val parts = com.openminis.app.ui.chat.encodeAssistantTurnParts(
+                    listOf(com.openminis.app.data.model.AgentContentPart.Text("$branch 剧情")),
+                    mapOf("image" to com.openminis.app.ui.chat.storyImageBlock(image, branch)))
+                repository.appendMessage(session.id, "assistant", parts, messageId = branch)
+                picture
+            }
+            val workspace = NovexWorkspaceFactory.create(database, File(context.filesDir, "novex-media"))
+            val runtime = JSONObject().put("conversationId", session.id).put("configurationJson",
+                NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(session.id)))
+            val result = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
+            ZipFile(result.file).use { zip ->
+                fun read(name: String) = zip.getInputStream(zip.getEntry(name)).readBytes()
+                val index = JSONArray(read("media/index.json").toString(Charsets.UTF_8))
+                assertEquals(2, index.length())
+                media.forEach { picture ->
+                    val entry = (0 until index.length()).map(index::getJSONObject).single { it.getString("reference") == picture.absolutePath }
+                    assertArrayEquals(picture.readBytes(), read(entry.getString("path")))
+                }
+                val rows = read("database/messages.jsonl").toString(Charsets.UTF_8)
+                assertEquals(2, Regex("novexStoryImage").findAll(rows).count())
+            }
+        } finally { database.close() }
+    }
+
     @Test(timeout = 60_000) fun `bundle keeps raw branches and adopted environment apart from current library with file hashes`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "bundle.db").absolutePath

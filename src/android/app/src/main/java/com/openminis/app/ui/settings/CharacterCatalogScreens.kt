@@ -91,6 +91,7 @@ internal data class CharacterPageData(
 @Composable
 fun CatalogCharacterDetailScreen(
     characterId: String,
+    initialVersionId: String? = null,
     onOpenSession: (String) -> Unit,
     onBack: () -> Unit,
     onEditVersion: (String) -> Unit,
@@ -98,6 +99,7 @@ fun CatalogCharacterDetailScreen(
     onCreateVariant: () -> Unit,
     onDuplicated: (String) -> Unit,
     onOpenModule: (String) -> Unit,
+    onOrganizeImportedCard: (String) -> Unit = onHelpCreate,
 ) {
     val context = LocalContext.current
     val novex = rememberNovexWorkspace()
@@ -112,7 +114,7 @@ fun CatalogCharacterDetailScreen(
         mutableStateOf<Map<String, Map<String, Map<String, MediaAssetEntity>>>>(emptyMap())
     }
     var missing by remember { mutableStateOf(false) }
-    var selectedVersionId by rememberSaveable(characterId) { mutableStateOf<String?>(null) }
+    var selectedVersionId by rememberSaveable(characterId, initialVersionId) { mutableStateOf(initialVersionId) }
     var confirmDeleteRoot by remember { mutableStateOf(false) }
     var copyCard by remember(characterId) { mutableStateOf(false) }
     var confirmDeleteVariant by remember { mutableStateOf<CharacterVersionEntity?>(null) }
@@ -125,6 +127,11 @@ fun CatalogCharacterDetailScreen(
             data = null
         } else {
             val aggregate = snapshot.character
+            if (initialVersionId != null && selectedVersionId == initialVersionId && aggregate.allVersions.none { it.id == initialVersionId }) {
+                missing = true
+                data = null
+                return@LaunchedEffect
+            }
             missing = false
             selectedVersionId = selectedVersionId?.takeIf { id -> aggregate.allVersions.any { it.id == id } }
                 ?: aggregate.original.id
@@ -165,11 +172,14 @@ fun CatalogCharacterDetailScreen(
         onBack = onBack,
         actions = {
             if (page != null) {
+                val isImportedSource = page.modules.any {
+                    com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+                }
                 NovexTopAction(
                     icon = R.drawable.ic_phosphor_sparkle,
-                    contentDescription = "帮我创作",
-                    label = "帮我创作",
-                    onClick = { onHelpCreate(page.version.id) },
+                    contentDescription = if (isImportedSource) "帮我整理" else "帮我创作",
+                    label = if (isImportedSource) "帮我整理" else "帮我创作",
+                    onClick = { if (isImportedSource) onOrganizeImportedCard(page.version.id) else onHelpCreate(page.version.id) },
                 )
                 NovexTopAction(
                     icon = R.drawable.ic_phosphor_pencil_simple,

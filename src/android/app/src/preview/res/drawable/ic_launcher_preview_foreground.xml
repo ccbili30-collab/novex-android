@@ -1,11 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@mipmap/ic_launcher_foreground" />
-    <item
-        android:width="30dp"
-        android:height="30dp"
-        android:bottom="5dp"
-        android:end="5dp"
-        android:gravity="bottom|end"
-        android:drawable="@drawable/ic_launcher_preview_badge" />
-</layer-list>
+<!-- Preserve the supplied artwork; fit it inside the adaptive icon safe area. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/novex_preview_dove"
+    android:gravity="fill"
+    android:filter="true" />

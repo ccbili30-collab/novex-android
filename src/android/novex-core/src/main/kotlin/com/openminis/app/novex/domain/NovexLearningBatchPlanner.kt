@@ -29,7 +29,11 @@ object NovexLearningBatchPlanner {
         maxBlocks: Int = DEFAULT_MAX_BLOCKS,
         maxChars: Int = DEFAULT_MAX_CHARS,
         readRanges: List<NovexLearningReadRange> = emptyList(),
-    ): List<NovexLearningReviewRequest> = plan(document.ref, document.blocks, maxBlocks, maxChars, readRanges) { blocks ->
+    ): List<NovexLearningReviewRequest> = plan(document.ref, document.blocks, maxBlocks,
+        // Dense records can require almost as much output as source text. A large input window
+        // does not increase the provider's output limit. Reserve a source slice small enough
+        // for a factual note; preparation and execution share these exact boundaries.
+        minOf(maxChars, limits.maxOutputTokens, 4096).coerceAtLeast(2), readRanges) { blocks ->
         NovexLearningBudgetPolicy.fits(NovexLearningPrompt.review(document.title, blocks), limits)
     }.map { batch ->
         val input = NovexLearningBudgetPolicy.inputReservation(NovexLearningPrompt.review(document.title, batch.blocks))

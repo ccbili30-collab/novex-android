@@ -98,7 +98,7 @@ class NovexConversationContextAdoption(
             }
         }
         require(!traversal.truncated) { "设定引用展开超过上限，请缩小引用范围" }
-        require(traversal.missingTargets.isEmpty()) { "设定包含缺失引用，请修复后采用" }
+        require(NovexWorldbookUse.requiredMissing(root, traversal).isEmpty()) { "启用的设定包含缺失引用，请修复后采用" }
         val media = NovexSnapshotMediaCapture(workspace, mediaStore)
         return NovexAdoptedContext(address, acting, sources.values.map { media.capture(it) }, traversal.references)
     }

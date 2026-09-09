@@ -1319,12 +1319,12 @@
     <string name="move_to_new_play_session">新建游玩会话</string>
     <string name="move_to_new_play_session_hint">把当前内容带入一个新的文游</string>
     <string-array name="novex_composer_hints">
-        <item>欢迎找优质的文游设计师，设计自己独立的文游启动器。</item>
+        <item>可以聊天，也可以一起创作。</item>
         <item>使用【】可以调整人工智能的处理方式。</item>
         <item>点击选项会将内容填入输入框，你可以修改后再发送。</item>
         <item>面板用于单独展示资料，点击标题可以展开或折叠。</item>
-        <item>创作模式：把大量零散文件或设定交给人工智能，整理成可用的游戏规则模板。</item>
-        <item>游玩模式：可以直接开玩；点击选项会填入输入框，修改后再发送。</item>
+        <item>把资料放进对话仓库，需要时让人工智能读取。</item>
+        <item>想使用某张卡，可以在对话设置里选择。</item>
     </string-array>
 
     <!-- T-pwa-1: WebApp 快捷方式基础（原 PWA 已重命名） -->
@@ -1628,4 +1628,5 @@
     <string name="chat_error_present_choices_missing">模型在自动重试一次后仍未返回结构化选项按钮。已保留现有文字并停止本轮，避免循环调用。</string>
     <string name="chat_compacted_history_show">%1$s · 展开早期消息</string>
     <string name="chat_compacted_history_hide">%1$s · 收起早期消息</string>
+    <string name="chat_stream_degraded_notice">正在生成，完成后显示完整排版。</string>
 </resources>

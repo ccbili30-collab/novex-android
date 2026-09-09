@@ -168,14 +168,20 @@ class NovexPlaythroughCheckpointWriter(
             }
             return@synchronized entry
         }
-        store.writeText(
+        val saved = store.writeSnapshot(
             scope = scope,
-            area = NovexWorkspaceArea.SAVES,
             relativePath = "checkpoint-${checkpoint.id}.json",
             content = NovexPlaythroughCheckpointCodec.encode(checkpoint),
-            mimeType = "application/json",
             provenance = provenance,
         )
+        val raw = store.readBytes(scope, saved.workspaceRef).toString(Charsets.UTF_8)
+        require(NovexFrozenContextCodec.digest(raw) == saved.sha256) { "存档写入后校验失败，文件已保留，请重新核对" }
+        val verified = NovexPlaythroughCheckpointCodec.decode(raw)
+        require(verified.id == checkpoint.id && verified.branchId == scope.writeBranchId && verified.conversationId == scope.conversationId) {
+            "存档写入后归属校验失败，文件已保留"
+        }
+        require(store.inspect(scope).entries.any { it.workspaceRef == saved.workspaceRef }) { "存档已写入，但目录尚未找到，请重新核对" }
+        saved
     }
 }
 

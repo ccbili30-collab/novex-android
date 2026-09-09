@@ -29,6 +29,7 @@ data class ModuleOwner(
             ModuleOwner(ModuleOwnerType.CONTENT_MODULE, "$moduleId$ITEM_SEPARATOR$itemId")
 
         fun contentModuleId(ownerId: String): String = ownerId.substringBefore(ITEM_SEPARATOR)
+        fun contentModuleItemId(ownerId: String): String? = ownerId.substringAfter(ITEM_SEPARATOR, "").takeIf { it.isNotBlank() }
     }
 }
 

@@ -39,7 +39,7 @@ object NovexSettingUse {
             val current = queue.removeFirst()
             if (!visited.add(current)) continue
             outgoing[current.subject].orEmpty().filter { reference ->
-                reference.purpose in setOf(NovexReferencePurpose.BACKGROUND, NovexReferencePurpose.RULES) &&
+                reference.enabled && reference.purpose in setOf(NovexReferencePurpose.BACKGROUND, NovexReferencePurpose.RULES) &&
                     (current.moduleId == null || current.moduleId == reference.sourceModuleId) &&
                     ((acting && current == root) || enabled(configuration, NovexReferenceTarget(reference.source, reference.sourceModuleId))) &&
                     enabled(configuration, reference.target)

@@ -41,7 +41,7 @@ class NovexChatPipelineInteractionTest {
     private fun exercise(mode: NovexExecutionMode) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as MinisApp
-        runBlocking { app.startupCoordinator.ensureRuntime().getOrThrow() }
+        runBlocking { app.startupCoordinator.ensureRuntime().getOrThrow(); app.providerRepository.awaitConfigLoaded() }
         val server = MockWebServer()
         val streams = CopyOnWriteArrayList<JSONObject>()
         val streamCount = AtomicInteger()
@@ -83,11 +83,12 @@ class NovexChatPipelineInteractionTest {
         val instanceId = "foundation-${UUID.randomUUID()}"
         val model = LLMModel("foundation-fixture", "本地验收模型", "openai", contextWindow = 128000,
             maxOutputTokens = 4096, supportsReasoning = false, supportsTools = true)
-        val entry = ModelEntry(instanceId, model, isCustom = true)
+        val requestedEntry = ModelEntry(instanceId, model, isCustom = true)
         app.providerRepository.addInstance(ProviderInstance(instanceId, "隔离验收接口", ProviderType.openAI,
             ProviderCredential.apiKey, customBaseURL = server.url("/").toString(), appendV1Suffix = true))
         app.providerRepository.saveApiKey(instanceId, "local-fixture-only")
-        app.providerRepository.addEntry(entry)
+        app.providerRepository.addEntry(requestedEntry)
+        val entry = app.providerRepository.entriesFor(instanceId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "完整聊天路径验收", memoryEnabled = false)
             app.chatRepository.updateSessionBinding(created.id,
@@ -145,11 +146,15 @@ class NovexChatPipelineInteractionTest {
                 ui.waitUntil(30_000) { ui.onAllNodesWithText("同意执行这一次").fetchSemanticsNodes().isNotEmpty() }
                 assertTrue(runBlocking { app.novexWorkspace.interactiveFictions().none { it.project.name == title } })
                 ui.onNode(isToggleable()).performTouchInput { click() }
+                ui.onNodeWithText("确认执行").assertIsEnabled().performTouchInput { click() }
             }
             ui.waitUntil(45_000) { ui.onAllNodesWithText(finalText, substring = true).fetchSemanticsNodes().isNotEmpty() }
             ui.waitUntil(15_000) {
                 runBlocking { app.chatRepository.loadActiveMessages(session.id) }.any { it.partsJson.contains(finalText) }
             }
+            // Visible response text can precede the final receipt/layout update.
+            // Judge the completed turn only after streaming has actually ended.
+            ui.waitUntil(15_000) { ui.onAllNodesWithContentDescription("Stop").fetchSemanticsNodes().isEmpty() }
             ui.onNodeWithText("同意执行这一次").assertDoesNotExist()
             ui.onNodeWithText(workText).assertDoesNotExist()
             val games = runBlocking { app.novexWorkspace.interactiveFictions().filter { it.project.name == title } }
@@ -159,6 +164,15 @@ class NovexChatPipelineInteractionTest {
                 streams.forEach { assertEquals(0, it.optJSONArray("tools")?.length() ?: 0) }
             } else {
                 val game = games.single()
+                if (ui.onAllNodesWithText("打开《$title》").fetchSemanticsNodes().isEmpty()) {
+                    screenshot(app, "card-open-missing-${mode.name}")
+                    val evidence = File(app.cacheDir, "foundation-ui")
+                    File(evidence, "card-open-missing-${mode.name}-tree.txt").writeText(ui.onRoot().printToString())
+                    File(evidence, "card-open-missing-${mode.name}-messages.json").writeText(JSONArray(
+                        runBlocking { app.chatRepository.loadActiveMessages(session.id) }.map { row ->
+                            JSONObject().put("parts", JSONArray(row.partsJson))
+                        }).toString(2))
+                }
                 ui.onNodeWithText("打开《$title》").performTouchInput { click() }
                 ui.runOnIdle { assertEquals(game.project.id, opened?.second) }
                 assertTrue(streams.any { (it.optJSONArray("tools")?.length() ?: 0) > 0 })
@@ -191,6 +205,7 @@ class NovexChatPipelineInteractionTest {
                 ui.runOnIdle { visible = true }
                 ui.waitUntil(30_000) { ui.onAllNodesWithText("同意执行这一次").fetchSemanticsNodes().isNotEmpty() }
                 ui.onNode(isToggleable()).performTouchInput { click() }
+                ui.onNodeWithText("确认执行").assertIsEnabled().performTouchInput { click() }
                 ui.waitUntil(45_000) { ui.onAllNodesWithText(sortedText, substring = true).fetchSemanticsNodes().isNotEmpty() }
                 val after = runBlocking { app.novexWorkspace.modules(ModuleOwner.interactiveFiction(game.project.id)).modules }
                 assertEquals(before.reversed().map { it.id }, after.map { it.id })

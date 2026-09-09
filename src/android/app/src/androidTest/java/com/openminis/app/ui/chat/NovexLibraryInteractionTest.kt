@@ -22,6 +22,7 @@ import org.junit.runner.RunWith
 @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class NovexLibraryInteractionTest {
+    private val darkTheme get() = InstrumentationRegistry.getArguments().getString("novexDark") == "true"
     @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
     private fun tapVisible(text: String, unmerged: Boolean = false) {
         val node = ui.onNodeWithText(text, useUnmergedTree = unmerged)
@@ -99,7 +100,7 @@ class NovexLibraryInteractionTest {
         val entries = listOf(NovexLibraryEntry(game, "西幻人生模拟器", "文游"), NovexLibraryEntry(file, "资料与主题索引", "文件"))
         val library = NovexWorkGroup("lib", "西幻", setOf(game, file), listOf(NovexLibraryFolder("folder", "资料")), mapOf(file to "folder"))
         var chosen: Set<NovexContentAddress>? = null
-        ui.setContent { MinisTheme(darkTheme = false) {
+        ui.setContent { MinisTheme(darkTheme = darkTheme) {
             NovexLibraryPicker("选择管理内容", entries, listOf(library), onDismiss = {}, onConfirm = { chosen = it })
         } }
         ui.onNodeWithText("世界库").assertDoesNotExist()
@@ -122,7 +123,7 @@ class NovexLibraryInteractionTest {
 
     @Test fun settingsOverviewShowsFourGroupsAndOpensOnlyTheChosenEditor() {
         var page by mutableStateOf("")
-        ui.setContent { MinisTheme(darkTheme = false) {
+        ui.setContent { MinisTheme(darkTheme = darkTheme) {
             com.openminis.app.ui.novex.NovexDetailScaffold("对话设置", onBack = {}) {
                 ConversationSettingsOverview("诺瓦", "未设置", 0, "未启动", 0, "批准", false, { page = it }, { page = "permission" })
             }
@@ -152,7 +153,7 @@ class NovexLibraryInteractionTest {
         var opened: String? = null
         var created = false
         try {
-            ui.setContent { MinisTheme(darkTheme = false) {
+            ui.setContent { MinisTheme(darkTheme = darkTheme) {
                 com.openminis.app.ui.sessions.NovexInteractiveFictionLibraryRoot(
                     onOpenInteractiveFiction = { opened = it }, onCreateInteractiveFiction = { created = true },
                     onOpenSettings = {}, onConfigureConversation = {})
@@ -185,10 +186,14 @@ class NovexLibraryInteractionTest {
         try {
             runBlocking {
                 groups.select(NovexWorkGroupSnapshot.ALL)
+                // Clean only this test's synthetic artifacts after an interrupted instrumentation run.
+                repository.list(com.openminis.app.data.creative.CreativeArtifactQuery(conversationId = "library-ui-fixture")).forEach {
+                    repository.moveToTrash(it.artifact.id); repository.permanentlyDelete(it.artifact.id)
+                }
                 ids += repository.capture(rawName, CreativeArtifactKind.DOCUMENT, "原始资料".toByteArray(), "text/markdown",
                     CreativeArtifactOrigin("library-ui-fixture", "main")).artifact.id
             }
-            ui.setContent { MinisTheme(darkTheme = false) {
+            ui.setContent { MinisTheme(darkTheme = darkTheme) {
                 com.openminis.app.ui.creative.CreativeLibraryScreen(repository, app.creativeArtifactDeviceDirectory,
                     app.novexWorkspace, null, onBack = {}, onOpenArtifact = { record, file ->
                         opened = record.artifact.id
@@ -201,7 +206,20 @@ class NovexLibraryInteractionTest {
                 ids += repository.capture("资料与主题索引.json", CreativeArtifactKind.DOCUMENT, "{}".toByteArray(), "application/json",
                     CreativeArtifactOrigin("library-ui-fixture", "main")).artifact.id
             }
-            ui.waitUntil(15_000) { ui.onAllNodesWithText("资料与主题索引.json").fetchSemanticsNodes().isNotEmpty() }
+            try {
+                ui.waitUntil(15_000) { ui.onAllNodesWithText("资料与主题索引.json").fetchSemanticsNodes().isNotEmpty() }
+            } catch (notVisible: androidx.compose.ui.test.ComposeTimeoutException) {
+                screenshot("new-file-not-visible")
+                File(app.cacheDir, "library-ui/new-file-not-visible-tree.txt").writeText(ui.onRoot().printToString())
+                // Inserting above a stable visible row need not move the user's viewport.
+                // Searching the lazy list distinguishes an off-screen new row from a missed refresh.
+                repeat(3) {
+                    ui.onNode(hasScrollToIndexAction()).performTouchInput { swipeDown() }
+                    ui.mainClock.advanceTimeBy(500)
+                    ui.waitForIdle()
+                }
+                ui.onNodeWithText("资料与主题索引.json").assertIsDisplayed()
+            }
             screenshot("readable-file-library")
             ui.onNodeWithText(cleanName).performTouchInput { click() }
             ui.waitUntil(15_000) { ui.runOnIdle { opened != null } }
@@ -219,7 +237,7 @@ class NovexLibraryInteractionTest {
         val oldSelection = runBlocking { groups.snapshots.first().selection }
         val id = runBlocking { groups.create("界面验收库") }
         try {
-            ui.setContent { MinisTheme(darkTheme = false) {
+            ui.setContent { MinisTheme(darkTheme = darkTheme) {
                 val snapshot by groups.snapshots.collectAsState(initial = null)
                 NovexWorkGroupControls(snapshot, openMembersRequest = 1)
             } }

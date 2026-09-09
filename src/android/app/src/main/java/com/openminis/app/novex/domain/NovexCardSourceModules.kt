@@ -8,9 +8,13 @@ class NovexCardSourceModules(
     private val documents: NovexDocumentSnapshotStore,
     private val isAllowed: (NovexResourceRef) -> Boolean,
 ) {
+    fun requireAccess(reference: String) {
+        require(isAllowed(NovexResourceRef(reference))) { "来源文档不在当前对话可读目录中" }
+    }
+
     fun document(reference: String, revision: String): NovexDocumentSnapshot {
         val ref = NovexResourceRef(reference)
-        require(isAllowed(ref)) { "来源文档不在当前对话可读目录中" }
+        requireAccess(reference)
         require(revision.isNotBlank()) { "请先检查文档，并携带 source_revision（来源修订）" }
         return requireNotNull(documents.findRevision(ref, revision)) { "该文档修订不可用，请重新检查来源；没有写入卡片" }
     }

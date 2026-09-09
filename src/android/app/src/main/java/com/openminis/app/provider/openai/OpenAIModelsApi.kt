@@ -164,6 +164,8 @@ object OpenAIModelsApi {
                     LLMModel(
                         id = id,
                         displayName = displayName,
+                        contextWindow = sequenceOf(obj.optInt("context_length"), obj.optInt("context_window"),
+                            obj.optJSONObject("limit")?.optInt("context") ?: 0).firstOrNull { it > 0 },
                         provider = if (isCustomBase) "Custom" else "OpenAI",
                         inputModalities = inputModalities,
                         outputModalities = outputModalities,
@@ -172,7 +174,11 @@ object OpenAIModelsApi {
                 )
             }
             if (parsed.isEmpty()) return@withContext fallback
-            ModelsDevApi.enrichModels(parsed)
+            val directLimits = parsed.associate { it.id to it.contextWindow }
+            ModelsDevApi.enrichModels(parsed).map { enriched ->
+                val reported = directLimits[enriched.id]?.let { enriched.copy(contextWindow = it) } ?: enriched
+                com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(reported, baseURL)
+            }
         } catch (_: Exception) {
             return@withContext fallback
         }

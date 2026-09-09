@@ -28,9 +28,16 @@ class NovexTeachingAssemblyTest {
             assertTrue(old.contains("保留用户原有风格"))
             assertTrue(current.prompt.contains("保留用户原有风格"))
             assertTrue(current.prompt.contains("普通交流、保存资料、编辑卡片不会因此进入游玩"))
-            if (enabled) assertTrue(current.prompt.contains("创作或修改请求完成后自然结束"))
+            if (enabled) {
+                assertTrue(current.prompt.contains("创作或修改请求完成后自然结束"))
+                assertTrue(current.prompt.contains("只需存档名称"))
+                assertFalse("旧教学不能重新要求模型编写存档事实", current.prompt.contains("提交可读摘要与结构化状态"))
+            }
             else assertTrue(current.prompt.contains("当前对话未启用工具"))
             assertFalse(current.prompt.contains("候选第六版"))
+            assertFalse("软件不额外禁止叙事小动作", current.prompt.contains("包括停下、拿起、转身"))
+            assertFalse("保存工具不能泛化为创作禁令", current.prompt.contains("不补造行动、装备、感情或经历"))
+            if (enabled) assertTrue(current.prompt.contains("用户委托设计或补充身份时可以创作"))
         }
     }
     @Test fun `candidate assembles six sections and selects one identity without replacing formal text`() {

@@ -9,10 +9,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NovexAssistantStreamTurnTest {
-    private fun turn(tools: Boolean = true, clock: () -> Long = { 10_000 }) = AssistantStreamTurn(0, tools, { it }, clock)
+    private fun turn(clock: () -> Long = { 10_000 }) = AssistantStreamTurn(0, { it }, clock)
+
+    @Test fun availableToolsDoNotHideOrdinaryTextBeforeAnyActualCall() = runBlocking {
+        val state = turn()
+        val visible = mutableListOf<AssistantStreamTurn.Snapshot>()
+        state.accept(Chunk.Text("雨停了，邮局窗前亮起一盏灯。"), true) { visible += it }
+        state.finish { visible += it }
+        assertFalse(state.snapshot().blocks.single().executionText)
+        assertTrue(visible.any { snapshot -> snapshot.blocks.any { it.isText && !it.executionText } })
+        state.accept(Chunk.ToolUseStart("save", "save_checkpoint"), true) { visible += it }
+        assertTrue(state.snapshot().blocks.filter { it.isText }.all { it.executionText })
+        state.reset()
+        state.accept(Chunk.Text("雨后的街道安静下来。"), true) {}
+        assertFalse(state.snapshot().blocks.single().executionText)
+    }
 
     @Test fun unexpectedReadonlyToolReclassifiesItsTextAndRetainsTheOriginal() = runBlocking {
-        val state = turn(false)
+        val state = turn()
         val rendered = mutableListOf<AssistantStreamTurn.Snapshot>()
         state.accept(Chunk.Text("正在保存"), true) { rendered += it }
         assertFalse(state.snapshot().blocks.single().executionText)
@@ -83,13 +97,13 @@ class NovexAssistantStreamTurnTest {
     }
 
     @Test fun contentAfterToolStartAndStartlessCompletionBothProduceCompleteBlocks() = runBlocking {
-        val state = turn(false)
+        val state = turn()
         state.accept(Chunk.ToolUseStart("a", "read"), true) {}
         state.accept(Chunk.Text("说明"), true) {}
         state.accept(Chunk.ToolCallComplete("a", "read", JSONObject()), true) {}
         assertTrue(state.snapshot().blocks.first().isText)
         assertTrue(state.snapshot().blocks.first().executionText)
-        val startless = turn(false)
+        val startless = turn()
         startless.accept(Chunk.Text("准备"), false) {}
         startless.accept(Chunk.ToolCallComplete("x", "read", JSONObject()), false) {}
         assertEquals(listOf("text", "tool_use"), startless.snapshot().blocks.map { it.kind })

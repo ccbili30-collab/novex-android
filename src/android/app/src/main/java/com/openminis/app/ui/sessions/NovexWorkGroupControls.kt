@@ -85,7 +85,7 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
                 groupId = item.id; folderId = null; page = "browse"
             }
         } + NovexSelectionAction("新建创作库") { groupId = ""; name = ""; naming = "create"; page = "name" },
-            "搜索创作库", onDismissRequest = { page = "select" }, dismissOnSelection = false)
+            "搜索创作库", onDismissRequest = { page = "" }, dismissOnSelection = false)
         "browse" -> if (group != null) NovexSearchableSelectionSheet(group.folderPath(folderId), buildList {
             add(NovexSelectionAction("返回上一级", com.openminis.app.R.drawable.ic_phosphor_arrow_left) {
                 if (folderId == null) page = "manage" else folderId = group.folders.firstOrNull { it.id == folderId }?.parentId
@@ -109,27 +109,25 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
             } else add(NovexSelectionAction("删除空文件夹", group = "管理") {
                 execute { val parent = group.folders.first { it.id == folderId }.parentId; groups.removeFolder(groupId, folderId!!); folderId = parent }
             })
-        }, "搜索当前文件夹", onDismissRequest = {
-            if (folderId == null) page = "manage" else folderId = group.folders.firstOrNull { it.id == folderId }?.parentId
-        }, dismissOnSelection = false)
+        }, "搜索当前文件夹", onDismissRequest = { page = "" }, dismissOnSelection = false)
         "add" -> NovexLibraryPicker("选择加入的内容", entries.filterNot { it.address in expectedMembers }, snapshot?.groups.orEmpty(),
-            onDismiss = { page = "browse" }, onConfirm = { selected -> execute {
+            onDismiss = { page = "" }, onConfirm = { selected -> execute {
                 groups.replaceMembers(groupId, expectedMembers, expectedMembers + selected, folderId)
                 page = "browse"
             } })
         "item" -> NovexSelectionSheet(visible[subject]?.title ?: "内容已不可用", buildList {
-            if (onOpenContent != null && subject in visible) add(NovexSelectionAction("打开") { subject?.let(onOpenContent); page = "browse" })
+            if (onOpenContent != null && subject in visible) add(NovexSelectionAction("打开") { page = ""; subject?.let(onOpenContent) })
             add(NovexSelectionAction("移动到文件夹") { page = "move" })
             add(NovexSelectionAction("从此库移出") { execute {
                 val current = requireNotNull(group); groups.replaceMembers(groupId, current.members, current.members - requireNotNull(subject)); page = "browse"
             } })
-        }, onDismissRequest = { page = "browse" })
+        }, onDismissRequest = { page = "" })
         "move" -> NovexSearchableSelectionSheet("移动到", buildList {
             add(NovexSelectionAction(group?.name ?: "库根目录") { execute { groups.moveMembers(groupId, setOf(requireNotNull(subject)), folderId, null); page = "browse" } })
             group?.folders.orEmpty().forEach { target -> add(NovexSelectionAction(group!!.folderPath(target.id)) {
                 execute { groups.moveMembers(groupId, setOf(requireNotNull(subject)), folderId, target.id); page = "browse" }
             }) }
-        }, "搜索文件夹", onDismissRequest = { page = "item" }, dismissOnSelection = false)
+        }, "搜索文件夹", onDismissRequest = { page = "" }, dismissOnSelection = false)
         "name" -> NovexContentDialog(when (naming) { "create" -> "新建创作库"; "folder" -> "新建文件夹"; else -> "重命名" },
             onDismiss = { page = if (groupId.isEmpty()) "manage" else "browse" }, confirmButton = {
                 TextButton(enabled = !busy && name.isNotBlank(), onClick = { execute {
@@ -154,9 +152,9 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
                     page = ""; onConfigureConversation(conversation.id)
                 })
             }
-        }, "搜索对话", onDismissRequest = { page = "browse" }, dismissOnSelection = false)
+        }, "搜索对话", onDismissRequest = { page = "" }, dismissOnSelection = false)
         "conversations" -> NovexSearchableSelectionSheet("选择对话", conversations.map { conversation ->
             NovexSelectionAction(conversation.title) { page = ""; onConfigureConversation(conversation.id) }
-        }, "搜索对话", onDismissRequest = { page = "browse" }, dismissOnSelection = false)
+        }, "搜索对话", onDismissRequest = { page = "" }, dismissOnSelection = false)
     }
 }

@@ -18,8 +18,9 @@ class NovexManagementPlanTest {
         fun article(value: String) = org.json.JSONObject().put("version", 1).put("kind", "article").put("text", value).toString()
         val plan = NovexManagementPlan("plan", "chat",
             listOf(NovexManagedChange.UpdateModule("module", "规则", article(after))), setOf(world),
-            NovexManagementRisk.SHARED_CHANGE, "修改规则", expectedModuleContents = mapOf("module" to article(before)))
+            NovexManagementRisk.SHARED_CHANGE, "修改规则", expectedModuleContents = mapOf("module" to "revision-fingerprint"), originalModuleDocuments = mapOf("module" to article(before)))
         val review = plan.reviewText()
+        assertFalse(review.contains("revision-fingerprint"))
         assertTrue(review.contains(before))
         assertTrue(review.contains(after))
         assertTrue(review.contains("新名称：规则"))

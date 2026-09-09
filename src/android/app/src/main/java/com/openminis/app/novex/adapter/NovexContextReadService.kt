@@ -12,6 +12,7 @@ import org.json.JSONObject
 class NovexContextReadService(
     private val workspace: NovexWorkspace,
     private val legacy: NovexLegacyContext = NovexLegacyContext(),
+    private val visibleMessages: List<String> = emptyList(),
 ) {
     suspend fun inspect(configuration: NovexConversationConfigurationSnapshot, offset: Int = 0, limit: Int = 80): JSONObject {
         require(offset >= 0 && limit in 1..100) { "目录偏移不能为负，每页数量须为一到一百" }
@@ -63,7 +64,8 @@ class NovexContextReadService(
 
     private suspend fun candidates(configuration: NovexConversationConfigurationSnapshot): List<NovexContextCandidate> =
         WorkspaceNovexContextLoader(workspace, legacy).load(configuration)
-            .filter { it.kind != ContextSourceKind.TOOL_DEFINITION && it.content.isNotBlank() }
+            .filter { it.kind != ContextSourceKind.TOOL_DEFINITION && it.content.isNotBlank() &&
+                com.openminis.app.novex.domain.NovexWorldbookConditions.omission(it.worldbookConditions, visibleMessages) == null }
 
     private fun NovexContextCandidate.descriptor(): JSONObject = JSONObject().put("source_id", sourceId)
         .put("label", label).put("revision", NovexFrozenContextCodec.digest(content)).put("total_characters", content.length)

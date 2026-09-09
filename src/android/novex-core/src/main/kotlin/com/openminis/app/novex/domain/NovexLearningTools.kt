@@ -11,6 +11,8 @@ fun interface NovexLearningPreflightResolver {
     }
     /** Only return state that the current conversation branch is allowed to read. */
     fun readState(collectionRef: NovexResourceRef): NovexLearningState? = null
+    /** Resolve only the recorded revision of a source still visible in this conversation. */
+    fun readSource(collectionRef: NovexResourceRef, documentRef: NovexResourceRef, revision: String): NovexDocumentSnapshot? = null
 }
 
 /** Read-only preparation and note access; the host starts an exact saved plan through its common execution gate. */
@@ -31,10 +33,14 @@ class NovexLearningTools(
         digest.update(history.toByteArray(Charsets.UTF_8))
         notes.forEach { note ->
             listOf(note.ref.value, note.title, note.body).forEach { digest.update(it.toByteArray(Charsets.UTF_8)); digest.update(0) }
+            (note.sourceRevisions.entries.sortedBy { it.key.value }.map { "${it.key.value}:${it.value}" } +
+                note.sourceBlockIds + note.readRanges.map { it.toString() }).forEach {
+                digest.update(it.toByteArray(Charsets.UTF_8)); digest.update(0)
+            }
         }
         val sha = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
         val snapshot = NovexDocumentSnapshot(NovexResourceRef("novex://documents/learning-$sha"), sha,
-            "learning-notes-v1", state.collection.title, NovexDocumentFormat.TEXT, NovexDocumentStatus.READY,
+            "learning-notes-v2", state.collection.title, NovexDocumentFormat.TEXT, NovexDocumentStatus.READY,
             notes.mapIndexed { index, note ->
                 val anchor = NovexDocumentSourceAnchor(note.ref.value, index)
                 NovexDocumentBlock(NovexDocumentBlockId.from(sha, anchor), NovexDocumentBlockKind.NOTE,
@@ -47,13 +53,16 @@ class NovexLearningTools(
         val noteIndex = selectedRef?.let { ref -> notes.indexOfFirst { it.ref.value == ref }.also { index ->
             require(index >= 0) { "note_ref 不属于当前资料集；请使用 learning_read 返回的笔记引用" }
         } }
+        val requestedChars = if (arguments.has("max_chars")) arguments.getInt("max_chars") else 24_000
+        require(requestedChars in 1..48_000) { "max_chars（本次文字上限）应在 1 到 48000 之间" }
+        val evidenceBudget = minOf(8_000, requestedChars / 3)
         val result = NovexDocumentTools(NovexDocumentSnapshotStore { snapshot }).documentRead(NovexDocumentReadRequest(
             documentRef = snapshot.ref,
             blockIds = noteIndex?.let { listOf(snapshot.blocks[it].id) }.orEmpty(),
             query = arguments.optString("query").trim().ifBlank { null },
             cursor = arguments.optString("cursor").trim().ifBlank { null },
             firstBlock = if (arguments.has("first_note")) arguments.getInt("first_note") else null,
-            maxChars = if (arguments.has("max_chars")) arguments.getInt("max_chars") else 24_000,
+            maxChars = requestedChars - evidenceBudget,
             maxBlocks = 20,
         ))
         if (!result.ok) return NovexToolResult.failure(result.code,
@@ -61,11 +70,15 @@ class NovexLearningTools(
             else result.summary.replace("first_block", "first_note"), affectedRefs = listOf(collectionRef))
         val returnedIds = (result.data["blocks"] as? List<*>)?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }.orEmpty().toSet()
         val returnedNotes = notes.filterIndexed { index, _ -> snapshot.blocks[index].id in returnedIds }
+        val evidence = NovexLearningNoteEvidence.read(state, returnedNotes, evidenceBudget, preflights::readSource)
         return NovexToolResult.success("learning.notes_read", "已读取 ${returnedNotes.size} 条学习笔记；笔记不是原文，通读覆盖以阅读记录为准" +
             if (history == "history") "。这是旧整理成果，不计入当前解析的覆盖" else "",
             data = (result.data - "document_ref") + mapOf(
                 "collection_ref" to collectionRef.value,
                 "read_via" to "learning_read",
+                "note_bodies_verified" to false,
+                "source_evidence" to (evidence - "read_observations"),
+                "read_observations" to evidence.getValue("read_observations"),
                 "total_notes" to notes.size,
                 "note_set" to history,
                 "historical_note_count" to state.historicalNotes.size,

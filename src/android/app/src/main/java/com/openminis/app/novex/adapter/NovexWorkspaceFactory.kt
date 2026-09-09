@@ -25,7 +25,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 object NovexWorkspaceFactory {
-    fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace {
+    fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace = createWithDirectoryStore(database, mediaRoot)
+
+    internal fun createWithDirectoryStore(database: AppDatabase, mediaRoot: File, directoryStore: NovexCardDirectoryStore = NovexCardDirectoryStore(File(mediaRoot.canonicalFile.parentFile, "novex-cards"))): NovexWorkspace {
         val catalog = CharacterCatalogRepository(database.characterCatalogDao())
         val content = ContentModuleRepository(database.contentModuleDao())
         val interactiveFiction = InteractiveFictionRepository(database.interactiveFictionDao())
@@ -37,6 +39,7 @@ object NovexWorkspaceFactory {
         }
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
+            cardDirectories = RoomCardDirectories(database.novexCardDirectoryDao(), directoryStore),
             cardReferences = RoomCardReferenceAdapter(database.novexCardReferenceDao()),
             versionRelations = RoomCharacterVersionRelationAdapter(database.novexCharacterVersionRelationDao()),
             characterRevisions = RoomCharacterRevisionAdapter(database.novexCharacterRevisionDao()),
@@ -92,6 +95,9 @@ internal class DeferredNovexWorkspace(
     @Volatile
     private var initialized: NovexWorkspace? = null
     private val initializationMutex = Mutex()
+
+    override suspend fun cardDirectory(subject: com.openminis.app.novex.domain.NovexContentAddress) = workspace().cardDirectory(subject)
+    override suspend fun migrateCardDirectories() = workspace().migrateCardDirectories()
 
     override suspend fun emptyConversationDrafts(conversationId: String) = workspace().emptyConversationDrafts(conversationId)
     override suspend fun conversationDrafts(conversationId: String) = workspace().conversationDrafts(conversationId)

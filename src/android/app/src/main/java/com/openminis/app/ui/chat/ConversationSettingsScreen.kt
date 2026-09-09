@@ -765,6 +765,9 @@ fun ConversationSettingsScreen(
     if (showingSettingUse) NovexSettingUseControls(draft.configuration.copy(backgroundSettings = draft.configuration.backgroundSettings.filterNot { it.subject in privateSubjects }), onToggle = { target, enabled ->
         try { draft = draft.setSettingEnabled(target, enabled) }
         catch (failure: IllegalArgumentException) { error = failure.message ?: "设定开关尚未保存" }
+    }, onReferenceToggle = { id, enabled ->
+        try { draft = draft.setReferenceEnabled(id, enabled) }
+        catch (failure: IllegalArgumentException) { error = failure.message ?: "设定开关尚未保存" }
     }, onDismiss = { showingSettingUse = false })
     if (showingAdoptedSources) com.openminis.app.ui.novex.NovexContentDialog("实际采用的来源", onDismiss = { showingAdoptedSources = false },
         confirmButton = { com.openminis.app.ui.novex.TextButton(onClick = { showingAdoptedSources = false }) { Text("返回对话配置") } }) {

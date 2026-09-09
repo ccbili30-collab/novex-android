@@ -45,18 +45,18 @@ object NovexManagementTools {
         ),
         AgentToolDefinition(
             name = INSPECT,
-            description = "查看当前对话私有卡片和已加入管理区的卡片或模块。无参数只列卡片目录；指定卡片列模块目录，指定 module_id 读取正文。专用模块格式及高级操作按需传 include_advanced=true 查看。" +
+            description = "查看当前对话私有卡片和已加入管理区的卡片或模块。无参数列卡片目录；只传 subject_kind 可按类型筛选目录；指定卡片编号列模块目录，指定 module_id 读取正文。专用模块格式及高级操作按需传 include_advanced=true 查看。" +
                 "私有空卡可读，创建时由 novex_write_card 自动承接，填满后可继续创建更多卡；未授权的外部对象不能读取。" +
                 "同时返回 card_references（向外引用）、card_backlinks（使用来源）、reference_purposes（合法用途）；这些目录不会授予目标卡片的读写权限。",
             parameters = mapOf(
                 "subject_kind" to AgentToolParam(
                     type = "string",
-                    description = "Mounted subject kind.",
+                    description = "卡片类型；单独填写时仅列出当前可管理的这一类卡片。",
                     enumValues = listOf("world", "character_version", "game", "artifact"),
                 ),
                 "subject_id" to AgentToolParam("string", "本对话私有或已加入管理区的对象编号，与 subject_kind 一起填写。"),
                 "include_advanced" to AgentToolParam("boolean", "需要专用模块格式、人物阶段关系或高级批量操作时设为 true，返回内容示例和完整参数说明。"),
-                "module_id" to AgentToolParam("string", "Optional module id owned by the selected mounted subject."),
+                "module_id" to AgentToolParam("string", "要读取正文的模块编号；使用目录返回的 module_id，不能用计划或卡片编号代替。"),
                 "profile_section" to AgentToolParam("string", "角色总览默认只读 public（公开资料）；明确管理旧格式专属扮演资料时选择 role_instructions（专属扮演指令）。私有模块通过 private_modules（私有模块目录）的编号单独读取。明确分析保存的酒馆原件时选择 exchange_source（交换原件），按偏移和修订分段读取；背景用途不能访问原件。", enumValues = listOf("public", "role_instructions", "exchange_source")),
                 "offset" to AgentToolParam("integer", "仅用于交换原件：起始字符偏移，首次为 0，后续使用返回的 next_offset（下一偏移）。"),
                 "limit" to AgentToolParam("integer", "仅用于交换原件：本次字符上限，1 至 16000，默认 8000。"),

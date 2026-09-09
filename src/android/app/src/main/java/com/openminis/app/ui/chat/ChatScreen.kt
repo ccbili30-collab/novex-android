@@ -59,7 +59,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -88,8 +87,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import com.openminis.app.ui.novex.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
@@ -339,7 +336,7 @@ fun ChatScreen(
      *  responsible for navigating; this screen has already stashed the
      *  pending transfer in [ChatViewModelStore.stashPendingTransfer]. */
     onMoveToSession: (sessionId: String) -> Unit = {},
-    onBrowseChatFiles: () -> Unit = {},
+    onBrowseChatFiles: (String) -> Unit = {},
     onOpenCreatedCard: (kind: String, id: String) -> Unit = { _, _ -> },
     /** T150: open FilePreviewScreen for a non-image attachment in a user bubble. */
     onPreviewAttachment: (com.openminis.app.ui.sandbox.FileItem) -> Unit = {},
@@ -470,10 +467,13 @@ fun ChatScreen(
     val inputText by viewModel.inputText.collectAsState()
     LaunchedEffect(sessionId) {
         val pending = com.openminis.app.deeplink.DeepLinkCoordinator.pendingChatAction.value
-        if (pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL) {
+        if (pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL ||
+            pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.ORGANIZE_IMPORTED_CARD) {
             com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingChatAction()
             if (viewModel.inputText.value.isBlank()) {
-                viewModel.setInputText("【创作工具】帮我从当前对话出发进行创作。先理解已有内容，再和我一起整理目标与下一步。")
+                viewModel.setInputText(if (pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.ORGANIZE_IMPORTED_CARD)
+                    "请读取本次选中的卡片，把原始设定整理成方便编辑的模块。保留原有设定，修改同一张卡；整理后的内容不要与原文重复采用。"
+                else "请根据当前对话已有资料帮我创作；已有明确目标时直接完成，缺少目标时再和我讨论。")
             }
         }
     }
@@ -933,13 +933,16 @@ fun ChatScreen(
         Unit
     }
     var transcriptFollowState by remember(sessionId) { mutableStateOf(TranscriptFollowState()) }
+    var lastUserDragAtMs by remember(sessionId) { mutableStateOf(Long.MIN_VALUE) }
     var submittedTurnNavigation by remember(sessionId) { mutableStateOf(SubmittedTurnNavigation()) }
     val scrollToLatestOnce: suspend (TranscriptViewportMove) -> Unit = scroll@{ reason ->
         if (!transcriptFollowState.shouldMoveFor(reason)) return@scroll
         // One frame lets a newly-added or newly-measured row enter the list.
         // Explicit actions always pass; passive growth only passes while the
         // temporary “follow latest” state is active.
+        val dragBeforeFrame = lastUserDragAtMs
         withFrameNanos { }
+        if (lastUserDragAtMs != dragBeforeFrame || !transcriptFollowState.shouldMoveFor(reason)) return@scroll
         latestTranscriptItemIndex(listState.layoutInfo.totalItemsCount)?.let { latest ->
             // A zero offset would place the beginning of a viewport-tall final
             // message at the top. A large forward offset is safely clamped by
@@ -949,8 +952,10 @@ fun ChatScreen(
         }
     }
     LaunchedEffect(viewModel, sessionId) {
-        viewModel.submittedUserMessageId.collect { messageId ->
-            submittedTurnNavigation = submittedTurnNavigation.awaiting(messageId)
+        viewModel.submittedUserMessageId.collect { submission ->
+            if (!submission.canNavigateAfter(lastUserDragAtMs)) return@collect
+            transcriptFollowState = transcriptFollowState.after(TranscriptFollowEvent.UserRequestedLatest)
+            submittedTurnNavigation = submittedTurnNavigation.awaiting(submission.messageId)
         }
     }
     // T-android-jank-profile: gate verbose scroll telemetry behind a constant
@@ -1213,6 +1218,7 @@ fun ChatScreen(
             focusManager.clearFocus()
             return@handler
         }
+        if (!viewModel.hasModelForSend()) return@handler
         lastSendTimeMs = System.currentTimeMillis()
         // [T-android-slash-send-keeps-text] A send always ends the slash session.
         //
@@ -1252,6 +1258,8 @@ fun ChatScreen(
             when (interaction) {
                 is androidx.compose.foundation.interaction.DragInteraction.Start -> {
                     isUserDragging = true
+                    lastUserDragAtMs = android.os.SystemClock.uptimeMillis()
+                    submittedTurnNavigation = SubmittedTurnNavigation()
                     transcriptFollowState = transcriptFollowState.after(
                         TranscriptFollowEvent.UserDragStarted,
                     )
@@ -1360,7 +1368,7 @@ fun ChatScreen(
     var showContextMeter by remember {
         mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER, false))
     }
-    var contextMeterMode by rememberSaveable { mutableIntStateOf(0) }
+    var contextMeterMode by rememberSaveable { mutableIntStateOf(1) }
     val lastTurnContextTokens by viewModel.lastTurnContextTokens.collectAsState()
     // T-chat-title-pill: live-toggled by Settings → Appearance and by
     // `minis-config set appearance.show_chat_title …`. Default ON.
@@ -1844,14 +1852,7 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    if (showContextMeter) {
-                        NovexContextMeter(
-                            usedTokens = lastTurnContextTokens,
-                            windowTokens = viewModel.currentModelContextWindow,
-                            mode = contextMeterMode,
-                            onClick = { contextMeterMode = (contextMeterMode + 1) % 3 },
-                        )
-                    }
+                    NovexDeepSeekClock()
                     // iOS: "..." circle button → dropdown menu
                     Box {
                         IconButton(onClick = { showChatMenu = true }) {
@@ -2222,7 +2223,9 @@ fun ChatScreen(
                     // Consume before moving so stream-start / stream-end
                     // recompositions cannot repeat this navigation.
                     submittedTurnNavigation = resolution.nextState
+                    val dragBeforeFrame = lastUserDragAtMs
                     withFrameNanos { }
+                    if (lastUserDragAtMs != dragBeforeFrame) return@LaunchedEffect
                     tracedScrollToItem(
                         TranscriptViewportMove.UserSentMessage.name,
                         targetIndex,
@@ -2234,10 +2237,11 @@ fun ChatScreen(
                     snapshotFlow {
                         val info = listState.layoutInfo
                         val latest = latestTranscriptItemIndex(info.totalItemsCount)
-                        val latestSize = info.visibleItemsInfo
+                        val latestItem = info.visibleItemsInfo
                             .firstOrNull { it.index == latest }
-                            ?.size ?: -1
-                        Triple(info.totalItemsCount, latestSize, info.viewportEndOffset)
+                        // A fixed-height final control row can move when the body above grows.
+                        listOf(info.totalItemsCount, latestItem?.size ?: -1,
+                            latestItem?.offset ?: -1, info.viewportEndOffset)
                     }
                         .distinctUntilChanged()
                         .collect {
@@ -2601,288 +2605,38 @@ fun ChatScreen(
                                     },
                                 ),
                         ) {
-                        when (item) {
-                            is FlatChatItem.UserBubble -> {
-                                // User bubbles intentionally don't register
-                                // MinisTextKit shards — long-press on a user
-                                // bubble shows its own action menu (Copy /
-                                // Retry / Edit) instead of starting text
-                                // selection, matching iOS UX.
-                                UserMessageBubble(
-                                message = item.message,
-                                // [T-android-candidate-bubble-gap] extra top
-                                // gap when this bubble directly follows another
-                                // user bubble (back-to-back candidate sends).
-                                precededByUser = item.precededByUser,
-                                onCopy = {
-                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", item.message.content))
-                                },
-                                onShare = {
-                                    pendingShareText = item.message.content
-                                    showMoveSheet = true
-                                },
-                                // T119: pass null while a turn is in flight so
-                                // the long-press menu hides Retry; once the
-                                // stream stops (cancel or natural end) the
-                                // option reappears. Gating execution alone
-                                // wasn't enough — users still saw a tappable
-                                // Retry that silently no-op'd.
-                                onRetry = if (isStreaming) null else ({
-                                    safeMutate { viewModel.retryFromMessage(item.message.id) }
+                        ChatTranscriptRow(item,
+                            ChatTranscriptRowState(isStreaming, canResume, viewModel.thinkingLevel.value, compactedHistoryExpanded),
+                            selectionController, panelExpansionState) { action ->
+                            when (action) {
+                                is ChatTranscriptAction.Share -> { pendingShareText = action.text; showMoveSheet = true }
+                                is ChatTranscriptAction.RetryFrom -> {
+                                    safeMutate { viewModel.retryFromMessage(action.messageId) }
                                     coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
-                                }),
-                                // T187: long-press → Edit pulls the user message
-                                // text into the composer; the next send truncates
-                                // from this turn (inclusive) before persisting
-                                // the edited content. Gated on isStreaming the
-                                // same way Retry is.
-                                onEdit = if (isStreaming || item.message.isQueued) null else ({
-                                    val prefill = viewModel.editMessage(item.message.id)
-                                    if (prefill != null) {
-                                        viewModel.setInputText(prefill)
-                                        inputFocusRequester.requestFocus()
-                                    }
-                                }),
-                                onDelete = if (isStreaming || item.message.isQueued) null else ({
-                                    pendingDeleteFromMessageId = item.message.id
-                                }),
-                                onWithdraw = if (item.message.isQueued) {
-                                    { safeMutate { viewModel.withdrawQueuedMessage(item.message.id) } }
-                                } else null,
-                                onPreviewFile = { uri, name ->
-                                    // T150: turn the persisted file:// URI back
-                                    // into a FileItem and hand off to the host
-                                    // navigator (FilePreviewScreen). Mirrors
-                                    // FileBrowser's onPreviewFile contract so
-                                    // both entry points share one screen.
-                                    val file = uri.path?.let { java.io.File(it) }
-                                    if (file != null && file.exists()) {
-                                        onPreviewAttachment(
-                                            com.openminis.app.ui.sandbox.FileItem(
-                                                file = file,
-                                                name = name,
-                                                isDirectory = false,
-                                                isSymlink = false,
-                                                size = file.length(),
-                                                modifiedMs = file.lastModified(),
-                                            )
-                                        )
-                                    }
-                                },
-                            )
-                            } // close UserBubble SideEffect + UserMessageBubble block
-                            is FlatChatItem.AssistantHeader -> AssistantHeader()
-                            is FlatChatItem.AssistantText -> BoundsTrackedBlock(
-                                messageId = item.messageId,
-                                slotKey = "text:${item.block.id}",
-                                markdown = item.messageMarkdown,
-                            ) {
-                                CharacterAssistantBubble {
-                                // T-android-gc-storm-issue17: collapse oversized frozen
-                                // assistant text before feeding the markdown parser, which
-                                // is the GC-storm hotspot for legacy sessions.
-                                LargeContentGuard(
-                                    content = item.block.content,
-                                    isStreaming = item.isStreaming,
-                                    stableKey = "text:${item.messageId}:${item.block.id}",
-                                ) {
-                                    SideEffect {
-                                        selectionController.rememberMessageMarkdown(item.messageId, item.messageMarkdown)
-                                    }
-                                    StreamingMarkdownText(
-                                        content = item.block.content,
-                                        isStreaming = item.isStreaming,
-                                        shardId = TextShardId(
-                                            messageId = item.messageId,
-                                            shardId = "text:${item.block.id}",
-                                        ),
-                                    )
                                 }
+                                is ChatTranscriptAction.Edit -> viewModel.editMessage(action.messageId)?.let { text ->
+                                    viewModel.setInputText(text); inputFocusRequester.requestFocus()
                                 }
-                            }
-                            is FlatChatItem.AssistantMarkdownBlock -> BoundsTrackedBlock(
-                                messageId = item.messageId,
-                                slotKey = "mdblock:${item.parentBlockId}:${item.blockIndex}",
-                                markdown = item.messageMarkdown,
-                            ) {
-                                CharacterAssistantBubble {
-                                LargeContentGuard(
-                                    content = item.rawText,
-                                    isStreaming = item.isStreaming,
-                                    stableKey = "mdblock:${item.messageId}:${item.parentBlockId}:${item.blockIndex}",
-                                ) {
-                                    SideEffect {
-                                        selectionController.rememberMessageMarkdown(item.messageId, item.messageMarkdown)
-                                    }
-                                    MarkdownBlock(
-                                        rawText = item.rawText,
-                                        isStreaming = item.isStreaming,
-                                        shardId = TextShardId(
-                                            messageId = item.messageId,
-                                            shardId = "mdblock:${item.parentBlockId}:${item.blockIndex}",
-                                        ),
-                                    )
-                                }
-                                }
-                            }
-                            is FlatChatItem.AssistantThinking -> {
-                                // T300: hide Deep Thinking block when the user
-                                // currently has thinking turned off — even if
-                                // a forced-reasoning model (e.g. xAI Grok 4.x
-                                // via OpenRouter) still streams reasoning_-
-                                // content. Snapshot on the message wins so
-                                // toggling the level after a turn finishes
-                                // doesn't retro-hide an already-visible block;
-                                // legacy DB-restored messages (snapshot=null)
-                                // follow the chat's current level.
-                                val effectiveLevel = item.messageThinkingLevel
-                                    ?: viewModel.thinkingLevel.value
-                                if (effectiveLevel.isEnabled) {
-                                    // [T-android-thinking-auto-collapse] Use
-                                    // `isLastBlockOverall` (not `isLast` =
-                                    // last-thinking-only) so the block flips
-                                    // to !isStreaming the moment a sibling
-                                    // text/tool_use arrives — that's the
-                                    // edge ThinkingBlock's LaunchedEffect
-                                    // hooks for auto-collapse, matching iOS
-                                    // ThinkingBlockView semantics.
-                                    ThinkingBlock(
-                                        block = item.block,
-                                        isStreaming = item.isLastBlockOverall && item.messageIsStreaming,
-                                        isLast = item.isLast,
-                                    )
-                                }
-                            }
-                            is FlatChatItem.AssistantProcess -> NovexExecutionProcessRow(item) { openedProcess = item }
-                            is FlatChatItem.AssistantToolUse -> {
-                                if (item.block.toolName == "present_choices") {
-                                    NovexChoiceButtons(item.block.toolArgs) { choice ->
-                                        viewModel.setInputText(choice)
-                                        inputFocusRequester.requestFocus()
-                                    }
-                                } else if (item.block.toolName in setOf("render_panel", "panel", "present_system_panel")) {
-                                    NovexPanel(
-                                        argsJson = item.block.toolArgs,
-                                        panelKey = "${item.messageId}:${item.block.id}",
-                                        expansionState = panelExpansionState,
-                                    ) { value ->
-                                        viewModel.setInputText(value)
-                                        inputFocusRequester.requestFocus()
-                                    }
-                                } else {
-                                    ToolCallPill(
-                                block = item.block,
-                                allToolBlocks = item.allToolBlocks,
-                                onRetry = if (item.isLastCancelled && !isStreaming && !canResume) ({ safeMutate { viewModel.retryLast() } }) else null,
-                                // T14: route per-card stop to the global
-                                // cancelStream(). The button only renders
-                                // when the block is RUNNING/STREAMING — see
-                                // ToolCallPill `isRunning && onStop != null`
-                                // — so passing it unconditionally is safe.
-                                onStop = { viewModel.cancelStream() },
-                                onOpenTerminalWithCommand = onOpenTerminalWithCommand,
-                                // T261: route detail open through ViewModel so
-                                // the sheet is hoisted out of LazyColumn item
-                                // scope (otherwise the sheet snaps shut when
-                                // the pill scrolls off-screen and Compose
-                                // disposes the item).
-                                onOpenDetail = { viewModel.openToolDetail(it) },
-                                // [T-android-rerun-from-tool-block-position]
-                                // Re-run cuts at THIS tool_use block: keep the
-                                // blocks before it in the same turn, drop it +
-                                // everything after, then regenerate. The block
-                                // id (== tool_use id for a tool_use block) is
-                                // the stable anchor. Gated off while streaming
-                                // (mutating an in-flight turn corrupts agent
-                                // state, same rule as Retry on the user bubble).
-                                // safeMutate tears down the selection toolbar
-                                // before the truncation reshuffles the list.
-                                onRerunFromHere = if (!isStreaming) ({
-                                    safeMutate { viewModel.rerunFromToolBlock(item.messageId, item.block.id) }
-                                    coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
-                                }) else null,
-                                onCopyDetails = {
-                                    val text = formatToolDetailsForClipboard(item.block)
-                                    val cb = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    cb.setPrimaryClip(android.content.ClipData.newPlainText("tool", text))
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        context.getString(R.string.tool_longpress_copied_toast),
-                                        android.widget.Toast.LENGTH_SHORT,
-                                    ).show()
-                                },
-                                    )
-                                }
-                            }
-                            is FlatChatItem.AssistantFallbackChoices -> {
-                                NovexChoiceButtons(item.choices) { choice ->
-                                    viewModel.setInputText(choice)
-                                    inputFocusRequester.requestFocus()
-                                }
-                            }
-                            is FlatChatItem.AssistantInfo -> if (item.block.toolName == NovexCardCreationTask.MARKER) {
-                                NovexCardTaskStatusRow(item.block, !isStreaming, onOpenCard = onOpenCreatedCard) {
-                                    viewModel.setInputText("继续核对并完成刚才的卡片任务；先检查已有成果，不重复创建。")
-                                    inputFocusRequester.requestFocus()
-                                }
-                            } else FallbackInfoBlock(
-                                block = item.block,
-                                // Only the compact-divider info block should
-                                // surface a "Revert Compact" button on its
-                                // detail sheet — other info rows (slash
-                                // notices, fallback notices) have nothing
-                                // to revert.
-                                onRevert = if (item.block.toolName == "compact") {
-                                    { viewModel.revertCompact() }
-                                } else null,
-                                compactedHistoryExpanded = if (item.block.toolName == "compact") {
-                                    compactedHistoryExpanded
-                                } else null,
-                                onToggleCompactedHistory = if (item.block.toolName == "compact") ({
-                                    compactedHistoryExpanded = !compactedHistoryExpanded
-                                }) else null,
-                            )
-                            is FlatChatItem.AssistantTyping -> TypingIndicator()
-                            is FlatChatItem.AssistantError -> InlineErrorBanner(
-                                error = item.error,
-                                onRetry = {
+                                is ChatTranscriptAction.DeleteFrom -> pendingDeleteFromMessageId = action.messageId
+                                is ChatTranscriptAction.Withdraw -> safeMutate { viewModel.withdrawQueuedMessage(action.messageId) }
+                                is ChatTranscriptAction.PreviewAttachment -> onPreviewAttachment(action.file)
+                                is ChatTranscriptAction.Prefill -> { viewModel.setInputText(action.text); inputFocusRequester.requestFocus() }
+                                is ChatTranscriptAction.OpenProcess -> openedProcess = action.process
+                                is ChatTranscriptAction.RetryLast -> {
                                     safeMutate { viewModel.retryLast() }
-                                    coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
-                                },
-                            )
-                            is FlatChatItem.BranchSwitcher -> ConversationBranchSwitcher(
-                                index = item.index,
-                                count = item.count,
-                                onPrevious = {
-                                    safeMutate { viewModel.switchMessageBranch(item.messageId, -1) }
-                                },
-                                onNext = {
-                                    safeMutate { viewModel.switchMessageBranch(item.messageId, 1) }
-                                },
-                            )
-                            is FlatChatItem.AssistantLegacyContent -> BoundsTrackedBlock(
-                                messageId = item.messageId,
-                                slotKey = "legacy",
-                                markdown = item.messageMarkdown,
-                            ) {
-                                LargeContentGuard(
-                                    content = item.content,
-                                    isStreaming = item.isStreaming,
-                                    stableKey = "legacy:${item.messageId}",
-                                ) {
-                                    SideEffect {
-                                        selectionController.rememberMessageMarkdown(item.messageId, item.messageMarkdown)
-                                    }
-                                    StreamingMarkdownText(
-                                        content = item.content,
-                                        isStreaming = item.isStreaming,
-                                        shardId = TextShardId(
-                                            messageId = item.messageId,
-                                            shardId = "legacy",
-                                        ),
-                                    )
+                                    if (action.navigateToLatest) coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
                                 }
+                                ChatTranscriptAction.Stop -> viewModel.cancelStream()
+                                is ChatTranscriptAction.OpenTerminal -> onOpenTerminalWithCommand(action.command)
+                                is ChatTranscriptAction.OpenToolDetail -> viewModel.openToolDetail(action.id)
+                                is ChatTranscriptAction.RerunFrom -> {
+                                    safeMutate { viewModel.rerunFromToolBlock(action.messageId, action.blockId) }
+                                    coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
+                                }
+                                is ChatTranscriptAction.OpenCard -> onOpenCreatedCard(action.kind, action.id)
+                                ChatTranscriptAction.RevertCompact -> viewModel.revertCompact()
+                                ChatTranscriptAction.ToggleCompactedHistory -> compactedHistoryExpanded = !compactedHistoryExpanded
+                                is ChatTranscriptAction.SwitchBranch -> safeMutate { viewModel.switchMessageBranch(action.messageId, action.delta) }
                             }
                         }
                         } // Box (alpha wrapper)
@@ -2933,7 +2687,7 @@ fun ChatScreen(
                         }
                     } else {
                         Text(
-                            text = "导入你的模拟器启动词，开始游戏吧",
+                            text = "想聊些什么，或一起创作？",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
@@ -4022,19 +3776,6 @@ fun ChatScreen(
                     } else
                     // Text field (iOS: placeholder "Message Minis", no border)
                     run {
-                        val interactionSource = remember { MutableInteractionSource() }
-                        val mergedTextStyle = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 16.5.sp * chatInputFontScale,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        val teachingHints = stringArrayResource(R.array.novex_composer_hints)
-                        var teachingHintIndex by rememberSaveable { mutableIntStateOf(0) }
-                        LaunchedEffect(teachingHints.size) {
-                            while (teachingHints.isNotEmpty()) {
-                                kotlinx.coroutines.delay(120_000L)
-                                teachingHintIndex = (teachingHintIndex + 1) % teachingHints.size
-                            }
-                        }
                         // [T-android-enter-to-send-broken] Live read of the
                         // "Return key sends" preference. Bound here (not
                         // captured at BasicTextField construction) so a
@@ -4080,90 +3821,18 @@ fun ChatScreen(
                             noteSendForInputModePref()
                             true
                         }
-                        BasicTextField(
+                        ChatComposerTextField(
                             value = inputFieldValue,
                             onValueChange = { tfv ->
-                                // T217-2: drop IME residue commits in 300ms post-send window.
-                                // finishComposingText (fired by clearFocus on send) makes
-                                // voice/Pinyin IMEs replay their pending candidate through
-                                // onValueChange after we cleared inputText.
-                                val now = System.currentTimeMillis()
-                                if (now - lastSendTimeMs < 300L && tfv.text.isNotEmpty()) {
-                                    return@BasicTextField
-                                }
-                                // [T-android-voice-correction] Capability #3:
-                                // learn from select-and-replace edits. When the
-                                // PREVIOUS value had a non-empty selection and
-                                // this change swapped that span for different
-                                // text, the user deliberately replaced something
-                                // they had already written — the same shape as
-                                // fixing a transcript, so the recorder applies
-                                // the identical phonetic admission test and
-                                // discards anything that reads as a rewrite.
-                                //
-                                // Silent background capture: consent-gated,
-                                // fire-and-forget, no UI. Deliberately NOT
-                                // firing on ordinary typing, which is
-                                // append-only and carries no correction signal.
+                                val edit = interpretComposerTextEdit(inputFieldValue, tfv,
+                                    System.currentTimeMillis() - lastSendTimeMs, sendOnEnter, showMentionMenu)
+                                if (edit == ComposerTextEdit.Ignore) return@ChatComposerTextField
                                 captureSelectionReplacement(context, inputFieldValue, tfv)
-                                // [T-android-enter-to-send-multiline] Root cause:
-                                // the composer is a multi-line BasicTextField
-                                // (maxLines=6 ⇒ EditorInfo carries
-                                // TYPE_TEXT_FLAG_MULTI_LINE, confirmed inputType
-                                // 0x28001 in dumpsys input_method). In multi-line
-                                // mode soft IMEs (Gboard/LatinIME, Sogou, MIUI)
-                                // render Enter as a newline and IGNORE
-                                // IME_ACTION_SEND — so KeyboardActions.onSend
-                                // never fires and the "Return key sends" pref
-                                // looked inert. The IME commits the Enter as a
-                                // plain '\n' through onValueChange (not through
-                                // onKeyEvent / a KEYCODE_ENTER), so the only
-                                // place to catch it for soft keyboards is here.
-                                //
-                                // Detect a single '\n' freshly inserted into the
-                                // text (one Enter keypress) and convert it to a
-                                // send. Guarded to a single added newline so a
-                                // paste containing newlines is NOT swallowed —
-                                // those increase the count by >1 and fall through
-                                // to the normal multi-line edit. Hardware-keyboard
-                                // Enter / Shift+Enter still go through onKeyEvent
-                                // below (Shift+Enter inserts a newline there and
-                                // never reaches the send path).
-                                if (sendOnEnter && !showMentionMenu) {
-                                    val oldText = inputFieldValue.text
-                                    val newText = tfv.text
-                                    val addedNewline = newText.length == oldText.length + 1 &&
-                                        newText.count { it == '\n' } == oldText.count { it == '\n' } + 1
-                                    if (addedNewline) {
-                                        val caret = tfv.selection.end
-                                        // The inserted char sits just before the
-                                        // caret; confirm it is the newline so we
-                                        // don't misfire on an unrelated 1-char edit
-                                        // that happens to keep newline parity.
-                                        if (caret in 1..newText.length &&
-                                            newText[caret - 1] == '\n'
-                                        ) {
-                                            performEnterSend()
-                                            return@BasicTextField
-                                        }
-                                    }
+                                if (edit == ComposerTextEdit.Send) {
+                                    performEnterSend()
+                                    return@ChatComposerTextField
                                 }
-                                // System-level corrections live on their own
-                                // first line. When the user closes a leading
-                                // 【…】 or […] instruction, insert the line break
-                                // automatically so following prose never gets
-                                // accidentally swallowed into the instruction.
-                                val systemSeparated = run {
-                                    val insertedOne = tfv.text.length == inputFieldValue.text.length + 1
-                                    val closesInstruction = tfv.text.startsWith("【") && tfv.text.endsWith("】") ||
-                                        tfv.text.startsWith("[") && tfv.text.endsWith("]")
-                                    if (insertedOne && closesInstruction) {
-                                        tfv.copy(
-                                            text = tfv.text + "\n",
-                                            selection = androidx.compose.ui.text.TextRange(tfv.text.length + 1),
-                                        )
-                                    } else tfv
-                                }
+                                val systemSeparated = (edit as ComposerTextEdit.Replace).value
                                 inputFieldValue = systemSeparated
                                 if (inputText != systemSeparated.text) {
                                     composerInputSynchronizer.recordLocalEdit(systemSeparated.text)
@@ -4181,12 +3850,9 @@ fun ChatScreen(
                                     caret = systemSeparated.selection.end,
                                 )
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 25.dp)
-                                .focusRequester(inputFocusRequester)
-                                .onFocusChanged { inputFocused = it.isFocused }
-                                .onKeyEvent { event ->
+                            focusRequester = inputFocusRequester,
+                            onFocusChanged = { inputFocused = it },
+                            onKeyEvent = onKeyEvent@{ event ->
                                     // T-at-filepicker-keyboard: while the @-mention
                                     // menu is open, hardware Up/Down navigates the
                                     // list and Return commits the highlighted entry.
@@ -4243,39 +3909,9 @@ fun ChatScreen(
                                         performEnterSend()
                                     } else false
                                 },
-                            textStyle = mergedTextStyle,
-                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                            maxLines = 6,
-                            // [T-android-enter-to-send-broken] When the
-                            // user has Return-Key=Send turned on, ask the
-                            // IME for the Send action so it (a) shows the
-                            // send glyph instead of "Enter" and (b)
-                            // actually invokes KeyboardActions.onSend
-                            // instead of silently inserting '\n'. With
-                            // Default, Gboard / Sogou / MIUI etc. never
-                            // routed Enter through onKeyEvent so the
-                            // preference appeared inert.
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = if (sendOnEnter) ImeAction.Send else ImeAction.Default,
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSend = { performEnterSend() },
-                            ),
-                            interactionSource = interactionSource,
-                            decorationBox = { innerTextField ->
-                                Box(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
-                                    if (inputText.isEmpty()) {
-                                        Text(
-                                            teachingHints.getOrElse(teachingHintIndex) { "" },
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                            fontSize = 16.5.sp * chatInputFontScale,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            },
+                            fontScale = chatInputFontScale,
+                            sendOnEnter = sendOnEnter,
+                            onSend = { performEnterSend() },
                         )
                     }
 
@@ -4780,6 +4416,15 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
+                        if (showContextMeter) {
+                            NovexContextMeter(
+                                usedTokens = lastTurnContextTokens,
+                                windowTokens = viewModel.currentModelContextWindow,
+                                mode = contextMeterMode,
+                                onClick = { contextMeterMode = (contextMeterMode + 1) % 3 },
+                            )
+                        }
+
                         // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
                         //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
                         //     which dispatches to enqueuePrompt since _isStreaming is true).
@@ -5115,118 +4760,37 @@ fun ChatScreen(
     }
 
     // Model Picker bottom sheet
+    val modelSetupRequired by viewModel.modelSetupRequired.collectAsState()
+    if (modelSetupRequired) {
+        com.openminis.app.ui.novex.NovexContentDialog(
+            title = "连接模型后再发送",
+            onDismiss = viewModel::dismissModelSetup,
+            confirmButton = {
+                com.openminis.app.ui.novex.TextButton(onClick = {
+                    viewModel.dismissModelSetup()
+                    onSettings()
+                }) { Text("连接模型") }
+            },
+            dismissButton = {
+                com.openminis.app.ui.novex.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
+            },
+        ) { Text("先在设置中连接一个可用模型。当前文字和附件会留在输入框中，不会自动发送。") }
+    }
     if (showModelPicker) {
         val config by providerRepository.config.collectAsState()
         val activeEntryId by viewModel.activeEntryId.collectAsState()
-
-        // When the user picks a model whose output is image/audio/video, defer
-        // the actual binding behind a confirmation dialog — those models can't
-        // drive an Agent loop, so we steer the user toward a text-output model
-        // (or, if they really want it, hint at adding it as a tool inside an
-        // Agent loop instead).
-        var pendingNonTextSelection by remember {
-            mutableStateOf<PendingNonTextSelection?>(null)
-        }
-        val resolveImageLabel = stringResource(R.string.model_picker_modality_image)
-        val resolveAudioLabel = stringResource(R.string.model_picker_modality_audio)
-        val resolveVideoLabel = stringResource(R.string.model_picker_modality_video)
-        fun nonTextLabelFor(model: LLMModel): String? {
-            val mods = model.outputModalities?.map { it.lowercase() } ?: emptyList()
-            return when {
-                "image" in mods -> resolveImageLabel
-                "audio" in mods -> resolveAudioLabel
-                "video" in mods -> resolveVideoLabel
-                else -> null
-            }
-        }
-        fun entryById(entryId: String): ModelEntry? =
-            config.modelEntries.firstOrNull { it.id == entryId }
-
-        ModelPickerSheet(
+        ChatModelSelectionSheet(
             groups = availableGroups,
             selectedGroupId = selectedGroupId,
             activeEntryId = activeEntryId,
-            defaultPrimaryGroupId = config.defaultPrimaryGroupId,
             config = config,
             providerRepository = providerRepository,
-            onSelectGroup = { groupId ->
-                val group = availableGroups.firstOrNull { it.id == groupId }
-                val firstEntry = group?.memberEntryIds?.firstNotNullOfOrNull(::entryById)
-                val label = firstEntry?.model?.let(::nonTextLabelFor)
-                if (label != null) {
-                    pendingNonTextSelection = PendingNonTextSelection.Group(
-                        groupId = groupId,
-                        modelDisplayName = firstEntry.model.displayName,
-                        modalityLabel = label,
-                    )
-                } else {
-                    viewModel.selectGroup(groupId)
-                    showModelPicker = false
-                }
-            },
-            onSelectGroupEntry = { groupId, entryId ->
-                val entry = entryById(entryId)
-                val label = entry?.model?.let(::nonTextLabelFor)
-                if (entry != null && label != null) {
-                    pendingNonTextSelection = PendingNonTextSelection.GroupEntry(
-                        groupId = groupId,
-                        entryId = entryId,
-                        modelDisplayName = entry.model.displayName,
-                        modalityLabel = label,
-                    )
-                } else {
-                    viewModel.selectGroupEntry(groupId, entryId)
-                    showModelPicker = false
-                }
-            },
-            onSelectEntry = { entryId ->
-                val entry = entryById(entryId)
-                val label = entry?.model?.let(::nonTextLabelFor)
-                if (entry != null && label != null) {
-                    pendingNonTextSelection = PendingNonTextSelection.Entry(
-                        entryId = entryId,
-                        modelDisplayName = entry.model.displayName,
-                        modalityLabel = label,
-                    )
-                } else {
-                    viewModel.selectEntry(entryId)
-                    showModelPicker = false
-                }
-            },
+            onSelectGroup = viewModel::selectGroup,
+            onSelectGroupEntry = viewModel::selectGroupEntry,
+            onSelectEntry = viewModel::selectEntry,
             onDismiss = { showModelPicker = false },
-            // [T-android-modelpicker-group-edit] Close the picker first, then
-            // navigate — pushing the management screen on top of an open bottom
-            // sheet leaves the sheet lingering behind it on back.
-            onEditGroups = {
-                showModelPicker = false
-                onModelGroupsClick()
-            },
+            onEditGroups = onModelGroupsClick,
         )
-
-        pendingNonTextSelection?.let { pending ->
-            MinisAlertDialog(
-                onDismissRequest = { pendingNonTextSelection = null },
-                title = stringResource(R.string.model_picker_non_text_warning_title),
-                text = stringResource(
-                    R.string.model_picker_non_text_warning_body,
-                    pending.modelDisplayName,
-                    pending.modalityLabel,
-                    pending.modalityLabel,
-                ),
-                confirmText = stringResource(R.string.model_picker_non_text_warning_use_anyway),
-                dismissText = stringResource(R.string.model_picker_non_text_warning_choose_other),
-                onConfirm = {
-                    when (val sel = pending) {
-                        is PendingNonTextSelection.Group -> viewModel.selectGroup(sel.groupId)
-                        is PendingNonTextSelection.GroupEntry ->
-                            viewModel.selectGroupEntry(sel.groupId, sel.entryId)
-                        is PendingNonTextSelection.Entry -> viewModel.selectEntry(sel.entryId)
-                    }
-                    pendingNonTextSelection = null
-                    showModelPicker = false
-                },
-            )
-        }
     }
 
     // Offload permission dialog
@@ -5289,7 +4853,9 @@ fun ChatScreen(
         novexLearningDetails?.let { state ->
             NovexLearningDetailsDialog(state, novexLearningReadCoverage, viewModel::closeNovexLearningDetails,
                 viewModel::previewLatestNovexLearningResponse, viewModel::requestNovexLearningContinuation,
-                onFiles = { viewModel.prepareNovexLearningFiles { viewModel.closeNovexLearningDetails(); onBrowseChatFiles() } })
+                onFiles = { viewModel.prepareNovexLearningFiles { savedSessionId ->
+                    viewModel.closeNovexLearningDetails(); onBrowseChatFiles(savedSessionId)
+                } })
         }
     }
     if (novexLearningError == null && novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) {
@@ -5466,7 +5032,7 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
 // verbatim to ChatComposerWidgets.kt.
 
 // [T-android-split-chat] createCameraOutputUri / getFileName /
-// PendingNonTextSelection moved verbatim to ChatScreenHelpers.kt (now internal).
+// Model selection confirmation is owned by ChatModelSelectionSheet.
 
 
 // [T-android-split-chat] fuzzyMatch / ModelPickerSheet / providerDotColor moved
@@ -5476,248 +5042,3 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
 // CompactSummarySheet / parseInlineMarkdown / rememberBrowserLiveSnapshot /
 // ResumeBanner / SwipeToSendHint moved verbatim to ChatMiscViews.kt.
 // Sun May 24 11:01:25 CST 2026
-
-/**
- * [T-android-thinking-badge-navbar] Compact thinking-level pill shown on the
- * navbar's "provider · model" line (iOS AIChatView.thinkingLevelBadge parity).
- *
- * Deliberately smaller than the 11sp model-name text next to it — a 9dp
- * lightbulb + 9sp level label — so it reads as secondary auxiliary info and
- * never crowds out the model name. Uses [com.openminis.app.ui.novex.NovexIcons.Lightbulb], the same
- * glyph the `/thinking` slash command uses.
- *
- * Colors mirror iOS AIChatView.thinkingLevelBadge exactly — a NEUTRAL look, not
- * an accent one. iOS uses `foregroundStyle(secondaryText)` on a
- * `Capsule().fill(Color.secondary.opacity(0.10))` background; the Compose
- * equivalents are `onSurfaceVariant` (secondary grey) for the icon+label and
- * `onSurface.copy(alpha = 0.08f)` (a faint translucent grey) for the capsule.
- * We deliberately do NOT use `primary` / `primaryContainer` / the app's blue
- * thinking accent here: the badge is passive status ("thinking is on, at this
- * level"), not a call-to-action, so a blue highlight would over-emphasize it
- * and clash with the grey "provider · model" text it sits beside. Both colors
- * are theme tokens, so the badge adapts to light/dark automatically.
- *
- * Also mounted when thinking is Off on a reasoning-capable model (iOS parity,
- * e6bd75efc): the pill then reads icon + "Off" as a tap target for enabling
- * deep thinking. The icon is dimmed to 0.4 alpha in that state, matching the
- * Off-row convention in [ThinkingLevelSheet].
- *
- * It carries its OWN clickable (which consumes the tap) so a tap on the badge
- * opens the thinking-level sheet instead of the model picker owned by the
- * enclosing subtitle Column — see the call site for the full gesture-separation
- * rationale.
- */
-@Composable
-private fun ThinkingLevelBadge(
-    level: com.openminis.app.data.model.ThinkingLevel,
-    onClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    // Secondary grey for icon + label (iOS secondaryText parity) — no accent.
-    val badgeColor = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            // Faint translucent-grey capsule (iOS Color.secondary.opacity(0.10)).
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            // Own clickable → consumes the tap, opens the thinking sheet.
-            .clickable(onClick = onClick)
-            .padding(horizontal = 5.dp, vertical = 1.dp),
-    ) {
-        Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
-            contentDescription = null,
-            // Dimmed in the Off state (sheet Off-row convention) so "Off" reads
-            // as "thinking disabled" at a glance.
-            tint = if (level.isEnabled) badgeColor else badgeColor.copy(alpha = 0.4f),
-            modifier = Modifier.size(9.dp),
-        )
-        Text(
-            text = level.localizedName(context),
-            fontSize = 9.sp,
-            lineHeight = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = badgeColor,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun ConversationBranchSwitcher(
-    index: Int,
-    count: Int,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onPrevious,
-            enabled = index > 1,
-            modifier = Modifier.size(28.dp),
-        ) {
-            Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
-                contentDescription = "上一分支",
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        Text(
-            text = "$index/$count",
-            color = ChatColors.secondaryText,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(min = 34.dp),
-        )
-        IconButton(
-            onClick = onNext,
-            enabled = index < count,
-            modifier = Modifier.size(28.dp),
-        ) {
-            Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronRight,
-                contentDescription = "下一分支",
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun NovexContextMeter(
-    usedTokens: Int,
-    windowTokens: Int?,
-    mode: Int,
-    onClick: () -> Unit,
-) {
-    val window = windowTokens?.takeIf { it > 0 } ?: 1
-    val progress = (usedTokens.toFloat() / window.toFloat()).coerceIn(0f, 1f)
-    val percent = (progress * 100).toInt()
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
-        when (mode) {
-            0 -> Box(
-                Modifier
-                    .size(9.dp)
-                    .background(ChatColors.secondaryText, CircleShape),
-            )
-            1 -> Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(34.dp)
-                    .background(ChatColors.inputBg, CircleShape)
-                    .border(1.dp, ChatColors.toolBorder, CircleShape),
-            ) {
-                Text(
-                    "$percent%",
-                    color = ChatColors.primaryText,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            else -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
-                CircularProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxSize(),
-                    color = ChatColors.sendButton,
-                    trackColor = ChatColors.toolBorder,
-                    strokeWidth = 2.5.dp,
-                )
-                Text(
-                    compactContextTokens(usedTokens),
-                    color = ChatColors.primaryText,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-    }
-}
-
-private fun compactContextTokens(value: Int): String = when {
-    value >= 1_000_000 -> "${value / 100_000 / 10f}M"
-    value >= 1_000 -> "${value / 1_000}K"
-    else -> value.toString()
-}
-
-/**
- * [T-android-thinking-badge-navbar] Bottom-sheet thinking-level selector opened
- * from [ThinkingLevelBadge]. Mirrors iOS ThinkingLevelSheetView: an Off row
- * followed by every level the current model supports; the active level shows a
- * trailing check. Selecting any row calls [onSelect] (which also dismisses).
- */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun ThinkingLevelSheet(
-    currentLevel: com.openminis.app.data.model.ThinkingLevel,
-    availableLevels: List<com.openminis.app.data.model.ThinkingLevel>,
-    onSelect: (com.openminis.app.data.model.ThinkingLevel) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    // Off is always offered (turns thinking off); availableLevels already
-    // excludes Off, so prepend it. De-dup defensively in case a caller ever
-    // includes it.
-    val rows = remember(availableLevels) {
-        listOf(com.openminis.app.data.model.ThinkingLevel.OFF) +
-            availableLevels.filter { it != com.openminis.app.data.model.ThinkingLevel.OFF }
-    }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-            Text(
-                text = stringResource(R.string.thinking_level_sheet_title),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ChatColors.primaryText,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-            HorizontalDivider(color = ChatColors.toolBorder, thickness = 0.5.dp)
-            val context = LocalContext.current
-            rows.forEach { level ->
-                // "Off selected" = the current level is disabled; otherwise an
-                // exact match.
-                val isSelected = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) {
-                    !currentLevel.isEnabled
-                } else {
-                    currentLevel == level
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(level) }
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                ) {
-                    Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
-                        contentDescription = null,
-                        tint = ChatColors.thinking.copy(
-                            alpha = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) 0.4f else 1f,
-                        ),
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = level.localizedName(context),
-                        fontSize = 15.sp,
-                        color = ChatColors.primaryText,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (isSelected) {
-                        Icon(
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
-                            contentDescription = null,
-                            tint = ChatColors.thinking,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}

@@ -181,7 +181,7 @@ class NovexLearningReviewRunnerTest {
             NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, firstBatchOnly,
                 { saved = NovexLearningStateJsonCodec.decode(NovexLearningStateJsonCodec.encode(it)) }).run(fixture.state)
         }
-        assertEquals(24_000, saved.notes.single().readRanges.single().end)
+        assertEquals(4_096, saved.notes.single().readRanges.single().end)
         val request = NovexLearningPreflightRequest(
             collectionRef = fixture.state.collection.ref,
             sources = listOf(NovexLearningSourceEstimate(fixture.document.ref, 50_000)),
@@ -189,12 +189,13 @@ class NovexLearningReviewRunnerTest {
             effectiveContextTokens = 200_000, occupiedContextTokens = 0, directReadBudgetTokens = 100_000,
             proposedBudget = NovexLearningTokenBudget(600_000, 90_000))
         val continuation = NovexLearningPreflight.prepare(request, saved)
-        assertEquals("已完成首批后只剩两批正文", 2, continuation.reviewBatchCount)
+        assertEquals("输出容量约束下，已完成首批不应再次读取", 12, continuation.reviewBatchCount)
         assertTrue("扩大预算必须重新确认，不能因剩余量变小绕过确认", continuation.requiresConfirmation)
         val remainingReviewer = RecordingReviewer()
         NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, remainingReviewer, {}).run(saved)
-        assertEquals(2, remainingReviewer.reviewRequests.size)
-        assertEquals(26_000, remainingReviewer.reviewRequests.sumOf { it.blocks.sumOf { block -> block.text.length } })
+        assertEquals(12, remainingReviewer.reviewRequests.size)
+        assertEquals(45_904, remainingReviewer.reviewRequests.sumOf { it.blocks.sumOf { block -> block.text.length } })
+        assertEquals(4_096, remainingReviewer.reviewRequests.first().sourceRanges.first().start)
         assertEquals(remainingReviewer.reviewRequests.sumOf { it.estimatedInputTokens }, continuation.reviewInputReservationTokens)
     }
 
@@ -327,6 +328,26 @@ class NovexLearningReviewRunnerTest {
         assertEquals(1, result.notes.count { it.body == "a".repeat(5000) })
     }
 
+    @Test fun `intermediate summary may miss the requested half length while still making bounded progress`() = runTest {
+        val fixture = fixture(500_000, 80_000, List(4) { "x".repeat(800) })
+        var summaries = 0
+        val reviewer = object : NovexLearningReviewer {
+            override suspend fun review(request: NovexLearningReviewRequest) =
+                NovexLearningReviewOutput("详细笔记", "a".repeat(1500), request.estimatedInputTokens, 400)
+            override suspend fun synthesize(request: NovexLearningSynthesisRequest): NovexLearningReviewOutput {
+                summaries++
+                check(summaries <= 8) { "缩短过程不能无限执行" }
+                val size = if (request.targetCharacters == null) 300 else request.notes.sumOf { it.body.length } * 3 / 5
+                return NovexLearningReviewOutput("小结", "b".repeat(size), request.estimatedInputTokens, 300)
+            }
+        }
+        val result = NovexLearningReviewRunner(NovexDocumentSnapshotStore { fixture.document }, reviewer, {},
+            maxCharsPerBatch = 2000).run(fixture.state)
+        assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
+        assertEquals(2, result.notes.count { it.body == "a".repeat(1500) })
+        assertTrue(summaries in 2..8)
+    }
+
     @Test fun `expanding intermediate summaries pause with paid usage recorded instead of looping`() = runTest {
         val fixture = fixture(500_000, 80_000, List(4) { "x".repeat(800) })
         var saved = fixture.state
@@ -397,7 +418,9 @@ class NovexLearningReviewRunnerTest {
             NovexDocumentSnapshotStore { fixture.document }, reviewer, {},
         ).run(fixture.state)
         assertEquals(NovexLearningTaskStatus.COMPLETE, result.task?.status)
-        assertEquals(1, reviewer.reviewRequests.size)
+        assertEquals(5, reviewer.reviewRequests.size)
+        assertEquals(fixture.document.blocks.map { it.text }, reviewer.reviewRequests.flatMap { it.blocks }.map { it.text })
+        assertTrue(reviewer.reviewRequests.all { it.blocks.sumOf { b -> b.text.length } <= 4096 })
         assertEquals(1154, result.reviewLedger.reviewedBlocks)
     }
 

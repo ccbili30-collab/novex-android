@@ -51,6 +51,9 @@ internal fun encodeAssistantTurnParts(
     metadata.values.lastOrNull { it.toolName == NovexCardCreationTask.MARKER }?.let { task ->
         result.put(JSONObject().put("type", "novexCardTask").put("value", JSONObject(task.toolArgs)))
     }
+    metadata.values.filter { it.toolName == NOVEX_STORY_IMAGE }.forEach { block ->
+        readStoryImage(block)?.let { result.put(JSONObject().put("type", NOVEX_STORY_IMAGE).put("value", com.openminis.app.novex.domain.NovexSnapshotMediaCodec.encode(it))) }
+    }
     return result.toString()
 }
 
@@ -58,7 +61,7 @@ internal fun encodeAssistantTurnParts(
 internal fun isCompletedPresentationTurn(blocks: List<AssistantBlock>): Boolean {
     val tools = blocks.filter { it.kind == "tool_use" }
     return tools.any { it.toolName == "present_choices" } && tools.all {
-        it.toolName in setOf("present_choices", "render_panel", "panel", "present_system_panel") &&
+        it.toolName in setOf("present_choices", "render_panel", "panel", "present_system_panel", com.openminis.app.tools.NovexIllustrationTools.SELECT) &&
             it.toolStatus == ToolBlockStatus.SUCCESS
     }
 }

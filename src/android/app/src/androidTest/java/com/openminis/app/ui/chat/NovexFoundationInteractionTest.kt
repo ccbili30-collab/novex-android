@@ -74,7 +74,7 @@ class NovexFoundationInteractionTest {
         } finally { runBlocking { app.novexWorkspace.apply(NovexCommand.DeleteWorld(world.id)) } }
     }
 
-    @Test fun approvalHidesRawArgumentsAndOneCheckboxResolvesTheDecision() {
+    @Test fun approvalSelectionNeverExecutesUntilExplicitConfirmation() {
         var visible by mutableStateOf(true)
         var approved = 0
         val operation = NovexToolOperation("chat", "reply", "call", "learning_start",
@@ -91,6 +91,14 @@ class NovexFoundationInteractionTest {
         ui.onNodeWithText("拒绝").assertIsDisplayed()
         screenshot("permission")
         ui.onNode(isToggleable()).performTouchInput { click() }
+        ui.runOnIdle { assertEquals(0, approved) }
+        ui.onNodeWithText("确认执行").assertIsEnabled()
+        ui.onNode(isToggleable()).performTouchInput { click() }
+        ui.runOnIdle { assertEquals(0, approved) }
+        ui.waitUntil(15_000) { ui.onNodeWithText("拒绝").isDisplayed() }
+        ui.onNodeWithText("确认执行").assertIsNotEnabled()
+        ui.onNode(isToggleable()).performTouchInput { click() }
+        ui.onNodeWithText("确认执行").performTouchInput { click() }
         ui.runOnIdle { assertEquals(1, approved) }
         ui.onNodeWithText("同意执行这一次").assertDoesNotExist()
         ui.onNodeWithText("对话草稿保留在这里").assertIsDisplayed()
@@ -120,5 +128,42 @@ class NovexFoundationInteractionTest {
         ui.onNodeWithText("返回对话").performTouchInput { click() }
         ui.onNodeWithText(work.content).assertDoesNotExist()
         ui.onNodeWithText("这一处修改尚未保存，原内容仍保留。").assertIsDisplayed()
+    }
+
+    @Test fun approvalCannotSubmitTwiceAndNewOperationNeedsItsOwnSelection() {
+        var operation by mutableStateOf(NovexToolOperation("chat", "reply", "first", "save_checkpoint", "{}", "保存进度"))
+        var approved = 0
+        var rejected = 0
+        ui.setContent { MinisTheme(darkTheme = true) {
+            NovexToolApprovalDialog(operation, { approved++ }, { rejected++ })
+        } }
+        ui.waitUntil(15_000) { ui.onNodeWithText("拒绝").isDisplayed() }
+        ui.onNodeWithText("确认执行").assertIsNotEnabled()
+        ui.onNode(isToggleable()).performTouchInput { click() }
+        ui.onNodeWithText("确认执行").performTouchInput { click(); click() }
+        ui.runOnIdle { assertEquals(1, approved); assertEquals(0, rejected) }
+        ui.onNodeWithText("确认执行").assertIsNotEnabled()
+        ui.runOnIdle { operation = operation.copy(callId = "second") }
+        ui.onNode(isToggleable()).assertIsOff()
+        ui.onNodeWithText("确认执行").assertIsNotEnabled()
+        ui.onNode(isToggleable()).performTouchInput { click() }
+        ui.onNodeWithText("拒绝").performTouchInput { click() }
+        ui.runOnIdle { assertEquals(1, approved); assertEquals(1, rejected) }
+    }
+
+    @Test fun closingCheckedApprovalDoesNotExecute() {
+        var visible by mutableStateOf(true)
+        var approved = 0
+        var rejected = 0
+        ui.setContent { MinisTheme(darkTheme = false) {
+            Text("原草稿仍在")
+            if (visible) NovexToolApprovalDialog(NovexToolOperation("chat", "reply", "close", "novex_write_card", "{}", "保存卡片"),
+                { approved++; visible = false }, { rejected++; visible = false })
+        } }
+        ui.waitUntil(15_000) { ui.onNodeWithText("拒绝").isDisplayed() }
+        ui.onNode(isToggleable()).performTouchInput { click() }
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        ui.runOnIdle { assertEquals(0, approved); assertEquals(1, rejected) }
+        ui.onNodeWithText("原草稿仍在").assertIsDisplayed()
     }
 }

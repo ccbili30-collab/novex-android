@@ -53,6 +53,8 @@ data class ContextUsageRecord(
     val sourceReads: List<NovexSourceRead> = emptyList(),
     val teachingTraceRef: String? = null,
     val teachingTraceError: String? = null,
+    /** Scope of historical execution payloads. Null legacy records cannot authorize private replay. */
+    val historyScopeKey: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "上下文引用记录编号不能为空" }

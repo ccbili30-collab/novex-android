@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.openminis.app.data.creative.*
 import com.openminis.app.data.db.*
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.*
 import org.junit.Assert.*

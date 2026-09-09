@@ -39,6 +39,8 @@ data class ContentModuleCollectionItem(
     val visualKey: String? = null,
     /** Unknown type-specific fields survive internal edits and native package re-export. */
     val preservedJson: String = "{}",
+    /** Explicit use condition, encoded as JSON including unsupported value types for faithful exchange. */
+    val contextTriggerJson: String? = null,
 )
 
 /**
@@ -50,6 +52,15 @@ data class ContentModuleCollectionItem(
  */
 object ContentModuleDocumentCodec {
     private const val CURRENT_VERSION = 1
+
+    /** Shared by persistence and read-back verification; imported source metadata is immutable. */
+    fun preserveTransferSource(originalJson: String, incomingJson: String): String {
+        val source = runCatching { JSONObject(originalJson).optJSONObject("_novexTransferSource") }.getOrNull()
+            ?: return incomingJson
+        return runCatching { JSONObject(incomingJson) }
+            .getOrElse { JSONObject(encode(ContentModuleDocument.Article(incomingJson))) }
+            .put("_novexTransferSource", source).toString()
+    }
 
     /** Editing known fields must not erase extensions retained from an imported card. */
     fun edit(originalJson: String, document: ContentModuleDocument): String {
@@ -97,6 +108,7 @@ object ContentModuleDocumentCodec {
                             put("name", item.name)
                             put("summary", item.summary)
                             put("description", item.description)
+                            item.contextTriggerJson?.let { put("contextTrigger", org.json.JSONTokener(it).nextValue()) } ?: remove("contextTrigger")
                             item.visualKey?.let { put("visualKey", it) }
                                 ?: remove("visualKey")
                         })
@@ -148,6 +160,7 @@ object ContentModuleDocumentCodec {
                         remove("summary")
                         remove("description")
                         remove("visualKey")
+                        remove("contextTrigger")
                     }
                     ContentModuleCollectionItem(
                         id = item.optString("id"),
@@ -156,6 +169,7 @@ object ContentModuleDocumentCodec {
                         description = item.optString("description"),
                         visualKey = item.optString("visualKey").takeIf(String::isNotBlank),
                         preservedJson = preserved.toString(),
+                        contextTriggerJson = if (item.has("contextTrigger")) JSONArray().put(item.get("contextTrigger")).toString().drop(1).dropLast(1) else null,
                     )
                 },
             )

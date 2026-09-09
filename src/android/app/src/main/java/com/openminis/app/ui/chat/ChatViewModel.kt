@@ -126,7 +126,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -645,6 +644,25 @@ class ChatViewModel(
      */
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
+    private var inputEditedBeforeLoad = false
+    private val composerDraftMutex = kotlinx.coroutines.sync.Mutex()
+    private val _modelSetupRequired = MutableStateFlow(false)
+    val modelSetupRequired: StateFlow<Boolean> = _modelSetupRequired.asStateFlow()
+
+    fun dismissModelSetup() { _modelSetupRequired.value = false }
+
+    /** Gate sending before the screen clears the composer or its attachments. */
+    fun hasModelForSend(): Boolean {
+        if (currentProvider != null) return true
+        _modelSetupRequired.value = true
+        return false
+    }
+
+    private suspend fun persistComposerDraft() = composerDraftMutex.withLock {
+        val sid = realSessionId.takeIf { it.isNotEmpty() } ?: return@withLock
+        // Read inside the lock so a queued older save cannot overwrite a newer flush.
+        chatRepository.saveComposerDraft(sid, _inputText.value)
+    }
 
     /**
      * [T-android-slash-menu-align-ios-prepend] One-shot caret position the
@@ -694,6 +712,7 @@ class ChatViewModel(
     }
 
     fun setInputText(value: String) {
+        inputEditedBeforeLoad = true
         _inputText.value = value
     }
 
@@ -843,8 +862,8 @@ class ChatViewModel(
      * revealing it; a timer must never guess that the old final row is the new
      * turn.
      */
-    private val _submittedUserMessageId = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val submittedUserMessageId: SharedFlow<String> = _submittedUserMessageId.asSharedFlow()
+    private val _submittedUserMessageId = MutableSharedFlow<SubmittedUserTurn>(extraBufferCapacity = 8)
+    val submittedUserMessageId: SharedFlow<SubmittedUserTurn> = _submittedUserMessageId.asSharedFlow()
 
     private val _availableGroups = MutableStateFlow<List<ModelGroup>>(emptyList())
     val availableGroups: StateFlow<List<ModelGroup>> = _availableGroups.asStateFlow()
@@ -941,8 +960,14 @@ class ChatViewModel(
         com.openminis.app.novex.domain.NovexLearningExecutionPlans(novexLearningRepository, novexDocumentRepository,
             java.io.File(context.filesDir, "novex/learning-plans"))
     }
-    private val novexLearningControlMutex = kotlinx.coroutines.sync.Mutex()
-    private var novexLearningRunningRef: NovexResourceRef? = null
+    private val novexLearningSession by lazy {
+        com.openminis.app.novex.domain.NovexLearningSession(viewModelScope, novexLearningRepository,
+            visibleCollections = { activeNovexSourceCollectionRefs.map(::NovexResourceRef) },
+            onState = { state ->
+                _novexLearningTask.value = state.task
+                _novexLearningStatus.value = state.task?.status
+            })
+    }
     @Volatile
     private var activeNovexSourceCollectionRefs: Set<String> = emptySet()
     private val _pendingNovexLearningPreflight = MutableStateFlow<NovexLearningPreflightSnapshot?>(null)
@@ -957,6 +982,12 @@ class ChatViewModel(
             override fun readState(collectionRef: NovexResourceRef): NovexLearningState? {
                 if (collectionRef.value !in activeNovexSourceCollectionRefs) return null
                 return novexLearningRepository.find(collectionRef)?.takeIf { collectionRef.value in activeNovexSourceCollectionRefs }
+            }
+            override fun readSource(collectionRef: NovexResourceRef, documentRef: NovexResourceRef, revision: String): com.openminis.app.novex.domain.NovexDocumentSnapshot? {
+                if (collectionRef.value !in activeNovexSourceCollectionRefs || documentRef.value !in activeNovexDocumentRefs) return null
+                return novexDocumentRepository.findRevision(documentRef, revision)?.takeIf {
+                    collectionRef.value in activeNovexSourceCollectionRefs && documentRef.value in activeNovexDocumentRefs
+                }
             }
         }, start = { ref, id -> startNovexLearningPlan(NovexResourceRef(ref), id, awaitCompletion = true) })
     }
@@ -995,7 +1026,6 @@ class ChatViewModel(
     private val _novexLearningCollections = MutableStateFlow<List<NovexLearningState>?>(null)
     val novexLearningCollections: StateFlow<List<NovexLearningState>?> = _novexLearningCollections.asStateFlow()
     private var novexLearningDetailsRequest = 0
-    private var novexLearningJob: Job? = null
     private var conversationVisible = true
     private var conversationExitJob: Job? = null
     private val novexManagementMutex = kotlinx.coroutines.sync.Mutex()
@@ -1078,6 +1108,7 @@ class ChatViewModel(
     private val conversationBranchMutex = kotlinx.coroutines.sync.Mutex()
     private var activeBranchMessageIds: Set<String> = emptySet()
     private var activeBranchPathIds: List<String> = emptyList()
+    private var novexContextRevision = 0L
     private var excludedBranchMemoryWrites: Map<String, Int> = emptyMap()
 
     /**
@@ -1955,7 +1986,8 @@ class ChatViewModel(
         // For v2 prev markers, lastCompactedMessageId IS the prev anchor —
         // start at prevIdx + 1. For v1 prev markers, firstKeptMessageId points
         // at "first kept" — start AT prevIdx (it was exclusive on right edge).
-        val prev = _cachedLatestMarker
+        val compactionScopeKey = historyScopeKey()
+        val prev = _cachedLatestMarker?.takeIf { com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(it.historyScopeKey, compactionScopeKey) }
         val effectiveStartIdx: Int = if (prev == null) {
             0
         } else {
@@ -1991,13 +2023,14 @@ class ChatViewModel(
             // keep today's behavior (queued bubbles stay pending + cancellable).
             var compactSucceeded = false
             try {
-                val existing = _compactSummary.value
+                val existing = _compactSummary.value.takeIf { prev != null }
+                val projectedHistory = scopedHistory(history, compactionScopeKey).messages
                 // Mirrors iOS `generateCompactSummaryWithSplitting` — when the
                 // joined transcript exceeds the model's context window, halve
                 // the message list and summarize each half independently, then
                 // merge. depth cap=3 prevents pathological recursion.
                 val summary = generateCompactSummaryWithSplitting(
-                    messages = toCompact,
+                    messages = projectedHistory.subList(effectiveStartIdx, anchorIdx + 1),
                     previousSummary = existing,
                     depth = 0,
                 ).trim()
@@ -2107,6 +2140,7 @@ class ChatViewModel(
                         sourceMessageRefs = distillationSourceRefs,
                         durableFactRefs = (distillationMemoryRefs + distillationWorkspaceRefs).distinct(),
                         createdAtMillis = System.currentTimeMillis(),
+                        historyScopeKey = compactionScopeKey,
                     ),
                     provenance = com.openminis.app.novex.domain.NovexWorkspaceProvenance(
                         conversationId = sid,
@@ -2126,6 +2160,7 @@ class ChatViewModel(
                     firstKeptMessageId = null,
                     lastCompactedMessageId = lastCompactedDbId,
                     version = 2,
+                    historyScopeKey = compactionScopeKey,
                 )
                 chatRepository.dao.insertCompactMarker(marker)
                 AppLogger.info(
@@ -2469,14 +2504,26 @@ class ChatViewModel(
      * [dropOrphanedToolParts] for why the sweep exists and what it can and
      * cannot fix.
      */
-    private fun effectiveAgentHistory(): List<LLMMessage> =
-        dropOrphanedToolParts(effectiveAgentHistoryUncounted())
+    private fun historyScopeKey(): String = com.openminis.app.novex.domain.NovexHistoryAccessScope.key(currentNovexConfiguration())
 
-    private fun effectiveAgentHistoryUncounted(): List<LLMMessage> {
-        val summary = _compactSummary.value
+    private suspend fun scopedHistory(history: List<LLMMessage>, scopeKey: String = historyScopeKey()) =
+        com.openminis.app.novex.adapter.NovexScopedConversationHistory.project(history,
+            chatRepository.loadActiveMessages(activeSessionId), chatRepository.novexContextUsage(activeSessionId), scopeKey)
+
+    private suspend fun effectiveAgentHistory(): List<LLMMessage> {
+        val scopeKey = historyScopeKey()
+        val projection = scopedHistory(agentHistory.toList(), scopeKey)
+        val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
+        return dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
+            it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
+        })
+    }
+
+    private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
+        val summary = _compactSummary.value.takeIf { allowSummary }
         val marker = _cachedLatestMarker
         // No compact in play → return full history untouched.
-        if (summary.isNullOrBlank() || marker == null) return agentHistory.toList()
+        if (summary.isNullOrBlank() || marker == null) return history.toList()
 
         val summaryWrappedText = "<context-summary>\n" +
             "The following is a summary of the earlier conversation that was compacted to save context space.\n" +
@@ -2502,11 +2549,11 @@ class ChatViewModel(
         if (marker.version >= 2) {
             val anchorId = marker.lastCompactedMessageId?.takeIf { it.isNotEmpty() }
             val anchorIdx = anchorId?.let { id ->
-                agentHistory.indexOfLast { it.dbMessageId == id }
+                history.indexOfLast { it.dbMessageId == id }
             } ?: -1
             if (anchorIdx < 0) {
-                Log.w(TAG, "[Compact] effectiveAgentHistory v2: anchorId=${anchorId?.take(8) ?: "nil"} not in agentHistory(size=${agentHistory.size}) — degrading to full history (no summary)")
-                return agentHistory.toList()
+                Log.w(TAG, "[Compact] effectiveAgentHistory v2: anchorId=${anchorId?.take(8) ?: "nil"} not in history(size=${history.size}) — degrading to full history (no summary)")
+                return history.toList()
             }
 
             // Step 1: walk back from anchor collecting user-text turns. Stop
@@ -2539,7 +2586,7 @@ class ChatViewModel(
             // strip the matching tool_use part (same id) from the assistant
             // message so the model never sees a dangling tool_use/result.
             val preAnchorRaw: List<LLMMessage> =
-                if (priorIdx <= anchorIdx) agentHistory.subList(priorIdx, anchorIdx + 1).toList()
+                if (priorIdx <= anchorIdx) history.subList(priorIdx, anchorIdx + 1).toList()
                 else emptyList()
 
             val droppedToolIds = mutableSetOf<String>()
@@ -2588,8 +2635,8 @@ class ChatViewModel(
             val result = mutableListOf<LLMMessage>()
             result.addAll(preAnchorPruned)
 
-            val postAnchor = if (anchorIdx + 1 < agentHistory.size) {
-                agentHistory.subList(anchorIdx + 1, agentHistory.size)
+            val postAnchor = if (anchorIdx + 1 < history.size) {
+                history.subList(anchorIdx + 1, history.size)
             } else {
                 emptyList()
             }
@@ -2601,7 +2648,7 @@ class ChatViewModel(
             val priorIdxSource =
                 if (priorIdxResolved == null) "fallback=empty(<$keepN user-text turns before anchor or cap hit)"
                 else "userTextWalkBack(N=$keepN)"
-            AppLogger.info(TAG, "[CompactDiag] eAH v2 slice: priorIdx=$priorIdx anchorIdx=$anchorIdx agentHistory.size=${agentHistory.size} → preAnchorRaw=$preAnchorRawCount preAnchorSent=${preAnchorPruned.size} postAnchor=${postAnchor.size} summaryChars=${summary.length} priorIdxSource=$priorIdxSource markerId=${marker.id.take(8)}")
+            AppLogger.info(TAG, "[CompactDiag] eAH v2 slice: priorIdx=$priorIdx anchorIdx=$anchorIdx history.size=${history.size} → preAnchorRaw=$preAnchorRawCount preAnchorSent=${preAnchorPruned.size} postAnchor=${postAnchor.size} summaryChars=${summary.length} priorIdxSource=$priorIdxSource markerId=${marker.id.take(8)}")
 
             val firstUserOffset = postAnchor.indexOfFirst { it.role == LLMMessage.Role.USER }
             if (firstUserOffset >= 0) {
@@ -2640,30 +2687,30 @@ class ChatViewModel(
             ?: (marker.boundaryMessageId?.takeIf { it.isNotEmpty() })
 
         if (firstKeptId != null) {
-            val keepStart = agentHistory.indexOfFirst { it.dbMessageId == firstKeptId }
+            val keepStart = history.indexOfFirst { it.dbMessageId == firstKeptId }
             if (keepStart >= 0) {
-                return buildList(agentHistory.size - keepStart + 1) {
+                return buildList(history.size - keepStart + 1) {
                     add(summaryHead)
-                    addAll(agentHistory.subList(keepStart, agentHistory.size))
+                    addAll(history.subList(keepStart, history.size))
                 }
             }
             // Fall through to safety net.
         } else {
             val lcmId = marker.lastCompactedMessageId?.takeIf { it.isNotEmpty() }
             val lcmIdx = lcmId?.let { id ->
-                agentHistory.indexOfLast { it.dbMessageId == id }
+                history.indexOfLast { it.dbMessageId == id }
             } ?: -1
             val postCompactStart = lcmIdx + 1
-            return buildList(agentHistory.size - postCompactStart + 1) {
+            return buildList(history.size - postCompactStart + 1) {
                 add(summaryHead)
-                if (postCompactStart < agentHistory.size) {
-                    addAll(agentHistory.subList(postCompactStart, agentHistory.size))
+                if (postCompactStart < history.size) {
+                    addAll(history.subList(postCompactStart, history.size))
                 }
             }
         }
 
-        Log.w(TAG, "[Compact] effectiveAgentHistory: marker ${marker.id.take(8)} unresolvable in agentHistory (size=${agentHistory.size}); returning full history")
-        return agentHistory.toList()
+        Log.w(TAG, "[Compact] effectiveAgentHistory: marker ${marker.id.take(8)} unresolvable in history (size=${history.size}); returning full history")
+        return history.toList()
     }
 
     /**
@@ -3392,23 +3439,27 @@ class ChatViewModel(
         val outputReserve = (currentModel?.maxOutputTokens ?: 8_192).coerceIn(1_024, 32_000)
         val budget = NovexContextBudgetPolicy.moduleBudget(window, occupied, outputReserve)
         val worldbook = com.openminis.app.novex.domain.NovexTavernWorldbook.adopted(configuration)
-        val worldbookReserve = if(worldbook == null) 0 else minOf(2048, budget / 4)
+        val worldbookReserve = if(worldbook == null && candidates.none { it.worldbookConditions.isNotEmpty() }) 0 else minOf(2048, budget / 4)
         val baseComposition = NovexContextComposer.compose(
             query = query,
             tokenBudget = budget - worldbookReserve,
-            candidates = candidates,
+            candidates = candidates.filter { it.worldbookConditions.isEmpty() },
             estimateTokens = BPETokenizer::countTokens,
         )
-        val worldbookResult = worldbook?.let { (version, book) ->
+        val worldbookResult = run {
             val visibleById = _messages.value.filter { !it.isQueued && it.error == null && it.role in setOf("user", "assistant") }.associateBy { it.id }
             val visible = (activeBranchPathIds + requestMessageId).distinct().mapNotNull { visibleById[it]?.content }
                 .let { if(requestMessageId !in visibleById) it + query else it }
-            com.openminis.app.novex.domain.NovexTavernWorldbook.evaluate(version, book, visible,
+            com.openminis.app.novex.domain.NovexWorldbookRuntime.evaluate(candidates, worldbook, visible,
                 (budget - baseComposition.usedTokens).coerceAtLeast(0), BPETokenizer::countTokens)
         }
-        val worldbookFragments = worldbookResult?.fragments.orEmpty()
+        val worldbookFragments = worldbookResult.fragments
+        val closedWorldbooks = com.openminis.app.novex.domain.NovexWorldbookUse.references(configuration).filterNot { it.enabled }.map { reference ->
+            com.openminis.app.novex.domain.ContextSourceOmission(com.openminis.app.novex.domain.ContextSourceKind.BACKGROUND_MODULE,
+                "reference:${reference.id}", reference.targetLabel.ifBlank { "世界书引用" }, "此引用已关闭；其他启用来源分别判断")
+        }
         val composition = baseComposition.copy(fragments = baseComposition.fragments + worldbookFragments,
-            omissions = baseComposition.omissions + worldbookResult?.omissions.orEmpty(),
+            omissions = baseComposition.omissions + worldbookResult.omissions + closedWorldbooks,
             usedTokens = baseComposition.usedTokens + worldbookFragments.sumOf { it.tokenCount })
         var record = composition.toUsageRecord(
             id = java.util.UUID.randomUUID().toString(),
@@ -3475,35 +3526,44 @@ class ChatViewModel(
         refreshNovexRuntimeProjection()
     }
 
-    private suspend fun persistNovexConfiguration(configuration: NovexConversationConfigurationSnapshot) {
-        val sid = realSessionId
-        if (sid.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot().copy(
-                    novexConfigurationJson = NovexConversationConfigurationCodec.encode(configuration.copy(conversationId = activeSessionId)),
-                ))
-            }
-        }
-        installNovexConfiguration(configuration)
+    private val novexSettingsStore by lazy {
+        com.openminis.app.novex.adapter.NovexConversationSettingsStore(
+            mutex = novexConfigurationMutex,
+            sessionId = { ensureSession() },
+            current = { conversationSettingsSnapshot() },
+            transaction = com.openminis.app.novex.domain.NovexManagementTransaction { work ->
+                novexApplication().database.withTransaction { work() }
+            },
+            adopt = { configuration ->
+                val app = novexApplication()
+                val profile = _immersiveProfile.value
+                com.openminis.app.novex.adapter.NovexConversationContextAdoption(app.novexWorkspace,
+                    com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world),
+                    app.novexSnapshotMediaStore).adopt(configuration)
+            },
+            write = { sid, saved -> chatRepository.updateConversationSettings(sid, saved) },
+            install = { saved -> withContext(Dispatchers.Main) { installSavedNovexSettings(saved) } },
+        )
+    }
+
+    private fun installSavedNovexSettings(saved: com.openminis.app.data.ConversationSettingsSnapshot) {
+        _conversationPrompt.value = saved.conversationPrompt
+        _imageStylePrompt.value = saved.imageStylePrompt
+        _novexConfigurationJson.value = saved.novexConfigurationJson
+        refreshNovexRuntimeProjection()
+        _immersiveProfile.value = _immersiveProfile.value.copy(
+            rolePresentationEnabled = saved.rolePresentationEnabled,
+            assistantDisplayName = saved.assistantDisplayName.ifBlank { null },
+            assistantAvatarPath = saved.assistantAvatarPath,
+            playerDisplayName = saved.playerDisplayName.ifBlank { null },
+            playerAvatarPath = saved.playerAvatarPath,
+        )
+        novexContextRevision++
     }
 
     /** Save the captured sources before any request or tool can rely on them. */
-    private suspend fun adoptedNovexConfiguration(): NovexConversationConfigurationSnapshot = novexConfigurationMutex.withLock {
-        val sid = ensureSession()
-        val configuration = currentNovexConfiguration()
-        val application = novexApplication()
-        val profile = _immersiveProfile.value
-        val adopted = application.database.withTransaction {
-            val result = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
-                com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), application.novexSnapshotMediaStore)
-                .adopt(configuration)
-            if (result != configuration) chatRepository.updateConversationSettings(sid, conversationSettingsSnapshot().copy(
-                novexConfigurationJson = NovexConversationConfigurationCodec.encode(result)))
-            result
-        }
-        if (adopted != configuration) installNovexConfiguration(adopted)
-        adopted
-    }
+    private suspend fun adoptedNovexConfiguration(): NovexConversationConfigurationSnapshot =
+        novexSettingsStore.update(captureSources = true)
 
     private fun legacyNovexConfiguration(
         conversationId: String,
@@ -3603,38 +3663,10 @@ class ChatViewModel(
                 )
             },
         )
-        fun installSavedSettings(saved: com.openminis.app.data.ConversationSettingsSnapshot) {
-            _conversationPrompt.value = saved.conversationPrompt
-            _imageStylePrompt.value = saved.imageStylePrompt
-            _novexConfigurationJson.value = saved.novexConfigurationJson
-            refreshNovexRuntimeProjection()
-            _immersiveProfile.value = _immersiveProfile.value.copy(
-                rolePresentationEnabled = saved.rolePresentationEnabled,
-                assistantDisplayName = saved.assistantDisplayName.ifBlank { null },
-                assistantAvatarPath = saved.assistantAvatarPath,
-                playerDisplayName = saved.playerDisplayName.ifBlank { null },
-                playerAvatarPath = saved.playerAvatarPath,
-            )
-        }
         viewModelScope.launch {
             val result = runCatching {
-                novexConfigurationMutex.withLock {
-                    require(expectedConfigurationJson == null || expectedConfigurationJson == _novexConfigurationJson.value) {
-                        "会话配置或本局状态已在编辑期间更新。请重新打开对话编辑后调整，避免覆盖新内容。"
-                    }
-                    val sid = ensureSession()
-                    val application = novexApplication()
-                    val profile = _immersiveProfile.value
-                    val durable = application.database.withTransaction {
-                        val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(application.novexWorkspace,
-                            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), application.novexSnapshotMediaStore)
-                            .adopt(NovexConversationConfigurationCodec.decode(value.novexConfigurationJson, sid))
-                        value.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(captured)).also {
-                            chatRepository.updateConversationSettings(sid, it)
-                        }
-                    }
-                    withContext(Dispatchers.Main) { installSavedSettings(durable) }
-                }
+                novexSettingsStore.update(settings = value, expectedConfigurationJson = expectedConfigurationJson, captureSources = true)
+                Unit
             }
             withContext(Dispatchers.Main) { onComplete(result) }
         }
@@ -3678,6 +3710,14 @@ class ChatViewModel(
     init {
         ChatViewModelStore.registerRuntime(sessionId, requireNotNull(viewModelScope.coroutineContext[Job]))
         loadSession()
+        viewModelScope.launch {
+            sessionLoaded.first { it }
+            _inputText.collect {
+                try { persistComposerDraft() }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: Exception) { _error.value = "草稿尚未保存：${failure.message}。请保留当前页面后重试。" }
+            }
+        }
         // [T-session-paused-badge-active-false-positive] Drive the session-list
         // PAUSED badge directly off canResume — the authoritative "this session
         // is interrupted (tap Resume)" flag. This is the single chokepoint over
@@ -3964,6 +4004,9 @@ class ChatViewModel(
         val sid = ensureSession()
         novexApplication().novexWorkspace.apply(com.openminis.app.novex.domain.NovexCommand.EnsureConversationDrafts(sid))
         withContext(Dispatchers.IO) {
+            val persistedReplies = chatRepository.loadActiveConversation(sid).activeMessages
+                .filter { it.role == "assistant" }.mapTo(hashSetOf()) { it.id }
+            novexConversationWorkspaceStore.recoverLegacyReplyFiles(sid, persistedReplies)
             com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(
                 novexConversationWorkspaceStore, novexApplication().creativeArtifactRepository,
             ).reconcile(com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
@@ -4198,6 +4241,7 @@ class ChatViewModel(
 
             // Existing session: load from DB
             val session = chatRepository.getSession(sessionId) ?: return@launch
+            if (!inputEditedBeforeLoad && _inputText.value.isEmpty()) _inputText.value = session.composerDraft.orEmpty()
             _sessionTitle.value = session.title ?: "New Chat"
             _sessionCategory.value = session.category
             val sessionCharacter = session.characterSnapshotJson?.let {
@@ -5482,12 +5526,12 @@ class ChatViewModel(
      */
     fun switchMessageBranch(messageId: String, delta: Int) {
         if (_isStreaming.value || delta == 0) return
-        if (novexLearningJob?.isActive == true) pauseNovexLearning()
         val sid = realSessionId.takeIf { it.isNotEmpty() } ?: sessionId
         if (sid.isEmpty()) return
         viewModelScope.launch {
             conversationBranchMutex.lock()
             try {
+                withContext(Dispatchers.IO) { novexLearningSession.pauseActive() }
                 val conversation = withContext(Dispatchers.IO) {
                     chatRepository.switchMessageSibling(sid, messageId, delta)
                 }
@@ -5800,7 +5844,7 @@ class ChatViewModel(
             queuedPromptId = prompt.id,
         )
         _messages.value = _messages.value + chatMsg
-        _submittedUserMessageId.tryEmit(chatMsg.id)
+        _submittedUserMessageId.tryEmit(SubmittedUserTurn(chatMsg.id, android.os.SystemClock.uptimeMillis()))
         clearAttachments()
         Log.i(TAG, "Enqueued prompt (${trimmed.length}ch, ${pendingAttachments.size} attachments), queue=${_promptQueue.value.size}")
     }
@@ -5910,6 +5954,7 @@ class ChatViewModel(
             LLMMessage(
                 role = LLMMessage.Role.ASSISTANT,
                 content = "(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)",
+                publicHistoryText = "(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)",
                 contentParts = listOf(
                     AgentContentPart.Text("(Interrupted mid-task by a new user message. Decide based on the new message and overall context whether the prior task should continue — do not forget or abandon it unless the user explicitly says to stop, or the new message makes clear it is no longer needed.)"),
                 ),
@@ -6042,13 +6087,15 @@ class ChatViewModel(
 
             val userText = combinedText.toString()
             val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
-            chatRepository.appendMessage(sid, "user", userPartsJson)
+            val queuedUser = chatRepository.appendMessage(sid, "user", userPartsJson)
+            recordActiveBranchMessage(queuedUser.id)
 
             agentHistory.add(LLMMessage(
                 role = LLMMessage.Role.USER,
                 content = userText,
                 imageParts = prepared.imageParts,
                 contentParts = combinedParts,
+                dbMessageId = queuedUser.id,
             ))
 
             try {
@@ -6092,6 +6139,10 @@ class ChatViewModel(
         // an empty text + non-empty attachments still produces a valid user
         // message. Without this an image-only "look at this" send dropped.
         if (trimmed.isBlank() && _attachments.value.isEmpty()) return
+        if (!hasModelForSend()) {
+            setInputText(text)
+            return
+        }
         // A substantial first prompt is usually a shared world template. Keep
         // an immutable local copy before the model sees it so long sessions do
         // not gradually dilute the world's original rules.
@@ -6162,6 +6213,7 @@ class ChatViewModel(
 
         // T145: claim _isStreaming synchronously so a rapid second tap can't
         // slip past the entry guard during DB/OAuth setup. See retryFromMessage.
+        val navigationRequestedAtMs = android.os.SystemClock.uptimeMillis()
         AppLogger.info(TAG_STREAM, "send _isStreaming=true (sync, sid=$activeSessionId)")
         _isStreaming.value = true
 
@@ -6218,7 +6270,7 @@ class ChatViewModel(
                 attachmentUris = prepared.nonImageUris,
             )
             _messages.value = _messages.value + userMsg
-            _submittedUserMessageId.tryEmit(userMsg.id)
+            _submittedUserMessageId.tryEmit(SubmittedUserTurn(userMsg.id, navigationRequestedAtMs))
             val imageParts = prepared.imageParts
 
             // T132: build the user contentParts in iOS order — caption first
@@ -6794,7 +6846,7 @@ class ChatViewModel(
         // LLMModel.contextWindowTokens so the corrected Claude-1M / Gemini-1M
         // values apply here too, instead of the stale local "everything 200K"
         // copy that under-reported modern Claude/Gemini windows.
-        val contextWindow = model.contextWindowTokens
+        val contextWindow = effectiveContextWindowTokens() ?: model.contextWindowTokens
         if (contextWindow <= 0) return maxOutputCeiling
         val inputTokens = if (lastContextTokens > 0) lastContextTokens else 0
         val remaining = contextWindow - inputTokens
@@ -7110,7 +7162,7 @@ class ChatViewModel(
                 withContext(Dispatchers.Main) { installActiveConversation(chatRepository.loadActiveConversation(activeSessionId)) }
             }
         }
-        val preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
+        var preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
             try {
                 prepareNovexRequestContext(systemPrompt, requestId, novexRequestMessage.content)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -7123,7 +7175,8 @@ class ChatViewModel(
                 throw IllegalStateException("本轮设定尚未准备完成，未发送模型请求：${error.message ?: "请重新检查采用的卡片"}", error)
             }
         }
-        val requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt
+        var requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt
+        var requestContextRevision = novexContextRevision
         // [T-android-mem-probe-trust] Send-path context shape. The existing
         // `messages-shape` probe only runs on session LOAD, so the 2026-08-15
         // log described the session as it was opened, never as it was sent —
@@ -7242,8 +7295,25 @@ class ChatViewModel(
             // Pre-allocate the persisted assistant-row identity so branch-local
             // state tools can bind to this exact turn before the row is written.
             val turnMessageId = java.util.UUID.randomUUID().toString()
-            if (turn == 0 && preparedNovexContext != null) {
-                val persistedRecord = preparedNovexContext.record.copy(
+            val contextChanged = requestContextRevision != novexContextRevision
+            if (contextChanged) {
+                val updatedBasePrompt = buildSystemPrompt()
+                preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
+                    prepareNovexRequestContext(updatedBasePrompt, requestId, novexRequestMessage.content)
+                }
+                requestSystemPrompt = preparedNovexContext?.systemPrompt ?: updatedBasePrompt
+                requestContextRevision = novexContextRevision
+            }
+            val contextForTurn = preparedNovexContext
+            if (novexRequestMessage?.dbMessageId != null) {
+                val persistedRecord = (contextForTurn?.record ?: ContextUsageRecord(
+                    id = "request-context:$turnMessageId", requestMessageId = novexRequestMessage.dbMessageId,
+                    branchId = turnMessageId, answerIdentity = currentNovexConfiguration().answerIdentity,
+                    includedSources = emptyList(), usedTokens = 0,
+                    effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
+                )).copy(
+                    id = "request-context:$turnMessageId",
+                    historyScopeKey = historyScopeKey(),
                     responseMessageId = turnMessageId,
                     branchId = turnMessageId,
                 )
@@ -7266,6 +7336,8 @@ class ChatViewModel(
                         TAG_STREAM,
                         "Novex context usage persistence failed ${error::class.java.simpleName}: ${error.message}",
                     )
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    throw IllegalStateException("本轮访问范围未保存，尚未发送模型请求。请重试。", error)
                 }
             }
             // Sanitize history before each API call (mirrors iOS pre-API validation)
@@ -7380,7 +7452,7 @@ class ChatViewModel(
             // only the NEW parts from this turn (not the full accumulated history).
             // Matches iOS's per-turn RawMessage persistence.
             val turnStartBlockIndex = allToolBlocks.size
-            val streamedTurn = AssistantStreamTurn(turn, agentTools.isNotEmpty(), ::friendlyToolTitle)
+            val streamedTurn = AssistantStreamTurn(turn, ::friendlyToolTitle)
             suspend fun publishStream(snapshot: AssistantStreamTurn.Snapshot) {
                 while (allToolBlocks.size > turnStartBlockIndex) allToolBlocks.removeAt(allToolBlocks.lastIndex)
                 allToolBlocks.addAll(snapshot.blocks)
@@ -7721,6 +7793,7 @@ class ChatViewModel(
 
                 }
 
+                appendCompletedStoryImage(allToolBlocks, turnStartBlockIndex, turnMessageId, novexRequestMessage?.dbMessageId)
                 AppLogger.info(
                     TAG_STREAM,
                     "runAgentLoop complete: model=${currentProvider.model.id} turn=$turn " +
@@ -8107,6 +8180,9 @@ class ChatViewModel(
                         val block = allToolBlocks[index]
                         if (block.isText) allToolBlocks[index] = block.copy(executionText = false)
                     }
+                }
+                if (isCompletedPresentationTurn(allToolBlocks.drop(turnStartBlockIndex))) {
+                    appendCompletedStoryImage(allToolBlocks, turnStartBlockIndex, turnMessageId, novexRequestMessage?.dbMessageId)
                 }
                 val lastHistoryIndex = agentHistory.lastIndex
                 if (lastHistoryIndex >= 0) {
@@ -8498,6 +8574,37 @@ class ChatViewModel(
         }
         val details = runCatching {
             when (name) {
+                com.openminis.app.tools.NovexConversationActionTools.SET_PLAYER_IDENTITY -> {
+                    val args = JSONObject(argsJson)
+                    val previous = currentNovexConfiguration().playerIdentity?.description
+                    if (args.optBoolean("clear")) "清空本对话的玩家身份。当前身份：${previous.orEmpty()}"
+                    else "保存本对话的玩家身份：${args.getString("description")}" +
+                        (previous?.let { "\n原身份：$it" } ?: "")
+                }
+                com.openminis.app.tools.NovexConversationActionTools.SELECT_IDENTITY -> {
+                    val args = JSONObject(argsJson)
+                    val label = when (args.optString("kind")) {
+                        "nova" -> "诺瓦"
+                        "custom" -> args.getString("name")
+                        "character" -> requireNotNull(novexApplication().novexWorkspace.characterForVersion(args.getString("version_id"))) { "所选角色已不存在" }.character.character.name
+                        else -> error("请选择有效的回答身份")
+                    }
+                    "将本对话的回答身份改为：$label。" + if (args.optBoolean("replace_player_identity")) "同时替换玩家身份。" else "已有玩家身份保持不变。"
+                }
+                com.openminis.app.tools.NovexConversationActionTools.START_GAME -> {
+                    val args = JSONObject(argsJson)
+                    val game = requireNotNull(novexApplication().novexWorkspace.interactiveFiction(args.getString("project_id"))) { "所选文游已不存在" }
+                    buildString {
+                        append("在本对话启动《${game.project.name}》。")
+                        if (args.optBoolean("replace_active_game")) append("将切换当前文游，原局次保留。")
+                        args.optString("player_description").takeIf(String::isNotBlank)?.let { description ->
+                            currentNovexConfiguration().playerIdentity?.let { append("\n原玩家身份：${it.description}") }
+                            append("\n本局玩家身份：$description")
+                        }
+                    }
+                }
+                in com.openminis.app.tools.NovexIllustrationTools.names -> "查看或选择本对话已采用的剧情插图，完成回答后展示。"
+                in com.openminis.app.tools.NovexWorldbookTools.names -> novexWorldbookActions().review(currentNovexConfiguration(), name, JSONObject(argsJson))
                 com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> novexMemoryExecutor.review(
                     currentNovexMemoryScope(), currentNovexMemoryReadContext(), JSONObject(argsJson).getString("proposal_id"))
                 NovexManagementTools.APPLY -> {
@@ -8575,18 +8682,23 @@ class ChatViewModel(
                 currentNovexMemoryScope(), currentNovexMemoryReadContext(turnMessageId), turnMessageId,
                 requestMessageId, argsJson)
             com.openminis.app.tools.NovexMemoryAgentTools.APPLY -> novexMemoryExecutor.apply(
-                currentNovexMemoryScope(), currentNovexMemoryReadContext(), argsJson)
+                currentNovexMemoryScope(), currentNovexMemoryReadContext(), argsJson).also { if (it.success) novexContextRevision++ }
+            com.openminis.app.tools.NovexConversationActionTools.SELECT_IDENTITY,
+            com.openminis.app.tools.NovexConversationActionTools.SET_PLAYER_IDENTITY,
+            com.openminis.app.tools.NovexConversationActionTools.START_GAME -> executeConversationAction(name, argsJson)
+            in com.openminis.app.tools.NovexWorldbookTools.names -> executeWorldbookAction(name, argsJson)
+            in com.openminis.app.tools.NovexIllustrationTools.names -> executeIllustrationTool(name, argsJson, requestMessageId)
             "present_choices" -> executePresentChoicesTool(argsJson)
             "render_panel", "panel" -> executePanelTool(argsJson)
             // Compatibility for tool calls already stored by earlier Novex builds.
             "present_system_panel" -> executePanelTool(argsJson)
             "save_checkpoint" -> executeSaveCheckpointTool(
                 argsJson = argsJson,
-                replyBranchId = assistantId,
+                replyBranchId = turnMessageId,
                 sourceMessageId = turnMessageId,
                 toolCallId = toolId,
             )
-            "register_controls" -> executeRegisterControlsTool(argsJson, assistantId)
+            "register_controls" -> executeRegisterControlsTool(argsJson, turnMessageId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
             NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
@@ -8598,15 +8710,16 @@ class ChatViewModel(
             NovexDocumentToolRouter.DOCUMENT_READ,
             -> recordNovexFileRead(novexDocumentAgentTools.execute(name, argsJson), requestMessageId, turnMessageId)
             NovexLearningToolRouter.LEARNING_PREPARE,
-            NovexLearningToolRouter.LEARNING_START,
-            NovexLearningToolRouter.LEARNING_READ -> novexLearningAgentTools.execute(name, argsJson)
+            NovexLearningToolRouter.LEARNING_START -> novexLearningAgentTools.execute(name, argsJson)
+            NovexLearningToolRouter.LEARNING_READ -> recordNovexFileRead(novexLearningAgentTools.execute(name, argsJson), requestMessageId, turnMessageId)
             in com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter.TOOL_NAMES -> {
                 val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
                     conversationId = activeSessionId,
                     visibleBranchIds = activeBranchPathIds,
-                    writeBranchId = assistantId,
+                    writeBranchId = turnMessageId,
                 )
                 recordNovexFileRead(novexWorkspaceAgentTools.execute(
+                    historyScopeKey = historyScopeKey(),
                     visibleImports = novexApplication().creativeArtifactRepository.visibleSourcePaths(activeSessionId),
                     name = name,
                     argumentsJson = argsJson,
@@ -8650,7 +8763,8 @@ class ChatViewModel(
         val workspace = requireNotNull((context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace) { "内容工作空间尚未就绪" }
         val profile = _immersiveProfile.value
         val reader = com.openminis.app.novex.adapter.NovexContextReadService(workspace,
-            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
+            com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world),
+            visibleMessages = _messages.value.filter { it.id in (activeBranchPathIds + listOfNotNull(requestMessageId)) && !it.isQueued && it.error == null && it.role in setOf("user", "assistant") }.map { it.content })
         val configuration = adoptedNovexConfiguration()
         val offset = args.optInt("offset", 0)
         val operation = args.optString("operation", "inspect")
@@ -8703,9 +8817,10 @@ class ChatViewModel(
         }
         val inspection = novexManagementService().inspect(
             configuration = currentNovexConfiguration(),
-            subject = args.managementSubjectOrNull(),
+            subject = args.managementSubjectOrNull(allowKindOnly = true),
             moduleId = args.optString("module_id").trim().ifBlank { null },
             profileSection = args.optString("profile_section").trim().ifBlank { "public" },
+            kindFilter = args.managementKindOrNull(),
         )
         ToolExecutionResult(
             output = inspection.toModelToolJson(args.optBoolean("include_advanced")).apply {
@@ -8725,22 +8840,26 @@ class ChatViewModel(
     private suspend fun executeNovexContentTool(name: String, argsJson: String, replyId: String, callId: String,
         requestId: String?): ToolExecutionResult = novexManagementMutex.withLock {
         prepareNovexConversationDrafts()
-        novexConfigurationMutex.withLock {
-            val app = novexApplication()
-            val configuration = currentNovexConfiguration()
-            val settings = conversationSettingsSnapshot()
-            val executor = com.openminis.app.novex.domain.NovexContentToolExecutor(app.novexWorkspace, novexManagementService(),
-                com.openminis.app.novex.domain.NovexCardFileOperations(
-                    com.openminis.app.novex.domain.NovexCardSourceModules(novexDocumentRepository) { it.value in activeNovexDocumentRefs }),
-                com.openminis.app.novex.domain.NovexManagementTransaction { work -> app.database.withTransaction { work() } })
-            val result = executor.execute(name, argsJson,
-                com.openminis.app.novex.domain.NovexContentToolExecutor.Request(configuration, currentNovexUserRequests(), replyId, callId, requestId)) { next ->
-                chatRepository.updateConversationSettings(configuration.conversationId,
-                    settings.copy(novexConfigurationJson = NovexConversationConfigurationCodec.encode(next)))
-            }
-            if (result.configuration != configuration) installNovexConfiguration(result.configuration)
-            result.tool
+        val app = novexApplication()
+        val executor = com.openminis.app.novex.domain.NovexContentToolExecutor(app.novexWorkspace, novexManagementService(),
+            com.openminis.app.novex.domain.NovexCardFileOperations(
+                com.openminis.app.novex.domain.NovexCardSourceModules(novexDocumentRepository) { it.value in activeNovexDocumentRefs }),
+            com.openminis.app.novex.domain.NovexManagementTransaction { work -> app.database.withTransaction { work() } })
+        // Source IO and chapter construction must finish before the settings commit locks the database.
+        // The executor rechecks source visibility and the management plan against the locked configuration.
+        val prepared = try { executor.prepare(name, argsJson) }
+        catch (failure: Exception) {
+            return@withLock ToolExecutionResult("内容准备未完成：${failure.message ?: "来源无法读取"}。没有写入卡片。",
+                false, toolTitle = "内容准备未完成")
         }
+        var tool: ToolExecutionResult? = null
+        novexSettingsStore.update { configuration ->
+            val result = executor.execute(prepared,
+                com.openminis.app.novex.domain.NovexContentToolExecutor.Request(configuration, currentNovexUserRequests(), replyId, callId, requestId)) { }
+            tool = result.tool
+            result.configuration
+        }
+        requireNotNull(tool)
     }
 
     private fun novexApplication(): com.openminis.app.MinisApp {
@@ -8836,21 +8955,21 @@ class ChatViewModel(
 
     private suspend fun latestExplicitUserText(): String = currentNovexUserRequests().lastOrNull().orEmpty()
 
-    private fun JSONObject.managementSubjectOrNull(): NovexContentAddress? {
-        val kind = optString("subject_kind").trim()
+    private fun JSONObject.managementKindOrNull(): NovexContentKind? = when (val kind = optString("subject_kind").trim()) {
+        "" -> null
+        "world" -> NovexContentKind.WORLD
+        "character_version" -> NovexContentKind.CHARACTER_VERSION
+        "game" -> NovexContentKind.INTERACTIVE_FICTION
+        "artifact" -> NovexContentKind.CREATIVE_ARTIFACT
+        else -> error("未知管理对象类型：$kind")
+    }
+
+    private fun JSONObject.managementSubjectOrNull(allowKindOnly: Boolean = false): NovexContentAddress? {
+        val kind = managementKindOrNull()
         val id = optString("subject_id").trim()
-        require(kind.isBlank() == id.isBlank()) { "subject_kind 和 subject_id 必须同时提供" }
-        if (kind.isBlank()) return null
-        return NovexContentAddress(
-            kind = when (kind) {
-                "world" -> NovexContentKind.WORLD
-                "character_version" -> NovexContentKind.CHARACTER_VERSION
-                "game" -> NovexContentKind.INTERACTIVE_FICTION
-                "artifact" -> NovexContentKind.CREATIVE_ARTIFACT
-                else -> error("未知管理对象类型：$kind")
-            },
-            id = id,
-        )
+        if (id.isBlank() && (kind == null || allowKindOnly)) return null
+        require(kind != null && id.isNotBlank()) { "读取指定卡片时请同时提供卡片类型和编号；只列目录可省略编号" }
+        return NovexContentAddress(kind, id)
     }
 
     private fun executePresentChoicesTool(argsJson: String): ToolExecutionResult {
@@ -8875,15 +8994,81 @@ class ChatViewModel(
         }
     }
 
+    private fun illustrationVisibleMessages(requestMessageId: String?): List<String> = _messages.value.filter {
+        it.id in (activeBranchPathIds + listOfNotNull(requestMessageId)) && !it.isQueued && it.error == null && !it.isStreaming && it.role in setOf("user", "assistant")
+    }.map { if (it.role == "assistant") formalAssistantText(it.toolBlocks, it.content) else it.content }
+
+    private suspend fun executeIllustrationTool(name: String, arguments: String, requestMessageId: String?): ToolExecutionResult = try {
+        val output = NovexStoryImageCoordinator.tool(adoptedNovexConfiguration(), illustrationVisibleMessages(requestMessageId), name, arguments)
+        ToolExecutionResult(output.toString(), true, toolTitle = friendlyToolTitle(name))
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+    catch (failure: Exception) { ToolExecutionResult("图片选择未完成：${failure.message}", false, toolTitle = friendlyToolTitle(name)) }
+
+    /** Only called at normal completion. Never feeds pixels, tool output, or hidden text back into selection. */
+    private suspend fun appendCompletedStoryImage(blocks: MutableList<AssistantBlock>, start: Int, messageId: String, requestMessageId: String?) {
+        try {
+            NovexStoryImageCoordinator.completed(adoptedNovexConfiguration(), illustrationVisibleMessages(requestMessageId), blocks, start,
+                chatRepository.loadActiveMessages(realSessionId.ifEmpty { sessionId }), messageId)?.let(blocks::add)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { AppLogger.warning(TAG, "剧情插图未附加，正文保留") }
+    }
+
+    private fun novexWorldbookActions(): com.openminis.app.novex.adapter.NovexWorldbookActions {
+        val app = novexApplication()
+        return com.openminis.app.novex.adapter.NovexWorldbookActions(app.novexWorkspace,
+            com.openminis.app.novex.domain.NovexGameWorldbooks(app.novexWorkspace) { block -> app.database.withTransaction { block() } })
+    }
+
+    private suspend fun executeWorldbookAction(name: String, arguments: String): ToolExecutionResult {
+        return try {
+            var payload: JSONObject? = null
+            novexSettingsStore.update { current ->
+                val result = novexWorldbookActions().execute(current, name, JSONObject(arguments))
+                payload = result.payload
+                result.configuration
+            }
+            ToolExecutionResult(requireNotNull(payload).toString(), true, toolTitle = friendlyToolTitle(name))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { ToolExecutionResult("世界书操作未完成：${failure.message}", false, toolTitle = friendlyToolTitle(name)) }
+    }
+
+    private suspend fun executeConversationAction(name: String, arguments: String): ToolExecutionResult {
+        return try {
+            val app = novexApplication()
+            val userStatements = currentNovexUserRequests()
+            val updated = novexSettingsStore.update { current ->
+                val actions = com.openminis.app.novex.adapter.NovexConversationActions(app.novexWorkspace, app.novexSnapshotMediaStore, userStatements)
+                when (name) {
+                    com.openminis.app.tools.NovexConversationActionTools.SELECT_IDENTITY -> actions.selectIdentity(current, JSONObject(arguments))
+                    com.openminis.app.tools.NovexConversationActionTools.SET_PLAYER_IDENTITY -> actions.setPlayerIdentity(current, JSONObject(arguments))
+                    else -> actions.startGame(current, JSONObject(arguments))
+                }
+            }
+            val label = when (val identity = updated.answerIdentity) {
+                AnswerIdentity.Nova -> "诺瓦"
+                is AnswerIdentity.PersonaPreset -> identity.label
+                is AnswerIdentity.CharacterVersion -> app.novexWorkspace.characterForVersion(identity.versionId)?.character?.character?.name ?: "所选角色"
+            }
+            ToolExecutionResult(
+                com.openminis.app.novex.domain.NovexToolResult.success("conversation.configured",
+                    (if (name == com.openminis.app.tools.NovexConversationActionTools.SET_PLAYER_IDENTITY)
+                        updated.playerIdentity?.let { "玩家身份已保存：${it.description}" } ?: "玩家身份已清空"
+                    else "对话设置已保存，当前回答身份：$label" + (updated.activeInteractiveFiction?.let { "；当前文游：${it.title}" } ?: "")) +
+                        "。下一次回答将使用此设置，不要对用户输出内部编号。",
+                    data = mapOf("answer_identity" to com.openminis.app.novex.domain.NovexAnswerIdentityCodec.encode(updated.answerIdentity),
+                        "player_identity" to updated.playerIdentity?.let { mapOf("label" to it.label, "description" to it.description) },
+                        "active_game" to updated.activeInteractiveFiction?.projectId)).toJson(),
+                true, toolTitle = friendlyToolTitle(name))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            ToolExecutionResult("对话设置未完成：${failure.message}", false, toolTitle = "更新对话设置")
+        }
+    }
+
     private fun executePanelTool(argsJson: String): ToolExecutionResult {
         return runCatching {
             val args = JSONObject(argsJson)
-            val hasContent = listOf("title", "summary", "blocks", "content", "images", "items", "buttons")
-                .any { args.optString(it).isNotBlank() }
-            require(hasContent) { "面板内容为空" }
-            listOf("blocks", "actions", "images", "items", "buttons").forEach { key ->
-                args.optString(key).takeIf(String::isNotBlank)?.let { org.json.JSONArray(it) }
-            }
+            NovexPanelContent.parse(args)
             ToolExecutionResult(
                 output = "内容已显示在当前会话的可折叠面板中。",
                 success = true,
@@ -8905,18 +9090,10 @@ class ChatViewModel(
         toolCallId: String,
     ): ToolExecutionResult {
         return runCatching {
-            val args = JSONObject(argsJson)
-            val name = args.optString("name").trim()
-            require(name.isNotEmpty()) { "存档名称不能为空" }
-            val legacyState = args.optString("state").trim()
-            val summary = args.optString("summary").trim().ifBlank {
-                legacyState.lineSequence().firstOrNull(String::isNotBlank)?.take(240).orEmpty()
-            }
-            require(summary.isNotEmpty()) { "存档摘要不能为空" }
-            val stateJson = args.optString("state_json").trim().ifBlank {
-                require(legacyState.isNotEmpty()) { "存档状态不能为空" }
-                JSONObject().put("legacy_markdown", legacyState).toString()
-            }
+            val input = com.openminis.app.novex.domain.NovexCheckpointInput.parse(argsJson)
+            val name = input.name
+            val summary = input.summary
+            val stateJson = input.stateJson
             val scope = com.openminis.app.novex.domain.NovexConversationWorkspaceScope(
                 conversationId = activeSessionId,
                 visibleBranchIds = activeBranchPathIds,
@@ -8924,6 +9101,7 @@ class ChatViewModel(
             )
             val configuration = currentNovexConfiguration()
             val sourceRows = chatRepository.loadMessages(scope.conversationId)
+            require(sourceRows.any { it.id == replyBranchId }) { "当前回复尚未保存，未创建存档，请稍后重试" }
             val sourcePath = (scope.visibleBranchIds + replyBranchId).distinct()
             val checkpoint = com.openminis.app.novex.domain.NovexPlaythroughCheckpointFactory.create(
                 id = com.openminis.app.novex.domain.NovexFrozenContextCodec.digest("${scope.conversationId}|$replyBranchId|$toolCallId"),
@@ -8950,7 +9128,7 @@ class ChatViewModel(
             )
             val result = com.openminis.app.novex.domain.NovexToolResult.success(
                 code = "playthrough.checkpoint_saved",
-                summary = "存档“$name”已保存；模型摘要尚未核验，续接应核对原始消息与软件状态",
+                summary = "存档“$name”已保存，原始记录与软件状态已保留；本次保存不推进剧情。",
                 data = mapOf(
                     "checkpoint_id" to checkpoint.id,
                     "workspace_ref" to entry.workspaceRef.value,
@@ -8980,13 +9158,15 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun executeEndInteractiveFictionTool(argsJson: String): ToolExecutionResult = novexConfigurationMutex.withLock {
-        runCatching {
-            val configuration = NovexConversationConfiguration.open(currentNovexConfiguration())
-            val ended = configuration.apply(com.openminis.app.novex.domain.NovexConversationCommand.EndInteractiveFiction(
-                JSONObject(argsJson).getString("playthrough_id"),
-            )).snapshot
-            persistNovexConfiguration(ended)
+    private suspend fun executeEndInteractiveFictionTool(argsJson: String): ToolExecutionResult = runCatching {
+            var previous: NovexConversationConfigurationSnapshot? = null
+            novexSettingsStore.update { current ->
+                previous = current
+                NovexConversationConfiguration.open(current).apply(com.openminis.app.novex.domain.NovexConversationCommand.EndInteractiveFiction(
+                    JSONObject(argsJson).getString("playthrough_id"),
+                )).snapshot
+            }
+            val configuration = NovexConversationConfiguration.open(requireNotNull(previous))
             val restoration = when {
                 configuration.snapshot.activeInteractiveFiction == null -> "本局已经结束，没有再次切换身份。"
                 configuration.snapshot.preGameAnswerIdentity != null -> "文游已结束，已恢复启动前的回答身份和玩家身份。"
@@ -8997,23 +9177,19 @@ class ChatViewModel(
                 success = true, toolTitle = "结束文游",
             )
         }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
             ToolExecutionResult(output = "没有结束文游：${error.message ?: "保存失败"}", success = false, toolTitle = "结束文游")
         }
-    }
 
     private suspend fun executeRegisterControlsTool(
         argsJson: String,
         replyBranchId: String,
-    ): ToolExecutionResult = novexConfigurationMutex.withLock {
-        runCatching {
+    ): ToolExecutionResult = runCatching {
             val args = JSONObject(argsJson)
             val controlsJson = args.jsonArrayText("controls")
-            val updated = ConversationControlRegistration.registerAiControls(
-                currentNovexConfiguration(),
-                controlsJson,
-                branchId = replyBranchId,
-            )
-            persistNovexConfiguration(updated)
+            val updated = novexSettingsStore.update { current ->
+                ConversationControlRegistration.registerAiControls(current, controlsJson, branchId = replyBranchId)
+            }
             val count = InteractiveFictionRuntime.resolveControls(
                 updated,
                 activeBranchPathIds + replyBranchId,
@@ -9032,21 +9208,16 @@ class ChatViewModel(
                 toolTitle = "更新快捷操作",
             )
         }
-    }
 
     private suspend fun executeUpdatePlaythroughStateTool(
         argsJson: String,
         turnMessageId: String,
-    ): ToolExecutionResult = novexConfigurationMutex.withLock {
-        runCatching {
-            val configuration = currentNovexConfiguration()
-            require(configuration.activeInteractiveFiction != null) { "当前对话没有活动文游" }
-            val updated = PlaythroughStateRegistration.applyUpdates(
-                configuration = configuration,
-                branchId = turnMessageId,
-                updatesJson = JSONObject(argsJson).jsonArrayText("updates"),
-            )
-            persistNovexConfiguration(updated)
+    ): ToolExecutionResult = runCatching {
+            novexSettingsStore.update { configuration ->
+                require(configuration.activeInteractiveFiction != null) { "当前对话没有活动文游" }
+                PlaythroughStateRegistration.applyUpdates(configuration = configuration, branchId = turnMessageId,
+                    updatesJson = JSONObject(argsJson).jsonArrayText("updates"))
+            }
             ToolExecutionResult(
                 output = "已更新当前消息分支的本局状态；切换分支时会恢复对应状态。",
                 success = true,
@@ -9059,7 +9230,6 @@ class ChatViewModel(
                 toolTitle = "更新本局状态",
             )
         }
-    }
 
     private fun JSONObject.jsonArrayText(key: String): String = when (val value = opt(key)) {
         is org.json.JSONArray -> value.toString()
@@ -11482,6 +11652,7 @@ class ChatViewModel(
         conversationExitJob = viewModelScope.launch {
             try {
                 sessionLoaded.first { it }
+                persistComposerDraft()
                 _isStreaming.first { !it }
                 novexManagementMutex.withLock {
                     novexConfigurationMutex.withLock finalize@{
@@ -11491,7 +11662,7 @@ class ChatViewModel(
                         // A first file may still be copying: keep the empty conversation until import settles.
                         if (app.conversationRepositoryImporter.status(sid).value.running) return@finalize
                         val drafts = app.novexWorkspace.conversationDrafts(sid)
-                        val protection = if (_canResume.value || _isCompacting.value || novexLearningJob?.isActive == true ||
+                        val protection = if (_canResume.value || _isCompacting.value || novexLearningSession.isRunning ||
                             novexOperationJournal.list(sid).any { it.status in setOf(
                                 com.openminis.app.novex.domain.NovexOperationStatus.WAITING,
                                 com.openminis.app.novex.domain.NovexOperationStatus.APPROVED) })
@@ -11509,7 +11680,7 @@ class ChatViewModel(
                             com.openminis.app.novex.domain.NovexCommand.FinalizeConversationDrafts(sid, protection),
                         ) as com.openminis.app.novex.domain.NovexChange.ConversationDraftsFinalized
                         if (finalized.result.snapshot.cards.isNotEmpty() || finalized.result.snapshot.pendingWrites.isNotEmpty()) return@finalize
-                        if (_attachments.value.isNotEmpty() || currentNovexConfiguration().hasPersistentConfiguration) return@finalize
+                        if (_inputText.value.isNotEmpty() || _attachments.value.isNotEmpty() || currentNovexConfiguration().hasPersistentConfiguration) return@finalize
                         if (_conversationPrompt.value != null && _conversationPrompt.value != inheritedEditablePrompt()) return@finalize
                         if (_imageStylePrompt.value.isNotBlank() || chatRepository.messageCount(sid) > 0) return@finalize
                         if (app.creativeArtifactRepository.list(com.openminis.app.data.creative.CreativeArtifactQuery(
@@ -11668,6 +11839,11 @@ class ChatViewModel(
                                     executionText = obj.optBoolean("execution", false),
                                 ))
                             }
+                        }
+                        NOVEX_STORY_IMAGE -> {
+                            if (entity.role == "assistant") runCatching {
+                                com.openminis.app.novex.domain.NovexSnapshotMediaCodec.decode(obj.getJSONObject("value"))
+                            }.getOrNull()?.let { blocks.add(storyImageBlock(it, entity.id)) }
                         }
                         "novexCardTask" -> {
                             val value = obj.optJSONObject("value")
@@ -11916,60 +12092,15 @@ class ChatViewModel(
 
     /** Native confirmation and authorized model calls share this save-before-schedule path. */
     private suspend fun startNovexLearningPlan(ref: NovexResourceRef, id: String, awaitCompletion: Boolean = false): com.openminis.app.novex.domain.NovexToolResult {
-        val (receipt, run) = novexLearningControlMutex.withLock {
-            val provider = requireNotNull(currentProvider) { "当前没有可用模型连接" }
-            val model = requireNotNull(currentModel) { "当前没有可用模型" }
-            val committed = novexLearningPlans.commit(activeSessionId, ref, id,
+        val provider = requireNotNull(currentProvider) { "当前没有可用模型连接" }
+        val model = requireNotNull(currentModel) { "当前没有可用模型" }
+        return novexLearningSession.start(ref, id, awaitCompletion,
+            commit = { novexLearningPlans.commit(activeSessionId, ref, id,
                 { it.value in activeNovexSourceCollectionRefs },
                 { state, budget, fingerprint -> buildNovexLearningPreflight(state, model, provider.name, budget, fingerprint) },
-                { requireNovexLearningExecutionContext(it, provider) })
-            val task = requireNotNull(committed.state.task)
-            val runnable = task.preflight.id == id && task.status in setOf(NovexLearningTaskStatus.INDEXING,
-                NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)
-            _novexLearningTask.value = task
-            _novexLearningStatus.value = task.status
-            if (runnable) {
-                requireNovexLearningExecutionContext(task.preflight, provider)
-                if (novexLearningJob?.isActive != true || novexLearningRunningRef != ref) {
-                    novexLearningJob?.cancelAndJoin()
-                    pauseCompetingNovexLearningTasks(ref)
-                    novexLearningRunningRef = ref
-                    _novexLearningError.value = null
-                    novexLearningJob = viewModelScope.launch(Dispatchers.IO) { runNovexLearning(committed.state, provider) }
-                }
-            }
-            com.openminis.app.novex.domain.NovexToolResult.success("learning.task_saved",
-                if (runnable) "整理任务已保存并启动，将分批保存笔记；尚未完成通读，可在资料整理进度中查看或暂停。"
-                else "这份计划已有执行记录；保留当前进度与状态，没有重复开始。",
-                data = mapOf("collection_ref" to ref.value, "preflight_id" to id, "task_status" to task.status.name,
-                    "replayed" to committed.replayed, "reviewed_blocks" to committed.state.reviewLedger.reviewedBlocks,
-                    "total_blocks" to committed.state.reviewLedger.totalReadableBlocks),
-                affectedRefs = listOf(ref)) to novexLearningJob.takeIf { runnable && novexLearningRunningRef == ref }
-        }
-
-        if (!awaitCompletion) return receipt
-        return com.openminis.app.novex.domain.NovexLearningRunCompletion.await(ref, id, run,
-            readState = { novexLearningControlMutex.withLock {
-                novexLearningRepository.find(ref)?.takeIf { ref.value in activeNovexSourceCollectionRefs }
-            } },
-            stopOwnedRun = {
-                novexLearningControlMutex.withLock {
-                    if (run != null && novexLearningJob === run) {
-                        run.cancelAndJoin()
-                        novexLearningJob = null
-                        novexLearningRunningRef = null
-                        val state = novexLearningRepository.find(ref)
-                        val task = state?.task
-                        if (task?.preflight?.id == id && task.status in setOf(NovexLearningTaskStatus.INDEXING,
-                                NovexLearningTaskStatus.REVIEWING, NovexLearningTaskStatus.SYNTHESIZING)) {
-                            val paused = state.copy(task = task.pause())
-                            novexLearningRepository.save(paused)
-                            _novexLearningTask.value = paused.task
-                            _novexLearningStatus.value = paused.task?.status
-                        }
-                    }
-                }
-            })
+                { requireNovexLearningExecutionContext(it, provider) }) },
+            validate = { requireNovexLearningExecutionContext(it, provider) },
+            execute = { state -> _novexLearningError.value = null; runNovexLearning(state, provider) })
     }
 
     fun pauseNovexLearning() = stopNovexLearningRun(cancel = false)
@@ -11978,25 +12109,7 @@ class ChatViewModel(
 
     private fun stopNovexLearningRun(cancel: Boolean) {
         val ref = currentNovexLearningCollectionRef() ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            novexLearningControlMutex.withLock {
-                if (novexLearningRunningRef == ref) {
-                    novexLearningJob?.cancelAndJoin()
-                    novexLearningJob = null
-                    novexLearningRunningRef = null
-                }
-                val state = novexLearningRepository.find(ref) ?: return@withLock
-                val task = state.task ?: return@withLock
-                val controls = com.openminis.app.novex.domain.NovexLearningControlPolicy.allowedControls(task.status)
-                val control = if (cancel) com.openminis.app.novex.domain.NovexLearningControl.CANCEL
-                    else com.openminis.app.novex.domain.NovexLearningControl.PAUSE
-                if (control !in controls) return@withLock
-                val stopped = state.copy(task = if (cancel) task.cancel() else task.pause())
-                novexLearningRepository.save(stopped)
-                _novexLearningTask.value = stopped.task
-                _novexLearningStatus.value = stopped.task?.status
-            }
-        }
+        viewModelScope.launch(Dispatchers.IO) { novexLearningSession.stop(ref, cancel) }
     }
 
     fun resumeNovexLearning() {
@@ -12004,19 +12117,9 @@ class ChatViewModel(
         val ref = currentNovexLearningCollectionRef() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                novexLearningControlMutex.withLock {
-                    val state = novexLearningRepository.find(ref) ?: return@withLock
-                    val task = state.task?.takeIf { it.status == NovexLearningTaskStatus.PAUSED } ?: return@withLock
-                    requireNovexLearningExecutionContext(task.preflight, provider)
-                    novexLearningJob?.cancelAndJoin()
-                    pauseCompetingNovexLearningTasks(ref)
-                    val resumed = state.copy(task = task.resume())
-                    novexLearningRepository.save(resumed)
-                    _novexLearningTask.value = resumed.task
-                    _novexLearningStatus.value = resumed.task?.status
-                    novexLearningRunningRef = ref
-                    novexLearningJob = viewModelScope.launch(Dispatchers.IO) { runNovexLearning(resumed, provider) }
-                }
+                novexLearningSession.resume(ref,
+                    validate = { requireNovexLearningExecutionContext(it, provider) },
+                    execute = { runNovexLearning(it, provider) })
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { _novexLearningError.value = failure.message ?: "资料整理未恢复，已保存进度保留" }
         }
@@ -12143,11 +12246,13 @@ class ChatViewModel(
         }
     }
 
-    fun prepareNovexLearningFiles(onReady: () -> Unit) {
-        val sid = activeSessionId
-        val refs = activeNovexSourceCollectionRefs.toList()
+    fun prepareNovexLearningFiles(onReady: (String) -> Unit) {
         viewModelScope.launch {
             try {
+                // Navigation may still hold the draft route. Only the persisted address
+                // can own imports and match the scope used by workspace tools.
+                val sid = ensureSession()
+                val refs = activeNovexSourceCollectionRefs.toList()
                 withContext(Dispatchers.IO) {
                     val messages = chatRepository.loadActiveMessages(sid)
                     refs.forEach { value ->
@@ -12160,11 +12265,11 @@ class ChatViewModel(
                             novexApplication().creativeArtifactRepository).reconcile(binding.scope)
                     }
                 }
-                if (activeSessionId == sid) onReady()
+                if (activeSessionId == sid) onReady(sid)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 closeNovexLearningDetails()
-                _novexLearningError.value = "学习笔记仍已保存，工作区文件登记暂未完成：${failure.message}"
+                _novexLearningError.value = "对话仓库暂时无法打开，已有资料保留：${failure.message}"
             }
         }
     }
@@ -12224,8 +12329,10 @@ class ChatViewModel(
                 saveCheckpoint = { checkpoint ->
                     novexLearningRepository.save(checkpoint)
                     binding?.let { projection.publish(checkpoint, it.scope, it.originals) }
-                    _novexLearningTask.value = checkpoint.task
-                    _novexLearningStatus.value = checkpoint.task?.status
+                    if (checkpoint.collection.ref.value in activeNovexSourceCollectionRefs) {
+                        _novexLearningTask.value = checkpoint.task
+                        _novexLearningStatus.value = checkpoint.task?.status
+                    }
                 },
             )
             runner.run(initial)
@@ -12236,7 +12343,7 @@ class ChatViewModel(
         } catch (failure: Exception) {
             val stored = novexLearningRepository.find(initial.collection.ref)
             val runningTask = stored?.task
-            if (stored != null && runningTask != null && runningTask.status in setOf(
+            if (stored != null && runningTask != null && runningTask.preflightId == initial.task?.preflightId && runningTask.status in setOf(
                     NovexLearningTaskStatus.INDEXING,
                     NovexLearningTaskStatus.REVIEWING,
                     NovexLearningTaskStatus.SYNTHESIZING,
@@ -12244,34 +12351,21 @@ class ChatViewModel(
             ) {
                 val paused = stored.copy(task = runningTask.pause(), lastFailure = failure.message ?: "资料通读失败，已保留完成进度")
                 novexLearningRepository.save(paused)
-                _novexLearningTask.value = paused.task
-                _novexLearningStatus.value = paused.task?.status
+                if (paused.collection.ref.value in activeNovexSourceCollectionRefs) {
+                    _novexLearningTask.value = paused.task
+                    _novexLearningStatus.value = paused.task?.status
+                }
             }
-            _novexLearningError.value = failure.message ?: "资料通读失败，已保留完成进度"
+            if (initial.collection.ref.value in activeNovexSourceCollectionRefs &&
+                runningTask?.preflightId == initial.task?.preflightId) {
+                _novexLearningError.value = failure.message ?: "资料通读失败，已保留完成进度"
+            }
         }
     }
 
     private fun currentNovexLearningCollectionRef(): NovexResourceRef? =
         _novexLearningDetails.value?.collection?.ref ?: _novexLearningTask.value?.collectionRef
             ?: activeNovexSourceCollectionRefs.lastOrNull()?.let(::NovexResourceRef)
-
-    private fun pauseCompetingNovexLearningTasks(except: NovexResourceRef) {
-        activeNovexSourceCollectionRefs.asSequence()
-            .map(::NovexResourceRef)
-            .filter { it != except }
-            .forEach { collectionRef ->
-                val state = novexLearningRepository.find(collectionRef) ?: return@forEach
-                val task = state.task ?: return@forEach
-                if (task.status in setOf(
-                        NovexLearningTaskStatus.INDEXING,
-                        NovexLearningTaskStatus.REVIEWING,
-                        NovexLearningTaskStatus.SYNTHESIZING,
-                    )
-                ) {
-                    novexLearningRepository.save(state.copy(task = task.pause()))
-                }
-            }
-    }
 
     private fun requireNovexLearningExecutionContext(preflight: NovexLearningPreflightSnapshot, provider: LLMProvider) {
         require(currentProvider === provider) { "当前模型连接已变化，学习已暂停；请恢复原配置后继续" }
@@ -12337,38 +12431,11 @@ class ChatViewModel(
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
-            if (novexLearningJob?.isActive == true && novexLearningRunningRef?.value in refs) return@launch
-            val restored = refs.asReversed().asSequence()
-                .mapNotNull { value -> novexLearningRepository.find(NovexResourceRef(value))?.task }
-                .firstOrNull { task ->
-                    task.status !in setOf(
-                        NovexLearningTaskStatus.CANCELLED,
-                        NovexLearningTaskStatus.PARTIAL_FAILURE,
-                        NovexLearningTaskStatus.COMPLETE,
-                    )
-                }
-                ?.let { task ->
-                    if (task.status in setOf(
-                            NovexLearningTaskStatus.INDEXING,
-                            NovexLearningTaskStatus.REVIEWING,
-                            NovexLearningTaskStatus.SYNTHESIZING,
-                        )
-                    ) {
-                        task.pause()
-                    } else {
-                        task
-                    }
-                }
+            val restored = novexLearningSession.restore()
             if (activeNovexSourceCollectionRefs.toList() == refs) {
-                if (restored != null) {
-                    val state = novexLearningRepository.find(restored.collectionRef)
-                    if (state != null && state.task?.status != restored.status) {
-                        novexLearningRepository.save(state.copy(task = restored))
-                    }
-                }
-                _novexLearningTask.value = restored
-                _novexLearningStatus.value = restored?.status
-                _novexLearningError.value = restored?.let { novexLearningRepository.find(it.collectionRef)?.lastFailure }
+                _novexLearningTask.value = restored?.task
+                _novexLearningStatus.value = restored?.task?.status
+                _novexLearningError.value = restored?.lastFailure
             }
         }
     }
@@ -12499,12 +12566,21 @@ class ChatViewModel(
         "present_choices" -> "提供行动选项"
         "render_panel", "panel", "present_system_panel" -> "显示资料面板"
         "save_checkpoint" -> "保存文游进度"
+        "inspect_story_images" -> "查看剧情插图"
+        "select_story_image" -> "选择剧情插图"
+        "inspect_worldbook_choices" -> "查看世界书选择"
+        "set_game_worldbooks" -> "设置文游世界书"
+        "set_current_worldbooks" -> "调整本局世界书"
+        "select_answer_identity" -> "选择回答身份"
+        "set_player_identity" -> "保存玩家身份"
+        "start_interactive_fiction" -> "启动文游"
         "register_controls" -> "更新快捷操作"
         "end_interactive_fiction" -> "结束文游"
         "update_playthrough_state" -> "更新本局状态"
         "novex_read_context" -> "读取当前采用资料"
         "novex_inspect_content" -> "查看卡片目录"
         "novex_write_card" -> "填写并保存卡片"
+        "novex_update_card" -> "修改卡片资料"
         "novex_write_module" -> "写入卡片模块"
         "novex_move_module" -> "调整模块顺序"
         "novex_link_cards" -> "关联卡片"

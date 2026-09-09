@@ -29,6 +29,9 @@ data class LLMMessage(
      * reasoning_content once `thinking` is enabled.
      */
     val reasoningContent: String? = null,
+    /** Exact, explicitly public text for host-created messages without a persisted row.
+     * Never populate from tool output, reasoning, summaries or an unknown fallback body. */
+    val publicHistoryText: String? = null,
 ) {
     enum class Role(val value: String) {
         USER("user"),

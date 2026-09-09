@@ -40,7 +40,10 @@ class NovexRoleCapabilitiesTest {
         prompts.forEach { prompt ->
             assertTrue(prompt.contains("默认创建应用内卡片"))
             assertTrue(prompt.contains("章节、主题与条目"))
-            assertTrue(prompt.contains("不得把整份资料塞进一个模块"))
+            assertTrue(prompt.contains("外部卡原文导入可以保留一个完整原文模块并直接使用"))
+            assertFalse(prompt.contains("不得把整份资料塞进一个模块"))
+            assertTrue(prompt.contains("novex_update_card"))
+            assertTrue(prompt.contains("点击确认执行才提交本次"))
             assertTrue(prompt.contains("content_example"))
             assertTrue(prompt.contains("保存后重新读取"))
         }

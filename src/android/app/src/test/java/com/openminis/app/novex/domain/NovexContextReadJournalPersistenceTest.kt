@@ -1,5 +1,7 @@
 package com.openminis.app.novex.domain
 
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
+
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.db.AppDatabase

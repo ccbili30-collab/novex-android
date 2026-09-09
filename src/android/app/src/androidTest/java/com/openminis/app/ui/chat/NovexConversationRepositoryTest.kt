@@ -24,6 +24,7 @@ import org.junit.runner.RunWith
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class NovexConversationRepositoryTest {
+    private val darkTheme get() = InstrumentationRegistry.getArguments().getString("novexDark") == "true"
     @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val app get() = instrumentation.targetContext.applicationContext as MinisApp
@@ -84,7 +85,7 @@ class NovexConversationRepositoryTest {
             assertEquals(1, entries.length())
             val originalRef = NovexWorkspaceFileRef.parse(entries.getJSONObject(0).getString("workspace_ref"))
             assertTrue(tools.workspaceRead(NovexWorkspaceReadRequest(originalRef)).toJson().contains("城主是白榆"))
-            ui.setContent { MinisTheme(darkTheme = false) {
+            ui.setContent { MinisTheme(darkTheme = darkTheme) {
                 CreativeLibraryScreen(app.creativeArtifactRepository, app.creativeArtifactDeviceDirectory, app.novexWorkspace,
                     id, onBack = {}, onOpenArtifact = { _, _ -> })
             } }

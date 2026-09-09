@@ -19,12 +19,28 @@ class NovexContentToolExecutor(
         val operationId get() = NovexFrozenContextCodec.digest("${configuration.conversationId}|$replyId|$callId")
     }
     data class Result(val tool: ToolExecutionResult, val configuration: NovexConversationConfigurationSnapshot)
+    class Prepared internal constructor(internal val name: String, internal val arguments: String,
+        internal val changes: String?)
+
+    fun prepare(name: String, arguments: String): Prepared {
+        val args = JSONObject(arguments)
+        val changes = if (name == NovexManagementTools.PROPOSE || name == NovexManagementTools.APPLY) null
+            else cardFiles.prepare(name, args)
+        return Prepared(name, args.toString(), changes)
+    }
 
     suspend fun execute(name: String, arguments: String, request: Request,
+        saveConfiguration: suspend (NovexConversationConfigurationSnapshot) -> Unit): Result =
+        try { execute(prepare(name, arguments), request, saveConfiguration) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { failure(error, request) }
+
+    suspend fun execute(prepared: Prepared, request: Request,
         saveConfiguration: suspend (NovexConversationConfigurationSnapshot) -> Unit): Result {
         var next = request.configuration
         return try {
-            val args = JSONObject(arguments)
+            val name = prepared.name
+            val args = JSONObject(prepared.arguments)
             var payload: JSONObject? = null
             transaction.run {
                 payload = when (name) {
@@ -33,20 +49,20 @@ class NovexContentToolExecutor(
                         val id = args.getString("proposal_id").trim()
                         val plan = requireNotNull(management.planForExecution(next, id)) { "找不到已保存的内容计划，请重新准备" }
                         val applied = management.apply(next, plan, "")
-                        if (!applied.replayed) applied.createdSubjects.forEach { subject ->
-                            next = NovexConversationConfiguration.open(next).apply(
-                                NovexConversationCommand.MountSubject(subject, ManagedAccess.EDIT)).snapshot
-                        }
+                        next = management.configurationAfterWrite(next, plan, applied)
                         JSONObject().put("proposal_id", id).put("applied_changes", applied.appliedChanges)
                             .put("replayed", applied.replayed)
                             .put("readback_status", "已写入，正文尚未回读核验；请用原对象编号读取，不要重复创建")
                             .put("created_subjects", JSONArray(applied.createdSubjects.map { subject ->
                                 JSONObject().put("kind", subject.kind.managementWireName()).put("id", subject.id)
-                            }))
+                            })).also { output ->
+                                val receipts = NovexSavedContentReceipt(workspace).fields(plan, applied)
+                                receipts.keys().forEach { field -> output.put(field, receipts.get(field)) }
+                            }
                     }
                     else -> {
                         val saved = NovexCardFileService(workspace, management, cardFiles, transaction).execute(next,
-                            name, args, request.userRequests, request.operationId, request.requestId)
+                            name, args, request.userRequests, request.operationId, request.requestId, prepared.changes)
                         next = saved.configuration
                         saved.payload
                     }
@@ -56,11 +72,12 @@ class NovexContentToolExecutor(
             Result(ToolExecutionResult(requireNotNull(payload).toString(2), true,
                 toolTitle = if (name == NovexManagementTools.PROPOSE) "准备内容变更" else "保存卡片内容"), next)
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) {
-            Result(ToolExecutionResult("内容操作未完成：${failure.message ?: "执行失败"}。请核对原对象或原计划的回执，不要改建其他卡片。",
-                false, toolTitle = "内容操作未完成"), request.configuration)
-        }
+        catch (error: Exception) { failure(error, request) }
     }
+
+    private fun failure(error: Exception, request: Request) = Result(ToolExecutionResult(
+        "内容操作未完成：${error.message ?: "执行失败"}。请核对原对象或原计划的回执，不要改建其他卡片。",
+        false, toolTitle = "内容操作未完成"), request.configuration)
 
     private suspend fun propose(args: JSONObject, request: Request): JSONObject {
         val changes = when (val value = args.opt("changes")) {

@@ -16,6 +16,12 @@ sealed interface NovexManagedChange {
     data class RemoveVersionRelation(val sourceVersionId: String, val relationId: String) : NovexManagedChange
     data class PutCardReference(val reference: NovexCardReference) : NovexManagedChange
     data class RemoveCardReference(val source: NovexContentAddress, val referenceId: String) : NovexManagedChange
+    data class UpdateCard(
+        val target: NovexContentAddress,
+        val name: String? = null,
+        val summary: String? = null,
+        val launchMode: InteractiveFictionLaunchMode? = null,
+    ) : NovexManagedChange
     data class AddModule(
         val owner: ModuleOwner,
         val type: ContentModuleType,
@@ -27,6 +33,7 @@ sealed interface NovexManagedChange {
         val moduleId: String,
         val name: String? = null,
         val contentJson: String? = null,
+        val appendText: String? = null,
     ) : NovexManagedChange
 
     data class MoveModule(val moduleId: String, val toIndex: Int) : NovexManagedChange
@@ -116,6 +123,8 @@ data class NovexManagementPlan(
     val directEditIndices: Set<Int> = emptySet(),
     val expectedModuleContents: Map<String, String> = emptyMap(),
     val creationRequestScope: String? = null,
+    val expectedCardHeaders: Map<String, String> = emptyMap(),
+    val originalModuleDocuments: Map<String, String> = emptyMap(),
 ) {
     init {
         require(id.isNotBlank()) { "变更计划编号不能为空" }
@@ -444,7 +453,9 @@ class NovexManagementService(
         subject: NovexContentAddress?,
         moduleId: String?,
         profileSection: String = "public",
+        kindFilter: NovexContentKind? = null,
     ): NovexManagementInspection {
+        require(subject == null || kindFilter == null || subject.kind == kindFilter) { "卡片类型与所选对象不同" }
         require(profileSection in setOf("public", "role_instructions")) { "资料范围只能是 public（公开资料）或 role_instructions（专属扮演指令）" }
         require(profileSection == "public" || (subject?.kind == NovexContentKind.CHARACTER_VERSION && moduleId == null)) {
             "读取专属扮演资料时，请指定角色版本，且不要同时指定模块"
@@ -458,6 +469,7 @@ class NovexManagementService(
         val selectedModule = moduleId?.let { id ->
             val value = requireNotNull(workspace.module(id)) { "模块不存在" }
             val owner = value.module.owner.toAddress()
+            require(kindFilter == null || owner.kind == kindFilter) { "模块不属于所选卡片类型" }
             require(canRead(owner)) {
                 "该模块不属于当前对话的管理对象"
             }
@@ -491,12 +503,12 @@ class NovexManagementService(
                     access = managed.access,
                     label = subjectLabel(managed.subject),
                 )
-            },
+            }.filter { kindFilter == null || it.subject.kind == kindFilter },
             selectedSubject = subject,
             selectedSubjectJson = subject?.let { subjectContentJson(it, profileSection) },
             modules = modules,
             selectedModule = selectedModule,
-            draftTargets = workspace.emptyConversationDrafts(configuration.conversationId),
+            draftTargets = workspace.emptyConversationDrafts(configuration.conversationId).filter { kindFilter == null || it.subject.kind == kindFilter },
             cardReferences = references,
             cardBacklinks = backlinks,
             referenceStatuses = references.associate { it.id to workspace.referenceStatus(it.target) },
@@ -555,6 +567,12 @@ class NovexManagementService(
         val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
         val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
             directEditIndices = directEdits, expectedModuleContents = expectedModules, creationRequestScope = creationRequestScope,
+            originalModuleDocuments = changes.filterIsInstance<NovexManagedChange.UpdateModule>().associate {
+                it.moduleId to requireNotNull(workspace.module(it.moduleId)).module.contentJson
+            },
+            expectedCardHeaders = changes.filterIsInstance<NovexManagedChange.UpdateCard>().associate {
+                NovexCardHeaderEdit.key(it.target) to NovexCardHeaderEdit.fingerprint(workspace, it.target)
+            },
             risk = if (targets.size == changes.size) NovexManagementRisk.CREATE_PRIVATE else plan.risk)
         if (workspace.conversationDrafts(configuration.conversationId) != null) {
             workspace.apply(NovexCommand.ReserveConversationDraftWrite(configuration.conversationId,
@@ -628,6 +646,15 @@ class NovexManagementService(
                     "模块在提出计划后已经修改，请读取当前内容并重新生成计划：$id"
                 }
             }
+            val headerTargets = plan.changes.filterIsInstance<NovexManagedChange.UpdateCard>().map { it.target }.distinct()
+            require(plan.expectedCardHeaders.keys == headerTargets.map(NovexCardHeaderEdit::key).toSet()) {
+                "旧计划缺少卡片修订，请读取当前卡片后重新修改"
+            }
+            headerTargets.forEach { target ->
+                require(plan.expectedCardHeaders[NovexCardHeaderEdit.key(target)] == NovexCardHeaderEdit.fingerprint(workspace, target)) {
+                    "卡片资料已被修改，请读取当前卡片后重新修改"
+                }
+            }
             val changes = mutableListOf<NovexChange>()
             val created = mutableListOf<NovexContentAddress>()
             plan.changes.forEachIndexed { index, managed ->
@@ -640,13 +667,21 @@ class NovexManagementService(
                         val current = if (managed is NovexManagedChange.UpdateModule) {
                             requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在，请重新生成计划" }.module
                         } else null
-                        val creation = managed.toCommand(facts, current)
+                        if (managed is NovexManagedChange.MoveModule) {
+                            val module = requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在" }.module
+                            val size = workspace.modules(module.owner).modules.size
+                            require(managed.toIndex in 0 until size) {
+                                "排序只在当前卡内移动；这张卡有 $size 个模块，位置应为 0 到 ${size - 1}。跨卡整理请先读取并写入目标卡，不要用排序合并卡片。"
+                            }
+                        }
+                        val creation = if (managed is NovexManagedChange.UpdateCard)
+                            NovexCardHeaderEdit.command(workspace, managed) else managed.toCommand(facts, current)
                         val command = plan.draftTargets[index]?.let { target ->
                             NovexCommand.FillConversationDraft(configuration.conversationId, target, creation)
                         } ?: creation
                         val result = workspace.apply(command)
                         changes += result
-                        result.createdSubject()?.let(created::add)
+                        if (managed.isCreation()) result.createdSubject()?.let(created::add)
                     }
                 }
             }
@@ -658,6 +693,19 @@ class NovexManagementService(
             outcome = NovexManagementApplyResult(changes, created, plan.changes.size, changedModuleIds = changedModuleIds)
         }
         return requireNotNull(outcome)
+    }
+
+    /** A filled placeholder is an ordinary result too. Persist its management
+     * address before a later identity change projects the execution history. */
+    internal suspend fun configurationAfterWrite(configuration: NovexConversationConfigurationSnapshot,
+        plan: NovexManagementPlan, applied: NovexManagementApplyResult): NovexConversationConfigurationSnapshot {
+        if (applied.replayed) return configuration // A retry must not undo an explicit unmount.
+        val ownedWritten = workspace.conversationDrafts(configuration.conversationId)?.cards.orEmpty()
+            .filter { !it.isPrivate && it.subject in plan.targets }.map { it.subject }
+        return (applied.createdSubjects + ownedWritten).distinct().fold(configuration) { current, subject ->
+            NovexConversationConfiguration.open(current)
+                .apply(NovexConversationCommand.MountSubject(subject, ManagedAccess.EDIT)).snapshot
+        }
     }
 
     /** Saving into the library does not revoke this conversation's access to its own works. */
@@ -840,6 +888,12 @@ object NovexManagementChangeCodec {
                     position = value.optInt("position"), targetLabel = value.optString("target_label"),
                 ))
                 "remove_card_reference" -> NovexManagedChange.RemoveCardReference(value.contentAddress(), value.getString("reference_id"))
+                "update_card" -> NovexManagedChange.UpdateCard(
+                    value.contentAddress(),
+                    if (value.has("name")) value.getString("name").trim() else null,
+                    if (value.has("summary")) value.getString("summary") else null,
+                    if (value.has("launch_mode")) NovexManagementLaunchModes.decode(value.getString("launch_mode")) else null,
+                )
                 "add_module" -> value.subjectOwner().let { owner ->
                     NovexManagedChange.AddModule(
                         owner = owner,
@@ -855,6 +909,7 @@ object NovexManagementChangeCodec {
                     moduleId = value.getString("module_id"),
                     name = if (value.has("name")) value.getString("name").trim() else null,
                     contentJson = if (value.has("content_json")) value.jsonText("content_json") else null,
+                    appendText = if (value.has("append_text")) value.getString("append_text") else null,
                 )
                 "move_module" -> NovexManagedChange.MoveModule(
                     value.getString("module_id"),
@@ -940,13 +995,21 @@ object NovexManagementChangeCodec {
 
     private fun validateChange(change: NovexManagedChange) {
         when (change) {
+            is NovexManagedChange.UpdateCard -> {
+                require(change.target.kind != NovexContentKind.CREATIVE_ARTIFACT) { "请选择世界、角色版本或文游卡片" }
+                require(change.name != null || change.summary != null || change.launchMode != null) { "请提供要修改的名称、简介或启动方式" }
+                change.name?.let { require(it.isNotBlank()) { "卡片名称不能为空" } }
+                require(change.launchMode == null || change.target.kind == NovexContentKind.INTERACTIVE_FICTION) { "只有文游可以修改启动方式" }
+            }
             is NovexManagedChange.AddModule -> {
                 require(change.name.isNotBlank()) { "模块名称不能为空" }
                 ContentModuleDocumentContract.validate(change.contentJson, change.type)
             }
             is NovexManagedChange.UpdateModule -> {
                 require(change.moduleId.isNotBlank()) { "模块编号不能为空" }
-                require(change.name != null || change.contentJson != null) { "至少提供 name 或 content_json；未提供的字段保持原样" }
+                require(change.name != null || change.contentJson != null || change.appendText != null) { "至少提供名称、正文或追加文本；未提供的字段保持原样" }
+                require(change.contentJson == null || change.appendText == null) { "完整替换和追加正文二选一" }
+                change.appendText?.let { require(it.isNotBlank()) { "追加正文不能为空" } }
                 change.name?.let { require(it.isNotBlank()) { "模块名称不能为空" } }
                 change.contentJson?.let { ContentModuleDocumentContract.validate(it) }
             }
@@ -991,6 +1054,7 @@ private fun NovexManagedChange.targets(facts: NovexManagementFacts): List<NovexC
     is NovexManagedChange.RemoveVersionRelation -> listOf(NovexContentAddress.characterVersion(sourceVersionId))
     is NovexManagedChange.PutCardReference -> listOf(reference.source)
     is NovexManagedChange.RemoveCardReference -> listOf(source)
+    is NovexManagedChange.UpdateCard -> listOf(target)
     is NovexManagedChange.AddModule -> listOf(owner.toAddress())
     is NovexManagedChange.UpdateModule -> listOf(requireNotNull(facts.moduleOwners[moduleId]) { "模块不存在" }.toAddress())
     is NovexManagedChange.MoveModule -> listOf(requireNotNull(facts.moduleOwners[moduleId]) { "模块不存在" }.toAddress())
@@ -1043,6 +1107,7 @@ private fun NovexManagedChange.summary(): String = when (this) {
     is NovexManagedChange.RemoveVersionRelation -> "移除版本关系 $relationId，保留各版本"
     is NovexManagedChange.PutCardReference -> "设置${reference.purpose.label}引用（目标 ${reference.target.subject.id}）"
     is NovexManagedChange.RemoveCardReference -> "移除卡片引用 $referenceId，保留目标卡片"
+    is NovexManagedChange.UpdateCard -> "修改卡片资料${name?.let { "：$it" }.orEmpty()}"
     is NovexManagedChange.AddModule -> "新增模块“$name”"
     is NovexManagedChange.UpdateModule -> "修改模块“${name ?: moduleId}”"
     is NovexManagedChange.MoveModule -> "调整模块顺序"
@@ -1098,6 +1163,7 @@ private fun NovexManagedChange.toCommand(
     is NovexManagedChange.RemoveVersionRelation -> NovexCommand.RemoveVersionRelation(relationId, sourceVersionId)
     is NovexManagedChange.PutCardReference -> NovexCommand.PutCardReference(reference)
     is NovexManagedChange.RemoveCardReference -> NovexCommand.RemoveCardReference(referenceId, source)
+    is NovexManagedChange.UpdateCard -> error("卡片资料需要在事务内读取后更新")
     is NovexManagedChange.AddModule -> NovexCommand.AddModule(
         owner = owner,
         type = type,
@@ -1105,7 +1171,11 @@ private fun NovexManagedChange.toCommand(
         contentJson = contentJson,
     )
     is NovexManagedChange.UpdateModule -> requireNotNull(currentModule) { "模块不存在" }.let { current ->
-        NovexCommand.SaveModule(moduleId, name ?: current.name, contentJson ?: current.contentJson)
+        val content = if (appendText != null) JSONObject(current.contentJson).apply {
+            require(optString("kind") == "article") { "追加文本只用于文章模块；其他模块请先读取，再提交完整结构化内容" }
+            put("text", getString("text") + "\n" + appendText)
+        }.toString() else contentJson ?: current.contentJson
+        NovexCommand.SaveModule(moduleId, name ?: current.name, content)
     }
     is NovexManagedChange.MoveModule -> NovexCommand.MoveModule(moduleId, toIndex)
     is NovexManagedChange.DeleteModule -> NovexCommand.DeleteModule(moduleId)
@@ -1230,6 +1300,8 @@ internal object NovexManagementPlanCodec {
         put("directEditIndices", JSONArray(plan.directEditIndices.sorted()))
         put("expectedModuleContents", JSONObject(plan.expectedModuleContents))
         put("creationRequestScope", plan.creationRequestScope)
+        put("expectedCardHeaders", JSONObject(plan.expectedCardHeaders))
+        put("originalModuleDocuments", JSONObject(plan.originalModuleDocuments))
         put("draftTargets", JSONArray(plan.draftTargets.map { (index, subject) -> address(subject).put("index", index) }))
     }.toString()
 
@@ -1258,7 +1330,9 @@ internal object NovexManagementPlanCodec {
             value.optString("authorizedUserRequest").ifBlank { null },
             value.optJSONArray("directEditIndices")?.let { indices -> (0 until indices.length()).map { indices.getInt(it) }.toSet() }.orEmpty(),
             value.optJSONObject("expectedModuleContents")?.let { entries -> entries.keys().asSequence().associateWith { entries.getString(it) } }.orEmpty(),
-            value.optString("creationRequestScope").ifBlank { null })
+            value.optString("creationRequestScope").ifBlank { null },
+            value.optJSONObject("expectedCardHeaders")?.let { entries -> entries.keys().asSequence().associateWith { entries.getString(it) } }.orEmpty(),
+            value.optJSONObject("originalModuleDocuments")?.let { entries -> entries.keys().asSequence().associateWith { entries.getString(it) } }.orEmpty())
     }
 
     private fun NovexManagedChange.initialModules(): List<NovexModuleDraft> = when (this) {

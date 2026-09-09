@@ -3,7 +3,7 @@ package com.openminis.app.novex.domain
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import com.openminis.app.novex.adapter.NovexConversationContextAdoption
 import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
 import java.io.File

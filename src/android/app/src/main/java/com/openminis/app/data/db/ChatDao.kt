@@ -77,6 +77,9 @@ interface ChatDao {
     @Query("UPDATE sessions SET title = :title, updated_at = :updatedAt WHERE id = :id")
     suspend fun updateSessionTitle(id: String, title: String, updatedAt: Long)
 
+    @Query("UPDATE sessions SET composer_draft = :text WHERE id = :id")
+    suspend fun updateComposerDraft(id: String, text: String?)
+
     @Query("UPDATE sessions SET title = :title, category = COALESCE(:category, category), updated_at = :updatedAt WHERE id = :id")
     suspend fun updateSessionTitleAndCategory(id: String, title: String, category: String?, updatedAt: Long)
 

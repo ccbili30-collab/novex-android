@@ -17,6 +17,9 @@ data class NovexWorkspaceInspectRequest(
     }
 }
 
+/** A model-readable view of a software-owned archive. Raw storage and user export stay intact. */
+data class NovexWorkspaceTextProjection(val text: String, val label: String)
+
 data class NovexWorkspaceReadRequest(
     val workspaceRef: NovexWorkspaceFileRef,
     val cursor: String? = null,
@@ -96,12 +99,13 @@ class NovexConversationWorkspaceTools(
         conversationId = scope.conversationId,
         branchId = scope.writeBranchId,
     ),
+    private val projectText: (NovexWorkspaceEntry, String) -> NovexWorkspaceTextProjection? = { _, _ -> null },
 ) {
     fun workspaceInspect(request: NovexWorkspaceInspectRequest): NovexToolResult =
-        NovexWorkspaceBrowser(scope, store).browse(request.area, request.path, request.query, request.cursor, request.maxEntries)
+        NovexWorkspaceBrowser(scope, store, projectText).browse(request.area, request.path, request.query, request.cursor, request.maxEntries)
 
     fun workspaceSearch(area: NovexWorkspaceArea?, path: String?, query: String, cursor: String?, maxEntries: Int): NovexToolResult =
-        NovexWorkspaceBrowser(scope, store).browse(area, path, query, cursor, maxEntries, searchContent = true)
+        NovexWorkspaceBrowser(scope, store, projectText).browse(area, path, query, cursor, maxEntries, searchContent = true)
 
     fun workspaceRead(request: NovexWorkspaceReadRequest): NovexToolResult {
         val requested = store.find(scope, request.workspaceRef) ?: return notFound(request.workspaceRef)
@@ -137,8 +141,11 @@ class NovexConversationWorkspaceTools(
             code = "workspace.read_conflict", summary = "文件读取时内容已经变化，请重新检查文件后再读",
             affectedRefs = listOf(entry.workspaceRef.asResourceRef()),
         )
-        val text = bytes.toString(Charsets.UTF_8)
-        val offset = request.cursor?.let { decodeCursor(it, entry) }
+        val originalText = bytes.toString(Charsets.UTF_8)
+        val projection = projectText(entry, originalText)
+        val text = projection?.text ?: originalText
+        val readingEntry = if (projection == null) entry else entry.copy(sha256 = sha256(text.toByteArray(Charsets.UTF_8)))
+        val offset = request.cursor?.let { decodeCursor(it, readingEntry) }
             ?: if (request.cursor == null) (request.startChar ?: 0) else return NovexToolResult.failure(
                 code = "workspace.invalid_cursor",
                 summary = "工作区读取游标已失效，请重新检查文件",
@@ -157,17 +164,18 @@ class NovexConversationWorkspaceTools(
         val data = linkedMapOf<String, Any?>(
             "workspace_ref" to entry.workspaceRef.value,
             "original_workspace_ref" to original.workspaceRef.value,
-            "reading_note" to if (entry != original) "本次读取解析文本；不包含未识别的图片或排版，不代表原件已通读" else null,
+            "reading_note" to (projection?.label ?: if (entry != original) "本次读取解析文本；不包含未识别的图片或排版，不代表原件已通读" else null),
             "mime_type" to entry.mimeType,
-            "sha256" to entry.sha256,
+            "sha256" to readingEntry.sha256,
+            "original_sha256" to if (projection != null) entry.sha256 else null,
             "content" to content,
             "char_offset" to offset,
             "total_characters" to text.length,
             "read_observations" to listOf(NovexSourceReadEvidence.source(entry.workspaceRef.value,
-                "工作区文件 · $displayPath", entry.sha256, text.length, "READ", listOf(offset to nextOffset))),
+                projection?.label ?: "工作区文件 · $displayPath", readingEntry.sha256, text.length, "READ", listOf(offset to nextOffset))),
             "truncated" to truncated,
         )
-        if (truncated) data["next_cursor"] = encodeCursor(entry, nextOffset)
+        if (truncated) data["next_cursor"] = encodeCursor(readingEntry, nextOffset)
         return NovexToolResult.success(
             code = "workspace.read",
             summary = "已读取 $displayPath 的 ${content.length} 个字符",
@@ -296,7 +304,11 @@ class NovexConversationWorkspaceTools(
                 affectedRefs = entries.map { it.workspaceRef.asResourceRef() },
             )
         }
-        val texts = bytes.map { it.toString(Charsets.UTF_8) }
+        val texts = bytes.zip(entries).map { (raw, entry) ->
+            require(sha256(raw) == entry.sha256) { "文件读取时内容已经变化，请重新检查" }
+            val text = raw.toString(Charsets.UTF_8)
+            projectText(entry, text)?.text ?: text
+        }
         return when (request.operation) {
             NovexWorkspaceComputeOperation.TEXT_STATISTICS -> textStatistics(entries, texts)
             NovexWorkspaceComputeOperation.JSON_VALIDATE -> validateJson(entries, texts)

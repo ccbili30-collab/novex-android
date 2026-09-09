@@ -78,6 +78,7 @@ fun CatalogContentModuleDetailScreen(
     var baselineName by rememberSaveable(moduleId) { mutableStateOf<String?>(null) }
     var baselineContent by rememberSaveable(moduleId) { mutableStateOf<String?>(null) }
     var image by remember { mutableStateOf<MediaAssetEntity?>(null) }
+    var itemImages by remember { mutableStateOf<Map<String, MediaAssetEntity>>(emptyMap()) }
     var references by remember { mutableStateOf<List<ContentModuleReferenceEntity>>(emptyList()) }
     var referenceOptions by remember { mutableStateOf<List<NovexModuleReferenceOption>>(emptyList()) }
     var referenceRefresh by remember { mutableStateOf(0) }
@@ -86,23 +87,18 @@ fun CatalogContentModuleDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val attachedArtifactImages = rememberNovexAttachedModuleImages(module?.managementOwnerAddress())
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) scope.launch {
-            runCatching {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("无法读取图片")
-                }
-                val asset = novex.apply(
-                    NovexCommand.AttachImage(
-                        owner,
-                        MediaAssetSlot.MODULE_IMAGE,
-                        bytes,
-                        context.contentResolver.getType(uri) ?: "image/*",
-                    ),
-                ).requireMedia()
-                image = asset
-            }.onFailure { error = it.message }
+    var imagePickerOwner by remember { mutableStateOf<ModuleOwner?>(null) }
+    fun refreshImages(detail: com.openminis.app.novex.domain.NovexModuleDetail?) {
+        if (detail == null) return
+        image = detail.image; itemImages = detail.itemImages
+        contentJson = com.openminis.app.novex.domain.NovexModuleImageOrigins.copyFrom(detail.module.contentJson, contentJson)
+        baselineContent = baselineContent?.let { com.openminis.app.novex.domain.NovexModuleImageOrigins.copyFrom(detail.module.contentJson, it) }
+    }
+    imagePickerOwner?.let { target ->
+        com.openminis.app.ui.novex.NovexModuleImagePicker(onDismiss = { imagePickerOwner = null }) { candidate ->
+            novex.apply(NovexCommand.AttachImage(target, MediaAssetSlot.MODULE_IMAGE, candidate.bytes,
+                candidate.mimeType, source = candidate.source)).requireMedia()
+            refreshImages(novex.module(moduleId))
         }
     }
 
@@ -117,6 +113,7 @@ fun CatalogContentModuleDetailScreen(
                 baselineContent = contentJson
             }
             image = detail.image
+            itemImages = detail.itemImages
             references = detail.references
             referenceOptions = detail.referenceOptions
         }
@@ -188,7 +185,7 @@ fun CatalogContentModuleDetailScreen(
                             else -> "添加代表图（可选）"
                         },
                         onClick = {
-                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            imagePickerOwner = owner
                         },
                     )
                     if (image != null) {
@@ -199,12 +196,18 @@ fun CatalogContentModuleDetailScreen(
                                 scope.launch {
                                     runCatching {
                                         novex.apply(NovexCommand.DetachImage(owner, MediaAssetSlot.MODULE_IMAGE))
-                                    }.onSuccess { image = null }.onFailure { error = it.message }
+                                    }.onSuccess {
+                                        image = null
+                                        val latest = novex.module(moduleId)?.module?.contentJson ?: contentJson
+                                        contentJson = com.openminis.app.novex.domain.NovexModuleImageOrigins.copyFrom(latest, contentJson)
+                                        baselineContent = baselineContent?.let { com.openminis.app.novex.domain.NovexModuleImageOrigins.copyFrom(latest, it) }
+                                    }.onFailure { error = it.message }
                                 }
                             },
                         )
                     }
                 }
+                if (image != null) com.openminis.app.ui.novex.NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "main") { contentJson = it }
                 if (image == null && artifactImage != null) {
                     Text(
                         "当前代表图来自创作成果库。",
@@ -218,8 +221,30 @@ fun CatalogContentModuleDetailScreen(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
+                if (module?.managementOwnerAddress()?.kind == com.openminis.app.novex.domain.NovexContentKind.WORLD) {
+                    com.openminis.app.ui.novex.NovexWorldbookConditionField(contentJson, requireNotNull(module).type) { contentJson = it }
+                }
                 SharedModuleDocumentFields(
                     document = ContentModuleDocumentCodec.decode(requireNotNull(module).type, contentJson),
+                    allowWorldbookConditions = module?.managementOwnerAddress()?.kind == com.openminis.app.novex.domain.NovexContentKind.WORLD,
+                    itemImageContent = { item ->
+                        val persisted = (ContentModuleDocumentCodec.decode(requireNotNull(module).type, requireNotNull(module).contentJson)
+                            as? com.openminis.app.data.character.ContentModuleDocument.Collection)?.items.orEmpty().any { it.id == item.id }
+                        val target = ModuleOwner.contentModuleItem(moduleId, item.id)
+                        itemImages[item.id]?.managedPath?.existingMediaFile()?.let { file ->
+                            AsyncImage(model = file, contentDescription = "${item.name}图片", contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp, max = 180.dp))
+                        }
+                        if (itemImages[item.id] != null) com.openminis.app.ui.novex.NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "entry:${item.id}") { contentJson = it }
+                        Row {
+                            NovexOutlineButton(label = if (!persisted) "保存条目后添加图片" else if (itemImages[item.id] == null) "添加图片" else "更换图片",
+                                enabled = persisted, onClick = { imagePickerOwner = target })
+                            if (itemImages[item.id] != null) NovexOutlineButton(label = "移除图片", danger = true, onClick = {
+                                scope.launch { runCatching { novex.apply(NovexCommand.DetachImage(target, MediaAssetSlot.MODULE_IMAGE)); refreshImages(novex.module(moduleId)) }
+                                    .onFailure { error = it.message } }
+                            })
+                        }
+                    },
                     onChange = { contentJson = ContentModuleDocumentCodec.edit(contentJson, it) },
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )

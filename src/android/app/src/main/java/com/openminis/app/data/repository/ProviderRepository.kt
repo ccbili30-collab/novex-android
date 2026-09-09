@@ -263,7 +263,9 @@ class ProviderRepository(private val context: Context) {
      */
     private val configLock = Any()
 
-    private fun loadConfig(): ProviderConfig = runBlocking { loadConfigSuspending() }
+    private fun loadConfig(): ProviderConfig = com.openminis.app.data.model.NovexDeepSeekModelMetadata.repairCatalog(
+        runBlocking { loadConfigSuspending() },
+    )
 
     /**
      * [T-android-provider-room-store] DB-first load with three-way
@@ -1069,7 +1071,9 @@ class ProviderRepository(private val context: Context) {
             val prior = existingByModelId[model.id]
             // Dedicated ASR/TTS id/name patterns fill the exact voice shape when
             // the API returned no modality info; the template's shape wins last.
-            var resolved = model.withInferredVoiceModality()
+            var resolved = com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
+                model.withInferredVoiceModality(), config.instances.firstOrNull { it.id == instanceId }?.effectiveBaseURL,
+            )
             templateVoiceModelById[model.id]?.let { tplModel ->
                 resolved = resolved.copy(
                     inputModalities = tplModel.inputModalities,

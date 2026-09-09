@@ -269,7 +269,7 @@ object NovexCardTransferParser {
         }
         val presentation = module.optString("presentation")
         val content = module.optJSONObject("content") ?: JSONObject()
-        var imagePath: String? = null
+        var imagePath: String? = content.optJSONObject("image")?.optString("path")?.takeIf(String::isNotBlank)
         val itemImagePaths = linkedMapOf<String, String>()
         val document = when (presentation) {
             "article" -> ContentModuleDocument.Article(content.optString("text"))
@@ -302,7 +302,8 @@ object NovexCardTransferParser {
                         },
                         description = item.optString("description"),
                         visualKey = id.takeIf { it in itemImagePaths },
-                        preservedJson = item.toString(),
+                        preservedJson = JSONObject(item.toString()).apply { remove("contextTrigger") }.toString(),
+                        contextTriggerJson = if (item.has("contextTrigger")) JSONArray().put(item.get("contextTrigger")).toString().drop(1).dropLast(1) else null,
                     )
                 },
             )

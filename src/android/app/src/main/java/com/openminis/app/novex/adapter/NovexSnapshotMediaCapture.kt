@@ -28,9 +28,15 @@ internal class NovexSnapshotMediaCapture(private val workspace: NovexWorkspace, 
             NovexContentKind.CREATIVE_ARTIFACT -> Unit
         }
         val result = mutableListOf<NovexSnapshotMedia>()
-        fun retain(asset: MediaAssetEntity, slot: MediaAssetSlot, moduleId: String? = null, entryId: String? = null) {
+        suspend fun retain(asset: MediaAssetEntity, slot: MediaAssetSlot, moduleId: String? = null, entryId: String? = null) {
             val retained = requireNotNull(store) { "尚未配置采用图片的独立保存目录" }.retain(asset)
-            result += NovexSnapshotMedia(retained, slot, moduleId, entryId, target.subject)
+            val module = moduleId?.let { workspace.module(it)?.module }
+            val item = module?.let { com.openminis.app.data.character.ContentModuleDocumentCodec.decode(it.type, it.contentJson)
+                as? com.openminis.app.data.character.ContentModuleDocument.Collection }?.items?.singleOrNull { it.id == entryId }
+            result += NovexSnapshotMedia(retained, slot, moduleId, entryId, target.subject,
+                label = item?.name ?: module?.name.orEmpty(), description = item?.summary ?: "",
+                illustrationRule = module?.let { NovexStoryIllustrations.read(it.contentJson, entryId?.let { id -> "entry:$id" } ?: "main") },
+                usageConditions = listOfNotNull(module?.let { NovexWorldbookConditions.read(it.contentJson) }, item?.contextTriggerJson))
         }
         if (target.moduleId == null) rootMedia.forEach { (slot, asset) -> retain(asset, slot) }
         if (target.entryId == null) moduleImages.filterKeys { id ->
@@ -38,8 +44,8 @@ internal class NovexSnapshotMediaCapture(private val workspace: NovexWorkspace, 
         }.forEach { (id, asset) -> retain(asset, MediaAssetSlot.MODULE_IMAGE, id) }
         itemImages.forEach { (moduleId, images) ->
             if (target.moduleId == null || target.moduleId == moduleId) images.forEach { (entryId, asset) ->
-                val allowed = if (target.entryId == null) moduleId in permittedSourceIds
-                    else target.entryId == entryId && "$moduleId:entry:$entryId" in permittedSourceIds
+                val allowed = (target.entryId == null || target.entryId == entryId) &&
+                    (moduleId in permittedSourceIds || "$moduleId:entry:$entryId" in permittedSourceIds)
                 if (allowed) retain(asset, MediaAssetSlot.MODULE_IMAGE, moduleId, entryId)
             }
         }

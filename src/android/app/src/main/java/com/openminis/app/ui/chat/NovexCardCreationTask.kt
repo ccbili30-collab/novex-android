@@ -13,7 +13,7 @@ internal object NovexCardCreationTask {
                 .put("cards", JSONArray(cards.map { JSONObject().put("kind", it.first).put("id", it.second).put("name", names[it]) })).toString())
     }
     fun evaluate(blocks: List<AssistantBlock>): Outcome? {
-        val calls = blocks.filter { it.kind == "tool_use" && it.toolName == "novex_write_card" }
+        val calls = blocks.filter { it.kind == "tool_use" && it.toolName in setOf("novex_write_card", "novex_update_card") }
             .associateBy { it.id }.values
         if (calls.isEmpty()) return null
         val verified = mutableListOf<Pair<String, String>>()
@@ -24,7 +24,7 @@ internal object NovexCardCreationTask {
             if (block.toolStatus != ToolBlockStatus.SUCCESS || receipt?.optString("status") != "saved_verified") {
                 unfinished = true
             } else {
-                val cards = receipt.optJSONArray("created_cards") ?: JSONArray()
+                val cards = receipt.optJSONArray(if (block.toolName == "novex_update_card") "updated_cards" else "created_cards") ?: JSONArray()
                 for (index in 0 until cards.length()) {
                     val card = cards.optJSONObject(index) ?: continue
                     val kind = card.optString("kind")

@@ -52,6 +52,10 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.SetSettingEnabled(target, enabled),
     )
 
+    fun setReferenceEnabled(id: String, enabled: Boolean) = apply(
+        NovexConversationCommand.SetReferenceEnabled(id, enabled),
+    )
+
     fun activateGame(snapshot: ActiveInteractiveFictionSnapshot, replacePlayerIdentity: Boolean = false) = apply(
         NovexConversationCommand.ActivateInteractiveFiction(snapshot, replacePlayerIdentity),
     )

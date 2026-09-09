@@ -218,6 +218,7 @@ sealed interface NovexConversationCommand {
     data class AddBackground(val subject: NovexContentAddress) : NovexConversationCommand
     data class RemoveBackground(val subject: NovexContentAddress) : NovexConversationCommand
     data class SetSettingEnabled(val target: NovexReferenceTarget, val enabled: Boolean) : NovexConversationCommand
+    data class SetReferenceEnabled(val referenceId: String, val enabled: Boolean) : NovexConversationCommand
     data class MountSubject(
         val subject: NovexContentAddress,
         val access: ManagedAccess,
@@ -394,6 +395,9 @@ class NovexConversationConfiguration private constructor(
             withSnapshot(snapshot.copy(disabledSettings = if (command.enabled) snapshot.disabledSettings - command.target
                 else snapshot.disabledSettings + command.target))
         }
+
+        is NovexConversationCommand.SetReferenceEnabled -> withSnapshot(
+            NovexWorldbookUse.setReference(snapshot, command.referenceId, command.enabled))
 
         is NovexConversationCommand.MountSubject -> {
             val mounted = ManagedSubject(command.subject, command.access)

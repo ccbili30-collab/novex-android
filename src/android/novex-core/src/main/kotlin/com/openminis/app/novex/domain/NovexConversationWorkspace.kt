@@ -178,6 +178,15 @@ interface NovexConversationWorkspaceStore {
         provenance: NovexWorkspaceProvenance,
     ): NovexWorkspaceEntry
 
+    /** Validated application snapshots can include original history beyond model-write limits.
+     * This capability is not exposed by the arbitrary workspace text tool. */
+    fun writeSnapshot(
+        scope: NovexConversationWorkspaceScope,
+        relativePath: String,
+        content: String,
+        provenance: NovexWorkspaceProvenance,
+    ): NovexWorkspaceEntry
+
     fun importArtifact(
         scope: NovexConversationWorkspaceScope,
         area: NovexWorkspaceArea,
@@ -246,6 +255,42 @@ class FileNovexConversationWorkspaceStore(
         }
     }
 
+    /**
+     * Native recovery for the old UI-only reply branch bug. The caller supplies actual
+     * persisted assistant IDs from this conversation's active path, never model input.
+     * Originals remain available to archives; conflicts are never overwritten.
+     */
+    @Synchronized
+    fun recoverLegacyReplyFiles(conversationId: String, persistedAssistantIds: Set<String>): Int {
+        if (persistedAssistantIds.isEmpty()) return 0
+        val candidates = inspectConversation(conversationId).flatMap { it.entries }.filter { entry ->
+            entry.workspaceRef.branchId.matches(Regex("assistant_[0-9]+")) &&
+                entry.provenance.messageId in persistedAssistantIds &&
+                entry.provenance.messageId != entry.workspaceRef.branchId
+        }.groupBy { entry ->
+            NovexWorkspaceFileRef.create(conversationId, requireNotNull(entry.provenance.messageId),
+                entry.workspaceRef.area, entry.workspaceRef.relativePath)
+        }
+        var restored = 0
+        candidates.forEach { (target, originals) ->
+            // Multiple old replies must not be arbitrarily collapsed into one file.
+            if (originals.map { it.sha256 to it.mimeType }.distinct().size != 1) return@forEach
+            val scope = NovexConversationWorkspaceScope(conversationId, listOf(target.branchId), target.branchId)
+            if (find(scope, target) != null) return@forEach
+            val original = originals.first()
+            val sourceScope = NovexConversationWorkspaceScope(conversationId,
+                listOf(original.workspaceRef.branchId), original.workspaceRef.branchId)
+            val bytes = runCatching { readBytes(sourceScope, original.workspaceRef) }.getOrNull() ?: return@forEach
+            if (bytes.size.toLong() != original.byteCount || sha256(bytes) != original.sha256) return@forEach
+            val sourceRefs = (original.provenance.sourceRefs + originals.map { it.workspaceRef.asResourceRef() }).distinct()
+            writeEntry(scope, target.area, target.relativePath, bytes, original.mimeType,
+                original.provenance.copy(branchId = target.branchId, sourceRefs = sourceRefs),
+                forceArtifact = original.artifactRef != null)
+            restored++
+        }
+        return restored
+    }
+
     @Synchronized
     override fun inspect(scope: NovexConversationWorkspaceScope): NovexWorkspaceSnapshot {
         val visible = linkedMapOf<String, NovexWorkspaceEntry>()
@@ -300,6 +345,21 @@ class FileNovexConversationWorkspaceStore(
         val bytes = content.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_MODEL_TEXT_BYTES) { "工作区文本超过单文件上限" }
         return writeEntry(scope, area, relativePath, bytes, mimeType, provenance, forceArtifact = area == NovexWorkspaceArea.OUTPUTS)
+    }
+
+    @Synchronized
+    override fun writeSnapshot(
+        scope: NovexConversationWorkspaceScope,
+        relativePath: String,
+        content: String,
+        provenance: NovexWorkspaceProvenance,
+    ): NovexWorkspaceEntry {
+        require(relativePath.startsWith("checkpoint-") && relativePath.endsWith(".json") && !relativePath.contains('/')) {
+            "存档入口只接受正式存档文件"
+        }
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_ARTIFACT_BYTES) { "存档包含的历史超过 64 MiB，未保存；已有存档保留" }
+        return writeEntry(scope, NovexWorkspaceArea.SAVES, relativePath, bytes, "application/json", provenance, forceArtifact = true)
     }
 
     @Synchronized
@@ -529,10 +589,19 @@ private fun decodeRefSegment(value: String): String {
             bytes += decoded.toByte()
             index += 3
         } else {
-            require(value[index].code < 128) { "资源引用必须转义非 ASCII 字符" }
-            bytes += value[index].code.toByte()
-            index += 1
+            // Accept the displayed path as well as percent-encoded references.
+            // Decode once, then let create() validate and canonicalize the path.
+            val codePoint = Character.codePointAt(value, index)
+            require(codePoint !in 0xD800..0xDFFF) { "资源引用包含不完整的字符" }
+            val length = Character.charCount(codePoint)
+            bytes.addAll(value.substring(index, index + length).toByteArray(Charsets.UTF_8).toList())
+            index += length
         }
     }
-    return bytes.toByteArray().toString(Charsets.UTF_8)
+    return runCatching {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            .decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString()
+    }.getOrElse { throw IllegalArgumentException("资源引用包含无效的 UTF-8（字符编码）", it) }
 }

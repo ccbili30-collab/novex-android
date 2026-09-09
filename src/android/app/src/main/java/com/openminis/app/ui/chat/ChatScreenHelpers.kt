@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-// [T-android-split-chat] Camera/file URI helpers + PendingNonTextSelection model
+// [T-android-split-chat] Camera/file URI helpers
 // extracted verbatim from ChatScreen.kt. Full import block copied
 // (unused=warnings); all internal (used by the ChatScreen composable).
 
@@ -302,29 +302,6 @@ internal fun getFileName(context: android.content.Context, uri: Uri): String? {
  * it unsuitable for driving an Agent task, so the picker can show a
  * confirmation dialog before applying the binding.
  */
-internal sealed class PendingNonTextSelection {
-    abstract val modelDisplayName: String
-    abstract val modalityLabel: String
-
-    data class Group(
-        val groupId: String,
-        override val modelDisplayName: String,
-        override val modalityLabel: String,
-    ) : PendingNonTextSelection()
-
-    data class GroupEntry(
-        val groupId: String,
-        val entryId: String,
-        override val modelDisplayName: String,
-        override val modalityLabel: String,
-    ) : PendingNonTextSelection()
-
-    data class Entry(
-        val entryId: String,
-        override val modelDisplayName: String,
-        override val modalityLabel: String,
-    ) : PendingNonTextSelection()
-}
 
 // ── Voice-correction capture from plain text edits ────────────────────────────
 

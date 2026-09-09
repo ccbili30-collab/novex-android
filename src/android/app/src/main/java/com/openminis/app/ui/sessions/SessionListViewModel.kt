@@ -1105,7 +1105,6 @@ class SessionListViewModel(
         groupId: String? = null,
         folderId: String? = null,
     ): String? {
-        if (providerRepository.allVisibleEntries().isEmpty()) return null
         var id = "__new__${java.util.UUID.randomUUID()}"
         if (groupId != null) id += "__grp__$groupId"
         if (folderId != null) id += "__fld__$folderId"

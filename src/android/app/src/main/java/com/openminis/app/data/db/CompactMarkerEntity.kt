@@ -54,4 +54,5 @@ data class CompactMarkerEntity(
      * any backfill — matches the SQL `DEFAULT 1` set by MIGRATION_7_8.
      */
     val version: Int = 1,
+    @ColumnInfo(name = "history_scope_key") val historyScopeKey: String? = null,
 )

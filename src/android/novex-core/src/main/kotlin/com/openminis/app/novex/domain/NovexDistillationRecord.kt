@@ -12,6 +12,7 @@ data class NovexDistillationRecord(
     val sourceMessageRefs: List<NovexResourceRef>,
     val durableFactRefs: List<NovexResourceRef>,
     val createdAtMillis: Long,
+    val historyScopeKey: String? = null,
 ) {
     init {
         require(id.matches(Regex("[A-Za-z0-9._-]{1,128}"))) { "蒸馏记录编号无效" }
@@ -34,6 +35,7 @@ object NovexDistillationRecordCodec {
         .put("source_message_refs", JSONArray(record.sourceMessageRefs.map(NovexResourceRef::value)))
         .put("durable_fact_refs", JSONArray(record.durableFactRefs.map(NovexResourceRef::value)))
         .put("created_at_millis", record.createdAtMillis)
+        .put("history_scope_key", record.historyScopeKey)
         .toString()
 }
 

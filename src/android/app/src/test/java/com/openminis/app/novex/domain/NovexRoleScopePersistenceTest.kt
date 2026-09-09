@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.adapter.NovexWorkspaceFactory
+import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import com.openminis.app.novex.adapter.WorkspaceNovexContextLoader
 import java.io.File
 import kotlinx.coroutines.runBlocking

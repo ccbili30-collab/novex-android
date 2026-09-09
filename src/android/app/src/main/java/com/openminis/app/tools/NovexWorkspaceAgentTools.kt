@@ -18,10 +18,12 @@ class NovexWorkspaceAgentTools(
         scope: NovexConversationWorkspaceScope,
         provenance: NovexWorkspaceProvenance,
         visibleImports: Set<String>? = null,
+        historyScopeKey: String? = null,
     ): ToolExecutionResult {
         val router = NovexConversationWorkspaceToolRouter(
             NovexConversationWorkspaceTools(scope,
-                if (visibleImports == null) store else com.openminis.app.novex.domain.NovexWorkspaceVisibility(store, visibleImports), provenance),
+                if (visibleImports == null) store else com.openminis.app.novex.domain.NovexWorkspaceVisibility(store, visibleImports), provenance,
+                { entry, raw -> com.openminis.app.novex.domain.NovexCheckpointReadProjection.projectArchive(entry, raw, historyScopeKey) }),
         )
         val result = router.execute(name, argumentsJson)
         return ToolExecutionResult(

@@ -256,7 +256,7 @@ internal fun ModelPickerSheet(
     var searchText by remember { mutableStateOf("") }
     var expandedGroupIds by remember { mutableStateOf(setOf<String>()) }
     // Note: the non-text-output "may not work as an Agent" confirmation lives
-    // in ChatScreen's callback wrappers (ee828dba), NOT here — the sheet stays
+    // in ChatModelSelectionSheet, not in this list — the sheet stays
     // a dumb list and the caller owns selection policy.
     val allInstanceIds = remember(config) {
         config.instances.filter { it.isEnabled }.map { it.id }.toSet()

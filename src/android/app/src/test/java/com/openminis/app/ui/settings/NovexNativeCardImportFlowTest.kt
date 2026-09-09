@@ -7,11 +7,12 @@ import org.junit.Test
 
 class NovexNativeCardImportFlowTest {
     @Test
-    fun worldRootOffersOnlyTheNativeWorldCardContract() {
+    fun worldRootOffersNativeCardsAndReadableExternalFiles() {
         val spec = novexNativeCardImportSpec(NovexCardKind.WORLD)
 
         assertEquals("导入世界卡", spec.label)
-        assertEquals(".novexworld", spec.extensionLabel)
+        assertTrue(spec.extensionLabel.contains(".novexworld"))
+        assertTrue("*/*" in spec.mimeTypes)
         assertTrue("application/zip" in spec.mimeTypes)
     }
 
