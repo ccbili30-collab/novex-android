@@ -32,6 +32,12 @@ for scope in novex-document novex-domain novex-ui; do
   fi
 done
 
+cloud_domain="$(sed -n '/            novex-domain)/,/              ;;/p' "$WORKFLOW")"
+if [[ "$cloud_domain" != *'":novex-core:test"'* ]]; then
+  echo "Cloud domain validation must include core tests, matching Windows" >&2
+  exit 1
+fi
+
 for expected in \
   'name: Android fast lane' \
   'workflow_dispatch:' \
