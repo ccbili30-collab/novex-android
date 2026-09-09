@@ -1543,13 +1543,14 @@
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">Welcome to Novex</string>
-    <string name="sessionlist_welcome_subtitle">Your first interactive-fiction companion</string>
+    <string name="sessionlist_welcome_subtitle">A space for conversations and creation</string>
+    <string name="sessionlist_welcome_draft_hint">Start a draft now; connect a model before sending</string>
     <string name="sessionlist_welcome_step1_title">Connect an AI model</string>
     <string name="sessionlist_welcome_step1_subtitle">Enter an OpenAI-compatible API address and key</string>
     <string name="sessionlist_welcome_step2_title">Select Models</string>
     <string name="sessionlist_welcome_step2_subtitle">Choose the models you want to use</string>
     <string name="sessionlist_welcome_step2_locked">Complete step 1 first</string>
-    <string name="sessionlist_welcome_step3_title">Start your first story</string>
+    <string name="sessionlist_welcome_step3_title">Start a conversation</string>
     <string name="sessionlist_welcome_step3_subtitle">Tap to begin</string>
     <string name="sessionlist_welcome_step3_locked">Complete step 2 first</string>
     <string name="sessionlist_welcome_step_done">Done</string>

@@ -63,7 +63,12 @@ class NovexNoModelDraftInteractionTest {
                 if (visible) ChatScreen(route, app.chatRepository, app.providerRepository,
                     onBack = { visible = false }, onBackReturnsToList = true,
                     onSettings = { openedSettings = true })
-                else Text("对话列表")
+                else com.openminis.app.ui.sessions.SessionListScreen(
+                    app.chatRepository, app.providerRepository,
+                    onSessionClick = { route = it; visible = true },
+                    onNewChat = { route = it; visible = true },
+                    onSettingsClick = { openedSettings = true },
+                )
             } }
             ui.waitUntil(30_000) { ui.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
             val meter = ui.onNodeWithContentDescription("上下文占用尚无记录", substring = true).getUnclippedBoundsInRoot()
@@ -90,6 +95,8 @@ class NovexNoModelDraftInteractionTest {
                     ?.also { persistedId = it.id } != null
             } }
             val id = requireNotNull(persistedId)
+            val draftTitle = "未连接模型的草稿"
+            runBlocking { app.chatRepository.updateSessionTitle(id, draftTitle) }
             assertEquals(0, runBlocking { app.chatRepository.messageCount(id) })
             ui.onNodeWithContentDescription("Send").performTouchInput { click() }
             ui.waitUntil(15_000) { ui.onAllNodesWithText("连接模型", substring = false).fetchSemanticsNodes().isNotEmpty() }
@@ -107,7 +114,8 @@ class NovexNoModelDraftInteractionTest {
                 android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
             ui.waitUntil(10_000) { !visible }
             runBlocking { ChatViewModelStore.stopAndJoin(id); ChatViewModelStore.finishDeletion(id, false) }
-            ui.runOnIdle { route = id; visible = true }
+            ui.waitUntil(30_000) { ui.onAllNodesWithText(draftTitle).fetchSemanticsNodes().isNotEmpty() }
+            ui.onNodeWithText(draftTitle).performTouchInput { click() }
             // Loading the saved draft is asynchronous; field creation is not restoration completion.
             ui.waitUntil(30_000) { ui.onAllNodes(hasSetTextAction() and hasText(original)).fetchSemanticsNodes().size == 1 }
             ui.onNode(hasSetTextAction()).assertTextEquals(original)

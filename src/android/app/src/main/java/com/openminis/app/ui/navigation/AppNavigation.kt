@@ -15,7 +15,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import com.openminis.app.data.model.hasUsableNovexModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.openminis.app.deeplink.DeepLinkAction
@@ -572,18 +571,8 @@ fun AppNavigation(
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
-            val providerConfig by providerRepository.config.collectAsState()
             val configLoaded by providerRepository.configLoaded.collectAsState()
             if (!configLoaded) return@composable
-            if (!providerConfig.hasUsableNovexModel()) {
-                LaunchedEffect(Unit) {
-                    navController.navigate(Routes.SESSION_LIST) {
-                        popUpTo(Routes.SESSION_LIST) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }
-                return@composable
-            }
             ChatScreen(
                 sessionId = sessionId,
                 onBackReturnsToList = navController.previousBackStackEntry?.destination?.route == Routes.SESSION_LIST,

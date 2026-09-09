@@ -1299,13 +1299,14 @@
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">欢迎使用 Novex</string>
-    <string name="sessionlist_welcome_subtitle">你的第一个文游伙伴</string>
+    <string name="sessionlist_welcome_subtitle">交流、整理资料，一起创作</string>
+    <string name="sessionlist_welcome_draft_hint">可以先写草稿，发送前再连接模型</string>
     <string name="sessionlist_welcome_step1_title">连接人工智能模型</string>
     <string name="sessionlist_welcome_step1_subtitle">填写 OpenAI 兼容接口地址和 API 密钥</string>
     <string name="sessionlist_welcome_step2_title">选择模型</string>
     <string name="sessionlist_welcome_step2_subtitle">选择你想使用的模型</string>
     <string name="sessionlist_welcome_step2_locked">请先完成第 1 步</string>
-    <string name="sessionlist_welcome_step3_title">开始第一个故事</string>
+    <string name="sessionlist_welcome_step3_title">开始对话</string>
     <string name="sessionlist_welcome_step3_subtitle">点击开始</string>
     <string name="sessionlist_welcome_step3_locked">请先完成第 2 步</string>
     <string name="sessionlist_welcome_step_done">已完成</string>

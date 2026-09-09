@@ -587,7 +587,8 @@
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">歡迎使用 Novex</string>
-    <string name="sessionlist_welcome_subtitle">你的第一個端側 Agent 即將就緒。</string>
+    <string name="sessionlist_welcome_subtitle">交流、整理資料，一起創作</string>
+    <string name="sessionlist_welcome_draft_hint">可以先寫草稿，傳送前再連接模型</string>
     <string name="overlay_completion_completed">執行完成</string>
     <string name="overlay_completion_failed">執行失敗</string>
     <string name="overlay_completion_cancelled">已取消</string>

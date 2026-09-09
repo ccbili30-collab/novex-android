@@ -755,17 +755,7 @@ fun SessionListScreen(
                         },
                     )
                 }
-                if (!hasGroups) {
-                    if (configLoaded) {
-                        OnboardingLanding(
-                            hasProviders = hasProviders,
-                            hasGroups = false,
-                            onAddProvider = onAddProviderClick,
-                            onSelectModels = onSelectModelsClick,
-                            onStartConversation = {},
-                        )
-                    }
-                } else if (sessions.isEmpty() && worlds.isEmpty()) {
+                if (sessions.isEmpty() && worlds.isEmpty()) {
                     if (isSearchActive && searchQuery.isNotBlank()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -2621,7 +2611,7 @@ private fun SessionRow(
     val style = remember(session.category) { categoryStyle(session.category) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val timeText = remember(session.updatedAt, ctx) { relativeDate(ctx, session.updatedAt) }
-    val titleText = session.title?.takeIf { it.isNotBlank() } ?: "新文游"
+    val titleText = session.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.new_chat)
     val rowHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     // [T-android-sessionrow-press-indication] The long-press path uses raw
@@ -3016,11 +3006,11 @@ private fun OnboardingLanding(
                     subtitle = if (hasGroups) {
                         stringResource(R.string.sessionlist_welcome_step3_subtitle)
                     } else {
-                        stringResource(R.string.sessionlist_welcome_step3_locked)
+                        stringResource(R.string.sessionlist_welcome_draft_hint)
                     },
                     isDone = false,
-                    isLocked = !hasGroups,
-                    onClick = { if (hasGroups) onStartConversation() },
+                    isLocked = false,
+                    onClick = onStartConversation,
                 )
             }
         }
