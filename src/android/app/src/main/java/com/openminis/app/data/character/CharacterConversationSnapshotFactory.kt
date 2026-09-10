@@ -14,6 +14,27 @@ class CharacterConversationSnapshotFactory(
     private val modules: ContentModuleRepository,
     private val media: MediaAssetRepository,
 ) {
+    suspend fun createWorldProfile(
+        worldId: String,
+        persona: PlayerPersona?,
+    ): ImmersiveChatProfile {
+        val world = requireNotNull(catalog.world(worldId)) { "世界不存在" }
+        require(persona == null || persona.worldId == worldId) { "玩家身份不属于所选世界" }
+        val owner = ModuleOwner.world(worldId)
+        val backgroundPath = media.assetFor(owner, MediaAssetSlot.WORLD_BACKGROUND)?.managedPath
+        val snapshot = world.toStoryWorldSnapshot(
+            moduleText = modules.list(owner).moduleText(),
+            backgroundPath = backgroundPath,
+        )
+        return ImmersiveChatProfile(
+            world = snapshot,
+            persona = persona,
+            worldId = world.id,
+            backgroundPath = snapshot.backgroundPath,
+            rolePresentationEnabled = false,
+        )
+    }
+
     suspend fun create(
         worldId: String,
         characterVersionId: String,
@@ -38,24 +59,10 @@ class CharacterConversationSnapshotFactory(
             MediaAssetSlot.CHARACTER_PAGE_BACKGROUND,
         )?.managedPath
 
-        val legacyWorldSnapshot = world.legacySnapshotJson
-            ?.let { raw -> runCatching { StoryWorld.fromJson(JSONObject(raw)) }.getOrNull() }
-        val worldSnapshot = legacyWorldSnapshot
-            ?.copy(
-                id = world.id,
-                name = world.name,
-                description = combineSections(world.overview, worldModules),
-                backgroundPath = worldBackground ?: legacyWorldSnapshot.backgroundPath,
-                updatedAt = world.updatedAt,
-            )
-            ?: StoryWorld(
-                id = world.id,
-                name = world.name,
-                description = combineSections(world.overview, worldModules),
-                backgroundPath = worldBackground,
-                createdAt = world.createdAt,
-                updatedAt = world.updatedAt,
-            )
+        val worldSnapshot = world.toStoryWorldSnapshot(
+            moduleText = worldModules.moduleText(),
+            backgroundPath = worldBackground,
+        )
 
         val imported = runCatching { CharacterCard.fromJson(JSONObject(version.profileJson)) }.getOrNull()
         val fixedProfile = fixedProfileText(profile)
@@ -120,12 +127,6 @@ class CharacterConversationSnapshotFactory(
         updatedAt = version.updatedAt,
     )
 
-    private fun combineSections(overview: String, values: List<ContentModuleEntity>): String =
-        buildList {
-            overview.trim().takeIf(String::isNotEmpty)?.let(::add)
-            values.moduleText().takeIf(String::isNotEmpty)?.let(::add)
-        }.joinToString("\n\n")
-
     private fun List<ContentModuleEntity>.withType(type: ContentModuleType): String =
         filter { it.type == type }.moduleText()
 
@@ -152,4 +153,30 @@ class CharacterConversationSnapshotFactory(
             }
         }
     }.joinToString("\n")
+}
+
+internal fun WorldEntity.toStoryWorldSnapshot(
+    moduleText: String,
+    backgroundPath: String?,
+): StoryWorld {
+    val description = buildList {
+        overview.trim().takeIf(String::isNotEmpty)?.let(::add)
+        moduleText.trim().takeIf(String::isNotEmpty)?.let(::add)
+    }.joinToString("\n\n")
+    val legacy = legacySnapshotJson
+        ?.let { raw -> runCatching { StoryWorld.fromJson(JSONObject(raw)) }.getOrNull() }
+    return legacy?.copy(
+        id = id,
+        name = name,
+        description = description,
+        backgroundPath = backgroundPath ?: legacy.backgroundPath,
+        updatedAt = updatedAt,
+    ) ?: StoryWorld(
+        id = id,
+        name = name,
+        description = description,
+        backgroundPath = backgroundPath,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
 }

@@ -110,6 +110,7 @@ fun ConversationSettingsScreen(
     var hydrated by remember(sessionId) { mutableStateOf(ready) }
     var prompt by remember(sessionId) { mutableStateOf(seed.conversationPrompt) }
     var imageStyle by remember(sessionId) { mutableStateOf(seed.imageStylePrompt) }
+    var backgroundOverride by remember(sessionId) { mutableStateOf(seed.backgroundPath) }
     var roleDisplay by remember(sessionId) { mutableStateOf(seed.rolePresentationEnabled) }
     var assistantName by remember(sessionId) { mutableStateOf(seed.assistantDisplayName) }
     var assistantAvatar by remember(sessionId) { mutableStateOf(seed.assistantAvatarPath) }
@@ -123,6 +124,7 @@ fun ConversationSettingsScreen(
     fun current() = ConversationSettingsSnapshot(
         conversationPrompt = prompt,
         imageStylePrompt = imageStyle,
+        backgroundPath = backgroundOverride,
         rolePresentationEnabled = roleDisplay,
         assistantDisplayName = assistantName,
         assistantAvatarPath = assistantAvatar,
@@ -135,6 +137,7 @@ fun ConversationSettingsScreen(
             initial = loaded
             prompt = loaded.conversationPrompt
             imageStyle = loaded.imageStylePrompt
+            backgroundOverride = loaded.backgroundPath
             roleDisplay = loaded.rolePresentationEnabled
             assistantName = loaded.assistantDisplayName
             assistantAvatar = loaded.assistantAvatarPath
@@ -162,6 +165,7 @@ fun ConversationSettingsScreen(
 
     val assistantPicker = conversationImagePicker("conversation-assistant-avatar") { assistantAvatar = it }
     val playerPicker = conversationImagePicker("conversation-player-avatar") { playerAvatar = it }
+    val backgroundPicker = conversationImagePicker("conversation-background") { backgroundOverride = it }
 
     BackHandler(onBack = ::leave)
     Scaffold(
@@ -247,6 +251,57 @@ fun ConversationSettingsScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { imageStyle = "" }, enabled = imageStyle.isNotEmpty()) {
                     Text("清除固定风格")
+                }
+            }
+
+            SettingsTitle("对话背景")
+            Text(
+                "只改变当前对话的背景。恢复来源背景后，会重新跟随角色卡或世界的背景设置。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+            val effectiveBackground = backgroundOverride ?: viewModel.sourceConversationBackgroundPath()
+            val backgroundFile = effectiveBackground
+                ?.takeIf(String::isNotBlank)
+                ?.let { java.io.File(it) }
+                ?.takeIf { it.exists() }
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (backgroundFile != null) {
+                    AsyncImage(
+                        model = backgroundFile,
+                        contentDescription = "当前对话背景预览",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "当前没有背景图片",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(onClick = backgroundPicker) {
+                    Text(if (backgroundFile == null) "选择背景" else "更换背景")
+                }
+                if (backgroundOverride != null) {
+                    TextButton(onClick = { backgroundOverride = null }) {
+                        Text("恢复来源背景")
+                    }
                 }
             }
 

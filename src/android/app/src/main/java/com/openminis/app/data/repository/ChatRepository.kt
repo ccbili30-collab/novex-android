@@ -150,6 +150,7 @@ class ChatRepository(internal val dao: ChatDao) {
             id = sessionId,
             conversationPrompt = value.conversationPrompt,
             imageStylePrompt = value.imageStylePrompt.ifBlank { null },
+            chatBackgroundPath = value.backgroundPath,
             rolePresentationEnabled = if (value.rolePresentationEnabled) 1 else 0,
             assistantDisplayName = value.assistantDisplayName.ifBlank { null },
             assistantAvatarPath = value.assistantAvatarPath,

@@ -368,6 +368,7 @@ interface ChatDao {
         UPDATE sessions SET
             conversation_prompt = :conversationPrompt,
             image_style_prompt = :imageStylePrompt,
+            chat_background_path = :chatBackgroundPath,
             role_presentation_enabled = :rolePresentationEnabled,
             assistant_display_name = :assistantDisplayName,
             assistant_avatar_path = :assistantAvatarPath,
@@ -380,6 +381,7 @@ interface ChatDao {
         id: String,
         conversationPrompt: String?,
         imageStylePrompt: String?,
+        chatBackgroundPath: String?,
         rolePresentationEnabled: Int,
         assistantDisplayName: String?,
         assistantAvatarPath: String?,

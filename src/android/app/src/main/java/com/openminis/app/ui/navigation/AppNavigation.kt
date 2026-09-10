@@ -662,11 +662,10 @@ fun AppNavigation(
                 },
                 onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
                 onStartWorldNovax = { personaId ->
-                    val draft = buildString {
-                        append("__new__").append(java.util.UUID.randomUUID())
-                        append("__world__").append(worldId)
-                        personaId?.let { append("__persona__").append(it) }
-                    }
+                    val draft = buildChatDraftId(
+                        draftId = java.util.UUID.randomUUID().toString(),
+                        context = ChatDraftContext(worldId = worldId, personaId = personaId),
+                    )
                     navController.safeNavigate(Routes.chat(draft))
                 },
                 onStartCharacterChat = { versionId, personaId ->

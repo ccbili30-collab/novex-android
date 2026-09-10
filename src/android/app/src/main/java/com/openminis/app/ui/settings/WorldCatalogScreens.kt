@@ -177,9 +177,7 @@ fun CatalogWorldDetailScreen(
 ) {
     val context = LocalContext.current
     CharacterCardStore.initialize(context)
-    val legacyWorlds by CharacterCardStore.worlds.collectAsState()
     val allPersonas by CharacterCardStore.personas.collectAsState()
-    val legacyWorld = legacyWorlds.firstOrNull { it.id == worldId }
     val personas = allPersonas.filter { it.worldId == worldId }
     val app = context.applicationContext as MinisApp
     val catalog = remember(app) { CharacterCatalogRepository(app.database.characterCatalogDao()) }
@@ -257,6 +255,20 @@ fun CatalogWorldDetailScreen(
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge,
                     )
+                }
+                SettingsSection(
+                    header = "开始对话",
+                    footer = "不需要先创建角色卡或玩家身份；世界设定会直接加入这段对话。",
+                ) {
+                    Button(
+                        onClick = {
+                            onStartWorldNovax(
+                                personas.firstOrNull { it.isDefault }?.id
+                                    ?: personas.firstOrNull()?.id,
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    ) { Text("开始世界对话") }
                 }
                 SharedContentModuleEditor(
                     owner = owner,
@@ -338,19 +350,6 @@ fun CatalogWorldDetailScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Text(if (personas.isEmpty()) "添加玩家身份" else "新增玩家身份")
-                    }
-                }
-                if (legacyWorld != null) {
-                    SettingsSection(header = "Nova 世界助手") {
-                        SettingsRow(
-                            title = "与 Nova 讨论这个世界",
-                            subtitle = "沿用升级前的世界观和玩家身份，不扮演角色卡。",
-                            onClick = {
-                                onStartWorldNovax(
-                                    personas.firstOrNull { it.isDefault }?.id ?: personas.firstOrNull()?.id,
-                                )
-                            },
-                        )
                     }
                 }
                 val worldSessions = sessions.filter { session ->
