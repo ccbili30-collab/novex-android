@@ -112,6 +112,17 @@ internal object NovexBulletinDefaults {
         channel = UpdateChannel.STABLE,
         releases = listOf(
             fallbackRelease(
+                version = "0.2.16",
+                body = """
+                    ## 对话背景与世界会话修复
+
+                    - 修复对话设置无法选择、保存和恢复背景图片的问题。
+                    - 对话背景支持预览、更换，并可恢复为角色卡或世界来源背景。
+                    - 修复新建世界无法直接开始对话的问题；无需先创建角色卡或玩家身份。
+                    - 世界概述、设定模块和世界背景会正确加入新对话。
+                """.trimIndent(),
+            ),
+            fallbackRelease(
                 version = "0.2.14",
                 body = """
                     ## 公告
