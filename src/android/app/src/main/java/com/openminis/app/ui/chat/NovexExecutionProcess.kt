@@ -29,8 +29,15 @@ private fun ToolBlockStatus?.displayLabel(): String = when (this) {
 
 @Composable
 internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
-    Text("执行过程 · ${process.statusLabel()}${if (process.tools.isEmpty()) "" else " · ${process.tools.size} 项操作"} ›", color = ChatColors.secondaryText,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onOpen).padding(horizontal = 8.dp, vertical = 14.dp))
+    val active=process.statusLabel()=="进行中"
+    val tools=if(active)process.tools.takeLast(3) else process.tools.takeLast(2)
+    Column(Modifier.fillMaxWidth().clickable(onClick=onOpen).padding(horizontal=8.dp,vertical=10.dp)) {
+        Text("${if(active)"正在处理" else "工作记录"} · ${process.statusLabel()} · ${process.tools.size} 项 ›",color=ChatColors.secondaryText)
+        tools.forEach { row->
+            val title=row.block.toolTitle.ifBlank {buildNovexStandardToolDetailPresentation(row.block.toolName,row.block.toolArgs,row.block.content)?.title ?: "查看操作详情"}
+            Text("${row.block.toolStatus.displayLabel()} · $title",color=ChatColors.secondaryText)
+        }
+    }
 }
 
 @Composable
@@ -61,7 +68,7 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
             val card = cards.optJSONObject(index) ?: continue
             val kind = card.optString("kind")
             val id = card.optString("id")
-            val label = when (kind) { "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
+            val label = when (kind) { "integrated" -> "卡片"; "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
             if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) {
                 Text(card.optString("name").takeIf(String::isNotBlank)?.let { "打开《$it》" } ?: "打开$label ${index + 1}")
             }

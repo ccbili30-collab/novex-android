@@ -510,7 +510,7 @@ private fun UpdateDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                if (update.channel == UpdateChannel.PREVIEW) {
+                if (update.channel != UpdateChannel.STABLE) {
                     Text(
                         stringResource(
                             if (update.isPrerelease) {
@@ -602,7 +602,7 @@ private fun UpdateDialog(
                     } else {
                         Text(
                             stringResource(
-                                if (update.channel == UpdateChannel.PREVIEW) {
+                                if (update.channel != UpdateChannel.STABLE) {
                                     R.string.check_update_download_preview_button
                                 } else {
                                     R.string.check_update_download_button
@@ -810,6 +810,6 @@ private fun AnnouncementItem(
 private fun updateChannelLabel(channel: UpdateChannel): String = stringResource(
     when (channel) {
         UpdateChannel.STABLE -> R.string.update_channel_stable
-        UpdateChannel.PREVIEW -> R.string.update_channel_preview
+        UpdateChannel.PREVIEW, UpdateChannel.PREVIEW_FREE -> R.string.update_channel_preview
     },
 )

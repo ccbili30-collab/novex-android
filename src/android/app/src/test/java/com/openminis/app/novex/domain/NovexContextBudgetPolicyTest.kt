@@ -5,9 +5,9 @@ import org.junit.Test
 
 class NovexContextBudgetPolicyTest {
     @Test
-    fun twoHundredThousandWindowCanUseSixtyThousandTokensOfStructuredModules() {
+    fun remainingWindowIsAvailableAfterHistoryAndOutput() {
         assertEquals(
-            60_000,
+            104_000,
             NovexContextBudgetPolicy.moduleBudget(
                 effectiveWindowTokens = 200_000,
                 occupiedTokens = 80_000,
@@ -17,9 +17,9 @@ class NovexContextBudgetPolicyTest {
     }
 
     @Test
-    fun oneMillionWindowKeepsAUsefulButBoundedRetrievalBudget() {
+    fun millionWindowIsNotSilentlyCappedAt128K() {
         assertEquals(
-            128_000,
+            868_000,
             NovexContextBudgetPolicy.moduleBudget(
                 effectiveWindowTokens = 1_000_000,
                 occupiedTokens = 100_000,

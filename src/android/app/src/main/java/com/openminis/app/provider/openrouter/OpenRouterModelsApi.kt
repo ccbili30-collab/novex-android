@@ -89,7 +89,7 @@ object OpenRouterModelsApi {
             val inputModalities = arch?.optJSONArray("input_modalities")?.toStringList().normalizeModalities()
             val outputModalities = arch?.optJSONArray("output_modalities")?.toStringList().normalizeModalities()
 
-            val contextWindow = obj.optInt("context_length").takeIf { it > 0 }
+            val contextWindow = com.openminis.app.data.model.ReportedContextWindow.read(obj)
             val maxOutputTokens = obj.optJSONObject("top_provider")
                 ?.optInt("max_completion_tokens")?.takeIf { it > 0 }
 

@@ -46,7 +46,7 @@ class NovexLongformPressureTest {
         )
 
         assertEquals(NovexLongformModelTier.EXTENDED, status.tier)
-        assertEquals(128_000, status.moduleBudgetTokens)
+        assertEquals(731_000, status.moduleBudgetTokens)
         assertTrue(composition.fragments.single().text.contains("沈砚"))
         assertTrue(composition.usedTokens <= status.moduleBudgetTokens)
     }

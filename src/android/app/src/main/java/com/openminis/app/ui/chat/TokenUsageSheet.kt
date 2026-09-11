@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,13 +53,39 @@ fun TokenUsageSheet(
     onDismiss: () -> Unit,
 ) {
     var stats by remember { mutableStateOf<ChatViewModel.SessionTokenStats?>(null) }
-    val contextWindow = remember { viewModel.currentModelContextWindow }
+    val capacity by viewModel.contextCapacity.collectAsState()
+    val contextWindow = capacity.second
+    val usedContext by viewModel.lastTurnContextTokens.collectAsState()
+    val estimatedContext by viewModel.contextEstimated.collectAsState()
+    val usageReady by viewModel.contextUsageReady.collectAsState()
+    var editingCapacity by remember { mutableStateOf(false) }
+    var capacityText by remember { mutableStateOf("") }
+    var capacityError by remember { mutableStateOf<String?>(null) }
+    val isStreaming by viewModel.isStreaming.collectAsState()
     val maxOutput = remember { viewModel.currentModelMaxOutputTokens }
     val thinking = remember { viewModel.thinkingInfo() }
 
     LaunchedEffect(Unit) {
         stats = viewModel.loadSessionTokenStats()
     }
+
+    if (editingCapacity) com.openminis.app.ui.novex.AlertDialog(
+        onDismissRequest = { editingCapacity = false },
+        title = { Text("模型上下文上限") },
+        text = { Column {
+            Text("填写当前服务支持的词元数；留空恢复自动识别。")
+            com.openminis.app.ui.novex.OutlinedTextField(value = capacityText, onValueChange = { capacityText = it; capacityError = null },
+                singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+            capacityError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { com.openminis.app.ui.novex.TextButton(enabled = !isStreaming, onClick = {
+            val parsed = capacityText.trim().toIntOrNull()
+            if (capacityText.isNotBlank() && (parsed == null || parsed < 1024)) capacityError = "请输入至少 1024 的整数"
+            else runCatching { viewModel.saveModelContextWindow(parsed) }
+                .onSuccess { editingCapacity = false }.onFailure { capacityError = it.message }
+        }) { Text("保存") } },
+        dismissButton = { com.openminis.app.ui.novex.TextButton(onClick = { editingCapacity = false }) { Text("取消") } },
+    )
 
     StandardChatSheet(
         title = stringResource(R.string.token_usage_sheet_title),
@@ -83,9 +110,14 @@ fun TokenUsageSheet(
             val yesText = stringResource(R.string.common_yes)
             val noText = stringResource(R.string.common_no)
             StatSection(title = stringResource(R.string.token_usage_section_context)) {
-                StatRow(stringResource(R.string.token_usage_context_used), formatTokens(s?.context ?: 0))
+                StatRow(if (estimatedContext) "本轮预计用量" else "本轮实际用量", if (usageReady) formatTokens(usedContext) else "尚未完成装配")
                 contextWindow?.let { StatRow(stringResource(R.string.token_usage_context_window), formatTokens(it)) }
                 maxOutput?.let { StatRow(stringResource(R.string.token_usage_max_output), formatTokens(it)) }
+                if(viewModel.modelContextIsEstimated) Text("未取得明确容量，当前按型号估算；可在模型设置中填写上游公布的容量。")
+                NovexContextLimitControl(capacity.first, contextWindow, !isStreaming, viewModel::saveConversationContextLimit)
+                if (viewModel.canEditModelCapacity) com.openminis.app.ui.novex.TextButton(enabled = !isStreaming, onClick = {
+                    capacityText = capacity.first?.toString().orEmpty(); capacityError = null; editingCapacity = true
+                }) { Text("校正模型上限") }
             }
 
             val longform = NovexLongformModelPolicy.evaluate(

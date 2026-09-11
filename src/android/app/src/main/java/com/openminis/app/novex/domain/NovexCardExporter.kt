@@ -324,10 +324,12 @@ internal class NovexCardExporter(
         if (document !is ContentModuleDocument.SingleImage) {
             media.add("$pathPrefix/${module.id}", mainImage)?.let { content.put("image", JSONObject().put("path", it)) }
         }
-        val retainedSource = runCatching { JSONObject(module.contentJson).optJSONObject("_novexTransferSource") }.getOrNull()
-        val retainedContent = retainedSource?.optJSONObject("content")?.let { JSONObject(it.toString()) } ?: JSONObject()
-        listOf("text", "description", "image", "nodes", "items").forEach(retainedContent::remove)
+        // These objects belong to this export only. Serializing and parsing them to copy
+        // would repeatedly duplicate a large body just before replacing that same body.
         val liveModule = runCatching { JSONObject(module.contentJson) }.getOrNull()
+        val retainedSource = liveModule?.optJSONObject("_novexTransferSource")
+        val retainedContent = retainedSource?.optJSONObject("content") ?: JSONObject()
+        listOf("text", "description", "image", "nodes", "items").forEach(retainedContent::remove)
         // The editor accepts ordinary JSON extensions as well as rendered fields.
         // A typed display model is not a complete serialization of that document.
         // Keep author data; only our envelope and separately assembled media/links
@@ -345,7 +347,7 @@ internal class NovexCardExporter(
         else retainedContent.remove(NovexStoryIllustrations.FIELD)
         if (liveModule?.has(NovexModuleImageOrigins.FIELD) == true) retainedContent.put(NovexModuleImageOrigins.FIELD, liveModule.get(NovexModuleImageOrigins.FIELD))
         else retainedContent.remove(NovexModuleImageOrigins.FIELD)
-        return (retainedSource?.let { JSONObject(it.toString()) } ?: JSONObject())
+        return (retainedSource ?: JSONObject())
             .put("id", module.id)
             .put("type", originalType)
             .put("title", module.name)
@@ -363,8 +365,7 @@ internal class NovexCardExporter(
                             versionSourceIds[reference.targetId] ?: reference.targetId
                         } else reference.targetId))
                 }
-                val pending = runCatching { JSONObject(module.contentJson)
-                    .optJSONArray("_novexPendingReferences") }.getOrNull()
+                val pending = liveModule?.optJSONArray("_novexPendingReferences")
                 if (pending != null) repeat(pending.length()) { put(pending.get(it)) }
             })
     }

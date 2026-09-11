@@ -57,7 +57,7 @@ class NovexOperationJournal(private val directory: File) {
             ToolExecutionResult(it.getString("output"), it.getBoolean("success"),
                 it.optString("imageData").takeIf(String::isNotBlank)?.let(Base64.getDecoder()::decode),
                 it.optional("imageMimeType"), it.optString("toolTitle"), it.optional("pageURL"),
-                it.optional("imageFilePath"), it.optional("imageLinuxPath"), it.optBoolean("timedOut"))
+                it.optional("imageFilePath"), it.optional("imageLinuxPath"), it.optBoolean("timedOut"), it.optional("stopAgentReason"))
         }
         return NovexOperationRecord(operation, NovexOperationStatus.valueOf(json.getString("status")), result)
     }
@@ -77,7 +77,7 @@ class NovexOperationJournal(private val directory: File) {
         record.result?.let { r -> json.put("result", JSONObject().put("output", r.output).put("success", r.success)
             .put("imageData", r.imageData?.let(Base64.getEncoder()::encodeToString))
             .put("imageMimeType", r.imageMimeType).put("toolTitle", r.toolTitle).put("pageURL", r.pageURL)
-            .put("imageFilePath", r.imageFilePath).put("imageLinuxPath", r.imageLinuxPath).put("timedOut", r.timedOut)) }
+            .put("imageFilePath", r.imageFilePath).put("imageLinuxPath", r.imageLinuxPath).put("timedOut", r.timedOut).put("stopAgentReason", r.stopAgentReason)) }
         val target = path(op.id)
         val temp = File.createTempFile("operation-", ".pending", directory)
         try {

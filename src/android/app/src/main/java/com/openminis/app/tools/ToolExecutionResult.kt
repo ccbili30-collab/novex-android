@@ -27,6 +27,8 @@ data class ToolExecutionResult(
      * subclassification iOS handles inline via error-message parsing.
      */
     val timedOut: Boolean = false,
+    /** Non-retryable host failure: persist this result, then stop the current automatic run. */
+    val stopAgentReason: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -36,7 +38,7 @@ data class ToolExecutionResult(
             imageMimeType == other.imageMimeType && toolTitle == other.toolTitle &&
             pageURL == other.pageURL && imageFilePath == other.imageFilePath &&
             imageLinuxPath == other.imageLinuxPath &&
-            timedOut == other.timedOut
+            timedOut == other.timedOut && stopAgentReason == other.stopAgentReason
     }
 
     override fun hashCode(): Int {
@@ -49,6 +51,7 @@ data class ToolExecutionResult(
         result = 31 * result + (imageFilePath?.hashCode() ?: 0)
         result = 31 * result + (imageLinuxPath?.hashCode() ?: 0)
         result = 31 * result + timedOut.hashCode()
+        result = 31 * result + (stopAgentReason?.hashCode() ?: 0)
         return result
     }
 }

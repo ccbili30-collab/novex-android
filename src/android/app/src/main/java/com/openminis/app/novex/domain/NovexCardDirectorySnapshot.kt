@@ -60,7 +60,7 @@ internal class NovexCardDirectorySnapshot(private val workspace: NovexWorkspace)
             }
         }
         root.put("modules", json(modules.sortedWith(compareBy<ContentModuleEntity> { it.ownerId }.thenBy { it.position })))
-        root.put("moduleReferences", JSONObject().apply { modules.forEach { put(it.id, json(workspace.module(it.id)?.references.orEmpty())) } })
+        root.put("moduleReferences", JSONObject().apply { modules.forEach { put(it.id, json(workspace.moduleReferences(it.id))) } })
         root.put("references", JSONArray(owners.flatMap { workspace.referencesFrom(it) }.sortedBy { it.id }.map { JSONObject(NovexCardReferenceCodec.encode(it)) }))
         return canonicalRevisionJson(root)
     }

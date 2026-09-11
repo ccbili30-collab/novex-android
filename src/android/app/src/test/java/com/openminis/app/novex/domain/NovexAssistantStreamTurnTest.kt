@@ -19,13 +19,13 @@ class NovexAssistantStreamTurnTest {
         assertFalse(state.snapshot().blocks.single().executionText)
         assertTrue(visible.any { snapshot -> snapshot.blocks.any { it.isText && !it.executionText } })
         state.accept(Chunk.ToolUseStart("save", "save_checkpoint"), true) { visible += it }
-        assertTrue(state.snapshot().blocks.filter { it.isText }.all { it.executionText })
+        assertTrue(state.snapshot().blocks.filter { it.isText }.all { !it.executionText })
         state.reset()
         state.accept(Chunk.Text("雨后的街道安静下来。"), true) {}
         assertFalse(state.snapshot().blocks.single().executionText)
     }
 
-    @Test fun unexpectedReadonlyToolReclassifiesItsTextAndRetainsTheOriginal() = runBlocking {
+    @Test fun unexpectedReadonlyToolRetainsItsTextWithoutInferringAHiddenChannel() = runBlocking {
         val state = turn()
         val rendered = mutableListOf<AssistantStreamTurn.Snapshot>()
         state.accept(Chunk.Text("正在保存"), true) { rendered += it }
@@ -37,7 +37,7 @@ class NovexAssistantStreamTurnTest {
         val final = state.snapshot()
         assertEquals("正在保存这张卡。", final.text)
         assertEquals(1, final.blocks.count { it.isText })
-        assertTrue(final.blocks.first().executionText)
+        assertFalse(final.blocks.first().executionText)
         assertEquals("正在保存这张卡。", final.blocks.first().content)
         // Earlier emitted immutable snapshots cannot mutate underneath the renderer.
         assertEquals("正在保存", rendered.first().blocks.single().content)
@@ -102,12 +102,12 @@ class NovexAssistantStreamTurnTest {
         state.accept(Chunk.Text("说明"), true) {}
         state.accept(Chunk.ToolCallComplete("a", "read", JSONObject()), true) {}
         assertTrue(state.snapshot().blocks.first().isText)
-        assertTrue(state.snapshot().blocks.first().executionText)
+        assertFalse(state.snapshot().blocks.first().executionText)
         val startless = turn()
         startless.accept(Chunk.Text("准备"), false) {}
         startless.accept(Chunk.ToolCallComplete("x", "read", JSONObject()), false) {}
         assertEquals(listOf("text", "tool_use"), startless.snapshot().blocks.map { it.kind })
-        assertTrue(startless.snapshot().blocks.first().executionText)
+        assertFalse(startless.snapshot().blocks.first().executionText)
         assertEquals(ToolBlockStatus.PENDING, startless.snapshot().blocks.last().toolStatus)
     }
 }

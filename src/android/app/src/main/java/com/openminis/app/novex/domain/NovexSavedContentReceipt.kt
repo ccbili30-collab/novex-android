@@ -9,7 +9,7 @@ internal class NovexSavedContentReceipt(private val workspace: NovexWorkspace) {
     suspend fun fields(plan: NovexManagementPlan, applied: NovexManagementApplyResult): JSONObject {
         val created = applied.createdSubjects.map { card(it) }
         val updated = plan.changes.filterIsInstance<NovexManagedChange.UpdateCard>().map { card(it.target) }
-        val modules = applied.changedModuleIds.mapNotNull { workspace.module(it)?.module }.map { module ->
+        val modules = applied.changedModuleIds.mapNotNull { workspace.moduleContent(it) }.map { module ->
             val kind = when (module.ownerType) {
                 ModuleOwnerType.WORLD -> "world"
                 ModuleOwnerType.CHARACTER_VERSION -> "character_version"

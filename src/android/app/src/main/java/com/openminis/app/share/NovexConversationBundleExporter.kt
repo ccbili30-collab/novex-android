@@ -42,6 +42,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
         val localFiles = linkedMapOf<String, Pair<File, String?>>()
         val collectionRefs = linkedSetOf<String>()
         val documentRefs = linkedSetOf<String>()
+        val newCardRoots = linkedSetOf<String>()
         var totalBytes = 0L
         var messageCount = 0
         var traceCount = 0
@@ -97,6 +98,11 @@ class NovexConversationBundleExporter(private val context: Context, private val 
         fun scan(value: Any?) {
             when(value) {
                 is JSONObject -> {
+                    value.optJSONObject("cardBinding")?.let {binding->
+                        listOf("primary","backgrounds","managed").forEach {key->
+                            binding.optJSONArray(key)?.let {items->repeat(items.length()){i->newCardRoots+=items.getJSONObject(i).getString("root")}}
+                        }
+                    }
                     if(value.has("sourceAssetId") && value.has("sha256") && value.has("path")) media(value.optString("path"), value.optString("sha256"))
                     if(value.optString("type") == "mediaRef") value.optJSONObject("value")?.optString("relativePath")?.let { media(File(context.filesDir, "media/$it").path) }
                     if(value.optString("type") in setOf("toolUse", "uiToolUse")) value.optJSONObject("value")?.optString("imageFilePath")?.let { media(it) }
@@ -210,6 +216,20 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                 }
                 table("database/creative-attachments.jsonl", "SELECT * FROM creative_artifact_attachments WHERE artifact_id IN (SELECT id FROM creative_artifacts WHERE $clause)", args)
             }
+            scan(runtime)
+            val newCards=novex.storage.CardStore(context.filesDir.toPath().resolve("rewrite-content"))
+            val newMappings=JSONArray()
+            newCardRoots.forEach {root->
+                try {
+                    val path="new-card-library/${NovexFrozenContextCodec.digest(root)}.zip"
+                    val output=target(path)
+                    val saved=novex.storage.CardFiles(newCards).export(root,output.toPath())
+                    register(path,output)
+                    newMappings.put(JSONObject().put("root",root).put("revision",saved.revision).put("path",path))
+                }catch(cancelled:CancellationException){throw cancelled}
+                catch(failure:Exception){if(failure is BundleLimitExceeded)throw failure;missing+="新版卡片 $root：${failure.message}"}
+            }
+            json("new-card-library/index.json",newMappings)
             val databaseCaptured = System.currentTimeMillis()
             json("environment/current-runtime.json", runtime); scan(runtime)
             NovexMemoryToolExecutor.exportPlans(File(context.filesDir, "novex/memory-plans"), conversationId)

@@ -32,7 +32,10 @@ internal fun ChatSessionEntity.isWorldConversation(): Boolean =
     !worldId.isNullOrBlank() || !worldSnapshotJson.isNullOrBlank()
 
 internal fun ChatSessionEntity.hasNovexContext(): Boolean =
-    isWorldConversation() ||
+    runCatching {
+        val binding=org.json.JSONObject(novexConfigurationJson?:"{}").optJSONObject("cardBinding")
+        (binding?.optJSONArray("primary")?.length()?:0)>0 || (binding?.optJSONArray("backgrounds")?.length()?:0)>0
+    }.getOrDefault(false) || isWorldConversation() ||
         !characterVersionId.isNullOrBlank() ||
         !characterId.isNullOrBlank() ||
         !characterSnapshotJson.isNullOrBlank() ||

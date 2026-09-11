@@ -23,6 +23,25 @@ import org.robolectric.annotation.Config
 class NovexRoleScopePersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
+    @Test fun `whole character chosen as player uses that character and never its private acting instructions`() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val workspace = NovexWorkspaceFactory.create(database, File(files.root, "player-role"))
+            val player = workspace.apply(NovexCommand.CreateCharacter("爱莉希雅测试", """{"name":"爱莉希雅测试","summary":"玩家是逐火之蛾成员"}""")).requireCharacter()
+            workspace.apply(NovexCommand.AddModule(ModuleOwner.characterVersion(player.original.id), ContentModuleType.ROLE_INSTRUCTIONS,
+                "仅供模型扮演", """{"text":"不可作为玩家资料的模型秘密指令"}"""))
+            val game = workspace.apply(NovexCommand.SaveInteractiveFictionPage(null, "玩家引用入口")).requireInteractiveFiction()
+            workspace.apply(NovexCommand.PutCardReference(NovexCardReference("player", NovexContentAddress.interactiveFiction(game.id),
+                NovexReferenceTarget(NovexContentAddress.characterVersion(player.original.id)), NovexReferencePurpose.PLAYER_IDENTITY)))
+            val prepared = com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace).create(game.id)
+            assertTrue(requireNotNull(prepared.playerIdentity).description.contains("玩家是逐火之蛾成员"))
+            assertFalse(prepared.playerIdentity!!.description.contains("模型秘密指令"))
+            assertNull(prepared.answerIdentity)
+            assertEquals(1, NovexGamePlayerChoices.read(prepared).size)
+        } finally { database.close() }
+    }
+
     @Test
     fun `game duty persona is frozen on start and stays out of referenced background`() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)

@@ -41,11 +41,11 @@ internal class NovexReferencePackage(
                     NovexContentKind.CREATIVE_ARTIFACT -> error("卡片包不收录创作文件")
                 } }
                 owners.forEach { owner -> workspace.modules(owner).modules.forEach { module ->
-                    workspace.module(module.id)?.references.orEmpty().forEach { ref ->
+                    workspace.moduleReferences(module.id).forEach { ref ->
                         val target = when(ref.targetType) {
                             ModuleReferenceTargetType.WORLD -> NovexContentAddress.world(ref.targetId)
                             ModuleReferenceTargetType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(ref.targetId)
-                            ModuleReferenceTargetType.MODULE -> workspace.module(ref.targetId)?.module?.let { target -> when(target.ownerType) {
+                            ModuleReferenceTargetType.MODULE -> workspace.moduleContent(ref.targetId)?.let { target -> when(target.ownerType) {
                                 ModuleOwnerType.WORLD -> NovexContentAddress.world(target.ownerId)
                                 ModuleOwnerType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(target.ownerId)
                                 ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(target.ownerId)
@@ -98,7 +98,7 @@ internal class NovexReferencePackage(
                     diagnostics += "带用途引用 ${ref.id}：目标未收录或缺失（${ref.target.subject.id}）"
             }
             included.forEach { source ->
-                workspace.modules(source.owner()).modules.forEach { module -> workspace.module(module.id)?.references.orEmpty().forEach { ref ->
+                workspace.modules(source.owner()).modules.forEach { module -> workspace.moduleReferences(module.id).forEach { ref ->
                     val present = when(ref.targetType) {
                         ModuleReferenceTargetType.MODULE -> ref.targetId in includedModules
                         ModuleReferenceTargetType.WORLD -> NovexContentAddress.world(ref.targetId) in included
@@ -226,12 +226,12 @@ internal class NovexReferencePackage(
                         else -> null
                     }
                     if(target != null) {
-                        if(workspace.module(sourceId)?.references.orEmpty().none { it.target == target })
+                        if(workspace.moduleReferences(sourceId).none { it.target == target })
                             workspace.apply(NovexCommand.AddModuleReference(sourceId, target, position))
                         restored += kind to id
                     }
                 }
-                val module = requireNotNull(workspace.module(sourceId)).module
+                val module = requireNotNull(workspace.moduleContent(sourceId))
                 val raw = JSONObject(module.contentJson)
                 raw.optJSONArray("_novexPendingReferences")?.let { pending ->
                     val remaining = (0 until pending.length()).map { pending.get(it) }.filterNot { item ->

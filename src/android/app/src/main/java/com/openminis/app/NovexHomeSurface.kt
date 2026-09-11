@@ -78,6 +78,7 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                 activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             NovexRootScreen(
+                onImportCard={uri,world->openLegacy("integrated-import?uri=${Uri.encode(uri.toString())}&world=$world")},
                 conversationContent = { onWorldsClick, onRootNavigationVisibilityChange ->
                     NovexConversationRoot(
                         chatRepository = app.chatRepository,

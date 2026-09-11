@@ -301,6 +301,7 @@ internal fun TopAppBar(
         navigation = navigationIcon,
         actions = actions,
         windowInsets = windowInsets,
+        contentHeight = expandedHeight,
         backgroundColor = colors.containerColor,
     )
 }

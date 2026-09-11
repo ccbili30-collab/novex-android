@@ -100,7 +100,9 @@ internal class ContentModuleDraftList private constructor(
             modules = modules.sortedWith(
                 compareBy<ContentModuleEntity> { it.position }.thenBy { it.createdAt }.thenBy { it.id },
             ).map { saved -> NovexModuleDraft.from(saved).copy(id = moduleId(saved)) },
-            expandedModuleIds = emptySet(),
+            expandedModuleIds = modules.filter {
+                com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+            }.mapTo(mutableSetOf(), moduleId),
         )
 
         private fun emptyDocument(type: ContentModuleType): ContentModuleDocument = when (type) {

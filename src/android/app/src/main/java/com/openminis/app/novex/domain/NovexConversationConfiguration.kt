@@ -173,18 +173,22 @@ data class NovexConversationConfigurationSnapshot(
     val preGameAdoptedIdentity: NovexAdoptedContext? = null,
     val disabledSettings: Set<NovexReferenceTarget> = emptySet(),
     val executionMode: NovexExecutionMode = NovexExecutionMode.DEFAULT,
+    /** Null preserves the inherited group policy for pre-existing conversations. */
+    val contextLimitTokens: Int? = NovexConversationContextLimit.MINIMUM,
     /** Preserve unreadable or newer data verbatim; never save an empty replacement over it. */
     val unreadableConfiguration: String? = null,
+    /** New content bindings travel with conversation settings, checkpoints and exports. */
+    val cardBindingJson: String? = null,
 ) {
     val effectivePlaythroughId: String?
-        get() = activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
+        get() = if(cardBindingJson!=null) "conversation:$conversationId" else activeInteractiveFiction?.let { activePlaythroughId ?: "legacy:${it.snapshotId}" }
 
     val hasPersistentConfiguration: Boolean
-        get() = answerIdentity != AnswerIdentity.Nova || playerIdentity != null ||
+        get() = cardBindingJson != null || answerIdentity != AnswerIdentity.Nova || playerIdentity != null ||
             backgroundSettings.isNotEmpty() || managedSubjects.isNotEmpty() ||
             activeInteractiveFiction != null || completedPlaythroughs.isNotEmpty() ||
             playthroughStates.isNotEmpty() || controls.isNotEmpty() || disabledSettings.isNotEmpty() ||
-            executionMode != NovexExecutionMode.DEFAULT
+            executionMode != NovexExecutionMode.DEFAULT || contextLimitTokens != NovexConversationContextLimit.MINIMUM
 }
 
 sealed interface NovexConversationCommand {
@@ -313,9 +317,6 @@ class NovexConversationConfiguration private constructor(
         )
 
         is NovexConversationCommand.SetPlaythroughValue -> {
-            require(snapshot.activeInteractiveFiction != null) {
-                "没有活动文游时不能修改本局状态"
-            }
             require(command.branchId.isNotBlank()) { "消息分支编号不能为空" }
             require(command.key.isNotBlank()) { "本局状态字段名不能为空" }
             val prior = snapshot.playthroughStates[command.branchId]
@@ -329,9 +330,6 @@ class NovexConversationConfiguration private constructor(
         }
 
         is NovexConversationCommand.ForkPlaythroughState -> {
-            require(snapshot.activeInteractiveFiction != null) {
-                "没有活动文游时不能创建本局分支状态"
-            }
             require(command.sourceBranchId.isNotBlank()) { "来源消息分支编号不能为空" }
             require(command.newBranchId.isNotBlank()) { "新消息分支编号不能为空" }
             require(command.newBranchId !in snapshot.playthroughStates) {

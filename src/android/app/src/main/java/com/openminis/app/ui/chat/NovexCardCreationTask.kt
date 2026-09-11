@@ -13,6 +13,18 @@ internal object NovexCardCreationTask {
                 .put("cards", JSONArray(cards.map { JSONObject().put("kind", it.first).put("id", it.second).put("name", names[it]) })).toString())
     }
     fun evaluate(blocks: List<AssistantBlock>): Outcome? {
+        val newToolNames=novex.runtime.CardToolProtocol.definitions(novex.runtime.CardToolPolicy(emptySet())).map {it.name}.toSet()-setOf("read_card","read_text_block","read_card_image")
+        val integratedCalls=blocks.filter {it.kind=="tool_use" && it.toolName in newToolNames}.associateBy {it.id}.values
+        val integrated=integratedCalls.filter {it.toolStatus==ToolBlockStatus.SUCCESS}.mapNotNull {block->
+            val receipt=runCatching {JSONObject(block.content)}.getOrNull()
+            if(receipt?.optString("status")!="saved" || !receipt.has("root_id") || !receipt.has("target_id"))null
+            else "integrated" to JSONObject().put("root",receipt.getString("root_id")).put("target",receipt.getString("target_id")).toString()
+        }.distinct()
+        if(integratedCalls.isNotEmpty()) {
+            val unfinished=integratedCalls.any {it.toolStatus!=ToolBlockStatus.SUCCESS || runCatching {JSONObject(it.content).optString("status")!="saved"}.getOrDefault(true)}
+            return Outcome(if(unfinished)"saved_needs_review" else "saved_verified",
+                if(integrated.isEmpty())"卡片操作尚未完成" else "已保存 ${integrated.size} 张卡片"+if(unfinished)"，另有操作未完成" else "",integrated)
+        }
         val calls = blocks.filter { it.kind == "tool_use" && it.toolName in setOf("novex_write_card", "novex_update_card") }
             .associateBy { it.id }.values
         if (calls.isEmpty()) return null

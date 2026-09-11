@@ -47,6 +47,10 @@ fun ModelEntryDetailScreen(
     providerRepository: ProviderRepository,
     onBack: () -> Unit,
 ) {
+    if (instanceId == com.openminis.app.data.model.TemporaryPreviewModel.INSTANCE_ID) {
+        TemporaryPreviewModelScreen(onBack)
+        return
+    }
     val config by providerRepository.config.collectAsState()
     val entry = config.modelEntries.find { it.id == entryId && it.providerInstanceId == instanceId }
     val instance = config.instances.find { it.id == instanceId }

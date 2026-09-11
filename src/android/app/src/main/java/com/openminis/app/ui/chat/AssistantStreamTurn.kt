@@ -78,7 +78,7 @@ internal class AssistantStreamTurn(
                     materializeText()
                     textBlock = StringBuilder(chunk.text)
                     val block = AssistantBlock("text_${turn}_${blocks.size}", "text", chunk.text,
-                        executionText = sawTool)
+                        executionText = false)
                     // Chat Completions content is one string, including content arriving after tool_calls.
                     val beforeTool = if (monolithic) blocks.indexOfFirst { it.kind == "tool_use" } else -1
                     if (beforeTool >= 0) { blocks.add(beforeTool, block); textIndex = beforeTool }
@@ -162,7 +162,7 @@ internal class AssistantStreamTurn(
     }
     private fun markExecution() {
         sawTool = true
-        for (i in blocks.indices) if (blocks[i].isText) blocks[i] = blocks[i].copy(executionText = true)
+        // 普通文字没有工作过程通道；工具出现不能改变此前或之后正文的语义。
     }
     private fun finishThinking() {
         val index = blocks.indexOfFirst { it.id == "thinking_$turn" && it.kind == "thinking" }

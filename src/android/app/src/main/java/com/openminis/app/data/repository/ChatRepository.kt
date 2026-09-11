@@ -422,7 +422,7 @@ class ChatRepository(internal val dao: ChatDao) {
             val anchorId = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.firstKeptMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.boundaryMessageId?.takeIf(String::isNotEmpty)
-            anchorId == null || anchorId in activeIds
+            (anchorId == null || anchorId in activeIds) && (marker.version < 3 || marker.firstKeptMessageId in activeIds)
         }
     }
 

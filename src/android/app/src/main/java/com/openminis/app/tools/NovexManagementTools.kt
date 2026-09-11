@@ -18,7 +18,7 @@ object NovexManagementTools {
 
     fun modelDefinitions(): List<AgentToolDefinition> = definitions().map { tool ->
         if (tool.name != PROPOSE) tool else tool.copy(
-            description = "高级批量变更计划。普通创建、模块写入、排序和索引请使用专用卡片工具。需要删除、人物版本关系或成果附加等高级操作时，先用 novex_inspect_content 的 include_advanced=true 查看参数，再提交计划。软件按本对话的执行权限直接执行或弹窗批准；不要求用户发送文字口令。",
+            description = "复杂批量变更计划（沿用当前对话权限）。普通创建、模块写入、排序和索引请使用专用卡片工具。需要删除、人物版本关系或成果附加等高级操作时，先用 novex_inspect_content 的 include_advanced=true 查看参数，再提交计划。软件按本对话的执行权限直接执行或弹窗批准；不要求用户发送文字口令。",
             parameters = mapOf("changes" to AgentToolParam("string", "一到二十项高级变更的结构化数组文本；具体字段按查看工具返回的 advanced_change_guide 填写")),
         )
     }
@@ -45,7 +45,7 @@ object NovexManagementTools {
         ),
         AgentToolDefinition(
             name = INSPECT,
-            description = "查看当前对话私有卡片和已加入管理区的卡片或模块。无参数列卡片目录；只传 subject_kind 可按类型筛选目录；指定卡片编号列模块目录，指定 module_id 读取正文。专用模块格式及高级操作按需传 include_advanced=true 查看。" +
+            description = "查看可管理作品，不用于判断当前加载了什么身份、背景或文游；查看当前采用资料请用 novex_read_context。查看当前对话私有卡片和已加入管理区的卡片或模块。无参数列卡片目录；只传 subject_kind 可按类型筛选目录；指定卡片编号列模块目录，指定 module_id 读取正文。专用模块格式及复杂批量操作参数按需传 include_advanced=true 查看；这只是参数展开，不是另一层工具权限。" +
                 "私有空卡可读，创建时由 novex_write_card 自动承接，填满后可继续创建更多卡；未授权的外部对象不能读取。" +
                 "同时返回 card_references（向外引用）、card_backlinks（使用来源）、reference_purposes（合法用途）；这些目录不会授予目标卡片的读写权限。",
             parameters = mapOf(

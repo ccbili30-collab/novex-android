@@ -67,14 +67,18 @@ fun NovexRootScreen(
     onCreateInteractiveFiction: () -> Unit,
     onOpenSettings: () -> Unit,
     onConfigureConversation: (String) -> Unit,
+    onImportCard: (android.net.Uri,Boolean)->Unit = {_,_->},
+    cardContent: (@Composable (Boolean,(Boolean)->Unit)->Unit)? = null,
 ) {
     var dockExpanded by rememberSaveable { mutableStateOf(false) }
-    var showRootDock by rememberSaveable { mutableStateOf(false) }
+    val dockVisibility = remember { androidx.compose.runtime.mutableStateMapOf<NovexRootSpace, Boolean>() }
     val pageStateHolder = rememberSaveableStateHolder()
-    val pagerState = rememberPagerState(initialPage = 0) { NovexRootSpace.entries.size }
+    val spaces=NovexRootSpace.entries.filter {it!=NovexRootSpace.INTERACTIVE_FICTION}
+    val pagerState = rememberPagerState(initialPage = 0) { spaces.size }
     val scope = rememberCoroutineScope()
     val headerHost = remember { NovexRootHeaderHost() }
-    val selected = NovexRootSpace.entries[pagerState.currentPage]
+    val selected = spaces[pagerState.currentPage]
+    val showRootDock = dockVisibility[selected] ?: (selected != NovexRootSpace.CONVERSATIONS)
 
     fun collapseDock() {
         dockExpanded = NovexRootNavigationState(
@@ -84,9 +88,8 @@ fun NovexRootScreen(
     }
 
     fun select(destination: NovexRootSpace, expand: Boolean = true) {
-        showRootDock = true
         if (expand) dockExpanded = true
-        scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+        scope.launch { pagerState.animateScrollToPage(spaces.indexOf(destination).coerceAtLeast(0)) }
     }
 
     val rootBackAction = novexRootBackAction(selected = selected, searchActive = false)
@@ -97,8 +100,8 @@ fun NovexRootScreen(
     }
 
     androidx.compose.runtime.CompositionLocalProvider(LocalNovexRootHeaderHost provides headerHost) {
-        Column(Modifier.fillMaxSize().background(NovexRootColors.Canvas).statusBarsPadding()) {
-            headerHost.current(selected)?.let { header ->
+        Column(Modifier.fillMaxSize().background(NovexRootColors.Canvas).then(if(cardContent==null || selected==NovexRootSpace.CONVERSATIONS)Modifier.statusBarsPadding() else Modifier)) {
+            if(cardContent==null || selected==NovexRootSpace.CONVERSATIONS)headerHost.current(selected)?.let { header ->
                 NovexRootPageHeader(
                     space = selected,
                     searching = header.searching,
@@ -127,23 +130,25 @@ fun NovexRootScreen(
                 HorizontalPager(
                     state = pagerState,
                     userScrollEnabled = showRootDock,
-                    key = { NovexRootSpace.entries[it].name },
+                    key = { spaces[it].name },
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
-                    val destination = NovexRootSpace.entries[page]
+                    val destination = spaces[page]
                     pageStateHolder.SaveableStateProvider(destination.name) {
                         when (destination) {
                             NovexRootSpace.CONVERSATIONS -> conversationContent(
                                 { select(NovexRootSpace.WORLDS) },
-                                { visible -> showRootDock = nextNovexRootDockVisibility(visible) },
+                                { visible -> dockVisibility[NovexRootSpace.CONVERSATIONS] = nextNovexRootDockVisibility(visible) },
                             )
                             NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
+                                onImport = {onImportCard(it,true)},
                                 onOpenWorld = onOpenWorld,
                                 onCreateWorld = onCreateWorld,
                                 onOpenSettings = onOpenSettings,
                                 onConfigureConversation = onConfigureConversation,
                             )
                             NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
+                                onImport = {onImportCard(it,false)},
                                 onOpenCharacter = onOpenCharacter,
                                 onCreateCharacter = onCreateCharacter,
                                 onOpenSettings = onOpenSettings,
@@ -173,6 +178,7 @@ fun NovexRootScreen(
                             ),
                     )
                     NovexRootDock(
+                        spaces=spaces,
                         selected = selected,
                         expanded = dockExpanded,
                         onSelect =(::select),
@@ -187,6 +193,7 @@ fun NovexRootScreen(
 
 @Composable
 private fun NovexRootDock(
+    spaces:List<NovexRootSpace>,
     selected: NovexRootSpace,
     expanded: Boolean,
     onSelect: (NovexRootSpace) -> Unit,
@@ -215,13 +222,13 @@ private fun NovexRootDock(
                     onDrag = { change, amount ->
                         change.consume()
                         dragX = (dragX + amount.x).coerceIn(0f, size.width.toFloat())
-                        onDragSelect(novexRootSpaceAtOffset(dragX, size.width.toFloat()))
+                        onDragSelect(spaces[((dragX / size.width.coerceAtLeast(1)) * spaces.size).toInt().coerceIn(0,spaces.lastIndex)])
                     },
                 )
             }
             .padding(horizontal = horizontalPadding, vertical = 6.dp),
     ) {
-        NovexRootSpace.entries.forEach { destination ->
+        spaces.forEach { destination ->
             AnimatedContent(
                 targetState = NovexRootNavigationState(selected, expanded).itemForm(destination),
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },

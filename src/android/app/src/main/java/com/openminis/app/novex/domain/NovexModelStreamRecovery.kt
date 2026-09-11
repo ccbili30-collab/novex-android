@@ -15,6 +15,7 @@ class NovexModelStreamRecovery<C>(
     private val label: (C) -> String,
     private val retryDelaysSeconds: List<Int> = listOf(1, 2, 4),
     private val waitSecond: suspend () -> Unit = { delay(1000) },
+    private val rejected: (Throwable) -> Unit = {},
 ) {
     var current: C = initial
         private set
@@ -40,8 +41,9 @@ class NovexModelStreamRecovery<C>(
                     if (error is CancellationException && error.cause == null) throw error
                     unwrap(error)
                 }
+                rejected(failure)
                 val rateLimited = failure is LLMError.RateLimited
-                val serverError = failure is LLMError.ProviderError && failure.detail.contains(Regex("[5][0-9]{2}"))
+                val serverError = failure is LLMError.ProviderError && com.openminis.app.data.model.ProviderFailure.httpStatus(failure.detail) in 500..599
                 val transient = failure is LLMError.NetworkError || failure is LLMError.TransientError || serverError
                 if (transient && retries < retryDelaysSeconds.size) {
                     val seconds = retryDelaysSeconds[retries++]
@@ -53,7 +55,8 @@ class NovexModelStreamRecovery<C>(
                     continue
                 }
                 settled()
-                val mayFallback = rateLimited || serverError || strategy == FallbackStrategy.always
+                val invalidRequest = failure is IllegalArgumentException || failure is LLMError.ProviderError && (com.openminis.app.data.model.ProviderFailure.isContextLimit(failure.detail) || com.openminis.app.data.model.ProviderFailure.httpStatus(failure.detail) in listOf(400, 413, 422))
+                val mayFallback = !invalidRequest && (rateLimited || serverError || strategy == FallbackStrategy.always)
                 val next = if (mayFallback) remaining.removeFirstOrNull() else null
                 if (next == null) {
                     val trail = if (mayFallback) reasons + unavailable() else emptyList()

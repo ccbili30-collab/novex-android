@@ -216,7 +216,7 @@ fun CreativeLibraryScreen(
 
     LaunchedEffect(repository) {
         val database = (context.applicationContext as com.openminis.app.MinisApp).database
-        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect { refresh() }
+        kotlinx.coroutines.flow.merge(com.openminis.app.novex.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect { refresh() }
     }
 
     LaunchedEffect(workspace) {
@@ -225,7 +225,7 @@ fun CreativeLibraryScreen(
     }
 
     LaunchedEffect(librarySnapshot, refreshKey) {
-        if (conversationId == null) runCatching { workspace.libraryDirectory(repository) }
+        if (conversationId == null) runCatching { com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).directory() }
             .onSuccess { libraryEntries = it }.onFailure { error = "读取创作库失败：${it.message}" }
     }
     fun openLibraryContent(address: NovexContentAddress) {

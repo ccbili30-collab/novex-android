@@ -225,6 +225,16 @@ fun NovexCharacterEditorScreen(
         onDeleteRequest = if (characterId != null && !createVariant) ({ confirmDelete = true }) else null,
         saveContainerColor = NovexColors.Text,
     ) {
+        if (baselineDraft?.contentModules?.isVerbatimCard == true) {
+            NovexVerbatimCardEditor(
+                name = draft.name,
+                onNameChange = { draft = if (createVariant || sourceVersion?.kind == CharacterVersionKind.VARIANT) draft.copy(name = it) else draft.copy(rootName = it, name = it) },
+                state = draft.contentModules,
+                persistedModuleIds = persistedModuleIds,
+                onChange = { draft = draft.copy(contentModules = it) },
+                onOpenDetails = onOpenModule,
+            )
+        } else {
         NovexEditorSection("角色身份") {
                 if (characterId != null) Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -325,6 +335,7 @@ fun NovexCharacterEditorScreen(
                 onChange = { draft = draft.copy(contentModules = it) },
                 onOpenDetails = onOpenModule,
             )
+        }
         Spacer(Modifier.height(32.dp))
     }
 

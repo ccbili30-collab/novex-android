@@ -258,6 +258,8 @@ data class LLMModel(
             if (lid.contains("codex")) return 200_000
             if (NovexDeepSeekModelMetadata.isKnownV4(id)) return NovexDeepSeekModelMetadata.CONTEXT_TOKENS
             if (lid.contains("deepseek")) return 128_000
+            if (lid.substringAfterLast('/') in setOf("mimo-v2.5", "mimo-v2.5-pro", "glm-5.2", "glm-5.2-cheap")) return 1_000_000
+            if (lid.substringAfterLast('/') in setOf("glm-5", "glm-5.1", "glm-5.1-highspeed")) return 200_000
             // xAI Grok. [T-android-grok-context-underestimate] Without this
             // branch a Grok id missing from the models.dev catalog fell through
             // to the 128K default, and ContextPolicy turned that into

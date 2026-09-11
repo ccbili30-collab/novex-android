@@ -142,7 +142,7 @@ fun NovexConversationRoot(
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     val searchState = rememberNovexLibrarySearchState()
     val appliedQuery by searchState.applied.collectAsState()
-    val selectedFilter = SessionHomeFilter.valueOf(filterName)
+    val selectedFilter = SessionHomeFilter.RECENT
 
     BackHandler(enabled = searching) {
         searching = false
@@ -236,18 +236,6 @@ fun NovexConversationRoot(
             NovexConversationSearchInput(searchState)
         }
 
-        NovexFilterTabs(
-            items = SessionHomeFilter.entries,
-            selected = selectedFilter,
-            label = { filter ->
-                when (filter) {
-                    SessionHomeFilter.RECENT -> "最近"
-                    SessionHomeFilter.CONTEXT_FREE -> "通用"
-                    SessionHomeFilter.WITH_CONTEXT -> "设定"
-                }
-            },
-            onSelect = { filterName = it.name },
-        )
         com.openminis.app.ui.novex.NovexConversationCardLookup(onOpenSession)
         Spacer(Modifier.height(12.dp))
 
@@ -296,40 +284,7 @@ fun NovexConversationRoot(
                 }
                 section("今天", today)
                 section("更早", earlier)
-                item(key = "new_conversation") {
-                    Box {
-                        NovexTextActionRow(
-                            label = "新建对话",
-                            onClick = { menuExpanded = true },
-                        )
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("新建对话") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onNewConversation()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("从世界开始") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onOpenWorlds()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("帮我创作") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onStartCreationTool()
-                                },
-                            )
-                        }
-                    }
-                }
+
             }
         }
     }
@@ -379,7 +334,6 @@ private fun NovexConversationRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.Top,
         modifier = modifier
@@ -442,12 +396,7 @@ private fun NovexConversationRow(
             fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
             modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
-        Box {
-            com.openminis.app.ui.novex.TextButton(onClick = { menuOpen = true }) { Text("更多") }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(text = { Text("删除对话") }, onClick = { menuOpen = false; onDelete() })
-            }
-        }
+        com.openminis.app.ui.novex.TextButton(onClick = onDelete) { Text("删除") }
     }
 }
 

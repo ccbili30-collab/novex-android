@@ -35,4 +35,14 @@ class NovexProviderSetupTest {
     @Test fun ordinaryChatModelDoesNotGainVisionByDefault() {
         assertEquals(listOf("text"), novexChatInputModalities("deepseek-v4-flash"))
     }
+
+    @Test fun fetchedCapacitySurvivesSetupSaveAndOverridesRemainIndependent() {
+        val previous = com.openminis.app.data.model.LLMModel("relay-alias","Alias","Relay",contextWindow=128000)
+        val fetched = previous.copy(contextWindow=1048576)
+        val saved = novexConnectionModel(fetched,previous,"https://relay.example/v1")
+        assertEquals(1048576,saved.contextWindow)
+        val entry = com.openminis.app.data.model.ModelEntry("relay",saved,
+            com.openminis.app.data.model.ModelOverrides(contextWindow=262144))
+        assertEquals(262144,entry.model.contextWindowTokens)
+    }
 }

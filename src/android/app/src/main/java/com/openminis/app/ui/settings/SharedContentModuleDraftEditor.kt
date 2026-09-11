@@ -51,6 +51,7 @@ internal fun SharedContentModuleDraftEditor(
     persistedModuleIds: Set<String>,
     onChange: (ContentModuleDraftList) -> Unit,
     onOpenDetails: (String) -> Unit,
+    freeTextOnly: Boolean = false,
 ) {
     var showAdd by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
@@ -81,11 +82,14 @@ internal fun SharedContentModuleDraftEditor(
             }
             NovexTextActionRow(
                 label = "添加模块",
-                onClick = { showAdd = true },
+                onClick = {
+                    if (freeTextOnly) onChange(state.add(com.openminis.app.data.character.ContentModuleType.CUSTOM))
+                    else showAdd = true
+                },
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
-        Text(
+        if (!freeTextOnly) Text(
             "点击模块展开编辑；拖动排序将在保存后成为实际展示顺序。",
             color = NovexColors.SecondaryText,
             style = MaterialTheme.typography.bodySmall,

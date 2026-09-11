@@ -234,12 +234,17 @@ data class NovexManagedSubjectInspection(
     val label: String,
 )
 
+data class NovexManagedModuleInspection(
+    val module: com.openminis.app.data.character.ContentModuleEntity,
+    val references: List<com.openminis.app.data.character.ContentModuleReferenceEntity>,
+)
+
 data class NovexManagementInspection(
     val subjects: List<NovexManagedSubjectInspection>,
     val selectedSubject: NovexContentAddress?,
     val selectedSubjectJson: String?,
     val modules: List<com.openminis.app.data.character.ContentModuleEntity>,
-    val selectedModule: NovexModuleDetail?,
+    val selectedModule: NovexManagedModuleInspection?,
     val draftTargets: List<NovexConversationDraftCard> = emptyList(),
     val cardReferences: List<NovexCardReference> = emptyList(),
     val cardBacklinks: List<NovexCardReference> = emptyList(),
@@ -376,6 +381,9 @@ fun NovexManagementInspection.toToolJson(): JSONObject = JSONObject().apply {
         JSONObject().put("kind", card.subject.kind.managementWireName()).put("id", card.subject.id)
             .put("role", "仅作为当前明确创建请求的目标，不自动启用背景或身份")
     }))
+    put("scope", "management")
+    put("adopted_context_tool", "novex_read_context")
+    put("scope_note", "这里只列可管理的作品；空目录不代表未加载身份、背景或文游。当前实际采用资料请用 novex_read_context 查看。内部创建目标不是已挂载卡片。")
     put("mounted_subjects", JSONArray().apply {
         subjects.forEach { value ->
             put(JSONObject()
@@ -467,14 +475,14 @@ class NovexManagementService(
             "该对象不属于本对话作品，也未加入管理区；请由用户加入管理区。新建卡片请使用 novex_write_card，不需要先读取其他对象"
         }
         val selectedModule = moduleId?.let { id ->
-            val value = requireNotNull(workspace.module(id)) { "模块不存在" }
-            val owner = value.module.owner.toAddress()
+            val value = requireNotNull(workspace.moduleContent(id)) { "模块不存在" }
+            val owner = value.owner.toAddress()
             require(kindFilter == null || owner.kind == kindFilter) { "模块不属于所选卡片类型" }
             require(canRead(owner)) {
                 "该模块不属于当前对话的管理对象"
             }
             if (subject != null) require(owner == subject) { "模块不属于指定管理对象" }
-            value
+            NovexManagedModuleInspection(value, workspace.moduleReferences(id))
         }
         val availableModules = when {
             selectedModule != null -> listOf(selectedModule.module)
@@ -494,10 +502,12 @@ class NovexManagementService(
         val backlinks = referenceOwner?.let { workspace.referencesTo(it) }.orEmpty()
             .filter { moduleId == null || it.target.moduleId == moduleId }
             .filter { it.target.moduleId !in hiddenIds && profileSection == "public" }
+        val emptyDrafts = workspace.emptyConversationDrafts(configuration.conversationId)
+        val emptyTargets = emptyDrafts.mapTo(mutableSetOf()) { it.subject }
         return NovexManagementInspection(
             subjects = (configuration.managedSubjects + owned.filter { target ->
                 configuration.managedSubjects.none { it.subject == target }
-            }.map { ManagedSubject(it, ManagedAccess.EDIT) }).map { managed ->
+            }.map { ManagedSubject(it, ManagedAccess.EDIT) }).filter { it.subject !in emptyTargets }.map { managed ->
                 NovexManagedSubjectInspection(
                     subject = managed.subject,
                     access = managed.access,
@@ -508,7 +518,7 @@ class NovexManagementService(
             selectedSubjectJson = subject?.let { subjectContentJson(it, profileSection) },
             modules = modules,
             selectedModule = selectedModule,
-            draftTargets = workspace.emptyConversationDrafts(configuration.conversationId).filter { kindFilter == null || it.subject.kind == kindFilter },
+            draftTargets = emptyDrafts.filter { kindFilter == null || it.subject.kind == kindFilter },
             cardReferences = references,
             cardBacklinks = backlinks,
             referenceStatuses = references.associate { it.id to workspace.referenceStatus(it.target) },
@@ -564,11 +574,11 @@ class NovexManagementService(
             index to card.subject
         }.toMap()
         val directEdits = emptySet<Int>()
-        val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.module(id)).module) }
+        val expectedModules = changes.mapNotNull { change -> change.editedModuleId() }.associateWith { id -> moduleEditFingerprint(requireNotNull(workspace.moduleContent(id))) }
         val resolved = plan.copy(draftTargets = targets, authorizedUserRequest = latestUserRequest,
             directEditIndices = directEdits, expectedModuleContents = expectedModules, creationRequestScope = creationRequestScope,
             originalModuleDocuments = changes.filterIsInstance<NovexManagedChange.UpdateModule>().associate {
-                it.moduleId to requireNotNull(workspace.module(it.moduleId)).module.contentJson
+                it.moduleId to requireNotNull(workspace.moduleContent(it.moduleId)).contentJson
             },
             expectedCardHeaders = changes.filterIsInstance<NovexManagedChange.UpdateCard>().associate {
                 NovexCardHeaderEdit.key(it.target) to NovexCardHeaderEdit.fingerprint(workspace, it.target)
@@ -642,7 +652,7 @@ class NovexManagementService(
             val editedIds = plan.changes.mapNotNull { it.editedModuleId() }.toSet()
             require(plan.expectedModuleContents.keys == editedIds) { "旧计划缺少完整模块修订，请读取当前内容并重新生成计划" }
             plan.expectedModuleContents.forEach { (id, expected) ->
-                require(workspace.module(id)?.module?.let(::moduleEditFingerprint) == expected) {
+                require(workspace.moduleContent(id)?.let(::moduleEditFingerprint) == expected) {
                     "模块在提出计划后已经修改，请读取当前内容并重新生成计划：$id"
                 }
             }
@@ -665,10 +675,10 @@ class NovexManagementService(
                         // Resolve each partial edit inside the transaction, after earlier changes
                         // in this plan, rather than filling omitted fields with an empty document.
                         val current = if (managed is NovexManagedChange.UpdateModule) {
-                            requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在，请重新生成计划" }.module
+                            requireNotNull(workspace.moduleContent(managed.moduleId)) { "模块已不存在，请重新生成计划" }
                         } else null
                         if (managed is NovexManagedChange.MoveModule) {
-                            val module = requireNotNull(workspace.module(managed.moduleId)) { "模块已不存在" }.module
+                            val module = requireNotNull(workspace.moduleContent(managed.moduleId)) { "模块已不存在" }
                             val size = workspace.modules(module.owner).modules.size
                             require(managed.toIndex in 0 until size) {
                                 "排序只在当前卡内移动；这张卡有 $size 个模块，位置应为 0 到 ${size - 1}。跨卡整理请先读取并写入目标卡，不要用排序合并卡片。"
@@ -756,7 +766,7 @@ class NovexManagementService(
             }
         }.distinct()
         val moduleOwners = moduleIds.associateWith { id ->
-            requireNotNull(workspace.module(id)) { "模块不存在：$id" }.module.owner
+            requireNotNull(workspace.moduleContent(id)) { "模块不存在：$id" }.owner
         }
         val versionIds = (changes.flatMap { change ->
             when (change) {

@@ -29,8 +29,6 @@ class NovexRootChromePolicyTest {
         assertEquals(
             listOf(
                 NovexConversationStart.EMPTY,
-                NovexConversationStart.WORLD_CONTEXT,
-                NovexConversationStart.CREATION_TOOL,
             ),
             novexConversationCreateMenu(),
         )

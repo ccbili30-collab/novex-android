@@ -336,6 +336,7 @@ fun ChatScreen(
      *  responsible for navigating; this screen has already stashed the
      *  pending transfer in [ChatViewModelStore.stashPendingTransfer]. */
     onMoveToSession: (sessionId: String) -> Unit = {},
+    onImportCard: (android.net.Uri,Boolean)->Unit = {_,_->},
     onBrowseChatFiles: (String) -> Unit = {},
     onOpenCreatedCard: (kind: String, id: String) -> Unit = { _, _ -> },
     /** T150: open FilePreviewScreen for a non-image attachment in a user bubble. */
@@ -372,6 +373,8 @@ fun ChatScreen(
     // grows in steps when the user reaches the top via [viewModel.loadOlderMessages].
     // Callers needing the full history (compact / fork / regenerate / send)
     // continue to read viewModel.messages directly inside the VM.
+    val gameEntryState by viewModel.gameEntryState.collectAsState()
+    val conversationStatus by viewModel.conversationStatus.collectAsState()
     val messages by viewModel.uiMessages.collectAsState()
     val toolApprovals by viewModel.pendingToolApprovals.collectAsState()
     LaunchedEffect(sessionId) { viewModel.restoreToolApprovals() }
@@ -385,14 +388,15 @@ fun ChatScreen(
             message.toolBlocks.firstOrNull()?.toolName == "compact"
         }?.id
     }
-    var compactedHistoryExpanded by remember(sessionId, compactDividerId) {
-        mutableStateOf(false)
+    var compactedHistoryExpanded by remember(sessionId) {
+        mutableStateOf(true)
     }
     val transcriptMessages = remember(messages, compactedHistoryExpanded) {
         conversationMessagesForDisplay(messages, compactedHistoryExpanded)
     }
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    val isCompactingNow by viewModel.isCompacting.collectAsState()
     val canResume by viewModel.canResume.collectAsState()
     val error by viewModel.error.collectAsState()
     val modelName by viewModel.modelName.collectAsState()
@@ -532,6 +536,7 @@ fun ChatScreen(
     val returnFromConversation = {
         if (onBackReturnsToList) viewModel.returnToConversationList(onBack) else onBack()
     }
+    NovexGameEntryDialog(gameEntryState, viewModel::selectGameEntryPlayer, viewModel::retryGameEntry, returnFromConversation)
     androidx.activity.compose.BackHandler(onBack = returnFromConversation)
     androidx.compose.runtime.DisposableEffect(sessionId) {
         viewModel.markConversationVisible()
@@ -666,6 +671,22 @@ fun ChatScreen(
     var showThinkingLevelSheet by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
+    var showHistoryNavigation by remember(sessionId) { mutableStateOf(false) }
+    var historyJumpId by remember(sessionId) { mutableStateOf<String?>(null) }
+    if (showHistoryNavigation) {
+        com.openminis.app.ui.novex.NovexSearchableSelectionSheet(
+            title = "对话历史", searchPlaceholder = "搜索原文",
+            actions = viewModel.historyNavigationMessages().map { message ->
+                com.openminis.app.ui.novex.NovexSelectionAction(
+                    label = message.content.take(80).ifBlank { if (message.role == "user") "用户消息" else "回复与执行记录" },
+                    description = message.content,
+                    onClick = {
+                        viewModel.revealHistoryMessage(message.id)
+                        compactedHistoryExpanded = true
+                        historyJumpId = message.id
+                    })
+            }, onDismissRequest = { showHistoryNavigation = false })
+    }
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
@@ -1302,8 +1323,8 @@ fun ChatScreen(
     // the recreated activity (the user wasn't typing anyway), and the
     // common new-session path still works because the 300 ms delay lets
     // the Modifier attach.
-    LaunchedEffect(Unit) {
-        if (sessionId.startsWith("__new__")) {
+    LaunchedEffect(gameEntryState) {
+        if (sessionId.startsWith("__new__") && gameEntryState == NovexGameEntryState.Ready) {
             // Small delay to let the layout settle before requesting focus
             kotlinx.coroutines.delay(300)
             try {
@@ -1368,8 +1389,11 @@ fun ChatScreen(
     var showContextMeter by remember {
         mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER, false))
     }
-    var contextMeterMode by rememberSaveable { mutableIntStateOf(1) }
+    var contextMeterMode by rememberSaveable { mutableIntStateOf(0) }
     val lastTurnContextTokens by viewModel.lastTurnContextTokens.collectAsState()
+    val contextCapacity by viewModel.contextCapacity.collectAsState()
+    val contextEstimated by viewModel.contextEstimated.collectAsState()
+    val contextUsageReady by viewModel.contextUsageReady.collectAsState()
     // T-chat-title-pill: live-toggled by Settings → Appearance and by
     // `minis-config set appearance.show_chat_title …`. Default ON.
     var showChatTitlePill by remember { mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CHAT_TITLE, true)) }
@@ -1862,6 +1886,9 @@ fun ChatScreen(
                             )
                         }
                         val chatActions = buildList {
+                            add(NovexMenuAction("对话历史", R.drawable.ic_phosphor_search) {
+                                showHistoryNavigation = true
+                            })
                             add(
                                 NovexMenuAction("对话设置", R.drawable.ic_phosphor_sliders_horizontal) {
                                     onSettings()
@@ -1874,7 +1901,7 @@ fun ChatScreen(
                             )
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
                                 onClick = { showConversationRecords = true }))
-                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(
+                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL in setOf("preview", "preview-free")) add(
                                 NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
                                     onClick = viewModel::prepareNovexConversationExport))
                             if (immersiveProfile.usesRolePresentation) {
@@ -1932,6 +1959,12 @@ fun ChatScreen(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
+            if (isCompactingNow) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("正在压缩对话，原消息保留", Modifier.weight(1f))
+                com.openminis.app.ui.novex.TextButton(onClick = viewModel::cancelCompaction) { Text("停止") }
+            }
+
             // Dismiss keyboard when the USER scrolls the messages. Gated on
             // `isUserDragging` (a real finger drag) rather than
             // `listState.isScrollInProgress` — the latter is also true during
@@ -2258,30 +2291,28 @@ fun ChatScreen(
                     }
                     streamWasRunning = isStreaming
                 }
-                // messageId → isCompactedHistory map. Used to fade entire
-                // assistant-row clusters (header + text + tool pills) at
-                // render time — mirrors iOS isCompactedHistory opacity(0.5).
-                // The lookup uses the underlying message id stripped of any
-                // dedupe suffix (`id#2`) added by buildFlatChatItems.
-                val grayedMap = remember(transcriptMessages) {
-                    transcriptMessages.associate { it.id to it.isCompactedHistory }
+                fun FlatChatItem.historyMessageId(): String? = when (this) {
+                    is FlatChatItem.UserBubble -> message.id
+                    is FlatChatItem.AssistantProcess -> messageId
+                    is FlatChatItem.AssistantHeader -> messageId
+                    is FlatChatItem.AssistantText -> messageId
+                    is FlatChatItem.AssistantMarkdownBlock -> messageId
+                    is FlatChatItem.AssistantThinking -> messageId
+                    is FlatChatItem.AssistantToolUse -> messageId
+                    is FlatChatItem.AssistantFallbackChoices -> messageId
+                    is FlatChatItem.AssistantError -> messageId
+                    is FlatChatItem.AssistantLegacyContent -> messageId
+                    else -> null
                 }
-                fun originalMessageId(id: String): String =
-                    id.substringBefore('#')
-                fun FlatChatItem.isCompacted(): Boolean = when (this) {
-                    is FlatChatItem.UserBubble -> grayedMap[originalMessageId(message.id)] == true
-                    is FlatChatItem.AssistantProcess -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantHeader -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantText -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantMarkdownBlock -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantThinking -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantToolUse -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantFallbackChoices -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.AssistantInfo -> false  // system rows never grayed
-                    is FlatChatItem.AssistantTyping -> false
-                    is FlatChatItem.AssistantError -> grayedMap[originalMessageId(messageId)] == true
-                    is FlatChatItem.BranchSwitcher -> false
-                    is FlatChatItem.AssistantLegacyContent -> grayedMap[originalMessageId(messageId)] == true
+                LaunchedEffect(historyJumpId, flatItems) {
+                    val target = historyJumpId ?: return@LaunchedEffect
+                    val rows = transcriptRowsForLayout(flatItems)
+                    val index = rows.indexOfFirst { it.historyMessageId()?.substringBefore('#') == target }
+                    if (index >= 0) {
+                        transcriptFollowState = transcriptFollowState.after(TranscriptFollowEvent.UserDragStarted)
+                        tracedScrollToItem("history-navigation", index + if (hasOlderMessages) 1 else 0, 0)
+                        historyJumpId = null
+                    }
                 }
                 // SelectionContainer must wrap the WHOLE LazyColumn — placing
                 // it per-item breaks long-press because items get disposed
@@ -2527,7 +2558,7 @@ fun ChatScreen(
                         // 0.4f matches iOS .opacity(0.5) closely once Compose's
                         // sRGB compositing is factored in. Renders below normal
                         // intensity but the message stays selectable + readable.
-                        val rowAlpha = if (item.isCompacted()) 0.4f else 1f
+                        val rowAlpha = 1f
                         // [T-HANG-DIAG] log on first composition of any item
                         // whose content is large enough to be a likely hang
                         // suspect. SideEffect runs after the first successful
@@ -3339,6 +3370,8 @@ fun ChatScreen(
                         }
                     }
                 }
+
+                NovexConversationStatusBar(conversationStatus, !isStreaming, onSettings, viewModel::saveConversationExecutionMode)
 
                 // Input box: iOS-style floating card — no visible border, separated
                 // from the backdrop by a symmetric soft shadow painted by hand
@@ -4419,9 +4452,12 @@ fun ChatScreen(
                         if (showContextMeter) {
                             NovexContextMeter(
                                 usedTokens = lastTurnContextTokens,
-                                windowTokens = viewModel.currentModelContextWindow,
+                                windowTokens = contextCapacity.second,
+                                maximumTokens = contextCapacity.first,
+                                estimated = contextEstimated,
+                                ready = contextUsageReady,
                                 mode = contextMeterMode,
-                                onClick = { contextMeterMode = (contextMeterMode + 1) % 3 },
+                                onClick = { contextMeterMode = (contextMeterMode + 1) % 2 },
                             )
                         }
 
@@ -4514,6 +4550,10 @@ fun ChatScreen(
 
             if (showMoveSheet) {
                 MoveToSessionSheet(
+                    onImportCard=if(viewModel.attachments.value.size==1)({world->
+                        val attachment=viewModel.attachments.value.singleOrNull()
+                        if(attachment!=null){showMoveSheet=false;onImportCard(attachment.uri,world)}
+                    }) else null,
                     currentSessionId = sessionId,
                     chatRepository = chatRepository,
                     onDismiss = { showMoveSheet = false },

@@ -139,6 +139,10 @@ fun NovexProviderSetupScreen(
     onSaved: () -> Unit,
     instanceId: String? = null,
 ) {
+    if (instanceId == com.openminis.app.data.model.TemporaryPreviewModel.INSTANCE_ID) {
+        TemporaryPreviewModelScreen(onBack)
+        return
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val existing = remember(instanceId) { instanceId?.let(providerRepository::instance) }
@@ -170,6 +174,8 @@ fun NovexProviderSetupScreen(
     var verificationJob by remember { mutableStateOf<Job?>(null) }
     val verificationResults = remember { mutableStateMapOf<String, ModelVerificationUiResult>() }
     val fetchedModels = remember { mutableStateListOf<String>() }
+    val fetchedMetadata = remember { mutableStateMapOf<String, LLMModel>() }
+    var fetchedMetadataSource by remember { mutableStateOf<Pair<String, String>?>(null) }
     fun invalidateVerification() {
         verificationJob?.cancel()
         verificationJob = null
@@ -316,13 +322,17 @@ fun NovexProviderSetupScreen(
                 OutlinedButton(enabled = !fetchingModels && checkingModelId == null, onClick = {
                     val values = validate(requireModels = false) ?: return@OutlinedButton
                     fetchingModels = true
+                    val metadataBase = novexCanonicalBase(values.base, appendV1Suffix)
                     scope.launch {
                         val models = fetchModels(values.base, values.key, appendV1Suffix)
-                            .filterNot(::looksLikeImageGenerationModel)
-                        fetchedModels.clear(); fetchedModels.addAll(models)
+                            .filterNot { looksLikeImageGenerationModel(it.id) }
+                        fetchedMetadata.clear(); fetchedMetadata.putAll(models.associateBy { it.id })
+                        fetchedMetadataSource = metadataBase to values.key
+                        val ids = models.map { it.id }
+                        fetchedModels.clear(); fetchedModels.addAll(ids)
                         if (models.isEmpty()) error = "没有拉取到模型，请检查地址和密钥，或继续手动填写模型名称。"
                         else {
-                            if (selectedModels.none { it in models }) setSelectedModels(listOf(models.first()))
+                            if (selectedModels.none { it in ids }) setSelectedModels(listOf(ids.first()))
                         }
                         fetchingModels = false
                     }
@@ -468,6 +478,7 @@ fun NovexProviderSetupScreen(
                         key = values.key,
                         modelIds = values.models,
                         modelToolsEnabled = values.models.associateWith(::toolsEnabled),
+                        metadata = if (fetchedMetadataSource == (novexCanonicalBase(values.base, appendV1Suffix) to values.key)) fetchedMetadata.toMap() else emptyMap(),
                     )
                 }.onSuccess {
                     onSaved()
@@ -505,12 +516,12 @@ fun NovexProviderSetupScreen(
     }
 }
 
-private suspend fun fetchModels(base: String, key: String, appendV1Suffix: Boolean): List<String> = runCatching {
+private suspend fun fetchModels(base: String, key: String, appendV1Suffix: Boolean): List<LLMModel> = runCatching {
     OpenAIModelsApi.fetchModels(
         key,
         novexCanonicalBase(base, appendV1Suffix),
         forceRefresh = true,
-    ).map { it.id }.distinct()
+    ).distinctBy { it.id }
 }.getOrDefault(emptyList())
 
 private suspend fun verifyConnection(
@@ -623,6 +634,7 @@ private fun saveConnections(
     key: String,
     modelIds: List<String>,
     modelToolsEnabled: Map<String, Boolean>,
+    metadata: Map<String, LLMModel> = emptyMap(),
 ) {
     val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
@@ -639,13 +651,13 @@ private fun saveConnections(
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
-                    baseModel = LLMModel(
+                    baseModel = novexConnectionModel(metadata[modelId], LLMModel(
                         id = modelId,
                         displayName = novexModelDisplayName(modelId),
                         provider = instance.label,
                         inputModalities = novexChatInputModalities(modelId),
                         outputModalities = listOf("text"),
-                    ),
+                    ), instance.effectiveBaseURL),
                     overrides = ModelOverrides(
                         supportsTools = modelToolsEnabled[modelId],
                     ),
@@ -657,15 +669,17 @@ private fun saveConnections(
     repository.entriesFor(instance.id)
         .filterNot { it.model.outputModalities.orEmpty().contains("image") }
         .forEach { entry ->
+        val refreshedBase = novexConnectionModel(metadata[entry.model.id], entry.baseModel, instance.effectiveBaseURL)
         val desiredInput = novexChatInputModalities(entry.model.id, entry.model.inputModalities)
         val desiredOutput = listOf("text")
         val desiredTools = modelToolsEnabled[entry.model.id]
-        if (entry.model.inputModalities != desiredInput ||
+        if (entry.baseModel != refreshedBase || entry.model.inputModalities != desiredInput ||
             entry.model.outputModalities != desiredOutput ||
             entry.overrides.supportsTools != desiredTools
         ) {
             repository.updateEntry(
                 entry.copy(
+                    baseModel = refreshedBase,
                     overrides = entry.overrides.copy(
                         inputModalities = desiredInput,
                         outputModalities = desiredOutput,
@@ -688,3 +702,8 @@ private fun saveConnections(
         repository.defaultPrimaryGroupId = group.id
     }
 }
+
+/** Fetched capacities survive saving; separately stored user overrides are untouched. */
+internal fun novexConnectionModel(fetched: LLMModel?, previous: LLMModel, base: String?): LLMModel =
+    com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
+        fetched ?: com.openminis.app.provider.ModelsDevApi.enrichModel(previous), base)

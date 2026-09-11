@@ -14,11 +14,18 @@ data class NovexCharacterRevisionEntity(
 )
 
 @Dao
-interface NovexCharacterRevisionDao {
-    @Query("SELECT * FROM novex_character_revisions WHERE version_id = :versionId ORDER BY sequence")
-    suspend fun list(versionId: String): List<NovexCharacterRevisionEntity>
-    @Query("SELECT * FROM novex_character_revisions WHERE version_id = :versionId ORDER BY sequence DESC LIMIT 1")
-    suspend fun latest(versionId: String): NovexCharacterRevisionEntity?
+interface NovexCharacterRevisionDao : NovexCardTextReader {
+    @Query("SELECT version_id, sequence, saved_at, '' AS content_json FROM novex_character_revisions WHERE version_id = :versionId ORDER BY sequence")
+    suspend fun listRecords(versionId: String): List<NovexCharacterRevisionEntity>
+    @Transaction
+    suspend fun list(versionId: String): List<NovexCharacterRevisionEntity> = listRecords(versionId).map { hydrate(it) }
+    @Query("SELECT version_id, sequence, saved_at, '' AS content_json FROM novex_character_revisions WHERE version_id = :versionId ORDER BY sequence DESC LIMIT 1")
+    suspend fun latestRecords(versionId: String): NovexCharacterRevisionEntity?
+    @Transaction
+    suspend fun latest(versionId: String): NovexCharacterRevisionEntity? = latestRecords(versionId)?.let { hydrate(it) }
     @Insert
     suspend fun insert(revision: NovexCharacterRevisionEntity)
+    private suspend fun hydrate(row: NovexCharacterRevisionEntity) = row.copy(
+        contentJson = requireNotNull(readCardText(NovexCardTextField.ROLE_REVISION, row.versionId, row.sequence)),
+    )
 }

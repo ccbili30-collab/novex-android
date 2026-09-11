@@ -351,6 +351,16 @@ fun CatalogInteractiveFictionEditorScreen(
         onSave = ::save,
         onDeleteRequest = projectId?.let { { confirmDelete = true } },
     ) {
+        if (baselineDraft?.contentModules?.isVerbatimCard == true) {
+            NovexVerbatimCardEditor(
+                name = draft.name,
+                onNameChange = { draft = draft.copy(name = it) },
+                state = draft.contentModules,
+                persistedModuleIds = persistedModuleIds,
+                onChange = { draft = draft.copy(contentModules = it) },
+                onOpenDetails = onOpenModule,
+            )
+        } else {
         NovexEditorSection(
             header = "基础资料",
             footer = "名称之外都可以留空；启动方式只决定开始时如何引导对话。",
@@ -412,6 +422,7 @@ fun CatalogInteractiveFictionEditorScreen(
             onChange = { draft = draft.copy(contentModules = it) },
             onOpenDetails = onOpenModule,
         )
+        }
         Spacer(Modifier.height(32.dp))
     }
 

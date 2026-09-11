@@ -10,9 +10,9 @@ enum class NovexExecutionMode(val wireName: String, val label: String, val descr
     val exposesTools: Boolean get() = this != READ_ONLY
 
     companion object {
-        // Existing edit mounts never imply consent to unrestricted execution.
-        val DEFAULT = APPROVAL
-        fun decode(value: String?): NovexExecutionMode = if (value == null) DEFAULT
+        // New conversations use free execution; legacy stored configurations keep their prior default.
+        val DEFAULT = FREE
+        fun decode(value: String?): NovexExecutionMode = if (value == null) APPROVAL
             else entries.singleOrNull { it.wireName == value }
                 ?: throw IllegalArgumentException("无法识别对话执行权限，原配置需要保留")
     }

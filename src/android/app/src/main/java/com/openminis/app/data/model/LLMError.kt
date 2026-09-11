@@ -3,7 +3,7 @@ package com.openminis.app.data.model
 sealed class LLMError(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class InvalidApiKey(val detail: String = "") : LLMError(if (detail.isBlank()) "Invalid API key" else "Invalid API key: $detail")
     class NetworkError(cause: Throwable) : LLMError("Network error: ${cause.message}", cause)
-    class ProviderError(val detail: String) : LLMError("Provider error: $detail")
+    class ProviderError(val detail: String) : LLMError(ProviderFailure.userMessage(detail))
     class DecodingError(cause: Throwable) : LLMError("Decoding error: ${cause.message}", cause)
     class RateLimited(val detail: String = "") : LLMError(
         if (detail.isBlank()) "Rate limited — please try again later"

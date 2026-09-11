@@ -1,10 +1,6 @@
 package com.openminis.app.ui.chat
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -28,63 +24,63 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.time.Instant
 
+internal data class ContextMeterGeometry(val enabled: Float, val used: Float, val percent: Int)
+internal fun contextMeterGeometry(used: Int, maximum: Int, enabled: Int): ContextMeterGeometry {
+    val max = maximum.coerceAtLeast(1).toFloat()
+    return ContextMeterGeometry((enabled / max).coerceIn(0f, 1f), (used / max).coerceIn(0f, 1f),
+        (used.toLong().coerceAtLeast(0) * 100 / enabled.coerceAtLeast(1)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+}
+
 @Composable
 internal fun NovexContextMeter(
     usedTokens: Int,
     windowTokens: Int?,
+    maximumTokens: Int?,
+    estimated: Boolean,
+    ready: Boolean,
     mode: Int,
     onClick: () -> Unit,
 ) {
-    val known = windowTokens != null && windowTokens > 0 && usedTokens > 0
-    val window = windowTokens?.takeIf { it > 0 } ?: 1
-    val progress = (usedTokens.toFloat() / window.toFloat()).coerceIn(0f, 1f)
-    val percent = (progress * 100).toInt()
+    val capacityKnown = windowTokens != null && maximumTokens != null && windowTokens > 0 && maximumTokens > 0
+    val known = ready && capacityKnown
+    val geometry = contextMeterGeometry(usedTokens, maximumTokens ?: 1, windowTokens ?: 1)
+    val ink = ChatColors.primaryText // black in light mode, readable inverted ink in dark mode
     IconButton(onClick = onClick, modifier = Modifier.size(48.dp).semantics {
-        contentDescription = if (known) "上轮请求上下文占用 $percent%，点击切换显示" else "上下文占用尚无记录，点击切换显示"
+        contentDescription = if (known) "${if (estimated) "预计" else "实际"}上下文占用 ${geometry.percent}%，已用 $usedTokens 词元，启用 $windowTokens，模型上限 $maximumTokens；点击切换百分比和用量"
+            else "本轮用量尚未确定，点击切换显示"
     }) {
-        when (mode) {
-            0 -> Box(
-                Modifier
-                    .size(9.dp)
-                    .background(ChatColors.secondaryText, CircleShape),
-            )
-            1 -> Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(34.dp)
-                    .background(ChatColors.inputBg, CircleShape)
-                    .border(1.dp, ChatColors.toolBorder, CircleShape),
-            ) {
-                Text(
-                    if (known) "$percent%" else "—",
-                    color = ChatColors.primaryText,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp)) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val inset = 2.dp.toPx()
+                val origin = androidx.compose.ui.geometry.Offset(inset, inset)
+                val area = androidx.compose.ui.geometry.Size(size.width - 2 * inset, size.height - 2 * inset)
+                drawArc(Color.Gray.copy(alpha = 0.35f), -90f, 360f, false, origin, area,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                if (capacityKnown) {
+                    drawArc(Color.Gray, -90f, geometry.enabled * 360f, false, origin, area,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                    if (known) drawArc(ink, -90f, geometry.used * 360f, false, origin, area,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                }
             }
-            else -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
-                CircularProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxSize(),
-                    color = ChatColors.sendButton,
-                    trackColor = ChatColors.toolBorder,
-                    strokeWidth = 2.5.dp,
-                )
-                Text(
-                    if (known) compactContextTokens(usedTokens) else "—",
-                    color = ChatColors.primaryText,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
+            Text(if (!known) "—" else (if (estimated) "≈" else "") +
+                if (mode % 2 == 0) "${geometry.percent}%" else compactContextTokens(usedTokens),
+                color = ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
 
-private fun compactContextTokens(value: Int): String = when {
-    value >= 1_000_000 -> "${value / 100_000 / 10f}M"
-    value >= 1_000 -> "${value / 1_000}K"
-    else -> value.toString()
+internal fun compactContextTokens(value: Int): String {
+    fun amount(divisor: Float, suffix: String): String {
+        val number = value / divisor
+        val format = if (number >= 100f) "%.0f" else "%.1f"
+        return String.format(java.util.Locale.ROOT, format, number).removeSuffix(".0") + suffix
+    }
+    return when {
+        value >= 1_000_000 -> amount(1_000_000f, "M")
+        value >= 1_000 -> amount(1_000f, "K")
+        else -> value.toString()
+    }
 }
 
 /** A reference to official DeepSeek hours, never a claim about a relay's invoice. */

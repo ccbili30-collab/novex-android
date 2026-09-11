@@ -20,7 +20,6 @@ object NovexExternalCardImport {
             require(preview.kind == kind) { "卡片类型与当前库不同，请在对应卡片库导入" }
             return NovexCardTransferParser.parse(preview)
         }
-        require(kind != NovexCardKind.GAME) { "文游卡请选择原生文游卡包" }
         if (bytes.startsWith(0x89, 0x50, 0x4e, 0x47)) {
             require(kind == NovexCardKind.CHARACTER) { "图片中的角色卡请在角色库导入" }
             return NovexTavernExchange.importCharacter(bytes)
@@ -32,19 +31,34 @@ object NovexExternalCardImport {
         }
         // Unknown keys remain literal text. They are not interpreted as native fields or permissions.
         val name = fileName.substringAfterLast('/').substringAfterLast('\\').substringBeforeLast('.', fileName)
-            .replace(Regex("[-_][0-9a-fA-F]{24,}$"), "").trim().ifBlank { if (kind == NovexCardKind.WORLD) "导入的世界" else "导入的角色" }
+            .replace(Regex("[-_][0-9a-fA-F]{24,}$"), "").trim().ifBlank { when (kind) {
+                NovexCardKind.WORLD -> "导入的世界"
+                NovexCardKind.CHARACTER -> "导入的角色"
+                NovexCardKind.GAME -> "导入的文游"
+            } }
         val id = UUID.randomUUID().toString()
         val module = JSONObject().put("id", "$id-source").put("title", "原始设定")
-            .put("type", if (kind == NovexCardKind.CHARACTER) "roleInstructions" else "custom")
+            .put("type", when (kind) {
+                NovexCardKind.CHARACTER -> "roleInstructions"
+                NovexCardKind.GAME -> "gameNarrativeRules"
+                NovexCardKind.WORLD -> "custom"
+            })
             .put("presentation", "article").put("content", JSONObject().put("text", text))
             .put("extensions", JSONObject().put("novex_verbatim", true))
         val document = JSONObject().put("schemaVersion", 1).put("sourceId", id).put("name", name)
-            .put("documentType", if (kind == NovexCardKind.WORLD) "novex.world" else "novex.character")
+            .put("documentType", when (kind) {
+                NovexCardKind.WORLD -> "novex.world"
+                NovexCardKind.CHARACTER -> "novex.character"
+                NovexCardKind.GAME -> "novex.game"
+            })
             .put(SOURCE, JSONObject().put("fileName", fileName.substringAfterLast('/').substringAfterLast('\\'))
                 .put("bytesBase64", Base64.getEncoder().encodeToString(bytes)).put("mode", "verbatim"))
         if (kind == NovexCardKind.WORLD) {
             document.put("overview", "").put("modules", JSONArray().put(module))
                 .put("moduleOrder", JSONArray().put(module.getString("id")))
+        } else if (kind == NovexCardKind.GAME) {
+            document.put("summary", "").put("launchMode", "freeSandbox").put("playerIdentity", "")
+                .put("modules", JSONArray().put(module)).put("moduleOrder", JSONArray().put(module.getString("id")))
         } else {
             val version = JSONObject().put("id", "$id-origin").put("kind", "origin").put("name", "本体")
                 .put("profile", JSONObject().put("displayName", name))

@@ -289,6 +289,10 @@ fun AppNavigation(
     initialRoute: String? = null,
 ) {
     val context = LocalContext.current
+    fun returnFromCard() {
+        if(navController.previousBackStackEntry==null) (context as? android.app.Activity)?.finish()
+        else navController.safePopBackStack()
+    }
     val cardNavigationScope = androidx.compose.runtime.rememberCoroutineScope()
 
     fun openCreationWorkspace(subject: NovexContentAddress, organizeImported: Boolean = false) {
@@ -505,8 +509,20 @@ fun AppNavigation(
             ) + fadeOut(animationSpec = tween(200, easing = EmphasizedAccelerate))
         },
     ) {
+        composable("integrated-import?uri={uri}&world={world}",arguments=listOf(
+            navArgument("uri"){type=NavType.StringType},navArgument("world"){type=NavType.BoolType;defaultValue=false})) {entry->
+            com.openminis.app.cards.IntegratedCardHost(kind=if(entry.arguments?.getBoolean("world")==true)novex.content.CardKind.WORLD else novex.content.CardKind.CHARACTER,
+                importUri=entry.arguments?.getString("uri"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+        }
+        composable("integrated-card-settings/{chat}",arguments=listOf(navArgument("chat"){type=NavType.StringType})) {entry->
+            com.openminis.app.cards.IntegratedCardSettings(requireNotNull(entry.arguments?.getString("chat")),onBack={navController.safePopBackStack()})
+        }
+        composable("integrated-card?root={root}&target={target}",arguments=listOf(navArgument("root"){type=NavType.StringType;defaultValue=""},navArgument("target"){type=NavType.StringType;defaultValue=""})) {entry->
+            com.openminis.app.cards.IntegratedCardHost(root=entry.arguments?.getString("root"),target=entry.arguments?.getString("target"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+        }
         composable(Routes.SESSION_LIST) {
             NovexRootScreen(
+                onImportCard={uri,world->navController.safeNavigate("integrated-import?uri=${android.net.Uri.encode(uri.toString())}&world=$world")},
                 conversationContent = { onWorldsClick, onRootNavigationVisibilityChange ->
                     SessionListScreen(
                         chatRepository = chatRepository,
@@ -628,9 +644,11 @@ fun AppNavigation(
                 onBrowseChatFiles = { savedSessionId ->
                     navController.safeNavigate(Routes.creativeLibrary(savedSessionId))
                 },
+                onImportCard={uri,world->navController.safeNavigate("integrated-import?uri=${android.net.Uri.encode(uri.toString())}&world=$world")},
                 onOpenCreatedCard = { kind, id -> cardNavigationScope.launch {
                     val workspace = (context.applicationContext as com.openminis.app.MinisApp).novexWorkspace
                     val route = when (kind) {
+                        "integrated" -> {val address=org.json.JSONObject(id);"integrated-card?root=${android.net.Uri.encode(address.getString("root"))}&target=${android.net.Uri.encode(address.getString("target"))}"}
                         "world" -> Routes.storyWorld(id)
                         "character_version" -> workspace.characterForVersion(id)?.let {
                             Routes.characterDetail(it.character.character.id, versionId = id)
@@ -661,6 +679,7 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
+                onCardSettings = {navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}")},
                 onBack = { navController.safePopBackStack() },
             )
         }
@@ -718,15 +737,11 @@ fun AppNavigation(
                 conversationId = entry.arguments?.getString("sessionId"),
                 onConfigureConversation = { navController.safeNavigate(Routes.conversationSettings(it)) },
                 onOpenCard = { address -> libraryScope.launch {
-                    val route = when (address.kind) {
-                        com.openminis.app.novex.domain.NovexContentKind.WORLD -> Routes.storyWorld(address.id)
-                        com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION -> Routes.interactiveFiction(address.id)
-                        com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION -> app.novexWorkspace.characterForVersion(address.id)?.let {
-                            Routes.characterDetail(it.character.character.id)
-                        }
-                        else -> null
+                    val root=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.openminis.app.cards.IntegratedCatalog.root(address,com.openminis.app.cards.IntegratedCards(app).store)
                     }
-                    route?.let { navController.safeNavigate(it) }
+                    root?.let {navController.safeNavigate("integrated-card?root=${android.net.Uri.encode(it)}&target=${android.net.Uri.encode(it)}")}
+
                 } },
                 onBack = { navController.safePopBackStack() },
                 onOpenArtifact = { record, file ->
@@ -747,56 +762,9 @@ fun AppNavigation(
             route = Routes.STORY_WORLD,
             arguments = listOf(navArgument("worldId") { type = NavType.StringType }),
         ) { entry ->
-            val worldId = entry.arguments?.getString("worldId") ?: return@composable
-            val context = LocalContext.current
-            com.openminis.app.data.character.CharacterCardStore.initialize(context)
-            val legacyPersonas by com.openminis.app.data.character.CharacterCardStore.personas.collectAsState()
-            com.openminis.app.ui.settings.CatalogWorldDetailScreen(
-                worldId = worldId,
-                personas = legacyPersonas.filter { it.worldId == worldId }.map { persona ->
-                    com.openminis.app.ui.settings.WorldPersonaSummary(
-                        id = persona.id,
-                        name = persona.name,
-                        description = persona.description,
-                        isDefault = persona.isDefault,
-                    )
-                },
-                onBack = { navController.safePopBackStack() },
-                onEditWorld = { navController.safeNavigate(Routes.storyWorldEdit(worldId)) },
-                onHelpCreate = { openCreationWorkspace(NovexContentAddress.world(worldId)) },
-                onOrganizeImportedCard = { openCreationWorkspace(NovexContentAddress.world(worldId), true) },
-                onEditPersona = { navController.safeNavigate(Routes.personaEdit(worldId, it)) },
-                onCreateCharacter = {
-                    navController.safeNavigate(Routes.characterCatalogEdit(worldId = worldId))
-                },
-                onOpenCharacter = { navController.safeNavigate(Routes.characterDetail(it)) },
-                onEditCharacterVersion = { characterId, versionId ->
-                    navController.safeNavigate(
-                        Routes.characterCatalogEdit(characterId = characterId, versionId = versionId),
-                    )
-                },
-                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
-                onStartWorldNovax = { personaId ->
-                    val draft = buildString {
-                        append("__new__").append(java.util.UUID.randomUUID())
-                        append("__world__").append(worldId)
-                        personaId?.let { append("__persona__").append(it) }
-                    }
-                    navController.safeNavigate(Routes.chat(draft))
-                },
-                onStartCharacterChat = { versionId, personaId ->
-                    val draft = buildChatDraftId(
-                        draftId = java.util.UUID.randomUUID().toString(),
-                        context = ChatDraftContext(
-                            worldId = worldId,
-                            characterVersionId = versionId,
-                            personaId = personaId,
-                        ),
-                    )
-                    navController.safeNavigate(Routes.chat(draft))
-                },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-            )
+            com.openminis.app.cards.LegacyCardEntry("world",entry.arguments?.getString("worldId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(
@@ -807,25 +775,9 @@ fun AppNavigation(
                 defaultValue = null
             }),
         ) { entry ->
-            val savedNavigationPlan = novexSavedDetailNavigationPlan()
-            com.openminis.app.ui.settings.CatalogWorldEditorScreen(
-                worldId = entry.arguments?.getString("worldId"),
-                onBack = { navController.safePopBackStack() },
-                onDeleted = {
-                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
-                        (context as? android.app.Activity)?.finish()
-                    }
-                },
-                onSaved = { worldId ->
-                    navController.safeNavigate(Routes.storyWorld(worldId)) {
-                        popUpTo(entry.destination.id) {
-                            inclusive = savedNavigationPlan.replaceCurrentEditor
-                        }
-                        launchSingleTop = savedNavigationPlan.launchSingleTop
-                    }
-                },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-            )
+            com.openminis.app.cards.LegacyCardEntry("world",entry.arguments?.getString("worldId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(
@@ -835,29 +787,9 @@ fun AppNavigation(
                 navArgument("versionId") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) { entry ->
-            val characterId = entry.arguments?.getString("characterId") ?: return@composable
-            com.openminis.app.ui.settings.CatalogCharacterDetailScreen(
-                characterId = characterId,
-                initialVersionId = entry.arguments?.getString("versionId"),
-                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
-                onBack = { navController.safePopBackStack() },
-                onEditVersion = { versionId ->
-                    navController.safeNavigate(
-                        Routes.characterCatalogEdit(characterId = characterId, versionId = versionId),
-                    )
-                },
-                onHelpCreate = { versionId ->
-                    openCreationWorkspace(NovexContentAddress.characterVersion(versionId))
-                },
-                onOrganizeImportedCard = { versionId -> openCreationWorkspace(NovexContentAddress.characterVersion(versionId), true) },
-                onCreateVariant = {
-                    navController.safeNavigate(
-                        Routes.characterCatalogEdit(characterId = characterId, createVariant = true),
-                    )
-                },
-                onDuplicated = { navController.safeNavigate(Routes.characterDetail(it)) },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-            )
+            com.openminis.app.cards.LegacyCardEntry("character",entry.arguments?.getString("characterId"),version=entry.arguments?.getString("versionId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(
@@ -896,72 +828,18 @@ fun AppNavigation(
                 },
             ),
         ) { entry ->
-            val editingCharacterId = entry.arguments?.getString("characterId")
-            val editingWorldId = entry.arguments?.getString("worldId")
-            val savedNavigationPlan = novexSavedDetailNavigationPlan()
-            com.openminis.app.ui.settings.NovexCharacterEditorScreen(
-                characterId = editingCharacterId,
-                versionId = entry.arguments?.getString("versionId"),
-                worldId = editingWorldId,
-                createVariant = entry.arguments?.getBoolean("createVariant") ?: false,
-                onBack = { navController.safePopBackStack() },
-                onDeleted = {
-                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
-                        (context as? android.app.Activity)?.finish()
-                    }
-                },
-                onSaved = { characterId ->
-                    navController.safeNavigate(Routes.characterDetail(characterId)) {
-                        popUpTo(entry.destination.id) {
-                            inclusive = savedNavigationPlan.replaceCurrentEditor
-                        }
-                        launchSingleTop = savedNavigationPlan.launchSingleTop
-                    }
-                },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-            )
+            com.openminis.app.cards.LegacyCardEntry("character",entry.arguments?.getString("characterId"),version=entry.arguments?.getString("versionId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(
             route = Routes.INTERACTIVE_FICTION_DETAIL,
             arguments = listOf(navArgument("projectId") { type = NavType.StringType }),
         ) { entry ->
-            val projectId = entry.arguments?.getString("projectId") ?: return@composable
-            com.openminis.app.ui.settings.CatalogInteractiveFictionDetailScreen(
-                projectId = projectId,
-                onOpenSession = { navController.safeNavigate(Routes.chat(it)) },
-                onBack = { navController.safePopBackStack() },
-                onEdit = {
-                    navController.safeNavigate(Routes.interactiveFictionEdit(projectId))
-                },
-                onHelpCreate = {
-                    openCreationWorkspace(NovexContentAddress.interactiveFiction(projectId))
-                },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-                onStartConversation = {
-                    navController.safeNavigate(
-                        Routes.chat("__new__game__${projectId}__${java.util.UUID.randomUUID()}"),
-                    ) {
-                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
-                    }
-                },
-                onShareToConversation = { fullText ->
-                    val share = com.openminis.app.share.PendingShare(
-                        items = listOf(
-                            com.openminis.app.share.PendingShare.Item(
-                                com.openminis.app.share.PendingShare.Item.Kind.INLINE_TEXT,
-                                fullText,
-                            ),
-                        ),
-                        timestampMs = System.currentTimeMillis(),
-                    )
-                    com.openminis.app.share.SharedShareStore.savePendingShare(context, share)
-                    com.openminis.app.share.ShareCoordinator.processPendingShare(context)
-                    navController.safeNavigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
-                        popUpTo(Routes.SESSION_LIST) { inclusive = false }
-                    }
-                },
-            )
+            com.openminis.app.cards.LegacyCardEntry("game",entry.arguments?.getString("projectId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(
@@ -974,25 +852,9 @@ fun AppNavigation(
                 },
             ),
         ) { entry ->
-            val savedNavigationPlan = novexSavedDetailNavigationPlan()
-            com.openminis.app.ui.settings.CatalogInteractiveFictionEditorScreen(
-                projectId = entry.arguments?.getString("projectId"),
-                onBack = { navController.safePopBackStack() },
-                onDeleted = {
-                    if (!navController.popBackStack(Routes.SESSION_LIST, inclusive = false)) {
-                        (context as? android.app.Activity)?.finish()
-                    }
-                },
-                onSaved = { projectId ->
-                    navController.safeNavigate(Routes.interactiveFiction(projectId)) {
-                        popUpTo(entry.destination.id) {
-                            inclusive = savedNavigationPlan.replaceCurrentEditor
-                        }
-                        launchSingleTop = savedNavigationPlan.launchSingleTop
-                    }
-                },
-                onOpenModule = { navController.safeNavigate(Routes.contentModuleDetail(it)) },
-            )
+            com.openminis.app.cards.LegacyCardEntry("game",entry.arguments?.getString("projectId"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+
         }
 
         composable(

@@ -42,6 +42,7 @@ object PendingUpdateStore {
         val apkSize: Long,
         val sha256: String?,
         val downloadedAtMs: Long,
+        val channel: String = com.openminis.app.BuildConfig.UPDATE_CHANNEL,
     )
 
     private var prefs: SharedPreferences? = null
@@ -65,6 +66,7 @@ object PendingUpdateStore {
             put("apkSize", pending.apkSize)
             if (pending.sha256 != null) put("sha256", pending.sha256) else put("sha256", JSONObject.NULL)
             put("downloadedAtMs", pending.downloadedAtMs)
+            put("channel", pending.channel)
         }
         requirePrefs(context).edit().putString(KEY, json.toString()).apply()
         AppLogger.info(
@@ -95,7 +97,12 @@ object PendingUpdateStore {
             apkSize = obj.optLong("apkSize"),
             sha256 = obj.optString("sha256", "").takeIf { it.isNotEmpty() && it != "null" },
             downloadedAtMs = obj.optLong("downloadedAtMs"),
+            channel = obj.optString("channel", ""),
         )
+        if (pending.channel != com.openminis.app.BuildConfig.UPDATE_CHANNEL) {
+            clearPending(context)
+            return null
+        }
         val age = System.currentTimeMillis() - pending.downloadedAtMs
         if (age > MAX_AGE_MS) {
             AppLogger.info(TAG, "pending update expired age=${age}ms; clearing")

@@ -52,8 +52,8 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
     LaunchedEffect(page) {
         if (page.isNotEmpty()) {
             val database = (context.applicationContext as com.openminis.app.MinisApp).database
-            com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect {
-                try { entries = workspace.libraryDirectory(artifacts) }
+            kotlinx.coroutines.flow.merge(com.openminis.app.novex.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect {
+                try { entries = com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).directory() }
                 catch (failure: Exception) { if (failure is CancellationException) throw failure; error = "读取仓库失败：${failure.message}" }
             }
         }

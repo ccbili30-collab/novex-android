@@ -10,8 +10,8 @@ import com.openminis.app.tools.NovexIllustrationTools
 
 /** Stateless presentation coordinator; callers provide the adopted configuration and active branch only. */
 internal object NovexStoryImageCoordinator {
-    fun tool(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, name: String, arguments: String): JSONObject {
-        val images = NovexStoryIllustrations.available(configuration, visibleMessages)
+    fun tool(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, name: String, arguments: String, providedImages:List<com.openminis.app.novex.domain.NovexSnapshotMedia>?=null): JSONObject {
+        val images = providedImages ?: NovexStoryIllustrations.available(configuration, visibleMessages)
         val output = if (name == NovexIllustrationTools.INSPECT) {
             val args = JSONObject(arguments.ifBlank { "{}" })
             val offset = args.optInt("offset", 0); val limit = args.optInt("limit", 30)
@@ -30,11 +30,11 @@ internal object NovexStoryImageCoordinator {
         return output
     }
     fun completed(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, blocks: List<AssistantBlock>,
-        start: Int, rows: List<MessageEntity>, messageId: String): AssistantBlock? {
+        start: Int, rows: List<MessageEntity>, messageId: String, providedImages:List<com.openminis.app.novex.domain.NovexSnapshotMedia>?=null): AssistantBlock? {
         if (blocks.any { it.toolName == NOVEX_STORY_IMAGE }) return null
         val text = formalAssistantText(blocks.drop(start), "")
         if (text.isBlank()) return null
-        val images = NovexStoryIllustrations.available(configuration, visibleMessages)
+        val images = providedImages ?: NovexStoryIllustrations.available(configuration, visibleMessages)
         val explicit = blocks.lastOrNull { it.toolName == NovexIllustrationTools.SELECT && it.toolStatus == ToolBlockStatus.SUCCESS }
             ?.let { runCatching { JSONObject(it.content).getString("selected_image_id") }.getOrNull() }
         val prior = rows.filter { it.role == "assistant" }.mapNotNull { row ->

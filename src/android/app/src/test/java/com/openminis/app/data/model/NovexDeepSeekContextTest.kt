@@ -38,7 +38,8 @@ class NovexDeepSeekContextTest {
             modelEntries = mutableListOf(base, overridden, custom, relayEntry))
         val upgraded = NovexDeepSeekModelMetadata.repairCatalog(config)
         assertEquals(config.modelEntries.map { it.id }, upgraded.modelEntries.map { it.id })
-        assertEquals(listOf(1_000_000, 64_000, 128_000, 128_000), upgraded.modelEntries.map { it.model.contextWindowTokens })
+        // Setup marks ordinary entries custom too; explicit user capacity lives in overrides.
+        assertEquals(listOf(1_000_000, 64_000, 1_000_000, 128_000), upgraded.modelEntries.map { it.model.contextWindowTokens })
         assertEquals("我的模型名称", upgraded.modelEntries.first().model.displayName)
         assertEquals(upgraded, NovexDeepSeekModelMetadata.repairCatalog(upgraded))
         assertEquals(128_000, config.modelEntries.first().baseModel.contextWindow)

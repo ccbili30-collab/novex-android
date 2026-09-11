@@ -5,6 +5,10 @@ internal fun novexErrorMessage(raw: String): String {
     val text = raw.trim()
     val lower = text.lowercase()
     val summary = when {
+        com.openminis.app.data.model.ProviderFailure.isContextLimit(text) ->
+            "本次请求超过模型实际接受的上下文长度。请减少本轮携带内容，或换用容量更大的模型；原文保留。"
+        "上下文" in text && ("容量" in text || "不足" in text || "超出" in text) ->
+            "当前启用的上下文容量不足以容纳本轮内容。请调高对话容量，或减少本轮携带资料；原文保留。"
         "tool call was interrupted" in lower ||
             ("interrupted" in lower && "tool" in lower) ->
             "工具调用被中断，系统没有收到执行结果。为避免重复操作，请先确认它是否已经生效。"

@@ -23,7 +23,7 @@ internal object ConversationCompactionPolicy {
     fun transcript(messages: List<LLMMessage>): String = buildString {
         messages.forEach { message ->
             val role = message.role.name.lowercase()
-            if (message.content.isNotEmpty()) {
+            if (message.content.isNotEmpty() && message.contentParts.none { it is AgentContentPart.Text }) {
                 append(role).append(": ").append(message.content).append('\n')
             }
             message.imageParts.forEach { image ->
@@ -55,6 +55,27 @@ internal object ConversationCompactionPolicy {
                     }
                 }
             }
+        }
+    }
+
+    /** Text-only summary input may be paged even when one original message is huge.
+     * This never alters the original message or cuts a provider tool exchange. */
+    fun pages(text: String, budget: Int, count: (String) -> Int): Sequence<String> = sequence {
+        var start = 0
+        while (start < text.length) {
+            var low = 1
+            var high = minOf(text.codePointCount(start, text.length), budget.coerceAtLeast(1) * 4)
+            var keep = 0
+            while (low <= high) {
+                val mid = (low + high) / 2
+                val end = text.offsetByCodePoints(start, mid)
+                if (count(text.substring(start, end)) <= budget) { keep = mid; low = mid + 1 }
+                else high = mid - 1
+            }
+            require(keep > 0) { "当前容量不足以生成摘要" }
+            val end = text.offsetByCodePoints(start, keep)
+            yield(text.substring(start, end))
+            start = end
         }
     }
 

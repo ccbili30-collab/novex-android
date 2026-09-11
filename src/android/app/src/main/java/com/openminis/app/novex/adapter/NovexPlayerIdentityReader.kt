@@ -8,6 +8,19 @@ import com.openminis.app.novex.domain.*
 
 /** Called only for an answering role's companion or an explicit player-purpose reference. */
 class NovexPlayerIdentityReader(private val workspace: NovexWorkspace) {
+    /** Explicit whole-character selection means the player is that character, not its companion. */
+    suspend fun readReference(target: NovexReferenceTarget): List<ConversationPlayerIdentity> {
+        if (target.subject.kind != NovexContentKind.CHARACTER_VERSION || target.moduleId != null) return read(target)
+        require(workspace.referenceStatus(target) == NovexReferenceTargetStatus.AVAILABLE) { "玩家身份引用缺失，请修复后采用" }
+        val role = requireNotNull(workspace.characterForVersion(target.subject.id)) { "玩家角色不存在" }.character
+        val version = requireNotNull(role.allVersions.singleOrNull { it.id == target.subject.id }) { "玩家角色版本不存在" }
+        val sources = NovexReferenceContextReader(workspace).read(target).orEmpty()
+        val description = sources.filter { it.content.isNotBlank() }.joinToString("\n\n") { "${it.label}\n${it.content}" }
+        if (description.isBlank()) return emptyList()
+        val label = "${role.character.name} · ${version.label}"
+        return listOf(ConversationPlayerIdentity("card-player:${target.subject.id}:profile:${NovexFrozenContextCodec.digest(description)}", label, description))
+    }
+
     suspend fun read(target: NovexReferenceTarget): List<ConversationPlayerIdentity> {
         require(workspace.referenceStatus(target) == NovexReferenceTargetStatus.AVAILABLE) { "玩家身份引用缺失，请修复后采用" }
         require(target.subject.kind in setOf(NovexContentKind.CHARACTER_VERSION, NovexContentKind.INTERACTIVE_FICTION)) {

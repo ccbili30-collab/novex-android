@@ -165,6 +165,7 @@
         android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Minis">
+        <meta-data android:name="com.noven.player.UPDATE_CHANNEL" android:value="${novexUpdateChannel}" />
 
         <activity
             android:name=".MainActivity"

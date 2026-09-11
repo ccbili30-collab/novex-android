@@ -14,7 +14,7 @@ internal fun conversationSettingsPageTitle(page: String): String = when (page) {
 @Composable
 internal fun ConversationSettingsOverview(
     answer: String, player: String, backgroundCount: Int, game: String, managedCount: Int,
-    permission: String, promptChanged: Boolean, onOpen: (String) -> Unit, onPermission: () -> Unit,
+    permission: String, promptChanged: Boolean, integrated:Boolean=false, onOpen: (String) -> Unit, onPermission: () -> Unit,
 ) {
     NovexEditorSection(header = "身份与回答") {
         NovexSummaryRow("回答身份", answer, onClick = { onOpen("answer") })
@@ -23,7 +23,7 @@ internal fun ConversationSettingsOverview(
     }
     NovexEditorSection(header = "使用的设定") {
         NovexSummaryRow("背景资料", if (backgroundCount == 0) "未添加" else "$backgroundCount 项", onClick = { onOpen("background") })
-        NovexSummaryRow("当前文游", game, onClick = { onOpen("game") })
+        if(!integrated)NovexSummaryRow("当前文游", game, onClick = { onOpen("game") })
     }
     NovexEditorSection(header = "内容与工具") {
         NovexSummaryRow("对话空间", "文件与成果", onClick = { onOpen("workspace") })
