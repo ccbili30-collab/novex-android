@@ -50,12 +50,14 @@ class RequestMaterials(private val store: CardStore) {
         return RequestMaterialDraft(plan,texts.filter {it.moduleId in selected},images.filter {it.moduleId in selected},names.mapValues {it.value.name},texts,images)
     }
 
-    fun selectAutomatic(draft:RequestMaterialDraft,ids:Set<String>):RequestMaterialDraft {
+    fun selectAutomatic(draft:RequestMaterialDraft,ids:Set<String>,recovered:Boolean=false):RequestMaterialDraft {
         val candidates=draft.plan.decisions.filter {it.reason==AdoptionReason.UNCONFIGURED}.map {it.module.id}.toSet()
         require(candidates.containsAll(ids)){"模型选择了候选范围之外的模块"}
         val plan=MaterialPlan(draft.plan.decisions.map {decision->
             if(decision.reason!=AdoptionReason.UNCONFIGURED)decision
-            else decision.copy(selected=decision.module.id in ids,reason=if(decision.module.id in ids)AdoptionReason.AI_SELECTED else AdoptionReason.AI_NOT_SELECTED)
+            else decision.copy(selected=decision.module.id in ids,reason=if(decision.module.id in ids) {
+                if(recovered)AdoptionReason.RECOVERY_READ else AdoptionReason.AI_SELECTED
+            } else AdoptionReason.AI_NOT_SELECTED)
         })
         val selected=plan.selected.map {it.module.id}.toSet()
         return draft.copy(plan=plan,texts=draft.availableTexts.filter {it.moduleId in selected},imagesNotSent=draft.availableImages.filter {it.moduleId in selected})

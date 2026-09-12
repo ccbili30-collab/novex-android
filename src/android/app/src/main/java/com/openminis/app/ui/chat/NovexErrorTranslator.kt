@@ -5,6 +5,8 @@ internal fun novexErrorMessage(raw: String): String {
     val text = raw.trim()
     val lower = text.lowercase()
     val summary = when {
+        text.startsWith("资料选择未完成") || text.startsWith("发送准备失败") ||
+            text.startsWith("本轮资料准备未完成") -> text
         com.openminis.app.data.model.ProviderFailure.isContextLimit(text) ->
             "本次请求超过模型实际接受的上下文长度。请减少本轮携带内容，或换用容量更大的模型；原文保留。"
         "上下文" in text && ("容量" in text || "不足" in text || "超出" in text) ->

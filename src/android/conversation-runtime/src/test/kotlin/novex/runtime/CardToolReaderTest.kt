@@ -20,6 +20,16 @@ class CardToolReaderTest {
     private val policy=CardToolPolicy(setOf(ManagementTarget("card")))
     private fun readCall()=PendingTool("read","read_card",JSONObject().put("root_id","card").put("target_id","card").toString())
     private fun page(version:String,start:Long,count:Int=2)=PendingTool("page","read_text_block",JSONObject().put("root_id","card").put("target_id","card").put("draft_version",version).put("module_id","m").put("block_id","b").put("offset",start).put("count",count).toString())
+    @Test fun `adopted reader retains saved version while management reads draft`() {
+        val store=CardStore(temporary.newFolder().toPath());initial(store)
+        val adopted=CardToolReader(store,useDraft={false})
+        val version=adopted.read(readCall(),policy).getString("draft_version")
+        val draft=CardDrafts(store).begin("card")
+        CardEditor(store).apply("card",draft.version,"card",EditorCommand.WriteText("m","b","经历","未保存正文",EditorPosition()))
+        assertEquals(version,adopted.read(readCall(),policy).getString("draft_version"))
+        assertEquals("甲😀",adopted.read(page(version,0),policy).getString("text"))
+        assertTrue(CardToolReader(store).read(readCall(),policy).getBoolean("has_draft"))
+    }
     @Test fun `结构读取不创建草稿且中文补充字符分页可完整拼回`() {
         val store=CardStore(temporary.newFolder().toPath());initial(store);val reader=CardToolReader(store,2)
         val metadata=reader.read(readCall(),policy)

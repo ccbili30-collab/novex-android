@@ -15,7 +15,7 @@ sealed interface UseOverride {
     data object Disabled : UseOverride
     data class Rule(val use: ModuleUse) : UseOverride
 }
-enum class AdoptionReason { ALWAYS, KEYWORD_MATCH, MANUAL_SELECTED, CONDITION_MISSED, MANUAL_NOT_SELECTED, DISABLED, UNCONFIGURED, AI_SELECTED, AI_NOT_SELECTED }
+enum class AdoptionReason { ALWAYS, KEYWORD_MATCH, MANUAL_SELECTED, CONDITION_MISSED, MANUAL_NOT_SELECTED, DISABLED, UNCONFIGURED, AI_SELECTED, AI_NOT_SELECTED, RECOVERY_READ }
 data class ModuleDecision(val cardId: String, val revision: String, val module: ContentModule,
                           val selected: Boolean, val reason: AdoptionReason, val matchedWords: List<String> = emptyList())
 data class MaterialPlan(val decisions: List<ModuleDecision>) {

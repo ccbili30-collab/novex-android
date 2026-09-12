@@ -17,12 +17,29 @@ import java.util.zip.ZipOutputStream
 
 /** 候选交换格式，仅供实验。载荷按流复制；结构文件不内嵌正文和图片字节。 */
 object ExchangeLab {
-    fun write(path: Path, card: ContentDocument, contents: StagedContentFiles) {
+    fun write(path: Path, card: ContentDocument, contents: StagedContentFiles, readable:Boolean=false) {
         card.validate()
         val references = references(card)
-        val paths = references.mapIndexed { index, ref -> ref to "contents/$index" }.toMap()
+        val labels=mutableMapOf<ContentRef,Pair<String,String>>()
+        fun collect(document:ContentDocument) {
+            document.resources.forEach {resource->
+                val extension=when(resource.mediaType){"image/png"->"png";"image/jpeg"->"jpg";"image/webp"->"webp";"image/gif"->"gif";else->"bin"}
+                labels[resource.content]="图片" to "${document.name}.$extension"
+            }
+            document.modules.flattenModules().forEach {module->module.blocks.forEach {block->when(block){
+                is ContentBlock.Text->labels.putIfAbsent(block.content,"正文" to "${document.name}-${module.name.ifBlank {"未命名模块"}}.md")
+                is ContentBlock.Image->block.caption?.let {labels.putIfAbsent(it,"正文" to "${document.name}-${module.name}-图片说明.md")}
+            }}}
+            document.internalCharacters.forEach(::collect)
+        }
+        if(readable)collect(card)
+        val paths = references.mapIndexed { index, ref ->
+            val (folder,label)=labels[ref]?: ("扩展" to "内容.bin")
+            val safe=label.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"),"_").take(100)
+            ref to if(readable)"$folder/${index.toString().padStart(4,'0')}-$safe" else "contents/$index"
+        }.toMap()
         val entries = JSONObject()
-        val metadata = JSONObject().put("experiment", "novex-content-exchange").put("version", 1)
+        val metadata = JSONObject().put("experiment", "novex-content-exchange").put("version", if(readable)2 else 1)
             .put("card", CardStructureCodec.encode(card)).put("contents", entries)
         // 调用方提供独立输出；错误时移除半包，不能把截断输出说成导出完成。
         require(!Files.exists(path)) { "输出已存在" }
@@ -65,7 +82,8 @@ object ExchangeLab {
         val header = zip.getEntry("structure.json") ?: error("缺少内容结构")
         val metadata = JSONObject(zip.getInputStream(header).bufferedReader(Charsets.UTF_8).use { it.readText() })
         fields(metadata, setOf("experiment", "version", "card", "contents"))
-        require(metadata.getString("experiment") == "novex-content-exchange" && metadata.getInt("version") == 1) { "不是支持的实验包版本" }
+        val version=metadata.getInt("version")
+        require(metadata.getString("experiment") == "novex-content-exchange" && version in 1..2) { "不是支持的交换包版本" }
         val card = CardStructureCodec.decode(metadata.getJSONObject("card")).validate()
         val entries = metadata.getJSONObject("contents")
         val refs = references(card)
@@ -76,7 +94,10 @@ object ExchangeLab {
             entry.getString("path")
         }
         require(paths.values.toSet().size == paths.size) { "多个内容引用映射到同一包条目" }
-        require(paths.values.all { Regex("contents/[0-9]+").matches(it) }) { "实验包条目路径无效" }
+        require(paths.values.all { name->if(version==1)Regex("contents/[0-9]+").matches(name)
+            else name.substringBefore('/') in setOf("正文","图片","扩展") && name.count {it=='/'}==1 &&
+                name.substringAfter('/').isNotBlank() && '\\' !in name && name.none {it.isISOControl()} &&
+                name.substringAfter('/') !in setOf(".","..") }) { "交换包条目路径无效" }
         require(names.toSet() == paths.values.toSet() + "structure.json") { "包条目缺失或含无法处理的额外条目" }
         val plan = if(preserveIds)ContentCopies.relocate(card,destination.allocator()) else ContentCopies.plan(card, { UUID.randomUUID().toString() }, destination.allocator())
         if (plan.transfers.isNotEmpty()) destination.receive(plan.transfers) { source ->

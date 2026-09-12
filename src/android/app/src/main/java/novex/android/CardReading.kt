@@ -53,7 +53,7 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
     val ref=module?.blocks?.filterIsInstance<ContentBlock.Text>()?.firstOrNull()?.content
     var text by remember(ref){mutableStateOf("")}
     LaunchedEffect(ref) {
-        text=if(ref==null)"" else try {model.textPage(ref,0,100).text.replace('\n',' ')}
+        text=if(ref==null)"" else try {model.textPage(ref,0,100).text.let(::moduleExcerptText)}
         catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){"内容读取未完成"}
     }
     if(text.isNotEmpty())Text(text,style=NovexType.Metadata,color=NovexColors.SecondaryText,maxLines=1,overflow=TextOverflow.Ellipsis)
@@ -118,7 +118,7 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
         memory.selected[card.id]=id
         scope.launch {withFrameNanos { };list.scrollToItem(0)}
     }
-    fun LazyListScope.modules(modules:List<ContentModule>,parent:String,horizontal:Boolean,showHeading:Boolean=true,fold:Boolean=false) {
+    fun LazyListScope.modules(modules:List<ContentModule>,parent:String,horizontal:Boolean,showHeading:Boolean=true,fold:Boolean=false,depth:Int=0) {
         val selected=memory.selected[parent]?.takeIf {id->modules.any {it.id==id}}?:modules.firstOrNull()?.id
         if(horizontal && modules.isNotEmpty())item("tabs-$parent") {
             CardTabStrip(modules,selected){id->if(parent==card.id)selectRoot(id) else memory.selected[parent]=id}
@@ -127,11 +127,16 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
             val collapsible=fold || (!horizontal && module.children.isNotEmpty())
             val open=memory.expanded[module.id]==true
             if(showHeading && (!horizontal || collapsible))item("title-${module.id}") {
-                CardRow(headlineContent={Text(module.name,style=NovexType.SectionTitle)},
-                    modifier=Modifier.then(if(onModule!=null)Modifier.clickable {onModule(module.id)} else Modifier),
+                CardRow(headlineContent={Text(module.name.ifBlank {"未命名模块"},style=NovexType.Body)},
+                    supportingContent=if(module.blocks.isNotEmpty())({ModuleExcerpt(module,model)}) else null,
+                    leadingContent={Icon(if(module.children.isNotEmpty())NovexIcons.Folder else NovexIcons.Description,null,Modifier.size(21.dp),tint=NovexColors.Primary)},
+                    modifier=Modifier.padding(start=(depth*16).coerceAtMost(64).dp).then(if(onModule!=null)Modifier.clickable {onModule(module.id)} else Modifier),
                     trailingContent=if(collapsible)({CardAction(if(open)NovexIcons.ExpandLess else NovexIcons.ChevronRight,if(open)"收起" else "展开"){memory.expanded[module.id]=!open}}) else null)
             }
-            if(collapsible && !open)return@forEach
+            if(collapsible && !open) {
+                item("divider-${module.id}"){CardDivider(Modifier.padding(start=(16+depth*16).coerceAtMost(80).dp,end=16.dp))}
+                return@forEach
+            }
             fun pages(id:String,ref:ContentRef) {
                 val key="$id:${ref.value}"
                 repeat(memory.pages[key]?:1){index->item("$key:$index") {
@@ -153,7 +158,7 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
                     CardRow(headlineContent={Text(role.name)},leadingContent={RoleThumbnail(role,model)},modifier=Modifier.then(if(onCharacter!=null)Modifier.clickable {onCharacter(id)} else Modifier))
                 }
             }
-            modules(module.children,module.id,module.layout==ModuleLayout.HORIZONTAL,fold=true)
+            modules(module.children,module.id,module.layout==ModuleLayout.HORIZONTAL,fold=true,depth=depth+1)
             item("divider-${module.id}"){CardDivider(Modifier.padding(horizontal=16.dp))}
         }
     }
@@ -167,7 +172,7 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
                 }
             }) {change,amount->distance+=amount;change.consume()}
         }
-    },state=list,contentPadding=PaddingValues(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+    },state=list,contentPadding=PaddingValues(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(0.dp)) {
         item("hero"){CardHero(card,model,onImage=onImage,onName=onName,onIntroduction=onIntroduction)}
         card.introductionModule()?.let {introduction->
             modules(listOf(introduction),"${card.id}-introduction",horizontal=false,showHeading=false)
@@ -247,3 +252,11 @@ private const val READING_PAGE_SIZE=4096
                 modifier=Modifier.fillMaxWidth().clickable(enabled=enabled){model.module(module.id)}.padding(vertical=12.dp))
     }
 }
+
+/** Compact directory summaries never display editing markup. */
+internal fun moduleExcerptText(value:String):String = value
+    .replace(Regex("!\\[([^]]*)\\]\\([^)]*\\)"), "$1")
+    .replace(Regex("\\[([^]]*)\\]\\([^)]*\\)"), "$1")
+    .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s+"), "")
+    .replace("**", "").replace("__", "").replace("`", "")
+    .replace(Regex("\\s+"), " ").trim()

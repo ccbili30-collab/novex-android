@@ -15,6 +15,20 @@ import java.util.zip.ZipEntry
 
 class ExchangeLabTest {
     @get:Rule val temporary = TemporaryFolder()
+    @Test fun `readable export preserves native content and separates named payloads`() {
+        val source=StagedContentFiles(temporary.newFolder().toPath())
+        val original=fixture(source)
+        val path=temporary.root.toPath().resolve("readable.zip")
+        ExchangeLab.write(path,original,source,readable=true)
+        ZipFile(path.toFile()).use {zip->
+            val names=zip.entries().asSequence().map {it.name}.toList()
+            assertTrue(names.any {it.startsWith("正文/") && it.endsWith(".md")})
+            assertTrue(names.any {it.startsWith("图片/")})
+            assertFalse(names.any {it.startsWith("contents/")})
+        }
+        val destination=StagedContentFiles(temporary.newFolder().toPath())
+        verify(ExchangeLab.read(path,destination),destination)
+    }
     private fun fixture(files: StagedContentFiles): ContentDocument {
         val allocate = files.allocator(); val text = allocate(); val image = allocate(); val extra = allocate()
         val data = mapOf(text to "中文原文。\n".repeat(300_000).toByteArray(), image to byteArrayOf(1, 4, 8, -1), extra to "{\"保留\":[1,2,3]}".toByteArray())

@@ -7,11 +7,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** 模型明确读取管理资料；不把管理范围全文自动塞入背景，不创建编辑草稿。 */
-class CardToolReader(private val store:CardStore,private val maximumPage:Int=8192) {
+class CardToolReader(private val store:CardStore,private val maximumPage:Int=8192,
+    private val useDraft:(ManagementTarget)->Boolean={true}) {
     init {require(maximumPage>0)}
     private data class Snapshot(val target:ContentDocument,val version:String,val source:ChangeSource,val hasDraft:Boolean)
     private fun snapshot(target:ManagementTarget):Snapshot {
-        val draft=CardDrafts(store).read(target.rootId)
+        val draft=if(useDraft(target))CardDrafts(store).read(target.rootId) else null
         if(draft!=null)return Snapshot(ContentTargets.find(draft.content,target.targetId),draft.version,draft.source,true)
         val saved=requireNotNull(store.open(target.rootId)){"管理对象不存在"}
         return Snapshot(ContentTargets.find(saved.content,target.targetId),"saved:${saved.revision}",saved.source,false)

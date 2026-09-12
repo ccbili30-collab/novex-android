@@ -39,4 +39,27 @@ class BudgetedMaterialsTest {
         val read=BudgetedMaterials(store).read(draft,0,{it.length},true).single()
         assertEquals("",read.text);assertEquals(0L,read.next)
     }
+    @Test fun recoveredSelectionReadsRealPagesAcrossSourcesAndPreservesContinuation() {
+        val store=CardStore(temporary.newFolder().toPath())
+        val modules=(1..3).map { i ->
+            val ref=store.contents.allocator()()
+            store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){("资料$i".repeat(1000)).byteInputStream()}
+            ContentModule("m$i","资料$i",listOf(ContentBlock.Text("b$i",ref)))
+        }
+        val card=ContentDocument("world",CardKind.WORLD,"世界",modules)
+        store.save(card,null,ChangeSource.HUMAN,"initial")
+        val materials=RequestMaterials(store)
+        val base=materials.prepare(listOf(SourceSelection(card.id)),emptySet(),emptyList(),TriggerWindow(1,setOf(MessageRole.USER)))
+        val draft=materials.selectAutomatic(base,modules.map {it.id}.toSet(),recovered=true)
+        val pages=BudgetedMaterials(store).read(draft,300,{it.length},true)
+        assertEquals(3,pages.size)
+        assertEquals(300,pages.sumOf {it.text.length})
+        pages.forEachIndexed {i,page ->
+            assertTrue(page.text.startsWith("资料${i+1}"))
+            assertEquals(100L,page.next)
+            assertEquals(100,page.text.length)
+            assertTrue(TextPages(store.contents).read(page.source.reference,page.next!!,10).text.isNotEmpty())
+        }
+        assertTrue(draft.plan.decisions.all {it.reason==AdoptionReason.RECOVERY_READ})
+    }
 }

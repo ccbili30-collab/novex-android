@@ -703,6 +703,7 @@ class ChatViewModel(
      * remeasuring from index 0 (white flash).
      */
     val listState: LazyListState = LazyListState(0, 0)
+    internal var retainedTranscriptRows: List<FlatChatItem> = emptyList()
 
     // A chronological LazyColumn starts at its oldest row. Each session-scoped
     // ViewModel consumes exactly one initial navigation to the newest row; the
@@ -6237,7 +6238,11 @@ class ChatViewModel(
         // whole point is that the request which tripped the threshold must not
         // be the one that goes out over-length.
         if (!skipContextCheck) {
-            when (checkContextBeforeSend(text)) {
+            when (try { checkContextBeforeSend(text) } catch (failure: Exception) {
+                setInputText(text)
+                _error.value = "发送准备失败：${failure.message ?: "请重试"}"
+                return
+            }) {
                 PreSendContextAction.PROCEED -> {}
                 PreSendContextAction.COMPACT_THEN_SEND -> {
                     pendingSendText = text
@@ -6473,6 +6478,11 @@ class ChatViewModel(
                 }
                 AppLogger.info(TAG_STREAM, "send streamJob EXIT")
             }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                setInputText(text)
+                _error.value = "发送准备失败：${failure.message ?: "请重试"}"
             } finally {
                 if (!streamLaunched) {
                     AppLogger.info(TAG_STREAM, "send _isStreaming=false (setup aborted)")
@@ -6490,6 +6500,8 @@ class ChatViewModel(
      *  on screen even though streaming is over. The flag is per-message and
      *  is not implicitly cleared by isStreaming=false. */
     private fun setInlineError(errorText: String) {
+        // Retain the last known estimate when preparation fails.
+        _contextUsageReady.value = _lastTurnContextTokens.value > 0
         // [T-error-persist-android] Never let an empty/blank error string reach
         // the banner. The UI gate is `message.error?.let { … }` — a non-null ""
         // would render an EMPTY error banner, and (now that errors persist) it
@@ -6504,6 +6516,14 @@ class ChatViewModel(
         flushAllStreamingDeltas()
         val msgs = _messages.value.toMutableList()
         val lastAssistantIdx = msgs.indexOfLast { it.role == "assistant" }
+        val lastUserIdx=msgs.indexOfLast {it.role=="user" && !it.isQueued}
+        if(lastAssistantIdx<=lastUserIdx) {
+            // Preparation failed before this request acquired an assistant row.
+            // Never mutate or persist an error onto the preceding completed reply.
+            _error.value=safeError
+            if(lastUserIdx>=0 && _inputText.value.isBlank())setInputText(msgs[lastUserIdx].content)
+            return
+        }
         if (lastAssistantIdx >= 0) {
             val msg = msgs[lastAssistantIdx]
             msgs[lastAssistantIdx] = msg.copy(
@@ -7249,7 +7269,7 @@ class ChatViewModel(
                     TAG_STREAM,
                     "Novex context preparation failed ${error::class.java.simpleName}: ${error.message}",
                 )
-                throw IllegalStateException("本轮设定尚未准备完成，未发送模型请求：${error.message ?: "请重新检查采用的卡片"}", error)
+                throw IllegalStateException("本轮资料准备未完成，尚未开始回答：${error.message ?: "请重新检查采用的卡片"}", error)
             }
         }
         var requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt

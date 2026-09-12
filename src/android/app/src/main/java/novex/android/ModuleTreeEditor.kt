@@ -56,6 +56,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
     var origin by remember {mutableStateOf(Offset.Zero)}
     var dragged by remember {mutableStateOf<String?>(null)}
     var point by remember {mutableStateOf(Offset.Zero)}
+    var grab by remember {mutableStateOf(Offset.Zero)}
     var drop by remember {mutableStateOf<ModuleDrop?>(null)}
     var menuTarget by remember {mutableStateOf<String?>(null)}
     LaunchedEffect(model.arrangementTarget) {
@@ -205,6 +206,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
             val held=awaitLongPressOrCancellation(down.id)?:return@awaitEachGesture
             val hit=hits.values.firstOrNull {it.bounds.contains(held.position+origin)}?:return@awaitEachGesture
             dragged=hit.id;point=held.position+origin
+            grab=Offset((point.x-hit.bounds.left).coerceIn(0f,180.dp.toPx()),20.dp.toPx())
             try {
                 while(true) {
                     val event=awaitPointerEvent(PointerEventPass.Initial)
@@ -251,7 +253,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
     }
         dragged?.let {id->card.modules.findModule(id)?.let {moving->
             Column(Modifier.widthIn(max=220.dp).padding(horizontal=12.dp).offset {
-                IntOffset(0,(point.y-origin.y-78.dp.toPx()).roundToInt().coerceIn(0,(viewport.height-80.dp.toPx()).roundToInt().coerceAtLeast(0)))
+                IntOffset((point.x-origin.x-grab.x).roundToInt(),(point.y-origin.y-grab.y).roundToInt())
             }.shadow(3.dp,RoundedCornerShape(6.dp)).background(NovexColors.Surface,RoundedCornerShape(6.dp))
                 .border(1.dp,NovexColors.Primary,RoundedCornerShape(6.dp)).padding(8.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {

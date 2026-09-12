@@ -52,7 +52,7 @@ class CardFiles(private val store: CardStore) {
     /** 只导出已保存版本，草稿必须通过共同保存入口提交后才能替代它。 */
     fun export(cardId: String, destination: Path, targetId:String=cardId): SavedCard {
         val saved = requireNotNull(store.open(cardId)) { "卡片尚未保存，无法导出正式版本" }
-        ExchangeLab.write(destination, ContentTargets.find(saved.content,targetId), store.contents)
+        ExchangeLab.write(destination, ContentTargets.find(saved.content,targetId), store.contents,readable=true)
         return saved
     }
 }

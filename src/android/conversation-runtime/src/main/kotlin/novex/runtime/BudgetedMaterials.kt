@@ -12,19 +12,25 @@ class BudgetedMaterials(store:CardStore) {
     fun read(draft:RequestMaterialDraft,budget:Int,count:(String)->Int,allowDeferred:Boolean):List<BudgetedText> {
         var remaining=budget.coerceAtLeast(0)
         val required=draft.plan.decisions.filter {it.reason==AdoptionReason.ALWAYS || it.reason==AdoptionReason.MANUAL_SELECTED}.map {it.module.id}.toSet()
-        return draft.texts.sortedBy {if(it.moduleId in required)0 else 1}.map {source->
+        val sources=draft.texts.sortedBy {if(it.moduleId in required)0 else 1}
+        val recovery=draft.plan.decisions.any {it.reason==AdoptionReason.RECOVERY_READ}
+        return sources.mapIndexed {index,source->
+            // Recovery reads real pages across sources instead of spending the
+            // entire budget on the first large block and sending only names for the rest.
+            var allowance=if(recovery && allowDeferred && source.moduleId !in required)
+                remaining/(sources.size-index) else remaining
             val output=StringBuilder();var offset=0L;var next:Long?=0L
-            while(next!=null && remaining>0) {
-                val page=pages.read(source.reference,offset,minOf(8192,remaining.coerceAtLeast(1)))
+            while(next!=null && allowance>0) {
+                val page=pages.read(source.reference,offset,minOf(8192,allowance))
                 var body=page.text
-                if(count(body)>remaining) {
+                if(count(body)>allowance) {
                     var lo=0;var hi=body.codePointCount(0,body.length)
                     while(lo<hi){val mid=(lo+hi+1)/2;val end=body.offsetByCodePoints(0,mid)
-                        if(count(body.substring(0,end))<=remaining)lo=mid else hi=mid-1}
+                        if(count(body.substring(0,end))<=allowance)lo=mid else hi=mid-1}
                     body=body.substring(0,body.offsetByCodePoints(0,lo))
                 }
                 val consumed=body.codePointCount(0,body.length)
-                output.append(body);remaining-=count(body)
+                output.append(body);val cost=count(body);remaining-=cost;allowance-=cost
                 next=if(body.length==page.text.length)page.next else offset+consumed
                 if(body.length!=page.text.length || consumed==0)break
                 offset=next?:offset

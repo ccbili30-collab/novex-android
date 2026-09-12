@@ -534,11 +534,13 @@ fun ChatScreen(
     // is a non-composable scope so we lift the read up here.
     val tHangDiagAppContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val returnFromConversation = {
+        com.openminis.app.crash.ProcessExitEvidence.record(context, "chat.return-request streaming=$isStreaming")
         if (onBackReturnsToList) viewModel.returnToConversationList(onBack) else onBack()
     }
     NovexGameEntryDialog(gameEntryState, viewModel::selectGameEntryPlayer, viewModel::retryGameEntry, returnFromConversation)
     androidx.activity.compose.BackHandler(onBack = returnFromConversation)
     androidx.compose.runtime.DisposableEffect(sessionId) {
+        com.openminis.app.crash.ProcessExitEvidence.record(context, "chat.mount")
         viewModel.markConversationVisible()
         ChatViewModelStore.setActiveSession(sessionId)
         // [T-HANG-DIAG] enter / dispose markers around the ChatScreen lifetime
@@ -552,6 +554,7 @@ fun ChatScreen(
         com.openminis.app.diagnostics.PerfLongCtx.step(sessionId, "chatScreen.mount")
         onDispose {
             println("[T-HANG-DIAG] ChatScreen UNMOUNT session=$sessionId")
+            com.openminis.app.crash.ProcessExitEvidence.record(context, "chat.unmount")
             ChatViewModelStore.setActiveSession(null)
 
         }
@@ -2005,7 +2008,7 @@ fun ChatScreen(
                 // computation on every new emission.
                 val showAssistantIdentity = immersiveProfile.usesRolePresentation
                 var flatItems by remember(sessionId, showAssistantIdentity) {
-                    mutableStateOf<List<FlatChatItem>>(emptyList())
+                    mutableStateOf(viewModel.retainedTranscriptRows)
                 }
                 var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
                 openedProcess?.let { opened ->
@@ -2217,6 +2220,7 @@ fun ChatScreen(
                                 }
                             }
                             flatItems = foldNovexExecutionProcesses(if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows)
+                            viewModel.retainedTranscriptRows = flatItems
                             com.openminis.app.diagnostics.StreamPerfMonitor.tick(
                                 flattenNanos = System.nanoTime() - tickStartNs,
                                 frozenReused = frozenReused,
@@ -2283,6 +2287,7 @@ fun ChatScreen(
                 }
                 var streamWasRunning by remember(sessionId) { mutableStateOf(isStreaming) }
                 LaunchedEffect(isStreaming) {
+                    com.openminis.app.crash.ProcessExitEvidence.record(context, "chat.streaming=$isStreaming")
                     if (streamWasRunning && !isStreaming && transcriptFollowState.isFollowingLatest) {
                         scrollToLatestOnce(TranscriptViewportMove.StreamCompleted)
                         transcriptFollowState = transcriptFollowState.after(
