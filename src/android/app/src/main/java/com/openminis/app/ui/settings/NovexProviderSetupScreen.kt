@@ -136,10 +136,6 @@ fun NovexProviderSetupScreen(
     onSaved: () -> Unit,
     instanceId: String? = null,
 ) {
-    if (instanceId == com.openminis.app.data.model.TemporaryPreviewModel.INSTANCE_ID) {
-        TemporaryPreviewModelScreen(onBack)
-        return
-    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val existing = remember(instanceId) { instanceId?.let(providerRepository::instance) }

@@ -46,7 +46,6 @@ for expected in \
   '- next' \
   'mode:' \
   'build_preview:' \
-  'include_free_model:' \
   'permissions:' \
   'contents: read' \
   'cancel-in-progress: true' \
@@ -97,12 +96,6 @@ package_step="$(sed -n '/name: Run selected checks and optional daily preview/,/
 if [[ "$package_step" != *"github.event_name == 'workflow_dispatch'"* ]] || \
    [[ "$package_step" != *'inputs.build_preview'* ]]; then
   echo "daily preview packaging must be manual and opt-in" >&2
-  exit 1
-fi
-
-if [[ "$source" != *'NOVEX_TEMP_DEEPSEEK_KEY'* ]] || \
-   [[ "$source" != *'inputs.include_free_model'* ]]; then
-  echo "private preview packaging must require an explicit opt-in and repository secret" >&2
   exit 1
 fi
 

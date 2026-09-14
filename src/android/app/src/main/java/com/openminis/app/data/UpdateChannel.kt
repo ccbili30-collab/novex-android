@@ -10,7 +10,6 @@ enum class UpdateChannel(
     // treating preview-only GitHub releases as installable APK updates. The
     // payload is still a signed APK and is staged with an .apk name on-device.
     PREVIEW("preview", "novex-preview.novex"),
-    PREVIEW_FREE("preview-free", "novex-preview-free.novex"),
     ;
 
     companion object {
@@ -74,7 +73,7 @@ internal object UpdateReleasePolicy {
         // Preview is an independent installation and only follows preview
         // candidates. A final release never moves users across channels even
         // if a release was accidentally published with both asset names.
-        UpdateChannel.PREVIEW, UpdateChannel.PREVIEW_FREE -> releases.filter { it.isPrerelease }
+        UpdateChannel.PREVIEW -> releases.filter { it.isPrerelease }
     }
 
     fun normalizeTag(tag: String): String = tag.trim().removePrefix("v").removePrefix("V")

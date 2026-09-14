@@ -82,7 +82,6 @@ android {
         versionName = novexVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "TEMPORARY_DEEPSEEK_KEY", "\"\"")
         manifestPlaceholders["novexUpdateChannel"] = "stable"
 
         // System prompt prefix required by Anthropic for Claude Code OAuth
@@ -447,16 +446,11 @@ dependencies {
     implementation(project(":model-transport")) { exclude(group="org.json",module="json") }
 }
 
-// Private preview artifact only. An ordinary build contains no credential or entry.
+// Candidate builds use the ordinary preview channel. No credentials or private
+// model entries are injected at build time.
 androidComponents {
     onVariants(selector().withFlavor("updateChannel" to "preview").withBuildType("daily")) { variant ->
-        val privateLane = providers.environmentVariable("NOVEX_PREVIEW_TRACK").orNull == "free"
-        val key = if (privateLane) providers.environmentVariable("NOVEX_TEMP_DEEPSEEK_KEY").orNull.orEmpty() else ""
-        require(!privateLane || key.isNotBlank()) { "Private preview requires its temporary credential" }
-        val channel = if (privateLane) "preview-free" else "preview"
-        variant.buildConfigFields.put("UPDATE_CHANNEL", BuildConfigField("String", "\"$channel\"", "Candidate track"))
-        variant.manifestPlaceholders.put("novexUpdateChannel", channel)
-        require(key.isEmpty() || key.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid temporary credential format" }
-        variant.buildConfigFields.put("TEMPORARY_DEEPSEEK_KEY", BuildConfigField("String", "\"$key\"", "Private preview only"))
+        variant.buildConfigFields.put("UPDATE_CHANNEL", BuildConfigField("String", "\"preview\"", "Candidate track"))
+        variant.manifestPlaceholders.put("novexUpdateChannel", "preview")
     }
 }

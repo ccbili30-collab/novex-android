@@ -810,6 +810,6 @@ private fun AnnouncementItem(
 private fun updateChannelLabel(channel: UpdateChannel): String = stringResource(
     when (channel) {
         UpdateChannel.STABLE -> R.string.update_channel_stable
-        UpdateChannel.PREVIEW, UpdateChannel.PREVIEW_FREE -> R.string.update_channel_preview
+        UpdateChannel.PREVIEW -> R.string.update_channel_preview
     },
 )

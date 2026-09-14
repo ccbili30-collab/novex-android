@@ -1603,7 +1603,7 @@ class ChatViewModel(
         NovexRequestEstimate.total(history, prompt, tools)
 
     val canEditModelCapacity: Boolean
-        get() = _activeEntryId.value != com.openminis.app.data.model.TemporaryPreviewModel.ENTRY_ID
+        get() = true
 
     fun saveModelContextWindow(tokens: Int?) {
         check(canEditModelCapacity) { "测试模型配置不可修改" }
@@ -3593,7 +3593,7 @@ class ChatViewModel(
                 prefix = "\n<本轮未完整提供的资料>\n", postfix = "\n不能把上述资料视为已通读。\n</本轮未完整提供的资料>",
                 separator = "\n",
             ) { "${it.label}：${it.reason}" }.orEmpty()
-        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL in setOf("preview", "preview-free")) {
+        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") {
             try {
                 val definitions = agentTools
                 val audit = novexPromptAuditInput?.takeIf { it.prompt == baseSystemPrompt }
@@ -12579,7 +12579,7 @@ class ChatViewModel(
     }
 
     fun prepareNovexConversationExport() {
-        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL !in setOf("preview", "preview-free")) return
+        if (com.openminis.app.BuildConfig.UPDATE_CHANNEL != "preview") return
         if(_isStreaming.value) {
             _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(error = "当前回答尚未完成，请等待保存后再导出。不会自动终止回答。")
             return

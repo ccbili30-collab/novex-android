@@ -1,6 +1,5 @@
 package com.openminis.app.data.repository
 
-import com.openminis.app.data.model.TemporaryPreviewModel
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -265,9 +264,8 @@ class ProviderRepository(private val context: Context) {
      */
     private val configLock = Any()
 
-    private fun loadConfig(): ProviderConfig = TemporaryPreviewModel.install(
-        com.openminis.app.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() }),
-    )
+    private fun loadConfig(): ProviderConfig =
+        com.openminis.app.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() })
 
     /**
      * [T-android-provider-room-store] DB-first load with three-way
@@ -582,7 +580,7 @@ class ProviderRepository(private val context: Context) {
             // emit the in-memory state so the UI reflects the user's
             // intent even when the disk write didn't land; the next
             // successful save resyncs everything.
-            val normalized = TemporaryPreviewModel.install(config)
+            val normalized = config
             val canonical = try {
                 runBlocking { persistToDbAndMirror(normalized) }
             } catch (e: Exception) {
@@ -654,8 +652,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun addInstance(instance: ProviderInstance): Unit = synchronized(configLock) {
-        if (instance.id == TemporaryPreviewModel.INSTANCE_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         config.instances.add(instance)
         // Seed built-in model entries ONLY when the seed is appropriate for this
@@ -792,8 +789,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun updateInstance(instance: ProviderInstance): Unit = synchronized(configLock) {
-        if (instance.id == TemporaryPreviewModel.INSTANCE_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         val idx = config.instances.indexOfFirst { it.id == instance.id }
         if (idx >= 0) {
@@ -826,8 +822,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun removeInstance(instanceId: String): Unit = synchronized(configLock) {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         invalidateModelCache(instanceId)
         val config = workingCopy()
         val removedEntryIds = config.modelEntries
@@ -1042,8 +1037,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun replaceEntries(instanceId: String, models: List<LLMModel>) = synchronized(configLock) {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         // Hot path for concurrent autoRefreshModels coroutines (one per
         // enabled instance) — without this lock, two replaceEntries() calls
         // race on the shared config.modelEntries ArrayList. The working copy
@@ -1173,8 +1167,7 @@ class ProviderRepository(private val context: Context) {
     // fine — replaceEntries / ensureVoiceTemplateModels already rely on that.
 
     fun addEntry(entry: ModelEntry): Unit = synchronized(configLock) {
-        if (entry.providerInstanceId == TemporaryPreviewModel.INSTANCE_ID || entry.id == TemporaryPreviewModel.ENTRY_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         if (!entry.isCustom) {
             val exists = config.modelEntries.any {
@@ -1189,8 +1182,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun updateEntry(entry: ModelEntry): Unit = synchronized(configLock) {
-        if (entry.providerInstanceId == TemporaryPreviewModel.INSTANCE_ID || entry.id == TemporaryPreviewModel.ENTRY_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         val idx = config.modelEntries.indexOfFirst { it.id == entry.id }
         if (idx >= 0) {
@@ -1200,8 +1192,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun removeEntry(entryId: String): Unit = synchronized(configLock) {
-        if (entryId == TemporaryPreviewModel.ENTRY_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         config.modelEntries.removeAll { it.id == entryId }
         config.modelGroups.forEach { group ->
@@ -1218,16 +1209,14 @@ class ProviderRepository(private val context: Context) {
     // --- Model Group management ---
 
     fun addGroup(group: ModelGroup): Unit = synchronized(configLock) {
-        if (group.id == TemporaryPreviewModel.GROUP_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         config.modelGroups.add(group)
         saveConfig(config)
     }
 
     fun updateGroup(group: ModelGroup): Unit = synchronized(configLock) {
-        if (group.id == TemporaryPreviewModel.GROUP_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         val idx = config.modelGroups.indexOfFirst { it.id == group.id }
         if (idx >= 0) {
@@ -1243,8 +1232,7 @@ class ProviderRepository(private val context: Context) {
     }
 
     fun removeGroup(groupId: String): Unit = synchronized(configLock) {
-        if (groupId == TemporaryPreviewModel.GROUP_ID) return@synchronized
-        ensureConfigLoaded()
+                ensureConfigLoaded()
         val config = workingCopy()
         config.removeModelGroupAndBindings(groupId)
         saveConfig(config)
@@ -2542,7 +2530,6 @@ class ProviderRepository(private val context: Context) {
      * so we never overwrite hand-edited entries. Mirrors iOS `autoRefreshModels(for:)`.
      */
     private suspend fun autoRefreshModels(instance: ProviderInstance) {
-        if (instance.id == TemporaryPreviewModel.INSTANCE_ID) return
         if (isOpenCodeFreeInstance(instance.id)) return
         val hasCustom = _config.value.modelEntries.any {
             it.providerInstanceId == instance.id && it.isCustom
@@ -2654,12 +2641,10 @@ class ProviderRepository(private val context: Context) {
 
     // API Key management
     fun saveApiKey(instanceId: String, key: String) {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return
         encryptedPrefs.edit().putString("apikey_$instanceId", key).apply()
     }
 
     fun loadApiKey(instanceId: String): String? {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return com.openminis.app.BuildConfig.TEMPORARY_DEEPSEEK_KEY.takeIf { it.isNotBlank() }
         return encryptedPrefs.getString("apikey_$instanceId", null)
     }
 
@@ -2676,7 +2661,6 @@ class ProviderRepository(private val context: Context) {
         loadApiKey(instance.id) ?: if (instance.allowsEmptyAPIKey) "" else null
 
     fun deleteApiKey(instanceId: String) {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return
         encryptedPrefs.edit().remove("apikey_$instanceId").apply()
     }
 
@@ -2702,7 +2686,6 @@ class ProviderRepository(private val context: Context) {
 
     /** Export an instance as shareable JSON (includes base64-encoded API key). */
     fun exportInstanceJSON(instanceId: String): String? {
-        if (instanceId == TemporaryPreviewModel.INSTANCE_ID) return null
         ensureConfigLoaded()
         val instance = instance(instanceId) ?: return null
         val entries = visibleEntries(instanceId) + _config.value.modelEntries.filter {

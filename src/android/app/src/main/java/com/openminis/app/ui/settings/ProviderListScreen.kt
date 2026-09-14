@@ -101,8 +101,7 @@ fun ProviderListScreen(
         refreshOpenCode(force = false)
     }
     val instances = config.instances.filterNot {
-        it.id in config.imageGenerationProviderInstanceIds || providerRepository.isOpenCodeFreeInstance(it.id) ||
-            it.id == com.openminis.app.data.model.TemporaryPreviewModel.INSTANCE_ID
+        it.id in config.imageGenerationProviderInstanceIds || providerRepository.isOpenCodeFreeInstance(it.id)
     }
     val groupedInstances = instances.groupBy { it.providerType }
     val context = LocalContext.current
@@ -158,9 +157,6 @@ fun ProviderListScreen(
             }
         },
     ) {
-        if (com.openminis.app.data.model.TemporaryPreviewModel.enabled) {
-            Text("DeepSeek API · 测试版免费模型", modifier = Modifier.padding(20.dp))
-        }
         OpenCodeFreeSection(
             entries = providerRepository.openCodeFreeEntries(),
             expanded = openCodeExpanded,

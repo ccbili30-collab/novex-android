@@ -1904,7 +1904,7 @@ fun ChatScreen(
                             )
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
                                 onClick = { showConversationRecords = true }))
-                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL in setOf("preview", "preview-free")) add(
+                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(
                                 NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
                                     onClick = viewModel::prepareNovexConversationExport))
                             if (immersiveProfile.usesRolePresentation) {

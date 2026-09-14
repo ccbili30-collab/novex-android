@@ -96,8 +96,7 @@ fun ModelGroupsScreen(
             providerRepository.ensureImageGenerationMigration()
         }
     }
-    val groups = config.modelGroups.filterNot { it.id in config.imageGenerationGroupIds ||
-        it.id == com.openminis.app.data.model.TemporaryPreviewModel.GROUP_ID }
+    val groups = config.modelGroups.filterNot { it.id in config.imageGenerationGroupIds }
     var showNewGroupDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
     var isManagingGroups by remember { mutableStateOf(false) }
