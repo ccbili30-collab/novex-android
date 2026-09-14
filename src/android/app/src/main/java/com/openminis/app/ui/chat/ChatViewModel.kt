@@ -764,7 +764,7 @@ class ChatViewModel(
     val activePlaythroughState: StateFlow<PlaythroughState?> = _activePlaythroughState.asStateFlow()
     private val _novexDataUpdates = MutableSharedFlow<NovexDataUpdateEvent>(extraBufferCapacity = 8)
     /** Software-generated state changes; model prose never writes this stream. */
-    val novexDataUpdates: SharedFlow<NovexDataUpdateEvent> = _novexDataUpdates.asSharedFlow()
+    internal val novexDataUpdates: SharedFlow<NovexDataUpdateEvent> = _novexDataUpdates.asSharedFlow()
     private val _novexControlView = MutableStateFlow<ConversationControlOutcome.View?>(null)
     val novexControlView: StateFlow<ConversationControlOutcome.View?> = _novexControlView.asStateFlow()
 
