@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -151,10 +151,9 @@ internal fun NovexSideConversations(
     }
 
     if (confirmDelete != null) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = null },
-            title = { Text("关闭这条侧边对话？") },
-            text = { Text("关闭后聊天记录将删除，且不可恢复。已回传主对话的交接简报不受影响。") },
+        com.openminis.app.ui.novex.NovexContentDialog(
+            "关闭这条侧边对话？",
+            onDismiss = { confirmDelete = null },
             confirmButton = { TextButton(onClick = {
                 val id = confirmDelete
                 confirmDelete = null
@@ -164,8 +163,9 @@ internal fun NovexSideConversations(
                     refresh()
                 }
             }) { Text("关闭并删除", color = NovexColors.Danger) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("取消") } },
-        )
+        ) {
+            Text("关闭后聊天记录将删除，且不可恢复。已回传主对话的交接简报不受影响。", style = NovexType.Body, color = NovexColors.Text)
+        }
     }
     notice?.let { message ->
         LaunchedEffect(message) {
@@ -294,23 +294,20 @@ private fun NovexSideConversationWindow(
 
 @Composable
 private fun BasicInputField(value: String, onValueChange: (String) -> Unit, modifier: Modifier, streaming: Boolean) {
-    androidx.compose.foundation.layout.Box(
+    Box(
         modifier
             .background(NovexColors.SurfaceMuted, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 2.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        androidx.compose.material3.OutlinedTextField(
+        if (value.isEmpty()) {
+            Text(if (streaming) "排队中…" else "戏外讨论…", style = NovexType.Body, color = NovexColors.TertiaryText)
+        }
+        BasicTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(if (streaming) "排队中…" else "戏外讨论…", style = NovexType.Metadata, color = NovexColors.TertiaryText) },
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-            ),
-            textStyle = NovexType.Body,
+            textStyle = NovexType.Body.copy(color = NovexColors.Text),
         )
     }
 }
