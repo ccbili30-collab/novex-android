@@ -124,9 +124,19 @@ class ChatRepository(internal val dao: ChatDao) {
             novexConfigurationJson = parent.novexConfigurationJson,
             sideOfSession = parentId,
         )
-        loadActiveMessages(parentId).forEach { row ->
-            dao.insertMessage(row.copy(id = UUID.randomUUID().toString(), sessionId = side.id,
-                createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()))
+        val source = loadActiveMessages(parentId)
+        // Remap ids so the copied branch graph stays self-contained in the side
+        // session — copied rows must not point at parent-session message ids.
+        val idMap = source.associate { it.id to UUID.randomUUID().toString() }
+        source.forEach { row ->
+            dao.insertMessage(row.copy(
+                id = requireNotNull(idMap[row.id]),
+                sessionId = side.id,
+                parentMessageId = row.parentMessageId?.let { idMap[it] },
+                activeChildId = row.activeChildId?.let { idMap[it] },
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+            ))
         }
         return side
     }
