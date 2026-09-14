@@ -8015,6 +8015,11 @@ class ChatViewModel(
                             content = turnText,
                             contentParts = assistantParts,
                             reasoningContent = turnReasoningContent,
+                            // The scope projection rebuilds unrowed messages
+                            // from their persisted rows; without this id the
+                            // live-session history loses the turn's text
+                            // (see the sibling adds below).
+                            dbMessageId = turnMessageId,
                         ),
                     )
                     val turnParts = buildTurnParts(allToolBlocks, turnStartBlockIndex, toolInputMap)
@@ -8158,6 +8163,11 @@ class ChatViewModel(
                     content = turnText,
                     contentParts = assistantParts,
                     reasoningContent = turnReasoningContent,
+                    // Without the row id the scope projection cannot resolve
+                    // this turn from storage and blanks it, so a live session
+                    // silently sends its history without any prior assistant
+                    // replies — the model then re-answers every old question.
+                    dbMessageId = turnMessageId,
                 ),
             )
 

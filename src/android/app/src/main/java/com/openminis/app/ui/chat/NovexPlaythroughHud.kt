@@ -29,8 +29,8 @@ import com.openminis.app.novex.domain.PlaythroughValue
 import kotlin.math.roundToInt
 
 /**
- * 本局状态挂耳：一颗可自由拖动的悬浮标签。按住可任意方向拖动，
- * 松手后吸附到最近的左缘 / 右缘 / 顶缘；点开为贴同侧的悬浮面板。
+ * 本局状态挂耳：一颗可自由拖动的悬浮标签。按住可任意方向拖动，松手后停在原地
+ * 自由悬浮；靠近某条边缘（约 56dp 内）松手才吸附到该边。点开为贴同侧的悬浮面板。
  * 状态载荷原样持久化，此层只做文本渲染 —— 结构化字段（如 value/max）与
  * HTML 血条渲染是后续升级位，不在本层锁死。
  */
@@ -52,28 +52,35 @@ internal fun NovexPlaythroughHud(
         val maxY = with(density) { (maxHeight - 140.dp).toPx() }.coerceAtLeast(0f)
         val maxX = (with(density) { maxWidth.toPx() } - earWidthPx).coerceAtLeast(0f)
         val placementX = if (x < 0f) maxX else x
+        // Free placement by default; only magnet to an edge when released
+        // close to one, so the ear can also hover anywhere as a standalone chip.
+        val snapMarginPx = with(density) { 56.dp.toPx() }
+        val dockedTop = placementX > snapMarginPx && maxX - placementX > snapMarginPx && y <= snapMarginPx
+        val dockedLeft = placementX <= snapMarginPx
+        val dockedRight = !dockedLeft && maxX - placementX <= snapMarginPx
+        val freeFloating = !dockedTop && !dockedLeft && !dockedRight
 
-        fun snapToNearestEdge() {
-            val toLeft = placementX
-            val toRight = maxX - placementX
+        fun snapIfNearEdge() {
             when {
-                y <= toLeft && y <= toRight -> y = 0f
-                toLeft <= toRight -> x = 0f
-                else -> x = maxX
+                y <= snapMarginPx && placementX > snapMarginPx && maxX - placementX > snapMarginPx -> y = 0f
+                placementX <= snapMarginPx -> x = 0f
+                maxX - placementX <= snapMarginPx -> x = maxX
+                else -> x = placementX
             }
         }
 
-        val onRight = placementX >= maxX / 2f
+        val onRight = dockedRight || (freeFloating && placementX >= maxX / 2f)
         val preview = state.values.entries.firstNotNullOfOrNull { entry ->
             (entry.value as? PlaythroughValue.Number)?.let { entry.key to it.value }
         }
         if (!expanded) {
             // Flush with the docked edge; only the inner corners round so the
-            // tab reads as growing out of that edge.
-            val earShape = if (onRight) {
-                RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)
-            } else {
-                RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)
+            // tab reads as growing out of that edge. Free-floating keeps all
+            // corners round — it is a standalone chip, not an ear.
+            val earShape = when {
+                freeFloating -> RoundedCornerShape(14.dp)
+                onRight -> RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)
+                else -> RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)
             }
             Surface(
                 shape = earShape,
@@ -90,7 +97,7 @@ internal fun NovexPlaythroughHud(
                                 x = (placementX + drag.x).coerceIn(0f, maxX)
                                 y = (y + drag.y).coerceIn(0f, maxY)
                             },
-                            onDragEnd = { snapToNearestEdge() },
+                            onDragEnd = { snapIfNearEdge() },
                         )
                     }
                     .clickable { expanded = true },
