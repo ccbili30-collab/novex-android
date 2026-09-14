@@ -17,7 +17,7 @@ internal fun ConversationSettingsOverview(
     answer: String, player: String, backgroundCount: Int, game: String, managedCount: Int,
     permission: String, promptChanged: Boolean, backgroundOverridden: Boolean,
     integrated:Boolean=false, onOpen: (String) -> Unit, onPermission: () -> Unit,
-    perTurnSet: Boolean = false,
+    perTurnSet: Boolean = false, onTokenUsage: () -> Unit = {},
 ) {
     NovexEditorSection(header = "身份与回答") {
         NovexSummaryRow("回答身份", answer, onClick = { onOpen("answer") })
@@ -32,6 +32,7 @@ internal fun ConversationSettingsOverview(
     NovexEditorSection(header = "内容与工具") {
         NovexSummaryRow("对话空间", "文件与成果", onClick = { onOpen("workspace") })
         NovexSummaryRow("可管理内容", if (managedCount == 0) "未添加" else "$managedCount 项", onClick = { onOpen("manage") })
+        NovexSummaryRow("上下文与用量", "请求占用与每轮明细", onClick = onTokenUsage)
         NovexSummaryRow("工具权限", permission, onClick = onPermission)
     }
     NovexEditorSection(header = "其他设置") {

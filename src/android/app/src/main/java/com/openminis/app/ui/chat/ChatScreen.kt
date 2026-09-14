@@ -692,7 +692,6 @@ fun ChatScreen(
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
-    var showTokenUsageSheet by remember { mutableStateOf(false) }
     // T185: Move-to-session sheet visibility. Hoisted to the top of
     // ChatScreen so the trigger (capsule inside the composer) and the
     // sheet body (rendered later in the layout tree) share the same
@@ -1389,7 +1388,7 @@ fun ChatScreen(
     var chatInputLevel by remember { mutableStateOf(appearancePrefs.getInt(com.openminis.app.ui.settings.KEY_FONT_CHAT_INPUT, 0)) }
     var toolPreviewEnabled by remember { mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_TOOL_PREVIEW, true)) }
     var showContextMeter by remember {
-        mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER, false))
+        mutableStateOf(appearancePrefs.getBoolean(com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER, true))
     }
     var contextMeterMode by rememberSaveable { mutableIntStateOf(0) }
     val lastTurnContextTokens by viewModel.lastTurnContextTokens.collectAsState()
@@ -1410,7 +1409,7 @@ fun ChatScreen(
                 com.openminis.app.ui.settings.KEY_FONT_MESSAGE -> messageFontLevel = sp.getInt(key, 0)
                 com.openminis.app.ui.settings.KEY_FONT_CHAT_INPUT -> chatInputLevel = sp.getInt(key, 0)
                 com.openminis.app.ui.settings.KEY_TOOL_PREVIEW -> toolPreviewEnabled = sp.getBoolean(key, true)
-                com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER -> showContextMeter = sp.getBoolean(key, false)
+                com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER -> showContextMeter = sp.getBoolean(key, true)
                 com.openminis.app.ui.settings.KEY_SHOW_CHAT_TITLE -> showChatTitlePill = sp.getBoolean(key, true)
             }
         }
@@ -1895,11 +1894,6 @@ fun ChatScreen(
                             add(
                                 NovexMenuAction("对话设置", R.drawable.ic_phosphor_sliders_horizontal) {
                                     onSettings()
-                                },
-                            )
-                            add(
-                                NovexMenuAction("上下文与用量", R.drawable.ic_phosphor_chart_bar) {
-                                    showTokenUsageSheet = true
                                 },
                             )
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
@@ -4762,14 +4756,6 @@ fun ChatScreen(
         BrowserSheet(
             tabPool = viewModel.browserTabPool,
             onDismiss = { viewModel.dismissBrowserSheet() },
-        )
-    }
-
-    // Session Token Usage bottom sheet
-    if (showTokenUsageSheet) {
-        TokenUsageSheet(
-            viewModel = viewModel,
-            onDismiss = { showTokenUsageSheet = false },
         )
     }
 

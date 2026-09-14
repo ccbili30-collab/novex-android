@@ -64,7 +64,7 @@ const val KEY_THEME_MODE = "theme_mode"            // 0=System, 1=Light, 2=Dark
 const val KEY_RETURN_KEY_BEHAVIOR = "returnKeyBehavior"  // Int 0=Newline (default), 1=Send
 const val KEY_KEEP_SCREEN_AWAKE = "keepScreenAwakeDuringTasks"  // Boolean, default false
 const val KEY_TOOL_PREVIEW = "tool_preview"        // Boolean, default true
-const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // Boolean, default false
+const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // Boolean, default true
 // [T-keyboard-auto-pop default flip] Default ON — most users want the
 // composer ready for a follow-up immediately after the model finishes.
 // Key name mirrors iOS `@AppStorage("chat.autoFocusAfterReply")` so a
@@ -121,7 +121,7 @@ fun autoExpandThinkingEnabled(context: Context): Boolean =
     getAppearancePrefs(context).getBoolean(KEY_AUTO_EXPAND_THINKING, true)
 
 fun showContextMeterEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_SHOW_CONTEXT_METER, false)
+    getAppearancePrefs(context).getBoolean(KEY_SHOW_CONTEXT_METER, true)
 
 /** Font scale levels matching iOS: XS(-2) Small(-1) Default(0) Medium(1) Large(2) XL(3) */
 private val fontScaleLabels = listOf("XS", "Small", "Default", "Medium", "Large", "XL")
@@ -171,7 +171,7 @@ fun AppearanceScreen(
     var returnKeyBehavior by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
     var keepScreenAwake by remember { mutableStateOf(prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, false)) }
     var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
-    var showContextMeter by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CONTEXT_METER, false)) }
+    var showContextMeter by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CONTEXT_METER, true)) }
     var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
     var autoExpandThinking by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_EXPAND_THINKING, true)) }
     var showChatTitle by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CHAT_TITLE, true)) }
@@ -319,7 +319,7 @@ fun AppearanceScreen(
 
         SettingsSection(
             header = "上下文用量",
-            footer = "在对话顶部显示当前模型实际上下文窗口的使用进度。",
+            footer = "在输入框旁显示当前模型实际上下文窗口的使用进度。",
         ) {
             SettingsSwitchRow(
                 icon = com.openminis.app.ui.novex.NovexIcons.DataUsage,

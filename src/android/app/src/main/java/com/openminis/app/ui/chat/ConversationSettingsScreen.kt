@@ -2,11 +2,6 @@ package com.openminis.app.ui.chat
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import com.openminis.app.novex.domain.libraryDirectory
-import com.openminis.app.novex.domain.NovexLibraryEntry
-import com.openminis.app.ui.novex.NovexLibraryPicker
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +24,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import com.openminis.app.novex.domain.libraryDirectory
+import com.openminis.app.novex.domain.NovexLibraryEntry
+import com.openminis.app.ui.novex.NovexLibraryPicker
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -112,6 +112,7 @@ fun ConversationSettingsScreen(
     onCardSettings: () -> Unit = {},
 ) {
     var settingsPage by rememberSaveable(sessionId) { mutableStateOf("") }
+    var showingTokenUsage by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -281,6 +282,7 @@ fun ConversationSettingsScreen(
             backgroundOverridden = draft.settings.backgroundPath != null,
             perTurnSet = draft.settings.perTurnPrompt.isNotBlank(),
             onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
+            onTokenUsage = { showingTokenUsage = true },
         )
         if (settingsPage == "workspace") {
             ConversationWorkspaceFiles(sessionId)
@@ -808,6 +810,10 @@ fun ConversationSettingsScreen(
                 })
         }
     }
+    if (showingTokenUsage) TokenUsageSheet(
+        viewModel = viewModel,
+        onDismiss = { showingTokenUsage = false },
+    )
     if (showingSettingUse) NovexSettingUseControls(draft.configuration.copy(backgroundSettings = draft.configuration.backgroundSettings.filterNot { it.subject in privateSubjects }), onToggle = { target, enabled ->
         try { draft = draft.setSettingEnabled(target, enabled) }
         catch (failure: IllegalArgumentException) { error = failure.message ?: "设定开关尚未保存" }
