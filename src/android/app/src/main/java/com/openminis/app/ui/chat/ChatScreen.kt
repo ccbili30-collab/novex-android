@@ -374,7 +374,6 @@ fun ChatScreen(
     // Callers needing the full history (compact / fork / regenerate / send)
     // continue to read viewModel.messages directly inside the VM.
     val gameEntryState by viewModel.gameEntryState.collectAsState()
-    val conversationStatus by viewModel.conversationStatus.collectAsState()
     val messages by viewModel.uiMessages.collectAsState()
     val toolApprovals by viewModel.pendingToolApprovals.collectAsState()
     LaunchedEffect(sessionId) { viewModel.restoreToolApprovals() }
@@ -1829,11 +1828,12 @@ fun ChatScreen(
                                             }
                                         }
                                         Text(
-                                            text = if (providerName.isNotEmpty() && modelName.isNotEmpty()) {
-                                                "$providerName · $modelName"
-                                            } else {
-                                                modelName.ifEmpty { providerName }
-                                            },
+                                            // Model name only — the provider prefix
+                                            // ate the headroom and the ellipsis cut
+                                            // into the model name itself, which is
+                                            // the part users identify. The provider
+                                            // stays visible in the model picker.
+                                            text = modelName.ifEmpty { providerName },
                                             fontSize = 11.sp,
                                             lineHeight = 13.sp,
                                             color = ChatColors.tertiaryText,
@@ -3385,8 +3385,6 @@ fun ChatScreen(
                         }
                     }
                 }
-
-                NovexConversationStatusBar(conversationStatus, !isStreaming, onSettings, viewModel::saveConversationExecutionMode)
 
                 // Input box: iOS-style floating card — no visible border, separated
                 // from the backdrop by a symmetric soft shadow painted by hand

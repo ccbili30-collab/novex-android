@@ -1,7 +1,9 @@
 package com.openminis.app.ui.chat
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -14,11 +16,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.openminis.app.novex.domain.PlaythroughState
+import com.openminis.app.novex.domain.PlaythroughValue
 import kotlin.math.roundToInt
 
+/**
+ * 本局状态挂耳：贴屏幕右缘、可上下拖动的标签；点开为悬浮面板。
+ * 状态载荷原样持久化，此层只做文本渲染 —— 结构化字段（如 value/max）与
+ * HTML 血条渲染是后续升级位，不在本层锁死。
+ */
 @Composable
 internal fun NovexPlaythroughHud(
     sessionKey: String,
@@ -28,45 +37,70 @@ internal fun NovexPlaythroughHud(
 ) {
     if (state == null) return
     var expanded by rememberSaveable(sessionKey) { mutableStateOf(false) }
-    var x by rememberSaveable(sessionKey) { mutableFloatStateOf(12f) }
     var y by rememberSaveable(sessionKey) { mutableFloatStateOf(120f) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
-        val maxX = with(density) { (maxWidth - if (expanded) 220.dp else 52.dp).toPx() }.coerceAtLeast(0f)
-        // Leave room for the composer and navigation area. The panel can be
-        // moved anywhere above this safe bottom band and follows the finger.
+        // Leave room for the composer and navigation area; the ear slides
+        // anywhere above this safe bottom band and follows the finger.
         val maxY = with(density) { (maxHeight - 140.dp).toPx() }.coerceAtLeast(0f)
+        val preview = state.values.entries.firstNotNullOfOrNull { entry ->
+            (entry.value as? PlaythroughValue.Number)?.let { entry.key to it.value }
+        }
         Column(
             Modifier
-                .offset { IntOffset(x.roundToInt().coerceIn(0, maxX.roundToInt()), y.roundToInt().coerceIn(0, maxY.roundToInt())) },
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(0, y.roundToInt().coerceIn(0, maxY.roundToInt())) }
+                .pointerInput(Unit) { detectDragGestures { change, drag -> change.consume(); y += drag.y } },
             horizontalAlignment = Alignment.End,
         ) {
-            if (update != null && !expanded) {
+            if (!expanded) {
+                // Right edge is flush with the screen border; only the left
+                // corners round, so the tab reads as growing out of the edge.
+                val earShape = RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)
                 Surface(
-                    Modifier.padding(bottom = 6.dp).widthIn(max = 230.dp).clickable { expanded = true },
-                    shape = RoundedCornerShape(12.dp),
-                    tonalElevation = 4.dp,
+                    shape = earShape,
+                    tonalElevation = 6.dp,
+                    modifier = Modifier
+                        .shadow(4.dp, earShape)
+                        .clickable { expanded = true },
                 ) {
-                    Text("数据已更新（点击查看）", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 10.dp, bottom = 10.dp),
+                    ) {
+                        Text(
+                            text = "状态" + preview?.let { (key, value) ->
+                                " · $key ${if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()}"
+                            }.orEmpty(),
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 150.dp),
+                        )
+                        if (update != null) {
+                            Box(
+                                Modifier
+                                    .padding(start = 6.dp)
+                                    .size(7.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                            )
+                        }
+                    }
                 }
-            }
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                tonalElevation = 6.dp,
-                modifier = Modifier
-                    .shadow(4.dp, RoundedCornerShape(16.dp))
-                    .pointerInput(Unit) { detectDragGestures { change, drag -> change.consume(); x += drag.x; y += drag.y } },
-            ) {
-                if (!expanded) {
-                    Text("数据", Modifier.clickable { expanded = true }.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge)
-                } else {
+            } else {
+                val panelShape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
+                Surface(
+                    shape = panelShape,
+                    tonalElevation = 6.dp,
+                    modifier = Modifier.shadow(4.dp, panelShape),
+                ) {
                     Column(Modifier.width(220.dp).padding(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("本局数据", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                            Text("本局状态", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                             TextButton(onClick = { expanded = false }) { Text("收起") }
                         }
                         if (update != null) {
-                            Text("数据已更新", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                            Text("状态已更新", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                             Text("来源：${update.sourceLabel} · 回合 ${update.branchId.takeLast(8)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             update.changes.forEach { change ->
                                 Text(

@@ -116,7 +116,7 @@ internal fun NovexChoiceButtons(
                         if (!event.allowMultiple) onChoice(choice.payload)
                         else if (choice.payload in selected) selected.remove(choice.payload) else selected.add(choice.payload)
                     },
-                    modifier = Modifier.heightIn(min = 32.dp),
+                    modifier = Modifier.heightIn(min = 36.dp),
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                         containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -125,7 +125,7 @@ internal fun NovexChoiceButtons(
                         1.dp,
                         if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                     ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                 ) {
                     Text(
                         text = choice.label,
@@ -163,8 +163,13 @@ internal fun NovexChoiceButtons(
         normalized.forEach { choice ->
             OutlinedButton(
                 onClick = { onChoice(choice) },
-                modifier = Modifier.heightIn(min = 32.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier = Modifier.heightIn(min = 36.dp),
+                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             ) {
                 Text(
                     text = choice,
