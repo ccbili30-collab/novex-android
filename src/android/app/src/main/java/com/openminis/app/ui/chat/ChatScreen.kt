@@ -692,6 +692,7 @@ fun ChatScreen(
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
+    var requestSideConversation by remember { mutableStateOf(false) }
     // T185: Move-to-session sheet visibility. Hoisted to the top of
     // ChatScreen so the trigger (capsule inside the composer) and the
     // sheet body (rendered later in the layout tree) share the same
@@ -1896,6 +1897,9 @@ fun ChatScreen(
                                     onSettings()
                                 },
                             )
+                            add(NovexMenuAction("侧边对话", R.drawable.ic_phosphor_arrow_left) {
+                                requestSideConversation = true
+                            })
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
                                 onClick = { showConversationRecords = true }))
                             if (com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(
@@ -4747,6 +4751,18 @@ fun ChatScreen(
             state = playthroughState,
             update = latestDataUpdate,
             onDismissUpdate = { latestDataUpdate = null },
+        )
+        NovexSideConversations(
+            mainSessionId = sessionId,
+            mainViewModel = viewModel,
+            chatRepository = chatRepository,
+            providerRepository = providerRepository,
+            memoryRepository = memoryRepository,
+            skillRepository = skillRepository,
+            mcpRepository = mcpRepository,
+            appContext = context.applicationContext,
+            requestNewSide = requestSideConversation,
+            onNewSideConsumed = { requestSideConversation = false },
         )
         }
     }

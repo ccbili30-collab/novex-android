@@ -23,7 +23,7 @@ class NovexComposerDraftPersistenceTest {
     @Test fun upgradeAndReopenKeepUnsentTextSeparateFromMessagesAndOtherConversations() = runBlocking {
         val path = File(files.root, "draft.db").absolutePath
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37).allowMainThreadQueries().build()
         var db = open()
         var repository = ChatRepository(db.chatDao())
         val first = repository.createSession("unknown", title = "尚未连接模型")

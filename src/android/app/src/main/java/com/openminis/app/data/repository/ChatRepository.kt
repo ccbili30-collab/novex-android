@@ -53,6 +53,8 @@ class ChatRepository(internal val dao: ChatDao) {
         playerDisplayName: String? = null,
         playerAvatarPath: String? = null,
         novexConfigurationJson: String? = null,
+        sideOfSession: String? = null,
+        perTurnPrompt: String? = null,
     ): ChatSessionEntity {
         val now = System.currentTimeMillis()
         val session = ChatSessionEntity(
@@ -78,10 +80,58 @@ class ChatRepository(internal val dao: ChatDao) {
             playerDisplayName = playerDisplayName,
             playerAvatarPath = playerAvatarPath,
             novexConfigurationJson = novexConfigurationJson,
+            perTurnPrompt = perTurnPrompt,
+            sideOfSession = sideOfSession,
         )
         dao.insertSession(session)
         return session
     }
+
+    /** Per-parent cap for side conversations (user decision 2026-09-14). */
+    val MAX_SIDE_CONVERSATIONS = 10
+
+    /**
+     * Fork a side conversation from [parentId]: copies the parent's active-branch
+     * messages and settings at the current point. After the fork the two histories
+     * never sync again — the only bridge back is the handoff brief.
+     */
+    suspend fun createSideSession(parentId: String): ChatSessionEntity {
+        val parent = requireNotNull(dao.getSession(parentId)) { "主对话不存在" }
+        require(dao.listSideSessions(parentId).size < MAX_SIDE_CONVERSATIONS) {
+            "侧边对话最多 ${MAX_SIDE_CONVERSATIONS} 条，请先删除旧的"
+        }
+        val index = dao.listSideSessions(parentId).size + 1
+        val side = createSession(
+            title = "${parent.title}·侧${index}",
+            modelId = parent.modelId,
+            memoryEnabled = parent.memoryEnabled != 0,
+            characterId = parent.characterId,
+            characterSnapshotJson = parent.characterSnapshotJson,
+            worldSnapshotJson = parent.worldSnapshotJson,
+            personaId = parent.personaId,
+            personaSnapshotJson = parent.personaSnapshotJson,
+            worldId = parent.worldId,
+            characterVersionId = parent.characterVersionId,
+            chatBackgroundPath = parent.chatBackgroundPath,
+            conversationPrompt = parent.conversationPrompt,
+            imageStylePrompt = parent.imageStylePrompt,
+            perTurnPrompt = parent.perTurnPrompt,
+            rolePresentationEnabled = parent.rolePresentationEnabled != 0,
+            assistantDisplayName = parent.assistantDisplayName,
+            assistantAvatarPath = parent.assistantAvatarPath,
+            playerDisplayName = parent.playerDisplayName,
+            playerAvatarPath = parent.playerAvatarPath,
+            novexConfigurationJson = parent.novexConfigurationJson,
+            sideOfSession = parentId,
+        )
+        loadActiveMessages(parentId).forEach { row ->
+            dao.insertMessage(row.copy(id = UUID.randomUUID().toString(), sessionId = side.id,
+                createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()))
+        }
+        return side
+    }
+
+    suspend fun listSideSessions(parentId: String): List<ChatSessionEntity> = dao.listSideSessions(parentId)
 
     suspend fun getSession(id: String): ChatSessionEntity? = dao.getSession(id)
 

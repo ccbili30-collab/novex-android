@@ -62,11 +62,14 @@ data class SessionTailRow(
 @Dao
 interface ChatDao {
     // Sessions
-    @Query("SELECT * FROM sessions ORDER BY updated_at DESC")
+    @Query("SELECT * FROM sessions WHERE side_of_session IS NULL ORDER BY updated_at DESC")
     fun observeSessions(): Flow<List<ChatSessionEntity>>
 
-    @Query("SELECT * FROM sessions ORDER BY updated_at DESC")
+    @Query("SELECT * FROM sessions WHERE side_of_session IS NULL ORDER BY updated_at DESC")
     suspend fun listSessions(): List<ChatSessionEntity>
+
+    @Query("SELECT * FROM sessions WHERE side_of_session = :parentId ORDER BY created_at ASC")
+    suspend fun listSideSessions(parentId: String): List<ChatSessionEntity>
 
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun getSession(id: String): ChatSessionEntity?

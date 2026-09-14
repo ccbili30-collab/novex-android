@@ -83,4 +83,6 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "active_leaf_message_id") val activeLeafMessageId: String? = null,
     /** Unsent composer text; never included in message history or model context. */
     @ColumnInfo(name = "composer_draft") val composerDraft: String? = null,
+    /** Non-null marks a side conversation forked from that parent session id; hidden from the session list. */
+    @ColumnInfo(name = "side_of_session") val sideOfSession: String? = null,
 )

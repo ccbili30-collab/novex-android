@@ -5761,6 +5761,11 @@ class ChatViewModel(
     }
 
     /** Rebuild every branch-sensitive in-memory view from one DB snapshot. */
+    /** External writers (side-conversation handoff) append rows directly; this pulls them into the live view. */
+    suspend fun reloadActiveConversation() {
+        installActiveConversation(chatRepository.loadActiveConversation(activeSessionId))
+    }
+
     private suspend fun installActiveConversation(
         conversation: ChatRepository.ActiveConversation,
     ) {

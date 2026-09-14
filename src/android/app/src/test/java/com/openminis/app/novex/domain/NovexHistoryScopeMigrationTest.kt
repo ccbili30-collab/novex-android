@@ -23,7 +23,7 @@ class NovexHistoryScopeMigrationTest {
     @Test fun upgradeKeepsOldSummaryWithoutInventingItsAccessScope() = runBlocking {
         val path = File(files.root, "scope.db").absolutePath
         fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37).allowMainThreadQueries().build()
         var db = open()
         val session = ChatRepository(db.chatDao()).createSession("fixture")
         db.chatDao().insertCompactMarker(CompactMarkerEntity("old", session.id, "原始摘要", 10, 2, 1, version = 2))
