@@ -66,6 +66,12 @@ jobs:
           -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
           :app:testStableDebugUnitTest
+          :content-core:test
+          :content-storage:test
+          :conversation-core:test
+          :conversation-runtime:test
+          :model-transport:test
+          :novex-core:test
           :app:compilePreviewDebugKotlin
 
       - name: Upload test report after failure
