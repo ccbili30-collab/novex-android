@@ -3,6 +3,7 @@ package com.openminis.app.data.character
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.openminis.app.data.ConversationSettingsSnapshot
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.ChatRepository
 import java.io.File
@@ -132,6 +133,81 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
         )
         assertEquals(world.id, database.chatDao().getSession(session.id)?.worldId)
         assertEquals(variant.id, database.chatDao().getSession(session.id)?.characterVersionId)
+    }
+
+    @Test
+    fun newWorldWithoutCharacterOrPersonaBecomesAUsableConversationSnapshot() = runBlocking {
+        val world = catalog.createWorld(
+            name = "群星海",
+            overview = "群岛漂浮在永夜天空中。",
+            now = 20,
+            id = "world-only",
+        )
+        modules.add(
+            ModuleOwner.world(world.id),
+            ContentModuleType.TIMELINE,
+            "时间线",
+            JSONObject().put("text", "纪元元年，第一颗星熄灭。 ").toString(),
+            now = 21,
+            id = "world-only-timeline",
+        )
+        val background = media.register(
+            "/managed/world-only.webp",
+            "image/webp",
+            "world-only-background",
+            now = 22,
+        )
+        media.attach(ModuleOwner.world(world.id), MediaAssetSlot.WORLD_BACKGROUND, background.id)
+
+        val profile = factory.createWorldProfile(world.id, persona = null)
+
+        assertEquals(world.id, profile.worldId)
+        assertEquals("群星海", profile.world?.name)
+        assertTrue(profile.world?.description.orEmpty().contains("群岛漂浮在永夜天空中。"))
+        assertTrue(profile.world?.description.orEmpty().contains("第一颗星熄灭"))
+        assertEquals("/managed/world-only.webp", profile.backgroundPath)
+        assertEquals(null, profile.character)
+
+        val repository = ChatRepository(database.chatDao())
+        val session = repository.createSession(
+            modelId = "model-1",
+            worldId = profile.worldId,
+            worldSnapshotJson = profile.world?.toJson()?.toString(),
+            personaId = null,
+            personaSnapshotJson = null,
+            chatBackgroundPath = null,
+        )
+        val restored = repository.getSession(session.id)
+        assertEquals(world.id, restored?.worldId)
+        assertEquals(null, restored?.characterId)
+        assertTrue(restored?.worldSnapshotJson.orEmpty().contains("群星海"))
+    }
+
+    @Test
+    fun conversationBackgroundOverridePersistsAndCanReturnToInheritedMode() = runBlocking {
+        val repository = ChatRepository(database.chatDao())
+        val session = repository.createSession(modelId = "model-1")
+
+        repository.updateConversationSettings(
+            session.id,
+            ConversationSettingsSnapshot(
+                conversationPrompt = "当前对话提示词",
+                backgroundPath = "/managed/conversation-background.jpg",
+            ),
+        )
+        assertEquals(
+            "/managed/conversation-background.jpg",
+            repository.getSession(session.id)?.chatBackgroundPath,
+        )
+
+        repository.updateConversationSettings(
+            session.id,
+            ConversationSettingsSnapshot(
+                conversationPrompt = "当前对话提示词",
+                backgroundPath = null,
+            ),
+        )
+        assertEquals(null, repository.getSession(session.id)?.chatBackgroundPath)
     }
 
     @Test

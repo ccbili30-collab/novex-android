@@ -231,6 +231,9 @@ fun ConversationSettingsScreen(
     val playerPicker = conversationImagePicker("conversation-player-avatar") { path ->
         draft = draft.updateSettings { it.copy(playerAvatarPath = path) }
     }
+    val backgroundPicker = conversationImagePicker("conversation-background") { path ->
+        draft = draft.updateSettings { it.copy(backgroundPath = path) }
+    }
     val labels = options.associateBy(ConversationContentOption::address)
     val adoptedImages = com.openminis.app.novex.domain.NovexSnapshotMediaProjection.visible(draft.configuration)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
@@ -274,6 +277,7 @@ fun ConversationSettingsScreen(
                 .distinct().count { it in labels },
             permission = draft.configuration.executionMode.label,
             promptChanged = draft.settings.conversationPrompt.isNotBlank(),
+            backgroundOverridden = draft.settings.backgroundPath != null,
             onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
         )
         if (settingsPage == "workspace") {
@@ -633,6 +637,27 @@ fun ConversationSettingsScreen(
                     draft.settings.assistantAvatarPath?.existingFile(),
                     assistantPicker,
                     onRemove = { draft = draft.updateSettings { it.copy(assistantAvatarPath = null) } },
+                )
+            }
+        }
+
+        if (settingsPage == "conversationBackground") NovexEditorSection(
+            header = "对话背景",
+            footer = "只改变当前对话的背景。恢复来源背景后，会继续跟随角色卡或世界的背景设置。",
+        ) {
+            val effectiveBackground = draft.settings.backgroundPath
+                ?: viewModel.sourceConversationBackgroundPath()
+            NovexOptionalImageRow(
+                "背景图片",
+                effectiveBackground?.takeIf { it.isNotBlank() }?.existingFile(),
+                backgroundPicker,
+                onRemove = { draft = draft.updateSettings { it.copy(backgroundPath = "") } },
+            )
+            if (draft.settings.backgroundPath != null) {
+                NovexTextActionRow(
+                    "恢复来源背景",
+                    R.drawable.ic_phosphor_arrow_left,
+                    onClick = { draft = draft.updateSettings { it.copy(backgroundPath = null) } },
                 )
             }
         }

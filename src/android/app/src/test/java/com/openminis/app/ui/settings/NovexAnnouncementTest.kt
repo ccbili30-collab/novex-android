@@ -16,6 +16,11 @@ class NovexAnnouncementTest {
         assertTrue(announcements.first().markdown.contains("迎来 AGI 时代"))
         assertEquals("特别致哀", announcements.last().title)
         assertTrue(announcements.last().markdown.contains("愿山河无恙，愿人间皆安"))
+
+        val releaseNotes = NovexBulletinDefaults.value.releaseNotes
+        assertEquals("0.2.16", releaseNotes.first().versionName)
+        assertTrue(releaseNotes.first().changelog.contains("对话背景"))
+        assertTrue(releaseNotes.first().changelog.contains("新建世界"))
     }
 
     @Test

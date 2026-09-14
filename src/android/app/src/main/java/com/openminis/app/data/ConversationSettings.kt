@@ -7,6 +7,8 @@ const val MAX_NOVEX_CONFIGURATION_CHARS = 512_000
 data class ConversationSettingsSnapshot(
     val conversationPrompt: String,
     val imageStylePrompt: String = "",
+    /** null inherits the source background; empty explicitly hides it. */
+    val backgroundPath: String? = null,
     val rolePresentationEnabled: Boolean = false,
     val assistantDisplayName: String = "",
     val assistantAvatarPath: String? = null,
@@ -19,6 +21,7 @@ fun normalizeConversationSettings(value: ConversationSettingsSnapshot): Conversa
     value.copy(
         conversationPrompt = value.conversationPrompt.take(MAX_CONVERSATION_PROMPT_CHARS),
         imageStylePrompt = value.imageStylePrompt.trim().take(MAX_IMAGE_STYLE_PROMPT_CHARS),
+        backgroundPath = value.backgroundPath?.trim(),
         assistantDisplayName = value.assistantDisplayName.trim().take(80),
         assistantAvatarPath = value.assistantAvatarPath?.trim()?.ifBlank { null },
         playerDisplayName = value.playerDisplayName.trim().take(80),

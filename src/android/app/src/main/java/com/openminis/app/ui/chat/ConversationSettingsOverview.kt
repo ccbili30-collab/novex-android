@@ -8,13 +8,15 @@ internal fun conversationSettingsPageTitle(page: String): String = when (page) {
     "answer" -> "回答身份"; "player" -> "我的身份"; "prompt" -> "对话提示词"
     "background" -> "背景资料"; "game" -> "当前文游"; "manage" -> "可管理内容"
     "workspace" -> "对话空间"; "controls" -> "快捷操作"; "display" -> "显示方式"
-    "image" -> "图片生成提示词"; "pending" -> "待执行变更"; else -> "对话设置"
+    "conversationBackground" -> "对话背景"; "image" -> "图片生成提示词"
+    "pending" -> "待执行变更"; else -> "对话设置"
 }
 
 @Composable
 internal fun ConversationSettingsOverview(
     answer: String, player: String, backgroundCount: Int, game: String, managedCount: Int,
-    permission: String, promptChanged: Boolean, integrated:Boolean=false, onOpen: (String) -> Unit, onPermission: () -> Unit,
+    permission: String, promptChanged: Boolean, backgroundOverridden: Boolean,
+    integrated:Boolean=false, onOpen: (String) -> Unit, onPermission: () -> Unit,
 ) {
     NovexEditorSection(header = "身份与回答") {
         NovexSummaryRow("回答身份", answer, onClick = { onOpen("answer") })
@@ -32,6 +34,7 @@ internal fun ConversationSettingsOverview(
     }
     NovexEditorSection(header = "其他设置") {
         NovexSummaryRow("显示方式", "头像与气泡", onClick = { onOpen("display") })
+        NovexSummaryRow("对话背景", if (backgroundOverridden) "已单独设置" else "跟随来源", onClick = { onOpen("conversationBackground") })
         NovexSummaryRow("快捷操作", "查看与行动", onClick = { onOpen("controls") })
         NovexSummaryRow("图片生成提示词", "风格与要求", onClick = { onOpen("image") })
     }

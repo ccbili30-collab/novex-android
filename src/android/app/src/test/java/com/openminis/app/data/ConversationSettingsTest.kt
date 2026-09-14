@@ -33,6 +33,33 @@ class ConversationSettingsTest {
     }
 
     @Test
+    fun conversationBackgroundOverrideSurvivesSettingsNormalization() {
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "提示词",
+                backgroundPath = "  /data/user/0/com.openminis.app/files/background.jpg  ",
+            ),
+        )
+
+        assertEquals(
+            "/data/user/0/com.openminis.app/files/background.jpg",
+            value.backgroundPath,
+        )
+    }
+
+    @Test
+    fun emptyConversationBackgroundKeepsExplicitHiddenState() {
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "提示词",
+                backgroundPath = "",
+            ),
+        )
+
+        assertEquals("", value.backgroundPath)
+    }
+
+    @Test
     fun longConversationAndImagePromptsAreBoundedIndependently() {
         val value = normalizeConversationSettings(
             ConversationSettingsSnapshot(

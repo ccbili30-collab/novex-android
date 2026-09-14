@@ -3430,6 +3430,13 @@ class ChatViewModel(
     val conversationPrompt: StateFlow<String?> = _conversationPrompt.asStateFlow()
     private val _imageStylePrompt = MutableStateFlow("")
     val imageStylePrompt: StateFlow<String> = _imageStylePrompt.asStateFlow()
+    /** Explicit conversation override. null means inherit character/world background. */
+    private val _conversationBackgroundPathOverride = MutableStateFlow<String?>(null)
+
+    fun sourceConversationBackgroundPath(): String? =
+        _immersiveProfile.value.character?.defaultBackgroundPath
+            ?: _immersiveProfile.value.world?.backgroundPath
+
     private val _novexConfigurationJson = MutableStateFlow(
         com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
             com.openminis.app.novex.domain.NovexConversationConfiguration.empty(sessionId).snapshot.copy(cardBindingJson=if(isDraft)com.openminis.app.cards.CardBinding().encode() else null),
@@ -3760,6 +3767,7 @@ class ChatViewModel(
         return com.openminis.app.data.ConversationSettingsSnapshot(
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value,
+            backgroundPath = _conversationBackgroundPathOverride.value,
             rolePresentationEnabled = profile.rolePresentationEnabled || profile.character != null,
             assistantDisplayName = profile.assistantDisplayName.orEmpty(),
             assistantAvatarPath = profile.assistantAvatarPath,
@@ -3785,6 +3793,17 @@ class ChatViewModel(
                     ),
                 )
             },
+        )
+        _conversationPrompt.value = value.conversationPrompt
+        _imageStylePrompt.value = value.imageStylePrompt
+        _conversationBackgroundPathOverride.value = value.backgroundPath
+        _immersiveProfile.value = _immersiveProfile.value.copy(
+            backgroundPath = value.backgroundPath ?: sourceConversationBackgroundPath(),
+            rolePresentationEnabled = value.rolePresentationEnabled,
+            assistantDisplayName = value.assistantDisplayName.ifBlank { null },
+            assistantAvatarPath = value.assistantAvatarPath,
+            playerDisplayName = value.playerDisplayName.ifBlank { null },
+            playerAvatarPath = value.playerAvatarPath,
         )
         viewModelScope.launch {
             val result = runCatching {
@@ -3817,6 +3836,7 @@ class ChatViewModel(
 
     /** null = inherit the role card background; empty = explicitly hide it. */
     fun setImmersiveBackground(path: String?) {
+        _conversationBackgroundPathOverride.value = path
         val effective = path
             ?: _immersiveProfile.value.character?.defaultBackgroundPath
             ?: _immersiveProfile.value.world?.backgroundPath
@@ -4052,7 +4072,7 @@ class ChatViewModel(
             personaSnapshotJson = _immersiveProfile.value.persona?.toJson()?.toString(),
             worldId = _immersiveProfile.value.worldId,
             characterVersionId = _immersiveProfile.value.characterVersionId,
-            chatBackgroundPath = _immersiveProfile.value.backgroundPath,
+            chatBackgroundPath = _conversationBackgroundPathOverride.value,
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value.ifBlank { null },
             rolePresentationEnabled = _immersiveProfile.value.rolePresentationEnabled ||
@@ -4273,6 +4293,33 @@ class ChatViewModel(
                         ) { path -> java.io.File(path).delete() },
                     ).create(initialWorldId, initialCharacterVersionId, draftPersona)
                     _immersiveProfile.value = snapshot.profile
+                } else if (initialWorldId != null) {
+                    val database = com.openminis.app.data.db.AppDatabase.getInstance(context)
+                    val catalogProfile = runCatching {
+                        com.openminis.app.data.character.CharacterConversationSnapshotFactory(
+                            catalog = com.openminis.app.data.character.CharacterCatalogRepository(
+                                database.characterCatalogDao(),
+                            ),
+                            modules = com.openminis.app.data.character.ContentModuleRepository(
+                                database.contentModuleDao(),
+                            ),
+                            media = com.openminis.app.data.character.MediaAssetRepository(
+                                database.mediaAssetDao(),
+                            ) { path -> java.io.File(path).delete() },
+                        ).createWorldProfile(initialWorldId, draftPersona)
+                    }.getOrNull()
+                    val legacyWorld = com.openminis.app.data.character.CharacterCardStore.world(
+                        context,
+                        initialWorldId,
+                    )
+                    _immersiveProfile.value = catalogProfile
+                        ?: com.openminis.app.data.character.ImmersiveChatProfile(
+                            world = legacyWorld,
+                            persona = draftPersona,
+                            worldId = initialWorldId,
+                            backgroundPath = legacyWorld?.backgroundPath,
+                            rolePresentationEnabled = false,
+                        )
                 } else {
                     val draftCharacter = com.openminis.app.data.character.CharacterCardStore.character(
                         context,
@@ -4389,6 +4436,7 @@ class ChatViewModel(
                 playerDisplayName = session.playerDisplayName,
                 playerAvatarPath = session.playerAvatarPath,
             )
+            _conversationBackgroundPathOverride.value = session.chatBackgroundPath
             _conversationPrompt.value = session.conversationPrompt
             _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
             _novexConfigurationJson.value = session.novexConfigurationJson?.takeIf(String::isNotBlank)
