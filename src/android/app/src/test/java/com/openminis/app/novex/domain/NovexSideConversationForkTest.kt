@@ -32,9 +32,9 @@ class NovexSideConversationForkTest {
 
             val side = repository.createSideSession(parent.id)
             assertEquals(parent.id, side.sideOfSession)
-            assertTrue(side.title.startsWith("主线故事·侧"))
+            assertTrue(side.title.orEmpty().startsWith("主线故事·侧"))
             // Hidden from the session list, visible as a side session.
-            assertTrue(repository.listSessions().none { it.id == side.id })
+            assertTrue(db.chatDao().listSessions().none { it.id == side.id })
             assertEquals(listOf(side.id), repository.listSideSessions(parent.id).map { it.id })
             // Fork copies the active history and the prompt snapshot.
             val sideMessages = repository.loadActiveMessages(side.id)
