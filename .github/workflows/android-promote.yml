@@ -122,7 +122,13 @@ jobs:
           SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
           RELEASE_TAG: ${{ steps.candidate.outputs.tag }}
         run: |
-          git fetch origin main next --tags
+          # actions/checkout narrows the origin fetch refspec to the checked-out
+          # branch. Fetching branch names alone only updates FETCH_HEAD, while
+          # the checks below intentionally read the remote-tracking refs.
+          git fetch origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/next:refs/remotes/origin/next" \
+            --tags
           if [ "$CANDIDATE_BRANCH" != "next" ]; then
             git fetch origin \
               "+refs/heads/$CANDIDATE_BRANCH:refs/remotes/origin/$CANDIDATE_BRANCH"
