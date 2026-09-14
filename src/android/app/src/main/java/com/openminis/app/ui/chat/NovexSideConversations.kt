@@ -110,7 +110,7 @@ internal fun NovexSideConversations(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    side.title.trim().take(1).ifEmpty { "侧" },
+                    side.title.orEmpty().trim().take(1).ifEmpty { "侧" },
                     color = Color(0xCC1C1C1E),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -236,7 +236,7 @@ private fun NovexSideConversationWindow(
         ) {
             // Chrome: full screen keeps only name · model · back.
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(side.title, Modifier.weight(1f), style = NovexType.ItemTitle, fontWeight = FontWeight.SemiBold,
+                Text(side.title.orEmpty(), Modifier.weight(1f), style = NovexType.ItemTitle, fontWeight = FontWeight.SemiBold,
                     color = NovexColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (fullscreen) {
                     Text(modelName.ifEmpty { "默认模型" }, style = NovexType.Metadata, color = NovexColors.SecondaryText,
