@@ -110,6 +110,9 @@ class NovexAssistantStreamTurnTest {
         assertEquals(listOf("text", "tool_use", "text"), startless.snapshot().blocks.map { it.kind })
         assertFalse(startless.snapshot().blocks.first().executionText)
         assertEquals(listOf("准备", "完成后答复"), startless.snapshot().blocks.filter { it.isText }.map { it.content })
-        assertEquals(ToolBlockStatus.PENDING, startless.snapshot().blocks.last().toolStatus)
+        assertEquals(
+            ToolBlockStatus.PENDING,
+            startless.snapshot().blocks.single { it.kind == "tool_use" }.toolStatus,
+        )
     }
 }

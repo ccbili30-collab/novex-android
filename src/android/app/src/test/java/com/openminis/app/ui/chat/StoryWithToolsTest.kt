@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StoryWithToolsTest {
-    @Test fun intermediateToolTurnIsProcessWhileItsRawTextAndOrderStayIntact()=runBlocking {
+    @Test fun toolTurnKeepsOrdinaryStoryTextVisibleAndItsRawOrderIntact()=runBlocking {
         for(monolithic in listOf(true,false)) {
             val turn=AssistantStreamTurn(0,{it})
             turn.accept(LLMStreamChunk.Text("你走进村庄。"),monolithic){}
@@ -17,8 +17,8 @@ class StoryWithToolsTest {
             turn.finish {}
             val snapshot=turn.snapshot()
             assertEquals("你走进村庄。村民向你挥手。",snapshot.text)
-            assertTrue(snapshot.blocks.filter {it.isText}.all {it.executionText})
-            assertEquals("",formalAssistantText(snapshot.blocks,""))
+            assertTrue(snapshot.blocks.filter {it.isText}.none {it.executionText})
+            assertEquals("你走进村庄。\n\n村民向你挥手。",formalAssistantText(snapshot.blocks,""))
             assertEquals(3, snapshot.blocks.size)
             assertEquals(listOf("text", "tool_use", "text"), snapshot.blocks.map { it.kind })
         }
