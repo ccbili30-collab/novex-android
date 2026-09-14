@@ -279,6 +279,7 @@ fun ConversationSettingsScreen(
             permission = draft.configuration.executionMode.label,
             promptChanged = draft.settings.conversationPrompt.isNotBlank(),
             backgroundOverridden = draft.settings.backgroundPath != null,
+            perTurnSet = draft.settings.perTurnPrompt.isNotBlank(),
             onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
         )
         if (settingsPage == "workspace") {
@@ -388,14 +389,19 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
-            NovexDivider(Modifier.padding(horizontal = 16.dp))
+        }
+
+        if (settingsPage == "perTurn") NovexEditorSection(
+            header = "每轮注入",
+            footer = "每次发送消息，都会把这段话随最新一轮一起发给模型；对话界面不会显示它。留空则完全不生效。例：每一轮都要向我提供 3~4 个选项。",
+        ) {
             NovexTextField(
-                label = "每轮注入",
+                label = "注入内容",
                 value = draft.settings.perTurnPrompt,
                 onValueChange = { value ->
                     draft = draft.updateSettings { it.copy(perTurnPrompt = value.take(MAX_PER_TURN_PROMPT_CHARS)) }
                 },
-                minLines = 2,
+                minLines = 4,
                 placeholder = "例：每一轮都要向我提供 3~4 个选项",
             )
         }
