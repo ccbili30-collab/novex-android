@@ -544,7 +544,11 @@ internal fun UserMessageBubble(
                 usage.includedSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(source.label, color = ChatColors.primaryText, fontWeight = FontWeight.Medium)
-                        Text("${source.tokenCount} 词元", color = ChatColors.tertiaryText, fontSize = 12.sp)
+                        Text(
+                            "${source.tokenCount} 词元${if (source.partial) " · 部分内容" else ""}",
+                            color = ChatColors.tertiaryText,
+                            fontSize = 12.sp,
+                        )
                     }
                 }
                 if (usage.sourceReads.isNotEmpty()) {

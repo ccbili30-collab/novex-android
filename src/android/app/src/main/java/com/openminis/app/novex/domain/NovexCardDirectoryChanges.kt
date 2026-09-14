@@ -14,7 +14,7 @@ internal class NovexCardDirectoryChanges(private val workspace: NovexWorkspace) 
         ModuleOwnerType.WORLD -> NovexCardCopyKey(NovexCardKind.WORLD, owner.id)
         ModuleOwnerType.INTERACTIVE_FICTION -> NovexCardCopyKey(NovexCardKind.GAME, owner.id)
         ModuleOwnerType.CHARACTER_VERSION -> root(NovexContentAddress.characterVersion(owner.id))
-        ModuleOwnerType.CONTENT_MODULE -> workspace.module(ModuleOwner.contentModuleId(owner.id))?.module?.let { owner(ModuleOwner(it.ownerType, it.ownerId)) }
+        ModuleOwnerType.CONTENT_MODULE -> workspace.moduleContent(ModuleOwner.contentModuleId(owner.id))?.let { owner(ModuleOwner(it.ownerType, it.ownerId)) }
     }
     suspend fun before(command: NovexCommand): Set<NovexCardCopyKey> {
         val result = linkedSetOf<NovexCardCopyKey>()

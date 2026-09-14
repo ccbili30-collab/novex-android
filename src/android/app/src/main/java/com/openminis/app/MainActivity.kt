@@ -147,6 +147,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.openminis.app.crash.ProcessExitEvidence.collect(this)
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.create restored=${savedInstanceState != null}")
 
         // Register the crash-share "Save to..." launcher BEFORE the
         // safe-mode early-return below — ActivityResultLauncher must be
@@ -529,6 +531,7 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(navController) {
                     val job = lifecycleScope.launch {
                         navController.currentBackStackEntryFlow.collect { entry ->
+                            com.openminis.app.crash.ProcessExitEvidence.record(this@MainActivity, "navigation.destination=${entry.destination.route}")
                             val isChatRoute = entry.destination.route == Routes.CHAT
                             val sid = entry.arguments?.getString("sessionId").takeIf { isChatRoute }
                             val previous = currentChatSessionId
@@ -660,6 +663,7 @@ class MainActivity : ComponentActivity() {
      * to bias OOM through.
      */
     override fun onDestroy() {
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.destroy changingConfiguration=$isChangingConfigurations finishing=$isFinishing")
         currentChatSessionId?.let { SessionActivityTracker.setAbsent(it) }
         currentChatSessionId = null
         super.onDestroy()
@@ -791,6 +795,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun finish() {
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.finish")
         val enteredFromNovexSettings = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE) == "settings"
         super.finish()
         if (enteredFromNovexSettings) {

@@ -135,18 +135,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.yield
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import kotlin.coroutines.coroutineContext
 
 // [T-android-split-chat] StreamingDelta / ChatMessage / QueuedPrompt /
 // ToolBlockStatus / SlashCommand / AssistantBlock moved verbatim to ChatModels.kt.
+
+/** Bounds recursive summary splitting so an unavailable provider cannot fan out forever. */
+private class CompactionCallBudget(private val maximum: Int = 8) {
+    private var used = 0
+    fun take() {
+        used += 1
+        check(used <= maximum) { "压缩请求次数已达到上限，请保留原对话后稍后重试" }
+    }
+}
 
 class ChatViewModel(
     internal val sessionId: String,
@@ -387,6 +400,13 @@ class ChatViewModel(
          * the summary's distilled form. Mirrors iOS `compactKeepRecentUserTurns`.
          */
         private const val COMPACT_KEEP_RECENT_USER_TURNS = 3
+        /** A compaction run must finish or report a recoverable failure. */
+        // One initial summary plus at most two children at each of the two
+        // split levels: 1 + 2 + 4 = 7. Keep one spare call for a provider
+        // retry path without allowing an unbounded compression cascade.
+        private const val COMPACT_MAX_LLM_CALLS = 8
+        private const val COMPACT_MAX_SPLIT_DEPTH = 2
+        private const val COMPACT_TIMEOUT_MS = 120_000L
         /// Max per-tool-call retained `accumulated` JSON snapshots from
         /// `ToolInputDelta`. Drained on preflight failure for diagnosis.
         /** Auto-retry backoff schedule (seconds). Mirrors iOS retryDelays, scaled to task spec: 1s → 2s → 4s. */
@@ -548,6 +568,13 @@ class ChatViewModel(
      * LazyColumn's "load older" header when the user reaches the top of
      * the windowed slice.
      */
+    fun historyNavigationMessages(): List<ChatMessage> = _messages.value.filter { it.role != "system" }
+
+    fun revealHistoryMessage(id: String) {
+        val index = _messages.value.indexOfFirst { it.id == id || id in it.sourceDbIds }
+        if (index >= 0) _visibleMessageCap.value = maxOf(_visibleMessageCap.value, _messages.value.size - index + 10)
+    }
+
     fun loadOlderMessages() {
         val totalNow = _messages.value.size
         if (totalNow <= LONG_SESSION_THRESHOLD) return
@@ -653,7 +680,19 @@ class ChatViewModel(
 
     /** Gate sending before the screen clears the composer or its attachments. */
     fun hasModelForSend(): Boolean {
-        if (currentProvider != null) return true
+        // The screen also gates queued prompts. Do not replace a running connection.
+        if (_isStreaming.value) return true
+        try {
+            val id = requireNotNull(_activeEntryId.value) { "请先选择模型" }
+            val (entry, instance) = com.openminis.app.data.model.ChatModelSelection.resolve(providerRepository.config.value, id)
+            val key = requireNotNull(providerRepository.usableApiKey(instance)) { "模型连接缺少凭据" }
+            bindChatEntry(entry, instance, key)
+            return true
+        } catch (failure: Exception) {
+            currentProvider = null
+            _error.value = failure.message ?: "所选模型无法连接"
+            recordModelPreparationFailure(failure)
+        }
         _modelSetupRequired.value = true
         return false
     }
@@ -695,6 +734,9 @@ class ChatViewModel(
      * remeasuring from index 0 (white flash).
      */
     val listState: LazyListState = LazyListState(0, 0)
+    /** Cached only for the session that produced it; never leak rows across reloads. */
+    internal var retainedTranscriptRows: List<FlatChatItem> = emptyList()
+    internal var retainedTranscriptSessionId: String? = null
 
     // A chronological LazyColumn starts at its oldest row. Each session-scoped
     // ViewModel consumes exactly one initial navigation to the newest row; the
@@ -894,6 +936,10 @@ class ChatViewModel(
      * means either we've never called the model or the provider didn't return
      * a usage payload — in which case we treat the turn as low-pressure.
      */
+    private val _contextUsageReady = MutableStateFlow(false)
+    val contextUsageReady = _contextUsageReady.asStateFlow()
+    private val _contextEstimated = MutableStateFlow(true)
+    val contextEstimated = _contextEstimated.asStateFlow()
     private val _lastTurnContextTokens = MutableStateFlow(0)
     val lastTurnContextTokens: StateFlow<Int> = _lastTurnContextTokens.asStateFlow()
 
@@ -906,6 +952,9 @@ class ChatViewModel(
      * Phase-B compact semantics (summary synthesized at inference time, never
      * baked back into agentHistory).
      */
+    private var compactionJob: kotlinx.coroutines.Job? = null
+    fun cancelCompaction() { compactionJob?.cancel() }
+
     private val _compactSummary = MutableStateFlow<String?>(null)
     val compactSummary: StateFlow<String?> = _compactSummary.asStateFlow()
 
@@ -1074,6 +1123,42 @@ class ChatViewModel(
      * The cost is negligible — [AgentTools.makeAgentTools] just builds a
      * fixed list of definition objects, no I/O.
      */
+    private val integratedCards by lazy { com.openminis.app.cards.IntegratedCards(context,
+        readBinding={currentNovexConfiguration().cardBindingJson},
+        updateBinding={change->novexSettingsStore.update { configuration->
+            configuration.copy(cardBindingJson=change(com.openminis.app.cards.CardBinding.decode(configuration.cardBindingJson)?:com.openminis.app.cards.CardBinding()).encode())
+        };Unit}) }
+    fun integratedCardBinding() = com.openminis.app.cards.CardBinding.decode(currentNovexConfiguration().cardBindingJson)
+    suspend fun saveIntegratedCardBinding(value:com.openminis.app.cards.CardBinding,expected:com.openminis.app.cards.CardBinding?) {
+        sessionLoaded.first {it}
+        require(!_isStreaming.value){"请先停止当前回答，再调整卡片关联"}
+        novexSettingsStore.update { configuration->
+            require(com.openminis.app.cards.CardBinding.decode(configuration.cardBindingJson)==expected){"卡片关联已更新，请返回后重新打开，避免覆盖新内容"}
+            configuration.copy(cardBindingJson=value.encode())
+        }
+    }
+    private suspend fun integratedConversationImages():Map<String,java.io.File> {
+        val base=mediaStore.mediaBaseDir.canonicalFile
+        val attached=chatRepository.loadActiveMessages(activeSessionId).flatMap {message->
+            val parts=org.json.JSONArray(message.partsJson)
+            (0 until parts.length()).mapNotNull {index->
+                val part=parts.getJSONObject(index)
+                val ref=part.takeIf {it.optString("type")=="mediaRef"}?.optJSONObject("value")?:return@mapNotNull null
+                if(!ref.optString("mimeType").startsWith("image/"))return@mapNotNull null
+                val id=ref.optString("id");val path=ref.optString("relativePath")
+                if(id.isBlank() || path.isBlank())return@mapNotNull null
+                val file=java.io.File(base,path).canonicalFile
+                if(!file.path.startsWith(base.path+java.io.File.separator) || !file.isFile)return@mapNotNull null
+                id to file
+            }
+        }.toMap()
+        val repository=novexApplication().creativeArtifactRepository
+        val generated=repository.list(com.openminis.app.data.creative.CreativeArtifactQuery(conversationId=activeSessionId,
+            kinds=setOf(com.openminis.app.novex.domain.CreativeArtifactKind.IMAGE,com.openminis.app.novex.domain.CreativeArtifactKind.MAP)))
+            .filter {it.artifact.origin.conversationId==activeSessionId && it.artifact.origin.branchId in activeBranchPathIds}
+            .associate {it.artifact.id to repository.file(it.artifact.id)}
+        return attached+generated
+    }
     private val allAgentTools: List<AgentToolDefinition>
         get() = if (currentModel?.supportsTools == false) {
             emptyList()
@@ -1086,7 +1171,7 @@ class ChatViewModel(
             ),
             memoryEnabled = _memoryEnabled.value,
             imageGenerationConfigured = providerRepository.resolvedImageGenerationEntries().isNotEmpty(),
-            interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null,
+            interactiveFictionActive = currentNovexConfiguration().activeInteractiveFiction != null || integratedCards.binding(activeSessionId)!=null,
             documentsAvailable = activeNovexDocumentRefs.isNotEmpty(),
             sourceCollectionsAvailable = activeNovexSourceCollectionRefs.isNotEmpty(),
             workspaceAvailable = true,
@@ -1096,7 +1181,10 @@ class ChatViewModel(
     private val agentTools: List<AgentToolDefinition>
         get() {
             if (!currentNovexConfiguration().executionMode.exposesTools) return emptyList()
-            return allAgentTools
+            if (currentModel?.supportsTools == false) return emptyList()
+            val legacy=com.openminis.app.tools.NovexCardFileTools.names + NovexManagementTools.definitions().map {it.name} + com.openminis.app.tools.NovexWorldbookTools.names + setOf(com.openminis.app.tools.NovexConversationActionTools.START_GAME,com.openminis.app.tools.NovexConversationActionTools.SELECT_IDENTITY,"end_interactive_fiction")
+            val common=allAgentTools.filter {it.name !in legacy && it.name !in integratedCards.names()}
+            return common + ConversationRecall.definitions() + if(integratedCards.binding(activeSessionId)!=null)integratedCards.definitions(activeSessionId) else emptyList()
         }
 
     /**
@@ -1490,32 +1578,53 @@ class ChatViewModel(
     val currentModelContextWindow: Int?
         get() = effectiveContextWindowTokens()
 
-    /**
-     * [T-context-window-live-read] Effective context window for capacity
-     * judgment (compaction warnings, tool-output offload, empty-response
-     * heuristic, Token Usage sheet). Reads LIVE state on every call instead of
-     * the `currentModel` snapshot, so editing the model's context window or
-     * the bound group's `contextLimitTokens` takes effect on the very next
-     * judgment without re-picking the model/group (mirrors iOS fcc22b66):
-     *   1. the active entry's model is re-resolved from the current repository
-     *      config (folds ModelOverrides live), falling back to the snapshot
-     *      only when the entry can't be found (e.g. synced sessions before
-     *      config finished loading);
-     *   2. the result is clamped by the bound group's `contextLimitTokens`
-     *      (null / <=0 = unlimited). Pre-fix that group field was write-only
-     *      on Android — persisted by the group editor but never consulted at
-     *      runtime.
-     */
+    /** Live model ceiling, then the explicit conversation limit or inherited group limit. */
     private fun effectiveContextWindowTokens(): Int? {
         val config = providerRepository.config.value
-        val liveModel = _activeEntryId.value
-            ?.let { id -> config.modelEntries.find { it.id == id }?.model }
-            ?: currentModel
-        val window = liveModel?.contextWindowTokens ?: return null
         val groupLimit = _selectedGroupId.value
             ?.let { gid -> config.modelGroups.find { it.id == gid }?.contextLimitTokens }
-            ?.takeIf { it > 0 }
-        return if (groupLimit != null) minOf(window, groupLimit) else window
+        return com.openminis.app.novex.domain.NovexConversationContextLimit.effective(
+            detectedModelContextWindow, currentNovexConfiguration().contextLimitTokens, groupLimit)
+    }
+
+    val contextCapacity: StateFlow<Pair<Int?, Int?>> by lazy {
+        combine(providerRepository.config, _activeEntryId, _selectedGroupId, _novexConfigurationJson) { _, _, _, _ ->
+            detectedModelContextWindow to effectiveContextWindowTokens()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            detectedModelContextWindow to effectiveContextWindowTokens())
+    }
+
+    val detectedModelContextWindow: Int?
+        get() = (_activeEntryId.value?.let { id ->
+            providerRepository.config.value.modelEntries.find { it.id == id }?.model
+        } ?: currentModel)?.contextWindowTokens?.takeIf { it > 0 }
+
+    private fun estimatePreparedRequest(history: List<LLMMessage>, prompt: String?, tools: List<AgentToolDefinition>): Int =
+        NovexRequestEstimate.total(history, prompt, tools)
+
+    val canEditModelCapacity: Boolean
+        get() = _activeEntryId.value != com.openminis.app.data.model.TemporaryPreviewModel.ENTRY_ID
+
+    fun saveModelContextWindow(tokens: Int?) {
+        check(canEditModelCapacity) { "测试模型配置不可修改" }
+        check(!_isStreaming.value) { "本轮结束后可校正模型容量" }
+        require(tokens == null || tokens >= 1024) { "请输入至少 1024 个词元，或留空恢复自动识别" }
+        val id = requireNotNull(_activeEntryId.value) { "请先选择模型" }
+        val entry = requireNotNull(providerRepository.config.value.modelEntries.find { it.id == id })
+        providerRepository.updateEntry(entry.copy(overrides = entry.overrides.copy(contextWindow = tokens)))
+        _contextEstimated.value = true
+        novexContextRevision++
+    }
+
+    val modelContextIsEstimated: Boolean
+        get() = (_activeEntryId.value?.let { id -> providerRepository.config.value.modelEntries.find {it.id==id}?.model } ?: currentModel)?.contextWindow?.takeIf {it>0}==null
+
+    suspend fun saveConversationContextLimit(tokens: Int) {
+        sessionLoaded.first { it }
+        require(!_isStreaming.value) { "请在本轮回答结束后调整上下文容量" }
+        val maximum = requireNotNull(detectedModelContextWindow) { "尚未读取到模型的上下文容量" }
+        val selected = com.openminis.app.novex.domain.NovexConversationContextLimit.selection(tokens, maximum)
+        novexSettingsStore.update { it.copy(contextLimitTokens = selected) }
     }
 
     val currentModelMaxOutputTokens: Int?
@@ -1938,86 +2047,29 @@ class ChatViewModel(
             appendSystemInfo("Nothing to compact — the session is empty.", "compact")
             return
         }
-        // ─── v2 unified anchor model ───────────────────────────────────
-        //
-        // anchor = last active agentHistory entry. The compacted range is
-        // `[prev marker anchor + 1, anchor]` (or `[0, anchor]` if no prev),
-        // so each compact "extends" the latest summary forward to cover all
-        // new turns. effectiveAgentHistory then re-injects the LAST N
-        // user-text turns LEADING UP TO the anchor as fresh context, so the
-        // model still sees recent verbatim content alongside the summary.
-        //
-        // Mirrors iOS post-Phase-v2: anchor = last active message, no
-        // "auto-keep tail" baked into the compacted range — that's a
-        // read-side decoration done by effectiveAgentHistory.
-        //
-        // anchor must be a persisted entry (have a non-null dbMessageId).
-        // The strict iOS check also requires id ∈ rawMessages DB, but DAO
-        // is suspend and we'd have to relocate range calculation into the
-        // launch below. As a compromise we do the dbMessageId-non-empty
-        // pre-check here (catches most stale-id cases at this stage), and
-        // do the rawDbIds-membership check inside the launch before the
-        // marker is written. Mirrors iOS AIChatViewModel+Compaction.swift:
-        // 644-657 "walk back through agentHistory looking for dbMessageId
-        // AND allRaw.contains" — split across two phases to honor suspend
-        // boundaries.
-        val anchorIdx: Int = if (anchorIdxOverride != null) {
-            // compactBefore() supplied a specific anchor — walk back from
-            // there to the closest entry with a dbMessageId (mirrors the
-            // tail-walk-back logic but bounded to [0..override]).
-            var i = anchorIdxOverride.coerceIn(0, history.lastIndex)
-            while (i >= 0 && history[i].dbMessageId.isNullOrEmpty()) i -= 1
-            i
-        } else {
-            // compactAll() — walk back from the tail to the closest
-            // persisted entry. iOS compactAll calls compactBefore with the
-            // last active UI message; we go through agentHistory directly
-            // since Android's agentHistory and UI list are tighter-coupled.
-            var i = history.lastIndex
-            while (i >= 0 && history[i].dbMessageId.isNullOrEmpty()) i -= 1
-            i
-        }
-        if (anchorIdx < 0) {
-            appendSystemInfo("Cannot compact: no persisted messages yet.", "compact")
-            return
-        }
-
-        // Slice to compact = (prev marker's anchor + 1) … anchorIdx inclusive.
-        // For v2 prev markers, lastCompactedMessageId IS the prev anchor —
-        // start at prevIdx + 1. For v1 prev markers, firstKeptMessageId points
-        // at "first kept" — start AT prevIdx (it was exclusive on right edge).
         val compactionScopeKey = historyScopeKey()
-        val prev = _cachedLatestMarker?.takeIf { com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(it.historyScopeKey, compactionScopeKey) }
-        val effectiveStartIdx: Int = if (prev == null) {
-            0
-        } else {
-            val prevAnchorOrFirstKept: String? = if (prev.version >= 2) {
-                prev.lastCompactedMessageId?.takeIf { it.isNotEmpty() }
-            } else {
-                prev.firstKeptMessageId?.takeIf { it.isNotEmpty() }
-                    ?: prev.boundaryMessageId?.takeIf { it.isNotEmpty() }
-            }
-            val prevIdx = prevAnchorOrFirstKept?.let { id ->
-                history.indexOfFirst { it.dbMessageId == id }
-            } ?: -1
-            if (prevIdx < 0) 0   // prev anchor not in current history — restart from top
-            else if (prev.version >= 2) prevIdx + 1
-            else prevIdx
+        val compactionSessionId = activeSessionId
+        val compactionWindow = effectiveContextWindowTokens() ?: 128_000
+        val compactionProvider = provider
+        val compactionModelId = currentModel?.id
+        val prev = _cachedLatestMarker?.takeIf {
+            com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(it.historyScopeKey, compactionScopeKey)
         }
-        if (effectiveStartIdx > anchorIdx) {
-            appendSystemInfo("Already compacted up to this point.", "compact")
+        val effectiveStartIdx = compactionStartIndex(history, prev)
+        val cut = ConversationRetention.cut(history, effectiveStartIdx,
+            ConversationRetention.recentBudget(compactionWindow), anchorIdxOverride, ::countHistoryMessage)
+        if (cut == null) {
+            appendSystemInfo("没有可压缩的较早完整消息，近期内容已保留。", "compact")
             return
         }
-        val toCompact = history.subList(effectiveStartIdx, anchorIdx + 1)
-        if (toCompact.isEmpty()) {
-            appendSystemInfo("Nothing to compact.", "compact")
-            return
-        }
+        val anchorIdx = cut.endExclusive - 1
+        val toCompact = history.subList(cut.start, cut.endExclusive)
+        val firstKeptId = requireNotNull(history[cut.endExclusive].dbMessageId)
         // Past every precondition — from here the launch below owns the
         // onFinished callback.
         markStarted()
         _isCompacting.value = true
-        viewModelScope.launch(Dispatchers.IO) {
+        compactionJob = viewModelScope.launch(Dispatchers.IO) {
             // [T-android-compact-queued-drain] Only a SUCCESSFUL compact kicks
             // the queued-prompt drain below; failure/cancel/empty-summary paths
             // keep today's behavior (queued bubbles stay pending + cancellable).
@@ -2028,12 +2080,21 @@ class ChatViewModel(
                 // Mirrors iOS `generateCompactSummaryWithSplitting` — when the
                 // joined transcript exceeds the model's context window, halve
                 // the message list and summarize each half independently, then
-                // merge. depth cap=3 prevents pathological recursion.
-                val summary = generateCompactSummaryWithSplitting(
-                    messages = projectedHistory.subList(effectiveStartIdx, anchorIdx + 1),
-                    previousSummary = existing,
-                    depth = 0,
-                ).trim()
+                // merge. The depth and call budgets below prevent pathological recursion.
+                val summary = try {
+                    withTimeout(COMPACT_TIMEOUT_MS) {
+                        generateCompactSummaryWithSplitting(
+                            messages = projectedHistory.subList(effectiveStartIdx, anchorIdx + 1),
+                            previousSummary = existing,
+                            depth = 0,
+                            window = compactionWindow,
+                            provider = compactionProvider,
+                            budget = CompactionCallBudget(COMPACT_MAX_LLM_CALLS),
+                        ).trim()
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    throw IllegalStateException("压缩请求超时，原对话仍保留；请稍后重试", e)
+                }
                 if (summary.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         appendSystemInfo("Compaction produced no output — try again later.", "compact")
@@ -2041,60 +2102,16 @@ class ChatViewModel(
                     return@launch
                 }
 
-                val sid = realSessionId.ifEmpty { sessionId }
-                // v2 marker: lastCompactedMessageId IS the anchor — single
-                // source of truth. The anchor we resolved above is guaranteed
-                // to have a persisted dbMessageId. Legacy fields (firstKept /
-                // boundary / sortOrder) stay null/MAX so a downgraded reader
-                // sees "everything compacted, nothing kept" as a graceful
-                // fallback rather than a stale boundary.
-                // Re-resolve anchor: now that we're inside an IO coroutine
-                // we can read the messages DB to verify the dbMessageId is
-                // actually persisted, not just set on the in-memory
-                // LLMMessage. iOS does this belt-and-suspenders check
-                // (AIChatViewModel+Compaction.swift:644-657). Walk back from
-                // the original anchorIdx until we find an entry whose id is
-                // both non-empty AND present in rawDbIds.
-                val rawDbIds: Set<String> = try {
-                    chatRepository.dao.loadMessages(sid).map { it.id }.toSet()
-                } catch (e: Exception) {
-                    Log.w(TAG, "[Compact] loadMessages for raw-id verify failed: ${e.message}")
-                    emptySet()
+                val sid = compactionSessionId
+                require(activeSessionId == sid && currentModel?.id == compactionModelId && effectiveContextWindowTokens() == compactionWindow && historyScopeKey() == compactionScopeKey && agentHistory.toList() == history) {
+                    "对话或消息分支已变化，本次摘要未采用。"
                 }
-                val verifiedAnchorIdx: Int = if (rawDbIds.isEmpty()) {
-                    // DB read failed; trust the in-memory walk-back result.
-                    anchorIdx
-                } else {
-                    var i = anchorIdx
-                    while (i >= 0) {
-                        val id = history[i].dbMessageId
-                        if (!id.isNullOrEmpty() && id in rawDbIds) break
-                        i -= 1
-                    }
-                    i
+                val rawDbRows = chatRepository.loadActiveMessages(sid)
+                val rawDbIds = rawDbRows.mapTo(hashSetOf()) { it.id }
+                require(toCompact.all { it.dbMessageId in rawDbIds } && firstKeptId in rawDbIds) {
+                    "消息尚未完整保存，本次摘要未采用。"
                 }
-                if (verifiedAnchorIdx < 0) {
-                    Log.w(TAG, "[Compact] No agentHistory entry has a DB-persisted dbMessageId; aborting")
-                    withContext(Dispatchers.Main) {
-                        appendSystemInfo("Compact failed: could not anchor to a persisted message.", "compact")
-                    }
-                    return@launch
-                }
-                if (verifiedAnchorIdx != anchorIdx) {
-                    AppLogger.warning(
-                        TAG,
-                        "[Compact] anchor walked back from idx=$anchorIdx to idx=$verifiedAnchorIdx " +
-                            "(closest with id in rawDbIds). Unsynced tail entries will fall on the active side of the divider.",
-                    )
-                }
-                val lastCompactedDbId = history[verifiedAnchorIdx].dbMessageId
-                    ?: run {
-                        Log.w(TAG, "[Compact] verified anchor at idx=$verifiedAnchorIdx lost dbMessageId; aborting")
-                        withContext(Dispatchers.Main) {
-                            appendSystemInfo("Compact failed: anchor message id unavailable.", "compact")
-                        }
-                        return@launch
-                    }
+                val lastCompactedDbId = requireNotNull(history[anchorIdx].dbMessageId)
                 val distillationSourceRefs = toCompact.mapNotNull { message ->
                     message.dbMessageId?.takeIf(String::isNotBlank)?.let { messageId ->
                         com.openminis.app.novex.domain.NovexResourceRef(
@@ -2157,78 +2174,29 @@ class ChatViewModel(
                     createdAt = System.currentTimeMillis(),
                     uiBoundarySortOrder = null,
                     boundaryMessageId = null,
-                    firstKeptMessageId = null,
+                    firstKeptMessageId = firstKeptId,
                     lastCompactedMessageId = lastCompactedDbId,
-                    version = 2,
+                    version = 3,
                     historyScopeKey = compactionScopeKey,
                 )
+                require(activeSessionId == sid && currentModel?.id == compactionModelId && effectiveContextWindowTokens() == compactionWindow && historyScopeKey() == compactionScopeKey && agentHistory.toList() == history) {
+                    "对话已变化，本次摘要未采用。"
+                }
                 chatRepository.dao.insertCompactMarker(marker)
                 AppLogger.info(
                     TAG,
                     "[Compact] persisted Novex distillation ${distillationEntry.workspaceRef.value}",
                 )
-                _compactSummary.value = summary
-                // Keep the marker in memory so effectiveAgentHistory() can
-                // resolve the boundary on the very next outgoing turn.
-                // Mirrors iOS `cachedLatestMarker = marker`.
-                _cachedLatestMarker = marker
                 withContext(Dispatchers.Main) {
-                    // Gray out everything in the compacted range; the kept
-                    // tail (last N user turns + tool/assistant follow-ups)
-                    // stays full opacity. Determined by walking _messages
-                    // until we pass the row whose id == lastCompactedDbId.
-                    //
-                    // Also drop any prior compact-divider system rows — a
-                    // session shows at most one divider (the latest marker).
-                    // Those old dividers are stored as system messages with
-                    // a "compact" iconKind in toolBlocks[0].toolName.
-                    val cutoffId: String = lastCompactedDbId
-                    var passedCutoff = false   // anchor is guaranteed non-null in v2
-                    val cleaned = _messages.value
-                        .filterNot { msg ->
-                            // Drop prior compact-divider rows; appendSystemInfo
-                            // below will re-add the new one.
-                            msg.role == "system" &&
-                                msg.toolBlocks.firstOrNull()?.toolName == "compact"
-                        }
-                        .map { msg ->
-                            if (msg.role == "system") msg
-                            else if (passedCutoff) msg
-                            else {
-                                val grayed = if (msg.isCompactedHistory) msg
-                                    else msg.copy(isCompactedHistory = true)
-                                if (msg.id == cutoffId) passedCutoff = true
-                                grayed
-                            }
-                        }
-                    // T84: count UI bubbles in this pass's compacted range.
-                    // Filters: role != system (dividers/notices don't count).
-                    // Range: everything up to and including the cutoff row,
-                    // since the kept-tail starts immediately after.
-                    // Falls back to "all non-system" when cutoffId is null
-                    // (compact-everything path), matching iOS dividerInsertIdx
-                    // == messages.count behavior.
-                    //
-                    // We deliberately do NOT exclude `isCompactedHistory` rows.
-                    // Back-to-back compacts (or compact after restoring a prior
-                    // marker on session reload) leave the in-range rows already
-                    // grayed; excluding them produced "0 messages compacted"
-                    // even though `toCompact.size` was nonzero. The divider's
-                    // count should reflect the size of THIS pass's range, not
-                    // the delta of newly-grayed rows.
-                    val cutoffIdx = cleaned.indexOfLast { it.id == cutoffId }
-                    val compactedUICount = if (cutoffIdx < 0) {
-                        cleaned.count { it.role != "system" }
-                    } else {
-                        cleaned.take(cutoffIdx + 1).count { it.role != "system" }
+                    require(activeSessionId == sid && historyScopeKey() == compactionScopeKey && agentHistory.toList() == history) {
+                        "对话已变化；摘要仅保留在原分支，本页未切换上下文。"
                     }
-                    _messages.value = cleaned
-                    AppLogger.info(TAG, "[Compact] divider: $compactedUICount UI bubbles compacted (history entries: ${toCompact.size})")
-                    appendSystemInfo(
-                        text = "$compactedUICount messages compacted",
-                        iconKind = "compact",
-                        payload = summary,
-                    )
+                    _compactSummary.value = summary
+                    _cachedLatestMarker = marker
+                    val originals = _messages.value.filterNot {
+                        it.role == "system" && it.toolBlocks.firstOrNull()?.toolName == "compact"
+                    }.map { it.copy(isCompactedHistory = false) }
+                    _messages.value = applyCompactMarkerGraying(originals, marker, rawDbRows, rawDbIds)
                 }
                 compactSucceeded = true
             } catch (e: CancellationException) {
@@ -2514,9 +2482,9 @@ class ChatViewModel(
         val scopeKey = historyScopeKey()
         val projection = scopedHistory(agentHistory.toList(), scopeKey)
         val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
-        return dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
+        return budgetedRequestHistory(dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
             it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
-        })
+        }))
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -2530,6 +2498,11 @@ class ChatViewModel(
             "Treat it as background context only. The user's most recent message (below or in the next turn) takes precedence — if it changes the task, the goal, or any numbers/scope, follow the new instruction and do not resume the old plan from this summary. Do not re-run discovery (reading memory, scanning skills, re-reading files) unless the new instruction requires it.\n\n" +
             summary +
             "\n</context-summary>"
+
+        if (marker.version >= 3) {
+            return marker.firstKeptMessageId?.let { ConversationRetention.rebuild(history, it, summary) }
+                ?: history.toList()
+        }
 
         // ─── v2 markers (id-only anchor model) ─────────────────────────
         //
@@ -2928,7 +2901,7 @@ class ChatViewModel(
      * exceeds the model's context window. Mirrors iOS
      * `generateCompactSummaryWithSplitting` (AIChatViewModel+Compaction.swift:820).
      *
-     * Depth cap = 3 so a pathologically large conversation
+     * Depth cap = 2 and a shared call budget so a pathologically large conversation
      * still terminates instead of fanning out indefinitely. At each split we
      * choose a safe turn boundary, summarize each half independently, then ask
      * the LLM to merge the two partial summaries into one — prioritizing Part 2
@@ -2938,6 +2911,9 @@ class ChatViewModel(
         messages: List<LLMMessage>,
         previousSummary: String? = null,
         depth: Int = 0,
+        window: Int = effectiveContextWindowTokens() ?: 128_000,
+        provider: com.openminis.app.provider.LLMProvider = requireNotNull(currentProvider),
+        budget: CompactionCallBudget = CompactionCallBudget(),
     ): String {
         val transcript = buildConversationTextForSummary(messages)
         val conversationText = if (previousSummary.isNullOrBlank()) {
@@ -2947,22 +2923,29 @@ class ChatViewModel(
                 "New conversation to merge:\n$transcript"
         }
         return try {
-            generateCompactSummary(conversationText)
+            generateCompactSummary(conversationText, window, provider, budget)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (!isSegmentRetryableError(e) || messages.size < 2 || depth >= 3) {
-                throw e
+            if (!isSegmentRetryableError(e)) throw e
+            val split = ConversationCompactionPolicy.splitBetweenTurns(messages)
+            if (split == null || depth >= COMPACT_MAX_SPLIT_DEPTH) {
+                if (BPETokenizer.countTokens(conversationText) < window / 2) throw e
+                var running = previousSummary.orEmpty()
+                for (page in ConversationCompactionPolicy.pages(transcript, window / 3, BPETokenizer::countTokens)) {
+                    running = generateCompactSummary(
+                        "Earlier summary:\n$running\n\nNext fragment of the historical transcript (may continue a message; do not invent missing context):\n$page",
+                        window, provider, budget)
+                }
+                return running
             }
-            val (firstHalf, secondHalf) = ConversationCompactionPolicy
-                .splitBetweenTurns(messages)
-                ?: throw e
+            val (firstHalf, secondHalf) = split
             AppLogger.info(
                 TAG,
                 "[Compact] Splitting ${messages.size} messages into ${firstHalf.size} + ${secondHalf.size} (depth=$depth)",
             )
-            val summary1 = generateCompactSummaryWithSplitting(firstHalf, null, depth + 1)
-            val summary2 = generateCompactSummaryWithSplitting(secondHalf, null, depth + 1)
+            val summary1 = generateCompactSummaryWithSplitting(firstHalf, null, depth + 1, window, provider, budget)
+            val summary2 = generateCompactSummaryWithSplitting(secondHalf, null, depth + 1, window, provider, budget)
             val mergeInput = buildString {
                 append("Merge these partial summaries into one continuity checkpoint. ")
                 append("Preserve the latest user corrections, current relationships, time, scene and world state, ")
@@ -2977,7 +2960,7 @@ class ChatViewModel(
                 append("Part 1:\n").append(summary1).append("\n\n")
                 append("Part 2:\n").append(summary2)
             }
-            generateCompactSummary(mergeInput)
+            generateCompactSummary(mergeInput, window, provider, budget)
         }
     }
 
@@ -2986,7 +2969,12 @@ class ChatViewModel(
      * summary. Throws on provider error so the splitter above can detect
      * context-too-large failures and retry with halved input.
      */
-    private suspend fun generateCompactSummary(conversationText: String): String {
+    private suspend fun generateCompactSummary(
+        conversationText: String,
+        contextWindow: Int,
+        provider: com.openminis.app.provider.LLMProvider,
+        budget: CompactionCallBudget = CompactionCallBudget(),
+    ): String {
         // Wrap the transcript in explicit BEGIN/END framing so the model
         // treats it as material to summarize rather than as a chat turn to
         // continue. Mirrors iOS AIChatViewModel+Compaction.swift
@@ -3002,12 +2990,10 @@ class ChatViewModel(
             append("Do not answer or continue the conversation. Keep current state in present tense, ")
             append("completed events in past tense, and unresolved matters explicitly unresolved.")
         }
-        val model = currentModel
-        val contextWindow = model?.contextWindow ?: 128_000
-        val estimatedInput = userMessage.length / 4
-        val maxOut = maxOf(1024, minOf(8192, contextWindow - estimatedInput))
-        val provider = currentProvider
-            ?: throw IllegalStateException("No LLM provider available for compaction")
+        val estimatedInput = BPETokenizer.countTokens(userMessage) + BPETokenizer.countTokens(compactSummarySystemPrompt) + 256
+        require(estimatedInput + 1024 < contextWindow) { "压缩输入超过当前对话容量" }
+        val maxOut = minOf(8192, contextWindow - estimatedInput)
+        budget.take()
         val response = provider.sendMessage(
             messages = listOf(
                 LLMMessage(role = LLMMessage.Role.USER, content = userMessage)
@@ -3024,6 +3010,9 @@ class ChatViewModel(
             tools = emptyList(),
             thinkingLevel = ThinkingLevel.OFF,
         )
+        require(response.stopReason?.lowercase() !in setOf("length", "max_tokens", "max_output_tokens")) {
+            "摘要输出被容量限制截断，未替换原上下文"
+        }
         return response.text
     }
 
@@ -3055,7 +3044,7 @@ class ChatViewModel(
         if (error is CancellationException) return false
         if (error is LLMError) {
             return when (error) {
-                is LLMError.Cancelled, is LLMError.NetworkError -> false
+                is LLMError.Cancelled, is LLMError.NetworkError, is LLMError.InvalidApiKey, is LLMError.RateLimited -> false
                 else -> true
             }
         }
@@ -3096,14 +3085,47 @@ class ChatViewModel(
      * `exhausted` boundaries and still allow the send. That gives the user
      * a signal to invoke `/compact` explicitly without blocking their turn.
      */
-    private fun checkContextBeforeSend(): PreSendContextAction {
-        val tokens = _lastTurnContextTokens.value
+    private fun compactionStartIndex(history: List<LLMMessage>, marker: CompactMarkerEntity?): Int {
+        if (marker == null) return 0
+        if (marker.version >= 3) return history.indexOfFirst { it.dbMessageId == marker.firstKeptMessageId }.coerceAtLeast(0)
+        val anchor = marker.lastCompactedMessageId?.let { id -> history.indexOfLast { it.dbMessageId == id } }
+        return if (anchor != null && anchor >= 0) anchor + 1 else 0
+    }
+
+    private fun shouldCompactRetainedHistory(tokens: Int, window: Int): Boolean {
+        val history = agentHistory.toList()
+        val marker = _cachedLatestMarker?.takeIf {
+            com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(it.historyScopeKey, historyScopeKey())
+        }
+        return ConversationRetention.shouldCompact(history, compactionStartIndex(history, marker), window, tokens, ::countHistoryMessage)
+    }
+
+    private fun budgetedRequestHistory(history: List<LLMMessage>): List<LLMMessage> {
+        if (integratedCards.binding(activeSessionId) == null) return history
+        val window = effectiveContextWindowTokens() ?: return history
+        return ConversationToolRetention.project(history, window,
+            estimatePreparedRequest(history, novexPromptAuditInput?.prompt, agentTools),
+            agentTools.any { it.name == "read_conversation_history" }, ::countPartTokens)
+    }
+
+    private fun retainedContextEstimate(): Int {
+        val allowed = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, historyScopeKey())
+        // The send-entry check precedes prompt assembly; do not reread files on
+        // the UI path just to estimate. The prepared/continuation guards use the
+        // freshly assembled prompt and the same schema/message estimator.
+        val knownPrompt = novexPromptAuditInput?.prompt
+        return estimatePreparedRequest(budgetedRequestHistory(effectiveAgentHistoryUncounted(agentHistory.toList(), allowed)), knownPrompt, agentTools) +
+            if (knownPrompt == null) 4096 else 0
+    }
+
+    private fun checkContextBeforeSend(pendingText: String): PreSendContextAction {
+        val tokens = retainedContextEstimate() + BPETokenizer.countTokens(pendingText)
         if (tokens <= 0) return PreSendContextAction.PROCEED
         // [T-context-window-live-read] Live window (entry re-resolved + group
         // contextLimitTokens folded in) — not the currentModel snapshot.
         val window = effectiveContextWindowTokens() ?: return PreSendContextAction.PROCEED
-        val policy = ContextPolicy.forContextWindow(window)
-        return when (policy.check(tokens, window)) {
+        val check = if (shouldCompactRetainedHistory(tokens, window)) ContextPolicy.CheckResult.NEEDS_COMPACT else ContextPolicy.CheckResult.OK
+        return when (check) {
             ContextPolicy.CheckResult.OK -> PreSendContextAction.PROCEED
 
             // Mirrors iOS AIChatViewModel.swift:2224. Previously Android only
@@ -3171,13 +3193,22 @@ class ChatViewModel(
         _showCompactBeforeSendPrompt.value = false
         val text = pendingSendText ?: return
         pendingSendText = null
+        val pendingAttachments = _attachments.value.toList()
         viewModelScope.launch {
             val ok = awaitCompaction()
-            if (!ok) {
-                AppLogger.warning(TAG, "[Context] pre-send compaction failed — sending anyway")
+            if (!ok || _attachments.value != pendingAttachments) {
+                restorePendingCompactText(text)
+                return@launch
             }
+            val newDraft = _inputText.value
             sendMessage(text, skipContextCheck = true)
+            if (newDraft.isNotEmpty()) _inputText.value = newDraft
         }
+    }
+
+    private fun restorePendingCompactText(text: String) {
+        val draft = _inputText.value
+        _inputText.value = if (draft.isBlank() || draft == text) text else text + "\n\n" + draft
     }
 
     /** Dialog action: send without compacting. */
@@ -3191,7 +3222,7 @@ class ChatViewModel(
     /** Dialog dismissed — restore the text to the composer so it isn't lost. */
     fun cancelCompactBeforeSend() {
         _showCompactBeforeSendPrompt.value = false
-        pendingSendText?.let { _inputText.value = it }
+        pendingSendText?.let(::restorePendingCompactText)
         pendingSendText = null
     }
 
@@ -3229,12 +3260,12 @@ class ChatViewModel(
      * Blocks until the compaction attempt settles, because the next API call
      * must read the freshly-compacted history.
      */
-    private suspend fun inLoopContextCheck(compactionsSoFar: Int): InLoopContextAction {
-        val tokens = _lastTurnContextTokens.value
+    private suspend fun inLoopContextCheck(compactionsSoFar: Int, tokensOverride:Int?=null): InLoopContextAction {
+        val tokens = tokensOverride ?: retainedContextEstimate()
         if (tokens <= 0) return InLoopContextAction.PROCEED
         val window = effectiveContextWindowTokens() ?: return InLoopContextAction.PROCEED
-        val policy = ContextPolicy.forContextWindow(window)
-        return when (policy.check(tokens, window)) {
+        val check = if (shouldCompactRetainedHistory(tokens, window)) ContextPolicy.CheckResult.NEEDS_COMPACT else ContextPolicy.CheckResult.OK
+        return when (check) {
             ContextPolicy.CheckResult.OK -> InLoopContextAction.PROCEED
 
             ContextPolicy.CheckResult.NEEDS_COMPACT -> {
@@ -3273,7 +3304,9 @@ class ChatViewModel(
                 // logging an identical 66358). Zeroing it makes the guard
                 // PROCEED once, so the next real response measures the
                 // post-compaction size and the decision is made on fresh data.
-                _lastTurnContextTokens.value = 0
+                _contextEstimated.value = true
+                _lastTurnContextTokens.value = retainedContextEstimate()
+                _contextUsageReady.value = true
                 InLoopContextAction.COMPACTED
             }
 
@@ -3303,6 +3336,7 @@ class ChatViewModel(
      */
     private suspend fun awaitCompaction(): Boolean =
         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { compactionJob?.cancel() }
             var resumed = false
             compactAll(allowDuringProcessing = true) { ok ->
                 // compactAll guarantees exactly one callback, but guard anyway:
@@ -3354,6 +3388,33 @@ class ChatViewModel(
     private val initialPersonaId: String? = draftMarker("persona")
     private val initialWorldId: String? = draftMarker("world")
     private val initialInteractiveFictionId: String? = draftMarker("game")
+    private val initialCardEntry by lazy { draftMarker("card")?.let {com.openminis.app.cards.IntegratedCardEntry.read(context,it)} }
+
+    private val gameEntry = NovexGameEntryController(
+        requested = initialInteractiveFictionId != null,
+        prepare = {
+            val app = novexApplication()
+            val current = currentNovexConfiguration()
+            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(app.novexWorkspace, app.novexSnapshotMediaStore)
+                .create(requireNotNull(initialInteractiveFictionId), current.backgroundSettings, current.adoptedContexts)
+        },
+        currentPlayer = { currentNovexConfiguration().playerIdentity },
+        activate = { game ->
+            novexSettingsStore.update(
+                settings = conversationSettingsSnapshot().copy(conversationPrompt = inheritedEditablePrompt(
+                    game.answerIdentity ?: com.openminis.app.novex.domain.NovexPersonaPresets.gameHost)),
+                captureSources = true,
+            ) { current ->
+                NovexConversationConfiguration.open(current).apply(
+                    com.openminis.app.novex.domain.NovexConversationCommand.ActivateInteractiveFiction(game, replacePlayerIdentity = true),
+                ).snapshot
+            }
+            prepareNovexConversationForEntry()
+        },
+    )
+    val gameEntryState = gameEntry.state
+    fun retryGameEntry() { viewModelScope.launch { gameEntry.start() } }
+    fun selectGameEntryPlayer(id: String) { viewModelScope.launch { gameEntry.select(id) } }
 
     private val _immersiveProfile = MutableStateFlow(com.openminis.app.data.character.ImmersiveChatProfile())
     val immersiveProfile: StateFlow<com.openminis.app.data.character.ImmersiveChatProfile> by lazy {
@@ -3368,13 +3429,40 @@ class ChatViewModel(
     val imageStylePrompt: StateFlow<String> = _imageStylePrompt.asStateFlow()
     private val _novexConfigurationJson = MutableStateFlow(
         com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
-            com.openminis.app.novex.domain.NovexConversationConfiguration.empty(sessionId).snapshot,
+            com.openminis.app.novex.domain.NovexConversationConfiguration.empty(sessionId).snapshot.copy(cardBindingJson=if(isDraft)com.openminis.app.cards.CardBinding().encode() else null),
         ),
     )
     val novexConfigurationJson: StateFlow<String> = _novexConfigurationJson.asStateFlow()
 
-    private fun currentNovexConfiguration(): NovexConversationConfigurationSnapshot =
-        NovexConversationConfigurationCodec.decode(_novexConfigurationJson.value, activeSessionId)
+    val conversationStatus: StateFlow<NovexConversationStatus> by lazy {
+        combine(_novexConfigurationJson, sessionLoaded) { raw, loaded ->
+            if (loaded) NovexConversationStatus.read(NovexConversationConfigurationCodec.decode(raw, activeSessionId))
+            else NovexConversationStatus(answer = "正在读取对话", editable = false)
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            NovexConversationStatus(answer = "正在读取对话", editable = false))
+    }
+
+    suspend fun saveConversationExecutionMode(mode: com.openminis.app.novex.domain.NovexExecutionMode) {
+        sessionLoaded.first { it }
+        require(!_isStreaming.value) { "请在本轮回答结束后调整工具权限" }
+        novexSettingsStore.update { current ->
+            NovexConversationConfiguration.open(current).apply(
+                com.openminis.app.novex.domain.NovexConversationCommand.SetExecutionMode(mode)).snapshot
+        }
+    }
+
+    @Volatile private var decodedNovexConfigurationCache: Pair<String, NovexConversationConfigurationSnapshot>? = null
+
+    private fun currentNovexConfiguration(): NovexConversationConfigurationSnapshot {
+        val raw = _novexConfigurationJson.value
+        val id = activeSessionId
+        decodedNovexConfigurationCache?.let { cached ->
+            if (cached.first === raw && cached.second.conversationId == id) return cached.second
+        }
+        return NovexConversationConfigurationCodec.decode(raw, id).also {
+            decodedNovexConfigurationCache = raw to it
+        }
+    }
 
     private data class NovexPromptAuditInput(val prompt: String, val style: String, val persistentContext: String, val extraContext: String)
     private var novexPromptAuditInput: NovexPromptAuditInput? = null
@@ -3397,25 +3485,33 @@ class ChatViewModel(
         requestMessageId: String,
         query: String,
     ): PreparedNovexRequestContext? {
+        _contextUsageReady.value = false
         val application = context.applicationContext as? com.openminis.app.MinisApp ?: return null
         if (!application.subsystemsReady()) return null
         val configuration = adoptedNovexConfiguration()
         val profile = _immersiveProfile.value
-        val candidates = WorkspaceNovexContextLoader(application.novexWorkspace,
+        val usingNewCards=integratedCards.binding(activeSessionId)!=null
+        val currentOccupied=if(usingNewCards) estimatePreparedRequest(effectiveAgentHistory(),baseSystemPrompt,agentTools)
+            else maxOf(_lastTurnContextTokens.value,estimateContextTokens())
+        val candidates = (if(usingNewCards)emptyList() else WorkspaceNovexContextLoader(application.novexWorkspace,
             com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world))
-            .load(configuration)
-            .toMutableList()
+            .load(configuration)).toMutableList()
+        if(usingNewCards && configuration.executionMode.exposesTools) {
+            val images=integratedConversationImages()
+            if(images.isNotEmpty())candidates+=NovexContextCandidate("new-card-conversation-images","对话图片目录",
+                "这些是当前对话可保存到卡片的图片编号，目录不代表已看图："+JSONArray(images.keys.toList()),ContextSourceKind.TOOL_DEFINITION,alwaysInclude=true)
+        }
         candidates += com.openminis.app.novex.domain.NovexReadOnlyAttachmentContext(novexDocumentRepository).candidates(
             configuration.executionMode,
             novexDocumentRefsInHistory(agentHistory.filter { it.role == LLMMessage.Role.USER })
                 .filter { it in activeNovexDocumentRefs }.map(::NovexResourceRef),
         )
-        configuration.activeInteractiveFiction?.let {
+        if(usingNewCards || configuration.activeInteractiveFiction!=null) {
             val state = InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
             if (state.values.isNotEmpty()) {
                 candidates += NovexContextCandidate(
                     sourceId = "playthrough:${state.branchId}",
-                    label = "文游 · 本局状态",
+                    label = "对话状态",
                     content = state.values.entries.joinToString("\n") { (key, value) ->
                         "$key：${when (value) {
                             is com.openminis.app.novex.domain.PlaythroughValue.Text -> value.value
@@ -3432,13 +3528,22 @@ class ChatViewModel(
         com.openminis.app.novex.domain.NovexCheckpointContinuation(novexConversationWorkspaceStore).prepare(configuration,
             com.openminis.app.novex.domain.NovexConversationWorkspaceScope(configuration.conversationId, activeBranchPathIds, requestMessageId))
             ?.let { candidates += it }
-        if (candidates.isEmpty()) return null
+        if (candidates.isEmpty() && !usingNewCards) return null
 
         val window = effectiveContextWindowTokens() ?: 128_000
-        val occupied = maxOf(_lastTurnContextTokens.value, estimateContextTokens())
-        val outputReserve = (currentModel?.maxOutputTokens ?: 8_192).coerceIn(1_024, 32_000)
+        val occupied = currentOccupied
+        val outputReserve = (currentModel?.maxOutputTokens ?: 8_192).coerceIn(1_024, 32_000) + window / 20
         val budget = NovexContextBudgetPolicy.moduleBudget(window, occupied, outputReserve)
-        val worldbook = com.openminis.app.novex.domain.NovexTavernWorldbook.adopted(configuration)
+        if(usingNewCards) {
+            val otherCost=candidates.sumOf {BPETokenizer.countTokens(it.content)}
+            candidates+=integratedCards.candidates(activeSessionId,requestMessageId,query,agentHistory,
+                (budget-otherCost).coerceAtLeast(0),BPETokenizer::countTokens,
+                configuration.executionMode.exposesTools && currentModel?.supportsTools!=false) { selection->
+                requireNotNull(currentProvider){"请先选择模型"}.sendMessage(
+                    listOf(LLMMessage(LLMMessage.Role.USER,selection)),"你是只读资料选择器，只选择模块编号，不执行任何操作。",1024).text
+            }
+        }
+        val worldbook = if(usingNewCards)null else com.openminis.app.novex.domain.NovexTavernWorldbook.adopted(configuration)
         val worldbookReserve = if(worldbook == null && candidates.none { it.worldbookConditions.isNotEmpty() }) 0 else minOf(2048, budget / 4)
         val baseComposition = NovexContextComposer.compose(
             query = query,
@@ -3446,6 +3551,20 @@ class ChatViewModel(
             candidates = candidates.filter { it.worldbookConditions.isEmpty() },
             estimateTokens = BPETokenizer::countTokens,
         )
+        if(usingNewCards) {
+            val selectedCards = candidates.filter {
+                it.sourceId.startsWith("new-card") &&
+                    it.sourceId != "new-card-reading" &&
+                    !it.partial &&
+                    it.content.isNotBlank()
+            }
+            val complete = selectedCards.all { candidate ->
+                baseComposition.fragments.any { it.sourceId == candidate.sourceId && !it.partial && it.text == candidate.content.trim() }
+            }
+            require(complete) {
+                "采用的卡片内容超过当前模型可用上下文，无法发送本轮请求；请降低本对话容量、减少模块或换用更大上下文的模型"
+            }
+        }
         val worldbookResult = run {
             val visibleById = _messages.value.filter { !it.isQueued && it.error == null && it.role in setOf("user", "assistant") }.associateBy { it.id }
             val visible = (activeBranchPathIds + requestMessageId).distinct().mapNotNull { visibleById[it]?.content }
@@ -3454,7 +3573,7 @@ class ChatViewModel(
                 (budget - baseComposition.usedTokens).coerceAtLeast(0), BPETokenizer::countTokens)
         }
         val worldbookFragments = worldbookResult.fragments
-        val closedWorldbooks = com.openminis.app.novex.domain.NovexWorldbookUse.references(configuration).filterNot { it.enabled }.map { reference ->
+        val closedWorldbooks = (if(usingNewCards)emptyList() else com.openminis.app.novex.domain.NovexWorldbookUse.references(configuration)).filterNot { it.enabled }.map { reference ->
             com.openminis.app.novex.domain.ContextSourceOmission(com.openminis.app.novex.domain.ContextSourceKind.BACKGROUND_MODULE,
                 "reference:${reference.id}", reference.targetLabel.ifBlank { "世界书引用" }, "此引用已关闭；其他启用来源分别判断")
         }
@@ -3474,7 +3593,7 @@ class ChatViewModel(
                 prefix = "\n<本轮未完整提供的资料>\n", postfix = "\n不能把上述资料视为已通读。\n</本轮未完整提供的资料>",
                 separator = "\n",
             ) { "${it.label}：${it.reason}" }.orEmpty()
-        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") {
+        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL in setOf("preview", "preview-free")) {
             try {
                 val definitions = agentTools
                 val audit = novexPromptAuditInput?.takeIf { it.prompt == baseSystemPrompt }
@@ -3499,6 +3618,9 @@ class ChatViewModel(
             } catch(cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch(failure: Exception) { record = record.copy(teachingTraceError = failure.message ?: "本轮装配记录未保存") }
         }
+        _contextEstimated.value = true
+        _lastTurnContextTokens.value = estimatePreparedRequest(effectiveAgentHistory(), formalPrompt, agentTools)
+        _contextUsageReady.value = true
         return PreparedNovexRequestContext(composition, record, formalPrompt)
     }
 
@@ -3506,9 +3628,7 @@ class ChatViewModel(
     private fun refreshNovexRuntimeProjection() {
         val configuration = currentNovexConfiguration()
         _novexControls.value = InteractiveFictionRuntime.resolveControls(configuration, activeBranchPathIds)
-        _activePlaythroughState.value = configuration.activeInteractiveFiction?.let {
-            InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds)
-        }
+        _activePlaythroughState.value = if(configuration.activeInteractiveFiction!=null || configuration.cardBindingJson!=null) InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds) else null
         _novexControlView.value = null
     }
 
@@ -3919,6 +4039,7 @@ class ChatViewModel(
         // construction; if the user flipped /memory on the draft
         // before first send, that choice wins.
         val session = chatRepository.createSession(
+            title = initialCardEntry?.first,
             modelId = modelId,
             memoryEnabled = _memoryEnabled.value,
             characterId = _immersiveProfile.value.character?.id,
@@ -3955,6 +4076,8 @@ class ChatViewModel(
             // minis-sessions/__new__*/… and be orphaned when the user
             // re-enters the session and everything is resolved via the real
             // id. See debug report 2026-04-21 (TikTok Chinese filename).
+            com.openminis.app.diagnostics.ModelRequestAudit.promoteDraft(
+                java.io.File(context.filesDir, "novex/model-requests"), sessionId, session.id)
             migrateDraftResources(fromDraft = sessionId, toReal = session.id)
             // [T-android-session-skill-override-init-timing] Re-point any
             // session_skill_overrides / mcp_session_overrides rows written
@@ -4002,7 +4125,7 @@ class ChatViewModel(
 
     private suspend fun prepareNovexConversationDrafts() {
         val sid = ensureSession()
-        novexApplication().novexWorkspace.apply(com.openminis.app.novex.domain.NovexCommand.EnsureConversationDrafts(sid))
+        if(integratedCards.binding(sid)==null)novexApplication().novexWorkspace.apply(com.openminis.app.novex.domain.NovexCommand.EnsureConversationDrafts(sid))
         withContext(Dispatchers.IO) {
             val persistedReplies = chatRepository.loadActiveConversation(sid).activeMessages
                 .filter { it.role == "assistant" }.mapTo(hashSetOf()) { it.id }
@@ -4087,6 +4210,13 @@ class ChatViewModel(
     }.getOrDefault(false)
 
     private fun loadSession() {
+        // A reload (compact revert, branch change, or recovery) must rebuild
+        // the agent history from the database exactly once.  Keeping the old
+        // list here duplicates every message on the next load and inflates
+        // context estimates until the provider rejects the request.
+        agentHistory.clear()
+        retainedTranscriptRows = emptyList()
+        retainedTranscriptSessionId = null
         // T-android-crash-detected-halt: when CrashFrequencyDetector
         // tripped (#459, ≥3 crashes in last hour), skip the heavy
         // session-restore path entirely. Re-running the same persisted
@@ -4123,7 +4253,7 @@ class ChatViewModel(
 
             if (isDraft) {
                 // Draft session: just set up provider using default group or first entry
-                _sessionTitle.value = "New Chat"
+                _sessionTitle.value = initialCardEntry?.first ?: "New Chat"
                 _sessionCategory.value = null
                 val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
                 if (initialCharacterVersionId != null && initialWorldId != null) {
@@ -4169,6 +4299,8 @@ class ChatViewModel(
                     worldId = _immersiveProfile.value.worldId,
                     characterVersionId = _immersiveProfile.value.characterVersionId,
                 )
+                if(initialCharacterId==null && initialCharacterVersionId==null && initialWorldId==null && initialInteractiveFictionId==null)
+                    startingConfiguration=startingConfiguration.copy(cardBindingJson=(initialCardEntry?.second ?: com.openminis.app.cards.CardBinding()).encode())
                 if (initialInteractiveFictionId == null) {
                     val role = startingConfiguration.answerIdentity as? com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion
                     val workspace = (context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace
@@ -4190,30 +4322,9 @@ class ChatViewModel(
                         com.openminis.app.novex.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world), novexApplication().novexSnapshotMediaStore)
                         .adopt(startingConfiguration)
                 }
-                val baseDraftConfiguration = initialInteractiveFictionId?.let { projectId ->
-                    val application = context.applicationContext as? com.openminis.app.MinisApp
-                    application?.novexWorkspace?.let { workspace ->
-                        val game = try {
-                            com.openminis.app.novex.adapter.NovexGameSnapshotAssembler(workspace, application.novexSnapshotMediaStore).create(projectId, startingConfiguration.backgroundSettings, startingConfiguration.adoptedContexts)
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (failure: Exception) {
-                            _error.value = "文游尚未启动：${failure.message ?: "读取设定失败"}"
-                            return@let startingConfiguration
-                        }
-                        if (com.openminis.app.novex.domain.NovexGamePlayerChoices.needsSelection(game) ||
-                            (game.playerIdentity != null && startingConfiguration.playerIdentity != null &&
-                            game.playerIdentity != startingConfiguration.playerIdentity)) {
-                            _error.value = "文游的玩家身份与当前选择不同，尚未启动。请在对话编辑中选择文游并确认使用哪个身份。"
-                            startingConfiguration
-                        } else NovexConversationConfiguration.open(startingConfiguration).apply(
-                            com.openminis.app.novex.domain.NovexConversationCommand.ActivateInteractiveFiction(game),
-                        ).snapshot
-                    }
-                } ?: startingConfiguration
                 val draftConfiguration = applyDraftManagedSubjects(
                     draftId = sessionId,
-                    configuration = baseDraftConfiguration,
+                    configuration = startingConfiguration,
                 )
                 installNovexConfiguration(draftConfiguration)
                 _conversationPrompt.value = inheritedEditablePrompt(startingConfiguration.answerIdentity)
@@ -4235,7 +4346,8 @@ class ChatViewModel(
                     // newest-provider/newest-text-model. Was firstOrNull().
                     applyNewChatDefaultModel()
                 }
-                prepareNovexConversationForEntry()
+                if (initialInteractiveFictionId != null) gameEntry.start()
+                else prepareNovexConversationForEntry()
                 return@launch
             }
 
@@ -4302,15 +4414,11 @@ class ChatViewModel(
             if (!resolved) {
                 val entry = findModelEntry(session.modelId)
                 if (entry != null) {
-                    currentModel = entry.model
-                    _modelName.value = entry.model.displayName
-                    _activeEntryId.value = entry.id
                     val instance = providerRepository.instance(entry.providerInstanceId)
                     if (instance != null) {
                         val apiKey = providerRepository.usableApiKey(instance)
                         if (apiKey != null) {
-                            currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
-                            _providerName.value = instance.label.ifEmpty { entry.model.provider }
+                            bindChatEntry(entry, instance, apiKey)
                             resolved = true
                             // No binding row (e.g. a synced session that only
                             // carried model_id). If the entry belongs to the
@@ -4504,6 +4612,7 @@ class ChatViewModel(
             // above to avoid re-parsing partsJson on the UI thread. Safe to
             // bulk-addAll here because loadSession runs once at init before
             // any sender writes into agentHistory.
+            agentHistory.clear()
             agentHistory.addAll(loaded.llmHistory)
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
@@ -4652,6 +4761,9 @@ class ChatViewModel(
         rawMessages: List<com.openminis.app.data.db.MessageEntity>,
         historyDbIds: Set<String>,
     ): List<ChatMessage> {
+        if (marker.version >= 3 && (marker.firstKeptMessageId !in historyDbIds || marker.lastCompactedMessageId !in historyDbIds)) {
+            return messages
+        }
         // Some legacy rows have empty-string boundaries instead of NULL —
         // treat both as "no boundary" so the compactAll path below kicks in.
         val firstKeptId = (marker.firstKeptMessageId?.takeIf { it.isNotEmpty() })
@@ -4854,6 +4966,28 @@ class ChatViewModel(
         )
     }
 
+    private fun bindChatEntry(entry: com.openminis.app.data.model.ModelEntry,
+        instance: com.openminis.app.data.model.ProviderInstance, apiKey: String) {
+        require(instance.isEnabled && entry.providerInstanceId == instance.id) { "模型连接已关闭或配置不一致" }
+        require(com.openminis.app.data.model.ChatModelSelection.eligible(entry)) { "请选择聊天模型，生图模型不能用于此对话" }
+        val resolved = ProviderFactory.create(instance, apiKey, entry.model, context)
+        check(resolved.model == entry.model) { "模型连接与所选配置不一致" }
+        currentProvider = resolved
+        currentModel = resolved.model
+        _activeEntryId.value = entry.id
+        _modelName.value = resolved.model.displayName
+        _providerName.value = instance.label.ifEmpty { resolved.model.provider }
+    }
+
+    private fun tryBindChatEntry(entry: com.openminis.app.data.model.ModelEntry,
+        instance: com.openminis.app.data.model.ProviderInstance, apiKey: String): Boolean = try {
+        bindChatEntry(entry, instance, apiKey)
+        true
+    } catch (failure: Exception) {
+        _error.value = failure.message ?: "所选模型无法连接"
+        false
+    }
+
     /** Restore provider state from a JSON binding string. Returns true if successfully resolved. */
     private fun restoreFromBinding(bindingJson: String?): Boolean {
         bindingJson ?: return false
@@ -4872,13 +5006,13 @@ class ChatViewModel(
                     val entry = providerRepository.config.value.modelEntries.find { it.id == entryId } ?: return false
                     val instance = providerRepository.instance(entry.providerInstanceId) ?: return false
                     val apiKey = providerRepository.usableApiKey(instance) ?: return false
-                    currentModel = entry.model
-                    _modelName.value = entry.model.displayName
-                    _providerName.value = instance.label.ifEmpty { entry.model.provider }
+                    bindChatEntry(entry, instance, apiKey)
                     _selectedGroupId.value = null
                     _selectedGroupName.value = ""
-                    _activeEntryId.value = entry.id
-                    currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
+                    _contextEstimated.value = true
+                    _lastTurnContextTokens.value = 0
+                    _contextUsageReady.value = false
+
                     true
                 }
                 else -> false
@@ -4901,7 +5035,7 @@ class ChatViewModel(
         // this entry inside the group last time"). Honor it only if the
         // entry is still enabled; otherwise fall back to the first enabled
         // member so the session can still proceed on a now-degraded group.
-        val enabledMembers = providerRepository.enabledMemberEntries(group)
+        val enabledMembers = com.openminis.app.data.model.ChatModelSelection.members(providerRepository.config.value, group)
         if (enabledMembers.isEmpty()) return false
         val targetEntry = if (preferredEntryId != null) {
             enabledMembers.firstOrNull { it.id == preferredEntryId } ?: enabledMembers.first()
@@ -4911,32 +5045,42 @@ class ChatViewModel(
         val instance = providerRepository.instance(targetEntry.providerInstanceId) ?: return false
         val apiKey = providerRepository.usableApiKey(instance) ?: return false
 
-        currentModel = targetEntry.model
-        _modelName.value = targetEntry.model.displayName
-        _providerName.value = instance.label.ifEmpty { targetEntry.model.provider }
+        if (!tryBindChatEntry(targetEntry, instance, apiKey)) return false
         _selectedGroupName.value = group.name
-        _activeEntryId.value = targetEntry.id
-        currentProvider = ProviderFactory.create(instance, apiKey, targetEntry.model, context)
+        _contextEstimated.value = true
+        _lastTurnContextTokens.value = 0
+        _contextUsageReady.value = false
         return true
     }
 
     fun selectGroup(groupId: String) {
-        _selectedGroupId.value = groupId
-        _selectedGroupName.value = providerRepository.group(groupId)?.name ?: ""
+        if (_isStreaming.value) {
+            _error.value = "请先停止当前回复，再切换模型"
+            return
+        }
         val resolved = resolveProviderFromGroup(groupId)
         if (resolved) {
-            persistBinding("""{"type":"group","groupId":"$groupId"}""")
+            _selectedGroupId.value = groupId
+            persistBinding("""{"type":"group","groupId":"$groupId","lastEntryId":"${_activeEntryId.value}"}""")
             applyGroupSessionDefaults(groupId)
         }
     }
 
     /** Select a specific entry within a group (keeps group selected). */
     fun selectGroupEntry(groupId: String, entryId: String) {
-        _selectedGroupId.value = groupId
-        _selectedGroupName.value = providerRepository.group(groupId)?.name ?: ""
+        if (_isStreaming.value) {
+            _error.value = "请先停止当前回复，再切换模型"
+            return
+        }
+        val entry = providerRepository.config.value.modelEntries.find { it.id == entryId }
+        if (entry == null || !com.openminis.app.data.model.ChatModelSelection.eligible(entry)) {
+            _error.value = "请选择聊天模型，生图模型不能用于此对话"
+            return
+        }
         val resolved = resolveProviderFromGroup(groupId, entryId)
         if (resolved) {
-            persistBinding("""{"type":"group","groupId":"$groupId","lastEntryId":"$entryId"}""")
+            _selectedGroupId.value = groupId
+            persistBinding("""{"type":"group","groupId":"$groupId","lastEntryId":"${_activeEntryId.value}"}""")
             applyGroupSessionDefaults(groupId)
             // [T-newchat-default-model-fallback-android] Record the actually-
             // resolved active entry as last-used (resolveProviderFromGroup may
@@ -4991,31 +5135,35 @@ class ChatViewModel(
             ?: providerRepository.newestProviderNewestTextEntry()
             ?: return false
         val instance = providerRepository.instance(entry.providerInstanceId) ?: return false
-        currentModel = entry.model
-        _modelName.value = entry.model.displayName
-        _activeEntryId.value = entry.id
-        _providerName.value = instance.label.ifEmpty { entry.model.provider }
-        val apiKey = providerRepository.usableApiKey(instance)
-        if (apiKey != null) {
-            currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
-        }
+        val apiKey = providerRepository.usableApiKey(instance) ?: return false
+        if (!tryBindChatEntry(entry, instance, apiKey)) return false
+        _contextEstimated.value = true
+        _lastTurnContextTokens.value = 0
+        _contextUsageReady.value = false
         return true
     }
 
     /** Select a specific model entry (bypasses group selection). */
     fun selectEntry(entryId: String) {
+        if (_isStreaming.value) {
+            _error.value = "请先停止当前回复，再切换模型"
+            return
+        }
         val config = providerRepository.config.value
         val entry = config.modelEntries.find { it.id == entryId } ?: return
         val instance = providerRepository.instance(entry.providerInstanceId) ?: return
         val apiKey = providerRepository.usableApiKey(instance) ?: return
 
-        currentModel = entry.model
-        _modelName.value = entry.model.displayName
-        _providerName.value = instance.label.ifEmpty { entry.model.provider }
+        if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) {
+            _error.value = "请选择聊天模型，生图模型不能用于此对话"
+            return
+        }
+        if (!tryBindChatEntry(entry, instance, apiKey)) return
         _selectedGroupId.value = null
         _selectedGroupName.value = ""
-        _activeEntryId.value = entry.id
-        currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
+        _contextEstimated.value = true
+        _lastTurnContextTokens.value = 0
+        _contextUsageReady.value = false
         persistBinding("""{"type":"entry","entryId":"$entryId"}""")
         // [T-newchat-default-model-fallback-android] Remember this as the
         // global last-used model so the NEXT new chat (when no default group
@@ -5033,7 +5181,7 @@ class ChatViewModel(
     }
 
     private fun findModelEntry(modelId: String) =
-        providerRepository.allVisibleEntries().find { it.model.id == modelId }
+        providerRepository.allVisibleEntries().filter { it.model.id == modelId && com.openminis.app.data.model.ChatModelSelection.eligible(it) }.singleOrNull()
 
     /**
      * Build the ordered list of fallback providers for the current group,
@@ -5063,8 +5211,11 @@ class ChatViewModel(
         _modelName.value = next.provider.model.displayName
         val entry = providerRepository.config.value.modelEntries.find { it.id == next.entryId }
         if (entry != null) {
+            _contextEstimated.value = true
+            _lastTurnContextTokens.value = 0
+            _contextUsageReady.value = false
             _activeEntryId.value = entry.id
-            currentModel = entry.model
+            currentModel = next.provider.model
             providerRepository.instance(entry.providerInstanceId)?.let {
                 _providerName.value = it.label.ifEmpty { entry.model.provider }
             }
@@ -5097,7 +5248,7 @@ class ChatViewModel(
             val idx = if (currentIdx >= 0) (currentIdx + offset) % members.size else offset
             val entryId = members[idx]
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
-            if (!entry.model.isTextOutput) continue
+            if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) continue
             // Tool-disabled models are a strict pure-chat boundary. Crossing it
             // during fallback could reintroduce tool traffic into a clean turn.
             if (!hasSameToolMode(primaryProvider.model, entry.model)) continue
@@ -5127,7 +5278,8 @@ class ChatViewModel(
         val result = mutableListOf<String>()
         for (entryId in group.memberEntryIds) {
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
-            if (!entry.model.isTextOutput) continue
+            if (!entry.model.isTextOutput || com.openminis.app.data.model.ChatModelSelection.imageOutput(entry.model) ||
+                com.openminis.app.data.model.ChatModelSelection.imageOutput(entry.baseModel)) continue
             val instance = config.instances.find { it.id == entry.providerInstanceId } ?: continue
             val label = instance.label.ifEmpty { entry.model.provider }
             val reason = when {
@@ -5154,6 +5306,8 @@ class ChatViewModel(
             val nextIdx = (currentIdx + i) % group.memberEntryIds.size
             val entryId = group.memberEntryIds[nextIdx]
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
+            if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) continue
+            if (currentModel?.let { !hasSameToolMode(it, entry.model) } == true) continue
             val instance = providerRepository.instance(entry.providerInstanceId) ?: continue
             // [T-disabled-provider-via-group-android] Skip disabled
             // providers when walking the group's fallback chain so a
@@ -5163,11 +5317,10 @@ class ChatViewModel(
             if (!instance.isEnabled) continue
             val apiKey = providerRepository.usableApiKey(instance) ?: continue
 
-            currentModel = entry.model
-            _modelName.value = entry.model.displayName
-            _activeEntryId.value = entry.id
-            val provider = ProviderFactory.create(instance, apiKey, entry.model, context)
-            currentProvider = provider
+            bindChatEntry(entry, instance, apiKey)
+            val provider = requireNotNull(currentProvider)
+            val binding = JSONObject().put("type", "group").put("groupId", groupId).put("lastEntryId", entry.id)
+            persistBinding(binding.toString())
             return provider
         }
         return null
@@ -5588,6 +5741,8 @@ class ChatViewModel(
         excludedBranchMemoryWrites = projection.excludedMemoryWrites
         agentHistory.clear()
         agentHistory.addAll(llmHistory)
+        retainedTranscriptRows = emptyList()
+        retainedTranscriptSessionId = null
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
         activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(llmHistory)
         closeNovexLearningResponsePreview()
@@ -5665,8 +5820,12 @@ class ChatViewModel(
         val launchedProvider = provider
         streamJob = viewModelScope.launch(Dispatchers.IO) {
             AppLogger.info(TAG_STREAM, "$label streamJob ENTER sid=$activeSessionId")
+            val leasedSessionId = activeSessionId
+            var slotAcquired = false
+            var slotReleased = false
             try {
-                SessionConcurrencyManager.acquireSlot(activeSessionId)
+                SessionConcurrencyManager.acquireSlot(leasedSessionId)
+                slotAcquired = true
                 AppLogger.debug(TAG_STREAM, "$label streamJob slot acquired")
                 SessionActivityTracker.setActive(activeSessionId, onStop = { cancelStream() })
                 val activeFallbackStrategy = run {
@@ -5691,11 +5850,15 @@ class ChatViewModel(
                 } catch (e: Exception) {
                     AppLogger.error(TAG_STREAM, "$label runAgentLoop EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                     Log.e(TAG, "Agent loop error ($label)", e)
-                    setInlineError(e.message ?: "Unknown error")
-                    // T298: flag the upcoming setInactive() so the
-                    // background completion notifier renders the ❌
-                    // variant instead of a clean success.
-                    SessionActivityTracker.markStreamError(activeSessionId)
+                    if (streamJob === coroutineContext[Job]) {
+                        setInlineError(e.message ?: "Unknown error")
+                        // T298: flag the upcoming setInactive() so the
+                        // background completion notifier renders the ❌
+                        // variant instead of a clean success.
+                        SessionActivityTracker.markStreamError(activeSessionId)
+                    } else {
+                        AppLogger.info(TAG_STREAM, "$label stale stream ignored exception UI update")
+                    }
                 } finally {
                     AppLogger.info(TAG_STREAM, "$label streamJob FINALLY enter")
                     // [T-android-overlay-reply-status-34599] Surface
@@ -5705,15 +5868,24 @@ class ChatViewModel(
                     // non-null excerpt. Reading _messages here is safe:
                     // we're in the finally block of the agent loop and
                     // the stream has already flushed its last delta.
-                    publishOverlayReplyExcerpt(activeSessionId)
-                    SessionActivityTracker.setInactive(activeSessionId)
-                    SessionConcurrencyManager.releaseSlot(activeSessionId)
+                    if (streamJob === coroutineContext[Job]) {
+                        publishOverlayReplyExcerpt(activeSessionId)
+                        SessionActivityTracker.setInactive(activeSessionId)
+                    } else {
+                        AppLogger.info(TAG_STREAM, "$label stale stream skipped tracker finalization")
+                    }
+                    // The concurrency manager counts leases, so every job
+                    // releases its own slot even when its UI finalization is
+                    // stale relative to a newer job.
+                    SessionConcurrencyManager.releaseSlot(leasedSessionId)
+                    slotReleased = true
                     AppLogger.info(TAG_STREAM, "$label streamJob FINALLY exit")
                 }
             } catch (e: CancellationException) {
                 AppLogger.info(TAG_STREAM, "$label streamJob CANCELLED waiting for slot")
                 Log.d(TAG, "Cancelled while waiting for concurrency slot")
             }
+            if (slotAcquired && !slotReleased) SessionConcurrencyManager.releaseSlot(leasedSessionId)
             // [T-android-stale-streamjob-clears-isstreaming] Only the current
             // streamJob is allowed to flip _isStreaming false. An orphaned
             // earlier job (cancelled but its finally still draining downstream
@@ -6100,7 +6272,7 @@ class ChatViewModel(
 
             try {
                 runAgentLoop(
-                    provider = provider,
+                    provider = currentProvider ?: provider,
                     systemPrompt = systemPrompt,
                     fallbackProviders = fallbackProviders,
                     fallbackStrategy = fallbackStrategy,
@@ -6129,6 +6301,7 @@ class ChatViewModel(
      *   re-entry with `skipCompactCheck`.
      */
     private fun sendMessage(text: String, skipContextCheck: Boolean) {
+        if (gameEntryState.value != NovexGameEntryState.Ready) return
         val trimmed = text.trim()
         // While streaming, enqueue instead of silently dropping (iOS: send vs enqueuePrompt).
         if (_isStreaming.value) {
@@ -6168,7 +6341,12 @@ class ChatViewModel(
         // whole point is that the request which tripped the threshold must not
         // be the one that goes out over-length.
         if (!skipContextCheck) {
-            when (checkContextBeforeSend()) {
+            when (try { checkContextBeforeSend(text) } catch (failure: Exception) {
+                setInputText(text)
+                _error.value = "发送准备失败：${failure.message ?: "请重试"}"
+                recordModelPreparationFailure(failure)
+                return
+            }) {
                 PreSendContextAction.PROCEED -> {}
                 PreSendContextAction.COMPACT_THEN_SEND -> {
                     pendingSendText = text
@@ -6338,9 +6516,13 @@ class ChatViewModel(
             streamLaunched = true
             streamJob = launch(Dispatchers.IO) {
                 AppLogger.info(TAG_STREAM, "send streamJob ENTER sid=$activeSessionId")
+                val leasedSessionId = activeSessionId
+                var slotAcquired = false
+                var slotReleased = false
                 try {
                     // Acquire concurrency slot (suspends if at max)
-                    SessionConcurrencyManager.acquireSlot(activeSessionId)
+                    SessionConcurrencyManager.acquireSlot(leasedSessionId)
+                    slotAcquired = true
                     AppLogger.debug(TAG_STREAM, "send streamJob slot acquired")
                     SessionActivityTracker.setActive(activeSessionId, onStop = { cancelStream() })
 
@@ -6373,9 +6555,13 @@ class ChatViewModel(
                     } catch (e: Exception) {
                         AppLogger.error(TAG_STREAM, "send runAgentLoop EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                         Log.e(TAG, "Agent loop error (all fallbacks exhausted)", e)
-                        setInlineError(e.message ?: "Unknown error")
-                        // T298: completion notifier should show the ❌ variant.
-                        SessionActivityTracker.markStreamError(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            setInlineError(e.message ?: "Unknown error")
+                            // T298: completion notifier should show the ❌ variant.
+                            SessionActivityTracker.markStreamError(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "send stale stream ignored exception UI update")
+                        }
                     } finally {
                         AppLogger.info(TAG_STREAM, "send streamJob FINALLY enter")
                         // [T-android-overlay-reply-status-34599] Surface
@@ -6385,15 +6571,21 @@ class ChatViewModel(
                         // non-null excerpt. Reading _messages here is safe:
                         // we're in the finally block of the agent loop and
                         // the stream has already flushed its last delta.
-                        publishOverlayReplyExcerpt(activeSessionId)
-                        SessionActivityTracker.setInactive(activeSessionId)
-                        SessionConcurrencyManager.releaseSlot(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            publishOverlayReplyExcerpt(activeSessionId)
+                            SessionActivityTracker.setInactive(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "send stale stream skipped tracker finalization")
+                        }
+                        SessionConcurrencyManager.releaseSlot(leasedSessionId)
+                        slotReleased = true
                         AppLogger.info(TAG_STREAM, "send streamJob FINALLY exit")
                     }
                 } catch (e: CancellationException) {
                     AppLogger.info(TAG_STREAM, "send streamJob CANCELLED waiting for slot")
                     Log.d(TAG, "Cancelled while waiting for concurrency slot")
                 }
+                if (slotAcquired && !slotReleased) SessionConcurrencyManager.releaseSlot(leasedSessionId)
                 // [T-android-stale-streamjob-clears-isstreaming] guard — see
                 // `var streamJob` KDoc; identical pattern as runRerunStreamTail.
                 if (streamJob === coroutineContext[Job]) {
@@ -6404,6 +6596,12 @@ class ChatViewModel(
                 }
                 AppLogger.info(TAG_STREAM, "send streamJob EXIT")
             }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                setInputText(text)
+                _error.value = "发送准备失败：${failure.message ?: "请重试"}"
+                recordModelPreparationFailure(failure)
             } finally {
                 if (!streamLaunched) {
                     AppLogger.info(TAG_STREAM, "send _isStreaming=false (setup aborted)")
@@ -6420,7 +6618,24 @@ class ChatViewModel(
      *  true at runAgentLoop ~4015) leaves the "Minis is thinking" indicator
      *  on screen even though streaming is over. The flag is per-message and
      *  is not implicitly cleared by isStreaming=false. */
+    private fun recordModelPreparationFailure(failure: Exception) {
+        com.openminis.app.diagnostics.ModelRequestAudit(
+            java.io.File(context.filesDir, "novex/model-requests"), activeSessionId, null,
+            JSONObject().put("entryId", _activeEntryId.value).put("displayModelId", currentModel?.id)
+        ).event("preparation_failed", JSONObject().put("errorType", failure.javaClass.name)
+            .put("message", safeModelDiagnostic(failure.message.orEmpty())))
+    }
+
+    private fun safeModelDiagnostic(text: String): String {
+        val keys = providerRepository.config.value.instances.mapNotNull { instance ->
+            runCatching { providerRepository.usableApiKey(instance) }.getOrNull()
+        }
+        return com.openminis.app.diagnostics.ModelRequestAudit.safeText(text, keys)
+    }
+
     private fun setInlineError(errorText: String) {
+        // Retain the last known estimate when preparation fails.
+        _contextUsageReady.value = _lastTurnContextTokens.value > 0
         // [T-error-persist-android] Never let an empty/blank error string reach
         // the banner. The UI gate is `message.error?.let { … }` — a non-null ""
         // would render an EMPTY error banner, and (now that errors persist) it
@@ -6435,6 +6650,14 @@ class ChatViewModel(
         flushAllStreamingDeltas()
         val msgs = _messages.value.toMutableList()
         val lastAssistantIdx = msgs.indexOfLast { it.role == "assistant" }
+        val lastUserIdx=msgs.indexOfLast {it.role=="user" && !it.isQueued}
+        if(lastAssistantIdx<=lastUserIdx) {
+            // Preparation failed before this request acquired an assistant row.
+            // Never mutate or persist an error onto the preceding completed reply.
+            _error.value=safeError
+            if(lastUserIdx>=0 && _inputText.value.isBlank())setInputText(msgs[lastUserIdx].content)
+            return
+        }
         if (lastAssistantIdx >= 0) {
             val msg = msgs[lastAssistantIdx]
             msgs[lastAssistantIdx] = msg.copy(
@@ -6675,8 +6898,12 @@ class ChatViewModel(
             streamLaunched = true
             streamJob = launch(Dispatchers.IO) {
                 AppLogger.info(TAG_STREAM, "retryLast streamJob ENTER sid=$activeSessionId")
+                val leasedSessionId = activeSessionId
+                var slotAcquired = false
+                var slotReleased = false
                 try {
-                    SessionConcurrencyManager.acquireSlot(activeSessionId)
+                    SessionConcurrencyManager.acquireSlot(leasedSessionId)
+                    slotAcquired = true
                     AppLogger.debug(TAG_STREAM, "retryLast streamJob slot acquired")
                     SessionActivityTracker.setActive(activeSessionId, onStop = { cancelStream() })
                     val activeFallbackStrategy = run {
@@ -6703,9 +6930,13 @@ class ChatViewModel(
                     } catch (e: Exception) {
                         AppLogger.error(TAG_STREAM, "retryLast runAgentLoop EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                         Log.e(TAG, "Agent loop error (retryLast)", e)
-                        setInlineError(e.message ?: "Unknown error")
-                        // T298: completion notifier should show the ❌ variant.
-                        SessionActivityTracker.markStreamError(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            setInlineError(e.message ?: "Unknown error")
+                            // T298: completion notifier should show the ❌ variant.
+                            SessionActivityTracker.markStreamError(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "retryLast stale stream ignored exception UI update")
+                        }
                     } finally {
                         AppLogger.info(TAG_STREAM, "retryLast streamJob FINALLY enter")
                         // [T-android-overlay-reply-status-34599] Surface
@@ -6715,15 +6946,21 @@ class ChatViewModel(
                         // non-null excerpt. Reading _messages here is safe:
                         // we're in the finally block of the agent loop and
                         // the stream has already flushed its last delta.
-                        publishOverlayReplyExcerpt(activeSessionId)
-                        SessionActivityTracker.setInactive(activeSessionId)
-                        SessionConcurrencyManager.releaseSlot(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            publishOverlayReplyExcerpt(activeSessionId)
+                            SessionActivityTracker.setInactive(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "retryLast stale stream skipped tracker finalization")
+                        }
+                        SessionConcurrencyManager.releaseSlot(leasedSessionId)
+                        slotReleased = true
                         AppLogger.info(TAG_STREAM, "retryLast streamJob FINALLY exit")
                     }
                 } catch (e: CancellationException) {
                     AppLogger.info(TAG_STREAM, "retryLast streamJob CANCELLED waiting for slot")
                     Log.d(TAG, "Cancelled while waiting for concurrency slot")
                 }
+                if (slotAcquired && !slotReleased) SessionConcurrencyManager.releaseSlot(leasedSessionId)
                 // [T-android-stale-streamjob-clears-isstreaming] guard.
                 if (streamJob === coroutineContext[Job]) {
                     AppLogger.info(TAG_STREAM, "retryLast _isStreaming=false (about to set)")
@@ -6913,15 +7150,9 @@ class ChatViewModel(
      * offload candidates by size. Matches iOS `BPETokenizer.countPartTokens`
      * — text uses BPE, images use the grid-cell heuristic.
      */
-    private fun countPartTokens(part: AgentContentPart): Int = when (part) {
-        is AgentContentPart.Text -> BPETokenizer.countTokens(part.text)
-        is AgentContentPart.ToolUse -> BPETokenizer.countTokens(part.input.toString())
-        is AgentContentPart.ToolResult -> {
-            BPETokenizer.countTokens(part.content) +
-                (part.imageData?.let { BPETokenizer.countImageTokens(it) } ?: 0)
-        }
-        is AgentContentPart.ImageData -> BPETokenizer.countImageTokens(part.data)
-    }
+    private fun countHistoryMessage(message: LLMMessage): Int = NovexRequestEstimate.message(message)
+
+    private fun countPartTokens(part: AgentContentPart): Int = NovexRequestEstimate.part(part)
 
     /**
      * Offload candidate descriptor. `msgIdx` and `partIdx` index back into
@@ -6965,6 +7196,10 @@ class ChatViewModel(
         lastContextTokens: Int,
         force: Boolean = false,
     ) {
+        // New-card conversations use a non-mutating history projection with
+        // their real recall tool. Do not replace originals with file_read stubs
+        // when that legacy tool is not exposed to this conversation.
+        if (integratedCards.binding(activeSessionId) != null) return
         val sid = activeSessionId
         val policy = ContextPolicy.forContextWindow(contextWindow)
 
@@ -7148,11 +7383,45 @@ class ChatViewModel(
         fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
         recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
-        AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
-        val novexRequestMessage = agentHistory.asReversed().firstOrNull { message ->
-            message.role == LLMMessage.Role.USER && message.dbMessageId != null &&
-                (message.content.isNotBlank() || message.imageParts.isNotEmpty())
+        val audit = com.openminis.app.diagnostics.ModelRequestAudit(
+            java.io.File(context.filesDir, "novex/model-requests"), activeSessionId,
+            latestNovexUserRequest(agentHistory)?.dbMessageId,
+            JSONObject().put("entryId", _activeEntryId.value).put("groupId", _selectedGroupId.value)
+                .put("displayModelId", currentModel?.id).put("providerModelId", provider.model.id)
+                .put("displayName", _modelName.value).put("displayProvider", _providerName.value)
+                .put("providerClass", provider.javaClass.simpleName))
+        try {
+            withContext(audit) {
+                require(currentProvider === provider && currentModel == provider.model) {
+                    "模型显示与当前连接不一致，请重新选择模型"
+                }
+                require(provider.model.isTextOutput && !com.openminis.app.data.model.ChatModelSelection.imageOutput(provider.model)) {
+                    "所选模型用于图片输出，请选择聊天模型"
+                }
+                integratedCards.editingSession {
+                    runAgentLoopBody(provider,systemPrompt,fallbackProviders,fallbackStrategy,recoveryOrigin)
+                }
+                audit.event("run_returned")
+            }
+        } catch (failure: Exception) {
+            audit.event(if (failure is kotlinx.coroutines.CancellationException) "cancelled" else "failed",
+                JSONObject().put("errorType", failure.javaClass.name).put("message", safeModelDiagnostic(failure.message.orEmpty()))
+                    .put("causeType", failure.cause?.javaClass?.name)
+                    .put("cause", safeModelDiagnostic(failure.cause?.message.orEmpty())))
+            throw failure
         }
+    }
+
+    private suspend fun runAgentLoopBody(
+        provider: LLMProvider,
+        systemPrompt: String?,
+        fallbackProviders: List<FallbackCandidate> = emptyList(),
+        fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
+        recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
+    ) {
+        AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
+        val novexRequestMessage = latestNovexUserRequest(agentHistory)
+        val failedToolProgress = com.openminis.app.agent.FailedToolProgress()
         if (recoveryOrigin == AgentRunRecoveryOrigin.RESUME) {
             if (recoverPendingToolTurn()) return
             if (agentHistory.lastOrNull()?.role == LLMMessage.Role.ASSISTANT) {
@@ -7172,11 +7441,12 @@ class ChatViewModel(
                     TAG_STREAM,
                     "Novex context preparation failed ${error::class.java.simpleName}: ${error.message}",
                 )
-                throw IllegalStateException("本轮设定尚未准备完成，未发送模型请求：${error.message ?: "请重新检查采用的卡片"}", error)
+                throw IllegalStateException("本轮资料准备未完成，尚未开始回答：${error.message ?: "请重新检查采用的卡片"}", error)
             }
         }
         var requestSystemPrompt = preparedNovexContext?.systemPrompt ?: systemPrompt
         var requestContextRevision = novexContextRevision
+        var preparedRequestId = novexRequestMessage?.dbMessageId
         // [T-android-mem-probe-trust] Send-path context shape. The existing
         // `messages-shape` probe only runs on session LOAD, so the 2026-08-15
         // log described the session as it was opened, never as it was sent —
@@ -7243,7 +7513,13 @@ class ChatViewModel(
         var currentProvider = provider
         val streamRecovery = com.openminis.app.novex.domain.NovexModelStreamRecovery(
             FallbackCandidate(provider, _activeEntryId.value.orEmpty()), fallbackProviders, fallbackStrategy,
-            label = { it.provider.model.displayName })
+            label = { it.provider.model.displayName }, rejected = { failure ->
+                if (failure is LLMError.ProviderError) com.openminis.app.data.model.ProviderFailure.rejectedInputTokens(failure.detail)?.let { used ->
+                    _contextEstimated.value = false
+                    _lastTurnContextTokens.value = used
+                    _contextUsageReady.value = true
+                }
+            })
 
         // Accumulate tool inputs across all turns (so persist includes all, not just current turn)
         val allToolInputs = mutableMapOf<String, String>()
@@ -7292,54 +7568,10 @@ class ChatViewModel(
         // back into an INITIAL request and grant it another retry budget.
         var emptyResponseContext = EmptyResponseContext.INITIAL
         for (turn in 0 until MAX_AGENT_TURNS) {
+            val novexRequestMessage = latestNovexUserRequest(agentHistory)
             // Pre-allocate the persisted assistant-row identity so branch-local
             // state tools can bind to this exact turn before the row is written.
             val turnMessageId = java.util.UUID.randomUUID().toString()
-            val contextChanged = requestContextRevision != novexContextRevision
-            if (contextChanged) {
-                val updatedBasePrompt = buildSystemPrompt()
-                preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
-                    prepareNovexRequestContext(updatedBasePrompt, requestId, novexRequestMessage.content)
-                }
-                requestSystemPrompt = preparedNovexContext?.systemPrompt ?: updatedBasePrompt
-                requestContextRevision = novexContextRevision
-            }
-            val contextForTurn = preparedNovexContext
-            if (novexRequestMessage?.dbMessageId != null) {
-                val persistedRecord = (contextForTurn?.record ?: ContextUsageRecord(
-                    id = "request-context:$turnMessageId", requestMessageId = novexRequestMessage.dbMessageId,
-                    branchId = turnMessageId, answerIdentity = currentNovexConfiguration().answerIdentity,
-                    includedSources = emptyList(), usedTokens = 0,
-                    effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
-                )).copy(
-                    id = "request-context:$turnMessageId",
-                    historyScopeKey = historyScopeKey(),
-                    responseMessageId = turnMessageId,
-                    branchId = turnMessageId,
-                )
-                try {
-                    chatRepository.recordNovexContextUsage(
-                        realSessionId.ifEmpty { sessionId },
-                        persistedRecord,
-                    )
-                    withContext(Dispatchers.Main) {
-                        _messages.value = _messages.value.map { message ->
-                            if (message.id == persistedRecord.requestMessageId) {
-                                message.copy(novexContextUsage = persistedRecord)
-                            } else {
-                                message
-                            }
-                        }
-                    }
-                } catch (error: Throwable) {
-                    AppLogger.error(
-                        TAG_STREAM,
-                        "Novex context usage persistence failed ${error::class.java.simpleName}: ${error.message}",
-                    )
-                    if (error is kotlinx.coroutines.CancellationException) throw error
-                    throw IllegalStateException("本轮访问范围未保存，尚未发送模型请求。请重试。", error)
-                }
-            }
             // Sanitize history before each API call (mirrors iOS pre-API validation)
             sanitizeAgentHistory()
 
@@ -7370,7 +7602,13 @@ class ChatViewModel(
             // slam into the provider's context ceiling.
             //
             // Runs AFTER offload so it judges the post-offload size.
-            when (inLoopContextCheck(inLoopCompactions)) {
+            // New card excerpts can shrink; compact the retained conversation first,
+            // then allocate the remainder to cards. Do not repeatedly compact a
+            // static injected card because the preceding response reported it.
+            val retainedContext=if(integratedCards.binding(activeSessionId)!=null)
+                estimatePreparedRequest(effectiveAgentHistory(),systemPrompt,agentTools)
+                else null
+            when (inLoopContextCheck(inLoopCompactions,retainedContext)) {
                 InLoopContextAction.PROCEED -> {}
                 InLoopContextAction.COMPACTED -> {
                     // The next API call reads the freshly-compacted
@@ -7448,6 +7686,53 @@ class ChatViewModel(
                 }
             }
 
+            val contextChanged = preparedRequestId != novexRequestMessage?.dbMessageId || requestContextRevision != novexContextRevision || (turn>0 && integratedCards.binding(activeSessionId)!=null)
+            if (contextChanged) {
+                val updatedBasePrompt = buildSystemPrompt()
+                preparedNovexContext = novexRequestMessage?.dbMessageId?.let { requestId ->
+                    prepareNovexRequestContext(updatedBasePrompt, requestId, novexRequestMessage.content)
+                }
+                requestSystemPrompt = preparedNovexContext?.systemPrompt ?: updatedBasePrompt
+                requestContextRevision = novexContextRevision
+                preparedRequestId = novexRequestMessage?.dbMessageId
+            }
+            val contextForTurn = preparedNovexContext
+            if (novexRequestMessage?.dbMessageId != null) {
+                val persistedRecord = (contextForTurn?.record ?: ContextUsageRecord(
+                    id = "request-context:$turnMessageId", requestMessageId = novexRequestMessage.dbMessageId,
+                    branchId = turnMessageId, answerIdentity = currentNovexConfiguration().answerIdentity,
+                    includedSources = emptyList(), usedTokens = 0,
+                    effectiveWindowTokens = effectiveContextWindowTokens() ?: 128_000,
+                )).copy(
+                    id = "request-context:$turnMessageId",
+                    historyScopeKey = historyScopeKey(),
+                    responseMessageId = turnMessageId,
+                    branchId = turnMessageId,
+                )
+                try {
+                    chatRepository.recordNovexContextUsage(
+                        realSessionId.ifEmpty { sessionId },
+                        persistedRecord,
+                    )
+                    withContext(Dispatchers.Main) {
+                        _messages.value = _messages.value.map { message ->
+                            if (message.id == persistedRecord.requestMessageId) {
+                                message.copy(novexContextUsage = persistedRecord)
+                            } else {
+                                message
+                            }
+                        }
+                    }
+                } catch (error: Throwable) {
+                    AppLogger.error(
+                        TAG_STREAM,
+                        "Novex context usage persistence failed ${error::class.java.simpleName}: ${error.message}",
+                    )
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    throw IllegalStateException("本轮访问范围未保存，尚未发送模型请求。请重试。", error)
+                }
+            }
+
             // Mark where this turn's blocks start in allToolBlocks so we can persist
             // only the NEW parts from this turn (not the full accumulated history).
             // Matches iOS's per-turn RawMessage persistence.
@@ -7468,6 +7753,10 @@ class ChatViewModel(
             streamRecovery.collect(
                 attempt = { endpoint ->
                     currentProvider = endpoint.provider
+                    kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
+                        "model_attempt", JSONObject().put("entryId", endpoint.entryId)
+                            .put("modelId", endpoint.provider.model.id).put("modelName", endpoint.provider.model.displayName)
+                            .put("providerClass", endpoint.provider.javaClass.simpleName))
                     // [T-android-enhanced-cache] Stamp the per-turn Enhanced
                     // Cache flag onto the active provider here — the single
                     // choke point every turn passes through, regardless of how
@@ -7488,16 +7777,28 @@ class ChatViewModel(
                     val requestHistory = effectiveAgentHistory().let { history ->
                         if (requestToolsEnabled) history else pureChatHistory(history)
                     }
+                    val boundedHistory = applyRequestImageBudget(requestHistory)
+                    val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
+                    _contextEstimated.value = true
+                    _lastTurnContextTokens.value = estimate
+                    _contextUsageReady.value = true
+                    val limit = effectiveContextWindowTokens() ?: currentProvider.model.contextWindowTokens
+                    val output = minOf(dynamicMaxTokens(currentProvider, estimate), (limit - estimate - limit / 20).coerceAtLeast(1))
+                    require(estimate.toLong() + output + limit / 20 <= limit) {
+                        "本轮上下文预计超出启用容量，尚未发送。请减少携带资料或压缩历史，原文保留。"
+                    }
                     currentProvider.streamMessage(
-                        applyRequestImageBudget(requestHistory),
-                        requestSystemPrompt, dynamicMaxTokens(currentProvider, lastContextTokens),
+                        boundedHistory,
+                        requestSystemPrompt, output,
                         tools = if (requestToolsEnabled) conversationTools else emptyList(),
                         thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
                     ).collect { chunk ->
                         streamedTurn.accept(chunk, currentProvider.streamTextIsMonolithic, ::publishStream)
                         if (chunk is LLMStreamChunk.Usage && streamedTurn.contextTokens > 0) {
                             lastContextTokens = streamedTurn.contextTokens
+                            _contextEstimated.value = false
                             _lastTurnContextTokens.value = lastContextTokens
+                            _contextUsageReady.value = true
                         }
                     }
                     streamedTurn.finish(::publishStream)
@@ -7508,6 +7809,9 @@ class ChatViewModel(
                     publishStream(AssistantStreamTurn.Snapshot(failed.text, emptyList()))
                 },
                 retrying = { failure, attempt, limit ->
+                    kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
+                        "retry", JSONObject().put("attempt", attempt).put("limit", limit)
+                            .put("errorType", failure.javaClass.name).put("message", safeModelDiagnostic(failure.message.orEmpty())))
                     withContext(Dispatchers.Main) {
                         _autoRetryAttempt.value = attempt
                         setTransientInlineError("模型连接暂时中断，正在重试（$attempt/$limit）")
@@ -7533,6 +7837,10 @@ class ChatViewModel(
             )
 
             val completedStream = streamedTurn.snapshot()
+            kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
+                "model_result", JSONObject().put("modelId", currentProvider.model.id)
+                    .put("finishReason", streamedTurn.finishReason).put("textLength", completedStream.text.length)
+                    .put("toolCalls", streamedTurn.toolCalls.size))
             val turnText = completedStream.text
             val toolCalls = streamedTurn.toolCalls
             val toolCallSignatures = streamedTurn.toolSignatures
@@ -7839,7 +8147,17 @@ class ChatViewModel(
             // Execute all tool calls
             val resultParts = mutableListOf<AgentContentPart>()
             val terminalUiToolIds = linkedSetOf<String>()
+            var toolStopReason: String? = null
             for ((id, name, rawArgs) in toolCalls) {
+                val stopped = toolStopReason
+                if (stopped != null) {
+                    val skipped = "本轮已停止，该操作未执行：$stopped"
+                    resultParts.add(AgentContentPart.ToolResult(id, name, skipped, isError = true))
+                    val index = allToolBlocks.indexOfFirst { it.id == id }
+                    if (index >= 0) allToolBlocks[index] = allToolBlocks[index].copy(
+                        toolStatus = ToolBlockStatus.FAILED, content = skipped)
+                    continue
+                }
                 val args = JSONObject(rawArgs.toString())
                 // [T-android-overlay-tool-title] Pull tool_title uniformly
                 // from args for ALL tools — without this browser_use's
@@ -7944,7 +8262,8 @@ class ChatViewModel(
                 // stays balanced and the LLM sees the block reason.
                 val precheck = toolLoopDetector.check(name, paramsMap)
                 if (precheck.level == Level.CRITICAL) {
-                    val blockedMsg = precheck.message ?: "[LOOP BLOCKED] tool execution blocked"
+                    val blockedMsg = precheck.message ?: "工具重复执行且没有进展"
+                    toolStopReason = "重复操作没有进展，已停止本轮自动执行。已完成的结果保留。"
                     android.util.Log.w("ToolChain[VM]",
                         "[turn=$turn] tool BLOCKED by loop detector name=$name msg=$blockedMsg")
                     AppLogger.warning("ChatViewModel",
@@ -8062,6 +8381,7 @@ class ChatViewModel(
                 // Record post-execution. WARNING text is appended to the tool
                 // result so the model sees it on its next turn. No block here —
                 // CRITICAL only fires from check() and we already returned above.
+                toolStopReason = result.stopAgentReason ?: failedToolProgress.record(name, paramsMap, result.success, result.output)
                 val errMsgForDetector = if (!result.success) result.output else null
                 val postRecord = toolLoopDetector.record(
                     toolName = name,
@@ -8239,6 +8559,23 @@ class ChatViewModel(
                     )
                 }
 
+                if (toolStopReason != null) {
+                    // A user stop or permission stop is a normal terminal
+                    // state, not an exceptional provider failure. The tool
+                    // result and assistant row are already persisted above;
+                    // expose the reason and leave the turn resumable without
+                    // sending it through the crash/error path.
+                    withContext(Dispatchers.Main) {
+                        updateAssistantMessage(
+                            assistantId, accumulatedText, false, allToolBlocks,
+                            isAwaitingModelResponse = false,
+                        )
+                        setInlineError(toolStopReason!!)
+                    }
+                    _canResume.value = true
+                    loopExitedNormally = true
+                    break
+                }
                 if (turn == 0) generateSessionTitleIfNeeded()
                 loopExitedNormally = true
                 break
@@ -8285,6 +8622,22 @@ class ChatViewModel(
                 dbMessageId = toolResultDbId,
             ))
             emptyResponseContext = EmptyResponseContext.AFTER_TOOL_RESULT
+            if (toolStopReason != null) {
+                // A stop or permission result is a normal resumable boundary,
+                // not a provider exception. The tool result is already in
+                // history, so finish this turn without entering the failure
+                // path that can reset the screen or duplicate the prompt.
+                withContext(Dispatchers.Main) {
+                    updateAssistantMessage(
+                        assistantId, accumulatedText, false, allToolBlocks,
+                        isAwaitingModelResponse = false,
+                    )
+                    setInlineError(toolStopReason!!)
+                }
+                _canResume.value = true
+                loopExitedNormally = true
+                break
+            }
 
             // Auto-title after first exchange (mirrors iOS generateSessionTitleIfNeeded)
             if (turn == 0) {
@@ -8339,6 +8692,8 @@ class ChatViewModel(
                     // iteration top, so clearing means new turn's blocks
                     // span [0..size).
                     assistantId = handled.newAssistantId
+                    failedToolProgress.reset()
+                    toolLoopDetector.reset()
                     accumulatedText = ""
                     allToolBlocks.clear()
                     allToolInputs.clear()
@@ -8374,6 +8729,13 @@ class ChatViewModel(
             }
         } else {
             AppLogger.info(TAG_STREAM, "runAgentLoop EXIT (loop body ended naturally)")
+        }
+        // A cancelled job can finish downstream I/O after a new send has
+        // already taken over. Do not let that stale projection replace the
+        // newer conversation in the UI.
+        if (streamJob !== coroutineContext[Job]) {
+            AppLogger.info(TAG_STREAM, "runAgentLoop stale job skipped final conversation install")
+            return
         }
         // Replace volatile streaming bubbles with the canonical active-path
         // projection. This attaches sibling counts to newly persisted reply
@@ -8531,14 +8893,17 @@ class ChatViewModel(
         val pending = com.openminis.app.novex.domain.NovexPendingToolTurn.find(conversation.activeMessages) ?: return false
         val reply = conversation.activeMessages.filter { it.id == pending.replyId }.toChatMessages().singleOrNull()
         val blocks = reply?.toolBlocks.orEmpty().toMutableList()
+        var recoveryStop: String? = null
         val terminal = pending.recover(invoke = { call ->
             val operation = com.openminis.app.novex.domain.NovexToolOperation(activeSessionId, pending.replyId,
                 call.id, call.name, call.arguments, friendlyToolTitle(call.name))
             val receipt = novexToolExecution.recordedResult(operation)
             val validation = preflightValidateToolCall(call.name, JSONObject(call.arguments), agentTools)
-            val result = receipt ?: if (validation != null) novexToolExecution.retireUnexecutable(operation, validation)
+            val result = if (recoveryStop != null) ToolExecutionResult("本轮已停止，该操作未执行", false, stopAgentReason = recoveryStop)
+            else receipt ?: if (validation != null) novexToolExecution.retireUnexecutable(operation, validation)
             else executeTool(call.name, call.arguments, call.id, blocks, pending.replyId,
                 reply?.content.orEmpty(), pending.replyId, pending.requestId)
+            recoveryStop = result.stopAgentReason ?: recoveryStop
             captureCreativeArtifact(call.name, call.arguments, call.id, pending.replyId, result)
             val index = blocks.indexOfFirst { it.id == call.id }
             if (index >= 0) blocks[index] = blocks[index].copy(
@@ -8554,6 +8919,10 @@ class ChatViewModel(
         })
         if (terminal && isCompletedPresentationTurn(blocks)) chatRepository.markAssistantTextFormal(pending.replyId)
         withContext(Dispatchers.Main) { installActiveConversation(chatRepository.loadActiveConversation(activeSessionId)) }
+        if (recoveryStop != null) {
+            _canResume.value = true
+            withContext(Dispatchers.Main) { setInlineError(recoveryStop!!) }
+        }
         return terminal
     }
 
@@ -8569,11 +8938,15 @@ class ChatViewModel(
     ): ToolExecutionResult {
         val baseOperation = com.openminis.app.novex.domain.NovexToolOperation(activeSessionId, turnMessageId,
             toolId, name, argsJson, friendlyToolTitle(name))
-        if (currentNovexConfiguration().executionMode != com.openminis.app.novex.domain.NovexExecutionMode.READ_ONLY) {
+        if (name in ConversationRecall.names && novexToolExecution.recordedResult(baseOperation) != null) {
+            return ToolExecutionResult("历史读取记录已结束；如仍需回查，请发起新的读取调用以核对当前范围。", false, toolTitle = "读取对话历史")
+        }
+        if (name !in ConversationRecall.names && currentNovexConfiguration().executionMode != com.openminis.app.novex.domain.NovexExecutionMode.READ_ONLY) {
             novexToolExecution.recordedResult(baseOperation)?.let { return it }
         }
         val details = runCatching {
             when (name) {
+                in integratedCards.names() -> integratedCards.review(name,argsJson)
                 com.openminis.app.tools.NovexConversationActionTools.SET_PLAYER_IDENTITY -> {
                     val args = JSONObject(argsJson)
                     val previous = currentNovexConfiguration().playerIdentity?.description
@@ -8644,6 +9017,14 @@ class ChatViewModel(
         val toolTitle = try { JSONObject(argsJson).optString("tool_title", name) } catch (_: Exception) { name }
 
         return when (name) {
+            in ConversationRecall.names -> withContext(Dispatchers.IO) {
+                val originals = chatRepository.loadActiveMessages(activeSessionId).map { it.toLLMMessage() }
+                val history = scopedHistory(originals).messages
+                val budget = ((effectiveContextWindowTokens() ?: 128_000) / 32).coerceIn(512, 6000)
+                runCatching { ConversationRecall.execute(name, JSONObject(argsJson), history, budget) }
+                    .fold({ ToolExecutionResult(it, true, toolTitle = if (name.startsWith("search")) "搜索对话历史" else "读取历史原文") },
+                        { ToolExecutionResult(it.message ?: "历史读取失败", false, toolTitle = "读取对话历史") })
+            }
             FileReadTool.NAME -> {
                 val result = FileReadTool.execute(argsJson, activeSessionId, context)
                 // Record skill usage when SKILL.md under /var/minis/skills/<id>/ is read.
@@ -8701,6 +9082,11 @@ class ChatViewModel(
             "register_controls" -> executeRegisterControlsTool(argsJson, turnMessageId)
             "update_playthrough_state" -> executeUpdatePlaythroughStateTool(argsJson, turnMessageId)
             "end_interactive_fiction" -> executeEndInteractiveFictionTool(argsJson)
+            in integratedCards.names() -> {
+                val result=withContext(Dispatchers.IO) { integratedCards.execute(activeSessionId,turnMessageId,toolId,name,argsJson,integratedConversationImages()) }
+                if(result.success && name !in setOf("read_card","read_text_block","read_card_image"))novexContextRevision++
+                if(name=="read_card_image")routeReadImageResult(result,argsJson) else result
+            }
             NovexManagementTools.READ_CONTEXT -> executeNovexReadContextTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.INSPECT -> executeNovexInspectTool(argsJson, requestMessageId, turnMessageId)
             NovexManagementTools.PROPOSE -> executeNovexContentTool(name, argsJson, turnMessageId, toolId, requestMessageId)
@@ -8754,7 +9140,9 @@ class ChatViewModel(
             result.copy(output = receipt.result.toString(2))
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            ToolExecutionResult("阅读记录未能保存，本次没有返回正文：${failure.message ?: "请重试读取"}", false, toolTitle = result.toolTitle)
+            ToolExecutionResult("阅读记录未能保存，本次没有返回正文：${failure.message ?: "请重试读取"}", false,
+                toolTitle = result.toolTitle,
+                stopAgentReason = "文档读取未完成：阅读记录保存失败。已停止重复请求，原文件和已完成操作保留，请重试本轮。")
         }
     }
 
@@ -8943,7 +9331,7 @@ class ChatViewModel(
                     val part = parts.getJSONObject(index)
                     val value = part.optJSONObject("value")
                     if (part.optString("type") != "toolResult" || value == null ||
-                        value.optString("name") !in (com.openminis.app.tools.NovexCardFileTools.names + NovexManagementTools.APPLY)) null
+                        value.optString("name") !in (com.openminis.app.tools.NovexCardFileTools.names + NovexManagementTools.APPLY + integratedCards.names())) null
                     else AssistantBlock(value.optString("toolUseId"), "tool_use", value.optString("output"),
                         toolStatus = if (value.optBoolean("success")) ToolBlockStatus.SUCCESS else ToolBlockStatus.FAILED,
                         toolName = value.optString("name"))
@@ -8999,7 +9387,8 @@ class ChatViewModel(
     }.map { if (it.role == "assistant") formalAssistantText(it.toolBlocks, it.content) else it.content }
 
     private suspend fun executeIllustrationTool(name: String, arguments: String, requestMessageId: String?): ToolExecutionResult = try {
-        val output = NovexStoryImageCoordinator.tool(adoptedNovexConfiguration(), illustrationVisibleMessages(requestMessageId), name, arguments)
+        val output = NovexStoryImageCoordinator.tool(adoptedNovexConfiguration(), illustrationVisibleMessages(requestMessageId), name, arguments,
+            if(integratedCardBinding()!=null)withContext(Dispatchers.IO){integratedCards.illustrations(requestMessageId)} else null)
         ToolExecutionResult(output.toString(), true, toolTitle = friendlyToolTitle(name))
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
     catch (failure: Exception) { ToolExecutionResult("图片选择未完成：${failure.message}", false, toolTitle = friendlyToolTitle(name)) }
@@ -9008,7 +9397,8 @@ class ChatViewModel(
     private suspend fun appendCompletedStoryImage(blocks: MutableList<AssistantBlock>, start: Int, messageId: String, requestMessageId: String?) {
         try {
             NovexStoryImageCoordinator.completed(adoptedNovexConfiguration(), illustrationVisibleMessages(requestMessageId), blocks, start,
-                chatRepository.loadActiveMessages(realSessionId.ifEmpty { sessionId }), messageId)?.let(blocks::add)
+                chatRepository.loadActiveMessages(realSessionId.ifEmpty { sessionId }), messageId,
+                if(integratedCardBinding()!=null)withContext(Dispatchers.IO){integratedCards.illustrations(requestMessageId)} else null)?.let(blocks::add)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { AppLogger.warning(TAG, "剧情插图未附加，正文保留") }
     }
@@ -9153,7 +9543,7 @@ class ChatViewModel(
             ToolExecutionResult(
                 output = result.toJson(),
                 success = false,
-                toolTitle = "保存文游进度",
+                toolTitle = "保存对话进度",
             )
         }
     }
@@ -9197,7 +9587,7 @@ class ChatViewModel(
                 it.source == com.openminis.app.novex.domain.ConversationControlSource.AI
             }
             ToolExecutionResult(
-                output = "已在当前对话注册 $count 个快捷操作；未修改共享文游。",
+                output = "已在当前对话注册 $count 个快捷操作。",
                 success = true,
                 toolTitle = "更新快捷操作",
             )
@@ -9214,7 +9604,7 @@ class ChatViewModel(
         turnMessageId: String,
     ): ToolExecutionResult = runCatching {
             novexSettingsStore.update { configuration ->
-                require(configuration.activeInteractiveFiction != null) { "当前对话没有活动文游" }
+                require(configuration.activeInteractiveFiction != null || integratedCards.binding(activeSessionId)!=null) { "请先选择互动卡片" }
                 PlaythroughStateRegistration.applyUpdates(configuration = configuration, branchId = turnMessageId,
                     updatesJson = JSONObject(argsJson).jsonArrayText("updates"))
             }
@@ -9293,6 +9683,10 @@ class ChatViewModel(
                 imageFilePath = resolved.file.absolutePath,
             )
         }
+        return routeReadImageResult(base,argsJson)
+    }
+
+    private suspend fun routeReadImageResult(base:ToolExecutionResult,argsJson:String):ToolExecutionResult {
         // [T-android-vision-group / GH#182] Optional caller instruction focusing
         // what to learn from the image.
         val customPrompt = try {
@@ -9344,10 +9738,10 @@ class ChatViewModel(
             is com.openminis.app.tools.VisionGroupResolver.VisionResult.Failure ->
                 com.openminis.app.tools.VisionGroupResolver.failureText(result.reason)
         }
-        // Deliberately still success=true even on describe failure: an errored
-        // tool result tends to make models retry in a loop, whereas this lets the
-        // model plainly tell the user the image couldn't be analyzed.
+        // Reading the file is not the same as seeing its contents. Propagate
+        // vision failure so the receipt cannot report a completed image read.
         return base.copy(
+            success = result is com.openminis.app.tools.VisionGroupResolver.VisionResult.Success,
             output = base.output + "\n\n" + framed,
             imageData = null,
             imageMimeType = null,
@@ -10121,7 +10515,8 @@ class ChatViewModel(
         // Keep memory prompt injection and the Novex memory tool set behind the
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
-        val preparedTeaching = com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
+        val preparedTeaching = if(integratedCardBinding()!=null) com.openminis.app.cards.IntegratedCardPrompt.build(
+            identitySection,memoryOn,agentTools.mapTo(linkedSetOf()){it.name}) else com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
             sessionId = activeSessionId,
             context = context,
             personalitySection = identitySection,
@@ -11186,6 +11581,8 @@ class ChatViewModel(
     }
 
     fun cancelStream() {
+        compactionJob?.cancel()
+        integratedCards.stop()
         AppLogger.info(TAG_STREAM, "cancelStream invoked _isStreaming=false (sid=$activeSessionId)")
         streamJob?.cancel()
         _isStreaming.value = false
@@ -11309,8 +11706,12 @@ class ChatViewModel(
 
             streamJob = launch(Dispatchers.IO) {
                 AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel streamJob ENTER sid=$activeSessionId")
+                val leasedSessionId = activeSessionId
+                var slotAcquired = false
+                var slotReleased = false
                 try {
-                    SessionConcurrencyManager.acquireSlot(activeSessionId)
+                    SessionConcurrencyManager.acquireSlot(leasedSessionId)
+                    slotAcquired = true
                     AppLogger.debug(TAG_STREAM, "resumeQueueAfterCancel streamJob slot acquired")
                     SessionActivityTracker.setActive(activeSessionId, onStop = { cancelStream() })
 
@@ -11335,7 +11736,11 @@ class ChatViewModel(
                     } catch (e: Exception) {
                         AppLogger.error(TAG_STREAM, "resumeQueueAfterCancel drain EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                         Log.e(TAG, "Queued drain error (resumeQueueAfterCancel)", e)
-                        setInlineError(e.message ?: "Unknown error")
+                        if (streamJob === coroutineContext[Job]) {
+                            setInlineError(e.message ?: "Unknown error")
+                        } else {
+                            AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel stale stream ignored exception UI update")
+                        }
                     } finally {
                         AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel streamJob FINALLY enter")
                         // [T-android-overlay-reply-status-34599] Surface
@@ -11345,14 +11750,20 @@ class ChatViewModel(
                         // non-null excerpt. Reading _messages here is safe:
                         // we're in the finally block of the agent loop and
                         // the stream has already flushed its last delta.
-                        publishOverlayReplyExcerpt(activeSessionId)
-                        SessionActivityTracker.setInactive(activeSessionId)
-                        SessionConcurrencyManager.releaseSlot(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            publishOverlayReplyExcerpt(activeSessionId)
+                            SessionActivityTracker.setInactive(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel stale stream skipped tracker finalization")
+                        }
+                            SessionConcurrencyManager.releaseSlot(leasedSessionId)
+                            slotReleased = true
                         AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel streamJob FINALLY exit")
                     }
                 } catch (e: CancellationException) {
                     AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel streamJob CANCELLED waiting for slot")
                 }
+                if (slotAcquired && !slotReleased) SessionConcurrencyManager.releaseSlot(leasedSessionId)
                 // [T-android-stale-streamjob-clears-isstreaming] guard.
                 if (streamJob === coroutineContext[Job]) {
                     AppLogger.info(TAG_STREAM, "resumeQueueAfterCancel _isStreaming=false (about to set)")
@@ -11553,8 +11964,12 @@ class ChatViewModel(
             _isStreaming.value = true
             streamJob = launch(Dispatchers.IO) {
                 AppLogger.info(TAG_STREAM, "resume streamJob ENTER sid=$activeSessionId")
+                val leasedSessionId = activeSessionId
+                var slotAcquired = false
+                var slotReleased = false
                 try {
-                    SessionConcurrencyManager.acquireSlot(activeSessionId)
+                    SessionConcurrencyManager.acquireSlot(leasedSessionId)
+                    slotAcquired = true
                     AppLogger.debug(TAG_STREAM, "resume streamJob slot acquired")
                     SessionActivityTracker.setActive(activeSessionId, onStop = { cancelStream() })
                     val activeFallbackStrategy = run {
@@ -11582,8 +11997,12 @@ class ChatViewModel(
                     } catch (e: Exception) {
                         AppLogger.error(TAG_STREAM, "resume runAgentLoop EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
                         Log.e(TAG, "Agent loop error (resume)", e)
-                        setInlineError(e.message ?: "恢复执行未完成")
-                        _canResume.value = true
+                        if (streamJob === coroutineContext[Job]) {
+                            setInlineError(e.message ?: "恢复执行未完成")
+                            _canResume.value = true
+                        } else {
+                            AppLogger.info(TAG_STREAM, "resume stale stream ignored exception UI update")
+                        }
                     } finally {
                         AppLogger.info(TAG_STREAM, "resume streamJob FINALLY enter")
                         // [T-android-overlay-reply-status-34599] Surface
@@ -11593,15 +12012,21 @@ class ChatViewModel(
                         // non-null excerpt. Reading _messages here is safe:
                         // we're in the finally block of the agent loop and
                         // the stream has already flushed its last delta.
-                        publishOverlayReplyExcerpt(activeSessionId)
-                        SessionActivityTracker.setInactive(activeSessionId)
-                        SessionConcurrencyManager.releaseSlot(activeSessionId)
+                        if (streamJob === coroutineContext[Job]) {
+                            publishOverlayReplyExcerpt(activeSessionId)
+                            SessionActivityTracker.setInactive(activeSessionId)
+                        } else {
+                            AppLogger.info(TAG_STREAM, "resume stale stream skipped tracker finalization")
+                        }
+                        SessionConcurrencyManager.releaseSlot(leasedSessionId)
+                        slotReleased = true
                         AppLogger.info(TAG_STREAM, "resume streamJob FINALLY exit")
                     }
                 } catch (e: CancellationException) {
                     AppLogger.info(TAG_STREAM, "resume streamJob CANCELLED waiting for slot")
                     Log.d(TAG, "Cancelled while waiting for concurrency slot (resume)")
                 }
+                if (slotAcquired && !slotReleased) SessionConcurrencyManager.releaseSlot(leasedSessionId)
                 // [T-android-stale-streamjob-clears-isstreaming] guard.
                 if (streamJob === coroutineContext[Job]) {
                     AppLogger.info(TAG_STREAM, "resume _isStreaming=false (about to set)")
@@ -11836,6 +12261,11 @@ class ChatViewModel(
                                     id = "text_restored_${entity.id}_${textBlockCounter++}",
                                     kind = "text",
                                     content = t,
+                                    // Preserve an explicit process-channel marker
+                                    // written by the runtime.  Do not infer it
+                                    // merely because this assistant message also
+                                    // contains a tool; that older heuristic is
+                                    // what caused normal story text to disappear.
                                     executionText = obj.optBoolean("execution", false),
                                 ))
                             }
@@ -12149,7 +12579,7 @@ class ChatViewModel(
     }
 
     fun prepareNovexConversationExport() {
-        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL != "preview") return
+        if(com.openminis.app.BuildConfig.UPDATE_CHANNEL !in setOf("preview", "preview-free")) return
         if(_isStreaming.value) {
             _novexConversationExport.value = com.openminis.app.share.NovexConversationExportState(error = "当前回答尚未完成，请等待保存后再导出。不会自动终止回答。")
             return
@@ -12554,7 +12984,9 @@ class ChatViewModel(
      * while the model's own `tool_title` arg has not yet streamed in.
      * e.g. `file_write` → "Write File", `shell_execute` → "Execute Shell".
      */
-    private fun friendlyToolTitle(toolName: String): String = when (toolName) {
+    private fun friendlyToolTitle(toolName: String): String = com.openminis.app.cards.IntegratedCardToolLabels.values[toolName] ?: when (toolName) {
+        "search_conversation_history" -> "搜索对话历史"
+        "read_conversation_history" -> "读取历史原文"
         "shell_execute" -> "Execute Shell"
         "file_read" -> "Read File"
         "file_write" -> "Write File"
@@ -12565,7 +12997,7 @@ class ChatViewModel(
         "memory_write" -> "Write Memory"
         "present_choices" -> "提供行动选项"
         "render_panel", "panel", "present_system_panel" -> "显示资料面板"
-        "save_checkpoint" -> "保存文游进度"
+        "save_checkpoint" -> "保存对话进度"
         "inspect_story_images" -> "查看剧情插图"
         "select_story_image" -> "选择剧情插图"
         "inspect_worldbook_choices" -> "查看世界书选择"

@@ -94,7 +94,7 @@ class NovexCardFileService(
             }
             is NovexManagedChange.UpdateCard -> verified = verified && NovexCardHeaderEdit.matches(workspace, change)
             is NovexManagedChange.UpdateModule -> {
-                val actual = workspace.module(change.moduleId)?.module
+                val actual = workspace.moduleContent(change.moduleId)
                 val expectedContent = change.contentJson?.let { incoming ->
                     plan.originalModuleDocuments[change.moduleId]?.let { original ->
                         com.openminis.app.data.character.ContentModuleDocumentCodec.preserveTransferSource(original,
@@ -105,10 +105,10 @@ class NovexCardFileService(
                     (expectedContent == null || same(requireNotNull(actual).contentJson, expectedContent)) &&
                     (change.appendText == null || JSONObject(requireNotNull(actual).contentJson).optString("text").endsWith("\n" + change.appendText))
             }
-            is NovexManagedChange.MoveModule -> verified = verified && workspace.module(change.moduleId)?.module?.position == change.toIndex
+            is NovexManagedChange.MoveModule -> verified = verified && workspace.moduleContent(change.moduleId)?.position == change.toIndex
             is NovexManagedChange.AddModule -> {
                 val id = applied.changedModuleIds.firstOrNull()
-                val actual = id?.let { workspace.module(it)?.module }
+                val actual = id?.let { workspace.moduleContent(it) }
                 verified = verified && actual != null && actual.name == change.name && same(actual.contentJson, change.contentJson)
             }
             is NovexManagedChange.PutCardReference -> verified = verified && workspace.referencesFrom(change.reference.source).any { it == change.reference }

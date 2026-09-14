@@ -18,6 +18,8 @@ data class ContextSourceUsage(
     val sourceId: String,
     val label: String,
     val tokenCount: Int,
+    /** True when the request only carried an excerpt of this source. */
+    val partial: Boolean = false,
 ) {
     init {
         require(sourceId.isNotBlank()) { "上下文来源编号不能为空" }

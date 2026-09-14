@@ -57,7 +57,9 @@ import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.ui.MinisImageFetcher
 import kotlinx.coroutines.launch
 
-class MinisApp : Application(), ImageLoaderFactory {
+class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProvider {
+    override fun prepareCardImport(store:novex.storage.CardStore,input:java.io.InputStream,name:String,kind:novex.content.CardKind):novex.storage.CardDraft =
+        com.openminis.app.cards.LegacyArchiveImport(store,cacheDir.toPath().resolve("legacy-card-incoming")).prepare(input,name,kind)
     private val startupScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
     )
@@ -145,7 +147,9 @@ class MinisApp : Application(), ImageLoaderFactory {
     lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
         private set
     val novexWorkGroups: com.openminis.app.novex.domain.NovexWorkGroups by lazy {
-        com.openminis.app.data.creative.RoomNovexWorkGroups(database)
+        com.openminis.app.data.creative.RoomNovexWorkGroups(database) { address ->
+            com.openminis.app.cards.IntegratedCatalog(this).contains(address)
+        }
     }
     val novexSnapshotMediaStore by lazy {
         com.openminis.app.novex.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))

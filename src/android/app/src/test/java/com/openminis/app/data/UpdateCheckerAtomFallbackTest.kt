@@ -21,6 +21,18 @@ class UpdateCheckerAtomFallbackTest {
         </feed>
     """.trimIndent()
 
+    @Test fun missingPrivateAssetDoesNotMaskAnOlderMatchingCandidate() {
+        val result = UpdateChecker.parseAtomReleaseFeed(feed, "0.0.1", UpdateChannel.PREVIEW_FREE,
+            setOf("v0.2.0-preview"))
+        assertTrue(result is UpdateChecker.CheckResult.UpdateAvailable)
+        result as UpdateChecker.CheckResult.UpdateAvailable
+        assertEquals("v0.1.0-preview", result.tagName)
+        assertTrue(result.apkUrl.endsWith("/novex-preview-free.novex"))
+        assertEquals(UpdateChecker.CheckResult.NoReleaseAvailable,
+            UpdateChecker.parseAtomReleaseFeed(feed, "0.0.1", UpdateChannel.PREVIEW_FREE,
+                setOf("v0.2.0-preview", "v0.1.0-preview")))
+    }
+
     @Test
     fun `newer Atom release becomes downloadable update`() {
         val result = UpdateChecker.parseAtomReleaseFeed(feed, "0.1.0", UpdateChannel.PREVIEW)

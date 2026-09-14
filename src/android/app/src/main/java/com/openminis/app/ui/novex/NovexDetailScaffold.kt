@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 
@@ -101,6 +102,7 @@ internal fun NovexTopBarSurface(
     modifier: Modifier = Modifier,
     backgroundColor: Color = NovexColors.Canvas,
     windowInsets: WindowInsets = WindowInsets.statusBars,
+    contentHeight: Dp = NovexDimensions.TopBarHeight,
 ) {
     Box(
         contentAlignment = Alignment.Center,
@@ -108,7 +110,7 @@ internal fun NovexTopBarSurface(
             .fillMaxWidth()
             .background(backgroundColor)
             .windowInsetsPadding(windowInsets)
-            .height(NovexDimensions.TopBarHeight),
+            .height(contentHeight),
     ) {
         CompositionLocalProvider(LocalContentColor provides NovexColors.Text, LocalTextStyle provides NovexType.SectionTitle) {
             Layout(

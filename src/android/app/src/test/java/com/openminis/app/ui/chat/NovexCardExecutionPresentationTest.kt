@@ -47,7 +47,7 @@ class NovexCardExecutionPresentationTest {
         assertEquals(2, result.filterIsInstance<FlatChatItem.AssistantProcess>().size)
         assertTrue(result.containsAll(listOf(generated, picture, choice, user)))
         val failedChoice = foldNovexExecutionProcesses(listOf(tool("bad", "present_choices", ToolBlockStatus.FAILED))).single()
-        assertEquals("有操作未完成", (failedChoice as FlatChatItem.AssistantProcess).statusLabel())
+        assertTrue(failedChoice is FlatChatItem.AssistantToolUse)
     }
     @Test fun creationReceiptsReportActualSavedCardsWithoutGuessingUserIntent() {
         assertNull(NovexCardCreationTask.evaluate(listOf(AssistantBlock("text", "text", "已经完成"))))

@@ -93,10 +93,21 @@ class AnthropicProvider(
     ): LLMResponse = withContext(Dispatchers.IO) {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, stream = false, temperature = temperature, imageParts = imageParts, tools = tools, thinkingLevel = thinkingLevel)
         val request = buildRequest(body.toString(), body)
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        audit?.event("wire_request", JSONObject()
+            .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(request.url.toString()), listOf(apiKey)))
+            .put("method", request.method).put("protocol", "anthropic")
+            .put("modelId", body.optString("model")).put("stream", false)
+            .put("toolCount", tools.size).put("maxOutputTokens", body.optInt("max_tokens")))
         val response = client.newCall(request).execute()
+        audit?.event("response_headers", JSONObject().put("status", response.code))
         val responseBody = response.body?.string() ?: ""
 
         if (!response.isSuccessful) {
+            audit?.event("http_error", JSONObject().put("status", response.code).put("message",
+                com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    runCatching { JSONObject(responseBody).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty(), listOf(apiKey))))
             throw mapHttpError(response.code, responseBody)
         }
 
@@ -141,11 +152,22 @@ class AnthropicProvider(
             headerMap[name] = request.headers[name] ?: ""
         }
 
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        audit?.event("wire_request", JSONObject()
+            .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(request.url.toString()), listOf(apiKey)))
+            .put("method", request.method).put("protocol", "anthropic")
+            .put("modelId", body.optString("model")).put("stream", true)
+            .put("toolCount", tools.size).put("maxOutputTokens", body.optInt("max_tokens")))
         val response = client.newCall(request).execute()
+        audit?.event("response_headers", JSONObject().put("status", response.code))
         val durationMs = System.currentTimeMillis() - startTime
 
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
+            audit?.event("http_error", JSONObject().put("status", response.code).put("message",
+                com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    runCatching { JSONObject(errorBody).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty(), listOf(apiKey))))
             response.close()
             // T302: skip the LLMRequestLog write entirely on release builds —
             // see OpenAIProvider for the full rationale (release users never

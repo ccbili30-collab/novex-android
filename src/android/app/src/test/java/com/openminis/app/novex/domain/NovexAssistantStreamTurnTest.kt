@@ -25,7 +25,7 @@ class NovexAssistantStreamTurnTest {
         assertFalse(state.snapshot().blocks.single().executionText)
     }
 
-    @Test fun unexpectedReadonlyToolReclassifiesItsTextAndRetainsTheOriginal() = runBlocking {
+    @Test fun unexpectedReadonlyToolRetainsItsTextWithoutInferringAHiddenChannel() = runBlocking {
         val state = turn()
         val rendered = mutableListOf<AssistantStreamTurn.Snapshot>()
         state.accept(Chunk.Text("正在保存"), true) { rendered += it }
@@ -36,9 +36,9 @@ class NovexAssistantStreamTurnTest {
         state.finish { rendered += it }
         val final = state.snapshot()
         assertEquals("正在保存这张卡。", final.text)
-        assertEquals(1, final.blocks.count { it.isText })
-        assertTrue(final.blocks.first().executionText)
-        assertEquals("正在保存这张卡。", final.blocks.first().content)
+        assertEquals(2, final.blocks.count { it.isText })
+        assertEquals(listOf("正在保存", "这张卡。"), final.blocks.filter { it.isText }.map { it.content })
+        assertTrue(final.blocks.filter { it.isText }.all { it.executionText })
         // Earlier emitted immutable snapshots cannot mutate underneath the renderer.
         assertEquals("正在保存", rendered.first().blocks.single().content)
         assertFalse(rendered.first().blocks.single().executionText)
@@ -101,8 +101,8 @@ class NovexAssistantStreamTurnTest {
         state.accept(Chunk.ToolUseStart("a", "read"), true) {}
         state.accept(Chunk.Text("说明"), true) {}
         state.accept(Chunk.ToolCallComplete("a", "read", JSONObject()), true) {}
-        assertTrue(state.snapshot().blocks.first().isText)
-        assertTrue(state.snapshot().blocks.first().executionText)
+        assertEquals(listOf("tool_use", "text"), state.snapshot().blocks.map { it.kind })
+        assertTrue(state.snapshot().blocks.last().executionText)
         val startless = turn()
         startless.accept(Chunk.Text("准备"), false) {}
         startless.accept(Chunk.ToolCallComplete("x", "read", JSONObject()), false) {}

@@ -9,7 +9,7 @@ internal class NovexSavedCardTargets(private val workspace: NovexWorkspace) {
         ModuleOwnerType.WORLD -> NovexContentAddress.world(value.id)
         ModuleOwnerType.CHARACTER_VERSION -> NovexContentAddress.characterVersion(value.id)
         ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(value.id)
-        ModuleOwnerType.CONTENT_MODULE -> workspace.module(ModuleOwner.contentModuleId(value.id))?.module
+        ModuleOwnerType.CONTENT_MODULE -> workspace.moduleContent(ModuleOwner.contentModuleId(value.id))
             ?.let { owner(ModuleOwner(it.ownerType, it.ownerId)) }
     }
 

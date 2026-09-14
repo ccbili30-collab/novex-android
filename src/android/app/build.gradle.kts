@@ -1,4 +1,5 @@
 import java.util.Properties
+import com.android.build.api.variant.BuildConfigField
 
 plugins {
     id("com.android.application")
@@ -81,6 +82,8 @@ android {
         versionName = novexVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "TEMPORARY_DEEPSEEK_KEY", "\"\"")
+        manifestPlaceholders["novexUpdateChannel"] = "stable"
 
         // System prompt prefix required by Anthropic for Claude Code OAuth
         // credentials. Empty in the public mirror (see provider-customization.properties).
@@ -111,6 +114,7 @@ android {
         create("preview") {
             dimension = "updateChannel"
             applicationIdSuffix = ".preview"
+            manifestPlaceholders["novexUpdateChannel"] = "preview"
             buildConfigField("String", "UPDATE_CHANNEL", "\"preview\"")
         }
     }
@@ -429,4 +433,30 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation("junit:junit:4.13.2")
+}
+
+dependencies {
+    implementation(project(":content-core"))
+    implementation(project(":content-storage")) { exclude(group="org.json",module="json") }
+    implementation(project(":conversation-runtime")) { exclude(group="org.json",module="json") }
+}
+
+// Types used by the original conversation-to-card adapter.
+dependencies {
+    implementation(project(":conversation-core"))
+    implementation(project(":model-transport")) { exclude(group="org.json",module="json") }
+}
+
+// Private preview artifact only. An ordinary build contains no credential or entry.
+androidComponents {
+    onVariants(selector().withFlavor("updateChannel" to "preview").withBuildType("daily")) { variant ->
+        val privateLane = providers.environmentVariable("NOVEX_PREVIEW_TRACK").orNull == "free"
+        val key = if (privateLane) providers.environmentVariable("NOVEX_TEMP_DEEPSEEK_KEY").orNull.orEmpty() else ""
+        require(!privateLane || key.isNotBlank()) { "Private preview requires its temporary credential" }
+        val channel = if (privateLane) "preview-free" else "preview"
+        variant.buildConfigFields.put("UPDATE_CHANNEL", BuildConfigField("String", "\"$channel\"", "Candidate track"))
+        variant.manifestPlaceholders.put("novexUpdateChannel", channel)
+        require(key.isEmpty() || key.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid temporary credential format" }
+        variant.buildConfigFields.put("TEMPORARY_DEEPSEEK_KEY", BuildConfigField("String", "\"$key\"", "Private preview only"))
+    }
 }

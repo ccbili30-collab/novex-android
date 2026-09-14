@@ -79,6 +79,25 @@ class NovexContextComposerTest {
     }
 
     @Test
+    fun deferredCardExcerptRemainsMarkedPartialEvenWhenItsPageFits() {
+        val result = NovexContextComposer.compose(
+            query = "南城旧片区",
+            tokenBudget = 200,
+            candidates = listOf(
+                NovexContextCandidate(
+                    sourceId = "new-card:world:module:block",
+                    label = "世界 · 地理",
+                    content = "南城旧片区位于河湾以南。",
+                    partial = true,
+                ),
+            ),
+            estimateTokens = oneTokenPerChar,
+        )
+
+        assertTrue(result.fragments.single().partial)
+    }
+
+    @Test
     fun usageRecordKeepsExactIncludedAndOmittedModulesForTheRequestBranch() {
         val composition = NovexContextComposer.compose(
             query = "青龙会",
@@ -97,6 +116,7 @@ class NovexContextComposerTest {
 
         assertEquals("user-1", record.requestMessageId)
         assertEquals(listOf("faction"), record.includedSources.map { it.sourceId })
+        assertEquals(composition.fragments.single().partial, record.includedSources.single().partial)
         assertEquals(composition.usedTokens, record.usedTokens)
     }
 

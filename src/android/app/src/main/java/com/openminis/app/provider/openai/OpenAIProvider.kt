@@ -659,6 +659,16 @@ class OpenAIProvider private constructor(
             )
         }
         val request = buildRequest(bodyStr)
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        val diagnosticSecrets = listOfNotNull(apiKey, request.header("Authorization")?.removePrefix("Bearer "), request.header("api-key"))
+        audit?.event("wire_request", JSONObject()
+            .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(request.url.toString()), diagnosticSecrets))
+            .put("providerInstanceId", thinkingRuleInstanceId)
+            .put("method", request.method).put("protocol", if (usesChatCompletionsAPI) "chat_completions" else "responses")
+            .put("modelId", body.optString("model")).put("stream", body.optBoolean("stream"))
+            .put("toolCount", body.optJSONArray("tools")?.length() ?: 0)
+            .put("maxOutputTokens", body.optInt("max_completion_tokens", body.optInt("max_tokens", body.optInt("max_output_tokens", -1)))))
         val headerMap = mutableMapOf<String, String>()
         for (name in request.headers.names()) {
             headerMap[name] = request.headers[name] ?: ""
@@ -766,6 +776,9 @@ class OpenAIProvider private constructor(
             headersArrived.set(true)
             ttfbWatchdog.cancel()
         }
+        audit?.event("response_headers", JSONObject().put("status", response.code)
+            .put("requestId", com.openminis.app.diagnostics.ModelRequestAudit.safeText(response.header("x-request-id").orEmpty(), diagnosticSecrets))
+            .put("contentType", response.header("content-type")))
         // T321: response-side diagnostic log (status + select header values).
         run {
             val rh = response.headers
@@ -780,6 +793,12 @@ class OpenAIProvider private constructor(
         }
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
+            val diagnosticError = runCatching { JSONObject(errorBody).optJSONObject("error") }.getOrNull()
+            audit?.event("http_error", JSONObject().put("status", response.code)
+                .put("errorType", com.openminis.app.diagnostics.ModelRequestAudit.safeText(diagnosticError?.optString("type").orEmpty(), diagnosticSecrets))
+                .put("code", com.openminis.app.diagnostics.ModelRequestAudit.safeText(diagnosticError?.optString("code").orEmpty(), diagnosticSecrets))
+                .put("message", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    diagnosticError?.optString("message").orEmpty(), diagnosticSecrets)))
             // T321: full error body — debug-only, but kept unconditional here
             // since non-2xx is rare and the body is critical for diagnosis.
             com.openminis.app.logging.AppLogger.error(
@@ -874,6 +893,7 @@ class OpenAIProvider private constructor(
         val thinkParser = ThinkPrefixStreamParser()
 
         // T321: turn-level SSE counters for empty-response triage.
+        var recordedResponseModel = false
         var sseEventCount = 0
         var contentLen = 0
         var reasoningLen = 0
@@ -941,6 +961,13 @@ class OpenAIProvider private constructor(
                 }
                 android.util.Log.d("ToolChain[Provider]", "RAW SSE: $payload")
                 sseEventCount++
+                val responseModel = event.optString("model").takeIf { it.isNotBlank() }
+                    ?: event.optJSONObject("response")?.optString("model")?.takeIf { it.isNotBlank() }
+                if (!recordedResponseModel && responseModel != null) {
+                    audit?.event("response_model", JSONObject().put("modelId",
+                        com.openminis.app.diagnostics.ModelRequestAudit.safeText(responseModel, diagnosticSecrets)))
+                    recordedResponseModel = true
+                }
 
                 // T321: per-event delta-field summary. Only counts/lengths,
                 // never the actual delta text — keeps log volume bounded.

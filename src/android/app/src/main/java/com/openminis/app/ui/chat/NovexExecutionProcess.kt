@@ -10,6 +10,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.openminis.app.ui.novex.NovexContentDialog
 import com.openminis.app.ui.novex.TextButton
@@ -29,8 +31,31 @@ private fun ToolBlockStatus?.displayLabel(): String = when (this) {
 
 @Composable
 internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
-    Text("执行过程 · ${process.statusLabel()}${if (process.tools.isEmpty()) "" else " · ${process.tools.size} 项操作"} ›", color = ChatColors.secondaryText,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onOpen).padding(horizontal = 8.dp, vertical = 14.dp))
+    val active=process.statusLabel()=="进行中"
+    // Keep the compact preview short, but never hide a failed/stopped tool
+    // behind later successful rows. The folded row is the user's only clue
+    // that a turn needs attention; the dialog still contains every row.
+    val recent = if(active) process.tools.takeLast(3) else process.tools.takeLast(2)
+    val failed = process.tools.filter { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
+    val tools = (recent + failed).distinctBy { it.block.id }
+    Column(Modifier.fillMaxWidth().clickable(onClick=onOpen).padding(horizontal=8.dp,vertical=10.dp)) {
+        Text(
+            "${if(active)"正在处理" else "工作记录"} · ${process.statusLabel()} · ${process.rows.size} 项 ›",
+            color=ChatColors.secondaryText,
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        tools.forEach { row->
+            val title=row.block.toolTitle.ifBlank {buildNovexStandardToolDetailPresentation(row.block.toolName,row.block.toolArgs,row.block.content)?.title ?: "查看操作详情"}
+            Text(
+                "${row.block.toolStatus.displayLabel()} · $title",
+                color=ChatColors.secondaryText,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+            )
+        }
+    }
 }
 
 @Composable
@@ -39,9 +64,19 @@ internal fun NovexExecutionProcessDialog(process: FlatChatItem.AssistantProcess,
         confirmButton = { TextButton(onClick = onDismiss) { Text("返回对话") } }) {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
             process.rows.forEach { row -> when (row) {
-                is FlatChatItem.AssistantText -> Text(row.block.content, modifier = Modifier.padding(vertical = 6.dp))
-                is FlatChatItem.AssistantMarkdownBlock -> Text(row.rawText, modifier = Modifier.padding(vertical = 6.dp))
-                is FlatChatItem.AssistantThinking -> Text(row.block.content, modifier = Modifier.padding(vertical = 6.dp))
+                is FlatChatItem.AssistantText -> StreamingMarkdownText(
+                    content = row.block.content,
+                    isStreaming = false,
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    shardId = TextShardId(row.messageId, "process:${row.block.id}"),
+                )
+                is FlatChatItem.AssistantMarkdownBlock -> MarkdownBlock(
+                    rawText = row.rawText,
+                    isStreaming = false,
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    shardId = TextShardId(row.messageId, "process:${row.parentBlockId}:${row.blockIndex}"),
+                )
+                is FlatChatItem.AssistantThinking -> Text(row.block.content, modifier = Modifier.padding(vertical = 6.dp), fontSize = 13.sp, lineHeight = 19.sp)
                 is FlatChatItem.AssistantToolUse -> TextButton(onClick = { onOpenTool(row.block) }) {
                     Text("${row.block.toolStatus.displayLabel()} · " + row.block.toolTitle.ifBlank { buildNovexStandardToolDetailPresentation(row.block.toolName, row.block.toolArgs, row.block.content)?.title ?: "查看操作详情" })
                 }
@@ -61,7 +96,7 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
             val card = cards.optJSONObject(index) ?: continue
             val kind = card.optString("kind")
             val id = card.optString("id")
-            val label = when (kind) { "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
+            val label = when (kind) { "integrated" -> "卡片"; "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
             if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) {
                 Text(card.optString("name").takeIf(String::isNotBlank)?.let { "打开《$it》" } ?: "打开$label ${index + 1}")
             }

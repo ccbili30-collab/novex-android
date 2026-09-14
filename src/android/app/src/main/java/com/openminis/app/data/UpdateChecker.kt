@@ -182,7 +182,7 @@ object UpdateChecker {
                     return@withContext CheckResult.NoReleaseAvailable
                 }
                 val channel = currentChannel
-                val eligible = UpdateReleasePolicy.eligibleReleases(channel, candidates)
+                val eligible = UpdateReleasePolicy.eligibleReleases(channel, candidates).filter { channel == UpdateChannel.STABLE || it.assets.containsKey(channel.assetName) }
                 AppLogger.info(
                     TAG,
                     "non-draft releases=${candidates.size} channel=${channel.wireName} " +
@@ -287,7 +287,19 @@ object UpdateChecker {
                 AppLogger.info(TAG, "Atom HTTP ${response.code}")
                 if (!response.isSuccessful) return@use originalFailure
                 val body = response.body?.string() ?: return@use originalFailure
-                parseAtomReleaseFeed(body, localVersion, currentChannel)
+                val unavailable = mutableSetOf<String>()
+                var candidate = parseAtomReleaseFeed(body, localVersion, currentChannel, unavailable)
+                while (candidate is CheckResult.UpdateAvailable) {
+                    val target = candidate
+                    val status = client.newCall(Request.Builder().url(target.apkUrl).head().build()).execute().use { asset ->
+                        if (asset.isSuccessful) 200 else asset.code
+                    }
+                    if (status == 200) return@use target
+                    if (status != 404) return@use originalFailure
+                    unavailable += target.tagName
+                    candidate = parseAtomReleaseFeed(body, localVersion, currentChannel, unavailable)
+                }
+                candidate
             }
         } catch (e: Exception) {
             AppLogger.warning(TAG, "Atom fallback failed: ${e.javaClass.simpleName}: ${e.message}")
@@ -305,6 +317,7 @@ object UpdateChecker {
         body: String,
         localVersion: String,
         channel: UpdateChannel = currentChannel,
+        unavailableTags: Set<String> = emptySet(),
     ): CheckResult {
         val entries = Regex("<entry>(.*?)</entry>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
             .findAll(body)
@@ -318,6 +331,7 @@ object UpdateChecker {
                     RegexOption.IGNORE_CASE,
                 ).find(entry) ?: return@mapNotNull null
                 val tag = href.groupValues[2]
+                if (tag in unavailableTags) return@mapNotNull null
                 val title = Regex("<title>(.*?)</title>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
                     .find(entry)?.groupValues?.get(1)?.let(::atomContentToPlainText).orEmpty()
                 val changelog = Regex(
@@ -527,7 +541,7 @@ object UpdateChecker {
             val safeName = versionName
                 ?.replace(Regex("[^A-Za-z0-9._-]"), "_")
                 ?.takeIf { it.isNotEmpty() }
-                ?.let { "minis-$it.apk" }
+                ?.let { "novex-${currentChannel.wireName}-$it.apk" }
                 ?: currentChannel.assetName
             val outFile = File(outDir, safeName)
             // A previous, possibly-aborted download could leave a stale APK
@@ -560,6 +574,10 @@ object UpdateChecker {
                         }
                     }
                 }
+            }
+            if (!matchesInstalledTrack(context, outFile)) {
+                outFile.delete()
+                return@withContext DownloadResult.Error("安装包不属于当前更新渠道，未安装。请重新检查更新。")
             }
             AppLogger.info(TAG, "Downloaded ${outFile.length()} bytes to ${outFile.absolutePath}")
             // Persist so a subsequent Activity recreate (e.g. after the user
@@ -641,8 +659,8 @@ object UpdateChecker {
             return null
         }
         val file = PendingUpdateStore.verify(pending)
-        if (file == null) {
-            AppLogger.info(TAG, "pending APK failed integrity; clearing")
+        if (file == null || !matchesInstalledTrack(context, file)) {
+            AppLogger.info(TAG, "pending APK failed integrity or channel; clearing")
             PendingUpdateStore.clearPending(context)
             return null
         }
@@ -650,6 +668,10 @@ object UpdateChecker {
     }
 
     fun installApk(context: Context, apk: File): Boolean {
+        if (!matchesInstalledTrack(context, apk)) {
+            PendingUpdateStore.clearPending(context)
+            return false
+        }
         return try {
             val authority = "${context.packageName}.fileprovider"
             val uri = FileProvider.getUriForFile(context, authority, apk)
@@ -671,6 +693,15 @@ object UpdateChecker {
             false
         }
     }
+
+    /** Verify the actual downloaded manifest, not a filename or stale pending record. */
+    @Suppress("DEPRECATION")
+    private fun matchesInstalledTrack(context: Context, apk: File): Boolean = runCatching {
+        val info = context.packageManager.getPackageArchiveInfo(apk.absolutePath, android.content.pm.PackageManager.GET_META_DATA)
+            ?: return@runCatching false
+        info.packageName == context.packageName &&
+            info.applicationInfo?.metaData?.getString("com.noven.player.UPDATE_CHANNEL") == currentChannel.wireName
+    }.getOrDefault(false)
 
     /** Semantic-version comparison with a legacy fallback for old tags. */
     private fun compareVersions(a: String, b: String): Int = UpdateReleasePolicy.compareVersions(a, b)

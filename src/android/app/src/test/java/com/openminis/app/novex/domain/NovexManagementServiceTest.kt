@@ -15,6 +15,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexManagementServiceTest {
+    @Test fun `empty creation targets never appear as mounted cards but remain writable targets`() = runBlocking {
+        val workspace = FakeManagementWorkspace()
+        val empty = listOf(
+            NovexConversationDraftCard(NovexContentAddress.world("empty-world"), "empty-world"),
+            NovexConversationDraftCard(NovexContentAddress.characterVersion("empty-role"), "person"),
+            NovexConversationDraftCard(NovexContentAddress.interactiveFiction("empty-game"), "empty-game"),
+        )
+        workspace.ownedDrafts = NovexConversationDraftSnapshot("chat-1", empty)
+        workspace.emptyDrafts = empty
+        val service = NovexManagementService(workspace, FakeArtifactPort())
+        val directory = service.inspect(NovexConversationConfigurationSnapshot("chat-1"), null, null).toModelToolJson()
+        assertEquals("Internal placeholders must not be reported as adopted or mounted cards", 0,
+            directory.getJSONArray("mounted_subjects").length())
+        assertEquals(3, directory.getJSONArray("private_creation_targets").length())
+        workspace.emptyDrafts = empty.drop(1)
+        val filled = service.inspect(NovexConversationConfigurationSnapshot("chat-1"), null, null).toModelToolJson()
+        assertEquals(1, filled.getJSONArray("mounted_subjects").length())
+        assertEquals("empty-world", filled.getJSONArray("mounted_subjects").getJSONObject(0).getString("id"))
+    }
+
     @Test fun `model directory does not inject every module body and exact module reads preserve text`() = runBlocking {
         val workspace = FakeManagementWorkspace()
         val owner = ModuleOwner.world("w1")
@@ -287,6 +307,11 @@ private class FakeArtifactPort : NovexManagementArtifactPort {
 }
 
 private class FakeManagementWorkspace : NovexWorkspace {
+    var ownedDrafts: NovexConversationDraftSnapshot? = null
+    var emptyDrafts: List<NovexConversationDraftCard> = emptyList()
+    override suspend fun conversationDrafts(conversationId: String) = ownedDrafts
+    override suspend fun emptyConversationDrafts(conversationId: String) = emptyDrafts
+
     val modulesByOwner = mutableMapOf<ModuleOwner, List<ContentModuleEntity>>()
     val worldSnapshots = mutableMapOf<String, NovexWorldSnapshot>()
     val applied = mutableListOf<NovexCommand>()

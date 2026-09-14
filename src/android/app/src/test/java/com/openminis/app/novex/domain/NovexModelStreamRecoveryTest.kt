@@ -67,4 +67,32 @@ class NovexModelStreamRecoveryTest {
             { _, _, _ -> error("must not switch") }, { emptyList() }) }
         assertSame(failure, result.exceptionOrNull())
     }
+
+    @Test fun `context limit numbers never become HTTP 5xx and never retry or fallback`() = runBlocking {
+        val engine = NovexModelStreamRecovery("a", listOf("b"), FallbackStrategy.always, { it }, waitSecond = {})
+        val failure = LLMError.ProviderError("HTTP 400: This model's maximum context length is 1048576 tokens. However, you requested 1069387 tokens")
+        var calls = 0
+        val result = runCatching { engine.collect({ calls++; throw failure }, {},
+            { _, _, _ -> error("must not retry") }, {}, {}, { _, _, _ -> error("must not fallback") }, { emptyList() }) }
+        assertEquals(1, calls)
+        assertSame(failure, result.exceptionOrNull())
+    }
+
+    @Test fun `real labelled server status still retries`() = runBlocking {
+        for (message in listOf("HTTP 503: unavailable", "[502] gateway unavailable")) {
+            val engine = NovexModelStreamRecovery("a", emptyList<String>(), FallbackStrategy.default, { it }, retryDelaysSeconds = listOf(1), waitSecond = {})
+            var calls = 0
+            engine.collect({ if (++calls == 1) throw LLMError.ProviderError(message) }, {}, { _, _, _ -> }, {}, {}, { _, _, _ -> }, { emptyList() })
+            assertEquals(2, calls)
+        }
+    }
+
+    @Test fun `local preflight rejection does not fallback unchanged`() = runBlocking {
+        val engine = NovexModelStreamRecovery("a", listOf("b"), FallbackStrategy.always, { it }, waitSecond = {})
+        var calls=0
+        val error = IllegalArgumentException("本轮上下文预计超出启用容量")
+        val result=runCatching { engine.collect({calls++;throw error},{},{_,_,_->fail("retry")},{},{},{_,_,_->fail("fallback")},{emptyList()}) }
+        assertEquals(1,calls)
+        assertSame(error,result.exceptionOrNull())
+    }
 }

@@ -64,6 +64,9 @@ interface NovexWorkspace {
     suspend fun character(id: String): NovexCharacterSnapshot?
     suspend fun interactiveFiction(id: String): NovexInteractiveFictionSnapshot?
     suspend fun modules(owner: ModuleOwner): NovexModuleSnapshot
+    /** Content operations must not build the editor's library-wide reference picker. */
+    suspend fun moduleContent(id: String): ContentModuleEntity? = module(id)?.module
+    suspend fun moduleReferences(id: String): List<ContentModuleReferenceEntity> = module(id)?.references.orEmpty()
     suspend fun module(id: String): NovexModuleDetail?
     suspend fun apply(command: NovexCommand): NovexChange
 }
@@ -665,6 +668,10 @@ internal class DefaultNovexWorkspace(
         val modules = content.list(owner)
         return NovexModuleSnapshot(modules, moduleImages(modules), moduleItemImages(modules))
     }
+
+    override suspend fun moduleContent(id: String): ContentModuleEntity? = content.module(id)
+
+    override suspend fun moduleReferences(id: String): List<ContentModuleReferenceEntity> = content.references(id)
 
     override suspend fun module(id: String): NovexModuleDetail? {
         val module = content.module(id) ?: return null

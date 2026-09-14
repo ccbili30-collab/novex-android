@@ -18,6 +18,7 @@ object NovexContextUsageCodec {
                 .put("sourceId", source.sourceId)
                 .put("label", source.label)
                 .put("tokenCount", source.tokenCount)
+                .put("partial", source.partial)
         }))
         put("omittedSources", JSONArray(record.omittedSources.map { source ->
             JSONObject()
@@ -53,6 +54,7 @@ object NovexContextUsageCodec {
                     sourceId = source.getString("sourceId"),
                     label = source.getString("label"),
                     tokenCount = source.optInt("tokenCount"),
+                    partial = source.optBoolean("partial", false),
                 )
             },
             omittedSources = root.optJSONArray("omittedSources").objects().map { source ->

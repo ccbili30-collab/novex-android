@@ -6,7 +6,10 @@ import com.openminis.app.novex.domain.*
 import kotlinx.coroutines.flow.combine
 import java.util.UUID
 
-class RoomNovexWorkGroups(private val database: AppDatabase) : NovexWorkGroups {
+class RoomNovexWorkGroups(
+    private val database: AppDatabase,
+    private val contentExists: (suspend (NovexContentAddress) -> Boolean)? = null,
+) : NovexWorkGroups {
     private val dao get() = database.novexWorkGroupDao()
     override val conversations = combine(database.chatDao().observeSessions(), database.novexConversationDraftDao().observeList()) { rows, drafts ->
         val created = drafts.mapNotNull { runCatching { NovexConversationDraftCodec.decode(it.contentJson) }.getOrNull() }
@@ -53,7 +56,7 @@ class RoomNovexWorkGroups(private val database: AppDatabase) : NovexWorkGroups {
         }.filter { it.isPrivate }.map { it.subject }.toSet()
         require((members - expected).none { it in privateCards }) { "空白占位卡尚未成为仓库内容" }
         val old = load(id)
-        for (member in members - expected) require(dao.targetExists(member.kind.name, member.id)) {
+        for (member in members - expected) require(contentExists?.invoke(member) ?: dao.targetExists(member.kind.name, member.id)) {
             "待加入的内容已不存在，请重新读取选择列表"
         }
         dao.clearMembers(id)

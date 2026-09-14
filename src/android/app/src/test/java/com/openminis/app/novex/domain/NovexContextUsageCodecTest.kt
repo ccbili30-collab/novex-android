@@ -35,7 +35,7 @@ class NovexContextUsageCodecTest {
             answerIdentity = AnswerIdentity.CharacterVersion("version-1"),
             includedSources = listOf(
                 ContextSourceUsage(ContextSourceKind.ANSWER_IDENTITY, "profile-1", "苏晚晴 · 本体", 42),
-                ContextSourceUsage(ContextSourceKind.BACKGROUND_MODULE, "module-1", "世界 · 势力", 64),
+                ContextSourceUsage(ContextSourceKind.BACKGROUND_MODULE, "module-1", "世界 · 势力", 64, partial = true),
             ),
             omittedSources = listOf(
                 ContextSourceOmission(ContextSourceKind.BACKGROUND_MODULE, "module-2", "世界 · 历史", "超过预算"),

@@ -164,14 +164,22 @@ class NovexChatPipelineInteractionTest {
                 streams.forEach { assertEquals(0, it.optJSONArray("tools")?.length() ?: 0) }
             } else {
                 val game = games.single()
-                if (ui.onAllNodesWithText("打开《$title》").fetchSemanticsNodes().isEmpty()) {
-                    screenshot(app, "card-open-missing-${mode.name}")
-                    val evidence = File(app.cacheDir, "foundation-ui")
-                    File(evidence, "card-open-missing-${mode.name}-tree.txt").writeText(ui.onRoot().printToString())
-                    File(evidence, "card-open-missing-${mode.name}-messages.json").writeText(JSONArray(
-                        runBlocking { app.chatRepository.loadActiveMessages(session.id) }.map { row ->
-                            JSONObject().put("parts", JSONArray(row.partsJson))
-                        }).toString(2))
+                // The transcript is projected asynchronously after the send control changes.
+                // Require the actual receipt to appear; stopping the spinner is not that event.
+                try {
+                    ui.waitUntil(15_000) {
+                        ui.onAllNodesWithText("打开《$title》").fetchSemanticsNodes().isNotEmpty()
+                    }
+                } finally {
+                    if (ui.onAllNodesWithText("打开《$title》").fetchSemanticsNodes().isEmpty()) {
+                        screenshot(app, "card-open-missing-${mode.name}")
+                        val evidence = File(app.cacheDir, "foundation-ui")
+                        File(evidence, "card-open-missing-${mode.name}-tree.txt").writeText(ui.onRoot().printToString())
+                        File(evidence, "card-open-missing-${mode.name}-messages.json").writeText(JSONArray(
+                            runBlocking { app.chatRepository.loadActiveMessages(session.id) }.map { row ->
+                                JSONObject().put("parts", JSONArray(row.partsJson))
+                            }).toString(2))
+                    }
                 }
                 ui.onNodeWithText("打开《$title》").performTouchInput { click() }
                 ui.runOnIdle { assertEquals(game.project.id, opened?.second) }

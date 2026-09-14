@@ -78,10 +78,17 @@ internal class AssistantStreamTurn(
                     materializeText()
                     textBlock = StringBuilder(chunk.text)
                     val block = AssistantBlock("text_${turn}_${blocks.size}", "text", chunk.text,
+                        // Text in an intermediate provider turn that already
+                        // emitted a tool call is process narration. The host
+                        // can still promote a terminal presentation turn back
+                        // to formal text once it knows the tool semantics.
                         executionText = sawTool)
                     // Chat Completions content is one string, including content arriving after tool_calls.
-                    val beforeTool = if (monolithic) blocks.indexOfFirst { it.kind == "tool_use" } else -1
-                    if (beforeTool >= 0) { blocks.add(beforeTool, block); textIndex = beforeTool }
+                    // A post-tool paragraph belongs after the most recent tool,
+                    // never before the first tool in the response.
+                    val lastTool = if (monolithic) blocks.indexOfLast { it.kind == "tool_use" } else -1
+                    val afterTool = lastTool + 1
+                    if (lastTool >= 0) { blocks.add(afterTool, block); textIndex = afterTool }
                     else { blocks += block; textIndex = blocks.lastIndex }
                 }
                 pendingText = true
@@ -103,7 +110,13 @@ internal class AssistantStreamTurn(
                 finishThinking()
                 // Flush the entire preceding text before freezing it at an ordered tool boundary.
                 if (pendingText) { flushText(emit); yield() }
-                if (!monolithic) { textBlock = null; textIndex = -1 }
+                // A tool boundary is a display and persistence boundary even
+                // for monolithic provider responses.  The next text chunk is
+                // a new answer block; otherwise text after the tool call is
+                // appended to the pre-tool paragraph and the transcript loses
+                // the actual model/tool/model order.
+                textBlock = null
+                textIndex = -1
                 val id = nextId(chunk.id, starts)
                 inFlight[chunk.id] = id
                 lastFileMs = 0; lastOtherMs = 0
@@ -162,7 +175,16 @@ internal class AssistantStreamTurn(
     }
     private fun markExecution() {
         sawTool = true
-        for (i in blocks.indices) if (blocks[i].isText) blocks[i] = blocks[i].copy(executionText = true)
+        // A tool boundary gives us an explicit protocol event. Reclassify the
+        // text in this provider turn from provisional answer text to process
+        // narration without guessing from words such as “正在读取”. Terminal
+        // UI turns are promoted back to formal text by ChatViewModel.
+        blocks.indices.forEach { index ->
+            val block = blocks[index]
+            if (block.isText && !block.executionText) {
+                blocks[index] = block.copy(executionText = true)
+            }
+        }
     }
     private fun finishThinking() {
         val index = blocks.indexOfFirst { it.id == "thinking_$turn" && it.kind == "thinking" }

@@ -49,3 +49,6 @@ dependencyResolutionManagement {
 rootProject.name = "Noven"
 include(":app")
 include(":novex-core")
+
+// 新卡片核心嵌入原应用，不建立第二套应用身份。
+include(":content-core", ":content-storage", ":conversation-core", ":conversation-runtime", ":model-transport")

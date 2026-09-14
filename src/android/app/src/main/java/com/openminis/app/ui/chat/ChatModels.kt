@@ -284,6 +284,28 @@ data class AssistantBlock(
     val executionArgs: String? = null,
 ) {
     val isText: Boolean get() = kind == "text"
+
+    /**
+     * The channel used by the conversation renderer.  Keeping this decision
+     * next to the persisted block shape prevents each screen from guessing
+     * whether a piece of text is a real answer or an execution note.
+     */
+    internal fun presentationChannel(): NovexPresentationChannel = when {
+        kind == "thinking" -> NovexPresentationChannel.THINKING
+        kind == "tool_use" -> NovexPresentationChannel.TOOL
+        kind == "info" -> NovexPresentationChannel.INFO
+        executionText -> NovexPresentationChannel.PROCESS_TEXT
+        else -> NovexPresentationChannel.FORMAL_ANSWER
+    }
+}
+
+/** Stable presentation channels; this is not a provider protocol. */
+internal enum class NovexPresentationChannel {
+    FORMAL_ANSWER,
+    PROCESS_TEXT,
+    THINKING,
+    TOOL,
+    INFO,
 }
 
 /** Visible answer consumers share this projection; raw/export/provider content remains untouched. */

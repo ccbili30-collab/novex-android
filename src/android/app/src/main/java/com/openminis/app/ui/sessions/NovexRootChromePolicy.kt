@@ -36,8 +36,6 @@ internal fun novexRootChrome(space: NovexRootSpace): NovexRootChrome = NovexRoot
 
 internal fun novexConversationCreateMenu(): List<NovexConversationStart> = listOf(
     NovexConversationStart.EMPTY,
-    NovexConversationStart.WORLD_CONTEXT,
-    NovexConversationStart.CREATION_TOOL,
 )
 
 internal fun novexRootBackAction(

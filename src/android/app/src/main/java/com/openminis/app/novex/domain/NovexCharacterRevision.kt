@@ -40,7 +40,7 @@ internal class NovexCharacterRevisionJournal(
             put("modules", JSONArray(modules.map { module -> JSONObject().apply {
                 put("id", module.id); put("type", module.type.name); put("name", module.name)
                 put("content", jsonOrText(module.contentJson))
-                put("references", JSONArray(workspace.module(module.id)?.references.orEmpty().map { reference -> JSONObject().apply {
+                put("references", JSONArray(workspace.moduleReferences(module.id).map { reference -> JSONObject().apply {
                     put("type", reference.targetType.name); put("id", reference.targetId); put("position", reference.position)
                 } }))
             } }))
@@ -55,11 +55,11 @@ internal class NovexCharacterRevisionJournal(
                 }
             })
         }
-        records.append(versionId, at, canonical(value))
+        records.append(versionId, at, canonicalRevisionJson(value))
     }
 
     suspend fun existingTargets(command: NovexCommand): List<String> {
-        suspend fun module(id: String): String? = workspace.module(ModuleOwner.contentModuleId(id))?.module
+        suspend fun module(id: String): String? = workspace.moduleContent(ModuleOwner.contentModuleId(id))
             ?.takeIf { it.ownerType == ModuleOwnerType.CHARACTER_VERSION }?.ownerId
         suspend fun owner(value: ModuleOwner): String? = when (value.type) {
             ModuleOwnerType.CHARACTER_VERSION -> value.id
@@ -97,15 +97,6 @@ internal class NovexCharacterRevisionJournal(
 
     private fun jsonOrText(raw: String): Any = runCatching { JSONObject(raw) }.getOrElse { raw }
 
-    private fun canonical(value: Any?): String = when (value) {
-        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->
-            JSONObject.quote(key) + ":" + canonical(value.get(key))
-        }
-        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.get(it)) }
-        is String -> JSONObject.quote(value)
-        null, JSONObject.NULL -> "null"
-        else -> value.toString()
-    }
 }
 
 internal fun NovexCommand.revisionTime(): Long = when (this) {

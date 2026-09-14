@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      include_free_model:
+        description: "Enable the private preview model (requires the repository secret)"
+        required: true
+        default: false
+        type: boolean
   push:
     branches:
       - next
@@ -96,12 +101,18 @@ jobs:
             printf -- '- Changed files: `%s`\n' "${#files[@]}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Validate daily preview request
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}
+      - name: Validate private preview request
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_free_model }}
         shell: bash
+        env:
+          TEMPORARY_DEEPSEEK_KEY: ${{ secrets.NOVEX_TEMP_DEEPSEEK_KEY }}
         run: |
-          if [[ "$GITHUB_REF" != "refs/heads/next" ]]; then
-            echo "Daily preview artifacts can only be built from next." >&2
+          if [[ "${{ inputs.build_preview }}" != "true" ]]; then
+            echo "The private preview model can only be included in a packaged artifact." >&2
+            exit 1
+          fi
+          if [[ -z "$TEMPORARY_DEEPSEEK_KEY" ]]; then
+            echo "The private preview model requires NOVEX_TEMP_DEEPSEEK_KEY." >&2
             exit 1
           fi
 
@@ -183,6 +194,8 @@ jobs:
           NOVEX_RELEASE_STORE_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_STORE_PASSWORD || '' }}
           NOVEX_RELEASE_KEY_ALIAS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_KEY_ALIAS || '' }}
           NOVEX_RELEASE_KEY_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview && secrets.NOVEX_RELEASE_KEY_PASSWORD || '' }}
+          NOVEX_PREVIEW_TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.include_free_model && 'free' || '' }}
+          NOVEX_TEMP_DEEPSEEK_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.include_free_model && secrets.NOVEX_TEMP_DEEPSEEK_KEY || '' }}
           NOVEX_PREFER_CANONICAL_REPOSITORIES: "true"
         run: |
           set -euo pipefail

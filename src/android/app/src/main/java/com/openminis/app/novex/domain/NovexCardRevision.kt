@@ -45,7 +45,7 @@ internal class NovexCardRevisionJournal(private val workspace: NovexWorkspace, p
         value.put("modules", JSONArray(modules.sortedBy { it.position }.map { module -> JSONObject().apply {
             put("id", module.id); put("type", module.type.name); put("name", module.name); put("position", module.position)
             put("content", revisionJsonValue(module.contentJson))
-            put("references", JSONArray(workspace.module(module.id)?.references.orEmpty().map { ref -> JSONObject()
+            put("references", JSONArray(workspace.moduleReferences(module.id).map { ref -> JSONObject()
                 .put("type", ref.targetType.name).put("id", ref.targetId).put("position", ref.position) }))
         } }))
         value.put("references", JSONArray(workspace.referencesFrom(subject).sortedBy { it.id }.map { JSONObject(NovexCardReferenceCodec.encode(it)) }))
@@ -70,7 +70,7 @@ internal class NovexCardRevisionJournal(private val workspace: NovexWorkspace, p
             ModuleOwnerType.INTERACTIVE_FICTION -> NovexContentAddress.interactiveFiction(id)
             else -> null
         }
-        suspend fun module(id: String) = workspace.module(ModuleOwner.contentModuleId(id))?.module?.let { subject(it.ownerType, it.ownerId) }
+        suspend fun module(id: String) = workspace.moduleContent(ModuleOwner.contentModuleId(id))?.let { subject(it.ownerType, it.ownerId) }
         suspend fun owner(value: ModuleOwner) = if(value.type == ModuleOwnerType.CONTENT_MODULE) module(value.id) else subject(value.type, value.id)
         val target = when(command) {
             is NovexCommand.LinkCharacterVersion -> NovexContentAddress.world(command.worldId)
@@ -109,12 +109,33 @@ internal class NovexCardRevisionJournal(private val workspace: NovexWorkspace, p
 }
 
 internal fun revisionJsonValue(raw: String): Any = runCatching { org.json.JSONTokener(raw).nextValue() ?: raw }.getOrDefault(raw)
-internal fun canonicalRevisionJson(value: Any?): String = when(value) {
-    is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonicalRevisionJson(value.get(it)) }
-    is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonicalRevisionJson(value.get(it)) }
-    is String -> JSONObject.quote(value)
-    null, JSONObject.NULL -> "null"
-    else -> value.toString()
+internal fun canonicalRevisionJson(value: Any?): String = buildString { appendCanonicalRevision(value) }
+
+// Share one output buffer across the tree. Recursive joinToString copied each large
+// descendant again at every parent, multiplying allocations in revision/directory saves.
+private fun StringBuilder.appendCanonicalRevision(value: Any?) {
+    when (value) {
+        is JSONObject -> {
+            append('{')
+            value.keys().asSequence().toList().sorted().forEachIndexed { index, key ->
+                if (index > 0) append(',')
+                append(JSONObject.quote(key)).append(':')
+                appendCanonicalRevision(value.get(key))
+            }
+            append('}')
+        }
+        is JSONArray -> {
+            append('[')
+            repeat(value.length()) { index ->
+                if (index > 0) append(',')
+                appendCanonicalRevision(value.get(index))
+            }
+            append(']')
+        }
+        is String -> append(JSONObject.quote(value))
+        null, JSONObject.NULL -> append("null")
+        else -> append(value.toString())
+    }
 }
 
 /** Exact structured changes. No inferred meaning and no restoration of media. */

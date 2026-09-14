@@ -66,6 +66,7 @@ fun MoveToSessionSheet(
     chatRepository: ChatRepository,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
+    onImportCard: ((Boolean)->Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -83,6 +84,10 @@ fun MoveToSessionSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            onImportCard?.let {import->
+                com.openminis.app.ui.novex.TextButton(onClick={import(true)}){Text("导入为世界")}
+                com.openminis.app.ui.novex.TextButton(onClick={import(false)}){Text("导入为角色")}
+            }
             Text(
                 stringResource(R.string.move_to_sheet_title),
                 style = MaterialTheme.typography.titleMedium,

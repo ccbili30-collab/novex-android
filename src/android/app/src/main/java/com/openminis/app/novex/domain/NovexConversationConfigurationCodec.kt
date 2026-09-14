@@ -10,6 +10,8 @@ object NovexConversationConfigurationCodec {
         put("version", 1)
         put("conversationId", snapshot.conversationId)
         put("executionMode", snapshot.executionMode.wireName)
+        put("contextLimitTokens", snapshot.contextLimitTokens)
+        snapshot.cardBindingJson?.let { put("cardBinding", JSONObject(it)) }
         put("answerIdentity", NovexAnswerIdentityCodec.encode(snapshot.answerIdentity))
         snapshot.activePlaythroughId?.let { put("activePlaythroughId", it) }
         snapshot.preGameAnswerIdentity?.let { put("preGameAnswerIdentity", NovexAnswerIdentityCodec.encode(it)) }
@@ -37,11 +39,24 @@ object NovexConversationConfigurationCodec {
         if (raw.isNullOrBlank()) return NovexConversationConfiguration.empty(conversationId).snapshot
         return runCatching {
             val root = JSONObject(raw)
+            root.optJSONObject("cardBinding")?.let {binding->
+                listOf("primary","backgrounds","managed").forEach {key->
+                    val items=binding.optJSONArray(key)?:JSONArray()
+                    require(key!="primary" || items.length()<=1){"主要互动对象不能超过一个"}
+                    for(i in 0 until items.length()) {
+                        val item=items.getJSONObject(i)
+                        require(item.getString("root").isNotBlank() && item.getString("target").isNotBlank()){"卡片关联编号缺失"}
+                    }
+                }
+                binding.optJSONObject("overrides")?.let {items->items.keys().forEach {require(items.get(it) is Boolean)}}
+            }
             val decodedId = root.optString("conversationId").ifBlank { conversationId }
             val executionMode = runCatching { NovexExecutionMode.decode(root.optString("executionMode").takeIf { root.has("executionMode") }) }
             val unsupported = executionMode.isFailure || root.optInt("version", 1) != 1
             val snapshot = NovexConversationConfigurationSnapshot(
                 conversationId = decodedId,
+                cardBindingJson = root.optJSONObject("cardBinding")?.toString(),
+                contextLimitTokens = root.optInt("contextLimitTokens").takeIf { it > 0 },
                 executionMode = if (unsupported) NovexExecutionMode.READ_ONLY else executionMode.getOrThrow(),
                 unreadableConfiguration = raw.takeIf { unsupported },
                 activePlaythroughId = root.optString("activePlaythroughId").ifBlank { null },

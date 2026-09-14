@@ -26,7 +26,7 @@ class NovexLongformModelPolicyTest {
 
         assertEquals(NovexLongformModelTier.LIMITED, status.tier)
         assertFalse(status.meetsMinimum)
-        assertEquals(38_400, status.moduleBudgetTokens)
+        assertEquals(80_000, status.moduleBudgetTokens)
         assertTrue(status.guidance.contains("不足 200K"))
         assertTrue(status.guidance.contains("更早蒸馏"))
     }
@@ -46,9 +46,9 @@ class NovexLongformModelPolicyTest {
 
         assertEquals(NovexLongformModelTier.STANDARD, standard.tier)
         assertTrue(standard.meetsMinimum)
-        assertEquals(60_000, standard.moduleBudgetTokens)
+        assertEquals(104_000, standard.moduleBudgetTokens)
         assertEquals(NovexLongformModelTier.EXTENDED, extended.tier)
         assertTrue(extended.meetsMinimum)
-        assertEquals(128_000, extended.moduleBudgetTokens)
+        assertEquals(768_000, extended.moduleBudgetTokens)
     }
 }

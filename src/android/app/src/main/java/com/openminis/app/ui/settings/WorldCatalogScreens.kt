@@ -521,6 +521,16 @@ fun CatalogWorldEditorScreen(
         onSave = ::save,
         onDeleteRequest = worldId?.let { { confirmDelete = true } },
     ) {
+        if (baselineDraft?.contentModules?.isVerbatimCard == true) {
+            NovexVerbatimCardEditor(
+                name = draft.name,
+                onNameChange = { draft = draft.copy(name = it) },
+                state = draft.contentModules,
+                persistedModuleIds = persistedModuleIds,
+                onChange = { draft = draft.copy(contentModules = it) },
+                onOpenDetails = onOpenModule,
+            )
+        } else {
         NovexEditorSection(header = "基础资料") {
                 NovexInlineField(
                     label = "名称",
@@ -578,6 +588,7 @@ fun CatalogWorldEditorScreen(
                 onChange = { draft = draft.copy(contentModules = it) },
                 onOpenDetails = onOpenModule,
             )
+        }
         Spacer(Modifier.height(32.dp))
     }
     error?.let { message ->
@@ -736,7 +747,10 @@ private fun WorldPrimaryContent(
     mediaModels: Map<MediaAssetSlot, Any?> = emptyMap(),
 ) {
     WorldHero(data, mediaModels)
-    WorldOverviewBlock(data.world)
+    val verbatim = data.modules.any {
+        com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+    }
+    if (!verbatim || data.world.overview.isNotBlank()) WorldOverviewBlock(data.world)
     if (data.modules.isNotEmpty()) androidx.compose.material3.HorizontalDivider(
         color = NovexColors.Divider,
         modifier = Modifier.padding(horizontal = NovexDimensions.PageHorizontal),

@@ -123,6 +123,7 @@ class AgentForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "agent-service.create")
         // Register with Android before loading repositories, overlays or the tracker.
         // The deadline belongs to startForegroundService, not onStartCommand: even a
         // stop-only command or sticky restart must satisfy it before optional work.
@@ -139,6 +140,7 @@ class AgentForegroundService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, startup)
         }
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "agent-service.foreground-registered")
         Log.i(TAG, "Foreground registered after ${SystemClock.elapsedRealtime() - startTimeMs}ms in onCreate")
         // Safe-mode bail-out. When CrashFrequencyDetector tripped in
         // MinisApp.onCreate, the Application skipped its lateinit init
@@ -160,6 +162,7 @@ class AgentForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "agent-service.command startId=$startId stop=${intent?.action == ACTION_STOP}")
         // Safe-mode: system restarted us under START_STICKY (intent==null)
         // after a crash. onCreate already registered the foreground notification;
         // now remove it and unwind. The crash share dialog

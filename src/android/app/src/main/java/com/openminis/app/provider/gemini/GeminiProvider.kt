@@ -68,10 +68,21 @@ class GeminiProvider(
             .applyUserAgentOverride(null)
             .build()
 
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        audit?.event("wire_request", JSONObject()
+            .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(request.url.toString()), listOf(apiKey)))
+            .put("method", request.method).put("protocol", "gemini")
+            .put("modelId", model.id).put("stream", false)
+            .put("toolCount", tools.size).put("maxOutputTokens", body.optJSONObject("generationConfig")?.optInt("maxOutputTokens")))
         val response = client.newCall(request).execute()
+        audit?.event("response_headers", JSONObject().put("status", response.code))
         val responseBody = response.body?.string() ?: ""
 
         if (!response.isSuccessful) {
+            audit?.event("http_error", JSONObject().put("status", response.code).put("message",
+                com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    runCatching { JSONObject(responseBody).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty(), listOf(apiKey))))
             throw mapHttpError(response.code, responseBody)
         }
 
@@ -114,9 +125,20 @@ class GeminiProvider(
             .applyUserAgentOverride(null)
             .build()
 
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        audit?.event("wire_request", JSONObject()
+            .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(request.url.toString()), listOf(apiKey)))
+            .put("method", request.method).put("protocol", "gemini")
+            .put("modelId", model.id).put("stream", true)
+            .put("toolCount", tools.size).put("maxOutputTokens", body.optJSONObject("generationConfig")?.optInt("maxOutputTokens")))
         val response = client.newCall(request).execute()
+        audit?.event("response_headers", JSONObject().put("status", response.code))
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
+            audit?.event("http_error", JSONObject().put("status", response.code).put("message",
+                com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    runCatching { JSONObject(errorBody).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty(), listOf(apiKey))))
             response.close()
             throw mapHttpError(response.code, errorBody)
         }

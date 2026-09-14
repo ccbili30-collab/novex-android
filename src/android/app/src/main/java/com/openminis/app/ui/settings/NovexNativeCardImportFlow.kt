@@ -41,10 +41,9 @@ internal fun novexNativeCardImportSpec(kind: NovexCardKind): NovexNativeCardImpo
         extensionLabel = when (kind) {
             NovexCardKind.WORLD -> ".${kind.extension} 或任意可读设定文本"
             NovexCardKind.CHARACTER -> ".${kind.extension}、酒馆图片卡或任意可读角色文本"
-            NovexCardKind.GAME -> ".${kind.extension}"
+            NovexCardKind.GAME -> ".${kind.extension} 或任意可读文游文本"
         },
-        mimeTypes = listOf("application/zip", "application/octet-stream") +
-            if (kind != NovexCardKind.GAME) listOf("*/*", "image/png", "application/json", "text/plain") else emptyList(),
+        mimeTypes = listOf("application/zip", "application/octet-stream", "*/*", "image/png", "application/json", "text/plain"),
     )
 
 internal data class NovexNativeCardImporter(

@@ -50,6 +50,10 @@ data class CompactMarkerEntity(
      * active region. Older v1 markers keep working through the legacy
      * resolution path in ChatViewModel.effectiveAgentHistory().
      *
+     * Version 3 keeps firstKeptMessageId explicitly; lastCompactedMessageId
+     * anchors the summarized prefix. Recent originals are not summarized and
+     * replayed twice. Both ids are persisted atomically in the same row.
+     *
      * Defaults to 1 so rows from prior schema versions read as v1 without
      * any backfill — matches the SQL `DEFAULT 1` set by MIGRATION_7_8.
      */

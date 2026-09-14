@@ -472,7 +472,7 @@ fun SessionListScreen(
     val showFolderBlock = !isSearchActive || searchQuery.isBlank()
     val showCard3Hierarchy = !isSearchActive && !isSelecting
     val homeSessions = remember(sessions, showCard3Hierarchy, homeFilter) {
-        if (showCard3Hierarchy) sessions.forHomeFilter(homeFilter) else sessions
+        sessions
     }
     val folderPartition = remember(homeSessions, folders, collapsedFolderIds, showFolderBlock) {
         if (showFolderBlock) partitionByFolder(homeSessions, folders, collapsedFolderIds)
@@ -699,31 +699,7 @@ fun SessionListScreen(
                                         Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null)
                                     },
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("从世界开始") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        onCharactersClick()
-                                    },
-                                    leadingIcon = {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("帮我创作") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        com.openminis.app.deeplink.DeepLinkCoordinator.setPendingChatAction(
-                                            com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL,
-                                        )
-                                        scope.launch {
-                                            viewModel.createNewSession()?.let(onNewChatGuarded)
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.AutoAwesome, contentDescription = null)
-                                    },
-                                )
+
                             }
                         }
                     }
@@ -804,10 +780,7 @@ fun SessionListScreen(
                     ) {
                         if (showCard3Hierarchy) {
                             item(key = "home_filters") {
-                                SessionHomeFilterRow(
-                                    selected = homeFilter,
-                                    onSelect = { homeFilter = it },
-                                )
+
                                 com.openminis.app.ui.novex.NovexConversationCardLookup(onSessionClickGuarded)
                             }
                         }
@@ -1001,7 +974,7 @@ fun SessionListScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { showNewConversationMenu = true }
+                                        .clickable { scope.launch { viewModel.createNewSession()?.let(onNewChatGuarded) } }
                                         .padding(horizontal = 24.dp, vertical = 18.dp),
                                 ) {
                                     Text("＋", fontSize = 23.sp, fontWeight = FontWeight.Light)
@@ -1124,7 +1097,7 @@ fun SessionListScreen(
                     searchQueryFlow = viewModel.searchQuery,
                     isSearchingFlow = viewModel.isSearching,
                     hasSessions = sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive,
-                    onNewChat = { showNewConversationMenu = true },
+                    onNewChat = { scope.launch { viewModel.createNewSession()?.let(onNewChatGuarded) } },
                     onNewChatWithGroup = { groupId ->
                         scope.launch {
                             val sessionId = viewModel.createNewSession(groupId = groupId)
@@ -1147,62 +1120,6 @@ fun SessionListScreen(
                     },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-            }
-        }
-    }
-
-    if (showNewConversationMenu) {
-        ModalBottomSheet(onDismissRequest = { showNewConversationMenu = false }) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
-            ) {
-                Text("新建对话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "选择通用助手，或进入世界并选择一个本体或分身。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    onClick = {
-                        showNewConversationMenu = false
-                        scope.launch {
-                            val sessionId = viewModel.createNewSession()
-                            if (sessionId != null) onNewChatGuarded(sessionId)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("新建对话")
-                }
-                OutlinedButton(
-                    onClick = {
-                        showNewConversationMenu = false
-                        onCharactersClick()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("从世界开始")
-                }
-                OutlinedButton(
-                    onClick = {
-                        showNewConversationMenu = false
-                        com.openminis.app.deeplink.DeepLinkCoordinator.setPendingChatAction(
-                            com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL,
-                        )
-                        scope.launch {
-                            viewModel.createNewSession()?.let(onNewChatGuarded)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("帮我创作")
-                }
             }
         }
     }

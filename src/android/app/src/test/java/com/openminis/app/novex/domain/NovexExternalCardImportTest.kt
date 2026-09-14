@@ -30,12 +30,12 @@ class NovexExternalCardImportTest {
         val samples = listOf("{\"name\":\"不是标准字段\",\"kind\":\"image\",\"rules\":[\"简洁叙述\"]}",
             "{\"name\":\"别的平台\",\"description\":\"人物\",\"world_book\":[\"设定\"],\"pre_prompt\":\"文风\"}",
             "[\"第三人称\", {\"未知字段\":true}]", "{不是合法结构化数据，但设定仍能读", "写作风格:\n  视角: 第三人称\n  避免: 替玩家决定")
-        for (text in samples) for (kind in listOf(NovexCardKind.WORLD, NovexCardKind.CHARACTER)) {
+        for (text in samples) for (kind in NovexCardKind.entries) {
             val imported = NovexExternalCardImport.decode(kind, text.toByteArray(), "叙事设定.txt")
             val modules = when (val document = imported.document) {
                 is NovexWorldImportDocument -> document.modules
                 is NovexCharacterImportDocument -> document.versions.single().modules
-                else -> error("unexpected game")
+                is NovexInteractiveFictionImportDocument -> document.modules
             }
             assertEquals(text, (modules.single().document as ContentModuleDocument.Article).text)
             assertEquals("叙事设定", imported.displayName)
@@ -56,7 +56,7 @@ class NovexExternalCardImportTest {
     @Test fun corruptNativeAndUnreadableBinaryCannotBecomeSuccessfulEmptyCards() {
         assertTrue(runCatching { NovexExternalCardImport.decode(NovexCardKind.WORLD, "broken".toByteArray(), "坏卡.novexworld") }.isFailure)
         assertTrue(runCatching { NovexExternalCardImport.decode(NovexCardKind.WORLD, byteArrayOf(0, 1, 2, 3), "archive.bin") }.isFailure)
-        assertTrue(runCatching { NovexExternalCardImport.decode(NovexCardKind.GAME, "text".toByteArray(), "game.txt") }.isFailure)
+        assertTrue(runCatching { NovexExternalCardImport.decode(NovexCardKind.GAME, "broken".toByteArray(), "game.novexgame") }.isFailure)
     }
 
     @Test fun rawWorldIsUsableAfterRestartAndSourceSurvivesEditAndExport() = runBlocking {

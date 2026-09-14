@@ -422,7 +422,7 @@ class ChatRepository(internal val dao: ChatDao) {
             val anchorId = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.firstKeptMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.boundaryMessageId?.takeIf(String::isNotEmpty)
-            anchorId == null || anchorId in activeIds
+            (anchorId == null || anchorId in activeIds) && (marker.version < 3 || marker.firstKeptMessageId in activeIds)
         }
     }
 
@@ -511,9 +511,11 @@ class ChatRepository(internal val dao: ChatDao) {
      * session-wide "last assistant" query is not branch safe.
      */
     suspend fun updateLastActiveAssistantError(sessionId: String, errorInfo: String?) {
-        loadActiveConversation(sessionId).activeMessages
-            .lastOrNull { it.role.equals("assistant", ignoreCase = true) }
-            ?.let { dao.updateMessageErrorInfo(it.id, errorInfo) }
+        val messages = loadActiveConversation(sessionId).activeMessages
+        val assistant = messages.indexOfLast { it.role.equals("assistant", ignoreCase = true) }
+        val user = messages.indexOfLast { it.role.equals("user", ignoreCase = true) }
+        // A new user turn without a persisted reply must not mark the previous reply.
+        if (assistant > user) dao.updateMessageErrorInfo(messages[assistant].id, errorInfo)
     }
 
     suspend fun appendMessage(

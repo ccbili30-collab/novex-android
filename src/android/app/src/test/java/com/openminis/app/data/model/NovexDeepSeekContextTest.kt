@@ -4,12 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class NovexDeepSeekContextTest {
-    @Test fun v4WithoutMetadataUsesMillionForRuntimeAndGroupPicker() {
+    @Test fun v4WithoutMetadataUsesProviderSpecificWindowForRuntimeAndGroupPicker() {
         listOf("deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
             "deepseek/deepseek-v4-flash").forEach { id ->
             val model = LLMModel(id, id, "Custom")
-            assertEquals(id, 1_000_000, model.contextWindowTokens)
-            assertEquals(id, 1_000_000, inferContextWindowTokens(model))
+            val expected = if (id.contains("pro")) 1_000_000 else 128_000
+            assertEquals(id, expected, model.contextWindowTokens)
+            assertEquals(id, expected, inferContextWindowTokens(model))
         }
     }
     @Test fun explicitProviderOrUserLimitStillWins() {
@@ -38,6 +39,9 @@ class NovexDeepSeekContextTest {
             modelEntries = mutableListOf(base, overridden, custom, relayEntry))
         val upgraded = NovexDeepSeekModelMetadata.repairCatalog(config)
         assertEquals(config.modelEntries.map { it.id }, upgraded.modelEntries.map { it.id })
+        // The relay entry and an explicitly custom entry remain untouched;
+        // only the official direct entry is upgraded, while an explicit
+        // per-entry override still wins.
         assertEquals(listOf(1_000_000, 64_000, 128_000, 128_000), upgraded.modelEntries.map { it.model.contextWindowTokens })
         assertEquals("我的模型名称", upgraded.modelEntries.first().model.displayName)
         assertEquals(upgraded, NovexDeepSeekModelMetadata.repairCatalog(upgraded))

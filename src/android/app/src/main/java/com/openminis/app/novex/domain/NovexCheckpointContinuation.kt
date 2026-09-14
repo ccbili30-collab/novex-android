@@ -26,7 +26,7 @@ class NovexCheckpointContinuation(private val store: NovexConversationWorkspaceS
         } catch (failure: Exception) { NovexCheckpointRecord(entry, null, failure.message ?: "存档无法读取") }
 
     fun prepare(configuration: NovexConversationConfigurationSnapshot, scope: NovexConversationWorkspaceScope): NovexContextCandidate? {
-        if (configuration.activeInteractiveFiction == null) return null
+        if (configuration.activeInteractiveFiction == null && configuration.cardBindingJson==null) return null
         val examined = mutableListOf<NovexCheckpointRecord>()
         val compatible = records(scope).asSequence().onEach(examined::add).firstOrNull { row -> row.checkpoint?.let {
             it.playthroughId != null && it.playthroughId == configuration.effectivePlaythroughId
@@ -53,7 +53,7 @@ class NovexCheckpointContinuation(private val store: NovexConversationWorkspaceS
             appendLine("模型摘要及补充状态仅为未核验辅助整理，保留在用户的存档原件中；本次不把它们直接装配为确定前情。优先核对上述原始事件和软件当前本局状态；冲突或无依据处保留未知。")
             if (examined.any { it.error != null }) appendLine("在此存档之前另有 ${examined.count { it.error != null }} 份较新存档无法读取，不视为已恢复。")
         }
-        return NovexContextCandidate("checkpoint:${checkpoint.id}:${compatible.entry.sha256}", "文游 · 已保存续接依据", content,
+        return NovexContextCandidate("checkpoint:${checkpoint.id}:${compatible.entry.sha256}", "对话 · 已保存续接依据", content,
             ContextSourceKind.PLAYTHROUGH_STATE, alwaysInclude = true, position = Int.MIN_VALUE + 2)
     }
 }

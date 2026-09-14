@@ -10,6 +10,33 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 class NovexToolExecutionTest {
+    @Test fun terminalReadFailureSurvivesJournalReload() {
+        val journal = NovexOperationJournal(File(files.root, "terminal"))
+        val op = operation()
+        val result = ToolExecutionResult("reading journal failed", false, stopAgentReason = "stop this run")
+        journal.save(NovexOperationRecord(op, NovexOperationStatus.FAILED, result))
+        val restored = NovexOperationJournal(File(files.root, "terminal")).read(op.id)!!.result!!
+        assertEquals(result, restored)
+        assertEquals("stop this run", restored.stopAgentReason)
+    }
+
+    @Test fun `new conversation executes without approval and replay does not execute twice`() = runBlocking {
+        val configuration = NovexConversationConfigurationCodec.decode(null, "chat")
+        val runtime = engine()
+        val op = operation()
+        var calls = 0
+        withTimeout(2000) {
+            repeat(2) {
+                assertTrue(runtime.execute(op, { configuration.executionMode }) {
+                    calls++
+                    ToolExecutionResult("已保存", true)
+                }.success)
+            }
+        }
+        assertEquals(1, calls)
+        assertTrue(runtime.pending.value.isEmpty())
+    }
+
     @get:Rule val files = TemporaryFolder()
     private fun operation(chat: String = "chat", args: String = """{"name":"生生"}""") =
         NovexToolOperation(chat, "reply", "call", "novex_write_card", args, "保存文游卡")

@@ -42,6 +42,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
         val localFiles = linkedMapOf<String, Pair<File, String?>>()
         val collectionRefs = linkedSetOf<String>()
         val documentRefs = linkedSetOf<String>()
+        val newCardRoots = linkedSetOf<String>()
         var totalBytes = 0L
         var messageCount = 0
         var traceCount = 0
@@ -97,6 +98,11 @@ class NovexConversationBundleExporter(private val context: Context, private val 
         fun scan(value: Any?) {
             when(value) {
                 is JSONObject -> {
+                    value.optJSONObject("cardBinding")?.let {binding->
+                        listOf("primary","backgrounds","managed").forEach {key->
+                            binding.optJSONArray(key)?.let {items->repeat(items.length()){i->newCardRoots+=items.getJSONObject(i).getString("root")}}
+                        }
+                    }
                     if(value.has("sourceAssetId") && value.has("sha256") && value.has("path")) media(value.optString("path"), value.optString("sha256"))
                     if(value.optString("type") == "mediaRef") value.optJSONObject("value")?.optString("relativePath")?.let { media(File(context.filesDir, "media/$it").path) }
                     if(value.optString("type") in setOf("toolUse", "uiToolUse")) value.optJSONObject("value")?.optString("imageFilePath")?.let { media(it) }
@@ -210,8 +216,34 @@ class NovexConversationBundleExporter(private val context: Context, private val 
                 }
                 table("database/creative-attachments.jsonl", "SELECT * FROM creative_artifact_attachments WHERE artifact_id IN (SELECT id FROM creative_artifacts WHERE $clause)", args)
             }
+            scan(runtime)
+            val newCards=novex.storage.CardStore(context.filesDir.toPath().resolve("rewrite-content"))
+            val newMappings=JSONArray()
+            newCardRoots.forEach {root->
+                try {
+                    val path="new-card-library/${NovexFrozenContextCodec.digest(root)}.zip"
+                    val output=target(path)
+                    val saved=novex.storage.CardFiles(newCards).export(root,output.toPath())
+                    register(path,output)
+                    newMappings.put(JSONObject().put("root",root).put("revision",saved.revision).put("path",path))
+                }catch(cancelled:CancellationException){throw cancelled}
+                catch(failure:Exception){if(failure is BundleLimitExceeded)throw failure;missing+="新版卡片 $root：${failure.message}"}
+            }
+            json("new-card-library/index.json",newMappings)
             val databaseCaptured = System.currentTimeMillis()
             json("environment/current-runtime.json", runtime); scan(runtime)
+            val modelRequests = com.openminis.app.diagnostics.ModelRequestAudit.export(
+                File(context.filesDir, "novex/model-requests"), conversationId)
+            val requestFiles = JSONArray()
+            modelRequests.forEach { (name, raw) ->
+                val path = "execution/model-requests/$name"
+                write(path, raw.toByteArray(Charsets.UTF_8))
+                requestFiles.put(path)
+            }
+            json("execution/model-requests/index.json", JSONObject().put("records", requestFiles)
+                .put("scope", "实际调用与失败元数据；不含凭据和请求正文。旧版本未记录的调用无法补造。"))
+            if (modelRequests.isEmpty() && messageCount > 0) missing += "此对话没有实际调用及失败诊断记录；不能据此认定请求未发送或成功"
+
             NovexMemoryToolExecutor.exportPlans(File(context.filesDir, "novex/memory-plans"), conversationId)
                 .forEach { (name, raw) -> write("execution/memory-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
             com.openminis.app.novex.domain.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
@@ -292,7 +324,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             val limits = listOf("逐字原话来自全部已保存消息，包含保留分支、工具部分和原始元数据；未落库的生成过程不在包内。",
                 "数据库与当前原卡在同一事务内捕获；文件逐项读取并核对修订，不能宣称文件系统与数据库全局同一时刻。",
                 "采用快照在会话配置中，导出时共享原卡另存；后者不能冒充历史采用内容。",
-                "历史请求环境只保存实际存在的应用装配记录；旧版本未记录内容、提供商转换后报文及工具循环变化不能补造。",
+                "历史请求环境只导出实际存在的装配与请求记录；请求记录保留实际模型、地址、协议与错误，不保存完整请求报文；旧版本缺失的证据不能补造。",
                 "包内不包含模型账户密钥、登录令牌、请求头和提供商凭据配置；原始消息或用户文件中的原话不作替换。",
                 "这是预览测试导出包，当前没有一键导入恢复功能。未登记到原生工作区的旧外部执行环境不保证收录。")
             write("阅读说明.txt", ("对话原话与已保存环境导出包（预览测试）\n\n" + limits.joinToString("\n") + "\n\n缺项：\n" + missing.joinToString("\n")).toByteArray(Charsets.UTF_8))

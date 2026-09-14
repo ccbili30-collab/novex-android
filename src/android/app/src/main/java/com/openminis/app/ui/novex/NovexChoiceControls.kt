@@ -207,9 +207,11 @@ internal fun ListItem(
     colors: ListItemColors = ListItemDefaults.colors(),
     tonalElevation: Dp = 0.dp,
     shadowElevation: Dp = 0.dp,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+    minimumHeight: Dp = NovexDimensions.SettingsRowMinHeight,
 ) {
-    Row(modifier.fillMaxWidth().heightIn(min = NovexDimensions.SettingsRowMinHeight)
-        .padding(horizontal = 14.dp, vertical = 10.dp),
+    Row(modifier.fillMaxWidth().heightIn(min = minimumHeight)
+        .padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         CompositionLocalProvider(LocalContentColor provides NovexColors.Primary) { leadingContent?.invoke() }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -6,20 +6,32 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.openminis.app.data.db.NovexCardTextReader
+import com.openminis.app.data.db.NovexCardTextField
+import com.openminis.app.data.db.readCardText
 
 @Dao
-interface ContentModuleDao {
+interface ContentModuleDao : NovexCardTextReader {
     @Query(
-        "SELECT * FROM content_modules WHERE owner_type = :ownerType AND owner_id = :ownerId " +
+        "SELECT id, owner_type, owner_id, type, name, '' AS content_json, position, collapsed, created_at, updated_at FROM content_modules WHERE owner_type = :ownerType AND owner_id = :ownerId " +
             "ORDER BY position ASC, created_at ASC, id ASC",
     )
-    suspend fun list(ownerType: ModuleOwnerType, ownerId: String): List<ContentModuleEntity>
+    suspend fun listRecords(ownerType: ModuleOwnerType, ownerId: String): List<ContentModuleEntity>
 
-    @Query("SELECT * FROM content_modules ORDER BY owner_type ASC, owner_id ASC, position ASC")
-    suspend fun all(): List<ContentModuleEntity>
+    @Transaction
+    suspend fun list(ownerType: ModuleOwnerType, ownerId: String): List<ContentModuleEntity> = listRecords(ownerType, ownerId).map { hydrate(it) }
 
-    @Query("SELECT * FROM content_modules WHERE id = :id")
-    suspend fun module(id: String): ContentModuleEntity?
+    @Query("SELECT id, owner_type, owner_id, type, name, '' AS content_json, position, collapsed, created_at, updated_at FROM content_modules ORDER BY owner_type ASC, owner_id ASC, position ASC")
+    suspend fun allRecords(): List<ContentModuleEntity>
+
+    @Transaction
+    suspend fun all(): List<ContentModuleEntity> = allRecords().map { hydrate(it) }
+
+    @Query("SELECT id, owner_type, owner_id, type, name, '' AS content_json, position, collapsed, created_at, updated_at FROM content_modules WHERE id = :id")
+    suspend fun moduleRecords(id: String): ContentModuleEntity?
+
+    @Transaction
+    suspend fun module(id: String): ContentModuleEntity? = moduleRecords(id)?.let { hydrate(it) }
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(module: ContentModuleEntity)
@@ -106,4 +118,7 @@ interface ContentModuleDao {
         }
         updateAll(normalized)
     }
+    private suspend fun hydrate(row: ContentModuleEntity) = row.copy(
+        contentJson = requireNotNull(readCardText(NovexCardTextField.MODULE_CONTENT, row.id)),
+    )
 }

@@ -122,6 +122,8 @@ internal class DeferredNovexWorkspace(
     override suspend fun character(id: String) = workspace().character(id)
     override suspend fun interactiveFiction(id: String) = workspace().interactiveFiction(id)
     override suspend fun modules(owner: ModuleOwner) = workspace().modules(owner)
+    override suspend fun moduleContent(id: String) = workspace().moduleContent(id)
+    override suspend fun moduleReferences(id: String) = workspace().moduleReferences(id)
     override suspend fun module(id: String) = workspace().module(id)
     override suspend fun apply(command: com.openminis.app.novex.domain.NovexCommand) =
         workspace().apply(command)

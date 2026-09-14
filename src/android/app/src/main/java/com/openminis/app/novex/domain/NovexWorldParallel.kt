@@ -17,10 +17,10 @@ internal class NovexWorldParallel(private val workspace: NovexWorkspace) {
         workspace.referencesFrom(NovexContentAddress.world(worldId)).filter { it.unresolvedTarget == null }.forEach { ref ->
             if(ref.target.subject.kind == NovexContentKind.CHARACTER_VERSION) ids += ref.target.subject.id
         }
-        world.modules.forEach { module -> workspace.module(module.id)?.references.orEmpty().forEach { ref ->
+        world.modules.forEach { module -> workspace.moduleReferences(module.id).forEach { ref ->
             when(ref.targetType) {
                 ModuleReferenceTargetType.CHARACTER_VERSION -> ids += ref.targetId
-                ModuleReferenceTargetType.MODULE -> workspace.module(ref.targetId)?.module?.takeIf { it.ownerType == ModuleOwnerType.CHARACTER_VERSION }?.let { ids += it.ownerId }
+                ModuleReferenceTargetType.MODULE -> workspace.moduleContent(ref.targetId)?.takeIf { it.ownerType == ModuleOwnerType.CHARACTER_VERSION }?.let { ids += it.ownerId }
                 else -> Unit
             }
         } }
@@ -84,7 +84,7 @@ internal class NovexWorldParallel(private val workspace: NovexWorkspace) {
             if(ref.unresolvedTarget == null && target != null) workspace.apply(NovexCommand.PutCardReference(ref.copy(
                 target = ref.target.copy(subject = target, moduleId = ref.target.moduleId?.let { moduleIds[it] ?: it }))))
         } }
-        moduleIds.values.forEach { id -> workspace.module(id)?.references.orEmpty().forEach { ref ->
+        moduleIds.values.forEach { id -> workspace.moduleReferences(id).forEach { ref ->
             val targetId = when(ref.targetType) {
                 ModuleReferenceTargetType.MODULE -> moduleIds[ref.targetId]
                 ModuleReferenceTargetType.WORLD -> mapping[NovexContentAddress.world(ref.targetId)]?.id

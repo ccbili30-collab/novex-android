@@ -102,107 +102,9 @@ internal fun NovexWorldLibraryRoot(
     onCreateWorld: () -> Unit,
     onOpenSettings: () -> Unit,
     onConfigureConversation: (String) -> Unit,
+    onImport: (android.net.Uri) -> Unit,
 ) {
-    val novex = rememberNovexWorkspace()
-    val workGroups = rememberNovexWorkGroups()
-    val workGroup by workGroups.snapshots.collectAsState(initial = null)
-    val context = LocalContext.current
-    val orderStore = remember(context) { NovexManualOrderStore(context) }
-    var rows by remember { mutableStateOf<List<WorldRootRow>>(emptyList()) }
-    var refresh by remember { mutableStateOf(0) }
-    var loaded by remember { mutableStateOf(false) }
-    var searching by rememberSaveable { mutableStateOf(false) }
-    val searchState = rememberNovexLibrarySearchState()
-    val query by searchState.applied.collectAsState()
-    val listState = rememberLazyListState()
-    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromId = (from.key as? String)?.removePrefix("world:")
-            ?: return@rememberReorderableLazyListState
-        val toId = (to.key as? String)?.removePrefix("world:")
-            ?: return@rememberReorderableLazyListState
-        val fromIndex = rows.indexOfFirst { it.world.id == fromId }
-        val toIndex = rows.indexOfFirst { it.world.id == toId }
-        if (fromIndex !in rows.indices || toIndex !in rows.indices) return@rememberReorderableLazyListState
-        rows = rows.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-        orderStore.write(NovexManualOrderKind.WORLDS, rows.map { it.world.id })
-    }
-
-    BackHandler(enabled = searching) {
-        searching = false
-        searchState.clear()
-    }
-
-    val importer = rememberNovexNativeCardImporter(NovexCardKind.WORLD) { importedId ->
-        refresh++
-        onOpenWorld(importedId)
-    }
-    val resumeRevision = rememberNovexCatalogResumeRevision()
-
-    LaunchedEffect(refresh, resumeRevision) {
-        val loadedRows = novex.worlds().map { card ->
-            WorldRootRow(
-                world = card.world,
-                imagePath = card.image?.managedPath,
-                characterCount = card.characterCount,
-                moduleCount = card.moduleCount,
-            )
-        }
-        val byId = loadedRows.associateBy { it.world.id }
-        rows = mergeNovexManualOrder(
-            sourceIds = loadedRows.map { it.world.id },
-            savedIds = orderStore.read(NovexManualOrderKind.WORLDS),
-        ).mapNotNull(byId::get)
-        loaded = true
-    }
-    val filtered = remember(rows, query, workGroup) {
-        rows.filter { row ->
-            (workGroup?.includes(NovexContentAddress.world(row.world.id)) == true) && (query.isBlank() || row.world.name.contains(query, ignoreCase = true) ||
-                row.world.overview.contains(query, ignoreCase = true))
-        }
-    }
-
-    NovexLibraryFrame(
-        workGroup = workGroup,
-        onConfigureConversation = onConfigureConversation,
-        space = NovexRootSpace.WORLDS,
-        searching = searching,
-        searchState = searchState,
-        searchDescription = "搜索世界",
-        onSearchToggle = {
-            searching = !searching
-            if (!searching) searchState.clear()
-        },
-        onOpenSettings = onOpenSettings,
-        createItems = listOf(
-            NovexCreateMenuItem("新建世界", onCreateWorld),
-            NovexCreateMenuItem("导入世界卡", importer.launch),
-        ),
-    ) { manageGroup ->
-        when {
-            !loaded || importer.importing || workGroup == null -> NovexLoading()
-            filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的世界")
-            filtered.isEmpty() && workGroup?.selection != NovexWorkGroupSnapshot.ALL ->
-                NovexEmptyWorkGroup(requireNotNull(workGroup), "世界", manageGroup, onCreateWorld)
-            rows.isEmpty() -> NovexEmptyWorldLibrary(onCreateWorld, importer.launch)
-            else -> LazyColumn(
-                state = listState,
-                contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(filtered, key = { "world:${it.world.id}" }) { row ->
-                    ReorderableItem(reorderState, key = "world:${row.world.id}") { _ ->
-                        NovexWorldCard(
-                            row = row,
-                            onClick = { onOpenWorld(row.world.id) },
-                            modifier = Modifier.longPressDraggableHandle(),
-                        )
-                    }
-                }
-
-            }
-        }
-    }
+    NovexIntegratedLibraryRoot(novex.content.CardKind.WORLD,onOpenWorld,onCreateWorld,onOpenSettings,onConfigureConversation,onImport)
 }
 
 @Composable
@@ -211,105 +113,9 @@ internal fun NovexCharacterLibraryRoot(
     onCreateCharacter: () -> Unit,
     onOpenSettings: () -> Unit,
     onConfigureConversation: (String) -> Unit,
+    onImport: (android.net.Uri) -> Unit,
 ) {
-    val novex = rememberNovexWorkspace()
-    val workGroups = rememberNovexWorkGroups()
-    val workGroup by workGroups.snapshots.collectAsState(initial = null)
-    val context = LocalContext.current
-    val orderStore = remember(context) { NovexManualOrderStore(context) }
-    var rows by remember { mutableStateOf<List<CharacterRootRow>>(emptyList()) }
-    var refresh by remember { mutableStateOf(0) }
-    var loaded by remember { mutableStateOf(false) }
-    var searching by rememberSaveable { mutableStateOf(false) }
-    val searchState = rememberNovexLibrarySearchState()
-    val query by searchState.applied.collectAsState()
-    val listState = rememberLazyListState()
-    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromId = (from.key as? String)?.removePrefix("character:")
-            ?: return@rememberReorderableLazyListState
-        val toId = (to.key as? String)?.removePrefix("character:")
-            ?: return@rememberReorderableLazyListState
-        val fromIndex = rows.indexOfFirst { it.character.id == fromId }
-        val toIndex = rows.indexOfFirst { it.character.id == toId }
-        if (fromIndex !in rows.indices || toIndex !in rows.indices) return@rememberReorderableLazyListState
-        rows = rows.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-        orderStore.write(NovexManualOrderKind.CHARACTERS, rows.map { it.character.id })
-    }
-
-    BackHandler(enabled = searching) {
-        searching = false
-        searchState.clear()
-    }
-
-    val importer = rememberNovexNativeCardImporter(NovexCardKind.CHARACTER) { importedId ->
-        refresh++
-        onOpenCharacter(importedId)
-    }
-    val resumeRevision = rememberNovexCatalogResumeRevision()
-
-    LaunchedEffect(refresh, resumeRevision) {
-        val loadedRows = novex.characters().map { card ->
-            val aggregate = card.character
-            val character = aggregate.character
-            val profile = CharacterVersionProfile.fromJson(aggregate.original.profileJson, character.name)
-            CharacterRootRow(character, profile, card.avatar?.managedPath, aggregate.variants.size, aggregate.allVersions.map { it.id })
-        }
-        val byId = loadedRows.associateBy { it.character.id }
-        rows = mergeNovexManualOrder(
-            sourceIds = loadedRows.map { it.character.id },
-            savedIds = orderStore.read(NovexManualOrderKind.CHARACTERS),
-        ).mapNotNull(byId::get)
-        loaded = true
-    }
-    val filtered = remember(rows, query, workGroup) {
-        rows.filter { row ->
-            (row.versionIds.any { workGroup?.includes(NovexContentAddress.characterVersion(it)) == true }) && (query.isBlank() || row.character.name.contains(query, ignoreCase = true) ||
-                row.profile.summary.contains(query, ignoreCase = true))
-        }
-    }
-
-    NovexLibraryFrame(
-        workGroup = workGroup,
-        onConfigureConversation = onConfigureConversation,
-        space = NovexRootSpace.CHARACTERS,
-        searching = searching,
-        searchState = searchState,
-        searchDescription = "搜索角色",
-        onSearchToggle = {
-            searching = !searching
-            if (!searching) searchState.clear()
-        },
-        onOpenSettings = onOpenSettings,
-        createItems = listOf(
-            NovexCreateMenuItem("新建角色", onCreateCharacter),
-            NovexCreateMenuItem("导入角色卡", importer.launch),
-        ),
-    ) { manageGroup ->
-        when {
-            !loaded || importer.importing || workGroup == null -> NovexLoading()
-            filtered.isEmpty() && query.isNotBlank() -> NovexEmptyMessage("没有找到匹配的角色")
-            filtered.isEmpty() && workGroup?.selection != NovexWorkGroupSnapshot.ALL ->
-                NovexEmptyWorkGroup(requireNotNull(workGroup), "角色", manageGroup, onCreateCharacter)
-            rows.isEmpty() -> NovexEmptyCharacterLibrary(onCreateCharacter, importer.launch)
-            else -> LazyColumn(
-                state = listState,
-                contentPadding = novexPagePadding(bottom = NovexDimensions.RootBottomInset),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(filtered, key = { "character:${it.character.id}" }) { row ->
-                    ReorderableItem(reorderState, key = "character:${row.character.id}") { _ ->
-                        NovexCharacterRow(
-                            row = row,
-                            onClick = { onOpenCharacter(row.character.id) },
-                            modifier = Modifier.longPressDraggableHandle(),
-                        )
-                    }
-                }
-
-            }
-        }
-    }
+    NovexIntegratedLibraryRoot(novex.content.CardKind.CHARACTER,onOpenCharacter,onCreateCharacter,onOpenSettings,onConfigureConversation,onImport)
 }
 
 @Composable
@@ -429,7 +235,7 @@ internal fun NovexInteractiveFictionLibraryRoot(
 }
 
 @Composable
-private fun NovexLibraryFrame(
+internal fun NovexLibraryFrame(
     workGroup: NovexWorkGroupSnapshot?,
     space: NovexRootSpace,
     searching: Boolean,
@@ -472,13 +278,15 @@ private fun NovexLibraryFrame(
             NovexLibrarySearchInput(searchState, searchDescription)
         }
         NovexWorkGroupControls(workGroup, groupMembersRequest, onConfigureConversation)
-        Box(Modifier.fillMaxSize()) { content { groupMembersRequest++ } }
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides NovexRootColors.Text,
+        ) { Box(Modifier.fillMaxSize()) { content { groupMembersRequest++ } } }
     }
 }
 
 /** Reloads both catalogs whenever a detail/editor Activity returns to the root Activity. */
 @Composable
-private fun NovexEmptyWorkGroup(group: NovexWorkGroupSnapshot, kind: String, onManage: () -> Unit, onCreate: () -> Unit) {
+internal fun NovexEmptyWorkGroup(group: NovexWorkGroupSnapshot, kind: String, onManage: () -> Unit, onCreate: () -> Unit) {
     val groups = rememberNovexWorkGroups()
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }

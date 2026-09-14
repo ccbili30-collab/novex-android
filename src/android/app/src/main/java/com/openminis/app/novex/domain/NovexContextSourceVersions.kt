@@ -24,7 +24,10 @@ object NovexContextSourceVersions {
                     kind = if (same.any { it.kind == ContextSourceKind.ANSWER_IDENTITY }) ContextSourceKind.ANSWER_IDENTITY else first.kind,
                     aliases = same.flatMap { it.aliases }.toSet(),
                     relatedSourceIds = same.flatMap { it.relatedSourceIds }.flatMap { ids[it] ?: setOf(it) }.toSet(),
-                    alwaysInclude = same.any { it.alwaysInclude }, position = same.minOf { it.position })
+                    alwaysInclude = same.any { it.alwaysInclude }, position = same.minOf { it.position },
+                    // A complete version supersedes an excerpt regardless of
+                    // input order; only all-excerpt variants remain partial.
+                    partial = same.all { it.partial })
             }
         }
     }

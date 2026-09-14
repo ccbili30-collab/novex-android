@@ -27,12 +27,15 @@ internal fun encodeAssistantTurnParts(
     metadata: Map<String, AssistantBlock>,
 ): String {
     val textMetadata = metadata.values.filter { it.isText && it.content.isNotEmpty() }.iterator()
-    val fallbackExecution = parts.any { it is AgentContentPart.ToolUse }
     val result = JSONArray()
     parts.forEach { part ->
         when (part) {
             is AgentContentPart.Text -> {
-                val execution = if (textMetadata.hasNext()) textMetadata.next().executionText else fallbackExecution
+                // A tool in the same assistant turn does not make every text
+                // fragment a process note.  Only the block's explicit channel
+                // marker may mark it as execution text; this keeps story text
+                // visible after reload and export.
+                val execution = textMetadata.takeIf { it.hasNext() }?.next()?.executionText == true
                 result.put(JSONObject().put("type", "text").put("value", part.text).put("execution", execution))
             }
             is AgentContentPart.ToolUse -> if (part.name.isNotBlank()) {

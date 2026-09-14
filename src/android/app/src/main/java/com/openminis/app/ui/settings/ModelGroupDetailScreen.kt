@@ -83,6 +83,10 @@ fun ModelGroupDetailScreen(
     onBack: () -> Unit,
     onAddModels: () -> Unit,
 ) {
+    if (groupId == com.openminis.app.data.model.TemporaryPreviewModel.GROUP_ID) {
+        TemporaryPreviewModelScreen(onBack)
+        return
+    }
     val config by providerRepository.config.collectAsState()
     val group = config.modelGroups.find { it.id == groupId }
     var showDeleteDialog by remember { mutableStateOf(false) }

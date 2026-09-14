@@ -18,12 +18,18 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
         val turn = rows.subList(start, end)
         val folded = turn.filter { row -> when (row) {
             is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
-            is FlatChatItem.AssistantText -> row.block.executionText
+            is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
             is FlatChatItem.AssistantMarkdownBlock -> row.executionText
-            is FlatChatItem.AssistantThinking -> true
+            is FlatChatItem.AssistantThinking -> row.block.presentationChannel() == NovexPresentationChannel.THINKING
             else -> false
         } }
-        if (folded.isEmpty()) output += turn
+        val hasTool = folded.any { it is FlatChatItem.AssistantToolUse }
+        val hasProcessText = folded.any {
+            it is FlatChatItem.AssistantText || it is FlatChatItem.AssistantMarkdownBlock
+        }
+        // Thinking on its own already has a dedicated collapsed renderer.
+        // Do not replace it with an empty “0 项” work record.
+        if (folded.isEmpty() || (!hasTool && !hasProcessText)) output += turn
         else {
             val keys = folded.map { it.key }.toSet()
             val first = folded.first()
@@ -51,8 +57,10 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
 
 // Interactive outputs remain directly usable. Every other tool state belongs to the process area.
 private fun AssistantBlock.canFoldExecution(): Boolean =
-    toolName !in setOf("present_choices", "render_panel", "panel", "present_system_panel", "generate_image") ||
-        toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT)
+    // Interactive results stay on the main transcript so a failed choice,
+    // panel, or image action remains visible and actionable.  Non-interactive
+    // tool I/O belongs to the process disclosure regardless of final status.
+    toolName !in setOf("present_choices", "render_panel", "panel", "present_system_panel", "generate_image")
 
 internal fun FlatChatItem.AssistantProcess.statusLabel(): String {
     val states = tools.map { it.block.toolStatus }
@@ -64,4 +72,3 @@ internal fun FlatChatItem.AssistantProcess.statusLabel(): String {
         else -> "查看记录"
     }
 }
-

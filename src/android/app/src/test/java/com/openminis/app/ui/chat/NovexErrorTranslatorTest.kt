@@ -4,6 +4,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NovexErrorTranslatorTest {
+    @org.junit.Test fun localCapacityFailureDoesNotBecomeNetworkTroubleshooting() {
+        val result=novexErrorMessage("本轮设定尚未准备完成，未发送模型请求：本轮剩余上下文不足以携带已采用或管理的卡片资料")
+        org.junit.Assert.assertTrue(result.contains("调高对话容量"))
+        org.junit.Assert.assertFalse(result.contains("网络"))
+        org.junit.Assert.assertFalse(result.contains("请压缩"))
+    }
+    @org.junit.Test fun contextTokenNumbersCannotBeMistakenForHttpPermissionCodes() {
+        val result=novexErrorMessage("Provider error: HTTP 400: maximum context length is 1048576 tokens; requested 403 tokens")
+        org.junit.Assert.assertTrue(result.contains("上下文长度"))
+        org.junit.Assert.assertFalse(result.contains("密钥没有访问"))
+    }
+
     @Test
     fun `translated upstream error retains status and response detail`() {
         val translated = novexErrorMessage("HTTP 503: upstream overloaded; request_id=req-42")

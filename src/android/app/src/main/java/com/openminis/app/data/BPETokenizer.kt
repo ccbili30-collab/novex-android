@@ -5,23 +5,9 @@ import android.graphics.BitmapFactory
 import kotlin.math.ceil
 import kotlin.math.max
 
-/**
- * Approximate BPE token counter. Mirrors iOS `BPETokenizer` (cl100k_base)
- * but without the full vocabulary — we ship a lightweight heuristic by
- * default so the app size doesn't balloon by ~2 MB before a caller actually
- * needs tokenization. Drop in a real `cl100k_base.tiktoken` asset via
- * [loadVocabularyFromAssets] when a consumer needs higher fidelity.
- *
- * The heuristic: `max(1, codepointCount / 3)` for text. That's the same
- * floor iOS falls back to when vocab fails to load, and it's within ±15%
- * of real cl100k_base counts for English / mixed CJK text.
- *
- * Image tokens: iOS uses `ceil(w/32) * ceil(h/32)` with a 2048px long-edge
- * cap and a floor of 85 tokens. We match that exactly so the context bar
- * stays visually identical across platforms.
- *
- * This class is thread-safe once [loadVocabularyFromAssets] finishes (or if
- * the heuristic path is used). Vocabulary loading is one-shot via [@Volatile].
+/** Local, deliberately conservative estimate; never a provider tokenizer or measured usage.
+ * Text runs and Unicode bytes are counted separately so Chinese cards cannot be
+ * treated as one token per three characters. Provider usage replaces estimates.
  */
 object BPETokenizer {
     const val TOKENS_PER_MESSAGE = 3
@@ -97,13 +83,22 @@ object BPETokenizer {
     }
 
     private fun heuristicTokenCount(text: String): Int {
-        var cp = 0
+        var tokens = 0L
+        var asciiRun = 0
+        fun flush() { tokens += (asciiRun.toLong() + 2) / 3; asciiRun = 0 }
         var i = 0
         while (i < text.length) {
-            cp++
-            i += if (text[i].isHighSurrogate() && i + 1 < text.length) 2 else 1
+            val cp = text.codePointAt(i)
+            if (cp in 48..57 || cp in 65..90 || cp in 97..122) asciiRun++
+            else {
+                flush()
+                // Separators, CJK, emoji and arbitrary external text are not English prose.
+                tokens += when { cp < 128 -> 1; cp < 2048 -> 1; else -> 2 }
+            }
+            i += Character.charCount(cp)
         }
-        return max(1, cp / 3)
+        flush()
+        return tokens.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     /**

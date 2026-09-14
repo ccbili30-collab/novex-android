@@ -75,7 +75,7 @@ class NovexGameSnapshotAssembler(private val workspace: NovexWorkspace, private 
         val playerReference = workspace.referencesFrom(root.subject).singleOrNull {
             it.sourceModuleId == null && it.purpose == NovexReferencePurpose.PLAYER_IDENTITY
         }
-        val referencedPlayers = playerReference?.let { players.read(it.target).also { identities ->
+        val referencedPlayers = playerReference?.let { players.readReference(it.target).also { identities ->
             require(identities.isNotEmpty()) { "玩家身份引用没有可采用的正文，请填写身份模块后启动" }
         } }.orEmpty()
         val media = NovexSnapshotMediaCapture(workspace, mediaStore)

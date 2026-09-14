@@ -178,7 +178,7 @@ object ModelsDevApi {
 
     private fun applyDevData(model: LLMModel, devModel: ModelDevEntry): LLMModel {
         return model.copy(
-            contextWindow = devModel.contextWindow ?: model.contextWindow,
+            contextWindow = model.contextWindow ?: devModel.contextWindow,
             maxOutputTokens = devModel.maxOutputTokens ?: model.maxOutputTokens,
             supportsReasoning = devModel.reasoning ?: model.supportsReasoning,
             interleavedReasoningField = devModel.interleavedField ?: model.interleavedReasoningField,

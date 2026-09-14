@@ -6,9 +6,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.openminis.app.data.db.NovexCardTextReader
+import com.openminis.app.data.db.NovexCardTextField
+import com.openminis.app.data.db.readCardText
 
 @Dao
-interface CharacterCatalogDao {
+interface CharacterCatalogDao : NovexCardTextReader {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertWorld(world: WorldEntity)
 
@@ -99,11 +102,17 @@ interface CharacterCatalogDao {
         versions.forEach { insertVersion(it) }
     }
 
-    @Query("SELECT * FROM worlds WHERE id = :id")
-    suspend fun world(id: String): WorldEntity?
+    @Query("SELECT id, name, '' AS overview, '' AS tags_json, NULL AS legacy_snapshot_json, created_at, updated_at FROM worlds WHERE id = :id")
+    suspend fun worldRecord(id: String): WorldEntity?
 
-    @Query("SELECT * FROM worlds ORDER BY updated_at DESC, id ASC")
-    suspend fun listWorlds(): List<WorldEntity>
+    @Transaction
+    suspend fun world(id: String): WorldEntity? = worldRecord(id)?.let { hydrateWorld(it) }
+
+    @Query("SELECT id, name, '' AS overview, '' AS tags_json, NULL AS legacy_snapshot_json, created_at, updated_at FROM worlds ORDER BY updated_at DESC, id ASC")
+    suspend fun listWorldsRecord(): List<WorldEntity>
+
+    @Transaction
+    suspend fun listWorlds(): List<WorldEntity> = listWorldsRecord().map { hydrateWorld(it) }
 
     @Query("SELECT * FROM characters WHERE id = :id")
     suspend fun character(id: String): CharacterEntity?
@@ -111,11 +120,17 @@ interface CharacterCatalogDao {
     @Query("SELECT * FROM characters ORDER BY updated_at DESC, id ASC")
     suspend fun listCharacters(): List<CharacterEntity>
 
-    @Query("SELECT * FROM character_versions WHERE id = :id")
-    suspend fun version(id: String): CharacterVersionEntity?
+    @Query("SELECT id, character_id, kind, label, '' AS profile_json, position, created_at, updated_at FROM character_versions WHERE id = :id")
+    suspend fun versionRecord(id: String): CharacterVersionEntity?
 
-    @Query("SELECT * FROM character_versions ORDER BY updated_at DESC, id ASC")
-    suspend fun listVersions(): List<CharacterVersionEntity>
+    @Transaction
+    suspend fun version(id: String): CharacterVersionEntity? = versionRecord(id)?.let { hydrateVersion(it) }
+
+    @Query("SELECT id, character_id, kind, label, '' AS profile_json, position, created_at, updated_at FROM character_versions ORDER BY updated_at DESC, id ASC")
+    suspend fun listVersionsRecord(): List<CharacterVersionEntity>
+
+    @Transaction
+    suspend fun listVersions(): List<CharacterVersionEntity> = listVersionsRecord().map { hydrateVersion(it) }
 
     @Update
     suspend fun updateWorld(world: WorldEntity)
@@ -127,31 +142,40 @@ interface CharacterCatalogDao {
     suspend fun updateVersion(version: CharacterVersionEntity)
 
     @Query(
-        "SELECT * FROM character_versions WHERE character_id = :characterId " +
+        "SELECT id, character_id, kind, label, '' AS profile_json, position, created_at, updated_at FROM character_versions WHERE character_id = :characterId " +
             "ORDER BY position ASC, created_at ASC, id ASC",
     )
-    suspend fun versionsForCharacter(characterId: String): List<CharacterVersionEntity>
+    suspend fun versionsForCharacterRecord(characterId: String): List<CharacterVersionEntity>
+
+    @Transaction
+    suspend fun versionsForCharacter(characterId: String): List<CharacterVersionEntity> = versionsForCharacterRecord(characterId).map { hydrateVersion(it) }
 
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM character_versions WHERE character_id = :characterId")
     suspend fun nextVersionPosition(characterId: String): Int
 
     @Query(
-        "SELECT versions.* FROM character_versions AS versions " +
+        "SELECT versions.id, versions.character_id, versions.kind, versions.label, '' AS profile_json, versions.position, versions.created_at, versions.updated_at FROM character_versions AS versions " +
             "INNER JOIN world_character_versions AS memberships " +
             "ON memberships.character_version_id = versions.id " +
             "WHERE memberships.world_id = :worldId " +
             "ORDER BY memberships.position ASC, memberships.created_at ASC, versions.id ASC",
     )
-    suspend fun versionsForWorld(worldId: String): List<CharacterVersionEntity>
+    suspend fun versionsForWorldRecord(worldId: String): List<CharacterVersionEntity>
+
+    @Transaction
+    suspend fun versionsForWorld(worldId: String): List<CharacterVersionEntity> = versionsForWorldRecord(worldId).map { hydrateVersion(it) }
 
     @Query(
-        "SELECT worlds.* FROM worlds " +
+        "SELECT worlds.id, worlds.name, '' AS overview, '' AS tags_json, NULL AS legacy_snapshot_json, worlds.created_at, worlds.updated_at FROM worlds " +
             "INNER JOIN world_character_versions AS memberships " +
             "ON memberships.world_id = worlds.id " +
             "WHERE memberships.character_version_id = :versionId " +
             "ORDER BY memberships.created_at ASC, worlds.id ASC",
     )
-    suspend fun worldsForVersion(versionId: String): List<WorldEntity>
+    suspend fun worldsForVersionRecord(versionId: String): List<WorldEntity>
+
+    @Transaction
+    suspend fun worldsForVersion(versionId: String): List<WorldEntity> = worldsForVersionRecord(versionId).map { hydrateWorld(it) }
 
     @Query(
         "DELETE FROM world_character_versions " +
@@ -167,4 +191,13 @@ interface CharacterCatalogDao {
 
     @Query("DELETE FROM worlds WHERE id = :worldId")
     suspend fun deleteWorld(worldId: String)
+    private suspend fun hydrateWorld(row: WorldEntity) = row.copy(
+        overview = requireNotNull(readCardText(NovexCardTextField.WORLD_OVERVIEW, row.id)),
+        tagsJson = requireNotNull(readCardText(NovexCardTextField.WORLD_TAGS, row.id)),
+        legacySnapshotJson = readCardText(NovexCardTextField.WORLD_SOURCE, row.id),
+    )
+
+    private suspend fun hydrateVersion(row: CharacterVersionEntity) = row.copy(
+        profileJson = requireNotNull(readCardText(NovexCardTextField.ROLE_PROFILE, row.id)),
+    )
 }

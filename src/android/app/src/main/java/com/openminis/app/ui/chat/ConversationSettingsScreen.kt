@@ -108,6 +108,7 @@ fun ConversationSettingsScreen(
     skillRepository: SkillRepository? = null,
     mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     onBack: () -> Unit,
+    onCardSettings: () -> Unit = {},
 ) {
     var settingsPage by rememberSaveable(sessionId) { mutableStateOf("") }
     val context = LocalContext.current
@@ -260,17 +261,20 @@ fun ConversationSettingsScreen(
             NovexSummaryRow("对话设置未能恢复", "原数据已保留。当前只可阅读，暂不能修改设置；可从对话菜单导出记录进行检查。")
             return@NovexEditorScaffold
         }
+        val cardBinding=viewModel.integratedCardBinding()
+        if(settingsPage.isEmpty() && cardBinding==null)NovexSummaryRow("采用新版卡片", "历史设定仍保留，选择新版互动对象与管理范围",onClick=onCardSettings)
         if (settingsPage.isEmpty()) ConversationSettingsOverview(
-            answer = answerLabel,
+            answer = if(cardBinding?.primary!=null)"已采用卡片" else answerLabel,
+            integrated=cardBinding!=null,
             player = draft.configuration.playerIdentity?.label?.takeIf { it.isNotBlank() }
                 ?: draft.settings.playerDisplayName.ifBlank { "未设置" },
-            backgroundCount = draft.configuration.backgroundSettings.count { it.subject !in privateSubjects },
+            backgroundCount = cardBinding?.backgrounds?.size ?: draft.configuration.backgroundSettings.count { it.subject !in privateSubjects },
             game = draft.configuration.activeInteractiveFiction?.title ?: "未启动",
-            managedCount = (draft.configuration.managedSubjects.map { it.subject } + ownedOptions.map { it.address })
+            managedCount = cardBinding?.managed?.size ?: (draft.configuration.managedSubjects.map { it.subject } + ownedOptions.map { it.address })
                 .distinct().count { it in labels },
             permission = draft.configuration.executionMode.label,
             promptChanged = draft.settings.conversationPrompt.isNotBlank(),
-            onOpen = { settingsPage = it }, onPermission = { choosingExecutionMode = true },
+            onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
         )
         if (settingsPage == "workspace") {
             ConversationWorkspaceFiles(sessionId)

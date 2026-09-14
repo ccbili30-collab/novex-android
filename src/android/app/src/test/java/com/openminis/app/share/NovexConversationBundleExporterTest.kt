@@ -27,6 +27,35 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexConversationBundleExporterTest {
     @get:Rule val files = TemporaryFolder()
+    @Test(timeout = 60_000) fun `first turn failure exports request evidence without an assistant row`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            val repository = ChatRepository(database.chatDao())
+            val session = repository.createSession("display-model")
+            repository.appendMessage(session.id, "user", """[{"type":"text","value":"1"}]""", messageId = "first")
+            val root = File(context.filesDir, "novex/model-requests")
+            com.openminis.app.diagnostics.ModelRequestAudit(root, session.id, "first", JSONObject())
+                .event("http_error", JSONObject().put("status", 400).put("modelId", "actual-model"))
+            com.openminis.app.diagnostics.ModelRequestAudit(root, "unrelated", "other", JSONObject())
+                .event("http_error", JSONObject().put("message", "UNRELATED_MARKER"))
+            val workspace = NovexWorkspaceFactory.create(database, File(context.filesDir, "novex-media"))
+            val runtime = JSONObject().put("conversationId", session.id).put("configurationJson",
+                NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(session.id)))
+            val result = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
+            ZipFile(result.file).use { zip ->
+                fun text(name: String) = zip.getInputStream(zip.getEntry(name)).bufferedReader().readText()
+                val records = JSONObject(text("execution/model-requests/index.json")).getJSONArray("records")
+                assertEquals(1, records.length())
+                val record = JSONObject(text(records.getString(0)))
+                assertEquals("first", record.getString("requestMessageId"))
+                assertTrue(record.toString().contains("actual-model"))
+                assertFalse(record.toString().contains("UNRELATED_MARKER"))
+                assertEquals(1, text("database/messages.jsonl").lineSequence().count { it.isNotBlank() })
+            }
+        } finally { database.close() }
+    }
+
     @Test(timeout = 60_000) fun `story image versions from both reply branches remain in the export`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
@@ -109,8 +138,8 @@ class NovexConversationBundleExporterTest {
             val runtime = JSONObject().put("conversationId", session.id).put("configurationJson", configuration).put("modelId", "model-id")
             val result = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
             assertEquals(3, result.messageCount)
-            assertEquals(1, result.missing.size)
-            assertTrue(result.missing.single().contains("未找到配套装配记录"))
+            assertEquals(2, result.missing.size)
+            assertTrue(result.missing.any { it.contains("未找到配套装配记录") })
             ZipFile(result.file).use { zip ->
                 fun text(name: String) = zip.getInputStream(zip.getEntry(name)).bufferedReader().readText()
                 assertEquals(journal.exportRecords(session.id).getValue(operation.id), text("execution/operations/${operation.id}.json"))
@@ -160,7 +189,7 @@ class NovexConversationBundleExporterTest {
             val workspace = NovexWorkspaceFactory.create(database, File(context.filesDir, "novex-media"))
             val runtime = JSONObject().put("conversationId", session.id).put("configurationJson", NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(session.id)))
             val result = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
-            assertEquals(2, result.missing.size)
+            assertEquals(3, result.missing.size)
             ZipFile(result.file).use { zip ->
                 val names = zip.entries().asSequence().map { it.name }.toList()
                 assertTrue(names.none { it.contains("..") || it.startsWith("/") })

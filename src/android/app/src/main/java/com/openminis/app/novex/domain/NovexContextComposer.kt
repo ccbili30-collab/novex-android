@@ -12,6 +12,8 @@ data class NovexContextCandidate(
     val alwaysInclude: Boolean = false,
     val position: Int = 0,
     val worldbookConditions: List<String> = emptyList(),
+    /** True when this candidate is only an excerpt and can be continued by a tool. */
+    val partial: Boolean = false,
 ) {
     init {
         require(sourceId.isNotBlank()) { "上下文候选来源编号不能为空" }
@@ -55,6 +57,7 @@ data class NovexContextComposition(
                 sourceId = fragment.sourceId,
                 label = fragment.label,
                 tokenCount = fragment.tokenCount,
+                partial = fragment.partial,
             )
         },
         omittedSources = omissions,
@@ -147,7 +150,7 @@ object NovexContextComposer {
 
             val fullTokens = estimateTokens(content).coerceAtLeast(0)
             if (fullTokens <= remaining) {
-                fragments += candidate.toFragment(content, fullTokens, partial = false)
+                fragments += candidate.toFragment(content, fullTokens, partial = candidate.partial)
                 remaining -= fullTokens
                 return@forEach
             }

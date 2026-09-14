@@ -46,6 +46,7 @@ for expected in \
   '- next' \
   'mode:' \
   'build_preview:' \
+  'include_free_model:' \
   'permissions:' \
   'contents: read' \
   'cancel-in-progress: true' \
@@ -99,8 +100,9 @@ if [[ "$package_step" != *"github.event_name == 'workflow_dispatch'"* ]] || \
   exit 1
 fi
 
-if [[ "$source" != *'GITHUB_REF" != "refs/heads/next"'* ]]; then
-  echo "daily preview artifacts must be restricted to next" >&2
+if [[ "$source" != *'NOVEX_TEMP_DEEPSEEK_KEY'* ]] || \
+   [[ "$source" != *'inputs.include_free_model'* ]]; then
+  echo "private preview packaging must require an explicit opt-in and repository secret" >&2
   exit 1
 fi
 
