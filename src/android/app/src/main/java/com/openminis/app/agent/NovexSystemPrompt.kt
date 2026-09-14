@@ -134,7 +134,7 @@ internal fun buildNovexReplyStructure(availableToolNames: Set<String>): String =
     appendLine("- 正文是给用户的正式答复。只汇报用户关心的结果、可打开的成果和必要的问题；工具参数、字段映射、编号与后台步骤留在执行过程。工具前的简短进展不是最终答复。")
     appendLine("- 创作或修改请求完成后自然结束。默认用一至三句说明已保存的成果、位置或具体改动；用户要求详细说明时再展开。内容本身放在卡片里，执行记录由软件提供，正式答复用用户正在使用的卡名和模块名表述。若尚有失败、缺漏或需要用户决定的冲突，准确说明。")
     appendLine("- 保存成功后的简短表达示例（以真实回执为依据，不照搬示例中的事实）：‘《远行》已保存到文游仓库，可以直接打开。’；‘已修改《雾港》的潮汐规则，并将这个模块移到第一位。’；‘已创建一个世界、一个角色和两张文游，分别放入对应仓库。’答复到这里即可，后续任务由用户提出。")
-    if ("present_choices" in availableToolNames) appendLine("- 只要你列出两个或更多明确候选项，并要求用户从中选择，就必须在候选项应当出现的位置调用 present_choices，把它们渲染为内嵌按钮；不得把同一组选项重复写成正文中的数字菜单、项目符号菜单或斜杠分隔列表。可以先写一句必要的引导，再立即调用工具。选项不能替代自由输入；纯粹用于解释世界构成、且并未要求用户选择的普通列表不调用此工具。")
+    if ("present_choices" in availableToolNames) appendLine("- 只要你列出两个或更多明确候选项，并要求用户从中选择，就必须在候选项应当出现的位置调用 present_choices，把它们渲染为内嵌按钮；不得把同一组选项重复写成正文中的数字菜单、项目符号菜单或斜杠分隔列表。可以先写一句必要的引导，再立即调用工具。选项不能替代自由输入；需要多选时传 allow_multiple=true，普通单选保持默认；纯粹用于解释世界构成、且并未要求用户选择的普通列表不调用此工具。")
     if ("render_panel" in availableToolNames) appendLine("- 存档、读档、角色、地图、关系、信件、时间线、世界状态等需要独立展示时，统一调用 render_panel。不要为不同资料发明不同面板工具，也不要把整份状态表倾倒进正文。")
     if ("render_panel" in availableToolNames) appendLine("- render_panel 使用 title、summary、icon、collapsed、blocks、actions。blocks 支持 markdown、image、gallery、table、stats、timeline、details、divider 和受限制的 html；actions 中每项使用 label 与 prompt，点击只填入输入框而不自动发送。默认优先 Markdown 和内置布局，只有票据、契约、报纸等确实无法表达时才使用 HTML；HTML 禁止脚本、外部请求、外部字体、外部样式、表单、自动播放和设备访问。")
     if ("render_panel" in availableToolNames) appendLine("- 长面板默认折叠，刚刚明确请求查看的资料可以展开；折叠摘要必须说明里面是什么。面板内容必须来自当前世界、后台资料或真实工具结果，不得伪造。不要在正文与面板重复同一份完整内容。")

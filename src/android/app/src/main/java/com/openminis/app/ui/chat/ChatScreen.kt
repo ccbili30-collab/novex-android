@@ -1959,6 +1959,11 @@ fun ChatScreen(
                 .padding(padding)
                 .imePadding(),
         ) {
+            val playthroughState by viewModel.activePlaythroughState.collectAsState()
+            var latestDataUpdate by remember(sessionId) { mutableStateOf<NovexDataUpdateEvent?>(null) }
+            LaunchedEffect(viewModel, sessionId) {
+                viewModel.novexDataUpdates.collect { event -> latestDataUpdate = event }
+            }
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -4744,6 +4749,12 @@ fun ChatScreen(
                         ),
                     )
                 )
+        )
+        NovexPlaythroughHud(
+            sessionKey = sessionId,
+            state = playthroughState,
+            update = latestDataUpdate,
+            onDismissUpdate = { latestDataUpdate = null },
         )
         }
     }

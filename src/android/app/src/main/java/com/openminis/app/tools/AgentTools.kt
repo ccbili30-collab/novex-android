@@ -71,11 +71,14 @@ object AgentTools {
             "choices" to AgentToolParam(
                 "string",
                 "A JSON array containing 2 to 12 complete, concise button labels, for example " +
-                    "[\"查看信封\",\"找乳母谈话\",\"提前进城\"].",
+                    "[\"查看信封\",\"找乳母谈话\",\"提前进城\"]. Items may also be objects " +
+                    "like {\"label\":\"查看信封\",\"value\":\"打开信封\"} when the visible label " +
+                    "and submitted text differ.",
             ),
+            "allow_multiple" to AgentToolParam("boolean", "Whether the user may select more than one option before confirming."),
         ),
         required = listOf("choices"),
-        propertyOrdering = listOf("title", "choices"),
+        propertyOrdering = listOf("title", "choices", "allow_multiple"),
     )
 
     private fun renderPanelDefinition(): AgentToolDefinition = AgentToolDefinition(

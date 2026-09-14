@@ -24,7 +24,6 @@ internal class AssistantStreamTurn(
     private var lastFlushedLength = 0
     private var lastFileMs = 0L
     private var lastOtherMs = 0L
-    private var sawTool = false
     private var reasoningBlob: String? = null
     private val starts = mutableMapOf<String, Int>()
     private val completes = mutableMapOf<String, Int>()
@@ -56,7 +55,7 @@ internal class AssistantStreamTurn(
         val failed = snapshot()
         blocks.clear(); text.clear(); thinking.clear(); textBlock = null; textIndex = -1
         pendingText = false; lastTextMs = 0; lastFlushedLength = 0; lastFileMs = 0; lastOtherMs = 0
-        sawTool = false; reasoningBlob = null; usage = null; finishReason = null
+        reasoningBlob = null; usage = null; finishReason = null
         starts.clear(); completes.clear(); inFlight.clear(); calls.clear(); signatures.clear(); inputHistory.clear()
         return failed
     }
@@ -77,12 +76,13 @@ internal class AssistantStreamTurn(
                 } else {
                     materializeText()
                     textBlock = StringBuilder(chunk.text)
-                    val block = AssistantBlock("text_${turn}_${blocks.size}", "text", chunk.text,
-                        // Text in an intermediate provider turn that already
-                        // emitted a tool call is process narration. The host
-                        // can still promote a terminal presentation turn back
-                        // to formal text once it knows the tool semantics.
-                        executionText = sawTool)
+                    // Model text is formal content by default.  A provider
+                    // response can contain ordinary narration before or after
+                    // a tool call; classifying the whole response as
+                    // execution text made the transcript fold real answers.
+                    // Only host-authored process blocks may opt into
+                    // `executionText` explicitly.
+                    val block = AssistantBlock("text_${turn}_${blocks.size}", "text", chunk.text)
                     // Chat Completions content is one string, including content arriving after tool_calls.
                     // A post-tool paragraph belongs after the most recent tool,
                     // never before the first tool in the response.
@@ -150,6 +150,12 @@ internal class AssistantStreamTurn(
                 // or completing a call without a start chunk. Permission is checked by the host gate.
                 markExecution()
                 materializeText()
+                // Some providers omit ToolUseStart and send only the completed
+                // call. Treat that completion as a hard boundary too, so any
+                // following answer text cannot be appended to the pre-tool
+                // paragraph in monolithic responses.
+                textBlock = null
+                textIndex = -1
                 val id = nextId(chunk.id, completes)
                 calls += Triple(id, chunk.name, chunk.args)
                 chunk.thoughtSignature?.let { signatures[id] = it }
@@ -174,17 +180,9 @@ internal class AssistantStreamTurn(
             blocks[textIndex] = blocks[textIndex].copy(content = buffer.toString())
     }
     private fun markExecution() {
-        sawTool = true
-        // A tool boundary gives us an explicit protocol event. Reclassify the
-        // text in this provider turn from provisional answer text to process
-        // narration without guessing from words such as “正在读取”. Terminal
-        // UI turns are promoted back to formal text by ChatViewModel.
-        blocks.indices.forEach { index ->
-            val block = blocks[index]
-            if (block.isText && !block.executionText) {
-                blocks[index] = block.copy(executionText = true)
-            }
-        }
+        // A tool boundary is represented by the tool block itself.  Do not
+        // relabel already streamed model text: it may be the user's actual
+        // answer and must remain visible outside the folded process row.
     }
     private fun finishThinking() {
         val index = blocks.indexOfFirst { it.id == "thinking_$turn" && it.kind == "thinking" }

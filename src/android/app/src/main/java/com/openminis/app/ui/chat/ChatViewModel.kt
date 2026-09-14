@@ -762,6 +762,9 @@ class ChatViewModel(
     val novexControls: StateFlow<List<ConversationControlDefinition>> = _novexControls.asStateFlow()
     private val _activePlaythroughState = MutableStateFlow<PlaythroughState?>(null)
     val activePlaythroughState: StateFlow<PlaythroughState?> = _activePlaythroughState.asStateFlow()
+    private val _novexDataUpdates = MutableSharedFlow<NovexDataUpdateEvent>(extraBufferCapacity = 8)
+    /** Software-generated state changes; model prose never writes this stream. */
+    val novexDataUpdates: SharedFlow<NovexDataUpdateEvent> = _novexDataUpdates.asSharedFlow()
     private val _novexControlView = MutableStateFlow<ConversationControlOutcome.View?>(null)
     val novexControlView: StateFlow<ConversationControlOutcome.View?> = _novexControlView.asStateFlow()
 
@@ -9362,11 +9365,11 @@ class ChatViewModel(
 
     private fun executePresentChoicesTool(argsJson: String): ToolExecutionResult {
         return runCatching {
-            val args = JSONObject(argsJson)
-            val choices = org.json.JSONArray(args.getString("choices"))
-            val normalized = (0 until choices.length())
-                .mapNotNull { choices.optString(it).trim().takeIf(String::isNotEmpty) }
-                .take(6)
+            // Providers disagree on whether `choices` is an array or a
+            // JSON-encoded string.  Validate through the same parser used by
+            // the renderer so a valid native array cannot fail execution and
+            // leave the user without buttons.
+            val (_, normalized) = parseNovexChoiceOptions(argsJson)
             require(normalized.size >= 2) { "At least two choices are required" }
             ToolExecutionResult(
                 output = "已显示 ${normalized.size} 个可点击选项；用户也可以自由输入。",
@@ -9603,10 +9606,16 @@ class ChatViewModel(
         argsJson: String,
         turnMessageId: String,
     ): ToolExecutionResult = runCatching {
-            novexSettingsStore.update { configuration ->
+            val before = _activePlaythroughState.value
+            val updated = novexSettingsStore.update { configuration ->
                 require(configuration.activeInteractiveFiction != null || integratedCards.binding(activeSessionId)!=null) { "请先选择互动卡片" }
                 PlaythroughStateRegistration.applyUpdates(configuration = configuration, branchId = turnMessageId,
                     updatesJson = JSONObject(argsJson).jsonArrayText("updates"))
+            }
+            val after = InteractiveFictionRuntime.resolveState(updated, activeBranchPathIds + turnMessageId)
+            val changes = diffNovexPlaythroughState(before, after)
+            if (changes.isNotEmpty()) {
+                _novexDataUpdates.tryEmit(NovexDataUpdateEvent(turnMessageId, changes))
             }
             ToolExecutionResult(
                 output = "已更新当前消息分支的本局状态；切换分支时会恢复对应状态。",
