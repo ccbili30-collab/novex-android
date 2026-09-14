@@ -45,6 +45,7 @@ import androidx.room.withTransaction
 import com.openminis.app.R
 import com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS
 import com.openminis.app.data.MAX_IMAGE_STYLE_PROMPT_CHARS
+import com.openminis.app.data.MAX_PER_TURN_PROMPT_CHARS
 import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
@@ -387,6 +388,16 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
+            NovexDivider(Modifier.padding(horizontal = 16.dp))
+            NovexTextField(
+                label = "每轮注入",
+                value = draft.settings.perTurnPrompt,
+                onValueChange = { value ->
+                    draft = draft.updateSettings { it.copy(perTurnPrompt = value.take(MAX_PER_TURN_PROMPT_CHARS)) }
+                },
+                minLines = 2,
+                placeholder = "例：每一轮都要向我提供 3~4 个选项",
+            )
         }
 
         if (settingsPage == "game") NovexEditorSection(

@@ -3430,6 +3430,9 @@ class ChatViewModel(
     val conversationPrompt: StateFlow<String?> = _conversationPrompt.asStateFlow()
     private val _imageStylePrompt = MutableStateFlow("")
     val imageStylePrompt: StateFlow<String> = _imageStylePrompt.asStateFlow()
+    /** Standing instruction appended to every request's latest user turn; blank = off. */
+    private val _perTurnPrompt = MutableStateFlow("")
+    val perTurnPrompt: StateFlow<String> = _perTurnPrompt.asStateFlow()
     /** Explicit conversation override. null means inherit character/world background. */
     private val _conversationBackgroundPathOverride = MutableStateFlow<String?>(null)
 
@@ -3679,6 +3682,7 @@ class ChatViewModel(
     private fun installSavedNovexSettings(saved: com.openminis.app.data.ConversationSettingsSnapshot) {
         _conversationPrompt.value = saved.conversationPrompt
         _imageStylePrompt.value = saved.imageStylePrompt
+        _perTurnPrompt.value = saved.perTurnPrompt
         _novexConfigurationJson.value = saved.novexConfigurationJson
         refreshNovexRuntimeProjection()
         _immersiveProfile.value = _immersiveProfile.value.copy(
@@ -3767,6 +3771,7 @@ class ChatViewModel(
         return com.openminis.app.data.ConversationSettingsSnapshot(
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value,
+            perTurnPrompt = _perTurnPrompt.value,
             backgroundPath = _conversationBackgroundPathOverride.value,
             rolePresentationEnabled = profile.rolePresentationEnabled || profile.character != null,
             assistantDisplayName = profile.assistantDisplayName.orEmpty(),
@@ -3796,6 +3801,7 @@ class ChatViewModel(
         )
         _conversationPrompt.value = value.conversationPrompt
         _imageStylePrompt.value = value.imageStylePrompt
+        _perTurnPrompt.value = value.perTurnPrompt
         _conversationBackgroundPathOverride.value = value.backgroundPath
         _immersiveProfile.value = _immersiveProfile.value.copy(
             backgroundPath = value.backgroundPath ?: sourceConversationBackgroundPath(),
@@ -4439,6 +4445,7 @@ class ChatViewModel(
             _conversationBackgroundPathOverride.value = session.chatBackgroundPath
             _conversationPrompt.value = session.conversationPrompt
             _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
+            _perTurnPrompt.value = session.perTurnPrompt.orEmpty()
             _novexConfigurationJson.value = session.novexConfigurationJson?.takeIf(String::isNotBlank)
                 ?: com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
                     legacyNovexConfiguration(
@@ -7828,7 +7835,20 @@ class ChatViewModel(
                     val requestHistory = effectiveAgentHistory().let { history ->
                         if (requestToolsEnabled) history else pureChatHistory(history)
                     }
-                    val boundedHistory = applyRequestImageBudget(requestHistory)
+                    // Per-turn injection: applied to the request copy only (never persisted,
+                    // never rendered) and BEFORE the estimate so it counts toward the
+                    // context budget. Rebuilt from the blank-checking helper on every
+                    // attempt, so tool-loop iterations each see exactly one copy at the
+                    // latest user turn — no accumulation across the loop.
+                    val perTurnInjection = com.openminis.app.data.perTurnInjectionContent(_perTurnPrompt.value)
+                    if (perTurnInjection != null) {
+                        kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
+                            "per_turn_injection", JSONObject().put("chars", perTurnInjection.length),
+                        )
+                    }
+                    val boundedHistory = com.openminis.app.data.appendPerTurnInjection(
+                        applyRequestImageBudget(requestHistory), _perTurnPrompt.value,
+                    )
                     val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
                     _contextEstimated.value = true
                     _lastTurnContextTokens.value = estimate
@@ -12654,6 +12674,7 @@ class ChatViewModel(
                     .put("modelCapabilities", currentModel?.let { JSONObject(kotlinx.serialization.json.Json.encodeToString(LLMModel.serializer(), it)) })
                     .put("configurationJson", settings.novexConfigurationJson)
                     .put("conversationPrompt", settings.conversationPrompt).put("imageStylePrompt", settings.imageStylePrompt)
+                    .put("perTurnPrompt", settings.perTurnPrompt)
                     .put("activeBranchPathIds", JSONArray(activeBranchPathIds))
                     .put("modelId", currentModel?.id).put("modelName", currentModel?.displayName)
                     .put("contextWindow", currentModel?.contextWindowTokens).put("maxOutputTokens", currentModel?.maxOutputTokens)

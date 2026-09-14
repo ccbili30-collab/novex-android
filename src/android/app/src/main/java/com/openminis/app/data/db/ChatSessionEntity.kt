@@ -68,6 +68,8 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "conversation_prompt") val conversationPrompt: String? = null,
     /** Style text appended directly to every generate_image request in this conversation. */
     @ColumnInfo(name = "image_style_prompt") val imageStylePrompt: String? = null,
+    /** Standing instruction appended to every request's latest user turn. Blank/NULL = off. */
+    @ColumnInfo(name = "per_turn_prompt") val perTurnPrompt: String? = null,
     /** Presentation is independent from character prompt attachment. Existing character chats migrate to 1. */
     @ColumnInfo(name = "role_presentation_enabled") val rolePresentationEnabled: Int = 0,
     @ColumnInfo(name = "assistant_display_name") val assistantDisplayName: String? = null,
