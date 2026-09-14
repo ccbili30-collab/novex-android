@@ -30,14 +30,12 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * 本局状态挂耳：可自由拖动的悬浮标签，松手后停在原地自由悬浮；只有贴近某条边缘
- * （约 56dp 内）松手才吸附到该边。点开为悬浮面板（分区：本轮变更 / 当前数值，
- * 内容内部滚动）。
+ * 本局状态挂耳：可自由拖动的悬浮标签。拖动中是四角全圆的独立圆块；松手停在原地，
+ * 贴近某条边缘（约 56dp 内）松手才吸附为该边的挂耳造型。
  *
- * 拖动手势处理器里只能读 rememberSaveable 的状态（x/y 经代理实时读取）；
- * 组合期计算的局部 val（maxX 等）必须作为 pointerInput 的 key 传入，
- * 否则闭包捕获首次组合的旧值——横向拖动会被拉回初始边缘（beta.44 的缺陷）。
- * 状态载荷原样持久化，此层只做文本渲染；结构化字段与 HTML 血条是后续升级位。
+ * 性能约定：拖动路径上的位置更新只经过 offset 的布局期状态读取（x/y），
+ * 不触发重组；组合层只依赖 settledX/settledY（松手时写入一次）与 isDragging
+ * （起止各一次）。状态载荷原样持久化，此层只做文本渲染。
  */
 @Composable
 internal fun NovexPlaythroughHud(
@@ -48,9 +46,14 @@ internal fun NovexPlaythroughHud(
 ) {
     if (state == null) return
     var expanded by rememberSaveable(sessionKey) { mutableStateOf(false) }
-    // Free-floating position in px from the top-left. -1 means "unplaced": dock to the right edge.
+    // Live drag position (px, top-left). -1 means "unplaced": dock to the right edge.
     var x by rememberSaveable(sessionKey) { mutableFloatStateOf(-1f) }
     var y by rememberSaveable(sessionKey) { mutableFloatStateOf(120f) }
+    // Composition-facing anchor, written once on release — shapes and the panel
+    // position derive from these so pointer moves never recompose this scope.
+    var settledX by rememberSaveable(sessionKey) { mutableFloatStateOf(-1f) }
+    var settledY by rememberSaveable(sessionKey) { mutableFloatStateOf(120f) }
+    var isDragging by remember { mutableStateOf(false) }
     var earWidthPx by rememberSaveable(sessionKey) { mutableFloatStateOf(0f) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -58,21 +61,20 @@ internal fun NovexPlaythroughHud(
         // Leave room for the composer and navigation area.
         val maxY = with(density) { (maxHeight - 140.dp).toPx() }.coerceAtLeast(0f)
         val maxX = (screenWidthPx - earWidthPx).coerceAtLeast(0f)
-        val placementX = if (x < 0f) maxX else x.coerceIn(0f, maxX)
         val snapMarginPx = with(density) { 56.dp.toPx() }
-        val dockedTop = y <= snapMarginPx && placementX > snapMarginPx && maxX - placementX > snapMarginPx
-        val dockedLeft = !dockedTop && placementX <= snapMarginPx
-        val dockedRight = !dockedTop && !dockedLeft && maxX - placementX <= snapMarginPx
-        val freeFloating = !dockedTop && !dockedLeft && !dockedRight
+        val anchorX = if (settledX < 0f) maxX else settledX.coerceIn(0f, maxX)
+        val anchorY = settledY.coerceIn(0f, maxY)
+        val dockedTop = !isDragging && anchorY <= snapMarginPx && anchorX > snapMarginPx && maxX - anchorX > snapMarginPx
+        val dockedLeft = !isDragging && !dockedTop && anchorX <= snapMarginPx
+        val dockedRight = !isDragging && !dockedTop && !dockedLeft && maxX - anchorX <= snapMarginPx
         val preview = state.values.entries.firstNotNullOfOrNull { entry ->
             (entry.value as? PlaythroughValue.Number)?.let { entry.key to it.value }
         }
 
         if (!expanded) {
-            // Flush with the docked edge (only inner corners round); a free-floating
-            // chip keeps all corners round; docked-top rounds its bottom corners.
             val earShape = when {
-                freeFloating -> RoundedCornerShape(14.dp)
+                isDragging || (!dockedTop && !dockedLeft && !dockedRight) ->
+                    RoundedCornerShape(14.dp)
                 dockedTop -> RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
                 dockedLeft -> RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp)
                 else -> RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)
@@ -82,22 +84,26 @@ internal fun NovexPlaythroughHud(
                 tonalElevation = 6.dp,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset { IntOffset(placementX.roundToInt(), y.roundToInt().coerceIn(0, maxY.roundToInt())) }
-                    .shadow(4.dp, earShape)
+                    // Layout-phase reads: finger moves relayout only, no recomposition.
+                    .offset {
+                        val px = if (x < 0f) maxX else x.coerceIn(0f, maxX)
+                        IntOffset(px.roundToInt(), y.roundToInt().coerceIn(0, maxY.roundToInt()))
+                    }
+                    .then(if (isDragging) Modifier else Modifier.shadow(4.dp, earShape))
                     .onSizeChanged { measured ->
                         if (abs(measured.width.toFloat() - earWidthPx) > 1f) earWidthPx = measured.width.toFloat()
                     }
-                    // maxX / maxY are composition-time vals — pass them as keys so the
-                    // gesture handler restarts (with fresh clamps) whenever they change.
+                    // maxX / maxY are composition vals — keyed so the clamps stay fresh.
                     .pointerInput(maxX, maxY) {
                         detectDragGestures(
+                            onDragStart = { isDragging = true },
                             onDrag = { change, drag ->
                                 change.consume()
-                                // x / y are remembered state delegates — live reads.
                                 x = (x + drag.x).coerceIn(0f, maxX)
                                 y = (y + drag.y).coerceIn(0f, maxY)
                             },
                             onDragEnd = {
+                                isDragging = false
                                 val px = x.coerceIn(0f, maxX)
                                 when {
                                     y <= snapMarginPx && px > snapMarginPx && maxX - px > snapMarginPx -> y = 0f
@@ -105,6 +111,13 @@ internal fun NovexPlaythroughHud(
                                     maxX - px <= snapMarginPx -> x = maxX
                                     // else: keep the free-floating position
                                 }
+                                settledX = x
+                                settledY = y
+                            },
+                            onDragCancel = {
+                                isDragging = false
+                                settledX = x
+                                settledY = y
                             },
                         )
                     }
@@ -134,13 +147,12 @@ internal fun NovexPlaythroughHud(
                 }
             }
         } else {
-            val panelWidth = 280.dp
+            val panelWidth = 300.dp
             val panelWidthPx = with(density) { panelWidth.toPx() }
-            val panelX = placementX.coerceIn(0f, (screenWidthPx - panelWidthPx).coerceAtLeast(0f))
-            // Grow downward from the ear; never force a minimum that would push the
-            // panel over the composer — when little room remains the panel is short
-            // and scrolls internally instead of overlapping the input area.
-            val remainingPx = (with(density) { maxHeight.toPx() } - y - with(density) { 120.dp.toPx() })
+            val panelX = anchorX.coerceIn(0f, (screenWidthPx - panelWidthPx).coerceAtLeast(0f))
+            // Grow downward from the ear; when little room remains the panel is short
+            // and scrolls internally instead of overlapping the composer.
+            val remainingPx = (with(density) { maxHeight.toPx() } - anchorY - with(density) { 120.dp.toPx() })
                 .coerceAtLeast(with(density) { 96.dp.toPx() })
             val panelMaxHeight = (remainingPx / density.density).dp
             Surface(
@@ -148,7 +160,7 @@ internal fun NovexPlaythroughHud(
                 tonalElevation = 6.dp,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset { IntOffset(panelX.roundToInt(), y.roundToInt().coerceIn(0, maxY.roundToInt())) }
+                    .offset { IntOffset(panelX.roundToInt(), anchorY.roundToInt().coerceIn(0, maxY.roundToInt())) }
                     .shadow(4.dp, RoundedCornerShape(16.dp)),
             ) {
                 Column(Modifier.width(panelWidth)) {
@@ -170,13 +182,49 @@ internal fun NovexPlaythroughHud(
                             .verticalScroll(rememberScrollState())
                             .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                     ) {
-                        if (update != null && update.changes.isNotEmpty()) {
+                        // Importance order: scannable data first, then text states
+                        // (recently-changed first), change log last.
+                        val numeric = state.values.entries
+                            .filter { it.value is PlaythroughValue.Number || it.value is PlaythroughValue.Flag }
+                            .sortedBy { it.key }
+                        val changedKeys = update?.changes?.mapTo(hashSetOf()) { it.key }.orEmpty()
+                        val textEntries = state.values.entries
+                            .filter { it.value is PlaythroughValue.Text }
+                            .sortedWith(compareByDescending<Map.Entry<String, PlaythroughValue>> { it.key in changedKeys }.thenBy { it.key })
+
+                        if (numeric.isNotEmpty()) {
+                            HudSectionHeader("数值")
+                            numeric.forEach { (key, value) ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        key,
+                                        Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(value.displayValue(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                        textEntries.forEachIndexed { index, (key, value) ->
+                            if (numeric.isNotEmpty() || index > 0) Spacer(Modifier.height(14.dp))
+                            HudSectionHeader(key)
                             Text(
-                                "本轮变更",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                value.displayValue(),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 6.dp),
                             )
+                        }
+                        if (update != null && update.changes.isNotEmpty()) {
+                            if (numeric.isNotEmpty() || textEntries.isNotEmpty()) {
+                                Spacer(Modifier.height(14.dp))
+                                HorizontalDivider()
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            HudSectionHeader("本轮变更")
                             Column(
                                 Modifier
                                     .fillMaxWidth()
@@ -202,31 +250,37 @@ internal fun NovexPlaythroughHud(
                                 }
                                 TextButton(onClick = onDismissUpdate, modifier = Modifier.align(Alignment.End)) { Text("知道了") }
                             }
-                            HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 10.dp))
                         }
-                        Text(
-                            "当前数值",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        state.values.entries.sortedBy { it.key }.forEach { (key, value) ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(top = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    key,
-                                    Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(value.displayValue(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                            }
+                        if (numeric.isEmpty() && textEntries.isEmpty() && (update == null || update.changes.isEmpty())) {
+                            Text(
+                                "暂无状态",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HudSectionHeader(label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .padding(end = 6.dp)
+                .width(3.dp)
+                .height(12.dp)
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
