@@ -55,6 +55,8 @@ class ChatRepository(internal val dao: ChatDao) {
         novexConfigurationJson: String? = null,
         sideOfSession: String? = null,
         perTurnPrompt: String? = null,
+        runtimeDiceEnabled: Int = 0,
+        runtimeLedgerEnabled: Int = 0,
     ): ChatSessionEntity {
         val now = System.currentTimeMillis()
         val session = ChatSessionEntity(
@@ -81,6 +83,8 @@ class ChatRepository(internal val dao: ChatDao) {
             playerAvatarPath = playerAvatarPath,
             novexConfigurationJson = novexConfigurationJson,
             perTurnPrompt = perTurnPrompt,
+            runtimeDiceEnabled = runtimeDiceEnabled,
+            runtimeLedgerEnabled = runtimeLedgerEnabled,
             sideOfSession = sideOfSession,
         )
         dao.insertSession(session)
@@ -117,6 +121,8 @@ class ChatRepository(internal val dao: ChatDao) {
             conversationPrompt = parent.conversationPrompt,
             imageStylePrompt = parent.imageStylePrompt,
             perTurnPrompt = parent.perTurnPrompt,
+            runtimeDiceEnabled = parent.runtimeDiceEnabled,
+            runtimeLedgerEnabled = parent.runtimeLedgerEnabled,
             rolePresentationEnabled = parent.rolePresentationEnabled != 0,
             assistantDisplayName = parent.assistantDisplayName,
             assistantAvatarPath = parent.assistantAvatarPath,
@@ -224,6 +230,8 @@ class ChatRepository(internal val dao: ChatDao) {
             conversationPrompt = value.conversationPrompt,
             imageStylePrompt = value.imageStylePrompt.ifBlank { null },
             perTurnPrompt = value.perTurnPrompt.ifBlank { null },
+            runtimeDiceEnabled = if (value.diceInjectionEnabled) 1 else 0,
+            runtimeLedgerEnabled = if (value.ledgerInjectionEnabled) 1 else 0,
             chatBackgroundPath = value.backgroundPath,
             rolePresentationEnabled = if (value.rolePresentationEnabled) 1 else 0,
             assistantDisplayName = value.assistantDisplayName.ifBlank { null },

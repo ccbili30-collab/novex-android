@@ -70,6 +70,10 @@ data class ChatSessionEntity(
     @ColumnInfo(name = "image_style_prompt") val imageStylePrompt: String? = null,
     /** Standing instruction appended to every request's latest user turn. Blank/NULL = off. */
     @ColumnInfo(name = "per_turn_prompt") val perTurnPrompt: String? = null,
+    /** Wenyou runtime: 1 = append client-rolled d100 values to every request. */
+    @ColumnInfo(name = "runtime_dice_enabled") val runtimeDiceEnabled: Int = 0,
+    /** Wenyou runtime: 1 = echo the latest assistant <账本> block back as external state. */
+    @ColumnInfo(name = "runtime_ledger_enabled") val runtimeLedgerEnabled: Int = 0,
     /** Presentation is independent from character prompt attachment. Existing character chats migrate to 1. */
     @ColumnInfo(name = "role_presentation_enabled") val rolePresentationEnabled: Int = 0,
     @ColumnInfo(name = "assistant_display_name") val assistantDisplayName: String? = null,

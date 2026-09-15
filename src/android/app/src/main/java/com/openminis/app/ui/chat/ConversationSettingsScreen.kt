@@ -395,7 +395,7 @@ fun ConversationSettingsScreen(
 
         if (settingsPage == "perTurn") NovexEditorSection(
             header = "每轮注入",
-            footer = "每次发送消息，都会把这段话随最新一轮一起发给模型；对话界面不会显示它。留空则完全不生效。例：每一轮都要向我提供 3~4 个选项。",
+            footer = "每次发送消息，都会把这段话随最新一轮一起发给模型；对话界面不会显示它。留空则完全不生效。例：每一轮都要向我提供 3~4 个选项。下方的文游开关同样随最新一轮注入，适合文字游戏运行时。",
         ) {
             NovexTextField(
                 label = "注入内容",
@@ -406,6 +406,19 @@ fun ConversationSettingsScreen(
                 minLines = 4,
                 placeholder = "例：每一轮都要向我提供 3~4 个选项",
             )
+            NovexDivider(Modifier.padding(horizontal = 16.dp))
+            ConversationToggleRow(
+                "骰值注入 · 每轮附带 2 枚 1d100",
+                draft.settings.diceInjectionEnabled,
+            ) { value ->
+                draft = draft.updateSettings { it.copy(diceInjectionEnabled = value) }
+            }
+            ConversationToggleRow(
+                "账本回传 · 回传上轮〈账本〉与轮数",
+                draft.settings.ledgerInjectionEnabled,
+            ) { value ->
+                draft = draft.updateSettings { it.copy(ledgerInjectionEnabled = value) }
+            }
         }
 
         if (settingsPage == "game") NovexEditorSection(

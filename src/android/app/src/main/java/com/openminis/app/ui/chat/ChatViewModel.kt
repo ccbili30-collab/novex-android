@@ -3433,6 +3433,12 @@ class ChatViewModel(
     /** Standing instruction appended to every request's latest user turn; blank = off. */
     private val _perTurnPrompt = MutableStateFlow("")
     val perTurnPrompt: StateFlow<String> = _perTurnPrompt.asStateFlow()
+    private val _diceInjectionEnabled = MutableStateFlow(false)
+    val diceInjectionEnabled: StateFlow<Boolean> = _diceInjectionEnabled.asStateFlow()
+    private val _ledgerInjectionEnabled = MutableStateFlow(false)
+    val ledgerInjectionEnabled: StateFlow<Boolean> = _ledgerInjectionEnabled.asStateFlow()
+    /** Client-side randomness for wenyou dice injection; never seeded from model output. */
+    private val runtimeSecureRandom = java.security.SecureRandom()
     /** Explicit conversation override. null means inherit character/world background. */
     private val _conversationBackgroundPathOverride = MutableStateFlow<String?>(null)
 
@@ -3683,6 +3689,8 @@ class ChatViewModel(
         _conversationPrompt.value = saved.conversationPrompt
         _imageStylePrompt.value = saved.imageStylePrompt
         _perTurnPrompt.value = saved.perTurnPrompt
+        _diceInjectionEnabled.value = saved.diceInjectionEnabled
+        _ledgerInjectionEnabled.value = saved.ledgerInjectionEnabled
         _novexConfigurationJson.value = saved.novexConfigurationJson
         refreshNovexRuntimeProjection()
         _immersiveProfile.value = _immersiveProfile.value.copy(
@@ -3772,6 +3780,8 @@ class ChatViewModel(
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value,
             perTurnPrompt = _perTurnPrompt.value,
+            diceInjectionEnabled = _diceInjectionEnabled.value,
+            ledgerInjectionEnabled = _ledgerInjectionEnabled.value,
             backgroundPath = _conversationBackgroundPathOverride.value,
             rolePresentationEnabled = profile.rolePresentationEnabled || profile.character != null,
             assistantDisplayName = profile.assistantDisplayName.orEmpty(),
@@ -3802,6 +3812,8 @@ class ChatViewModel(
         _conversationPrompt.value = value.conversationPrompt
         _imageStylePrompt.value = value.imageStylePrompt
         _perTurnPrompt.value = value.perTurnPrompt
+        _diceInjectionEnabled.value = value.diceInjectionEnabled
+        _ledgerInjectionEnabled.value = value.ledgerInjectionEnabled
         _conversationBackgroundPathOverride.value = value.backgroundPath
         _immersiveProfile.value = _immersiveProfile.value.copy(
             backgroundPath = value.backgroundPath ?: sourceConversationBackgroundPath(),
@@ -4446,6 +4458,8 @@ class ChatViewModel(
             _conversationPrompt.value = session.conversationPrompt
             _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
             _perTurnPrompt.value = session.perTurnPrompt.orEmpty()
+            _diceInjectionEnabled.value = session.runtimeDiceEnabled != 0
+            _ledgerInjectionEnabled.value = session.runtimeLedgerEnabled != 0
             _novexConfigurationJson.value = session.novexConfigurationJson?.takeIf(String::isNotBlank)
                 ?: com.openminis.app.novex.domain.NovexConversationConfigurationCodec.encode(
                     legacyNovexConfiguration(
@@ -7860,14 +7874,38 @@ class ChatViewModel(
                     // context budget. Rebuilt from the blank-checking helper on every
                     // attempt, so tool-loop iterations each see exactly one copy at the
                     // latest user turn — no accumulation across the loop.
+                    // Wenyou runtime adds the same-placement external state (turn count +
+                    // latest <账本> echo) and client-rolled dice values when enabled.
                     val perTurnInjection = com.openminis.app.data.perTurnInjectionContent(_perTurnPrompt.value)
                     if (perTurnInjection != null) {
                         kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
                             "per_turn_injection", JSONObject().put("chars", perTurnInjection.length),
                         )
                     }
-                    val boundedHistory = com.openminis.app.data.appendPerTurnInjection(
-                        applyRequestImageBudget(requestHistory), _perTurnPrompt.value,
+                    val runtimeAudit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+                    if (_diceInjectionEnabled.value) {
+                        runtimeAudit?.event("dice_injection", JSONObject().put("count", com.openminis.app.data.RUNTIME_DICE_COUNT))
+                    }
+                    if (_ledgerInjectionEnabled.value) {
+                        runtimeAudit?.event(
+                            "ledger_injection",
+                            JSONObject().put(
+                                "chars",
+                                com.openminis.app.data.latestLedgerFromHistory(requestHistory)?.length ?: 0,
+                            ),
+                        )
+                    }
+                    val diceRolls = if (_diceInjectionEnabled.value) {
+                        List(com.openminis.app.data.RUNTIME_DICE_COUNT) { runtimeSecureRandom.nextInt(100) + 1 }
+                    } else {
+                        emptyList()
+                    }
+                    val boundedHistory = com.openminis.app.data.appendRuntimeInjections(
+                        applyRequestImageBudget(requestHistory),
+                        _perTurnPrompt.value,
+                        _diceInjectionEnabled.value,
+                        _ledgerInjectionEnabled.value,
+                        diceRolls,
                     )
                     val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
                     _contextEstimated.value = true
@@ -12706,6 +12744,8 @@ class ChatViewModel(
                     .put("configurationJson", settings.novexConfigurationJson)
                     .put("conversationPrompt", settings.conversationPrompt).put("imageStylePrompt", settings.imageStylePrompt)
                     .put("perTurnPrompt", settings.perTurnPrompt)
+                    .put("diceInjectionEnabled", settings.diceInjectionEnabled)
+                    .put("ledgerInjectionEnabled", settings.ledgerInjectionEnabled)
                     .put("activeBranchPathIds", JSONArray(activeBranchPathIds))
                     .put("modelId", currentModel?.id).put("modelName", currentModel?.displayName)
                     .put("contextWindow", currentModel?.contextWindowTokens).put("maxOutputTokens", currentModel?.maxOutputTokens)
