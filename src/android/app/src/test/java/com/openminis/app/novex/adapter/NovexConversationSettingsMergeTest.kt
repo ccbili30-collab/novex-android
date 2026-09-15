@@ -5,7 +5,7 @@ import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
 import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
 import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.novex.domain.PlaythroughValue
-import kotlinx.coroutines.Mutex
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
