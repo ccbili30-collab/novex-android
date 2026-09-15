@@ -1909,6 +1909,52 @@ private fun SessionItemContent(
                     menuAlignEnd = rowWidthPx > 0f && offsetPx.x > rowWidthPx / 2f
                     showContextMenu = true
                 },
+                // [T-android-sessionrow-overflow] 可见的 ⋮ 入口（用户决策 2026-09-14：
+                // "做成三点菜单，点开就是置顶或者删除"）。置顶此前只藏在长按菜单里，
+                // 没有可见入口，测试者以为功能没了。长按完整菜单保留不动。
+                trailing = {
+                    var rowMenuOpen by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { rowMenuOpen = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.MoreVert,
+                                contentDescription = stringResource(R.string.sessionlist_row_actions),
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        MinisMenu(
+                            expanded = rowMenuOpen,
+                            onDismissRequest = { rowMenuOpen = false },
+                            alignEnd = true,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (isPinned) R.string.sessionlist_unpin else R.string.sessionlist_pin)) },
+                                onClick = { rowMenuOpen = false; onPinToggle(session.id) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (isPinned) com.openminis.app.ui.novex.NovexIcons.Close else com.openminis.app.ui.novex.NovexIcons.PushPin,
+                                        contentDescription = null,
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                                onClick = { rowMenuOpen = false; onDeleteRequest(session.id) },
+                                leadingIcon = {
+                                    Icon(
+                                        com.openminis.app.ui.novex.NovexIcons.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                },
             )
             // Loading overlay when regenerating title
             if (isRegenerating) {
@@ -2524,6 +2570,8 @@ private fun SessionRow(
     searchSnippet: String? = null,
     /** See SessionItemContent — Transparent inside a folder container. */
     rowBackground: Color? = null,
+    /** Visible row action (e.g. the ⋮ menu). Rendered after the timestamp. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val style = remember(session.category) { categoryStyle(session.category) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -2717,6 +2765,10 @@ private fun SessionRow(
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.outline,
         )
+
+        if (trailing != null) {
+            trailing()
+        }
     }
 }
 

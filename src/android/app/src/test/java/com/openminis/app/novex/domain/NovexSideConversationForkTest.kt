@@ -20,30 +20,37 @@ import org.robolectric.annotation.Config
 class NovexSideConversationForkTest {
     @get:Rule val files = TemporaryFolder()
 
-    @Test fun forkCopiesHistorySettingsAndStaysHiddenWithCap() = runBlocking {
+    @Test fun sideOpensBlankSharesSettingsStaysHiddenWithCapAndCascade() = runBlocking {
         val path = File(files.root, "side.db").absolutePath
         val db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
             .allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(db.chatDao())
-            val parent = repository.createSession("model", title = "主线故事", conversationPrompt = "主线提示词")
+            val parent = repository.createSession(
+                "model", title = "主线故事",
+                conversationPrompt = "主线提示词",
+                perTurnPrompt = "每轮给出选项",
+            )
             repository.appendMessage(parent.id, "user", """[{"type":"text","value":"第一轮"}]""")
             repository.appendMessage(parent.id, "assistant", """[{"type":"text","value":"开场"}]""")
 
             val side = repository.createSideSession(parent.id)
             assertEquals(parent.id, side.sideOfSession)
             assertTrue(side.title.orEmpty().startsWith("主线故事·侧"))
+            // Blank fork (decision 13): no main-line history in UI or model context.
+            assertEquals(0, repository.loadActiveMessages(side.id).size)
+            // Configuration snapshot is shared verbatim.
+            assertEquals("主线提示词", repository.getSession(side.id)!!.conversationPrompt)
+            assertEquals("每轮给出选项", repository.getSession(side.id)!!.perTurnPrompt)
+            assertEquals(parent.worldId, repository.getSession(side.id)!!.worldId)
             // Hidden from the session list, visible as a side session.
             assertTrue(db.chatDao().listSessions().none { it.id == side.id })
             assertEquals(listOf(side.id), repository.listSideSessions(parent.id).map { it.id })
-            // Fork copies the active history and the prompt snapshot.
-            val sideMessages = repository.loadActiveMessages(side.id)
-            assertEquals(2, sideMessages.size)
-            assertEquals(listOf("user", "assistant"), sideMessages.map { it.role })
-            assertEquals("主线提示词", repository.getSession(side.id)!!.conversationPrompt)
-            // After the fork the histories diverge: parent-only writes stay parent-only.
+            // Histories never sync in either direction.
             repository.appendMessage(parent.id, "user", """[{"type":"text","value":"主线新轮"}]""")
-            assertEquals(2, repository.loadActiveMessages(side.id).size)
+            repository.appendMessage(side.id, "user", """[{"type":"text","value":"侧边讨论"}]""")
+            assertEquals(3, repository.loadActiveMessages(parent.id).size)
+            assertEquals(1, repository.loadActiveMessages(side.id).size)
             // Cap: 10 side conversations per parent.
             repeat(9) { repository.createSideSession(parent.id) }
             assertEquals(10, repository.listSideSessions(parent.id).size)
@@ -53,6 +60,13 @@ class NovexSideConversationForkTest {
             repository.deleteSession(side.id)
             assertEquals(9, repository.listSideSessions(parent.id).size)
             assertNotNull(repository.getSession(parent.id))
+            // Deleting the parent cascades its side conversations (no orphans:
+            // side rows are gone, not just hidden from the list).
+            val survivorId = repository.listSideSessions(parent.id).first().id
+            repository.deleteSession(parent.id)
+            assertNull(repository.getSession(parent.id))
+            assertNull(repository.getSession(survivorId))
+            assertEquals(0, db.chatDao().listSideSessions(parent.id).size)
         } finally { db.close() }
     }
 }

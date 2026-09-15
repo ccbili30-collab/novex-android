@@ -91,9 +91,10 @@ class ChatRepository(internal val dao: ChatDao) {
     val MAX_SIDE_CONVERSATIONS = 10
 
     /**
-     * Fork a side conversation from [parentId]: copies the parent's active-branch
-     * messages and settings at the current point. After the fork the two histories
-     * never sync again — the only bridge back is the handoff brief.
+     * Open a blank side conversation bound to [parentId]: it shares the parent's
+     * configuration snapshot (cards, prompts, identity) but carries NO history —
+     * neither the UI nor the model context ever sees the main line. The only
+     * bridge back is the handoff brief.
      */
     suspend fun createSideSession(parentId: String): ChatSessionEntity {
         val parent = requireNotNull(dao.getSession(parentId)) { "主对话不存在" }
@@ -124,20 +125,6 @@ class ChatRepository(internal val dao: ChatDao) {
             novexConfigurationJson = parent.novexConfigurationJson,
             sideOfSession = parentId,
         )
-        val source = loadActiveMessages(parentId)
-        // Remap ids so the copied branch graph stays self-contained in the side
-        // session — copied rows must not point at parent-session message ids.
-        val idMap = source.associate { it.id to UUID.randomUUID().toString() }
-        source.forEach { row ->
-            dao.insertMessage(row.copy(
-                id = requireNotNull(idMap[row.id]),
-                sessionId = side.id,
-                parentMessageId = row.parentMessageId?.let { idMap[it] },
-                activeChildId = row.activeChildId?.let { idMap[it] },
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis(),
-            ))
-        }
         return side
     }
 
@@ -263,6 +250,10 @@ class ChatRepository(internal val dao: ChatDao) {
     }
 
     suspend fun deleteSession(id: String) {
+        // Cascade: deleting a main line takes its side conversations with it —
+        // they are subordinate (side_of_session) and would otherwise become
+        // unreachable orphans, invisible in the session list forever.
+        dao.listSideSessions(id).forEach { side -> dao.deleteConversation(side.id) }
         dao.deleteConversation(id)
     }
 

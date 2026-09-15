@@ -628,6 +628,11 @@ fun AppNavigation(
                 onSettings = {
                     navController.safeNavigate(Routes.conversationSettings(sessionId))
                 },
+                // 侧边对话（2026-09-14 决策 12）：书签点按/新建后全屏进入该侧边
+                // 会话（复用同一个 Chat 界面），返回键自然回到主线。
+                onOpenSideSession = { sideId ->
+                    navController.safeNavigate(Routes.chat(sideId))
+                },
                 onOpenTerminal = {
                     navController.safeNavigate(Routes.terminal(sessionId = sessionId))
                 },

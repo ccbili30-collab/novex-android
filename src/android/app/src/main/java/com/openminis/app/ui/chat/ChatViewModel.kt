@@ -6364,7 +6364,22 @@ class ChatViewModel(
      *   re-entry with `skipCompactCheck`.
      */
     private fun sendMessage(text: String, skipContextCheck: Boolean) {
-        if (gameEntryState.value != NovexGameEntryState.Ready) return
+        // [T-android-send-silent-fail] 文游入口未就绪时此发送会静默丢弃——用户
+        // 看到输入清空却没有任何反应。改为可见反馈 + 把文字放回输入框，
+        // 绝不让一次按键无声消失。
+        if (gameEntryState.value != NovexGameEntryState.Ready) {
+            setInputText(text)
+            appendSystemInfo(
+                text = when (val gate = gameEntryState.value) {
+                    is NovexGameEntryState.Preparing -> "正在进入互动文游，请稍候再发送。"
+                    is NovexGameEntryState.ChoosePlayer -> "请先完成玩家身份选择，再开始对话。"
+                    is NovexGameEntryState.Failed -> "文游入口未就绪：${gate.message}"
+                    else -> "当前不可发送。"
+                },
+                iconKind = "info",
+            )
+            return
+        }
         val trimmed = text.trim()
         // While streaming, enqueue instead of silently dropping (iOS: send vs enqueuePrompt).
         if (_isStreaming.value) {

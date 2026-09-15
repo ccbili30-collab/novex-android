@@ -345,6 +345,9 @@ fun ChatScreen(
      *  management screen — wired to the "Edit" button on the model picker's
      *  Model Groups section header. */
     onModelGroupsClick: () -> Unit = {},
+    /** 侧边对话（2026-09-14 决策 12）：点书签或新建后全屏进入该侧边会话；
+     *  调用方负责导航（Routes.chat(sideId)），返回键自然回到主线。 */
+    onOpenSideSession: (sessionId: String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -693,6 +696,96 @@ fun ChatScreen(
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
     var requestSideConversation by remember { mutableStateOf(false) }
+    // ── 侧边对话页状态（决策 12/16）──────────────────────────────────────
+    // 非空 = 当前会话是侧边会话：顶栏只放删除、输入区放回传符号、不渲染
+    // 书签列与状态把手（防嵌套；状态只属于主线）。
+    var sideParentId by remember(sessionId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(sessionId) {
+        sideParentId = runCatching { chatRepository.getSession(sessionId)?.sideOfSession }.getOrNull()
+    }
+    // 回传守卫（决策 18）：只认"点击后新产生"的助手回复；生成失败/被打断
+    // 时明确报告交接未完成，绝不把旧回复当简报。
+    var handoffPending by remember { mutableStateOf(false) }
+    var handoffSawStreaming by remember { mutableStateOf(false) }
+    var handoffBaseIds by remember { mutableStateOf(setOf<String>()) }
+    var showSideDeleteDialog by remember { mutableStateOf(false) }
+    val uiMessages by viewModel.uiMessages.collectAsState()
+    LaunchedEffect(handoffPending, isStreaming, uiMessages.size) {
+        if (!handoffPending) return@LaunchedEffect
+        if (isStreaming) { handoffSawStreaming = true; return@LaunchedEffect }
+        if (!handoffSawStreaming) return@LaunchedEffect // generation not started yet
+        handoffPending = false
+        val parent = sideParentId ?: return@LaunchedEffect
+        // Fresh assistant text ONLY: ids not present at click time.
+        val fresh = uiMessages.lastOrNull {
+            it.role == "assistant" && it.content.isNotBlank() && it.id !in handoffBaseIds
+        }
+        if (fresh == null) {
+            android.widget.Toast.makeText(context, "交接未完成：没有新的助手回复", android.widget.Toast.LENGTH_SHORT).show()
+            return@LaunchedEffect
+        }
+        runCatching { chatRepository.appendMessage(parent, "user", NovexSideHandoff.parts(fresh.content)) }
+            .onSuccess {
+                NovexSideHandoff.writeWatermark(context, sessionId, fresh.content)
+                NovexSideHandoff.markParentDirty(context, parent)
+                android.widget.Toast.makeText(context, "交接简报已并入主对话", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .onFailure {
+                android.widget.Toast.makeText(context, it.message ?: "交接未写入主对话", android.widget.Toast.LENGTH_SHORT).show()
+            }
+    }
+    LaunchedEffect(handoffPending) {
+        if (!handoffPending) return@LaunchedEffect
+        kotlinx.coroutines.delay(150_000)
+        if (handoffPending) {
+            handoffPending = false
+            android.widget.Toast.makeText(context, "交接未完成：等待新回复超时", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    // Returning from a side page that delivered a handoff: reload once so the
+    // marked brief row is visible without re-entering the conversation.
+    val chatLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(chatLifecycleOwner, sessionId, sideParentId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && sideParentId == null &&
+                NovexSideHandoff.consumeParentDirty(context, sessionId)
+            ) {
+                viewModel.reloadActiveConversation()
+            }
+        }
+        chatLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { chatLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val startHandoff: () -> Unit = {
+        val parent = sideParentId
+        if (parent != null && !isStreaming && !handoffPending) {
+            handoffBaseIds = uiMessages.map { it.id }.toSet()
+            handoffSawStreaming = false
+            handoffPending = true
+            viewModel.sendMessage(NovexSideHandoff.instruction(NovexSideHandoff.readWatermark(context, sessionId)))
+        }
+    }
+    if (showSideDeleteDialog && sideParentId != null) {
+        com.openminis.app.ui.novex.NovexContentDialog(
+            "删除这条侧边对话？",
+            onDismiss = { showSideDeleteDialog = false },
+            confirmButton = {
+                com.openminis.app.ui.novex.TextButton(onClick = {
+                    showSideDeleteDialog = false
+                    coroutineScope.launch {
+                        runCatching { chatRepository.deleteSession(sessionId) }
+                        onBack()
+                    }
+                }) { Text("删除", color = com.openminis.app.ui.novex.NovexColors.Danger) }
+            },
+        ) {
+            Text(
+                "聊天记录将删除，且不可恢复。已并入主对话的交接简报不受影响。",
+                style = com.openminis.app.ui.novex.NovexType.Body,
+                color = com.openminis.app.ui.novex.NovexColors.Text,
+            )
+        }
+    }
     // T185: Move-to-session sheet visibility. Hoisted to the top of
     // ChatScreen so the trigger (capsule inside the composer) and the
     // sheet body (rendered later in the layout tree) share the same
@@ -1879,6 +1972,17 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    if (sideParentId != null) {
+                        // 侧边页顶栏只有删除（决策 16）：用"只能删除"表达从属关系，
+                        // 不放完整菜单。
+                        IconButton(onClick = { showSideDeleteDialog = true }) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.Delete,
+                                contentDescription = "删除侧边对话",
+                                tint = androidx.compose.ui.graphics.Color(0xFFFF5A5F),
+                            )
+                        }
+                    } else {
                     NovexDeepSeekClock()
                     // iOS: "..." circle button → dropdown menu
                     Box {
@@ -1934,6 +2038,7 @@ fun ChatScreen(
                             onDismissRequest = { showChatMenu = false },
                             actions = chatActions,
                         )
+                    }
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
@@ -4472,6 +4577,30 @@ fun ChatScreen(
                             )
                         }
 
+                        // 侧边页回传（决策 16/17）：符号入口——让侧边模型产出增量
+                        // 交接简报并并入主线。守卫见 startHandoff 状态机。
+                        if (sideParentId != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(
+                                        if (handoffPending) ChatColors.sendButtonDisabled else ChatColors.sendButton,
+                                        CircleShape,
+                                    )
+                                    .clip(CircleShape)
+                                    .clickable(enabled = !handoffPending && !isStreaming) { startHandoff() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
+                                    contentDescription = "回传主对话",
+                                    tint = if (handoffPending) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+
                         // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
                         //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
                         //     which dispatches to enqueuePrompt since _isStreaming is true).
@@ -4746,24 +4875,23 @@ fun ChatScreen(
                     )
                 )
         )
-        NovexPlaythroughHud(
-            sessionKey = sessionId,
-            state = playthroughState,
-            update = latestDataUpdate,
-            onDismissUpdate = { latestDataUpdate = null },
-        )
-        NovexSideConversations(
-            mainSessionId = sessionId,
-            mainViewModel = viewModel,
-            chatRepository = chatRepository,
-            providerRepository = providerRepository,
-            memoryRepository = memoryRepository,
-            skillRepository = skillRepository,
-            mcpRepository = mcpRepository,
-            appContext = context.applicationContext,
-            requestNewSide = requestSideConversation,
-            onNewSideConsumed = { requestSideConversation = false },
-        )
+        // 决策 12/16：侧边页不渲染书签列（防嵌套）也不渲染状态把手（本局
+        // 状态只属于主线，侧边对主线的影响通道只有交接简报）。
+        if (sideParentId == null) {
+            NovexPlaythroughHud(
+                sessionKey = sessionId,
+                state = playthroughState,
+                update = latestDataUpdate,
+                onDismissUpdate = { latestDataUpdate = null },
+            )
+            NovexSideConversations(
+                mainSessionId = sessionId,
+                chatRepository = chatRepository,
+                requestNewSide = requestSideConversation,
+                onNewSideConsumed = { requestSideConversation = false },
+                onOpenSide = onOpenSideSession,
+            )
+        }
         }
     }
 
@@ -4841,7 +4969,10 @@ fun ChatScreen(
         val config by providerRepository.config.collectAsState()
         val activeEntryId by viewModel.activeEntryId.collectAsState()
         ChatModelSelectionSheet(
-            groups = availableGroups,
+            // 生图专用分组不进文字聊天选择器：这类分组（生图来源组、迁移组
+            // "已迁移生图"）只含图像输出模型、在分组管理页被刻意隐藏删不到，
+            // 泄漏进聊天选择器就是"模型分组删完了还有"的残留观感。
+            groups = availableGroups.filterNot { it.id in config.imageGenerationGroupIds },
             selectedGroupId = selectedGroupId,
             activeEntryId = activeEntryId,
             config = config,

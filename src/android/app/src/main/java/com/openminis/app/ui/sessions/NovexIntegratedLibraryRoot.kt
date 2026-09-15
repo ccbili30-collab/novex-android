@@ -115,7 +115,7 @@ import sh.calvin.reorderable.*
                             Icon(NovexIcons.MoreVert,"${card.name}的更多操作",tint=if(kind==CardKind.WORLD)Color.White else NovexColors.Text)
                         }
                         NovexActionMenu(expanded=more,onDismissRequest={more=false},actions=listOf(
-                            NovexMenuAction(label="导出",icon=com.openminis.app.R.drawable.ic_phosphor_download_simple,onClick={more=false;exportId=card.id;exporter.launch("作品.novex.zip")}),
+                            NovexMenuAction(label="导出",icon=com.openminis.app.R.drawable.ic_phosphor_download_simple,onClick={more=false;exportId=card.id;exporter.launch(com.openminis.app.ui.novex.NovexExportFileName.build(card.name))}),
                             NovexMenuAction(label="删除",icon=com.openminis.app.R.drawable.ic_phosphor_trash,destructive=true,onClick={more=false;deleting=card})
                         ))
                     }

@@ -71,7 +71,8 @@ import novex.content.CardKind
             {session.open(requireNotNull(selected),opening?.target?:initialTarget?:requireNotNull(selected))},
             if(opening?.error!=null && session.state.saved!=null)({session.dismissOpening();selected=session.state.saved?.id}) else null,exit)
         else CardPages(session,files,exitTarget=initialTarget?:initialRoot,onExport={
-            exportRoot=requireNotNull(session.state.saved).id;exportTarget=session.state.targetId;exporter.launch("作品.novex.zip")
+            exportRoot=requireNotNull(session.state.saved).id;exportTarget=session.state.targetId
+            exporter.launch(com.openminis.app.ui.novex.NovexExportFileName.build(session.state.shownSaved?.name ?: session.state.saved?.name))
         },onInteract={val root=requireNotNull(session.state.saved).id;onUse(root,session.state.targetId?:root,false)},
             onExisting={manage->val root=requireNotNull(session.state.saved).id;onExisting(root,session.state.targetId?:root,manage)},
             onManage={val root=requireNotNull(session.state.saved).id;onUse(root,session.state.targetId?:root,true)},onExit=exit)
