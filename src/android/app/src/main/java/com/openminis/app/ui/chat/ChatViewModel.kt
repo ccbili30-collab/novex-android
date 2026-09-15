@@ -7876,13 +7876,13 @@ class ChatViewModel(
                     // latest user turn — no accumulation across the loop.
                     // Wenyou runtime adds the same-placement external state (turn count +
                     // latest <账本> echo) and client-rolled dice values when enabled.
+                    val runtimeAudit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
                     val perTurnInjection = com.openminis.app.data.perTurnInjectionContent(_perTurnPrompt.value)
                     if (perTurnInjection != null) {
-                        kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
+                        runtimeAudit?.event(
                             "per_turn_injection", JSONObject().put("chars", perTurnInjection.length),
                         )
                     }
-                    val runtimeAudit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
                     if (_diceInjectionEnabled.value) {
                         runtimeAudit?.event("dice_injection", JSONObject().put("count", com.openminis.app.data.RUNTIME_DICE_COUNT))
                     }
