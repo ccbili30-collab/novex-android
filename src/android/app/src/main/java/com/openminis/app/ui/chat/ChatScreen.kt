@@ -750,7 +750,7 @@ fun ChatScreen(
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && sideParentId == null &&
                 NovexSideHandoff.consumeParentDirty(context, sessionId)
             ) {
-                viewModel.reloadActiveConversation()
+                coroutineScope.launch { viewModel.reloadActiveConversation() }
             }
         }
         chatLifecycleOwner.lifecycle.addObserver(observer)

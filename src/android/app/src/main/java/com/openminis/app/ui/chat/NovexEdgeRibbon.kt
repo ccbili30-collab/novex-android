@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -182,8 +184,8 @@ internal fun NovexEdgeRibbon(
     // restart on recomposition (that would cancel an in-flight drag), so it can
     // only ever see these rememberUpdatedState reads — never a captured stale
     // callback object (the beta.44/45 stale-closure lesson).
-    val liveOnTap by androidx.compose.runtime.rememberUpdatedState(onTap)
-    val liveDrag by androidx.compose.runtime.rememberUpdatedState(drag)
+    val liveOnTap by rememberUpdatedState(onTap)
+    val liveDrag by rememberUpdatedState(drag)
     Box(
         modifier
             .size(width, height)
@@ -201,16 +203,19 @@ internal fun NovexEdgeRibbon(
                 if (liveDrag != null) {
                     Modifier
                         .then(if (liveOnTap != null) Modifier.clickable { liveOnTap?.invoke() } else Modifier)
+                        // Positional args: the start-callback's NAME differs
+                        // across foundation versions (onDragStart vs
+                        // onDragStarted) but the (start, end, cancel, drag)
+                        // ORDER is stable — positional avoids both.
                         .pointerInput(dock) {
                             detectDragGesturesAfterLongPress(
-                                onDragStarted = { liveDrag?.onDragStart() },
-                                onDrag = { change, amount ->
-                                    change.consume()
-                                    liveDrag?.onDrag(amount, change)
-                                },
-                                onDragEnd = { liveDrag?.onDragEnd() },
-                                onDragCancel = { liveDrag?.onDragCancel() },
-                            )
+                                { liveDrag?.onDragStart() },
+                                { liveDrag?.onDragEnd() },
+                                { liveDrag?.onDragCancel() },
+                            ) { change, amount ->
+                                change.consume()
+                                liveDrag?.onDrag(amount, change)
+                            }
                         }
                 } else if (liveOnTap != null) {
                     Modifier.clickable { liveOnTap?.invoke() }

@@ -84,8 +84,8 @@ internal fun NovexPlaythroughHud(
             // Design tokens read in composition; the ribbon body is composable.
             NovexEdgeRibbon(
                 dock = dock,
-                fill = NovexEdgeRibbonColors.fill,
-                rim = NovexEdgeRibbonColors.rim,
+                fill = NovexColors.Surface.copy(alpha = 0.95f),
+                rim = NovexColors.Divider,
                 width = HudRibbonWidth,
                 height = HudRibbonHeight,
                 modifier = Modifier.offset {
