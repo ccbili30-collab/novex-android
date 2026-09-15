@@ -1141,7 +1141,10 @@ class SkillRepository(private val context: Context) {
         val existing = _skills.value.find { it.id == bundledId }
 
         // Skip if local version is same or newer
-        if (existing != null && existing.version >= bundledVersion) return
+        if (existing != null && existing.version >= bundledVersion) {
+            installBundledAssetSkill(assetDir = "skills/wenyou-maker")
+            return
+        }
 
         val parsed = parseSkillMd(SKILL_CREATOR_CONTENT) ?: return
         if (existing != null) {
@@ -1168,6 +1171,92 @@ class SkillRepository(private val context: Context) {
                 source = ImportSource.BUNDLED,
             )
             Log.i(TAG, "Installed bundled skill: $bundledId (v$bundledVersion)")
+        }
+
+        installBundledAssetSkill(assetDir = "skills/wenyou-maker")
+    }
+
+    /**
+     * Install or upgrade a bundled skill defined by an assets directory.
+     *
+     * `assets/<assetDir>/SKILL.md` is required; sibling files (references/,
+     * scripts/, …) are copied alongside so a bundled skill can ship resources
+     * the same way zip/GitHub imports do. Per-skill isolation: a failure here
+     * logs and returns instead of escaping into app startup (same philosophy
+     * as loadAll's per-row guard).
+     *
+     * Skip condition is version-based AND requires the skill directory to be
+     * non-empty — a half-installed skill (row present, files missing)
+     * self-heals on the next launch without bumping the version.
+     */
+    private fun installBundledAssetSkill(assetDir: String) {
+        try {
+            val content = context.assets.open("$assetDir/SKILL.md").bufferedReader().use { it.readText() }
+            val parsed = parseSkillMd(content) ?: run {
+                Log.w(TAG, "Bundled skill at $assetDir has invalid SKILL.md — skipping")
+                return
+            }
+            val id = slugify(parsed.name)
+            if (id.isBlank()) return
+            val skillDir = File(skillsDir, id)
+            val existing = _skills.value.find { it.id == id }
+            if (existing != null && existing.version >= parsed.version &&
+                skillDir.isDirectory && skillDir.listFiles()?.isNotEmpty() == true
+            ) return
+
+            val refreshedAt = System.currentTimeMillis()
+            if (existing != null) {
+                db.execSQL(
+                    "UPDATE skills SET name=?, description=?, version=?, updated_at=? WHERE id=?",
+                    arrayOf<Any>(parsed.name, parsed.description, parsed.version, refreshedAt, id),
+                )
+                val updated = existing.copy(
+                    name = parsed.name,
+                    description = parsed.description,
+                    version = parsed.version,
+                    body = parsed.body,
+                    updatedAt = refreshedAt,
+                )
+                writeSkillMd(updated)
+                _skills.value = _skills.value.map { if (it.id == id) updated else it }
+                Log.i(TAG, "Upgraded bundled skill: $id → v${parsed.version}")
+            } else {
+                add(
+                    name = parsed.name,
+                    description = parsed.description,
+                    body = parsed.body,
+                    version = parsed.version,
+                    source = ImportSource.BUNDLED,
+                ) ?: return
+                Log.i(TAG, "Installed bundled skill: $id (v${parsed.version})")
+            }
+            copyAssetTree(assetDir, skillDir)
+        } catch (t: Throwable) {
+            Log.w(TAG, "installBundledAssetSkill failed for $assetDir: ${t.message}", t)
+        }
+    }
+
+    /** Recursively copy an assets directory into [dest]; SKILL.md is skipped (already written). */
+    private fun copyAssetTree(assetPath: String, dest: File) {
+        val entries = context.assets.list(assetPath).orEmpty()
+        if (entries.isEmpty()) return
+        dest.mkdirs()
+        for (entry in entries) {
+            val childPath = "$assetPath/$entry"
+            val childDest = File(dest, entry)
+            val isDir = context.assets.list(childPath).orEmpty().isNotEmpty()
+            if (isDir) {
+                copyAssetTree(childPath, childDest)
+            } else {
+                if (entry.equals("SKILL.md", ignoreCase = true)) continue
+                try {
+                    context.assets.open(childPath).use { input ->
+                        FileOutputStream(childDest).use { output -> input.copyTo(output) }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to copy bundled skill file $childPath: ${e.message}")
+                }
+            }
         }
     }
 
