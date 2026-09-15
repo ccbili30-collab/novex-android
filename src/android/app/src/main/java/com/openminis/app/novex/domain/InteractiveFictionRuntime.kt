@@ -219,6 +219,13 @@ object PlaythroughStateRegistration {
         repeat(updates.length()) { index ->
             val item = updates.optJSONObject(index) ?: error("第 ${index + 1} 项状态格式无效")
             val key = item.optString("key").trim()
+            val removeKey = item.optString("remove").trim().takeIf { it.isNotEmpty() }
+            if (removeKey != null) {
+                // 删除字段（2026-09-15 用户决策：AI 需要改与删的能力，不只是加）。
+                // 删除不存在的键幂等成功。
+                domain = domain.apply(NovexConversationCommand.RemovePlaythroughValue(branchId, removeKey))
+                return@repeat
+            }
             require(key.isNotBlank()) { "本局状态字段名不能为空" }
             val raw = item.opt("value")
             val value = when (raw) {
@@ -228,7 +235,7 @@ object PlaythroughStateRegistration {
                     val max = item.optDouble("max").takeIf { !it.isNaN() && it > 0 }
                     PlaythroughValue.Number(raw.toDouble(), max)
                 }
-                else -> error("本局状态只支持文本、数字和布尔值")
+                else -> error("本局状态只支持文本、数字和布尔值；删除字段请改用 remove")
             }
             domain = domain.apply(NovexConversationCommand.SetPlaythroughValue(branchId, key, value))
         }

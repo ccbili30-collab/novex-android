@@ -1,7 +1,8 @@
 package com.openminis.app.ui.chat
 
 import android.content.Context
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,13 +55,14 @@ internal data class NovexEdgeHandleSpec(
 )
 
 /**
- * 侧边组件轨（2026-09-15 第三轮重排）：
- * - 书签 = 左缘细长条，**跨主线↔侧边页常驻**（railSessionId 恒为主线）；当前
- *   所在侧边的书签变粗变长，主线页全部常规收缩态；新书签排最下；拖动仅排序。
+ * 侧边组件轨（2026-09-15 第三轮重排；同日按用户反馈改横条+淡化）：
+ * - 书签 = 左缘**横向**长条（外端尖角），**跨主线↔侧边页常驻**（railSessionId
+ *   恒为主线）；当前所在侧边的书签变长变厚；新书签排最下；拖动仅排序。
  * - 状态把手 = 右缘淡半圆（仅主线页），按下即拖、只沿边上下，位置按会话记住；
  *   点按展开面板（L 拐角缩放、尺寸记住）。
- * - 收起（仅主线页）：整列/把手滑向所在边缘留 6dp 微边，点微边唤出；微边上
- *   保留状态徽点。侧边页轨常驻不收起。
+ * - 淡化（仅主线页，2026-09-15 用户决策"不做收起做淡化"）：整列/把手原地
+ *   透明度归零，布局零跳动；淡化后不拦截点击（点到的就是聊天内容），任何
+ *   触摸由 ChatScreen 统一唤回。侧边页常驻不淡化。
  */
 @Composable
 internal fun NovexSideConversations(
@@ -72,7 +75,6 @@ internal fun NovexSideConversations(
     onOpenSide: (String) -> Unit,
     handle: NovexEdgeHandleSpec?,
     chromeCollapsed: Boolean,
-    onExpandChrome: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -122,10 +124,11 @@ internal fun NovexSideConversations(
 
         // ── Bookmark rail (left edge), top-down stacking with cumulative slots ──
         fun stripSize(id: String): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> =
-            if (id == currentSessionId) BookmarkStripCurrentWidth to BookmarkStripCurrentHeight
-            else BookmarkStripWidth to BookmarkStripHeight
+            if (id == currentSessionId) BookmarkStripCurrentLength to BookmarkStripCurrentThickness
+            else BookmarkStripLength to BookmarkStripThickness
 
-        fun stripHeightPx(id: String): Float = with(density) { stripSize(id).second.toPx() }
+        /** 横条：second = 厚度（垂直堆叠方向上的步进）。 */
+        fun stripThicknessPx(id: String): Float = with(density) { stripSize(id).second.toPx() }
         val gapPx = with(density) { BookmarkStripGap.toPx() }
 
         /** Slot Y of each bookmark in the CURRENT order (dragged one excluded). */
@@ -134,43 +137,47 @@ internal fun NovexSideConversations(
             order.forEach { id ->
                 if (id == exclude) return@forEach
                 add(id to y)
-                y += stripHeightPx(id) + gapPx
+                y += stripThicknessPx(id) + gapPx
             }
         }
 
-        val railSlide by animateDpAsState(
-            targetValue = if (collapsed) -(BookmarkStripWidth - EdgeCollapsedSliver) else 0.dp,
-            label = "bookmarkRailSlide",
+        // [T-chrome-fade] 原地淡化：透明度动画到 0，位置尺寸一律不动；淡出到
+        // 0 后不再参与组合（overlay 定位，无布局副作用），也不拦截任何点击。
+        val railAlpha by animateFloatAsState(
+            targetValue = if (collapsed) 0f else 1f,
+            animationSpec = tween(220),
+            label = "edgeRailAlpha",
         )
 
-        sides.forEach { side ->
+        if (railAlpha > 0.01f) sides.forEach { side ->
             if (side.id !in order) return@forEach
             val isCurrent = side.id == currentSessionId
-            val (stripWidth, stripHeight) = stripSize(side.id)
+            val (stripLength, stripThickness) = stripSize(side.id)
             val dragging = draggingId == side.id
             // While dragging, the OTHERS keep their slots (stable, no shifting);
             // the dragged strip reads its own slot only to seed dragY.
             val baseY = slotYs(exclude = null).firstOrNull { it.first == side.id }?.second ?: topInsetPx
             NovexEdgeGestureSurface(
-                shape = bookmarkStripShape(),
-                width = stripWidth,
-                height = stripHeight,
+                shape = bookmarkTabShape(),
+                width = stripLength,
+                height = stripThickness,
                 fill = colorFor(context, side.id),
                 rim = novexEdgeRim(),
-                modifier = Modifier.offset {
-                    IntOffset(
-                        railSlide.roundToPx(),
-                        (if (dragging) dragY else baseY).roundToInt(),
-                    )
-                },
-                contentAlignment = Alignment.TopCenter,
-                onTap = {
-                    if (collapsed) {
-                        onExpandChrome()
-                    } else if (!isCurrent) {
+                elevation = if (railAlpha >= 0.99f) 3.dp else 0.dp,
+                modifier = Modifier
+                    .graphicsLayer { alpha = railAlpha }
+                    .offset {
+                        IntOffset(
+                            0,
+                            (if (dragging) dragY else baseY).roundToInt(),
+                        )
+                    },
+                contentAlignment = Alignment.CenterStart,
+                onTap = if (collapsed) null else ({
+                    if (!isCurrent) {
                         onOpenSide(side.id)
                     }
-                },
+                }),
                 drag = if (collapsed) null else object : NovexEdgeDragCallbacks {
                     override fun onDragStart() {
                         draggingId = side.id
@@ -178,14 +185,14 @@ internal fun NovexSideConversations(
                     }
 
                     override fun onDrag(delta: Offset, change: PointerInputChange) {
-                        dragY = (dragY + delta.y).coerceIn(topInsetPx, (screenH - bottomReserve - stripHeightPx(side.id)).coerceAtLeast(topInsetPx))
+                        dragY = (dragY + delta.y).coerceIn(topInsetPx, (screenH - bottomReserve - stripThicknessPx(side.id)).coerceAtLeast(topInsetPx))
                     }
 
                     override fun onDragEnd() {
                         // Reorder: insertion index by drop position among the others.
                         val others = slotYs(exclude = side.id)
-                        val draggedCenter = dragY + stripHeightPx(side.id) / 2f
-                        val index = others.count { (id, y) -> y + stripHeightPx(id) / 2f <= draggedCenter }
+                        val draggedCenter = dragY + stripThicknessPx(side.id) / 2f
+                        val index = others.count { (id, y) -> y + stripThicknessPx(id) / 2f <= draggedCenter }
                         val next = reorderBookmarkIds(order, side.id, index)
                         if (next != order) {
                             order = next
@@ -200,23 +207,19 @@ internal fun NovexSideConversations(
                 Text(
                     side.title.orEmpty().trim().take(1).ifEmpty { "侧" },
                     color = androidx.compose.ui.graphics.Color(0xCC1C1C1E),
-                    fontSize = 15.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(start = 5.dp),
                 )
             }
         }
 
         // ── State handle (right edge, main pages only): pale semicircle. ──
-        if (handle != null && !expandedPanel) {
+        if (handle != null && !expandedPanel && railAlpha > 0.01f) {
             val handleWpx = with(density) { StateHandleWidth.toPx() }
             val handleHpx = with(density) { StateHandleHeight.toPx() }
             val maxHandleY = (screenH - bottomReserve - handleHpx).coerceAtLeast(topInsetPx)
             val handleBaseY = topInsetPx + handleFraction * (maxHandleY - topInsetPx)
-            val handleSlide by animateDpAsState(
-                targetValue = if (collapsed) StateHandleWidth - EdgeCollapsedSliver else 0.dp,
-                label = "handleSlide",
-            )
             NovexEdgeGestureSurface(
                 shape = semicircleShape(),
                 floatingShape = RoundedCornerShape(50),
@@ -225,17 +228,18 @@ internal fun NovexSideConversations(
                 fill = novexEdgeFill(),
                 rim = novexEdgeRim(),
                 floating = draggingId == HUD_ID,
-                // 平面贴右缘：x = 屏宽 − 把手宽 + 收起滑出量（layout 期读取）。
-                modifier = Modifier.offset {
-                    IntOffset(
-                        (screenW - handleWpx + handleSlide.roundToPx()).roundToInt(),
-                        (if (draggingId == HUD_ID) dragY else handleBaseY).roundToInt(),
-                    )
-                },
-                onTap = {
-                    if (collapsed) onExpandChrome() else expandedPanel = true
-                },
-                drag = object : NovexEdgeDragCallbacks {
+                elevation = if (railAlpha >= 0.99f) 3.dp else 0.dp,
+                // 平面贴右缘：x = 屏宽 − 把手宽（layout 期读取）。
+                modifier = Modifier
+                    .graphicsLayer { alpha = railAlpha }
+                    .offset {
+                        IntOffset(
+                            (screenW - handleWpx).roundToInt(),
+                            (if (draggingId == HUD_ID) dragY else handleBaseY).roundToInt(),
+                        )
+                    },
+                onTap = if (collapsed) null else ({ expandedPanel = true }),
+                drag = if (collapsed) null else object : NovexEdgeDragCallbacks {
                     override fun onDragStart() {
                         draggingId = HUD_ID
                         dragY = handleBaseY
@@ -254,32 +258,19 @@ internal fun NovexSideConversations(
                     override fun onDragCancel() { draggingId = null }
                 },
             ) {
-                if (collapsed) {
-                    // Sliver keeps the update dot visible (收起不漏变更).
-                    if (handle.update != null) {
-                        Box(
-                            Modifier
-                                .align(Alignment.CenterStart)
-                                .padding(start = 1.dp)
-                                .size(5.dp)
-                                .background(NovexColors.Primary, RoundedCornerShape(50)),
-                        )
-                    }
-                } else {
-                    Icon(
-                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft,
-                        contentDescription = "本局状态",
-                        tint = NovexColors.SecondaryText,
+                Icon(
+                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft,
+                    contentDescription = "本局状态",
+                    tint = NovexColors.SecondaryText,
+                )
+                if (handle.update != null) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 2.dp, top = 6.dp)
+                            .size(6.dp)
+                            .background(NovexColors.Primary, RoundedCornerShape(50)),
                     )
-                    if (handle.update != null) {
-                        Box(
-                            Modifier
-                                .align(Alignment.TopStart)
-                                .padding(start = 2.dp, top = 6.dp)
-                                .size(6.dp)
-                                .background(NovexColors.Primary, RoundedCornerShape(50)),
-                        )
-                    }
                 }
             }
         }
