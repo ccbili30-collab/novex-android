@@ -36,7 +36,7 @@ internal fun restoreVersion31LibraryTable(db: SupportSQLiteDatabase) {
 class NovexLibraryOrganizationTest {
     @get:Rule val files = TemporaryFolder()
     private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-        File(files.root, "library.db").absolutePath).addMigrations(AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37).allowMainThreadQueries().build()
+        File(files.root, "library.db").absolutePath).addMigrations(AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38).allowMainThreadQueries().build()
 
     @Test fun `folders files and shared cards persist and removal preserves originals`() = runBlocking<Unit> {
         var db = open()
