@@ -24,11 +24,11 @@ class ConversationSettingsTest {
     }
 
     @Test
-    fun perTurnInjectionWrapsTrimmedTextAndSkipsBlank() {
+    fun perTurnInjectionWrapsTrimmedTextWithPriorityLineAndSkipsBlank() {
         assertNull(perTurnInjectionContent(null))
         assertNull(perTurnInjectionContent("   "))
         assertEquals(
-            "<每轮注入>\n每一轮都要向我提供 3~4 个选项\n</每轮注入>",
+            "<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n每一轮都要向我提供 3~4 个选项\n</每轮注入>",
             perTurnInjectionContent("  每一轮都要向我提供 3~4 个选项  "),
         )
     }
@@ -43,7 +43,7 @@ class ConversationSettingsTest {
         val injected = appendPerTurnInjection(history, "保持悬念")
         assertEquals(3, injected.size)
         assertEquals(
-            "进城\n\n<每轮注入>\n保持悬念\n</每轮注入>",
+            "进城\n\n<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>",
             injected[2].content,
         )
         assertEquals("第一句", injected[0].content)

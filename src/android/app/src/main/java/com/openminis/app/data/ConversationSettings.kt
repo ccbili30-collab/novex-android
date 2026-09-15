@@ -53,11 +53,19 @@ fun mergeImageStylePrompt(requestPrompt: String, imageStylePrompt: String?): Str
     }
 }
 
-/** Wraps the standing per-turn instruction; null when the feature is off (blank text). */
+/**
+ * Wraps the standing per-turn instruction; null when the feature is off (blank text).
+ *
+ * The status line is load-bearing: without it some models read the appended block
+ * as part of the user's narrative input instead of a standing instruction, and the
+ * system prompt's 最高优先级 #4（"不擅自把自由创作改造成固定选项游戏"）then
+ * suppresses exactly the behaviour the user asked for（用户反馈 2026-09-15：
+ * 注入"叫它给按钮还是不给"）.
+ */
 fun perTurnInjectionContent(perTurnPrompt: String?): String? {
     val text = perTurnPrompt?.trim().orEmpty()
     if (text.isEmpty()) return null
-    return "<每轮注入>\n$text\n</每轮注入>"
+    return "<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n$text\n</每轮注入>"
 }
 
 /**

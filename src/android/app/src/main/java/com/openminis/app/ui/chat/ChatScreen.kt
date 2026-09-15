@@ -2029,8 +2029,10 @@ fun ChatScreen(
                             })
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
                                 onClick = { showConversationRecords = true }))
-                            if (com.openminis.app.BuildConfig.UPDATE_CHANNEL == "preview") add(
-                                NovexMenuAction("导出对话包（预览测试）", R.drawable.ic_phosphor_arrow_up,
+                            // 导出对话包对全部通道开放（用户决策 2026-09-15）：
+                            // 正式版用户反馈问题时也能提供诊断导出，不再只有预览版可导。
+                            add(
+                                NovexMenuAction("导出对话包", R.drawable.ic_phosphor_arrow_up,
                                     onClick = viewModel::prepareNovexConversationExport))
                             if (immersiveProfile.usesRolePresentation) {
                                 add(
