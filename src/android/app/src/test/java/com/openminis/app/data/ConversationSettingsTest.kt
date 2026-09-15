@@ -63,7 +63,7 @@ class ConversationSettingsTest {
         assertEquals(2, injected[1].contentParts.size)
         assertEquals(part, injected[1].contentParts[0])
         assertEquals(
-            AgentContentPart.Text("<每轮注入>\n保持悬念\n</每轮注入>"),
+            AgentContentPart.Text("<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>"),
             injected[1].contentParts[1],
         )
     }
@@ -74,7 +74,7 @@ class ConversationSettingsTest {
         val injected = appendPerTurnInjection(history, "保持悬念")
         assertEquals(2, injected.size)
         assertEquals(LLMMessage.Role.USER, injected[1].role)
-        assertEquals("<每轮注入>\n保持悬念\n</每轮注入>", injected[1].content)
+        assertEquals("<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>", injected[1].content)
     }
 
     @Test
@@ -170,7 +170,7 @@ class ConversationSettingsTest {
         assertEquals(3, injected.size)
         assertEquals(
             "继续探索\n\n<外部状态>\n第 2 轮\n<账本>\n[场景:日常]\n</账本>\n</外部状态>\n\n" +
-                "<骰值>1d100=63; 1d100=8</骰值>\n\n<每轮注入>\n保持悬念\n</每轮注入>",
+                "<骰值>1d100=63; 1d100=8</骰值>\n\n<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>",
             injected[2].content,
         )
         assertEquals("进城", injected[0].content)
@@ -192,7 +192,7 @@ class ConversationSettingsTest {
         )
         val injected = appendRuntimeInjections(history, "保持悬念", diceEnabled = false, ledgerEnabled = true, diceRolls = emptyList())
         assertEquals(
-            "出手\n\n<外部状态>\n第 2 轮\n<账本>\n[场景:战斗]\n</账本>\n</外部状态>\n\n<每轮注入>\n保持悬念\n</每轮注入>",
+            "出手\n\n<外部状态>\n第 2 轮\n<账本>\n[场景:战斗]\n</账本>\n</外部状态>\n\n<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>",
             injected[2].content,
         )
     }
