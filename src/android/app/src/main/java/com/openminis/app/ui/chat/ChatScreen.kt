@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -124,6 +125,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -707,59 +709,49 @@ fun ChatScreen(
     LaunchedEffect(sessionId) {
         sideParentId = runCatching { chatRepository.getSession(sessionId)?.sideOfSession }.getOrNull()
     }
-    // ── 沉浸收起（2026-09-15 用户确认）──────────────────────────────────
-    // 范围：顶栏 + 主线页侧边组件（书签列/状态把手滑出留微边）+ 右下浮动按钮。
-    // 触发：点聊天空白处切换；空闲 6 秒自动收起（生成中不豁免）。侧边对话页
-    // 不收起（顶栏、书签常驻）。任何触摸都会重置空闲计时。
+    // ── 沉浸淡化（2026-09-15 用户确认：不做收起做淡化）──────────────────
+    // 范围：顶栏 + 主线页侧边组件（书签列/状态把手）+ 右下浮动按钮——全部原地
+    // 透明度归零，布局零跳动（此前滑出+让位会跳版式，被用户当成 bug）。
+    // 触发：点聊天空白处切换；空闲 6 秒自动淡出（生成中不豁免）。侧边对话页
+    // 不淡化。任何触摸都会重置空闲计时，且**唤回**淡出的界面；为避免"隐藏
+    // 手势自己又触发唤回"，600ms 内刚隐藏/刚唤回的手势互不抢状态。
     var chromeCollapsed by remember { mutableStateOf(false) }
     var lastInteractionAt by remember { mutableStateOf(0L) }
+    var chromeHiddenAtMs by remember { mutableLongStateOf(0L) }
+    var chromeRevivedAtMs by remember { mutableLongStateOf(0L) }
     val effectiveChromeCollapsed = chromeCollapsed && sideParentId == null
+    val chromeFadeAlpha by animateFloatAsState(
+        targetValue = if (effectiveChromeCollapsed) 0f else 1f,
+        animationSpec = tween(220),
+        label = "chromeFadeAlpha",
+    )
     LaunchedEffect(lastInteractionAt, chromeCollapsed, sideParentId) {
         if (sideParentId != null || chromeCollapsed) return@LaunchedEffect
         kotlinx.coroutines.delay(6_000)
         chromeCollapsed = true
+        chromeHiddenAtMs = System.currentTimeMillis()
     }
-    // 回传守卫（决策 18）：只认"点击后新产生"的助手回复；生成失败/被打断
-    // 时明确报告交接未完成，绝不把旧回复当简报。
-    var handoffPending by remember { mutableStateOf(false) }
-    var handoffSawStreaming by remember { mutableStateOf(false) }
-    var handoffBaseIds by remember { mutableStateOf(setOf<String>()) }
+    // ── 底部活动条（2026-09-15 用户决策 ②：技能调用动态贴底滚动播报）──────
+    // 数据在转录区内部的扁平化流水线里产出（flatItems），状态提升到这里供
+    // 输入栏上方的条带读取；openedProcess 同理提升，条带点击可打开完整记录。
+    var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
+    var latestLiveProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
+    var processStripDone by remember(sessionId) { mutableStateOf(false) }
+    var stripVisibleDuringStream by remember(sessionId) { mutableStateOf(false) }
+    val isStreamingForStrip by viewModel.isStreaming.collectAsState()
+    LaunchedEffect(isStreamingForStrip, sessionId) {
+        if (!isStreamingForStrip && stripVisibleDuringStream) {
+            // 回合结束：活动条先显示「✓ 本轮完成」3 秒再消失（与回传条节奏一致）。
+            stripVisibleDuringStream = false
+            processStripDone = true
+            kotlinx.coroutines.delay(3_000)
+            processStripDone = false
+        }
+    }
+    // 回传守卫（决策 18）与状态机已下沉 ChatViewModel（2026-09-15 ①）：
+    // 页面销毁不再丢流程；这里只保留返回主线时的一次性重载（消费 dirty 标记）。
     var showSideDeleteDialog by remember { mutableStateOf(false) }
-    val uiMessages by viewModel.uiMessages.collectAsState()
-    LaunchedEffect(handoffPending, isStreaming, uiMessages.size) {
-        if (!handoffPending) return@LaunchedEffect
-        if (isStreaming) { handoffSawStreaming = true; return@LaunchedEffect }
-        if (!handoffSawStreaming) return@LaunchedEffect // generation not started yet
-        handoffPending = false
-        val parent = sideParentId ?: return@LaunchedEffect
-        // Fresh assistant text ONLY: ids not present at click time.
-        val fresh = uiMessages.lastOrNull {
-            it.role == "assistant" && it.content.isNotBlank() && it.id !in handoffBaseIds
-        }
-        if (fresh == null) {
-            android.widget.Toast.makeText(context, "交接未完成：没有新的助手回复", android.widget.Toast.LENGTH_SHORT).show()
-            return@LaunchedEffect
-        }
-        runCatching { chatRepository.appendMessage(parent, "user", NovexSideHandoff.parts(fresh.content)) }
-            .onSuccess {
-                NovexSideHandoff.writeWatermark(context, sessionId, fresh.content)
-                NovexSideHandoff.markParentDirty(context, parent)
-                android.widget.Toast.makeText(context, "交接简报已并入主对话", android.widget.Toast.LENGTH_SHORT).show()
-            }
-            .onFailure {
-                android.widget.Toast.makeText(context, it.message ?: "交接未写入主对话", android.widget.Toast.LENGTH_SHORT).show()
-            }
-    }
-    LaunchedEffect(handoffPending) {
-        if (!handoffPending) return@LaunchedEffect
-        kotlinx.coroutines.delay(150_000)
-        if (handoffPending) {
-            handoffPending = false
-            android.widget.Toast.makeText(context, "交接未完成：等待新回复超时", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-    // Returning from a side page that delivered a handoff: reload once so the
-    // marked brief row is visible without re-entering the conversation.
+    val sideHandoffState by viewModel.sideHandoffState.collectAsState()
     val chatLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(chatLifecycleOwner, sessionId, sideParentId) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -774,11 +766,8 @@ fun ChatScreen(
     }
     val startHandoff: () -> Unit = {
         val parent = sideParentId
-        if (parent != null && !isStreaming && !handoffPending) {
-            handoffBaseIds = uiMessages.map { it.id }.toSet()
-            handoffSawStreaming = false
-            handoffPending = true
-            viewModel.sendMessage(NovexSideHandoff.instruction(NovexSideHandoff.readWatermark(context, sessionId)))
+        if (parent != null && !isStreaming) {
+            viewModel.startSideHandoff(parent)
         }
     }
     if (showSideDeleteDialog && sideParentId != null) {
@@ -1750,12 +1739,12 @@ fun ChatScreen(
         } else ChatColors.background,
         contentWindowInsets = WindowInsets(0),
         topBar = {
-            // 沉浸收起：顶栏上滑消失；内容区顶部内边距同步动画（见下方 padding）。
-            // 侧边对话页不收起。
+            // 沉浸淡化（2026-09-15）：顶栏原地淡出淡入，不滑动；内容区顶部
+            // 内边距恒定（见下方 padding），版式零跳动。侧边对话页不淡化。
             AnimatedVisibility(
                 visible = !effectiveChromeCollapsed,
-                enter = slideInVertically { -it } + fadeIn(),
-                exit = slideOutVertically { -it } + fadeOut(),
+                enter = fadeIn(tween(220)),
+                exit = fadeOut(tween(220)),
             ) {
             TopAppBar(
                 title = {
@@ -2082,23 +2071,28 @@ fun ChatScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        // 收起时内容顶部回落到系统状态栏内边距（顶栏隐藏后仍不让内容钻到
-        // 状态栏底下）；展开时用顶栏实际高度。动画与顶栏的滑入滑出同步。
+        // [T-chrome-fade] 内容永远只让出系统状态栏的高度，顶栏悬浮在其上：
+        // 淡出时内容原地不动（此前收起会让内容上移补位，跳版式像出 bug）。
+        // 顶栏可见时会盖住顶部一两行内容（用户已确认接受）。
         val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val chromeTopInset by animateDpAsState(
-            targetValue = if (effectiveChromeCollapsed) statusBarTop else padding.calculateTopPadding(),
-            label = "chromeTopInset",
-        )
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = chromeTopInset, bottom = padding.calculateBottomPadding())
+                .padding(top = statusBarTop, bottom = padding.calculateBottomPadding())
                 .imePadding()
-                // 任何触摸都重置沉浸收起的空闲计时。
+                // 任何触摸都重置沉浸淡化的空闲计时；淡出状态下还负责唤回
+                // （600ms 内刚手动隐藏的不抢——那正是隐藏手势的收尾）。
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
-                        lastInteractionAt = System.currentTimeMillis()
+                        val now = System.currentTimeMillis()
+                        lastInteractionAt = now
+                        if (chromeCollapsed && sideParentId == null &&
+                            now - chromeHiddenAtMs > 600 && now - chromeRevivedAtMs > 600
+                        ) {
+                            chromeRevivedAtMs = now
+                            chromeCollapsed = false
+                        }
                     }
                 },
         ) {
@@ -2132,8 +2126,17 @@ fun ChatScreen(
 
             // Messages + scroll-to-bottom button
             Box(modifier = Modifier.weight(1f).pointerInput(Unit) {
-                // 空白处单点 = 切换沉浸收起（消息行自身的点击不会到达这里）。
-                detectTapGestures { chromeCollapsed = !chromeCollapsed }
+                // 空白处单点 = 立即淡出界面（消息行自身的点击不会到达这里）；
+                // 淡出状态下的唤回由外层触摸计时统一负责——同一次手势里两个
+                // 手势器都会触发，这里跳过"刚被唤回"的那一下，避免刚淡入又被
+                // 这里拍回去。
+                detectTapGestures {
+                    val now = System.currentTimeMillis()
+                    if (!chromeCollapsed && now - chromeRevivedAtMs > 600) {
+                        chromeCollapsed = true
+                        chromeHiddenAtMs = now
+                    }
+                }
             }) {
                 // Execution has one home: the collapsed transcript process. Do not duplicate
                 // raw tool thumbnails above the composer or reserve space for a hidden overlay.
@@ -2165,7 +2168,6 @@ fun ChatScreen(
                         }.orEmpty()
                     )
                 }
-                var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
                 openedProcess?.let { opened ->
                     val process = flatItems.filterIsInstance<FlatChatItem.AssistantProcess>()
                         .firstOrNull { it.key == opened.key } ?: opened
@@ -2375,6 +2377,10 @@ fun ChatScreen(
                                 }
                             }
                             flatItems = foldNovexExecutionProcesses(if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows)
+                            // [T-execution-activity-strip] 底部活动条的数据源：
+                            // 每次扁平化后刷新「最新一条工作记录」，供输入栏上方
+                            // 的滚动播报条读取（状态在 ChatScreen 顶层提升）。
+                            latestLiveProcess = flatItems.filterIsInstance<FlatChatItem.AssistantProcess>().lastOrNull()
                             viewModel.retainedTranscriptRows = flatItems
                             viewModel.retainedTranscriptSessionId = sessionId
                             com.openminis.app.diagnostics.StreamPerfMonitor.tick(
@@ -3049,7 +3055,7 @@ fun ChatScreen(
                 // anchor, extra bottom padding = down-button height 36dp + 10dp
                 // spacing). Tapping walks BACK one user turn at a time rather
                 // than jumping to the oldest message.
-                if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value && !effectiveChromeCollapsed) {
+                if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value && chromeFadeAlpha > 0.01f) {
                     val upBaseBottom = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
@@ -3057,8 +3063,9 @@ fun ChatScreen(
                         },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
+                            .graphicsLayer { alpha = chromeFadeAlpha }
                             .padding(end = 12.dp, bottom = upBaseBottom + 46.dp)
-                            .shadow(4.dp, CircleShape)
+                            .shadow(if (chromeFadeAlpha >= 0.99f) 4.dp else 0.dp, CircleShape)
                             .size(36.dp),
                         colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
                             containerColor = ChatColors.inputBg,
@@ -3078,7 +3085,7 @@ fun ChatScreen(
                 }
 
                 if (transcriptViewportReady && !isNearBottom.value &&
-                    contentOverflows.value && messages.isNotEmpty() && !effectiveChromeCollapsed
+                    contentOverflows.value && messages.isNotEmpty() && chromeFadeAlpha > 0.01f
                 ) {
                     val fabBottomPadding = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
@@ -3104,8 +3111,9 @@ fun ChatScreen(
                         },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
+                            .graphicsLayer { alpha = chromeFadeAlpha }
                             .padding(end = 12.dp, bottom = fabBottomPadding)
-                            .shadow(4.dp, CircleShape)
+                            .shadow(if (chromeFadeAlpha >= 0.99f) 4.dp else 0.dp, CircleShape)
                             .size(36.dp),
                         colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
                             containerColor = ChatColors.inputBg,
@@ -3530,6 +3538,28 @@ fun ChatScreen(
                             }
                         }
                     }
+                }
+
+                // [T-side-handoff-strip] 回传状态条（决策 ①）：侧边页输入栏上方，
+                // 忙碌/成功/失败全程可见；状态源在 ViewModel，退出页面不丢。
+                if (sideParentId != null && sideHandoffState !is ChatViewModel.SideHandoffState.Idle) {
+                    NovexSideHandoffStatusStrip(
+                        state = sideHandoffState,
+                        onRetry = { sideParentId?.let(viewModel::retrySideHandoff) },
+                        onDismiss = viewModel::dismissSideHandoff,
+                    )
+                }
+
+                // [T-execution-activity-strip] 技能活动条贴底（决策 ②）：生成中
+                // 滚动播报最新 3 条工具动态；回合结束切「✓ 本轮完成」停 3 秒。
+                // 仅在该轮确有执行动态时出现——纯文本回合不打扰。
+                val stripProcess = latestLiveProcess
+                val stripActive = isStreamingForStrip && stripProcess?.statusLabel() == "进行中"
+                if (stripActive) {
+                    stripVisibleDuringStream = true
+                    stripProcess?.let { NovexExecutionActivityStrip(it, done = false, onOpen = { openedProcess = it }) }
+                } else if (processStripDone && stripProcess != null) {
+                    NovexExecutionActivityStrip(stripProcess, done = true, onOpen = { openedProcess = stripProcess })
                 }
 
                 // Input box: iOS-style floating card — no visible border, separated
@@ -4620,24 +4650,26 @@ fun ChatScreen(
                             )
                         }
 
-                        // 侧边页回传（决策 16/17）：符号入口——让侧边模型产出增量
-                        // 交接简报并并入主线。守卫见 startHandoff 状态机。
+                        // 侧边页回传（决策 16/17；状态机 2026-09-15 下沉 ViewModel）：
+                        // 符号入口——让侧边模型产出增量交接简报并并入主线；
+                        // 全程反馈见输入栏上方的回传状态条。
+                        val handoffRunning = sideHandoffState is ChatViewModel.SideHandoffState.Running
                         if (sideParentId != null) {
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .background(
-                                        if (handoffPending) ChatColors.sendButtonDisabled else ChatColors.sendButton,
+                                        if (handoffRunning) ChatColors.sendButtonDisabled else ChatColors.sendButton,
                                         CircleShape,
                                     )
                                     .clip(CircleShape)
-                                    .clickable(enabled = !handoffPending && !isStreaming) { startHandoff() },
+                                    .clickable(enabled = !handoffRunning && !isStreaming) { startHandoff() },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
                                     contentDescription = "回传主对话",
-                                    tint = if (handoffPending) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
+                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
@@ -4918,8 +4950,8 @@ fun ChatScreen(
                     )
                 )
         )
-        // 侧边组件轨（2026-09-15 第三轮）：书签长条左缘、跨主线↔侧边页常驻；
-        // 状态半圆右缘仅主线；收起系统由本屏驱动（chromeCollapsed）。
+        // 侧边组件轨（2026-09-15 第三轮）：书签横条左缘、跨主线↔侧边页常驻；
+        // 状态半圆右缘仅主线；淡化系统由本屏驱动（chromeCollapsed）。
         NovexSideConversations(
             railSessionId = sideParentId ?: sessionId,
             currentSessionId = sessionId,
@@ -4937,7 +4969,6 @@ fun ChatScreen(
                 ) else null
             } else null,
             chromeCollapsed = chromeCollapsed,
-            onExpandChrome = { chromeCollapsed = false },
         )
         }
     }

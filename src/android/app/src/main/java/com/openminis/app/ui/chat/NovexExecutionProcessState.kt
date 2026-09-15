@@ -20,7 +20,11 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
             is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
             is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
             is FlatChatItem.AssistantMarkdownBlock -> row.executionText
-            is FlatChatItem.AssistantThinking -> row.block.presentationChannel() == NovexPresentationChannel.THINKING
+            // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
+            // 先实时显示文字，输出完再收档）：留在直播区由 ThinkingBlock 展开
+            // 渲染、结束自动收起；后续块到达或回合冻结后，它才被收进工作记录。
+            is FlatChatItem.AssistantThinking -> row.block.presentationChannel() == NovexPresentationChannel.THINKING &&
+                !(row.isLastBlockOverall && row.messageIsStreaming)
             else -> false
         } }
         val hasTool = folded.any { it is FlatChatItem.AssistantToolUse }

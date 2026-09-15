@@ -29,6 +29,48 @@ private fun ToolBlockStatus?.displayLabel(): String = when (this) {
     null -> "记录"
 }
 
+/**
+ * [T-execution-activity-strip] 生成中钉在输入栏上方的活动条（2026-09-15 用户
+ * 决策：技能调用动态要贴底滚动播报，否则用户看不到 AI 在干什么）。固定 3 行
+ * 滚动显示最新的工具动态，像终端尾巴；点击打开完整工作记录弹窗；回合结束后
+ * 由调用方切换成「✓ 本轮完成」样式停留 3 秒再收起。
+ */
+@Composable
+internal fun NovexExecutionActivityStrip(
+    process: FlatChatItem.AssistantProcess,
+    done: Boolean,
+    onOpen: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+    ) {
+        Text(
+            if (done) "✓ 本轮完成 · 查看记录 ›" else "正在处理 · 最新动态 ›",
+            color = if (done) ChatColors.primaryText else ChatColors.secondaryText,
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        if (!done) {
+            process.tools.takeLast(3).forEach { row ->
+                val title = row.block.toolTitle.ifBlank {
+                    buildNovexStandardToolDetailPresentation(row.block.toolName, row.block.toolArgs, row.block.content)?.title
+                        ?: "查看操作详情"
+                }
+                Text(
+                    "${row.block.toolStatus.displayLabel()} · $title",
+                    color = ChatColors.secondaryText,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
     val active=process.statusLabel()=="进行中"

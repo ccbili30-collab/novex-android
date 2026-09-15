@@ -139,19 +139,22 @@ internal fun NovexEdgeGestureSurface(
     ) { content() }
 }
 
-/** 长条书签形状：顶端两角圆角、底端收成一个小尖角（书签尾巴）。 */
-internal fun bookmarkStripShape(tipFraction: Float = 0.16f): Shape = object : Shape {
+/**
+ * 长条书签形状（横向版，2026-09-15 用户确认：横着从左缘探出）：贴屏幕的左端
+ * 两角圆角、探出的右端收成一个小尖角（书签尾巴朝屏幕内）。
+ */
+internal fun bookmarkTabShape(tipFraction: Float = 0.16f): Shape = object : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val path = Path()
-        val r = size.width / 2f
-        val tip = size.height * tipFraction
+        val r = size.height / 2f
+        val tip = size.width * tipFraction
         path.moveTo(0f, r)
         path.quadraticBezierTo(0f, 0f, r, 0f)
-        path.lineTo(size.width - r, 0f)
-        path.quadraticBezierTo(size.width, 0f, size.width, r)
-        path.lineTo(size.width, size.height - tip)
-        path.lineTo(size.width / 2f, size.height)
-        path.lineTo(0f, size.height - tip)
+        path.lineTo(size.width - tip, 0f)
+        path.lineTo(size.width, size.height / 2f)
+        path.lineTo(size.width - tip, size.height)
+        path.lineTo(r, size.height)
+        path.quadraticBezierTo(0f, size.height, 0f, size.height - r)
         path.close()
         return Outline.Generic(path)
     }
@@ -218,19 +221,16 @@ internal object NovexEdgePrefs {
 internal const val EDGE_PREFS_HUD = "novex_playthrough_hud"
 internal const val EDGE_PREFS_SIDES = "novex_side_conversations"
 
-/** 书签长条尺寸：常规 / 当前所在侧边（变粗变长）。 */
-internal val BookmarkStripWidth = 22.dp
-internal val BookmarkStripHeight = 96.dp
-internal val BookmarkStripCurrentWidth = 28.dp
-internal val BookmarkStripCurrentHeight = 120.dp
+/** 书签横条尺寸（2026-09-15）：从左缘横向探出；当前所在侧边变长变厚。 */
+internal val BookmarkStripLength = 96.dp
+internal val BookmarkStripThickness = 22.dp
+internal val BookmarkStripCurrentLength = 120.dp
+internal val BookmarkStripCurrentThickness = 28.dp
 internal val BookmarkStripGap = 8.dp
 
 /** 半圆把手尺寸（突出 24dp）。 */
 internal val StateHandleWidth = 24.dp
 internal val StateHandleHeight = 48.dp
-
-/** 收起后留在屏幕内的微边宽度。 */
-internal val EdgeCollapsedSliver = 6.dp
 
 /** 设计令牌的取值入口——必须从组合环境调用（getter 是 @Composable）。 */
 @Composable

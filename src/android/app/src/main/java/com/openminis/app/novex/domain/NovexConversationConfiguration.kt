@@ -215,6 +215,10 @@ sealed interface NovexConversationCommand {
         val key: String,
         val value: PlaythroughValue,
     ) : NovexConversationCommand
+    data class RemovePlaythroughValue(
+        val branchId: String,
+        val key: String,
+    ) : NovexConversationCommand
     data class ForkPlaythroughState(
         val sourceBranchId: String,
         val newBranchId: String,
@@ -333,6 +337,23 @@ class NovexConversationConfiguration private constructor(
             withSnapshot(
                 snapshot.copy(
                     playthroughStates = snapshot.playthroughStates + (command.branchId to updated),
+                ),
+            )
+        }
+
+        is NovexConversationCommand.RemovePlaythroughValue -> {
+            // 删除一个状态字段（用户 2026-09-15：AI 此前只能加、不能改删）。
+            // 分支尚无快照时为幂等空操作（不能凭空建一个空快照去遮蔽祖先值）；
+            // 删除不存在的键同样幂等成功——AI 重复删除同一字段不应报错。
+            require(command.branchId.isNotBlank()) { "消息分支编号不能为空" }
+            require(command.key.isNotBlank()) { "本局状态字段名不能为空" }
+            val prior = snapshot.playthroughStates[command.branchId]
+            if (prior == null) this
+            else withSnapshot(
+                snapshot.copy(
+                    playthroughStates = snapshot.playthroughStates + (
+                        command.branchId to prior.copy(values = prior.values - command.key)
+                        ),
                 ),
             )
         }

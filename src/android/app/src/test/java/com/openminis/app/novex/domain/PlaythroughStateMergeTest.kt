@@ -72,4 +72,34 @@ class PlaythroughStateMergeTest {
         val hp = InteractiveFictionRuntime.resolveState(config, listOf("t1")).values["hp"] as PlaythroughValue.Number
         assertEquals(null, hp.max)
     }
+
+    // ── 删除能力（2026-09-15 用户报告：AI 只能加、不能改删）────────────────
+
+    private fun remove(key: String): JSONObject = JSONObject().put("remove", key)
+
+    @Test fun removeDeletesExistingKeyOnSameBranch() {
+        var config = NovexConversationConfigurationSnapshot("chat", answerIdentity = AnswerIdentity.CharacterVersion("role"))
+        config = PlaythroughStateRegistration.applyUpdates(config, "t1", updates(update("hp", 100), update("mp", 40)), listOf("t1"))
+        config = PlaythroughStateRegistration.applyUpdates(config, "t1", updates(remove("hp")), listOf("t1"))
+        val resolved = InteractiveFictionRuntime.resolveState(config, listOf("t1"))
+        assertEquals(setOf("mp"), resolved.values.keys)
+    }
+
+    @Test fun removeOnNewBranchInheritsAncestorThenDeletes() {
+        var config = NovexConversationConfigurationSnapshot("chat", answerIdentity = AnswerIdentity.CharacterVersion("role"))
+        config = PlaythroughStateRegistration.applyUpdates(config, "t1", updates(update("hp", 100), update("mp", 40)), listOf("t1"))
+        // 新分支上删除：先继承祖先（mp 保留），再删 hp。
+        config = PlaythroughStateRegistration.applyUpdates(config, "t2", updates(remove("hp")), listOf("t1", "t2"))
+        val resolved = InteractiveFictionRuntime.resolveState(config, listOf("t1", "t2"))
+        assertEquals(setOf("mp"), resolved.values.keys)
+    }
+
+    @Test fun removeMissingKeyIsIdempotent() {
+        var config = NovexConversationConfigurationSnapshot("chat", answerIdentity = AnswerIdentity.CharacterVersion("role"))
+        config = PlaythroughStateRegistration.applyUpdates(config, "t1", updates(update("hp", 100)), listOf("t1"))
+        // 删除不存在的键：幂等成功，既有值不受影响。
+        config = PlaythroughStateRegistration.applyUpdates(config, "t1", updates(remove("ghost")), listOf("t1"))
+        val resolved = InteractiveFictionRuntime.resolveState(config, listOf("t1"))
+        assertEquals(setOf("hp"), resolved.values.keys)
+    }
 }

@@ -49,6 +49,26 @@ class NovexCardExecutionPresentationTest {
         val failedChoice = foldNovexExecutionProcesses(listOf(tool("bad", "present_choices", ToolBlockStatus.FAILED))).single()
         assertTrue(failedChoice is FlatChatItem.AssistantToolUse)
     }
+    // [T-thinking-live]（2026-09-15 用户决策：思考先实时显示，输出完再收档）
+    @Test fun streamingTrailingThinkingStaysLiveWhileCompletedThinkingFolds() {
+        fun thinking(id: String, content: String, last: Boolean, streaming: Boolean, trailing: Boolean) =
+            FlatChatItem.AssistantThinking(
+                messageId = "reply",
+                block = AssistantBlock(id, "thinking", content),
+                isLast = last,
+                messageIsStreaming = streaming,
+                isLastBlockOverall = trailing,
+            )
+        val done = thinking("t1", "先想了一步", last = false, streaming = true, trailing = false)
+        val call = tool("call-1")
+        val live = thinking("t2", "正在想……", last = true, streaming = true, trailing = true)
+        val rows = foldNovexExecutionProcesses(listOf(done, call, live))
+        // 已完成的思考与工具收进工作记录；进行中的思考留在直播区实时展开。
+        val process = rows.filterIsInstance<FlatChatItem.AssistantProcess>().single()
+        assertTrue(process.rows.contains(done))
+        assertTrue(process.rows.contains(call))
+        assertSame(live, rows.last())
+    }
     @Test fun creationReceiptsReportActualSavedCardsWithoutGuessingUserIntent() {
         assertNull(NovexCardCreationTask.evaluate(listOf(AssistantBlock("text", "text", "已经完成"))))
         fun saved(call: String, card: String) = tool(call, "novex_write_card", content = """{"status":"saved_verified","saved":true,"created_cards":[{"kind":"game","id":"$card"}]}""").block

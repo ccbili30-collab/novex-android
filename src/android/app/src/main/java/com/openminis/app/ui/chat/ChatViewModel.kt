@@ -125,6 +125,7 @@ import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -1199,6 +1200,15 @@ class ChatViewModel(
     private val conversationBranchMutex = kotlinx.coroutines.sync.Mutex()
     private var activeBranchMessageIds: Set<String> = emptySet()
     private var activeBranchPathIds: List<String> = emptyList()
+
+    /**
+     * 正在生成的这条 AI 消息 id（2026-09-15）。回合内的状态工具写入都挂在这个
+     * 分支上，但它要到回合结束持久化时才进 [activeBranchPathIds]——状态面板若
+     * 只按持久化路径解析，回合内永远显示旧值（用户报告"AI 改不动状态"的病因
+     * 之一）。工具首次写入时登记；新用户回合开启时轮换（旧 id 已持久化进路径，
+     * 重复出现在解析列表里无害）。
+     */
+    private var activeStreamingTurnId: String? = null
     private var novexContextRevision = 0L
     private var excludedBranchMemoryWrites: Map<String, Int> = emptyMap()
 
@@ -3646,8 +3656,11 @@ class ChatViewModel(
     /** Rebuilds branch-sensitive UI state without executing a control or tool. */
     private fun refreshNovexRuntimeProjection() {
         val configuration = currentNovexConfiguration()
+        // 状态解析并入在途回合分支：否则回合内的任何配置写回（含状态工具自身
+        // 的落库）触发本刷新时，面板会被打回"持久化路径"的旧值。
+        val statePath = activeBranchPathIds + listOfNotNull(activeStreamingTurnId)
         _novexControls.value = InteractiveFictionRuntime.resolveControls(configuration, activeBranchPathIds)
-        _activePlaythroughState.value = if(configuration.activeInteractiveFiction!=null || configuration.cardBindingJson!=null) InteractiveFictionRuntime.resolveState(configuration, activeBranchPathIds) else null
+        _activePlaythroughState.value = if(configuration.activeInteractiveFiction!=null || configuration.cardBindingJson!=null) InteractiveFictionRuntime.resolveState(configuration, statePath) else null
         _novexControlView.value = null
     }
 
@@ -3660,6 +3673,8 @@ class ChatViewModel(
 
     private fun recordActiveBranchMessage(messageId: String) {
         if (messageId.isBlank() || messageId in activeBranchMessageIds) return
+        // 用户消息入路径 = 新回合开启：上一条在途回合已终结，撤销其面板旁路。
+        if (activeStreamingTurnId != null && activeStreamingTurnId != messageId) activeStreamingTurnId = null
         activeBranchPathIds = activeBranchPathIds + messageId
         activeBranchMessageIds = activeBranchMessageIds + messageId
         refreshNovexRuntimeProjection()
@@ -5780,6 +5795,83 @@ class ChatViewModel(
         installActiveConversation(chatRepository.loadActiveConversation(activeSessionId))
     }
 
+    // ── 侧边回传（2026-09-15 重做：状态下沉 ViewModel）────────────────────
+    // 此前回传的收尾协程活在侧边页面的 UI 里——用户生成期间退出页面，协程被
+    // 取消、简报永不写入主线且无任何提示（用户报告"根本没办法回传"）。本
+    // ViewModel 按会话常驻（ChatViewModelStore），把状态机搬到这里后无论用户
+    // 何时离开页面，简报生成都一定会落账并给出结果。
+    sealed interface SideHandoffState {
+        data object Idle : SideHandoffState
+        data object Running : SideHandoffState
+        data class Succeeded(val brief: String) : SideHandoffState
+        data class Failed(val reason: String) : SideHandoffState
+    }
+
+    private val _sideHandoffState = MutableStateFlow<SideHandoffState>(SideHandoffState.Idle)
+    val sideHandoffState: StateFlow<SideHandoffState> = _sideHandoffState.asStateFlow()
+    private var sideHandoffBaseIds = setOf<String>()
+    private var sideHandoffJob: kotlinx.coroutines.Job? = null
+
+    /** 触发一次回传：让侧边模型产出增量交接简报并并入主线。守卫：只认点击后
+     *  新产生的助手回复；生成失败/超时绝不把旧回复当简报（决策 18）。 */
+    fun startSideHandoff(sideParentId: String) {
+        if (_isStreaming.value || _sideHandoffState.value is SideHandoffState.Running) return
+        sideHandoffJob?.cancel()
+        sideHandoffBaseIds = _messages.value.map { it.id }.toSet()
+        _sideHandoffState.value = SideHandoffState.Running
+        sendMessage(NovexSideHandoff.instruction(NovexSideHandoff.readWatermark(context, sessionId)))
+        sideHandoffJob = viewModelScope.launch {
+            // Pair(生成确实开始过, 新产出的助手回复)：外层 null = 150 秒超时。
+            var sawStreaming = false
+            val result: Pair<Boolean, ChatMessage?>? = withTimeoutOrNull(150_000) {
+                kotlinx.coroutines.flow.combine(_isStreaming, _messages) { streaming, _ -> streaming }
+                    .first { streaming ->
+                        if (streaming) {
+                            sawStreaming = true
+                            false
+                        } else {
+                            // 首个 false 且从未见过 true = 生成根本没开始。
+                            true
+                        }
+                    }
+                sawStreaming to _messages.value.lastOrNull {
+                    it.role == "assistant" && it.content.isNotBlank() && it.id !in sideHandoffBaseIds
+                }
+            }
+            val fresh = result?.second
+            _sideHandoffState.value = when {
+                result == null -> SideHandoffState.Failed("交接未完成：等待新回复超时")
+                !result.first -> SideHandoffState.Failed("交接未完成：发送没有生效，请重试")
+                fresh == null -> SideHandoffState.Failed("交接未完成：生成被打断，没有产出简报")
+                else -> runCatching {
+                    chatRepository.appendMessage(sideParentId, "user", NovexSideHandoff.parts(fresh.content))
+                    NovexSideHandoff.writeWatermark(context, sessionId, fresh.content)
+                    NovexSideHandoff.markParentDirty(context, sideParentId)
+                }.fold(
+                    { SideHandoffState.Succeeded(fresh.content) },
+                    { SideHandoffState.Failed(it.message ?: "交接未写入主对话") },
+                )
+            }
+            if (_sideHandoffState.value is SideHandoffState.Succeeded) {
+                kotlinx.coroutines.delay(3_000)
+                if (_sideHandoffState.value is SideHandoffState.Succeeded) {
+                    _sideHandoffState.value = SideHandoffState.Idle
+                }
+            }
+        }
+    }
+
+    fun retrySideHandoff(sideParentId: String) {
+        _sideHandoffState.value = SideHandoffState.Idle
+        startSideHandoff(sideParentId)
+    }
+
+    fun dismissSideHandoff() {
+        if (_sideHandoffState.value !is SideHandoffState.Running) {
+            _sideHandoffState.value = SideHandoffState.Idle
+        }
+    }
+
     private suspend fun installActiveConversation(
         conversation: ChatRepository.ActiveConversation,
     ) {
@@ -6408,53 +6500,12 @@ class ChatViewModel(
             setInputText(text)
             return
         }
-        // A substantial first prompt is usually a shared world template. Keep
-        // an immutable local copy before the model sees it so long sessions do
-        // not gradually dilute the world's original rules.
-        if (trimmed.length >= 300) {
-            runCatching {
-                val path = "/var/minis/workspace/novex/$activeSessionId/original.md"
-                val file = com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(activeSessionId, path, context)
-                if (file != null && !file.exists()) {
-                    file.parentFile?.mkdirs()
-                    file.writeText("# 世界原始模板\n\n$trimmed\n")
-                }
-            }
-        }
         if (_isCompacting.value) {
             appendSystemInfo(
                 text = "Wait for the current compact to finish before sending.",
                 iconKind = "compact",
             )
             return
-        }
-        // Context pressure check. Unlike before, needsCompact now HOLDS the
-        // send: either compact silently (auto-compact on) or ask first. The
-        // whole point is that the request which tripped the threshold must not
-        // be the one that goes out over-length.
-        if (!skipContextCheck) {
-            when (try { checkContextBeforeSend(text) } catch (failure: Exception) {
-                setInputText(text)
-                _error.value = "发送准备失败：${failure.message ?: "请重试"}"
-                recordModelPreparationFailure(failure)
-                return
-            }) {
-                PreSendContextAction.PROCEED -> {}
-                PreSendContextAction.COMPACT_THEN_SEND -> {
-                    pendingSendText = text
-                    _inputText.value = ""
-                    compactAndSendPending()
-                    return
-                }
-                PreSendContextAction.ASK_USER -> {
-                    // Park the text on the VM (not the composer) so the dialog
-                    // owns it; cancelCompactBeforeSend puts it back.
-                    pendingSendText = text
-                    _inputText.value = ""
-                    _showCompactBeforeSendPrompt.value = true
-                    return
-                }
-            }
         }
         // A fresh send supersedes any pending resume — mirror iOS which clears
         // canResume at the top of send().
@@ -6477,9 +6528,6 @@ class ChatViewModel(
         var provider: LLMProvider = initialProvider
 
         _error.value = null
-
-        val currentAttachments = _attachments.value
-        clearAttachments()
 
         // T145: claim _isStreaming synchronously so a rapid second tap can't
         // slip past the entry guard during DB/OAuth setup. See retryFromMessage.
@@ -6514,6 +6562,67 @@ class ChatViewModel(
             try {
             // Ensure session exists in DB (creates on first message for draft sessions)
             val activeSessionId = ensureSession()
+
+            // [T-send-stall]（用户 2026-09-15：发送有时卡十多秒）世界模板写盘与
+            // 发送前上下文检查此前同步跑在 UI 线程：前者过 PRoot 沙盒文件系统，
+            // 后者对整段历史做 O(对话长度) 的分词估算，长对话里两者叠加先把界
+            // 面冻住再发送。两者都挪到后台调度器执行；因 T145 已在上方同步声明
+            // _isStreaming，检查若改判压缩/询问/失败，必须先撤销声明再走原有的
+            // parking 路径，否则会留下一个永远不会开始流的"假流式"状态。
+            if (trimmed.length >= 300) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        // A substantial first prompt is usually a shared world
+                        // template. Keep an immutable local copy before the model
+                        // sees it so long sessions do not gradually dilute the
+                        // world's original rules.
+                        val path = "/var/minis/workspace/novex/$activeSessionId/original.md"
+                        val file = com.openminis.app.sandbox.PRootKernel.resolveSessionHostPath(activeSessionId, path, context)
+                        if (file != null && !file.exists()) {
+                            file.parentFile?.mkdirs()
+                            file.writeText("# 世界原始模板\n\n$trimmed\n")
+                        }
+                    }
+                }
+            }
+            // Context pressure check. needsCompact HOLDS the send: either compact
+            // silently (auto-compact on) or ask first — the request that tripped
+            // the threshold must not be the one that goes out over-length.
+            if (!skipContextCheck) {
+                val decision = withContext(Dispatchers.Default) {
+                    runCatching { checkContextBeforeSend(text) }
+                }
+                when (decision.getOrNull()) {
+                    PreSendContextAction.PROCEED, null -> {}
+                    PreSendContextAction.COMPACT_THEN_SEND -> {
+                        _isStreaming.value = false
+                        pendingSendText = text
+                        _inputText.value = ""
+                        compactAndSendPending()
+                        return@launch
+                    }
+                    PreSendContextAction.ASK_USER -> {
+                        // Park the text on the VM (not the composer) so the
+                        // dialog owns it; cancelCompactBeforeSend puts it back.
+                        _isStreaming.value = false
+                        pendingSendText = text
+                        _inputText.value = ""
+                        _showCompactBeforeSendPrompt.value = true
+                        return@launch
+                    }
+                }
+                if (decision.isFailure) {
+                    val failure = decision.exceptionOrNull() as? Exception
+                        ?: IllegalStateException("发送准备失败")
+                    _isStreaming.value = false
+                    setInputText(text)
+                    _error.value = "发送准备失败：${failure.message ?: "请重试"}"
+                    recordModelPreparationFailure(failure)
+                    return@launch
+                }
+            }
+            val currentAttachments = _attachments.value
+            clearAttachments()
 
             if (editingId != null) {
                 if (!forkBeforeEdit(editingId)) {
@@ -9742,6 +9851,7 @@ class ChatViewModel(
         argsJson: String,
         turnMessageId: String,
     ): ToolExecutionResult = runCatching {
+            activeStreamingTurnId = turnMessageId
             val before = _activePlaythroughState.value
             val updated = novexSettingsStore.update { configuration ->
                 require(configuration.activeInteractiveFiction != null || integratedCards.binding(activeSessionId)!=null) { "请先选择互动卡片" }
@@ -9750,6 +9860,10 @@ class ChatViewModel(
                     activePathIds = activeBranchPathIds)
             }
             val after = InteractiveFictionRuntime.resolveState(updated, activeBranchPathIds + turnMessageId)
+            // 回合内即时可见（2026-09-15）：常规投影刷新解析的是"已持久化路径"，
+            // 不含正在生成的这条消息——不在这里同步一次的话，AI 改了值、面板
+            // 到回合结束前都还显示旧值，看起来就是"改不动"。
+            _activePlaythroughState.value = after
             val changes = diffNovexPlaythroughState(before, after)
             if (changes.isNotEmpty()) {
                 _novexDataUpdates.tryEmit(NovexDataUpdateEvent(turnMessageId, changes))
