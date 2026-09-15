@@ -479,7 +479,12 @@ fun NovexProviderSetupScreen(
                     error = "保存模型连接失败：${failure.message ?: failure.javaClass.simpleName}"
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text("保存并启用（${selectedModels.size}）") }
-            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://platform.deepseek.com/api_keys"))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("前往 DeepSeek（深度求索）获取密钥") }
+            // [T-qianchen-preset] 取钥链接按实例自适应：内置预设带 keyHelpUrl
+            // （前尘 API → proxy.qianc.ltd）；其余实例保持 DeepSeek 默认指引。
+            val helpUrl = existing?.keyHelpUrl ?: "https://platform.deepseek.com/api_keys"
+            val helpLabel = existing?.keyHelpUrl?.let { "前往 ${existing.label} 官网获取密钥" }
+                ?: "前往 DeepSeek（深度求索）获取密钥"
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(helpUrl))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(helpLabel) }
             Spacer(Modifier.height(24.dp))
         }
     }

@@ -25,7 +25,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Connection
@@ -90,8 +93,22 @@ class OpenAIProvider private constructor(
      * which is wrong for Azure's deployments-path routing.
      */
     private val azureBase: String? = null,
+    /**
+     * [T-qianchen-preset] chat 首个数据块前失败（HTTP 4xx/5xx 或网络异常）时，
+     * 同一实例自动改走 /v1/responses 重试一次（用户 2026-09-16 决策：前尘中转
+     * 「chat 不行就换 responses」）。仅内置预设实例开启；进程内粘性——一旦切换
+     * 成功过，本进程后续请求直接走 responses，不再先撞一次 chat。
+     */
+    private val allowResponsesFallback: Boolean = false,
 ) : LLMProvider {
     override val name = "OpenAI"
+
+    /**
+     * [T-qianchen-preset] 本 provider 实例已激活 responses 回退。构造时不知道
+     * 实例 id（thinkingRuleInstanceId 由工厂构造后注入），粘性检查推迟到首次
+     * 请求时做。
+     */
+    @Volatile private var responsesFallbackActivated = false
 
     /**
      * [T-android-thinking-rules-phase2] Owning provider-instance id, set by
@@ -112,6 +129,8 @@ class OpenAIProvider private constructor(
         customUserAgent: String? = null,
         isAzure: Boolean = false,
         azureBase: String? = null,
+        // [T-qianchen-preset] chat 首块前失败自动改走 /v1/responses（仅内置前尘预设开启）。
+        allowResponsesFallback: Boolean = false,
     ) : this(
         apiKey = apiKey,
         oauthTokenProvider = null,
@@ -122,6 +141,7 @@ class OpenAIProvider private constructor(
         customUserAgent = customUserAgent,
         isAzure = isAzure,
         azureBase = azureBase,
+        allowResponsesFallback = allowResponsesFallback,
     )
 
     /** OAuth constructor (Codex Responses API). */
@@ -132,6 +152,14 @@ class OpenAIProvider private constructor(
     ) : this(apiKey = null, oauthTokenProvider = oauthTokenProvider, model = model, codexAccountId = codexAccountId)
 
     companion object {
+        /**
+         * [T-qianchen-preset] responses 回退的进程级粘性：key = 供应商实例 id。
+         * chat 失败并成功切到 responses 的实例，本进程内后续请求直接走
+         * responses（省一次必败的 chat 往返）。重启后自然复位，重新探测。
+         */
+        private val responsesFallbackSticky: MutableSet<String> =
+            java.util.concurrent.ConcurrentHashMap.newKeySet()
+
         /**
          * [T-android-thinking-level-arch] Codex OAuth client version advertised
          * in the Version / User-Agent headers. Bumped 0.142.3 → 0.144.1 to
@@ -331,7 +359,8 @@ class OpenAIProvider private constructor(
      * Responses API is used when OAuth (Codex) OR when the user explicitly
      * flipped the per-instance `useResponsesAPI` switch.
      */
-    private val usesChatCompletionsAPI: Boolean get() = forceChatCompletions || (!isOAuth && !useResponsesAPI)
+    private val usesChatCompletionsAPI: Boolean get() = forceChatCompletions ||
+        (!isOAuth && !useResponsesAPI && !responsesFallbackActivated)
 
     /**
      * [T-android-tool-splits-reply-fix] Chat Completions streams ONE
@@ -587,9 +616,45 @@ class OpenAIProvider private constructor(
         imageParts: List<LLMMessage.ImagePart>,
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
-    ): Flow<LLMStreamChunk> = rawStreamMessage(
-        messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel,
-    )
+    ): Flow<LLMStreamChunk> {
+        // [T-qianchen-preset] chat → responses 自动回退（仅 allowResponsesFallback
+        // 的实例，当前只有内置前尘预设）。两种情况不参与：已是 responses 模式、
+        // 或本次请求根本不走 chat。粘性实例（本进程内切换成功过）直接以
+        // responses 起步，省一次必败的 chat 往返。
+        if (!allowResponsesFallback || forceChatCompletions || isOAuth || useResponsesAPI) {
+            return rawStreamMessage(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+        }
+        if (!responsesFallbackActivated) {
+            thinkingRuleInstanceId?.let { if (it in responsesFallbackSticky) responsesFallbackActivated = true }
+        }
+        if (responsesFallbackActivated) {
+            return rawStreamMessage(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+        }
+        var emittedAny = false
+        return rawStreamMessage(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+            .onEach { emittedAny = true }
+            .catch { failure ->
+                if (failure is kotlinx.coroutines.CancellationException || emittedAny) throw failure
+                com.openminis.app.logging.AppLogger.warning(
+                    "OpenAIProvider",
+                    "[ResponsesFallback] chat failed before first chunk " +
+                        "(${failure.message}) — retrying the same request via /v1/responses",
+                )
+                // 本 provider 内立即切 responses；粘性标记等重试真的产出首块
+                // 再落——若 responses 也失败，下一回合仍从 chat 试起，不锁死。
+                responsesFallbackActivated = true
+                var stickyCommitted = false
+                emitAll(
+                    rawStreamMessage(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+                        .onEach {
+                            if (!stickyCommitted) {
+                                stickyCommitted = true
+                                thinkingRuleInstanceId?.let(responsesFallbackSticky::add)
+                            }
+                        },
+                )
+            }
+    }
 
     private fun rawStreamMessage(
         messages: List<LLMMessage>,

@@ -92,6 +92,9 @@ fun ProviderConfig.toSnapshot(
             imageEndpointMode = inst.imageEndpointMode.name,
             imageEndpointResolved = inst.imageEndpointResolved?.name,
             customUserAgent = inst.customUserAgent,
+            // [T-qianchen-preset] 前尘预设字段随行持久化。
+            keyHelpUrl = inst.keyHelpUrl,
+            autoResponsesFallback = if (inst.autoResponsesFallback) 1 else 0,
             isEnabled = if (inst.isEnabled) 1 else 0,
             sortOrder = idx,
             createdAt = inst.createdAt,
@@ -240,6 +243,9 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
             imageEndpointResolved = row.imageEndpointResolved?.let { m ->
                 runCatching { ImageEndpointMode.valueOf(m) }.getOrNull()
             },
+            // [T-qianchen-preset] 旧库行无此二列的值由 Room 默认补齐（null/0）。
+            keyHelpUrl = row.keyHelpUrl,
+            autoResponsesFallback = row.autoResponsesFallback != 0,
         )
     }.toMutableList()
 

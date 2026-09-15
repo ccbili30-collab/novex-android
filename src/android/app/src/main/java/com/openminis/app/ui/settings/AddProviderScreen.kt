@@ -83,6 +83,9 @@ fun AddProviderScreen(
     var selectedVoiceTemplate by remember {
         mutableStateOf<com.openminis.app.data.model.VoiceProviderTemplate?>(null)
     }
+    // [T-qianchen-preset] 「接口方向」入口带入：true = OpenAI 类型直接以
+    // /v1/responses 模式起步（用户 2026-09-16 决策：新增供应商可选接口方向）。
+    var preselectResponses by remember { mutableStateOf(false) }
 
     // Unified back handler: reuse each step's onBack so predictive-back gesture
     // and the top-bar arrow behave identically (go back to prior step, not exit).
@@ -96,10 +99,11 @@ fun AddProviderScreen(
             AddProviderStep.CONFIGURE -> {
                 // Voice-template entry skipped the credential step entirely —
                 // back returns straight to the type/template list.
-                if (selectedVoiceTemplate != null) {
+                if (selectedVoiceTemplate != null || preselectResponses) {
                     step = AddProviderStep.CHOOSE_TYPE
                     selectedType = null
                     selectedVoiceTemplate = null
+                    preselectResponses = false
                 } else {
                     val creds = availableCredentials(selectedType!!)
                     if (creds.size == 1) {
@@ -139,6 +143,20 @@ fun AddProviderScreen(
                 selectedCredential = ProviderCredential.apiKey
                 step = AddProviderStep.CONFIGURE
             },
+            // [T-qianchen-preset] 「接口方向」入口：与语音模板同款直达配置——
+            // Responses 方向预选 /v1/responses 模式；Anthropic 方向即 Anthropic
+            // 兼容协议（自带 /v1/messages + 自定义地址）。
+            onSelectResponsesDirection = {
+                preselectResponses = true
+                selectedType = ProviderType.openAI
+                selectedCredential = ProviderCredential.apiKey
+                step = AddProviderStep.CONFIGURE
+            },
+            onSelectAnthropicDirection = {
+                selectedType = ProviderType.anthropic
+                selectedCredential = ProviderCredential.apiKey
+                step = AddProviderStep.CONFIGURE
+            },
         )
         AddProviderStep.CHOOSE_CREDENTIAL -> ChooseCredentialScreen(
             providerType = selectedType!!,
@@ -153,6 +171,7 @@ fun AddProviderScreen(
             credentialType = selectedCredential!!,
             providerRepository = providerRepository,
             voiceTemplate = selectedVoiceTemplate,
+            initialUseResponsesAPI = preselectResponses,
             onBack = handleBack,
             onSaved = onSaved,
         )
@@ -206,6 +225,8 @@ private fun ChooseProviderScreen(
     onBack: () -> Unit,
     onSelect: (ProviderType) -> Unit,
     onSelectVoiceTemplate: (com.openminis.app.data.model.VoiceProviderTemplate) -> Unit = {},
+    onSelectResponsesDirection: () -> Unit = {},
+    onSelectAnthropicDirection: () -> Unit = {},
 ) {
     SettingsScaffold(
         title = stringResource(R.string.provider_list_add_provider),
@@ -244,6 +265,31 @@ private fun ChooseProviderScreen(
                     showDivider = index < providerDisplayOrder.size - 1,
                 )
             }
+        }
+
+        // [T-qianchen-preset] 接口方向（2026-09-16 用户决策）：中转/网关按开放
+        // 的接口选方向——同 host 常见 chat 与 responses 两种口子，个别只开
+        // Anthropic。选哪行就用对应协议直达配置。
+        SettingsSection(
+            header = "接口方向",
+            footer = "中转站或自建网关按它开放的接口选择：OpenAI Responses（/v1/responses）适合只开 responses 口子的中转；Anthropic Messages（/v1/messages）适合 Anthropic 兼容中转。地址与密钥在下一步填写。",
+        ) {
+            SettingsRow(
+                title = "OpenAI Responses 接口",
+                subtitle = "/v1/responses · 需要填写接口地址",
+                icon = providerIcon(ProviderType.openAI).first,
+                iconColor = providerIcon(ProviderType.openAI).second,
+                onClick = onSelectResponsesDirection,
+                showDivider = true,
+            )
+            SettingsRow(
+                title = "Anthropic Messages 接口",
+                subtitle = "/v1/messages · 需要填写接口地址",
+                icon = providerIcon(ProviderType.anthropic).first,
+                iconColor = providerIcon(ProviderType.anthropic).second,
+                onClick = onSelectAnthropicDirection,
+                showDivider = false,
+            )
         }
 
         // [T-android-provider-voice] Voice Chat Providers — one row per voice
@@ -351,6 +397,8 @@ private fun ConfigureProviderScreen(
     credentialType: ProviderCredential,
     providerRepository: ProviderRepository,
     voiceTemplate: com.openminis.app.data.model.VoiceProviderTemplate? = null,
+    // [T-qianchen-preset] 「接口方向」入口预选 /v1/responses 模式。
+    initialUseResponsesAPI: Boolean = false,
     onBack: () -> Unit,
     onSaved: () -> Unit,
 ) {
@@ -422,6 +470,7 @@ private fun ConfigureProviderScreen(
                 onCustomBaseURLChange = { customBaseURL = it },
                 providerRepository = providerRepository,
                 initialAppendV1 = voiceTemplate?.appendV1,
+                initialUseResponsesAPI = initialUseResponsesAPI,
                 onSaved = onSaved,
             )
             ProviderCredential.oauth -> OAuthConfigSection(
@@ -448,6 +497,8 @@ private fun ColumnScope.ApiKeyConfigSection(
     // [T-android-provider-voice] Voice templates carry their own v1-suffix
     // policy (e.g. MiMo appends /v1, ElevenLabs must not). null = type default.
     initialAppendV1: Boolean? = null,
+    // [T-qianchen-preset] 「接口方向」入口预选 Responses 模式（仅 openAI 类型生效）。
+    initialUseResponsesAPI: Boolean = false,
     onSaved: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -456,7 +507,9 @@ private fun ColumnScope.ApiKeyConfigSection(
         mutableStateOf(initialAppendV1 ?: (providerType != ProviderType.gemini))
     }
     // OpenAI API Format: false = Chat Completions, true = Responses API
-    var useResponsesAPI by remember { mutableStateOf(false) }
+    var useResponsesAPI by remember {
+        mutableStateOf(initialUseResponsesAPI && providerType == ProviderType.openAI)
+    }
 
     // ── Credential ──────────────────────────────────────────────────────
     val keyPlaceholder = when (providerType) {

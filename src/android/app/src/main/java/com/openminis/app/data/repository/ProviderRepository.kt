@@ -112,6 +112,12 @@ class ProviderRepository(private val context: Context) {
          */
         private const val MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000L
 
+        /**
+         * [T-qianchen-preset] 内置「前尘 API」中转预设的固定实例 id。固定 id 让
+         * 种子幂等（升级不重复建）；用户删除后靠 prefs 标记不再复活。
+         */
+        internal const val QIANCHEN_INSTANCE_ID = "builtin-qianchen-relay"
+
         /** Per-instance `lastFetchAt` pref key. */
         private fun lastFetchKey(instanceId: String) = "modelsLastFetchAt_$instanceId"
 
@@ -245,6 +251,15 @@ class ProviderRepository(private val context: Context) {
                 ensureVoiceTemplateModels()
             } catch (e: Exception) {
                 android.util.Log.w("ProviderRepo", "[Voice] ensureVoiceTemplateModels failed: ${e.message}")
+            }
+            // [T-qianchen-preset] Seed the built-in 前尘 API relay preset once per
+            // install (用户 2026-09-16 决策：预填协议地址、不内置密钥、密钥链接
+            // 指向官网、gemini 模型省略思考参数规避中转的错误参数翻译、chat 失败
+            // 自动改走 /v1/responses)。prefs 标记保证用户删除后不会复活。
+            try {
+                seedQianchenPreset()
+            } catch (e: Exception) {
+                android.util.Log.w("ProviderRepo", "[Preset] seedQianchenPreset failed: ${e.message}")
             }
         }
     }
@@ -723,6 +738,45 @@ class ProviderRepository(private val context: Context) {
      *    modality from /v1/models; restore the template's authoritative
      *    modality when it diverged.
      */
+    /**
+     * [T-qianchen-preset] 种子内置「前尘 API」预设（每安装一次）。实例带固定 id、
+     * OpenAI 兼容协议、地址预填（自动追加 /v1：实测 chat 必须走 /v1/chat/completions，
+     * responses 同 host 的 /v1/responses 亦通）；不内置密钥；密钥链接指向官网；
+     * 附带一条 gemini-* → 完全省略的思考规则（中转会把根级 reasoning_effort 错译成
+     * Claude thinking 参数触发 400）；chat 失败自动改走 responses（见
+     * OpenAIProvider 的 responsesFallback）。
+     */
+    private fun seedQianchenPreset() {
+        val prefs = context.getSharedPreferences("novex_provider_presets", Context.MODE_PRIVATE)
+        // 先落标记再写入，避免 addInstance → ensureConfigLoaded 重入时二次种子。
+        if (prefs.getBoolean("qianchen-seeded", false)) return
+        prefs.edit().putBoolean("qianchen-seeded", true).apply()
+        ensureConfigLoaded()
+        if (_config.value.instances.any { it.id == QIANCHEN_INSTANCE_ID }) return
+        addInstance(
+            ProviderInstance(
+                id = QIANCHEN_INSTANCE_ID,
+                label = "前尘 API",
+                providerType = ProviderType.openAI,
+                credentialType = ProviderCredential.apiKey,
+                customBaseURL = "https://proxy.qianc.ltd",
+                appendV1Suffix = true,
+                keyHelpUrl = "https://proxy.qianc.ltd",
+                autoResponsesFallback = true,
+            ),
+        )
+        saveThinkingRule(
+            QIANCHEN_INSTANCE_ID,
+            ThinkingRule(
+                kind = ThinkingRule.Kind.CUSTOM,
+                scope = ThinkingRule.Scope.ModelPattern("gemini-*"),
+                wireFormat = com.openminis.app.provider.thinking.ThinkingWireFormat.OmitEverything,
+                label = "中转兼容：gemini 模型不发思考参数",
+            ),
+        )
+        android.util.Log.i("ProviderRepo", "[Preset] seeded 前尘 API relay instance")
+    }
+
     fun ensureVoiceTemplateModels() = synchronized(configLock) {
         ensureConfigLoaded()
         val config = workingCopy()
@@ -2810,6 +2864,9 @@ class ProviderRepository(private val context: Context) {
             instance.customBaseURL?.let { put("customBaseURL", it) }
             if (!instance.appendV1Suffix) put("appendV1Suffix", false)
             if (instance.useResponsesAPI) put("useResponsesAPI", true)
+            // [T-qianchen-preset] additive optional fields — old readers decode to defaults.
+            instance.keyHelpUrl?.takeIf { it.isNotBlank() }?.let { put("keyHelpUrl", it) }
+            if (instance.autoResponsesFallback) put("autoResponsesFallback", true)
             // [T-provider-custom-user-agent] Additive, optional. Only written
             // when set; old/new readers without the key decode to null →
             // default UA. Field name matches iOS for cross-platform interop.
@@ -2846,6 +2903,9 @@ class ProviderRepository(private val context: Context) {
         val customBaseURL = dict.optString("customBaseURL", "").ifEmpty { null }
         val appendV1 = dict.optBoolean("appendV1Suffix", true)
         val useResponsesAPI = dict.optBoolean("useResponsesAPI", false)
+        // [T-qianchen-preset] additive optional fields — absent on old exports → defaults.
+        val keyHelpUrl = dict.optString("keyHelpUrl", "").ifEmpty { null }
+        val autoResponsesFallback = dict.optBoolean("autoResponsesFallback", false)
         // [T-provider-custom-user-agent] Additive: old exports lack the key →
         // empty → null → default UA. Field name matches iOS.
         val customUserAgent = dict.optString("customUserAgent", "").ifEmpty { null }
@@ -2859,6 +2919,8 @@ class ProviderRepository(private val context: Context) {
             appendV1Suffix = appendV1,
             useResponsesAPI = useResponsesAPI,
             customUserAgent = customUserAgent,
+            keyHelpUrl = keyHelpUrl,
+            autoResponsesFallback = autoResponsesFallback,
         )
         addInstance(instance)
 

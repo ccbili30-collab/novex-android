@@ -78,6 +78,9 @@ object ProviderFactory {
                         model = model,
                         basePath = base,
                         useResponsesAPI = instance.useResponsesAPI,
+                        // [T-qianchen-preset] 前尘预设：chat 首块前失败自动改走
+                        // /v1/responses（其他实例恒为 false，行为不变）。
+                        allowResponsesFallback = instance.autoResponsesFallback,
                         // [T-provider-custom-user-agent] Covers both chat and
                         // /responses for custom-base OpenAI-compat relays; null
                         // on the official direct path.

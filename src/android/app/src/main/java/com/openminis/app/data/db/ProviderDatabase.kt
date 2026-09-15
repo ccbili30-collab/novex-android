@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProviderConfigMetaEntity::class,
         ProviderThinkingRuleEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class ProviderDatabase : RoomDatabase() {
@@ -104,6 +104,18 @@ abstract class ProviderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * [T-qianchen-preset] 前尘预设字段：官网取钥链接（nullable TEXT）+
+         * chat 失败自动改走 /v1/responses（NOT NULL DEFAULT 0 回填为关）。
+         * 纯增量 ALTER，不动既有行。
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE provider_instances ADD COLUMN key_help_url TEXT")
+                db.execSQL("ALTER TABLE provider_instances ADD COLUMN auto_responses_fallback INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): ProviderDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -111,7 +123,7 @@ abstract class ProviderDatabase : RoomDatabase() {
                     ProviderDatabase::class.java,
                     "provider.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }
