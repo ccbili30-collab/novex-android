@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import com.openminis.app.ui.novex.DropdownMenu
 import com.openminis.app.ui.novex.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,10 +55,12 @@ import com.openminis.app.ui.novex.NovexPageTone
 import com.openminis.app.ui.novex.color
 import com.openminis.app.ui.novex.novexPagePadding
 import com.openminis.app.ui.novex.NovexFilterTabs
+import com.openminis.app.ui.novex.NovexIcons
 import com.openminis.app.ui.novex.NovexSearchField
 import com.openminis.app.ui.novex.NovexSectionTitle
 import com.openminis.app.ui.novex.NovexTextActionRow
 import com.openminis.app.ui.settings.existingMediaFile
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -137,6 +142,16 @@ fun NovexConversationRoot(
             onDismiss = { deleteTarget = null }, onDeleted = { deleteTarget = null })
     }
 
+    val scope = rememberCoroutineScope()
+    fun togglePin(session: ChatSessionEntity) {
+        scope.launch {
+            chatRepository.dao.updatePinnedAt(
+                session.id,
+                if (session.pinnedAt == null) System.currentTimeMillis() else null,
+            )
+        }
+    }
+
     var searching by rememberSaveable { mutableStateOf(false) }
     var filterName by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT.name) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -167,11 +182,13 @@ fun NovexConversationRoot(
                 ).any { it.contains(appliedQuery, ignoreCase = true) }
             }
     }
-    val today = remember(visibleSessions) {
-        visibleSessions.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.TODAY }
+    val pinned = remember(visibleSessions) { visibleSessions.filter { it.pinnedAt != null } }
+    val unpinned = remember(visibleSessions) { visibleSessions.filter { it.pinnedAt == null } }
+    val today = remember(unpinned) {
+        unpinned.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.TODAY }
     }
-    val earlier = remember(visibleSessions) {
-        visibleSessions.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.EARLIER }
+    val earlier = remember(unpinned) {
+        unpinned.filter { sessionHomeRecency(it.updatedAt) == SessionHomeRecency.EARLIER }
     }
     val listState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
@@ -275,6 +292,8 @@ fun NovexConversationRoot(
                                         ConversationWorldMeta(name = it, imagePath = null)
                                     },
                                 version = session.characterVersionId?.let(catalog.versions::get),
+                                pinned = session.pinnedAt != null,
+                                onTogglePin = { togglePin(session) },
                                 onClick = { onOpenSession(session.id) },
                                 onDelete = { deleteTarget = session.id },
                                 modifier = Modifier.longPressDraggableHandle(),
@@ -282,6 +301,7 @@ fun NovexConversationRoot(
                         }
                     }
                 }
+                section("置顶", pinned)
                 section("今天", today)
                 section("更早", earlier)
 
@@ -330,6 +350,8 @@ private fun NovexConversationRow(
     session: ChatSessionEntity,
     world: ConversationWorldMeta?,
     version: ConversationVersionMeta?,
+    pinned: Boolean,
+    onTogglePin: () -> Unit,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
@@ -396,7 +418,52 @@ private fun NovexConversationRow(
             fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
             modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
-        com.openminis.app.ui.novex.TextButton(onClick = onDelete) { Text("删除") }
+        // [T-novex-conversation-row-overflow] 用户决策 2026-09-14："做成三点菜单，
+        // 点开就是置顶或者删除"。此前的裸「删除」文字按钮误伤容易误触，且这个
+        // 启动页一直没有置顶入口；置顶/删除统一收进 ⋮ 菜单，长按拖动排序保留。
+        var actionsExpanded by remember { mutableStateOf(false) }
+        Box {
+            IconButton(onClick = { actionsExpanded = true }) {
+                Icon(
+                    NovexIcons.MoreVert,
+                    contentDescription = "对话操作",
+                    tint = NovexColors.SecondaryText,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            DropdownMenu(
+                expanded = actionsExpanded,
+                onDismissRequest = { actionsExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (pinned) "取消置顶" else "置顶") },
+                    onClick = {
+                        actionsExpanded = false
+                        onTogglePin()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (pinned) NovexIcons.Close else NovexIcons.PushPin,
+                            contentDescription = null,
+                        )
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("删除", color = NovexColors.Danger) },
+                    onClick = {
+                        actionsExpanded = false
+                        onDelete()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            NovexIcons.Delete,
+                            contentDescription = null,
+                            tint = NovexColors.Danger,
+                        )
+                    },
+                )
+            }
+        }
     }
 }
 
