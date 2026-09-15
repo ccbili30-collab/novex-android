@@ -1257,6 +1257,7 @@ class SkillRepository(private val context: Context) {
                 if (relative.contains("..") || relative.startsWith("/")) continue
                 if (relative.equals("SKILL.md", ignoreCase = true) || relative.equals("FILES.txt", ignoreCase = true)) continue
                 val childDest = File(dest, relative)
+                childDest.parentFile?.mkdirs()
                 try {
                     context.assets.open("$assetPath/$relative").use { input ->
                         FileOutputStream(childDest).use { output -> input.copyTo(output) }
@@ -1276,6 +1277,7 @@ class SkillRepository(private val context: Context) {
                 copyAssetTree(childPath, childDest)
             } else {
                 if (entry.equals("SKILL.md", ignoreCase = true)) continue
+                childDest.parentFile?.mkdirs()
                 try {
                     context.assets.open(childPath).use { input ->
                         FileOutputStream(childDest).use { output -> input.copyTo(output) }
