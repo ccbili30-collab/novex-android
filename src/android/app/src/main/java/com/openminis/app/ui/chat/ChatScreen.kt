@@ -172,7 +172,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingTo
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
@@ -2082,12 +2082,9 @@ fun ChatScreen(
     ) { padding ->
         // 收起时内容顶部回落到系统状态栏内边距（顶栏隐藏后仍不让内容钻到
         // 状态栏底下）；展开时用顶栏实际高度。动画与顶栏的滑入滑出同步。
+        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val chromeTopInset by animateDpAsState(
-            targetValue = if (effectiveChromeCollapsed) {
-                WindowInsets.statusBars.asPaddingTo().calculateTopPadding()
-            } else {
-                padding.calculateTopPadding()
-            },
+            targetValue = if (effectiveChromeCollapsed) statusBarTop else padding.calculateTopPadding(),
             label = "chromeTopInset",
         )
         Box(

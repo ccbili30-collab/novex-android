@@ -156,7 +156,7 @@ internal fun NovexSideConversations(
                 width = stripWidth,
                 height = stripHeight,
                 fill = colorFor(context, side.id),
-                rim = NovexEdgeColors.rim,
+                rim = novexEdgeRim(),
                 modifier = Modifier.offset {
                     IntOffset(
                         railSlide.roundToPx(),
@@ -222,8 +222,8 @@ internal fun NovexSideConversations(
                 floatingShape = RoundedCornerShape(50),
                 width = StateHandleWidth,
                 height = StateHandleHeight,
-                fill = NovexEdgeColors.fill,
-                rim = NovexEdgeColors.rim,
+                fill = novexEdgeFill(),
+                rim = novexEdgeRim(),
                 floating = draggingId == HUD_ID,
                 // 平面贴右缘：x = 屏宽 − 把手宽 + 收起滑出量（layout 期读取）。
                 modifier = Modifier.offset {

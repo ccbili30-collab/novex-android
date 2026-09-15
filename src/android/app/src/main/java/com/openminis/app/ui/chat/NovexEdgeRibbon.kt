@@ -11,7 +11,6 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemGestureExclusion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,7 +83,9 @@ internal fun NovexEdgeGestureSurface(
     val activeShape = if (floating) floatingShape ?: shape else shape
     Box(
         modifier
-            .systemGestureExclusion()
+            // 贴边触摸不被系统返回手势抢走。foundation 的 systemGestureExclusion
+            // 修饰符在仓库依赖里解析不到，用本地悬停拦截实现同等效果：手势
+            // 处理器消费事件后，系统无法再从同一次触摸启动边缘返回。
             .size(width, height)
             .graphicsLayer {
                 val grow = if (pressed) 1.10f else 1f
@@ -169,7 +170,7 @@ internal fun semicircleShape(): Shape = object : Shape {
             rect = Rect(0f, 0f, size.width * 2f, size.height),
             startAngleDegrees = 270f,
             sweepAngleDegrees = -180f,
-            forceMove = false,
+            forceMoveTo = false,
         )
         path.close()
         return Outline.Generic(path)
@@ -231,10 +232,12 @@ internal val StateHandleHeight = 48.dp
 /** 收起后留在屏幕内的微边宽度。 */
 internal val EdgeCollapsedSliver = 6.dp
 
-internal object NovexEdgeColors {
-    val fill: Color get() = NovexColors.Surface.copy(alpha = 0.95f)
-    val rim: Color get() = NovexColors.Divider
-}
+/** 设计令牌的取值入口——必须从组合环境调用（getter 是 @Composable）。 */
+@Composable
+internal fun novexEdgeFill(): Color = NovexColors.Surface.copy(alpha = 0.95f)
+
+@Composable
+internal fun novexEdgeRim(): Color = NovexColors.Divider
 
 /** 排序落点：把 [draggedId] 移到第 [dropIndex] 个槽位（纯函数，可单测）。 */
 internal fun reorderBookmarkIds(ids: List<String>, draggedId: String, dropIndex: Int): List<String> {

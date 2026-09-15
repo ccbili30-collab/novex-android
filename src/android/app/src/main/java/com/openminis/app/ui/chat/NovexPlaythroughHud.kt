@@ -177,6 +177,8 @@ internal fun NovexPlaythroughPanel(
         }
         // L-shaped resize grip on the FREE corner (bottom-left — the panel hugs
         // the screen's right edge because the state handle is fixed right).
+        // Token hoisted: the draw lambda is not a composition context.
+        val gripColor = NovexColors.SecondaryText
         Canvas(
             Modifier
                 .align(Alignment.BottomStart)
@@ -194,9 +196,8 @@ internal fun NovexPlaythroughPanel(
                 },
         ) {
             val stroke = 2.dp.toPx()
-            val color = NovexColors.SecondaryText
-            drawLine(color, Offset(0f, 0f), Offset(0f, size.height - stroke), stroke)
-            drawLine(color, Offset(0f, size.height - stroke / 2f), Offset(size.width, size.height - stroke / 2f), stroke)
+            drawLine(gripColor, Offset(0f, 0f), Offset(0f, size.height - stroke), stroke)
+            drawLine(gripColor, Offset(0f, size.height - stroke / 2f), Offset(size.width, size.height - stroke / 2f), stroke)
         }
     }
 }
@@ -206,13 +207,17 @@ internal fun NovexPlaythroughPanel(
 private fun StateValueRow(key: String, value: PlaythroughValue) {
     val number = value as? PlaythroughValue.Number
     val barMax = number?.max
+    // Design tokens must be read in composition — hoisted before any lambda.
+    val trackColor = NovexColors.SurfaceMuted
+    val lowColor = NovexColors.Danger
+    val normalColor = NovexColors.Primary
     Row(
         Modifier.fillMaxWidth().padding(top = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(key, Modifier.weight(1f), style = NovexType.Body, color = NovexColors.SecondaryText)
         if (barMax != null && barMax > 0) {
-            val fraction = (number.value / barMax).coerceIn(0f, 1f)
+            val fraction = ((number.value / barMax).coerceIn(0.0, 1.0)).toFloat()
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     value.displayValue(),
@@ -226,14 +231,14 @@ private fun StateValueRow(key: String, value: PlaythroughValue) {
                         .width(96.dp)
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp))
-                        .background(NovexColors.SurfaceMuted),
+                        .background(trackColor),
                 ) {
                     Box(
                         Modifier
                             .fillMaxWidth(fraction)
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(barColor(fraction)),
+                            .background(if (fraction <= 0.25f) lowColor else normalColor),
                     )
                 }
             }
@@ -243,22 +248,16 @@ private fun StateValueRow(key: String, value: PlaythroughValue) {
     }
 }
 
-@Composable
-private fun barColor(fraction: Float): Color = when {
-    fraction <= 0.25f -> NovexColors.Danger
-    else -> NovexColors.Primary
-}
-
 /** 可折叠小节标题：点标题整节收起/展开；本轮变更强制展开。 */
 @Composable
 private fun CollapsibleHeader(
     label: String,
-    collapsed: androidx.compose.runtime.MutableMap<String, Boolean>,
+    collapsed: androidx.compose.runtime.SnapshotStateMap<String, Boolean>,
     emphasize: Boolean = false,
     forceOpen: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val isCollapsed = !forceOpen && collapsed[label] == true
+    val isCollapsed = !forceOpen && (collapsed[label] == true)
     Column {
         Row(
             verticalAlignment = Alignment.CenterVertically,
