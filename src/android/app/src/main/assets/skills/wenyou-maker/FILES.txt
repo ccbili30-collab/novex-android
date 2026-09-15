@@ -1,0 +1,5 @@
+SKILL.md
+references/engine.md
+references/pack-template.md
+references/database.md
+references/acceptance.md
