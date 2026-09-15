@@ -1236,11 +1236,38 @@ class SkillRepository(private val context: Context) {
         }
     }
 
-    /** Recursively copy an assets directory into [dest]; SKILL.md is skipped (already written). */
+    /**
+     * Copy a bundled skill's asset files into [dest].
+     *
+     * Prefers an explicit `FILES.txt` manifest inside the asset directory —
+     * `AssetManager.list()` returns an empty array for asset directories in
+     * some runtimes (observed under Robolectric), and a manifest makes the
+     * copy deterministic everywhere. Falls back to recursive listing when no
+     * manifest ships. SKILL.md is always skipped ([writeSkillMd] owns it).
+     */
     private fun copyAssetTree(assetPath: String, dest: File) {
-        val entries = context.assets.list(assetPath).orEmpty()
-        if (entries.isEmpty()) return
         dest.mkdirs()
+        val manifest = runCatching {
+            context.assets.open("$assetPath/FILES.txt").bufferedReader().use { reader ->
+                reader.readLines().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }
+            }
+        }.getOrNull()
+        if (manifest != null) {
+            for (relative in manifest) {
+                if (relative.contains("..") || relative.startsWith("/")) continue
+                if (relative.equals("SKILL.md", ignoreCase = true) || relative.equals("FILES.txt", ignoreCase = true)) continue
+                val childDest = File(dest, relative)
+                try {
+                    context.assets.open("$assetPath/$relative").use { input ->
+                        FileOutputStream(childDest).use { output -> input.copyTo(output) }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to copy bundled skill file $relative: ${e.message}")
+                }
+            }
+            return
+        }
+        val entries = context.assets.list(assetPath).orEmpty()
         for (entry in entries) {
             val childPath = "$assetPath/$entry"
             val childDest = File(dest, entry)
