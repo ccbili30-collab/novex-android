@@ -34,6 +34,9 @@ internal fun diffNovexPlaythroughState(
 
 internal fun PlaythroughValue.displayValue(): String = when (this) {
     is PlaythroughValue.Text -> value
-    is PlaythroughValue.Number -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+    is PlaythroughValue.Number -> buildString {
+        append(if (value % 1.0 == 0.0) value.toLong().toString() else value.toString())
+        max?.let { append("/").append(if (it % 1.0 == 0.0) it.toLong().toString() else it.toString()) }
+    }
     is PlaythroughValue.Flag -> if (value) "是" else "否"
 }

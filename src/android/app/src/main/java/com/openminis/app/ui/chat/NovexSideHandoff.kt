@@ -42,5 +42,5 @@ internal object NovexSideHandoff {
     fun instruction(previous: String?): String =
         (previous?.takeIf { it.isNotBlank() }?.let { "上一次已交接的内容：\n$it\n\n" } ?: "") +
             "请把本次讨论中上次交接之后的新结论，压缩成一份交接简报：只列确定的事实、设定变更和接下来要做的事，" +
-            "不要复述剧情，不要空话，500 字以内。直接输出简报正文。"
+            "不要复述剧情，不要空话，500 字以内。状态相关的变化要写明字段与数值（如 hp 83/100），主线会据此自行落账。直接输出简报正文。"
 }

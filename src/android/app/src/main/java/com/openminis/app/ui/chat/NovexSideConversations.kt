@@ -1,13 +1,20 @@
 package com.openminis.app.ui.chat
 
 import android.content.Context
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputChange
@@ -20,7 +27,6 @@ import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.ui.novex.NovexColors
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -33,13 +39,13 @@ private val BookmarkPalette = listOf(
     androidx.compose.ui.graphics.Color(0xFFE8B4D8), androidx.compose.ui.graphics.Color(0xFFD8D8B4),
 )
 
-/** Initial anchor when a component has no stored placement. */
-private const val DEFAULT_ANCHOR_FRACTION = 0.35f
-
 /** Rail id of the playthrough handle (UUIDs can never contain NUL). */
 private const val HUD_ID = "\u0000hud"
 
-/** State-handle participation: null = no playthrough state → no handle ribbon. */
+/** 书签列/把手从容器顶部的起步距离（容器已在顶栏下方，只留呼吸间距）。 */
+private val RailTopInset = 16.dp
+
+/** State-handle participation: null = no playthrough state → no handle. */
 internal data class NovexEdgeHandleSpec(
     val state: PlaythroughState,
     val update: NovexDataUpdateEvent?,
@@ -47,229 +53,267 @@ internal data class NovexEdgeHandleSpec(
 )
 
 /**
- * 侧边组件轨（2026-09-15 用户修订）：状态把手与每枚书签是同一种侧边组件——
- * 同一套拖动/停靠/磁吸逻辑、外形各异。每个组件**独立**持有停靠边与沿边位置：
- * 拖动一枚只动它自己（其余照常显示）；松手吸附最近边后，与同边已有组件的距
- * 离小于磁吸阈值才贴上去成列（[NovexEdgeRail]），否则各停各的位置。新落位的
- * 书签自动排进同边第一个空槽，机制上保证与把手及其它书签不重叠。上边停靠落
- * 在内容区顶端（宿主的 y=0 已在顶栏下方，不再叠加保留高度）。
+ * 侧边组件轨（2026-09-15 第三轮重排）：
+ * - 书签 = 左缘细长条，**跨主线↔侧边页常驻**（railSessionId 恒为主线）；当前
+ *   所在侧边的书签变粗变长，主线页全部常规收缩态；新书签排最下；拖动仅排序。
+ * - 状态把手 = 右缘淡半圆（仅主线页），按下即拖、只沿边上下，位置按会话记住；
+ *   点按展开面板（L 拐角缩放、尺寸记住）。
+ * - 收起（仅主线页）：整列/把手滑向所在边缘留 6dp 微边，点微边唤出；微边上
+ *   保留状态徽点。侧边页轨常驻不收起。
  */
 @Composable
 internal fun NovexSideConversations(
-    mainSessionId: String,
+    railSessionId: String,
+    currentSessionId: String,
+    isSidePage: Boolean,
     chatRepository: ChatRepository,
     requestNewSide: Boolean,
     onNewSideConsumed: () -> Unit,
     onOpenSide: (String) -> Unit,
     handle: NovexEdgeHandleSpec?,
+    chromeCollapsed: Boolean,
+    onExpandChrome: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var sides by remember(mainSessionId) { mutableStateOf(listOf<ChatSessionEntity>()) }
-    var sidesLoaded by remember(mainSessionId) { mutableStateOf(false) }
-    // Per-component placements. The handle keeps its historical prefs key, so
-    // positions from beta.48–50 survive; bookmarks are keyed per side id.
-    val savedHandle = remember(mainSessionId) { NovexEdgePlacement.read(context, EDGE_PREFS_HUD, mainSessionId) }
-    var handleDock by remember(mainSessionId) { mutableStateOf(savedHandle.first) }
-    var handleFraction by remember(mainSessionId) { mutableFloatStateOf(savedHandle.second) }
-    var placements by remember(mainSessionId) { mutableStateOf<Map<String, Pair<NovexEdgeDock, Float>>>(emptyMap()) }
-    var expandedPanel by rememberSaveable(mainSessionId) { mutableStateOf(false) }
-    // Drag state: only the dragged ribbon follows the finger (independent drag).
-    var draggingId by remember { mutableStateOf<String?>(null) }
-    var dragX by remember { mutableFloatStateOf(0f) }
-    var dragY by remember { mutableFloatStateOf(0f) }
-    var stretchId by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(mainSessionId) {
-        sides = runCatching { chatRepository.listSideSessions(mainSessionId) }.getOrDefault(emptyList())
-        placements = sides.mapNotNull { side ->
-            NovexEdgePlacement.readOrNull(context, EDGE_PREFS_SIDES, "anchor:${side.id}")?.let { side.id to it }
-        }.toMap()
-        sidesLoaded = true
+    var sides by remember(railSessionId) { mutableStateOf(listOf<ChatSessionEntity>()) }
+    var sidesLoaded by remember(railSessionId) { mutableStateOf(false) }
+    var order by remember(railSessionId) { mutableStateOf<List<String>>(emptyList()) }
+    val savedHandleFraction = remember(railSessionId) {
+        NovexEdgePrefs.readFraction(context, EDGE_PREFS_HUD, railSessionId)
     }
-    LaunchedEffect(stretchId) {
-        if (stretchId != null) {
-            delay(200)
-            stretchId = null
-        }
+    var handleFraction by remember(railSessionId) { mutableFloatStateOf(savedHandleFraction) }
+    var expandedPanel by rememberSaveable(railSessionId) { mutableStateOf(false) }
+    val savedPanelSize = remember(railSessionId) {
+        NovexEdgePrefs.readSize(context, EDGE_PREFS_HUD, "panel:$railSessionId")
+    }
+    var panelWidth by remember(railSessionId) { mutableStateOf(savedPanelSize?.first?.toFloat()?.dp ?: PanelDefaultWidth) }
+    var panelHeight by remember(railSessionId) { mutableStateOf(savedPanelSize?.second?.toFloat()?.dp) }
+    // Drag state — one component at a time, never hides the others.
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(railSessionId) {
+        sides = runCatching { chatRepository.listSideSessions(railSessionId) }.getOrDefault(emptyList())
+        val stored = NovexEdgePrefs.readOrder(context, EDGE_PREFS_SIDES, "order:$railSessionId").orEmpty()
+        // Stored order first, then any sides never ordered (new ones appended at
+        // the bottom = 往下排), deleted ids dropped silently.
+        order = stored.filter { id -> sides.any { it.id == id } } + sides.map { it.id }.filter { it !in stored }
+        sidesLoaded = true
     }
     LaunchedEffect(requestNewSide) {
         if (!requestNewSide) return@LaunchedEffect
         onNewSideConsumed()
         scope.launch {
-            runCatching { chatRepository.createSideSession(mainSessionId) }
+            runCatching { chatRepository.createSideSession(railSessionId) }
                 .onSuccess { side -> onOpenSide(side.id) }
                 .onFailure { android.widget.Toast.makeText(context, it.message ?: "创建侧边对话失败", android.widget.Toast.LENGTH_SHORT).show() }
         }
     }
 
+    val collapsed = chromeCollapsed && !isSidePage
     if (!sidesLoaded && handle == null) return
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val screenW = with(density) { maxWidth.toPx() }
         val screenH = with(density) { maxHeight.toPx() }
-        val ribbonW = with(density) { NovexEdgeRibbonWidth.toPx() }
-        val ribbonH = with(density) { NovexEdgeRibbonHeight.toPx() }
-        val gap = with(density) { NovexEdgeRibbonGap.toPx() }
-        val magnetPx = with(density) { NovexEdgeMagnetDistance.toPx() }
-        val geometry = NovexEdgeDockGeometry(
-            screenW = screenW, screenH = screenH,
-            ribbonW = ribbonW, ribbonH = ribbonH,
-            bottomReserve = with(density) { 170.dp.toPx() },
+        val bottomReserve = with(density) { 170.dp.toPx() }
+        val topInsetPx = with(density) { RailTopInset.toPx() }
+
+        // ── Bookmark rail (left edge), top-down stacking with cumulative slots ──
+        fun stripSize(id: String): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> =
+            if (id == currentSessionId) BookmarkStripCurrentWidth to BookmarkStripCurrentHeight
+            else BookmarkStripWidth to BookmarkStripHeight
+
+        fun stripHeightPx(id: String): Float = with(density) { stripSize(id).second.toPx() }
+        val gapPx = with(density) { BookmarkStripGap.toPx() }
+
+        /** Slot Y of each bookmark in the CURRENT order (dragged one excluded). */
+        fun slotYs(exclude: String?): List<Pair<String, Float>> = buildList {
+            var y = topInsetPx
+            order.forEach { id ->
+                if (id == exclude) return@forEach
+                add(id to y)
+                y += stripHeightPx(id) + gapPx
+            }
+        }
+
+        val railSlide by animateDpAsState(
+            targetValue = if (collapsed) -(BookmarkStripWidth - EdgeCollapsedSliver) else 0.dp,
+            label = "bookmarkRailSlide",
         )
 
-        /** Column resolution shared by every ribbon on this screen (layout-time reads). */
-        fun resolvedOffsets(): Map<String, Offset> {
-            val entries = buildList {
-                if (handle != null) add(NovexEdgeRailEntry(HUD_ID, handleDock, handleFraction))
-                placements.forEach { (id, p) -> add(NovexEdgeRailEntry(id, p.first, p.second)) }
-            }
-            val out = mutableMapOf<String, Offset>()
-            entries.groupBy { it.dock }.forEach { (dock, list) ->
-                val pitch = if (dock == NovexEdgeDock.TOP) ribbonW + gap else ribbonH + gap
-                NovexEdgeRail.resolveAlong(geometry.maxAlong(dock), pitch, magnetPx, list).forEach { (id, along) ->
-                    out[id] = geometry.anchorAt(dock, along)
-                }
-            }
-            return out
-        }
-
-        /** Independent drag for one component; snap on release, persist its own placement. */
-        fun dragCallbacksFor(id: String, persist: (NovexEdgeDock, Float) -> Unit): NovexEdgeDragCallbacks =
-            object : NovexEdgeDragCallbacks {
-                override fun onDragStart() {
-                    draggingId = id
-                    val p = resolvedOffsets()[id] ?: Offset.Zero
-                    dragX = p.x
-                    dragY = p.y
-                }
-
-                override fun onDrag(delta: Offset, change: PointerInputChange) {
-                    dragX = (dragX + delta.x).coerceIn(0f, screenW - ribbonW)
-                    dragY = (dragY + delta.y).coerceIn(0f, screenH - ribbonH)
-                }
-
-                override fun onDragEnd() {
-                    val snapped = geometry.snap(Offset(dragX + ribbonW / 2f, dragY + ribbonH / 2f))
-                    draggingId = null
-                    persist(snapped.first, snapped.second)
-                }
-
-                override fun onDragCancel() { draggingId = null }
-            }
-
-        // Auto-slot: a bookmark without a stored placement takes the first free
-        // slot on the default edge (handle + other bookmarks count as occupied).
-        LaunchedEffect(sidesLoaded, sides) {
-            if (!sidesLoaded) return@LaunchedEffect
-            val live = sides.map { it.id }.toSet()
-            var next = placements.filterKeys { it in live }
-            var changed = next.size != placements.size
-            sides.forEach { side ->
-                if (side.id !in next) {
-                    val occupied = mutableListOf<Float>()
-                    if (handle != null && handleDock == NovexEdgeDock.RIGHT) occupied += handleFraction
-                    next.forEach { (_, p) -> if (p.first == NovexEdgeDock.RIGHT) occupied += p.second }
-                    val free = NovexEdgeRail.firstFreeFraction(
-                        geometry.maxAlong(NovexEdgeDock.RIGHT), ribbonH + gap, occupied, DEFAULT_ANCHOR_FRACTION,
-                    )
-                    next = next + (side.id to (NovexEdgeDock.RIGHT to free))
-                    NovexEdgePlacement.write(context, EDGE_PREFS_SIDES, "anchor:${side.id}", NovexEdgeDock.RIGHT, free)
-                    changed = true
-                }
-            }
-            if (changed) placements = next
-        }
-
-        // ── State handle ribbon: same rail, its own look (chevron + badge). ──
-        if (handle != null && !expandedPanel) {
-            NovexEdgeRibbon(
-                dock = handleDock,
-                fill = NovexColors.Surface.copy(alpha = 0.95f),
-                rim = NovexColors.Divider,
-                width = NovexEdgeRibbonWidth,
-                height = NovexEdgeRibbonHeight,
-                modifier = Modifier.offset {
-                    val p = if (draggingId == HUD_ID) Offset(dragX, dragY) else resolvedOffsets()[HUD_ID] ?: Offset.Zero
-                    IntOffset(p.x.roundToInt(), p.y.roundToInt())
-                },
-                floating = draggingId == HUD_ID,
-                badge = handle.update != null,
-                onTap = { expandedPanel = true },
-                drag = dragCallbacksFor(HUD_ID) { d, f ->
-                    handleDock = d
-                    handleFraction = f
-                    NovexEdgePlacement.write(context, EDGE_PREFS_HUD, mainSessionId, d, f)
-                },
-            ) {
-                // Chevron points toward the screen interior.
-                val chevron = when (handleDock) {
-                    NovexEdgeDock.RIGHT -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft
-                    NovexEdgeDock.LEFT -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight
-                    NovexEdgeDock.TOP -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
-                }
-                Icon(chevron, contentDescription = "本局状态", tint = NovexColors.SecondaryText)
-            }
-        }
-
-        // ── Bookmark ribbons: independent placements, first-char + palette. ──
         sides.forEach { side ->
-            val placement = placements[side.id] ?: return@forEach
-            NovexEdgeRibbon(
-                dock = placement.first,
+            if (side.id !in order) return@forEach
+            val isCurrent = side.id == currentSessionId
+            val (stripWidth, stripHeight) = stripSize(side.id)
+            val dragging = draggingId == side.id
+            // While dragging, the OTHERS keep their slots (stable, no shifting);
+            // the dragged strip reads its own slot only to seed dragY.
+            val baseY = slotYs(exclude = null).firstOrNull { it.first == side.id }?.second ?: topInsetPx
+            NovexEdgeGestureSurface(
+                shape = bookmarkStripShape(),
+                width = stripWidth,
+                height = stripHeight,
                 fill = colorFor(context, side.id),
-                rim = NovexColors.Divider,
-                width = NovexEdgeRibbonWidth,
-                height = NovexEdgeRibbonHeight,
+                rim = NovexEdgeColors.rim,
                 modifier = Modifier.offset {
-                    val p = if (draggingId == side.id) Offset(dragX, dragY) else resolvedOffsets()[side.id] ?: Offset.Zero
-                    IntOffset(p.x.roundToInt(), p.y.roundToInt())
+                    IntOffset(
+                        railSlide.roundToPx(),
+                        (if (dragging) dragY else baseY).roundToInt(),
+                    )
                 },
-                stretch = if (stretchId == side.id) 1.3f else 1f,
-                floating = draggingId == side.id,
+                contentAlignment = Alignment.TopCenter,
                 onTap = {
-                    stretchId = side.id
-                    scope.launch {
-                        delay(140)
+                    if (collapsed) {
+                        onExpandChrome()
+                    } else if (!isCurrent) {
                         onOpenSide(side.id)
                     }
                 },
-                drag = dragCallbacksFor(side.id) { d, f ->
-                    placements = placements + (side.id to (d to f))
-                    NovexEdgePlacement.write(context, EDGE_PREFS_SIDES, "anchor:${side.id}", d, f)
+                drag = if (collapsed) null else object : NovexEdgeDragCallbacks {
+                    override fun onDragStart() {
+                        draggingId = side.id
+                        dragY = baseY
+                    }
+
+                    override fun onDrag(delta: Offset, change: PointerInputChange) {
+                        dragY = (dragY + delta.y).coerceIn(topInsetPx, (screenH - bottomReserve - stripHeightPx(side.id)).coerceAtLeast(topInsetPx))
+                    }
+
+                    override fun onDragEnd() {
+                        // Reorder: insertion index by drop position among the others.
+                        val others = slotYs(exclude = side.id)
+                        val draggedCenter = dragY + stripHeightPx(side.id) / 2f
+                        val index = others.count { (id, y) -> y + stripHeightPx(id) / 2f <= draggedCenter }
+                        val next = reorderBookmarkIds(order, side.id, index)
+                        if (next != order) {
+                            order = next
+                            NovexEdgePrefs.writeOrder(context, EDGE_PREFS_SIDES, "order:$railSessionId", next)
+                        }
+                        draggingId = null
+                    }
+
+                    override fun onDragCancel() { draggingId = null }
                 },
             ) {
                 Text(
                     side.title.orEmpty().trim().take(1).ifEmpty { "侧" },
                     color = androidx.compose.ui.graphics.Color(0xCC1C1C1E),
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 12.dp),
                 )
             }
         }
 
-        // ── Playthrough panel: anchored at the handle's resolved position. ──
-        if (expandedPanel && handle != null) {
-            val anchorPos = resolvedOffsets()[HUD_ID] ?: Offset.Zero
-            val panelWpx = with(density) { PanelWidth.toPx() }
-            val panelX = when (handleDock) {
-                NovexEdgeDock.LEFT -> 0f
-                NovexEdgeDock.RIGHT -> (screenW - panelWpx).coerceAtLeast(0f)
-                NovexEdgeDock.TOP -> anchorPos.x.coerceIn(0f, (screenW - panelWpx).coerceAtLeast(0f))
+        // ── State handle (right edge, main pages only): pale semicircle. ──
+        if (handle != null && !expandedPanel) {
+            val handleWpx = with(density) { StateHandleWidth.toPx() }
+            val handleHpx = with(density) { StateHandleHeight.toPx() }
+            val maxHandleY = (screenH - bottomReserve - handleHpx).coerceAtLeast(topInsetPx)
+            val handleBaseY = topInsetPx + handleFraction * (maxHandleY - topInsetPx)
+            val handleSlide by animateDpAsState(
+                targetValue = if (collapsed) StateHandleWidth - EdgeCollapsedSliver else 0.dp,
+                label = "handleSlide",
+            )
+            NovexEdgeGestureSurface(
+                shape = semicircleShape(),
+                floatingShape = RoundedCornerShape(50),
+                width = StateHandleWidth,
+                height = StateHandleHeight,
+                fill = NovexEdgeColors.fill,
+                rim = NovexEdgeColors.rim,
+                floating = draggingId == HUD_ID,
+                // 平面贴右缘：x = 屏宽 − 把手宽 + 收起滑出量（layout 期读取）。
+                modifier = Modifier.offset {
+                    IntOffset(
+                        (screenW - handleWpx + handleSlide.roundToPx()).roundToInt(),
+                        (if (draggingId == HUD_ID) dragY else handleBaseY).roundToInt(),
+                    )
+                },
+                onTap = {
+                    if (collapsed) onExpandChrome() else expandedPanel = true
+                },
+                drag = object : NovexEdgeDragCallbacks {
+                    override fun onDragStart() {
+                        draggingId = HUD_ID
+                        dragY = handleBaseY
+                    }
+
+                    override fun onDrag(delta: Offset, change: PointerInputChange) {
+                        dragY = (dragY + delta.y).coerceIn(topInsetPx, maxHandleY)
+                    }
+
+                    override fun onDragEnd() {
+                        handleFraction = ((dragY - topInsetPx) / (maxHandleY - topInsetPx).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                        draggingId = null
+                        NovexEdgePrefs.writeFraction(context, EDGE_PREFS_HUD, railSessionId, handleFraction)
+                    }
+
+                    override fun onDragCancel() { draggingId = null }
+                },
+            ) {
+                if (collapsed) {
+                    // Sliver keeps the update dot visible (收起不漏变更).
+                    if (handle.update != null) {
+                        Box(
+                            Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 1.dp)
+                                .size(5.dp)
+                                .background(NovexColors.Primary, RoundedCornerShape(50)),
+                        )
+                    }
+                } else {
+                    Icon(
+                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft,
+                        contentDescription = "本局状态",
+                        tint = NovexColors.SecondaryText,
+                    )
+                    if (handle.update != null) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .padding(start = 2.dp, top = 6.dp)
+                                .size(6.dp)
+                                .background(NovexColors.Primary, RoundedCornerShape(50)),
+                        )
+                    }
+                }
             }
-            val panelY = when (handleDock) {
-                NovexEdgeDock.TOP -> 0f
-                else -> anchorPos.y.coerceIn(0f, (screenH - with(density) { 170.dp.toPx() }).coerceAtLeast(0f))
+        }
+
+        // ── Playthrough panel: right-anchored, resizable, size remembered. ──
+        if (handle != null && expandedPanel && !collapsed) {
+            val handleHpx = with(density) { StateHandleHeight.toPx() }
+            val maxHandleY = (screenH - bottomReserve - handleHpx).coerceAtLeast(topInsetPx)
+            val anchorY = topInsetPx + handleFraction * (maxHandleY - topInsetPx)
+            val maxPanelHeight = with(density) {
+                ((screenH - anchorY - 120.dp.toPx()).coerceAtLeast(200.dp.toPx())).toDp()
             }
-            val remainingPx = (screenH - panelY - with(density) { 120.dp.toPx() })
-                .coerceAtLeast(with(density) { 96.dp.toPx() })
+            val maxPanelWidth = maxWidth - 16.dp
             NovexPlaythroughPanel(
                 state = handle.state,
                 update = handle.update,
                 onDismissUpdate = handle.onDismissUpdate,
                 onCollapse = { expandedPanel = false },
-                modifier = Modifier.offset { IntOffset(panelX.roundToInt(), panelY.roundToInt()) },
-                maxHeight = (remainingPx / density.density).dp,
+                width = panelWidth.coerceIn(PanelMinWidth, maxPanelWidth),
+                height = panelHeight?.coerceIn(PanelMinHeight, maxPanelHeight),
+                maxHeight = maxPanelHeight,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(y = with(density) { anchorY.toDp() }),
+                onResize = { dw, dh ->
+                    panelWidth = (panelWidth + dw.dp).coerceIn(PanelMinWidth, maxPanelWidth)
+                    panelHeight = ((panelHeight ?: PanelMinHeight) + dh.dp).coerceIn(PanelMinHeight, maxPanelHeight)
+                },
+                onResizeEnd = {
+                    NovexEdgePrefs.writeSize(
+                        context, EDGE_PREFS_HUD, "panel:$railSessionId",
+                        panelWidth.value.roundToInt(), panelHeight?.value?.roundToInt() ?: PanelMinHeight.value.roundToInt(),
+                    )
+                },
             )
         }
     }

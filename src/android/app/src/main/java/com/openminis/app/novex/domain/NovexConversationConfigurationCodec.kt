@@ -170,6 +170,7 @@ private fun PlaythroughState.toJson() = JSONObject()
 private fun PlaythroughValue.toJson(): JSONObject = when (this) {
     is PlaythroughValue.Text -> JSONObject().put("kind", "text").put("value", value)
     is PlaythroughValue.Number -> JSONObject().put("kind", "number").put("value", value)
+        .apply { max?.let { put("max", it) } }
     is PlaythroughValue.Flag -> JSONObject().put("kind", "flag").put("value", value)
 }
 
@@ -179,7 +180,10 @@ private fun JSONObject.toPlaythroughState(): PlaythroughState {
         val value = valuesObject.optJSONObject(key) ?: return@mapNotNull null
         val decoded = when (value.optString("kind")) {
             "text" -> PlaythroughValue.Text(value.optString("value"))
-            "number" -> PlaythroughValue.Number(value.optDouble("value"))
+            "number" -> PlaythroughValue.Number(
+                value.optDouble("value"),
+                value.optDouble("max").takeIf { !it.isNaN() && it > 0 },
+            )
             "flag" -> PlaythroughValue.Flag(value.optBoolean("value"))
             else -> null
         }

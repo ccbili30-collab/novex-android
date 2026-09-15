@@ -105,7 +105,15 @@ data class ActiveInteractiveFictionSnapshot(
 
 sealed interface PlaythroughValue {
     data class Text(val value: String) : PlaythroughValue
-    data class Number(val value: Double) : PlaythroughValue
+    /**
+     * 数值状态。[max] 是可选上限（如血量 83/100）：模型在状态更新里声明了上限，
+     * 面板就把该值渲染成进度条；为 null 时按普通数值显示。
+     */
+    data class Number(val value: Double, val max: Double? = null) : PlaythroughValue {
+        init {
+            require(max == null || max > 0) { "数值状态的上限必须大于 0" }
+        }
+    }
     data class Flag(val value: Boolean) : PlaythroughValue
 }
 

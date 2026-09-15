@@ -9708,7 +9708,8 @@ class ChatViewModel(
             val updated = novexSettingsStore.update { configuration ->
                 require(configuration.activeInteractiveFiction != null || integratedCards.binding(activeSessionId)!=null) { "请先选择互动卡片" }
                 PlaythroughStateRegistration.applyUpdates(configuration = configuration, branchId = turnMessageId,
-                    updatesJson = JSONObject(argsJson).jsonArrayText("updates"))
+                    updatesJson = JSONObject(argsJson).jsonArrayText("updates"),
+                    activePathIds = activeBranchPathIds)
             }
             val after = InteractiveFictionRuntime.resolveState(updated, activeBranchPathIds + turnMessageId)
             val changes = diffNovexPlaythroughState(before, after)

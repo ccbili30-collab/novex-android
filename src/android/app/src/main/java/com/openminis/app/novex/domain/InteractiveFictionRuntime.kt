@@ -191,15 +191,31 @@ object ConversationControlRegistration {
 
 /** Applies typed tool values through the public conversation domain commands. */
 object PlaythroughStateRegistration {
+    /**
+     * 状态是按消息分支存的快照，读取时取路径上最近一个。写入前必须先**继承**
+     * 路径上最近祖先快照的全部值（[activePathIds] 从旧到新），再套用本轮更新——
+     * 否则新一轮的快照从空开始，旧值虽然还存着但被最近快照整个盖住
+     * （用户 2026-09-15 报告的"新状态盖住旧状态"缺陷）。
+     */
     fun applyUpdates(
         configuration: NovexConversationConfigurationSnapshot,
         branchId: String,
         updatesJson: String,
+        activePathIds: List<String> = emptyList(),
     ): NovexConversationConfigurationSnapshot {
         require(branchId.isNotBlank()) { "没有可写入的活动消息分支" }
         val updates = JSONArray(updatesJson)
         require(updates.length() > 0) { "本局状态更新为空" }
         var domain = NovexConversationConfiguration.open(configuration)
+        if (branchId !in configuration.playthroughStates) {
+            val ancestor = activePathIds.asReversed()
+                .firstNotNullOfOrNull { configuration.playthroughStates[it] }
+            if (ancestor != null) {
+                domain = domain.apply(
+                    NovexConversationCommand.ForkPlaythroughState(ancestor.branchId, branchId),
+                )
+            }
+        }
         repeat(updates.length()) { index ->
             val item = updates.optJSONObject(index) ?: error("第 ${index + 1} 项状态格式无效")
             val key = item.optString("key").trim()
@@ -207,8 +223,11 @@ object PlaythroughStateRegistration {
             val raw = item.opt("value")
             val value = when (raw) {
                 is Boolean -> PlaythroughValue.Flag(raw)
-                is Number -> PlaythroughValue.Number(raw.toDouble())
                 is String -> PlaythroughValue.Text(raw)
+                is Number -> {
+                    val max = item.optDouble("max").takeIf { !it.isNaN() && it > 0 }
+                    PlaythroughValue.Number(raw.toDouble(), max)
+                }
                 else -> error("本局状态只支持文本、数字和布尔值")
             }
             domain = domain.apply(NovexConversationCommand.SetPlaythroughValue(branchId, key, value))

@@ -138,12 +138,14 @@ object AgentTools {
         name = "update_playthrough_state",
         description = "Update typed state for the active Novex interactive-fiction playthrough on the current message " +
             "branch. Use this after the story changes location, health, inventory, quests or other tracked facts. " +
+            "Only list the keys that changed this turn; earlier values carry over automatically. " +
             "This never writes back to the shared project.",
         parameters = mapOf(
             "updates" to AgentToolParam(
                 "string",
                 "A JSON array of {key,value}; value must be a string, number or boolean. " +
-                    "Example: [{\"key\":\"health\",\"value\":72},{\"key\":\"location\",\"value\":\"山门\"}].",
+                    "Numbers may include an optional max to render as a bar (e.g. HP). " +
+                    "Example: [{\"key\":\"health\",\"value\":72,\"max\":100},{\"key\":\"location\",\"value\":\"山门\"}].",
             ),
         ),
         required = listOf("updates"),

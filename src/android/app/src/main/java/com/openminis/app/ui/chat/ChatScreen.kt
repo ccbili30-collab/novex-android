@@ -17,6 +17,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -169,6 +172,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingTo
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
@@ -702,6 +706,18 @@ fun ChatScreen(
     var sideParentId by remember(sessionId) { mutableStateOf<String?>(null) }
     LaunchedEffect(sessionId) {
         sideParentId = runCatching { chatRepository.getSession(sessionId)?.sideOfSession }.getOrNull()
+    }
+    // ── 沉浸收起（2026-09-15 用户确认）──────────────────────────────────
+    // 范围：顶栏 + 主线页侧边组件（书签列/状态把手滑出留微边）+ 右下浮动按钮。
+    // 触发：点聊天空白处切换；空闲 6 秒自动收起（生成中不豁免）。侧边对话页
+    // 不收起（顶栏、书签常驻）。任何触摸都会重置空闲计时。
+    var chromeCollapsed by remember { mutableStateOf(false) }
+    var lastInteractionAt by remember { mutableStateOf(0L) }
+    val effectiveChromeCollapsed = chromeCollapsed && sideParentId == null
+    LaunchedEffect(lastInteractionAt, chromeCollapsed, sideParentId) {
+        if (sideParentId != null || chromeCollapsed) return@LaunchedEffect
+        kotlinx.coroutines.delay(6_000)
+        chromeCollapsed = true
     }
     // 回传守卫（决策 18）：只认"点击后新产生"的助手回复；生成失败/被打断
     // 时明确报告交接未完成，绝不把旧回复当简报。
@@ -1734,6 +1750,13 @@ fun ChatScreen(
         } else ChatColors.background,
         contentWindowInsets = WindowInsets(0),
         topBar = {
+            // 沉浸收起：顶栏上滑消失；内容区顶部内边距同步动画（见下方 padding）。
+            // 侧边对话页不收起。
+            AnimatedVisibility(
+                visible = !effectiveChromeCollapsed,
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+            ) {
             TopAppBar(
                 title = {
                     // iOS-style centered layout: "Minis" + group row + provider·model row
@@ -2053,14 +2076,32 @@ fun ChatScreen(
                     LocalDensity.current.fontScale,
                 ).dp,
             )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
+        // 收起时内容顶部回落到系统状态栏内边距（顶栏隐藏后仍不让内容钻到
+        // 状态栏底下）；展开时用顶栏实际高度。动画与顶栏的滑入滑出同步。
+        val chromeTopInset by animateDpAsState(
+            targetValue = if (effectiveChromeCollapsed) {
+                WindowInsets.statusBars.asPaddingTo().calculateTopPadding()
+            } else {
+                padding.calculateTopPadding()
+            },
+            label = "chromeTopInset",
+        )
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding(),
+                .padding(top = chromeTopInset, bottom = padding.calculateBottomPadding())
+                .imePadding()
+                // 任何触摸都重置沉浸收起的空闲计时。
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        lastInteractionAt = System.currentTimeMillis()
+                    }
+                },
         ) {
             val playthroughState by viewModel.activePlaythroughState.collectAsState()
             var latestDataUpdate by remember(sessionId) { mutableStateOf<NovexDataUpdateEvent?>(null) }
@@ -2091,7 +2132,10 @@ fun ChatScreen(
             }
 
             // Messages + scroll-to-bottom button
-            Box(modifier = Modifier.weight(1f)) {
+            Box(modifier = Modifier.weight(1f).pointerInput(Unit) {
+                // 空白处单点 = 切换沉浸收起（消息行自身的点击不会到达这里）。
+                detectTapGestures { chromeCollapsed = !chromeCollapsed }
+            }) {
                 // Execution has one home: the collapsed transcript process. Do not duplicate
                 // raw tool thumbnails above the composer or reserve space for a hidden overlay.
                 val bottomReserve = 20.dp
@@ -3006,7 +3050,7 @@ fun ChatScreen(
                 // anchor, extra bottom padding = down-button height 36dp + 10dp
                 // spacing). Tapping walks BACK one user turn at a time rather
                 // than jumping to the oldest message.
-                if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value) {
+                if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value && !effectiveChromeCollapsed) {
                     val upBaseBottom = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
                         onClick = {
@@ -3035,7 +3079,7 @@ fun ChatScreen(
                 }
 
                 if (transcriptViewportReady && !isNearBottom.value &&
-                    contentOverflows.value && messages.isNotEmpty()
+                    contentOverflows.value && messages.isNotEmpty() && !effectiveChromeCollapsed
                 ) {
                     val fabBottomPadding = 8.dp
                     com.openminis.app.ui.novex.NovexFilledIconButton(
@@ -4875,26 +4919,27 @@ fun ChatScreen(
                     )
                 )
         )
-        // 决策 12/16：侧边页不渲染书签列（防嵌套）也不渲染状态把手（本局
-        // 状态只属于主线，侧边对主线的影响通道只有交接简报）。主线用统一
-        // 侧边组件轨：状态把手与所有书签同一套拖动/停靠/磁吸逻辑。
-        if (sideParentId == null) {
-            val railState = playthroughState
-            NovexSideConversations(
-                mainSessionId = sessionId,
-                chatRepository = chatRepository,
-                requestNewSide = requestSideConversation,
-                onNewSideConsumed = { requestSideConversation = false },
-                onOpenSide = onOpenSideSession,
-                handle = if (railState != null) {
-                    NovexEdgeHandleSpec(
-                        state = railState,
-                        update = latestDataUpdate,
-                        onDismissUpdate = { latestDataUpdate = null },
-                    )
-                } else null,
-            )
-        }
+        // 侧边组件轨（2026-09-15 第三轮）：书签长条左缘、跨主线↔侧边页常驻；
+        // 状态半圆右缘仅主线；收起系统由本屏驱动（chromeCollapsed）。
+        NovexSideConversations(
+            railSessionId = sideParentId ?: sessionId,
+            currentSessionId = sessionId,
+            isSidePage = sideParentId != null,
+            chatRepository = chatRepository,
+            requestNewSide = requestSideConversation,
+            onNewSideConsumed = { requestSideConversation = false },
+            onOpenSide = onOpenSideSession,
+            handle = if (sideParentId == null) {
+                val railState = playthroughState
+                if (railState != null) NovexEdgeHandleSpec(
+                    state = railState,
+                    update = latestDataUpdate,
+                    onDismissUpdate = { latestDataUpdate = null },
+                ) else null
+            } else null,
+            chromeCollapsed = chromeCollapsed,
+            onExpandChrome = { chromeCollapsed = false },
+        )
         }
     }
 
