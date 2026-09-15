@@ -30,20 +30,33 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import com.openminis.app.ui.novex.NovexColors
+import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * 侧边组件家族（2026-09-14 用户决策 14）：书签与本局状态把手是同一种"缎带"——
- * 矩形主体 + 一个朝屏幕内侧的小尖角，平面贴齐停靠边；拖动逻辑同一套
- * （长按拖出、松手吸附最近边、沿边锚点持久化）。本文件只提供形状、几何与
- * 手势；锚点布局由各使用方持有，缎带本体不持久化任何状态。
+ * 侧边组件家族（用户决策，2026-09-15 修订）：状态把手与每枚书签是**同一种侧边
+ * 组件**——同一套拖动/停靠/磁吸逻辑，外形各异。每个组件独立持有自己的停靠边与
+ * 沿边位置；渲染时同一条边上的组件按"距离小于阈值才磁吸成列、否则各自独立、
+ * 永不重叠"的规则解析落点（见 [NovexEdgeRail]）。
  */
 internal enum class NovexEdgeDock { LEFT, RIGHT, TOP }
 
 /** 缎带尖角占包围盒长轴的比例；内容区自动避开这一段。 */
 private const val RIBBON_TIP_FRACTION = 0.32f
 
-/** 拖动事件由使用方接管（书签拖动的是整列锚点，状态把手拖动自己）。 */
+/** 家族统一尺寸与间距（缎带等宽等高，磁吸成列时才能严丝合缝）。 */
+internal val NovexEdgeRibbonWidth = 34.dp
+internal val NovexEdgeRibbonHeight = 46.dp
+internal val NovexEdgeRibbonGap = 8.dp
+
+/** 磁吸阈值：与上一枚的落点距离小于此值才贴上来，否则保持独立。 */
+internal val NovexEdgeMagnetDistance = 24.dp
+
+/** 两个家族的锚点存储（沿用旧键名，老位置直接迁移）。 */
+internal const val EDGE_PREFS_HUD = "novex_playthrough_hud"
+internal const val EDGE_PREFS_SIDES = "novex_side_conversations"
+
+/** 拖动事件由宿主接管；每个组件一份回调，各自更新自己的位置。 */
 internal interface NovexEdgeDragCallbacks {
     fun onDragStart()
     fun onDrag(delta: Offset, change: PointerInputChange)
@@ -52,9 +65,10 @@ internal interface NovexEdgeDragCallbacks {
 }
 
 /**
- * 停靠几何：把 [NovexEdgeDock] + 沿边比例换算成缎带包围盒的左上角，并把
- * 任意拖动落点吸附回最近的边。bottomReserve 是输入区/导航保留高度，缎带
- * 永不驻留其中；topReserve 是状态栏保留高度。
+ * 停靠几何：把 [NovexEdgeDock] + 沿边位置换算成缎带包围盒的左上角，并把任意
+ * 拖动落点吸附回最近的边。上边停靠落在内容区 y=0——宿主容器（Scaffold 内容
+ * 区）的 y=0 本就在顶栏下方，这里**不得**再叠加顶部保留（beta.50 的"吸附在
+ * 半空中"就是把保留高度算了两遍）。bottomReserve 是输入区/导航保留高度。
  */
 internal class NovexEdgeDockGeometry(
     private val screenW: Float,
@@ -62,21 +76,24 @@ internal class NovexEdgeDockGeometry(
     private val ribbonW: Float,
     private val ribbonH: Float,
     bottomReserve: Float,
-    private val topReserve: Float = 0f,
 ) {
     private val maxX = (screenW - ribbonW).coerceAtLeast(1f)
     private val maxY = (screenH - ribbonH - bottomReserve).coerceAtLeast(1f)
 
-    fun anchor(dock: NovexEdgeDock, fraction: Float): Offset = when (dock) {
-        NovexEdgeDock.LEFT -> Offset(0f, fraction.coerceIn(0f, 1f) * maxY)
-        NovexEdgeDock.RIGHT -> Offset(maxX, fraction.coerceIn(0f, 1f) * maxY)
-        NovexEdgeDock.TOP -> Offset(fraction.coerceIn(0f, 1f) * maxX, topReserve)
+    fun maxAlong(dock: NovexEdgeDock): Float = if (dock == NovexEdgeDock.TOP) maxX else maxY
+
+    fun anchor(dock: NovexEdgeDock, fraction: Float): Offset = anchorAt(dock, fraction.coerceIn(0f, 1f) * maxAlong(dock))
+
+    fun anchorAt(dock: NovexEdgeDock, alongPx: Float): Offset = when (dock) {
+        NovexEdgeDock.LEFT -> Offset(0f, alongPx.coerceIn(0f, maxY))
+        NovexEdgeDock.RIGHT -> Offset(maxX, alongPx.coerceIn(0f, maxY))
+        NovexEdgeDock.TOP -> Offset(alongPx.coerceIn(0f, maxX), 0f)
     }
 
     fun snap(center: Offset): Pair<NovexEdgeDock, Float> {
         val toLeft = center.x
         val toRight = screenW - center.x
-        val toTop = center.y - topReserve
+        val toTop = center.y
         val dock = when {
             toTop <= toLeft && toTop <= toRight -> NovexEdgeDock.TOP
             toLeft <= toRight -> NovexEdgeDock.LEFT
@@ -87,6 +104,35 @@ internal class NovexEdgeDockGeometry(
             else -> (center.y - ribbonH / 2f) / maxY
         }
         return dock to fraction.coerceIn(0f, 1f)
+    }
+}
+
+internal data class NovexEdgeRailEntry(val id: String, val dock: NovexEdgeDock, val fraction: Float)
+
+/**
+ * 落点解析（纯函数，可单测）：同一条边上的组件按期望位置排序后顺序走一遍——
+ * 期望位置落在"上一枚已解析位置 + [magnet]"以内（含重叠）就贴到上一枚的下一
+ * 个间距槽（磁吸成列）；更远则保持独立位置。结果永不重叠，远者互不牵连。
+ */
+internal object NovexEdgeRail {
+    fun resolveAlong(maxAlong: Float, pitch: Float, magnet: Float, entries: List<NovexEdgeRailEntry>): Map<String, Float> {
+        val out = mutableMapOf<String, Float>()
+        var cursor = Float.NEGATIVE_INFINITY
+        entries.sortedBy { it.fraction }.forEach { entry ->
+            val desired = entry.fraction.coerceIn(0f, 1f) * maxAlong
+            val pos = if (desired <= cursor + magnet) cursor + pitch else desired
+            out[entry.id] = pos
+            cursor = pos
+        }
+        return out
+    }
+
+    /** 新组件的初始落位：从基准比例出发，跳过同边已占的间距槽。 */
+    fun firstFreeFraction(maxAlong: Float, pitch: Float, occupied: List<Float>, baseFraction: Float): Float {
+        val occupiedPx = occupied.map { it.coerceIn(0f, 1f) * maxAlong }.sorted()
+        var px = baseFraction.coerceIn(0f, 1f) * maxAlong
+        while (occupiedPx.any { abs(it - px) < pitch * 0.99f }) px += pitch
+        return (px / maxAlong).coerceIn(0f, 1f)
     }
 }
 
@@ -133,19 +179,20 @@ internal fun ribbonShape(dock: NovexEdgeDock, tipFraction: Float = RIBBON_TIP_FR
     }
 }
 
-/** 停靠锚点持久化（dock:fraction），各使用方自带 prefs 名与键。 */
+/** 停靠锚点持久化（dock:fraction），各组件自带 prefs 名与键。 */
 internal object NovexEdgePlacement {
     fun read(
         context: Context,
         prefsName: String,
         key: String,
         default: Pair<NovexEdgeDock, Float> = NovexEdgeDock.RIGHT to 0.35f,
-    ): Pair<NovexEdgeDock, Float> {
-        val raw = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(key, null)
-            ?: return default
+    ): Pair<NovexEdgeDock, Float> = readOrNull(context, prefsName, key) ?: default
+
+    fun readOrNull(context: Context, prefsName: String, key: String): Pair<NovexEdgeDock, Float>? {
+        val raw = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(key, null) ?: return null
         val parts = raw.split(':')
-        val dock = parts.getOrNull(0)?.let { runCatching { NovexEdgeDock.valueOf(it) }.getOrNull() } ?: default.first
-        val fraction = parts.getOrNull(1)?.toFloatOrNull()?.coerceIn(0f, 1f) ?: default.second
+        val dock = parts.getOrNull(0)?.let { runCatching { NovexEdgeDock.valueOf(it) }.getOrNull() } ?: return null
+        val fraction = parts.getOrNull(1)?.toFloatOrNull()?.coerceIn(0f, 1f) ?: return null
         return dock to fraction
     }
 
@@ -203,11 +250,11 @@ internal fun NovexEdgeRibbon(
                 if (liveDrag != null) {
                     Modifier
                         .then(if (liveOnTap != null) Modifier.clickable { liveOnTap?.invoke() } else Modifier)
-                        // Positional args: the start-callback's NAME differs
-                        // across foundation versions (onDragStart vs
-                        // onDragStarted) but the (start, end, cancel, drag)
-                        // ORDER is stable — positional avoids both.
                         .pointerInput(dock) {
+                            // Positional args: the start-callback's NAME differs
+                            // across foundation versions (onDragStart vs
+                            // onDragStarted) but the (start, end, cancel, drag)
+                            // ORDER is stable — positional avoids both.
                             detectDragGesturesAfterLongPress(
                                 { liveDrag?.onDragStart() },
                                 { liveDrag?.onDragEnd() },

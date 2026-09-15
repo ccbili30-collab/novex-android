@@ -4876,20 +4876,22 @@ fun ChatScreen(
                 )
         )
         // 决策 12/16：侧边页不渲染书签列（防嵌套）也不渲染状态把手（本局
-        // 状态只属于主线，侧边对主线的影响通道只有交接简报）。
+        // 状态只属于主线，侧边对主线的影响通道只有交接简报）。主线用统一
+        // 侧边组件轨：状态把手与所有书签同一套拖动/停靠/磁吸逻辑。
         if (sideParentId == null) {
-            NovexPlaythroughHud(
-                sessionKey = sessionId,
-                state = playthroughState,
-                update = latestDataUpdate,
-                onDismissUpdate = { latestDataUpdate = null },
-            )
             NovexSideConversations(
                 mainSessionId = sessionId,
                 chatRepository = chatRepository,
                 requestNewSide = requestSideConversation,
                 onNewSideConsumed = { requestSideConversation = false },
                 onOpenSide = onOpenSideSession,
+                handle = if (playthroughState != null) {
+                    NovexEdgeHandleSpec(
+                        state = playthroughState,
+                        update = latestDataUpdate,
+                        onDismissUpdate = { latestDataUpdate = null },
+                    )
+                } else null,
             )
         }
         }

@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -15,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
+import com.openminis.app.novex.domain.PlaythroughState
 import com.openminis.app.ui.novex.NovexColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,16 +33,26 @@ private val BookmarkPalette = listOf(
     androidx.compose.ui.graphics.Color(0xFFE8B4D8), androidx.compose.ui.graphics.Color(0xFFD8D8B4),
 )
 
-private const val SIDE_PREFS = "novex_side_conversations"
-private val RibbonWidth = 34.dp
-private val RibbonHeight = 46.dp
-private val RibbonGap = 8.dp
+/** Initial anchor when a component has no stored placement. */
+private const val DEFAULT_ANCHOR_FRACTION = 0.35f
+
+/** Rail id of the playthrough handle (UUIDs can never contain NUL). */
+private const val HUD_ID = "\u0000hud"
+
+/** State-handle participation: null = no playthrough state → no handle ribbon. */
+internal data class NovexEdgeHandleSpec(
+    val state: PlaythroughState,
+    val update: NovexDataUpdateEvent?,
+    val onDismissUpdate: () -> Unit,
+)
 
 /**
- * 侧边对话书签列（2026-09-14 决策 12/15）：每条侧边对话一枚缎带书签（首字 +
- * 随机色），磁吸成列贴边停靠。点按 = 拉长提示后全屏进入该侧边对话；长按拖动
- * 整列（拖动的书签跟随手指成胶囊，其余隐藏，松手吸附最近边重组成列，锚点
- * 持久化）。新建走主对话 ⋮ 菜单，创建后直接进入。删除只在侧边页右上角。
+ * 侧边组件轨（2026-09-15 用户修订）：状态把手与每枚书签是同一种侧边组件——
+ * 同一套拖动/停靠/磁吸逻辑、外形各异。每个组件**独立**持有停靠边与沿边位置：
+ * 拖动一枚只动它自己（其余照常显示）；松手吸附最近边后，与同边已有组件的距
+ * 离小于磁吸阈值才贴上去成列（[NovexEdgeRail]），否则各停各的位置。新落位的
+ * 书签自动排进同边第一个空槽，机制上保证与把手及其它书签不重叠。上边停靠落
+ * 在内容区顶端（宿主的 y=0 已在顶栏下方，不再叠加保留高度）。
  */
 @Composable
 internal fun NovexSideConversations(
@@ -47,33 +61,38 @@ internal fun NovexSideConversations(
     requestNewSide: Boolean,
     onNewSideConsumed: () -> Unit,
     onOpenSide: (String) -> Unit,
+    handle: NovexEdgeHandleSpec?,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var sides by remember(mainSessionId) { mutableStateOf(listOf<ChatSessionEntity>()) }
-    val savedAnchor = remember(mainSessionId) {
-        NovexEdgePlacement.read(context, SIDE_PREFS, "anchor:$mainSessionId")
-    }
-    var anchorDock by remember(mainSessionId) { mutableStateOf(savedAnchor.first) }
-    var anchorFraction by remember(mainSessionId) { mutableFloatStateOf(savedAnchor.second) }
-    // Drag state: index of the ribbon being dragged; the rest of the column
-    // hides until it re-forms at the released anchor (磁吸成列).
-    var draggingIndex by remember { mutableIntStateOf(-1) }
+    var sidesLoaded by remember(mainSessionId) { mutableStateOf(false) }
+    // Per-component placements. The handle keeps its historical prefs key, so
+    // positions from beta.48–50 survive; bookmarks are keyed per side id.
+    val savedHandle = remember(mainSessionId) { NovexEdgePlacement.read(context, EDGE_PREFS_HUD, mainSessionId) }
+    var handleDock by remember(mainSessionId) { mutableStateOf(savedHandle.first) }
+    var handleFraction by remember(mainSessionId) { mutableFloatStateOf(savedHandle.second) }
+    var placements by remember(mainSessionId) { mutableStateOf<Map<String, Pair<NovexEdgeDock, Float>>>(emptyMap()) }
+    var expandedPanel by rememberSaveable(mainSessionId) { mutableStateOf(false) }
+    // Drag state: only the dragged ribbon follows the finger (independent drag).
+    var draggingId by remember { mutableStateOf<String?>(null) }
     var dragX by remember { mutableFloatStateOf(0f) }
     var dragY by remember { mutableFloatStateOf(0f) }
     var stretchId by remember { mutableStateOf<String?>(null) }
 
-    fun refresh() {
-        scope.launch { sides = runCatching { chatRepository.listSideSessions(mainSessionId) }.getOrDefault(emptyList()) }
+    LaunchedEffect(mainSessionId) {
+        sides = runCatching { chatRepository.listSideSessions(mainSessionId) }.getOrDefault(emptyList())
+        placements = sides.mapNotNull { side ->
+            NovexEdgePlacement.readOrNull(context, EDGE_PREFS_SIDES, "anchor:${side.id}")?.let { side.id to it }
+        }.toMap()
+        sidesLoaded = true
     }
-    LaunchedEffect(mainSessionId) { refresh() }
     LaunchedEffect(stretchId) {
         if (stretchId != null) {
             delay(200)
             stretchId = null
         }
     }
-
     LaunchedEffect(requestNewSide) {
         if (!requestNewSide) return@LaunchedEffect
         onNewSideConsumed()
@@ -84,44 +103,130 @@ internal fun NovexSideConversations(
         }
     }
 
-    if (sides.isEmpty()) return
+    if (!sidesLoaded && handle == null) return
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val screenW = with(density) { maxWidth.toPx() }
         val screenH = with(density) { maxHeight.toPx() }
-        val ribbonW = with(density) { RibbonWidth.toPx() }
-        val ribbonH = with(density) { RibbonHeight.toPx() }
-        val gap = with(density) { RibbonGap.toPx() }
-        // Same reserve contract as the state handle: never park in the composer
-        // zone, keep clear of the top bar.
+        val ribbonW = with(density) { NovexEdgeRibbonWidth.toPx() }
+        val ribbonH = with(density) { NovexEdgeRibbonHeight.toPx() }
+        val gap = with(density) { NovexEdgeRibbonGap.toPx() }
+        val magnetPx = with(density) { NovexEdgeMagnetDistance.toPx() }
         val geometry = NovexEdgeDockGeometry(
             screenW = screenW, screenH = screenH,
             ribbonW = ribbonW, ribbonH = ribbonH,
             bottomReserve = with(density) { 170.dp.toPx() },
-            topReserve = with(density) { 90.dp.toPx() },
         )
 
-        fun slotOffset(index: Int): Offset {
-            val base = geometry.anchor(anchorDock, anchorFraction)
-            return when (anchorDock) {
-                NovexEdgeDock.LEFT, NovexEdgeDock.RIGHT -> Offset(base.x, base.y + index * (ribbonH + gap))
-                NovexEdgeDock.TOP -> Offset(base.x + index * (ribbonW + gap), base.y)
+        /** Column resolution shared by every ribbon on this screen (layout-time reads). */
+        fun resolvedOffsets(): Map<String, Offset> {
+            val entries = buildList {
+                if (handle != null) add(NovexEdgeRailEntry(HUD_ID, handleDock, handleFraction))
+                placements.forEach { (id, p) -> add(NovexEdgeRailEntry(id, p.first, p.second)) }
+            }
+            val out = mutableMapOf<String, Offset>()
+            entries.groupBy { it.dock }.forEach { (dock, list) ->
+                val pitch = if (dock == NovexEdgeDock.TOP) ribbonW + gap else ribbonH + gap
+                NovexEdgeRail.resolveAlong(geometry.maxAlong(dock), pitch, magnetPx, list).forEach { (id, along) ->
+                    out[id] = geometry.anchorAt(dock, along)
+                }
+            }
+            return out
+        }
+
+        /** Independent drag for one component; snap on release, persist its own placement. */
+        fun dragCallbacksFor(id: String, persist: (NovexEdgeDock, Float) -> Unit): NovexEdgeDragCallbacks =
+            object : NovexEdgeDragCallbacks {
+                override fun onDragStart() {
+                    draggingId = id
+                    val p = resolvedOffsets()[id] ?: Offset.Zero
+                    dragX = p.x
+                    dragY = p.y
+                }
+
+                override fun onDrag(delta: Offset, change: PointerInputChange) {
+                    dragX = (dragX + delta.x).coerceIn(0f, screenW - ribbonW)
+                    dragY = (dragY + delta.y).coerceIn(0f, screenH - ribbonH)
+                }
+
+                override fun onDragEnd() {
+                    val snapped = geometry.snap(Offset(dragX + ribbonW / 2f, dragY + ribbonH / 2f))
+                    draggingId = null
+                    persist(snapped.first, snapped.second)
+                }
+
+                override fun onDragCancel() { draggingId = null }
+            }
+
+        // Auto-slot: a bookmark without a stored placement takes the first free
+        // slot on the default edge (handle + other bookmarks count as occupied).
+        LaunchedEffect(sidesLoaded, sides) {
+            if (!sidesLoaded) return@LaunchedEffect
+            val live = sides.map { it.id }.toSet()
+            var next = placements.filterKeys { it in live }
+            var changed = next.size != placements.size
+            sides.forEach { side ->
+                if (side.id !in next) {
+                    val occupied = mutableListOf<Float>()
+                    if (handle != null && handleDock == NovexEdgeDock.RIGHT) occupied += handleFraction
+                    next.forEach { (_, p) -> if (p.first == NovexEdgeDock.RIGHT) occupied += p.second }
+                    val free = NovexEdgeRail.firstFreeFraction(
+                        geometry.maxAlong(NovexEdgeDock.RIGHT), ribbonH + gap, occupied, DEFAULT_ANCHOR_FRACTION,
+                    )
+                    next = next + (side.id to (NovexEdgeDock.RIGHT to free))
+                    NovexEdgePlacement.write(context, EDGE_PREFS_SIDES, "anchor:${side.id}", NovexEdgeDock.RIGHT, free)
+                    changed = true
+                }
+            }
+            if (changed) placements = next
+        }
+
+        // ── State handle ribbon: same rail, its own look (chevron + badge). ──
+        if (handle != null && !expandedPanel) {
+            NovexEdgeRibbon(
+                dock = handleDock,
+                fill = NovexColors.Surface.copy(alpha = 0.95f),
+                rim = NovexColors.Divider,
+                width = NovexEdgeRibbonWidth,
+                height = NovexEdgeRibbonHeight,
+                modifier = Modifier.offset {
+                    val p = if (draggingId == HUD_ID) Offset(dragX, dragY) else resolvedOffsets()[HUD_ID] ?: Offset.Zero
+                    IntOffset(p.x.roundToInt(), p.y.roundToInt())
+                },
+                floating = draggingId == HUD_ID,
+                badge = handle.update != null,
+                onTap = { expandedPanel = true },
+                drag = dragCallbacksFor(HUD_ID) { d, f ->
+                    handleDock = d
+                    handleFraction = f
+                    NovexEdgePlacement.write(context, EDGE_PREFS_HUD, mainSessionId, d, f)
+                },
+            ) {
+                // Chevron points toward the screen interior.
+                val chevron = when (handleDock) {
+                    NovexEdgeDock.RIGHT -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft
+                    NovexEdgeDock.LEFT -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight
+                    NovexEdgeDock.TOP -> com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                }
+                Icon(chevron, contentDescription = "本局状态", tint = NovexColors.SecondaryText)
             }
         }
 
-        sides.forEachIndexed { index, side ->
-            if (draggingIndex >= 0 && index != draggingIndex) return@forEachIndexed
-            val dragging = index == draggingIndex
-            val slot = if (dragging) Offset(dragX, dragY) else slotOffset(index)
+        // ── Bookmark ribbons: independent placements, first-char + palette. ──
+        sides.forEach { side ->
+            val placement = placements[side.id] ?: return@forEach
             NovexEdgeRibbon(
-                dock = anchorDock,
+                dock = placement.first,
                 fill = colorFor(context, side.id),
                 rim = NovexColors.Divider,
-                width = RibbonWidth,
-                height = RibbonHeight,
-                modifier = Modifier.offset { IntOffset(slot.x.roundToInt(), slot.y.roundToInt()) },
+                width = NovexEdgeRibbonWidth,
+                height = NovexEdgeRibbonHeight,
+                modifier = Modifier.offset {
+                    val p = if (draggingId == side.id) Offset(dragX, dragY) else resolvedOffsets()[side.id] ?: Offset.Zero
+                    IntOffset(p.x.roundToInt(), p.y.roundToInt())
+                },
                 stretch = if (stretchId == side.id) 1.3f else 1f,
-                floating = dragging,
+                floating = draggingId == side.id,
                 onTap = {
                     stretchId = side.id
                     scope.launch {
@@ -129,27 +234,9 @@ internal fun NovexSideConversations(
                         onOpenSide(side.id)
                     }
                 },
-                drag = object : NovexEdgeDragCallbacks {
-                    override fun onDragStart() {
-                        draggingIndex = index
-                        dragX = slotOffset(index).x
-                        dragY = slotOffset(index).y
-                    }
-
-                    override fun onDrag(delta: Offset, change: androidx.compose.ui.input.pointer.PointerInputChange) {
-                        dragX = (dragX + delta.x).coerceIn(0f, screenW - ribbonW)
-                        dragY = (dragY + delta.y).coerceIn(0f, screenH - ribbonH)
-                    }
-
-                    override fun onDragEnd() {
-                        val snapped = geometry.snap(Offset(dragX + ribbonW / 2f, dragY + ribbonH / 2f))
-                        anchorDock = snapped.first
-                        anchorFraction = snapped.second
-                        draggingIndex = -1
-                        NovexEdgePlacement.write(context, SIDE_PREFS, "anchor:$mainSessionId", anchorDock, anchorFraction)
-                    }
-
-                    override fun onDragCancel() { draggingIndex = -1 }
+                drag = dragCallbacksFor(side.id) { d, f ->
+                    placements = placements + (side.id to (d to f))
+                    NovexEdgePlacement.write(context, EDGE_PREFS_SIDES, "anchor:${side.id}", d, f)
                 },
             ) {
                 Text(
@@ -160,11 +247,36 @@ internal fun NovexSideConversations(
                 )
             }
         }
+
+        // ── Playthrough panel: anchored at the handle's resolved position. ──
+        if (expandedPanel && handle != null) {
+            val anchorPos = resolvedOffsets()[HUD_ID] ?: Offset.Zero
+            val panelWpx = with(density) { PanelWidth.toPx() }
+            val panelX = when (handleDock) {
+                NovexEdgeDock.LEFT -> 0f
+                NovexEdgeDock.RIGHT -> (screenW - panelWpx).coerceAtLeast(0f)
+                NovexEdgeDock.TOP -> anchorPos.x.coerceIn(0f, (screenW - panelWpx).coerceAtLeast(0f))
+            }
+            val panelY = when (handleDock) {
+                NovexEdgeDock.TOP -> 0f
+                else -> anchorPos.y.coerceIn(0f, (screenH - with(density) { 170.dp.toPx() }).coerceAtLeast(0f))
+            }
+            val remainingPx = (screenH - panelY - with(density) { 120.dp.toPx() })
+                .coerceAtLeast(with(density) { 96.dp.toPx() })
+            NovexPlaythroughPanel(
+                state = handle.state,
+                update = handle.update,
+                onDismissUpdate = handle.onDismissUpdate,
+                onCollapse = { expandedPanel = false },
+                modifier = Modifier.offset { IntOffset(panelX.roundToInt(), panelY.roundToInt()) },
+                maxHeight = (remainingPx / density.density).dp,
+            )
+        }
     }
 }
 
 private fun colorFor(context: Context, sideId: String): androidx.compose.ui.graphics.Color {
-    val prefs = context.getSharedPreferences(SIDE_PREFS, Context.MODE_PRIVATE)
+    val prefs = context.getSharedPreferences(EDGE_PREFS_SIDES, Context.MODE_PRIVATE)
     var index = prefs.getInt("color:$sideId", -1)
     if (index < 0) {
         index = (sideId.hashCode().let { if (it < 0) -it else it }) % BookmarkPalette.size
