@@ -252,7 +252,7 @@ private fun StateValueRow(key: String, value: PlaythroughValue) {
 @Composable
 private fun CollapsibleHeader(
     label: String,
-    collapsed: androidx.compose.runtime.SnapshotStateMap<String, Boolean>,
+    collapsed: androidx.compose.runtime.MutableStateMap<String, Boolean>,
     emphasize: Boolean = false,
     forceOpen: Boolean = false,
     content: @Composable () -> Unit,
