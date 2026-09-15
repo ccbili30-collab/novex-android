@@ -40,6 +40,26 @@ class SkillRepositoryBundledAssetSkillTest {
         assertTrue("engine.md content intact", engine.orEmpty().contains("仲裁优先级"))
     }
 
+    /** Temporary diagnostic: dumps exactly what the CI Robolectric sees. Remove before merge. */
+    @Test
+    fun diagnosticsAssetVisibility() {
+        val app = RuntimeEnvironment.getApplication()
+        val rootList = app.assets.list("skills/wenyou-maker").joinToString(",").ifEmpty { "<empty>" }
+        val refsList = app.assets.list("skills/wenyou-maker/references").joinToString(",").ifEmpty { "<empty>" }
+        val filesTxt = runCatching {
+            app.assets.open("skills/wenyou-maker/FILES.txt").bufferedReader().use { it.readText() }
+        }.fold({ it.take(80) }, { "ERR:${it.message}" })
+        val skillMd = runCatching {
+            app.assets.open("skills/wenyou-maker/SKILL.md").bufferedReader().use { it.readText() }
+        }.fold({ it.take(40) }, { "ERR:${it.message}" })
+        val engineMd = runCatching {
+            app.assets.open("skills/wenyou-maker/references/engine.md").bufferedReader().use { it.readText() }
+        }.fold({ it.take(40) }, { "ERR:${it.message}" })
+        org.junit.Assert.fail(
+            "DIAG list(root)=[$rootList] list(refs)=[$refsList] FILES.txt=[$filesTxt] SKILL.md=[$skillMd] engine.md=[$engineMd]",
+        )
+    }
+
     @Test
     fun sameVersionReinstallDoesNotClobberUserEdits() {
         val first = newRepository()
