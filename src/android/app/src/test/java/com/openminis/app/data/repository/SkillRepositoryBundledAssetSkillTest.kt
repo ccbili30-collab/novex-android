@@ -44,8 +44,8 @@ class SkillRepositoryBundledAssetSkillTest {
     @Test
     fun diagnosticsAssetVisibility() {
         val app = RuntimeEnvironment.getApplication()
-        val rootList = app.assets.list("skills/wenyou-maker").joinToString(",").ifEmpty { "<empty>" }
-        val refsList = app.assets.list("skills/wenyou-maker/references").joinToString(",").ifEmpty { "<empty>" }
+        val rootList = app.assets.list("skills/wenyou-maker").orEmpty().joinToString(",").ifEmpty { "<empty>" }
+        val refsList = app.assets.list("skills/wenyou-maker/references").orEmpty().joinToString(",").ifEmpty { "<empty>" }
         val filesTxt = runCatching {
             app.assets.open("skills/wenyou-maker/FILES.txt").bufferedReader().use { it.readText() }
         }.fold({ it.take(80) }, { "ERR:${it.message}" })
