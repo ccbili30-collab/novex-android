@@ -12,7 +12,7 @@ import org.json.JSONObject
  * 节点不合法时一个字都不写，错误信息精确到 JSON 路径（modules[2].children[0].name），
  * 模型改一处重发即可，不出现"建一半再调整"。
  */
-internal data class BulkModuleNode(
+data class BulkModuleNode(
     val name: String,
     val text: String?,
     val children: List<BulkModuleNode>,

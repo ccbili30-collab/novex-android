@@ -151,7 +151,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                 store.history(request.target.rootId,operation)?.let{return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,it.revision))}
                 require(store.open(request.target.rootId)==null && CardDrafts(store).read(request.target.rootId)==null){"新作品编号已被占用"}
                 val empty=novex.content.ContentDocument(request.target.rootId,bulkCreation.kind,bulkCreation.name.trim())
-                val built=empty.copy(modules=CardBulk.buildModules(bulkCreation.tree,request.target.rootId.take(8)){text->bulkTextRef(text)}).validate()
+                val built=empty.copy(modules=CardBulk.buildModules(bulkCreation.tree,request.target.rootId.take(8),textRef={text->bulkTextRef(text)})).validate()
                 val savedCard=store.save(built,null,ChangeSource.AI,operation)
                 val ids=createdIds(empty,built)
                 return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,savedCard.revision,ids.first,ids.second))
@@ -181,7 +181,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                         if(draft.baseRevision!=actual.revision || draft.content!=actual.content)throw DraftConflict()
                         draft.version
                     } else request.draftVersion
-                    val built=CardBulk.buildModules(addBulk.tree,request.target.rootId.take(8)){text->bulkTextRef(text)}
+                    val built=CardBulk.buildModules(addBulk.tree,request.target.rootId.take(8),textRef={text->bulkTextRef(text)})
                     val modules=if(addBulk.beforeId.isNullOrBlank()) before.content.modules+built
                     else {
                         val at=before.content.modules.indexOfFirst {it.id==addBulk.beforeId}
@@ -209,17 +209,17 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                     is CardToolEdit.ReplaceTextRange->EditorCommand.ReplaceTextRange(edit.moduleId,edit.blockId,edit.content,edit.start,edit.end,edit.text,EditorPosition())
                     is CardToolEdit.WriteText->EditorCommand.WriteText(edit.moduleId,edit.blockId,edit.name,edit.text,EditorPosition())
                 }
+                    val expected=if(request.draftVersion.startsWith("saved:")){
+                        val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
+                        if(actual.revision!=request.draftVersion.removePrefix("saved:"))throw DraftConflict()
+                        val draft=CardDrafts(store).begin(request.target.rootId)
+                        if(draft.baseRevision!=actual.revision || draft.content!=actual.content)throw DraftConflict()
+                        draft.version
+                    } else request.draftVersion
+                    val beforeEdit=requireNotNull(CardDrafts(store).read(request.target.rootId))
+                    beforeContent=beforeEdit.content
+                    updated=CardEditor(store).apply(request.target.rootId,expected,request.target.targetId,command,ChangeSource.AI,lease)
                 }
-                val expected=if(request.draftVersion.startsWith("saved:")){
-                    val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
-                    if(actual.revision!=request.draftVersion.removePrefix("saved:"))throw DraftConflict()
-                    val draft=CardDrafts(store).begin(request.target.rootId)
-                    if(draft.baseRevision!=actual.revision || draft.content!=actual.content)throw DraftConflict()
-                    draft.version
-                } else request.draftVersion
-                val beforeEdit=requireNotNull(CardDrafts(store).read(request.target.rootId))
-                beforeContent=beforeEdit.content
-                updated=CardEditor(store).apply(request.target.rootId,expected,request.target.targetId,command,ChangeSource.AI,lease)
                 journal.prepared(request.chatId,request.callId,JSONObject().put("commit",updated!!.version))
                 if(stop.isStopped())return finish(request,CardToolResult.Stopped(updated!!.version))
                 saved=CardDrafts(store).commitTarget(request.target.rootId,updated!!.version,request.target.targetId,beforeEdit,lease)
