@@ -95,7 +95,7 @@ class SkillRepositoryBundledAssetSkillTest {
 
         val skill = repo.skills.value.firstOrNull { it.id == "card-organizer" }
         assertNotNull("card-organizer should be installed on first init", skill)
-        assertEquals("1.1.0", skill!!.version)
+        assertEquals("1.0.0", skill!!.version)
         assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
         assertTrue(
             "description carries the trigger words",
