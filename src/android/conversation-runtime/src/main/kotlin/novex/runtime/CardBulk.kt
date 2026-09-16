@@ -60,7 +60,11 @@ object CardBulk {
     private fun depthOf(nodes: List<BulkModuleNode>, depth: Int = 1): Int =
         nodes.maxOfOrNull { depthOf(it.children, depth + 1) } ?: depth
 
-    /** 编号确定性生成：宏创建的模块/块带 bulk- 前缀，与精确工具的编号不撞。 */
+    /**
+     * 编号生成：bulk- 前缀 + 卡片段 + 每次调用的随机盐——同卡多次宏操作
+     * （先追加再插入）编号不撞（对话包实测教训：确定性编号在第二次插入
+     * 时与首次产物冲突，"同一内容树中编号重复"）。
+     */
     fun buildModules(
         nodes: List<BulkModuleNode>,
         seed: String,
@@ -69,11 +73,13 @@ object CardBulk {
         depth: Int = 1,
     ): List<ContentModule> {
         require(depth <= MAX_DEPTH) { "模块嵌套超过 $MAX_DEPTH 层（第 $depth 层）" }
+        val salt = java.util.UUID.randomUUID().toString.take(4)
+        fun id(kind: String, index: Int) = "bulk-$kind$seed-$salt-$index"
         return nodes.map { node ->
             val index = counter[0]++
-            val block = node.text?.let { ContentBlock.Text("bulk-b$seed-$index", textRef(it)) }
+            val block = node.text?.let { ContentBlock.Text(id("b", index), textRef(it)) }
             ContentModule(
-                id = "bulk-m$seed-$index",
+                id = id("m", index),
                 name = node.name,
                 blocks = listOfNotNull(block),
                 children = if (node.children.isEmpty()) emptyList() else buildModules(node.children, seed, textRef, counter, depth + 1),
