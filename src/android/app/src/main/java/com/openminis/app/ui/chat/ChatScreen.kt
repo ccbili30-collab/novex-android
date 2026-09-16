@@ -738,17 +738,12 @@ fun ChatScreen(
     // 数据在转录区内部的扁平化流水线里产出（flatItems），状态提升到这里供
     // 输入栏上方的条带读取；openedProcess 同理提升，条带点击可打开完整记录。
     var openedProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
-    var latestLiveProcess by remember(sessionId) { mutableStateOf<FlatChatItem.AssistantProcess?>(null) }
-    var processStripDone by remember(sessionId) { mutableStateOf(false) }
-    var stripVisibleDuringStream by remember(sessionId) { mutableStateOf(false) }
-    val isStreamingForStrip by viewModel.isStreaming.collectAsState()
-    LaunchedEffect(isStreamingForStrip, sessionId) {
-        if (!isStreamingForStrip && stripVisibleDuringStream) {
-            // 回合结束：活动条先显示「✓ 本轮完成」3 秒再消失（与回传条节奏一致）。
-            stripVisibleDuringStream = false
-            processStripDone = true
-            kotlinx.coroutines.delay(3_000)
-            processStripDone = false
+    // [T-handoff-queue] 生成结束后消费排队的回传（决策 7）。
+    val isStreamingForHandoffQueue by viewModel.isStreaming.collectAsState()
+    LaunchedEffect(isStreamingForHandoffQueue, sideParentId) {
+        val parent = sideParentId
+        if (!isStreamingForHandoffQueue && parent != null) {
+            viewModel.runQueuedSideHandoff(parent)
         }
     }
     // 回传守卫（决策 18）与状态机已下沉 ChatViewModel（2026-09-15 ①）：
@@ -2001,7 +1996,15 @@ fun ChatScreen(
                     NovexDeepSeekClock()
                     // iOS: "..." circle button → dropdown menu
                     Box {
-                        IconButton(onClick = { showChatMenu = true }) {
+                        IconButton(onClick = {
+                            // [T-menu-revive] 2026-09-16 用户批④：淡化状态下打开
+                            // 菜单自动唤回界面，菜单不再悬在隐形顶栏上。
+                            if (chromeCollapsed) {
+                                chromeRevivedAtMs = System.currentTimeMillis()
+                                chromeCollapsed = false
+                            }
+                            showChatMenu = true
+                        }) {
                             Icon(
                                 painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_more_vertical),
                                 contentDescription = "更多操作",
@@ -2380,10 +2383,6 @@ fun ChatScreen(
                                 }
                             }
                             flatItems = foldNovexExecutionProcesses(if (liveRows.isEmpty()) frozenRows else frozenRows + liveRows)
-                            // [T-execution-activity-strip] 底部活动条的数据源：
-                            // 每次扁平化后刷新「最新一条工作记录」，供输入栏上方
-                            // 的滚动播报条读取（状态在 ChatScreen 顶层提升）。
-                            latestLiveProcess = flatItems.filterIsInstance<FlatChatItem.AssistantProcess>().lastOrNull()
                             viewModel.retainedTranscriptRows = flatItems
                             viewModel.retainedTranscriptSessionId = sessionId
                             com.openminis.app.diagnostics.StreamPerfMonitor.tick(
@@ -3553,17 +3552,9 @@ fun ChatScreen(
                     )
                 }
 
-                // [T-execution-activity-strip] 技能活动条贴底（决策 ②）：生成中
-                // 滚动播报最新 3 条工具动态；回合结束切「✓ 本轮完成」停 3 秒。
-                // 仅在该轮确有执行动态时出现——纯文本回合不打扰。
-                val stripProcess = latestLiveProcess
-                val stripActive = isStreamingForStrip && stripProcess?.statusLabel() == "进行中"
-                if (stripActive) {
-                    stripVisibleDuringStream = true
-                    stripProcess?.let { NovexExecutionActivityStrip(it, done = false, onOpen = { openedProcess = it }) }
-                } else if (processStripDone && stripProcess != null) {
-                    NovexExecutionActivityStrip(stripProcess, done = true, onOpen = { openedProcess = stripProcess })
-                }
+                // [T-execution-activity-strip] 输入栏上方任务条已撤（2026-09-16
+                // 用户：冗余——转录内已有实时过程行，同屏播两遍）。过程动态见
+                // 转录区的回合工作行；完整记录点行内「查看记录」。
 
                 // Input box: iOS-style floating card — no visible border, separated
                 // from the backdrop by a symmetric soft shadow painted by hand
@@ -4724,17 +4715,19 @@ fun ChatScreen(
                                         CircleShape,
                                     )
                                     .clip(CircleShape)
-                                    .clickable(enabled = canActivate) {
-                                        // T-drag-send-queue: route through the
-                                        // shared send-or-enqueue handler. Same
-                                        // semantics as before: slash short-
-                                        // circuit, snapshot text, clear input
-                                        // + focus, then sendMessage (which
-                                        // routes to enqueuePrompt when
-                                        // _isStreaming is true), then reveal
-                                        // the submitted turn exactly once.
-                                        performSendOrEnqueue(inputText)
-                                    },
+                                    // [T-longpress-stop] 2026-09-16 用户批④：生成中
+                                    // 长按发送键=立即打断（不用去够停止键）；平时行为不变。
+                                    .combinedClickable(
+                                        enabled = canActivate || isStreaming,
+                                        onLongClick = {
+                                            if (isStreaming) {
+                                                viewModel.cancelStream()
+                                            }
+                                        },
+                                        // T-drag-send-queue: 点击走共享 send-or-enqueue
+                                        // 处理器（斜杠短路、快照文本、清输入，发送中入队）。
+                                        onClick = { performSendOrEnqueue(inputText) },
+                                    ),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(

@@ -25,12 +25,16 @@ object ProviderWireCapture {
     private const val HEAD_KEEP_CHARS = 2_000
     private val lock = Any()
 
-    fun record(provider: String, body: String) {
+    fun record(provider: String, body: String, url: String = "") {
         val dir = captureDir ?: return
+        // [T-wire-capture-images] 2026-09-16：带图片的请求也抓（用户复现"模型
+        // 看不到图"时需要分辨是应用没发还是服务端丢了）；纯文本对话仍不落盘。
         val carriesTools = body.contains("tool_result") || body.contains("tool_use") ||
             body.contains("\"tool_calls\"") || body.contains("\"role\":\"tool\"") ||
             body.contains("function_call_output")
-        if (!carriesTools) return
+        val carriesImages = body.contains("image_url") || body.contains("input_image") ||
+            body.contains("\"type\":\"image\"") || body.contains("\"inline_data\"")
+        if (!carriesTools && !carriesImages) return
         val recorded = if (body.length > MAX_BODY_CHARS) {
             body.take(HEAD_KEEP_CHARS) + "\n…[wire-capture 截断，全长 ${body.length} 字符，保留尾部]…\n" + body.takeLast(MAX_BODY_CHARS - HEAD_KEEP_CHARS)
         } else body
@@ -42,6 +46,7 @@ object ProviderWireCapture {
                     JSONObject()
                         .put("at", System.currentTimeMillis())
                         .put("provider", provider)
+                        .put("url", url)
                         .put("bytes", body.length)
                         .put("body", recorded)
                         .toString() + "\n",

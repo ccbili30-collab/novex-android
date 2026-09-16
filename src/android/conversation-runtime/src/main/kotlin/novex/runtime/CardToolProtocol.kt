@@ -33,6 +33,22 @@ object CardToolProtocol {
         }
         return CardEditingTools.definitions()+listOf(
             ToolDefinition("create_card","新建一张空世界或角色并保存。只接受 kind（WORLD 世界／CHARACTER 角色）和 name（名称）。新建不代表正文完成；成功后可管理该新作品，不改变当前互动来源。",JSONObject().put("type","object").put("properties",JSONObject().put("kind",JSONObject().put("type","string").put("enum",JSONArray(listOf("WORLD","CHARACTER")))).put("name",JSONObject().put("type","string"))).put("required",JSONArray(listOf("kind","name"))).put("additionalProperties",false).toString()),
+            ToolDefinition("create_card_bulk","一次成型整张卡（宏通道，建卡首选）：kind + name + modules 嵌套模块树。每个节点 name 必填；text 是该模块的正文（自动成为一个文字块）；children 为嵌套子模块（最多四层）；数组顺序即排序。先整包校验再一次性写入：任何节点不合法都不会写入半张卡，错误信息带 JSON 路径，改一处重发即可。成功返回全部新模块/块编号（created_module_ids/created_block_ids）与 next_draft_version，后续微调用精确工具直接引用。建整卡或大批量内容必须用它，不要逐个 add_module。",
+                JSONObject().put("type","object")
+                    .put("properties",JSONObject()
+                        .put("kind",JSONObject().put("type","string").put("enum",JSONArray(listOf("WORLD","CHARACTER"))))
+                        .put("name",JSONObject().put("type","string").put("description","卡片名称"))
+                        .put("modules",JSONObject().put("type","array").put("description","模块树，数组顺序即排序").put("items",CardBulk.moduleSchema())))
+                    .put("required",JSONArray(listOf("kind","name","modules"))).put("additionalProperties",false).toString()),
+            ToolDefinition("add_module_bulk","一次向已有卡插入整棵模块子树（宏通道）：module 为与 create_card_bulk 相同的节点结构（name/text/children）；before_id 为空插到根模块末尾，否则插到该根级模块之前。整包校验失败不写入。成功返回新模块/块编号。批量补充内容必须用它，不要逐个 add_module。",
+                JSONObject().put("type","object")
+                    .put("properties",JSONObject()
+                        .put("root_id",JSONObject().put("type","string").put("description","根作品编号"))
+                        .put("target_id",JSONObject().put("type","string").put("description","实际目标卡编号"))
+                        .put("draft_version",JSONObject().put("type","string").put("description","读取时的草稿版本，或上次保存返回的 next_draft_version"))
+                        .put("before_id",JSONObject().put("type","string").put("description","定位根级模块编号，插到它之前；空字符串表示末尾"))
+                        .put("module",CardBulk.moduleSchema()))
+                    .put("required",JSONArray(listOf("root_id","target_id","draft_version","module"))).put("additionalProperties",false).toString()),
             readTool("read_card_image","明确读取目标卡图片并放入下一次模型请求。先读取结构取得资源和版本；目录或图注不代表图像内容。",mapOf("draft_version" to "最新版本","resource_id" to "本卡图片资源编号")),
             tool("save_conversation_image","将当前对话持有图片复制到允许管理的卡片并保存。image_id 从对话图片目录取得；module_id 为空则仅存入素材，after_id 为空则放模块末尾。不依赖原附件继续存在。",mapOf("image_id" to "对话图片编号","module_id" to "模块编号或空字符串","after_id" to "定位块编号或空字符串")),
             tool("remove_module","移除指定模块及其全部子模块、内容块并保存；保留卡片图片资源及历史版本，不删除其他模块。先读取最新结构，明确目标后操作。",mapOf("module_id" to "要移除的模块编号")),
@@ -52,6 +68,25 @@ object CardToolProtocol {
         )
     }
     fun parse(chatId:String,call:PendingTool):CardToolRequest {
+        if(call.name=="create_card_bulk") {
+            val value=JSONObject(call.arguments)
+            val kind=value.optString("kind").trim().uppercase()
+            val name=value.optString("name").trim()
+            require(kind=="WORLD"||kind=="CHARACTER"){"kind 必须是 WORLD（世界）或 CHARACTER（角色）"}
+            require(name.isNotBlank()){"name 不能为空"}
+            val tree=CardBulk.parseTree(value,"modules")
+            val id=java.util.UUID.nameUUIDFromBytes((chatId.length.toString()+":"+chatId+call.id).toByteArray(Charsets.UTF_8)).toString()
+            return CardToolRequest(chatId,call.id,ManagementTarget(id),"new",CardToolEdit.CreateBulk(novex.content.CardKind.valueOf(kind),name,tree))
+        }
+        if(call.name=="add_module_bulk") {
+            val value=JSONObject(call.arguments)
+            listOf("root_id","target_id","draft_version").forEach { require(value.optString(it).isNotBlank()){"$it 不能为空"} }
+            val module=requireNotNull(value.optJSONObject("module")){"module（模块树）缺失"} 
+            val wrapper=JSONObject().put("modules",java.util.Collections.singletonList(module).let{JSONArray(it)})
+            val tree=CardBulk.parseTree(wrapper,"modules")
+            return CardToolRequest(chatId,call.id,ManagementTarget(value.getString("root_id"),value.getString("target_id")),value.getString("draft_version"),
+                CardToolEdit.AddModuleBulk(value.optString("before_id").takeIf{it.isNotBlank()},tree))
+        }
         if(call.name=="create_card") {
             // [T-lenient-parse] 2026-09-16 工具协议批：多余键忽略（此前模型顺手
             // 加说明字段就被拒）；kind 大小写归一；缺必需键才报错。
@@ -79,7 +114,7 @@ object CardToolProtocol {
             "save_conversation_image"->{require(value.getString("image_id").isNotBlank());val module=value.optString("module_id").takeIf {it.isNotBlank()};val after=value.optString("after_id").takeIf {it.isNotBlank()};require(module!=null || after==null);CardToolEdit.ConversationImage(value.getString("image_id"),module,after)}
             "remove_module"->CardToolEdit.RemoveModule(value.getString("module_id"))
             "remove_content_block"->{require(value.getString("block_id").isNotBlank());CardToolEdit.RemoveBlock(value.getString("module_id"),value.getString("block_id"))}
-            "set_module_options"->CardToolEdit.Options(value.getString("module_id"),ModuleOptionsProtocol.strings(value.getJSONArray("tags")),ModuleOptionsProtocol.decode(value.getJSONObject("rule")))
+            "set_module_options"->{val tags=runCatching{ModuleOptionsProtocol.strings(value.getJSONArray("tags"))}.getOrElse{emptyList()};CardToolEdit.Options(value.getString("module_id"),tags,ModuleOptionsProtocol.decodeLenient(value.opt("rule")))}
             "set_card_image"->{
                 require(value.getString("resource_id").isNotBlank())
                 require(value.getString("purpose") in setOf("cover","avatar")){"图片用途无效"}

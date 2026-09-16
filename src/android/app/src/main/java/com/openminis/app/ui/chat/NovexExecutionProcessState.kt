@@ -14,19 +14,24 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
 
     val output = mutableListOf<FlatChatItem>()
     var start = 0
+    // [T-turn-single-card] 2026-09-16 用户批③（方案 A）：一个回合一张卡——
+    // 回合内**全部**可折叠行（工具/思考/过程文字）合并为唯一一条工作行，钉在
+    // 回合末尾；叙述文字归组留在主文流，不再被过程块打断（此前"连续段折叠"
+    // 会把一次建卡拆成 过程块×N + 叙述×N 交替，占屏且结构混乱）。
+    fun foldable(row: FlatChatItem): Boolean = when (row) {
+        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
+        is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
+        is FlatChatItem.AssistantMarkdownBlock -> row.executionText
+        // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
+        // 先实时显示文字，输出完再收档）：留在直播区由 ThinkingBlock 展开
+        // 渲染、结束自动收起；后续块到达或回合冻结后，它才被收进工作记录。
+        is FlatChatItem.AssistantThinking -> row.block.presentationChannel() == NovexPresentationChannel.THINKING &&
+            !(row.isLastBlockOverall && row.messageIsStreaming)
+        else -> false
+    }
     fun flush(end: Int) {
         val turn = rows.subList(start, end)
-        val folded = turn.filter { row -> when (row) {
-            is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
-            is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
-            is FlatChatItem.AssistantMarkdownBlock -> row.executionText
-            // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
-            // 先实时显示文字，输出完再收档）：留在直播区由 ThinkingBlock 展开
-            // 渲染、结束自动收起；后续块到达或回合冻结后，它才被收进工作记录。
-            is FlatChatItem.AssistantThinking -> row.block.presentationChannel() == NovexPresentationChannel.THINKING &&
-                !(row.isLastBlockOverall && row.messageIsStreaming)
-            else -> false
-        } }
+        val folded = turn.filter(::foldable)
         val hasTool = folded.any { it is FlatChatItem.AssistantToolUse }
         val hasProcessText = folded.any {
             it is FlatChatItem.AssistantText || it is FlatChatItem.AssistantMarkdownBlock
@@ -45,10 +50,9 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
                 else -> error("Unexpected execution row")
             }
             val process = FlatChatItem.AssistantProcess(messageId, folded, first.key)
-            turn.forEach { row ->
-                if (row === first) output += process
-                else if (row.key !in keys) output += row
-            }
+            // 叙述与交互类工具保留原位；唯一工作行钉在回合末尾。
+            turn.forEach { row -> if (row.key !in keys) output += row }
+            output += process
         }
         start = end
     }

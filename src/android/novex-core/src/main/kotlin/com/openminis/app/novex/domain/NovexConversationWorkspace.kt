@@ -109,7 +109,7 @@ class NovexWorkspaceFileRef private constructor(
 
         fun parse(value: String): NovexWorkspaceFileRef {
             NovexResourceRef(value)
-            require(value.startsWith(PREFIX)) { "不是 Novex 会话工作区引用" }
+            require(value.startsWith(PREFIX)) { "不是 Novex 会话工作区引用；普通文件路径请改用 file_read 工具读取" }
             val pieces = value.removePrefix(PREFIX).split('/')
             require(pieces.size >= 5 && pieces[1] == "branches") { "工作区引用结构无效" }
             val conversationId = decodeRefSegment(pieces[0])

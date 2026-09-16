@@ -160,28 +160,49 @@ class ResponsesTopLevelImageTest {
     // ---- controls ---------------------------------------------------------
 
     @Test
-    fun `a non-vision model gets the placeholder, never raw pixels`() {
+    fun `an unknown text-only model still gets pixels optimistically`() {
+        // [T-image-optimistic-send] 2026-09-16：不再按名字猜视觉——未学习降级的
+        // 模型一律真实发送像素（此前占位文本会被模型复述成"我不支持图片"）。
         val body = capturedBody(
             textOnlyModel(),
-            listOf(
-                LLMMessage.ImagePart(
-                    data = pixels,
-                    mimeType = "image/png",
-                    noVisionPlaceholder = "[Image attached: /tmp/x.png — call read_image]",
-                ),
-            ),
+            listOf(LLMMessage.ImagePart(data = pixels, mimeType = "image/png")),
         )
         val content = lastInputContent(body)
         assertEquals(
-            "a text-only model must not receive input_image blocks",
-            0,
+            "an unknown model must receive the input_image block optimistically",
+            1,
             blocksOfType(content, "input_image").size,
         )
-        val texts = blocksOfType(content, "input_text").map { it.optString("text") }
-        assertTrue(
-            "the Vision-Group placeholder should be forwarded verbatim, got: $texts",
-            texts.any { it.contains("call read_image") },
-        )
+    }
+
+    @Test
+    fun `a learned-degraded model gets the placeholder, never raw pixels`() {
+        OpenAIProvider.imageDegradedModels.add("text-only-model")
+        try {
+            val body = capturedBody(
+                textOnlyModel(),
+                listOf(
+                    LLMMessage.ImagePart(
+                        data = pixels,
+                        mimeType = "image/png",
+                        noVisionPlaceholder = "[Image attached: /tmp/x.png — call read_image]",
+                    ),
+                ),
+            )
+            val content = lastInputContent(body)
+            assertEquals(
+                "a learned-degraded model must not receive input_image blocks",
+                0,
+                blocksOfType(content, "input_image").size,
+            )
+            val texts = blocksOfType(content, "input_text").map { it.optString("text") }
+            assertTrue(
+                "the Vision-Group placeholder should be forwarded verbatim, got: $texts",
+                texts.any { it.contains("call read_image") },
+            )
+        } finally {
+            OpenAIProvider.imageDegradedModels.remove("text-only-model")
+        }
     }
 
     @Test

@@ -301,7 +301,7 @@ class SkillRepository(private val context: Context) {
 
         return buildString {
             append("Skills:\n")
-            append("Reusable instruction sets stored at /var/minis/skills/<name>/SKILL.md. Read the SKILL.md file to load full instructions before using a skill.\n\n")
+            append("Reusable instruction sets stored at /var/minis/skills/<name>/SKILL.md. Load a skill by calling the file_read tool with the skill's <path> below (workspace tools cannot read these files).\n\n")
             append(xml)
             if (hasMore) {
                 val selectedIds = selected.mapTo(HashSet(selected.size)) { it.id }

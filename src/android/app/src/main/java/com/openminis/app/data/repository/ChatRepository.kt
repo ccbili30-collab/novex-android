@@ -251,6 +251,9 @@ class ChatRepository(internal val dao: ChatDao) {
         dao.updateSessionBinding(sessionId, binding, modelId)
     }
 
+    /** [T-side-snapshot] 按消息 ID 只读拉取（分裂点快照回放用，认 ID 不认活跃路径）。 */
+    suspend fun findMessageById(messageId: String) = dao.findMessage(messageId)
+
     suspend fun markAssistantTextFormal(messageId: String) {
         val row = dao.findMessage(messageId) ?: return
         require(row.role == "assistant")

@@ -1,5 +1,6 @@
 package com.openminis.app.ui.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -7,11 +8,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
@@ -59,7 +65,11 @@ internal fun ChatTranscriptRow(
 ) {
     val context = LocalContext.current
     when (item) {
-        is FlatChatItem.UserBubble -> {
+        is FlatChatItem.UserBubble -> if (isBriefReportText(item.message.content)) {
+            // [T-brief-collapsed-row] 2026-09-16 用户批④·决策 4：回传/沟通简报
+            // 并入历史后显示为一行可展开的摘要行，不占正文气泡位；模型仍读全文。
+            BriefReportRow(content = item.message.content)
+        } else {
             // User bubbles intentionally don't register
             // MinisTextKit shards — long-press on a user
             // bubble shows its own action menu (Copy /
@@ -375,5 +385,44 @@ private fun ConversationBranchSwitcher(
                 modifier = Modifier.size(18.dp),
             )
         }
+    }
+}
+
+
+// [T-brief-collapsed-row] 简报类用户消息判定：回传简报与 /sync 沟通简报。
+internal fun isBriefReportText(text: String): Boolean =
+    text.startsWith("【交接简报") || text.startsWith("【沟通简报")
+
+@Composable
+private fun BriefReportRow(content: String) {
+    var expanded by remember(content) { mutableStateOf(false) }
+    val firstLine = content.lineSequence().firstOrNull().orEmpty()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (expanded) "▾ $firstLine" else "▸ $firstLine",
+            color = ChatColors.secondaryText,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (expanded) {
+        Text(
+            content,
+            color = ChatColors.secondaryText,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 2.dp),
+        )
     }
 }

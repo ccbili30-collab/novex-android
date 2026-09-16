@@ -359,6 +359,15 @@ class ChatViewModel(
          * Mirrors iOS AIChatViewModel.maxAgentTurns.
          */
         private const val MAX_AGENT_TURNS = 200
+
+        // [T-tool-turn-pressure] 回合终止压力（2026-09-16 用户批④）：细粒度工具
+        // 协议下模型会把工具轮当成新提问无限续写（对话包实测一问 40 答）。
+        // 软顶 40 轮起注入收尾指令；200 硬顶仍是最后保险。
+        internal const val SOFT_TOOL_TURN_LIMIT = 40
+        internal const val TOOL_RESULT_HINT =
+            "(以下是本轮工具的执行结果，供完成当前任务使用；这不是用户发送的新消息。完成当前任务后请直接给出结果或总结，不要重新开场，也不要重复已完成的工作。)"
+        internal const val TOOL_TURN_BUDGET_NOTE =
+            "(系统提示：本轮工具调用轮数已达到上限。请利用已获得的结果直接向用户总结当前进展并结束本轮回复，不要再发起新的工具调用。)"
         private const val MIN_MAX_TOKENS = 1024
         /**
          * Hard ceiling on max_tokens we ever send to a provider, regardless
@@ -1745,6 +1754,13 @@ class ChatViewModel(
             title = "Thinking",
             subtitle = "",
         ),
+        // [T-cross-sync] 双向沟通：压缩自己的记忆发给另一边（2026-09-16 用户批δ）。
+        SlashCommand(
+            id = "sync",
+            icon = com.openminis.app.ui.novex.NovexIcons.Share,
+            title = "Sync",
+            subtitle = "",
+        ),
     )
 
     // [T-android-split-chat] filteredSlashCommands / updateSlashMenuState /
@@ -1806,6 +1822,7 @@ class ChatViewModel(
             "memory" -> toggleMemoryEnabled()
             "thinking" -> toggleThinking()
             "clear" -> _clearChatConfirmRequested.value = true
+            "sync" -> startCrossSync(currentInput.trim().removePrefix("/").removePrefix("／").substringAfter(' ', "").trim())
             else -> AppLogger.info(TAG, "[Slash] unrecognized id=${cmd.id} — no dispatch")
         }
         // [T-android-slash-menu-align-ios-prepend] Action command: restore the
@@ -1907,8 +1924,9 @@ class ChatViewModel(
         if (first != '/' && first != '／') return false
         val name = trimmed.drop(1).lowercase()
         val cmd = availableSlashCommands.firstOrNull { it.title.lowercase() == name }
+            ?: availableSlashCommands.firstOrNull { it.title.lowercase() == name.substringBefore(' ') }
             ?: return false
-        executeSlashCommand(cmd)
+        executeSlashCommand(cmd, trimmed.drop(1))
         return true
     }
 
@@ -2497,7 +2515,32 @@ class ChatViewModel(
         val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
         return budgetedRequestHistory(dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
             it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
-        }))
+        }).let { prependSideSnapshotHistory(it) })
+    }
+
+    /**
+     * [T-side-snapshot] 侧边请求前拼主线分裂点快照（2026-09-16 用户批δ）：
+     * 按创建时定格的消息 ID 只读拉取主线消息（含已被切换分支弃用的死分支
+     * 消息——认 ID 不认现状），映射后拼在侧边自己的历史之前；界面仍只显示
+     * 侧边消息。在预算裁剪**之前**拼接，主线历史与侧边历史一起过容量检查
+     * 与压缩机制。快照缺失（旧侧边/直连对话）原样返回。
+     */
+    private suspend fun prependSideSnapshotHistory(history: List<LLMMessage>): List<LLMMessage> {
+        if (history.isEmpty()) return history
+        val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+            ?: return history
+        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return history
+        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return history
+        val mainline = snapshot.messageIds.mapNotNull { id ->
+            runCatching { chatRepository.findMessageById(id) }.getOrNull()
+                ?.takeIf { it.sessionId == sideOf }
+                ?.let { entity ->
+                    runCatching { entity.toLLMMessage() }.getOrNull()
+                }
+        }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
+        if (mainline.isEmpty()) return history
+        AppLogger.info(TAG, "[SideSnapshot] prepending ${mainline.size} mainline messages (split-point freeze) to side $activeSessionId")
+        return mainline + history
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -5820,8 +5863,17 @@ class ChatViewModel(
 
     /** 触发一次回传：让侧边模型产出增量交接简报并并入主线。守卫：只认点击后
      *  新产生的助手回复；生成失败/超时绝不把旧回复当简报（决策 18）。 */
+    // [T-handoff-queue] 2026-09-16 用户批④·决策 7：生成中点回传→排队，本轮
+    // 结束自动执行（此前直接吞掉点击，用户以为回传失灵）。
+    @Volatile private var sideHandoffQueued = false
+
     fun startSideHandoff(sideParentId: String) {
-        if (_isStreaming.value || _sideHandoffState.value is SideHandoffState.Running) return
+        if (_sideHandoffState.value is SideHandoffState.Running) return
+        if (_isStreaming.value) {
+            sideHandoffQueued = true
+            appendSystemInfo("正在生成中：回传已排队，本轮结束后自动执行", "handoff")
+            return
+        }
         sideHandoffJob?.cancel()
         sideHandoffBaseIds = _messages.value.map { it.id }.toSet()
         _sideHandoffState.value = SideHandoffState.Running
@@ -5870,6 +5922,111 @@ class ChatViewModel(
     fun retrySideHandoff(sideParentId: String) {
         _sideHandoffState.value = SideHandoffState.Idle
         startSideHandoff(sideParentId)
+    }
+
+    /** [T-handoff-queue] 流结束后由页面调用：消费排队的回传。 */
+    fun runQueuedSideHandoff(sideParentId: String) {
+        if (!sideHandoffQueued || _isStreaming.value) return
+        sideHandoffQueued = false
+        if (_sideHandoffState.value is SideHandoffState.Idle) startSideHandoff(sideParentId)
+    }
+
+    // ── [T-cross-sync] /sync 双向沟通（2026-09-16 用户批δ，决策 1/2/3）──────
+    // 任意一边调用：后台起一个独立压缩请求（不占两边上下文），把"自己的记忆"
+    // 压成简报；命令本身不落史，简报本体作为用户消息并入两边历史。侧边→主线；
+    // 主线→侧边（多条侧边时 /sync <编号> 指定，主线只压分裂点之后的增量）。
+    private val _crossSyncState = MutableStateFlow<String?>(null)
+    val crossSyncState: StateFlow<String?> = _crossSyncState.asStateFlow()
+
+    fun startCrossSync(argument: String = "") {
+        if (_isStreaming.value) {
+            appendSystemInfo("正在生成中；本轮结束后再执行 /sync 沟通", "sync")
+            return
+        }
+        if (_crossSyncState.value != null) return
+        _crossSyncState.value = "正在压缩记忆并发送…"
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runCrossSync(argument)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                appendSystemInfo("沟通失败：${failure.message ?: "未知错误"}", "sync")
+            } finally {
+                _crossSyncState.value = null
+            }
+        }
+    }
+
+    private suspend fun runCrossSync(argument: String) {
+        val session = chatRepository.getSession(activeSessionId) ?: return
+        val sideOf = session.sideOfSession
+        val targetId: String
+        val fromSide: Boolean
+        if (sideOf != null) {
+            targetId = sideOf; fromSide = true
+        } else {
+            val sides = chatRepository.listSideSessions(activeSessionId)
+            when {
+                sides.isEmpty() -> {
+                    appendSystemInfo("没有沟通对象：主线用 /sync 前请先开侧边对话；在侧边对话里用 /sync 是把摘要发给主线。", "sync"); return
+                }
+                sides.size == 1 -> targetId = sides.first().id
+                else -> {
+                    val byNumber = argument.toIntOrNull()?.let { n -> sides.firstOrNull { com.openminis.app.data.repository.sideConversationNumber(it.title ?: "") == n } }
+                    val byName = sides.firstOrNull { argument.isNotBlank() && (it.title ?: "").contains(argument.trim()) }
+                    val pick = byNumber ?: byName
+                    if (pick == null) {
+                        appendSystemInfo("这条主线有多条侧边，请用 /sync <编号> 指定（${sides.joinToString("、") { "${com.openminis.app.data.repository.sideConversationNumber(it.title ?: "")}·${it.title}" }}）", "sync"); return
+                    }
+                    targetId = pick.id
+                }
+            }
+            fromSide = false
+        }
+        // 压缩源：自己的可见文本历史；主线→侧边只压分裂点之后的增量。
+        val snapshotIds = if (!fromSide) SideSnapshotStore.read(context, targetId)?.messageIds?.toSet() else null
+        val transcript = chatRepository.loadActiveMessages(activeSessionId)
+            .filter { row -> row.role == "user" || row.role == "assistant" }
+            .filter { row -> snapshotIds == null || row.id !in snapshotIds }
+            .mapNotNull { row ->
+                val text = runCatching {
+                    val arr = org.json.JSONArray(row.partsJson)
+                    (0 until arr.length()).mapNotNull { i ->
+                        arr.optJSONObject(i)?.takeIf { it.optString("type") == "text" }?.optString("value")?.trim()
+                    }.filter { it.isNotEmpty() }.joinToString(" ")
+                }.getOrNull().orEmpty().ifBlank { null }
+                "${if (row.role == "user") "[用户]" else "[助手]"} $text"
+            }
+            .takeLast(60)
+            .joinToString("\n")
+        if (transcript.isBlank()) {
+            appendSystemInfo("还没有可沟通的内容（没有新的对话记录）", "sync"); return
+        }
+        val provider = currentProvider ?: run {
+            appendSystemInfo("请先选择模型再执行沟通", "sync"); return
+        }
+        val brief = provider.sendMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "以下是本对话的自有记录，请压缩成一份给另一条平行对话看的沟通简报：\n\n$transcript")),
+            "你是对话记忆压缩器。把输入的对话压缩为一份交接简报：保留关键事实、决定、数值、人物状态与未完成事项；丢弃寒暄、客套与过程描述。不超过 500 字，直接输出简报正文，不要任何前后缀说明。",
+            1024,
+        ).text.trim()
+        if (brief.isBlank()) {
+            appendSystemInfo("沟通失败：压缩结果为空", "sync"); return
+        }
+        val header = if (fromSide) "【沟通简报 · 来自侧边】" else "【沟通简报 · 来自主线】"
+        val text = "$header\n$brief"
+        val parts = org.json.JSONArray().put(org.json.JSONObject().put("type", "text").put("value", text)).toString()
+        val mine = chatRepository.appendMessage(activeSessionId, "user", parts)
+        recordActiveBranchMessage(mine.id)
+        agentHistory.add(LLMMessage(LLMMessage.Role.USER, text, dbMessageId = mine.id))
+        chatRepository.appendMessage(targetId, "user", parts)
+        if (fromSide) NovexSideHandoff.markParentDirty(context, targetId)
+        appendSystemInfo(
+            "已沟通：简报已并入两边的历史（${if (fromSide) "侧边 → 主线" else "主线 → 侧边"}）",
+            "sync",
+            payload = brief,
+        )
     }
 
     fun dismissSideHandoff() {
@@ -8824,7 +8981,7 @@ class ChatViewModel(
                         LLMMessage(
                             role = LLMMessage.Role.USER,
                             content = "",
-                            contentParts = providerResultParts,
+                            contentParts = providerResultParts + listOf(AgentContentPart.Text(TOOL_RESULT_HINT)),
                             dbMessageId = toolResultDbId,
                         ),
                     )
@@ -8886,10 +9043,15 @@ class ChatViewModel(
             val toolResultDbId = persistToolResultMessage(resultParts)
 
             // Add tool results to history
+            // [T-tool-turn-pressure] 工具结果轮附隐形提示（防中转翻译层把工具轮
+            // 变成"空用户消息"诱发重新开场）；软顶后追加收尾指令。
             agentHistory.add(LLMMessage(
                 role = LLMMessage.Role.USER,
                 content = "",
-                contentParts = resultParts,
+                contentParts = resultParts + buildList {
+                    add(AgentContentPart.Text(TOOL_RESULT_HINT))
+                    if (turn + 1 >= SOFT_TOOL_TURN_LIMIT) add(AgentContentPart.Text(TOOL_TURN_BUDGET_NOTE))
+                },
                 dbMessageId = toolResultDbId,
             ))
             emptyResponseContext = EmptyResponseContext.AFTER_TOOL_RESULT
@@ -10308,18 +10470,44 @@ class ChatViewModel(
         val args = runCatching { JSONObject(argsJson) }.getOrElse {
             return ToolExecutionResult("生图参数不是有效的 JSON", false, toolTitle = "生成图片")
         }
-        val artifactId = args.optString("reference_artifact_id").trim()
-        val reference = if (artifactId.isEmpty()) {
+        // [T-unified-image-reference] 参考图统一引用面（2026-09-16 用户批γ）：
+        // conversation:图片编号 / card:卡片编号:资源编号 / artifact:成果编号；
+        // 旧 reference_artifact_id 仍按 artifact 处理。
+        val referenceRef = args.optString("reference_image").trim()
+            .ifEmpty { args.optString("reference_artifact_id").trim() }
+        val reference = if (referenceRef.isEmpty()) {
             null
         } else {
-            val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
-                return ToolExecutionResult(
-                    error.message ?: "无法读取指定参考图片成果",
-                    false,
-                    toolTitle = "生成图片",
-                )
+            when {
+                referenceRef.startsWith("conversation:") -> {
+                    val imageId = referenceRef.removePrefix("conversation:")
+                    val file = runCatching { integratedConversationImages()[imageId] }.getOrNull()
+                    if (file == null) {
+                        return ToolExecutionResult("对话图片目录里没有编号 $imageId；编号来自「对话图片目录」工具定义", false, toolTitle = "生成图片")
+                    }
+                    LLMMessage.ImagePart(file.readBytes(), "image/jpeg", null)
+                }
+                referenceRef.startsWith("card:") -> {
+                    val parts = referenceRef.removePrefix("card:").split(':', limit = 2)
+                    if (parts.size != 2) {
+                        return ToolExecutionResult("card: 引用格式是 card:卡片编号:资源编号", false, toolTitle = "生成图片")
+                    }
+                    val bytes = runCatching { integratedCards.cardImageBytes(parts[0], parts[1]) }.getOrNull()
+                        ?: return ToolExecutionResult("卡片 ${parts[0]} 上没有图片资源 ${parts[1]}；资源编号以 read_card 结构为准", false, toolTitle = "生成图片")
+                    LLMMessage.ImagePart(bytes.first, bytes.second, null)
+                }
+                else -> {
+                    val artifactId = referenceRef.removePrefix("artifact:")
+                    val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
+                        return ToolExecutionResult(
+                            error.message ?: "无法读取指定参考图片成果",
+                            false,
+                            toolTitle = "生成图片",
+                        )
+                    }
+                    LLMMessage.ImagePart(resolved.bytes, resolved.mimeType, null)
+                }
             }
-            LLMMessage.ImagePart(resolved.bytes, resolved.mimeType, null)
         }
         return GenerateImageTool.execute(
             argsJson = argsJson,
