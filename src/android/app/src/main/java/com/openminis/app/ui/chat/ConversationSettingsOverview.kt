@@ -17,7 +17,7 @@ internal fun ConversationSettingsOverview(
     answer: String, player: String, backgroundCount: Int, game: String, managedCount: Int,
     permission: String, promptChanged: Boolean, backgroundOverridden: Boolean,
     integrated:Boolean=false, onOpen: (String) -> Unit, onPermission: () -> Unit,
-    perTurnSet: Boolean = false, onTokenUsage: () -> Unit = {},
+    perTurnSet: Boolean = false, styleSet: Boolean = false, onTokenUsage: () -> Unit = {},
 ) {
     NovexEditorSection(header = "身份与回答") {
         NovexSummaryRow("回答身份", answer, onClick = { onOpen("answer") })
@@ -27,6 +27,7 @@ internal fun ConversationSettingsOverview(
     NovexEditorSection(header = "使用的设定") {
         NovexSummaryRow("背景资料", if (backgroundCount == 0) "未添加" else "$backgroundCount 项", onClick = { onOpen("background") })
         NovexSummaryRow("每轮注入", if (perTurnSet) "已设置" else "未设置", onClick = { onOpen("perTurn") })
+        NovexSummaryRow("文字文风", if (styleSet) "已设置" else "未设置", onClick = { onOpen("textStyle") })
         if(!integrated)NovexSummaryRow("当前文游", game, onClick = { onOpen("game") })
     }
     NovexEditorSection(header = "内容与工具") {

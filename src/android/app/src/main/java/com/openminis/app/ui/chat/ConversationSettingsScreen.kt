@@ -46,6 +46,7 @@ import com.openminis.app.R
 import com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS
 import com.openminis.app.data.MAX_IMAGE_STYLE_PROMPT_CHARS
 import com.openminis.app.data.MAX_PER_TURN_PROMPT_CHARS
+import com.openminis.app.data.MAX_TEXT_STYLE_PROMPT_CHARS
 import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
@@ -281,6 +282,7 @@ fun ConversationSettingsScreen(
             promptChanged = draft.settings.conversationPrompt.isNotBlank(),
             backgroundOverridden = draft.settings.backgroundPath != null,
             perTurnSet = draft.settings.perTurnPrompt.isNotBlank(),
+            styleSet = draft.settings.textStylePrompt.isNotBlank(),
             onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
             onTokenUsage = { showingTokenUsage = true },
         )
@@ -391,6 +393,38 @@ fun ConversationSettingsScreen(
                 }
             }
             NovexTextActionRow("添加世界或角色背景", onClick = { picker = ConversationPicker.BACKGROUND })
+        }
+
+        if (settingsPage == "textStyle") {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val presets = remember(context) { com.openminis.app.data.TextStylePresets.load(context) }
+            NovexEditorSection(
+                header = "文字文风",
+                footer = "每次发送消息，这段文风设定都会随最新一轮发给模型；留空不生效。可以从内置题材文风卡一键填入后再改。题材卡来源：oh-story-claudecode（MIT）。",
+            ) {
+                NovexTextField(
+                    label = "文风设定",
+                    value = draft.settings.textStylePrompt,
+                    onValueChange = { value ->
+                        draft = draft.updateSettings { it.copy(textStylePrompt = value.take(MAX_TEXT_STYLE_PROMPT_CHARS)) }
+                    },
+                    minLines = 4,
+                    placeholder = "例：短句为主，多动作少心理，禁排比与段尾升华",
+                )
+                NovexTextActionRow("清空文风", onClick = {
+                    draft = draft.updateSettings { it.copy(textStylePrompt = "") }
+                })
+                presets.forEach { preset ->
+                    val active = draft.settings.textStylePrompt == preset.content
+                    NovexSummaryRow(
+                        if (active) "${preset.label} · 已应用" else preset.label,
+                        "题材文风卡（点击填入，可再修改）",
+                        onClick = {
+                            draft = draft.updateSettings { it.copy(textStylePrompt = preset.content.take(MAX_TEXT_STYLE_PROMPT_CHARS)) }
+                        },
+                    )
+                }
+            }
         }
 
         if (settingsPage == "perTurn") NovexEditorSection(

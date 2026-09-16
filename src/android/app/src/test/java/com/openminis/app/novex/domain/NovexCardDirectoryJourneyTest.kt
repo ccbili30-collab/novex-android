@@ -27,7 +27,7 @@ class NovexCardDirectoryJourneyTest {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "migration.db").absolutePath
         fun open() = Room.databaseBuilder(context, AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38).allowMainThreadQueries().build()
+            .addMigrations(AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
         var db = open()
         try {
             val store = NovexCardDirectoryStore(File(files.root, "cards"), syncDirectory = {})

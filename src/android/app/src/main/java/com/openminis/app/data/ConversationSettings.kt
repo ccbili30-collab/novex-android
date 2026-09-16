@@ -7,11 +7,14 @@ const val MAX_CONVERSATION_PROMPT_CHARS = 48_000
 const val MAX_IMAGE_STYLE_PROMPT_CHARS = 8_000
 const val MAX_NOVEX_CONFIGURATION_CHARS = 512_000
 const val MAX_PER_TURN_PROMPT_CHARS = 8_000
+const val MAX_TEXT_STYLE_PROMPT_CHARS = 8_000
 
 data class ConversationSettingsSnapshot(
     val conversationPrompt: String,
     val imageStylePrompt: String = "",
     val perTurnPrompt: String = "",
+    /** Standing text-style instruction appended after the latest user turn (文字文风). Blank = off. */
+    val textStylePrompt: String = "",
     /** Wenyou runtime: append client-rolled d100 values after the latest user turn. */
     val diceInjectionEnabled: Boolean = false,
     /** Wenyou runtime: echo the latest assistant `<账本>` block back as external state. */
@@ -31,6 +34,7 @@ fun normalizeConversationSettings(value: ConversationSettingsSnapshot): Conversa
         conversationPrompt = value.conversationPrompt.take(MAX_CONVERSATION_PROMPT_CHARS),
         imageStylePrompt = value.imageStylePrompt.trim().take(MAX_IMAGE_STYLE_PROMPT_CHARS),
         perTurnPrompt = value.perTurnPrompt.trim().take(MAX_PER_TURN_PROMPT_CHARS),
+        textStylePrompt = value.textStylePrompt.trim().take(MAX_TEXT_STYLE_PROMPT_CHARS),
         backgroundPath = value.backgroundPath?.trim(),
         assistantDisplayName = value.assistantDisplayName.trim().take(80),
         assistantAvatarPath = value.assistantAvatarPath?.trim()?.ifBlank { null },
@@ -62,6 +66,12 @@ fun mergeImageStylePrompt(requestPrompt: String, imageStylePrompt: String?): Str
  * suppresses exactly the behaviour the user asked for（用户反馈 2026-09-15：
  * 注入"叫它给按钮还是不给"）.
  */
+fun textStyleInjectionContent(textStylePrompt: String?): String? {
+    val text = textStylePrompt?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    return "<文风>\n（用户保存的文字文风设定，每轮生效，约束叙事的表达方式。）\n$text\n</文风>"
+}
+
 fun perTurnInjectionContent(perTurnPrompt: String?): String? {
     val text = perTurnPrompt?.trim().orEmpty()
     if (text.isEmpty()) return null
@@ -140,12 +150,14 @@ fun appendRuntimeInjections(
     diceEnabled: Boolean,
     ledgerEnabled: Boolean,
     diceRolls: List<Int>,
+    textStylePrompt: String? = null,
 ): List<LLMMessage> {
     val blocks = buildList {
         if (diceEnabled || ledgerEnabled) {
             add(externalStateInjectionContent(userTurnCount(history), if (ledgerEnabled) latestLedgerFromHistory(history) else null))
         }
         if (diceEnabled) add(diceInjectionContent(diceRolls))
+        add(textStyleInjectionContent(textStylePrompt))
         add(perTurnInjectionContent(perTurnPrompt))
     }
     return appendInjectionBlocks(history, blocks.filterNotNull())
