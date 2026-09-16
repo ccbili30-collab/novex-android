@@ -329,4 +329,48 @@ class ConversationSettingsTest {
         assertEquals(raw, value.novexConfigurationJson)
         org.json.JSONObject(value.novexConfigurationJson)
     }
+
+    @Test
+    fun textStyleInjectionWrapsTrimmedTextAndSkipsBlank() {
+        assertNull(textStyleInjectionContent(null))
+        assertNull(textStyleInjectionContent("   "))
+        assertEquals(
+            "<文风>\n（用户保存的文字文风设定，每轮生效，约束叙事的表达方式。）\n短句为主\n</文风>",
+            textStyleInjectionContent("  短句为主  "),
+        )
+    }
+
+    @Test
+    fun runtimeInjectionPlacesStyleBeforePerTurnBlock() {
+        val history = listOf(LLMMessage(LLMMessage.Role.USER, "进城"))
+        val injected = appendRuntimeInjections(
+            history, "保持悬念", diceEnabled = false, ledgerEnabled = false,
+            diceRolls = emptyList(), textStylePrompt = "短句为主",
+        )
+        assertEquals(
+            "进城\n\n<文风>\n（用户保存的文字文风设定，每轮生效，约束叙事的表达方式。）\n短句为主\n</文风>\n\n<每轮注入>\n（用户保存的常设指令，每轮生效，优先于系统默认习惯与世界模板未明确规定的部分。）\n保持悬念\n</每轮注入>",
+            injected[0].content,
+        )
+    }
+
+    @Test
+    fun blankTextStyleLeavesOnlyPerTurnBlock() {
+        val history = listOf(LLMMessage(LLMMessage.Role.USER, "进城"))
+        val injected = appendRuntimeInjections(
+            history, "保持悬念", diceEnabled = false, ledgerEnabled = false,
+            diceRolls = emptyList(), textStylePrompt = "  ",
+        )
+        assertFalse(injected[0].content.contains("<文风>"))
+    }
+
+    @Test
+    fun normalizationBoundsTextStylePrompt() {
+        val value = normalizeConversationSettings(
+            ConversationSettingsSnapshot(
+                conversationPrompt = "提示词",
+                textStylePrompt = "风".repeat(MAX_TEXT_STYLE_PROMPT_CHARS + 10),
+            ),
+        )
+        assertEquals(MAX_TEXT_STYLE_PROMPT_CHARS, value.textStylePrompt.length)
+    }
 }

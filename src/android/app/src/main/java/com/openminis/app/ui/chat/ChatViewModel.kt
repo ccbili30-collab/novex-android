@@ -3443,6 +3443,8 @@ class ChatViewModel(
     /** Standing instruction appended to every request's latest user turn; blank = off. */
     private val _perTurnPrompt = MutableStateFlow("")
     val perTurnPrompt: StateFlow<String> = _perTurnPrompt.asStateFlow()
+    private val _textStylePrompt = MutableStateFlow("")
+    val textStylePrompt: StateFlow<String> = _textStylePrompt.asStateFlow()
     private val _diceInjectionEnabled = MutableStateFlow(false)
     val diceInjectionEnabled: StateFlow<Boolean> = _diceInjectionEnabled.asStateFlow()
     private val _ledgerInjectionEnabled = MutableStateFlow(false)
@@ -3704,6 +3706,7 @@ class ChatViewModel(
         _conversationPrompt.value = saved.conversationPrompt
         _imageStylePrompt.value = saved.imageStylePrompt
         _perTurnPrompt.value = saved.perTurnPrompt
+        _textStylePrompt.value = saved.textStylePrompt
         _diceInjectionEnabled.value = saved.diceInjectionEnabled
         _ledgerInjectionEnabled.value = saved.ledgerInjectionEnabled
         _novexConfigurationJson.value = saved.novexConfigurationJson
@@ -3795,6 +3798,7 @@ class ChatViewModel(
             conversationPrompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
             imageStylePrompt = _imageStylePrompt.value,
             perTurnPrompt = _perTurnPrompt.value,
+            textStylePrompt = _textStylePrompt.value,
             diceInjectionEnabled = _diceInjectionEnabled.value,
             ledgerInjectionEnabled = _ledgerInjectionEnabled.value,
             backgroundPath = _conversationBackgroundPathOverride.value,
@@ -3827,6 +3831,7 @@ class ChatViewModel(
         _conversationPrompt.value = value.conversationPrompt
         _imageStylePrompt.value = value.imageStylePrompt
         _perTurnPrompt.value = value.perTurnPrompt
+        _textStylePrompt.value = value.textStylePrompt
         _diceInjectionEnabled.value = value.diceInjectionEnabled
         _ledgerInjectionEnabled.value = value.ledgerInjectionEnabled
         _conversationBackgroundPathOverride.value = value.backgroundPath
@@ -4473,6 +4478,7 @@ class ChatViewModel(
             _conversationPrompt.value = session.conversationPrompt
             _imageStylePrompt.value = session.imageStylePrompt.orEmpty()
             _perTurnPrompt.value = session.perTurnPrompt.orEmpty()
+            _textStylePrompt.value = session.textStylePrompt.orEmpty()
             _diceInjectionEnabled.value = session.runtimeDiceEnabled != 0
             _ledgerInjectionEnabled.value = session.runtimeLedgerEnabled != 0
             _novexConfigurationJson.value = session.novexConfigurationJson?.takeIf(String::isNotBlank)
@@ -8009,12 +8015,17 @@ class ChatViewModel(
                     } else {
                         emptyList()
                     }
+                    val styleInjection = com.openminis.app.data.textStyleInjectionContent(_textStylePrompt.value)
+                    if (styleInjection != null) {
+                        runtimeAudit?.event("text_style_injection", JSONObject().put("chars", styleInjection.length))
+                    }
                     val boundedHistory = com.openminis.app.data.appendRuntimeInjections(
                         applyRequestImageBudget(requestHistory),
                         _perTurnPrompt.value,
                         _diceInjectionEnabled.value,
                         _ledgerInjectionEnabled.value,
                         diceRolls,
+                        _textStylePrompt.value,
                     )
                     val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
                     _contextEstimated.value = true
@@ -12858,6 +12869,7 @@ class ChatViewModel(
                     .put("configurationJson", settings.novexConfigurationJson)
                     .put("conversationPrompt", settings.conversationPrompt).put("imageStylePrompt", settings.imageStylePrompt)
                     .put("perTurnPrompt", settings.perTurnPrompt)
+                    .put("textStylePrompt", settings.textStylePrompt)
                     .put("diceInjectionEnabled", settings.diceInjectionEnabled)
                     .put("ledgerInjectionEnabled", settings.ledgerInjectionEnabled)
                     .put("activeBranchPathIds", JSONArray(activeBranchPathIds))
