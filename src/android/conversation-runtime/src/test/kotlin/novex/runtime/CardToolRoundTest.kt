@@ -67,8 +67,9 @@ class CardToolRoundTest {
         assertNull(store.open("card"));assertEquals(draft,CardDrafts(store).read("card"))
         val read=request.copy(tools=CardToolProtocol.definitions(policy.copy(permission=ToolPermission.READ_ONLY)))
         assertFalse(JSONObject(read.encode()).has("tools"))
+        // [T-lenient-parse] 多余键（permission）忽略：解析成功，内容与其他字段不变。
         val bad=JSONObject(args(draft.version)).put("permission","free").toString()
-        assertThrows(IllegalArgumentException::class.java){CardToolProtocol.parse("chat",call.copy(arguments=bad))}
+        CardToolProtocol.parse("chat",call.copy(arguments=bad))
         val parsed=CardToolProtocol.parse("chat",call)
         coordinator.select(parsed,true);val saved=coordinator.confirm(parsed,policy) as CardToolResult.Saved
         val resumed=round.consume("chat",request,ModelResult.ToolsRequested("",listOf(call)),policy) as ToolRoundResult.Continue
