@@ -156,6 +156,18 @@ data class ProviderInstance(
     // but modeled here as a switch on the instance so an existing OpenAI
     // provider can be re-pointed without changing its type.
     var useResponsesAPI: Boolean = false,
+    /**
+     * [T-qianchen-preset] 「前往官网获取密钥」链接（2026-09-16 内置前尘 API 预设
+     * 引入）：非空时供应商编辑页的保存区下方展示此链接，方便用户去中转站注册
+     * 取钥匙。仅内置预设使用；导出/导入按可选字段往返。
+     */
+    var keyHelpUrl: String? = null,
+    /**
+     * [T-qianchen-preset] chat 失败自动改走 /v1/responses（用户 2026-09-16 决策：
+     * 「chat 不行就换 responses」）。仅对内置前尘预设开启——该中转两种接口同
+     * host 可用，chat 路径受上游/参数转换影响更脆。进程内粘性，见 OpenAIProvider。
+     */
+    var autoResponsesFallback: Boolean = false,
     // [T-android-image-endpoint-mode] User-selected image-generation routing
     // for OpenAI-compatible providers (see ImageEndpointMode). Defaults keep
     // old persisted JSON (which lacks both keys) round-tripping cleanly:

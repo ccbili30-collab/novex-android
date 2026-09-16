@@ -31,6 +31,10 @@ data class ProviderInstanceEntity(
     @ColumnInfo(name = "image_endpoint_mode") val imageEndpointMode: String? = null,
     @ColumnInfo(name = "image_endpoint_resolved") val imageEndpointResolved: String? = null,
     @ColumnInfo(name = "custom_user_agent") val customUserAgent: String? = null,
+    // [T-qianchen-preset] 前尘预设两个字段：官网取钥链接（NULL = 不展示）；
+    // chat 失败自动改走 /v1/responses（NOT NULL DEFAULT 0，迁移回填为关）。
+    @ColumnInfo(name = "key_help_url") val keyHelpUrl: String? = null,
+    @ColumnInfo(name = "auto_responses_fallback") val autoResponsesFallback: Int = 0,
     @ColumnInfo(name = "is_enabled") val isEnabled: Int = 1,
     @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
     @ColumnInfo(name = "created_at") val createdAt: Long,
