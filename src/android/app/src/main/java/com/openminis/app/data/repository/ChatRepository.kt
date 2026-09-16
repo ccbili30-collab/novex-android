@@ -110,7 +110,9 @@ class ChatRepository(internal val dao: ChatDao) {
         val side = createSession(
             title = nextSideConversationTitle(existingSides.map { it.title ?: "" }),
             modelId = parent.modelId,
-            memoryEnabled = parent.memoryEnabled != 0,
+            // [决策 9] 侧边默认关记忆：主线记忆由分裂点快照提供（另批实现），
+            // 再写全局记忆库是重复且污染；用户可自行打开。
+            memoryEnabled = false,
             characterId = parent.characterId,
             characterSnapshotJson = parent.characterSnapshotJson,
             worldSnapshotJson = parent.worldSnapshotJson,

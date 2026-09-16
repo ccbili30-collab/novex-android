@@ -6,10 +6,13 @@ import org.json.JSONObject
 object ToolResultCodec {
     fun decode(value: JSONObject): CardToolResult {
         fun optional(key: String): String? = if(value.isNull(key)) null else value.getString(key)
+        // [T-saved-with-ids] 旧日志无 created_* 数组时回落空集（模型重读结构）。
+        fun strings(key: String): List<String> = value.optJSONArray(key)?.let{a->(0 until a.length()).map{a.getString(it)}} ?: emptyList()
         val legacy=!value.has("status")
         return when(value.optString(if(legacy) "kind" else "status")) {
             "read" -> CardToolResult.Read(value.toString())
-            "saved" -> CardToolResult.Saved(value.getString(if(legacy) "root" else "root_id"), value.getString(if(legacy) "target" else "target_id"), value.getString("revision"))
+            "saved" -> CardToolResult.Saved(value.getString(if(legacy) "root" else "root_id"), value.getString(if(legacy) "target" else "target_id"), value.getString("revision"),
+                strings("created_modules"),strings("created_blocks"))
             "registered" -> CardToolResult.Registered(value.getString("conversation_id"), value.getString("registration_id"))
             "state_saved" -> CardToolResult.StateSaved(value.getString("conversation_id"), value.getString("event_id"))
             "checkpoint_saved" -> CardToolResult.CheckpointSaved(value.getString("conversation_id"), value.getString("checkpoint_id"))

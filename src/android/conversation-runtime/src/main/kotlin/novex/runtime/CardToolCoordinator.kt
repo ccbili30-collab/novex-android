@@ -1,7 +1,10 @@
 package novex.runtime
 
 import novex.storage.*
+import novex.content.ContentDocument
+import novex.content.ContentModule
 import novex.content.ContentTargets
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -34,7 +37,10 @@ sealed interface CardToolResult {
     data class CheckpointSaved(val conversationId:String,val checkpointId:String):CardToolResult
     data class StateSaved(val conversationId:String,val eventId:String):CardToolResult
     data class Registered(val conversationId:String,val registrationId:String):CardToolResult
-    data class Saved(val rootId:String,val targetId:String,val revision:String):CardToolResult
+    data class Saved(val rootId:String,val targetId:String,val revision:String,
+                     // [T-saved-with-ids] 本次保存新建的模块/块编号（2026-09-16 工具协议批）：
+                     // 模型直接引用继续下一步，免 read_card 回读。
+                     val createdModules:List<String> = emptyList(),val createdBlocks:List<String> = emptyList()):CardToolResult
     data class Stopped(val preservedDraft:String?):CardToolResult
     data class Failed(val reason:String,val preservedDraft:String?=null):CardToolResult
 }
@@ -167,7 +173,9 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                 if(stop.isStopped())return finish(request,CardToolResult.Stopped(updated!!.version))
                 saved=CardDrafts(store).commitTarget(request.target.rootId,updated!!.version,request.target.targetId,beforeEdit,lease)
             }
-            return finish(request,CardToolResult.Saved(request.target.rootId,request.target.targetId,saved!!.revision))
+            // [T-saved-with-ids] 对提交前后结构做差集，回传本次新建的模块/块编号。
+            val createdIds=createdIds(beforeEdit?.content,updated?.content)
+            return finish(request,CardToolResult.Saved(request.target.rootId,request.target.targetId,saved!!.revision,createdIds.first,createdIds.second))
         } catch(failure:Exception) {
             // 原子提交之后记录结果前若发生异常，以真实修订核对是否已保存。
             val actual=saved?:updated?.let { store.history(request.target.rootId,it.version) }
@@ -187,9 +195,27 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
         }
         return CardToolResult.Unconfirmed
     }
+    /**
+     * [T-saved-with-ids] 提交前后结构差集 = 本次新建的模块/块编号（含嵌套
+     * 子模块与内部角色）。任一侧缺失（创建路径/崩溃恢复）返回空，模型回落
+     * 到 read_card，行为向后兼容。
+     */
+    private fun createdIds(before:ContentDocument?,after:ContentDocument?):Pair<List<String>,List<String>> {
+        if(before==null||after==null)return emptyList<String>() to emptyList<String>()
+        fun collect(document:ContentDocument,modules:MutableSet<String>,blocks:MutableSet<String>) {
+            fun visit(module:ContentModule){modules.add(module.id);module.blocks.forEach{blocks.add(it.id)};module.children.forEach(::visit)}
+            document.modules.forEach(::visit)
+            document.internalCharacters.forEach{collect(it,modules,blocks)}
+        }
+        val beforeModules=mutableSetOf<String>();val beforeBlocks=mutableSetOf<String>();collect(before,beforeModules,beforeBlocks)
+        val afterModules=mutableSetOf<String>();val afterBlocks=mutableSetOf<String>();collect(after,afterModules,afterBlocks)
+        return (afterModules-beforeModules).toList() to (afterBlocks-beforeBlocks).toList()
+    }
+
     private fun finish(request:CardToolRequest,result:CardToolResult):CardToolResult {
         val value=when(result) {
             is CardToolResult.Saved->JSONObject().put("kind","saved").put("root",result.rootId).put("target",result.targetId).put("revision",result.revision)
+                .put("created_modules",JSONArray(result.createdModules)).put("created_blocks",JSONArray(result.createdBlocks))
             is CardToolResult.Stopped->JSONObject().put("kind","stopped").put("draft",result.preservedDraft?:JSONObject.NULL)
             is CardToolResult.Failed->JSONObject().put("kind","failed").put("reason",result.reason).put("draft",result.preservedDraft?:JSONObject.NULL)
             else->error("结果不是已执行操作的结束状态")
