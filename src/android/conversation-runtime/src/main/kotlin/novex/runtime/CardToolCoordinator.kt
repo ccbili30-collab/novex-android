@@ -138,6 +138,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
             }
         }
         var updated:CardDraft?=null
+        var beforeContent:novex.content.ContentDocument?=null
         var saved:SavedCard?=null
         try {
             if(stop.isStopped())return finish(request,CardToolResult.Stopped(null))
@@ -168,14 +169,15 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                     draft.version
                 } else request.draftVersion
                 val beforeEdit=requireNotNull(CardDrafts(store).read(request.target.rootId))
+                beforeContent=beforeEdit.content
                 updated=CardEditor(store).apply(request.target.rootId,expected,request.target.targetId,command,ChangeSource.AI,lease)
                 journal.prepared(request.chatId,request.callId,JSONObject().put("commit",updated!!.version))
                 if(stop.isStopped())return finish(request,CardToolResult.Stopped(updated!!.version))
                 saved=CardDrafts(store).commitTarget(request.target.rootId,updated!!.version,request.target.targetId,beforeEdit,lease)
             }
             // [T-saved-with-ids] 对提交前后结构做差集，回传本次新建的模块/块编号。
-            val createdIds=createdIds(beforeEdit?.content,updated?.content)
-            return finish(request,CardToolResult.Saved(request.target.rootId,request.target.targetId,saved!!.revision,createdIds.first,createdIds.second))
+            val created=createdIds(beforeContent,updated?.content)
+            return finish(request,CardToolResult.Saved(request.target.rootId,request.target.targetId,saved!!.revision,created.first,created.second))
         } catch(failure:Exception) {
             // 原子提交之后记录结果前若发生异常，以真实修订核对是否已保存。
             val actual=saved?:updated?.let { store.history(request.target.rootId,it.version) }
