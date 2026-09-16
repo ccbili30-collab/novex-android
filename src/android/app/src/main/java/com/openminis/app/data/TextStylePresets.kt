@@ -30,13 +30,27 @@ object TextStylePresets {
                 val content = runCatching {
                     context.assets.open("$ASSET_DIR/$fileName").bufferedReader().use { it.readText() }
                 }.getOrNull() ?: return@mapNotNull null
-                // Strip the YAML frontmatter; the body is the prompt itself.
-                val body = if (content.startsWith("---")) {
-                    content.lines().dropWhile { it.trim() != "---" }.drop(1).joinToString("\n").trim()
-                } else content.trim()
+                // Files are ASCII-named for cross-runtime asset safety; the Chinese
+                // display label comes from the frontmatter `genre:` field.
+                val lines = content.lines()
+                var label = fileName.removeSuffix(".md")
+                var bodyStart = 0
+                if (lines.firstOrNull()?.trim() == "---") {
+                    val end = lines.indexOfFirst { it.trim() == "---" }
+                    if (end > 0) {
+                        lines.subList(1, end).forEach { line ->
+                            val idx = line.indexOf(':')
+                            if (idx > 0 && line.substring(0, idx).trim() == "genre") {
+                                label = line.substring(idx + 1).trim()
+                            }
+                        }
+                        bodyStart = end + 1
+                    }
+                }
+                val body = lines.drop(bodyStart).joinToString("\n").trim()
                 Preset(
                     id = fileName.removeSuffix(".md"),
-                    label = fileName.removeSuffix(".md"),
+                    label = label,
                     content = body,
                 )
             }

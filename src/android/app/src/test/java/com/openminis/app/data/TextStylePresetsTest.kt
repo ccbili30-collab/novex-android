@@ -18,10 +18,11 @@ class TextStylePresetsTest {
         val presets = TextStylePresets.load(RuntimeEnvironment.getApplication())
         assertEquals("manifest lists 32 genre cards", 32, presets.size)
         assertTrue(
-            " 东方仙侠 card present: ${presets.map { it.id }}",
-            presets.any { it.id == "东方仙侠" },
+            "东方仙侠 card present: ${presets.map { it.label }}",
+            presets.any { it.label == "东方仙侠" },
         )
-        val xianxia = presets.first { it.id == "东方仙侠" }
+        val xianxia = presets.first { it.label == "东方仙侠" }
+        assertTrue("ascii id", xianxia.id.matches(Regex("\\d{2}")))
         assertTrue("frontmatter stripped", !xianxia.content.startsWith("---"))
         assertTrue("body survives", xianxia.content.contains("正文提示词"))
         assertTrue("no empty cards", presets.all { it.content.length > 100 })
