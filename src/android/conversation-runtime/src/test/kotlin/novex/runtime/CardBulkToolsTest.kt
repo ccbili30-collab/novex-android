@@ -54,7 +54,9 @@ class CardBulkToolsTest {
                 JSONObject().put("name", "修仙设定").put("text", "筑基后期"),
             )))
         val request = CardToolProtocol.parse("chat", PendingTool("c2", "create_card_bulk", modules.toString()))
-        val saved = coordinator(store).submit(request, policy()) as CardToolResult.Saved
+        val outcome = coordinator(store).submit(request, policy())
+        assertTrue("create_card_bulk 结果：$outcome", outcome is CardToolResult.Saved)
+        val saved = outcome as CardToolResult.Saved
         assertEquals("card", saved.rootId)
         val card = ContentTargets.find(store.open("card")!!.content, "card")
         assertEquals(listOf("基础档案", "修仙设定"), card.modules.map { it.name })
@@ -74,7 +76,9 @@ class CardBulkToolsTest {
         val append = CardToolProtocol.parse("chat", PendingTool("c3", "add_module_bulk",
             JSONObject().put("root_id", "card").put("target_id", "card").put("draft_version", version)
                 .put("module", JSONObject().put("name", "背景故事").put("text", "出身")).toString()))
-        val first = coordinator(store).submit(append, policy()) as CardToolResult.Saved
+        val appendOutcome = coordinator(store).submit(append, policy())
+        assertTrue("add_module_bulk 结果：$appendOutcome", appendOutcome is CardToolResult.Saved)
+        val first = appendOutcome as CardToolResult.Saved
         assertEquals(listOf("原有", "背景故事"),
             ContentTargets.find(store.open("card")!!.content, "card").modules.map { it.name })
 
@@ -84,7 +88,8 @@ class CardBulkToolsTest {
                 .put("draft_version", "saved:${first.revision}")
                 .put("before_id", "m0")
                 .put("module", JSONObject().put("name", "前置设定")).toString()))
-        coordinator(store).submit(insert, policy())
+        val insertOutcome = coordinator(store).submit(insert, policy())
+        assertTrue("add_module_bulk(saved:) 结果：$insertOutcome", insertOutcome is CardToolResult.Saved)
         assertEquals(listOf("前置设定", "原有", "背景故事"),
             ContentTargets.find(store.open("card")!!.content, "card").modules.map { it.name })
     }
