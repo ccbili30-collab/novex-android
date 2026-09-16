@@ -168,7 +168,7 @@ class OpenAIProvider private constructor(
          * 仅当端点明确报图片相关错误后，把该模型记入此集，后续请求回落占位
          * 文本（占位文案中性，不再让模型自述"不支持"）。重启后重新探测。
          */
-        private val imageDegradedModels: MutableSet<String> =
+        internal val imageDegradedModels: MutableSet<String> =
             java.util.concurrent.ConcurrentHashMap.newKeySet()
 
         /** [T-image-optimistic-send] 失败消息是否指向"端点不收图片输入"。 */

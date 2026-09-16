@@ -21,11 +21,12 @@ class NovexCardExecutionPresentationTest {
         val raw = listOf(intro, pending, failed, cancelled, final)
         val result = foldNovexExecutionProcesses(raw)
         assertEquals(2, result.size)
-        val process = result.first() as FlatChatItem.AssistantProcess
+        // [T-turn-single-card] 工作行钉在回合末尾，叙述在前。
+        val process = result.last() as FlatChatItem.AssistantProcess
         assertEquals(raw.dropLast(1), process.rows)
         assertEquals(intro.key, process.key)
         assertEquals("进行中", process.statusLabel())
-        assertSame(final, result.last())
+        assertSame(final, result.first())
         assertEquals(5, raw.size)
     }
     @Test fun textIsClassifiedByItsChannelInsteadOfPositionOrWording() {
@@ -67,7 +68,9 @@ class NovexCardExecutionPresentationTest {
         val process = rows.filterIsInstance<FlatChatItem.AssistantProcess>().single()
         assertTrue(process.rows.contains(done))
         assertTrue(process.rows.contains(call))
-        assertSame(live, rows.last())
+        // [T-turn-single-card] 直播思考是唯一保留行；工作行钉在回合末尾。
+        assertSame(live, rows.first())
+        assertSame(process, rows.last())
     }
     @Test fun creationReceiptsReportActualSavedCardsWithoutGuessingUserIntent() {
         assertNull(NovexCardCreationTask.evaluate(listOf(AssistantBlock("text", "text", "已经完成"))))
