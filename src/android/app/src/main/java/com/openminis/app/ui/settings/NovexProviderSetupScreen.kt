@@ -110,22 +110,88 @@ internal fun novexCanonicalBase(base: String, appendV1Suffix: Boolean): String {
     return if (appendV1Suffix && !normalized.endsWith("/v1")) "$normalized/v1" else normalized
 }
 
+/**
+ * [T-provider-direction] 模型连接页的接口方向。旧「新增供应商」多步页（AddProviderScreen）
+ * 已死代码化——所有连接都从本页创建，方向在这里选。Chat = 现状默认；
+ * Responses = openAI 类型 + useResponsesAPI；Anthropic = anthropic 类型。
+ */
+internal enum class NovexProviderDirection(
+    val buttonLabel: String,
+    val headerTitle: String,
+    val headerSubtitle: String,
+    val hint: String,
+    val defaultLabel: String,
+    val defaultBase: String,
+    val defaultKeyHelpUrl: String,
+    val defaultKeyHelpLabel: String,
+) {
+    CHAT(
+        buttonLabel = "Chat",
+        headerTitle = "连接 OpenAI（开放人工智能）兼容接口",
+        headerSubtitle = "支持 DeepSeek（深度求索）与常见中转站。可直接保存启用，也可以按需检测当前模型或全部模型。",
+        hint = "默认 /v1/chat/completions，中转站最通用。",
+        defaultLabel = "DeepSeek",
+        defaultBase = "https://api.deepseek.com",
+        defaultKeyHelpUrl = "https://platform.deepseek.com/api_keys",
+        defaultKeyHelpLabel = "前往 DeepSeek（深度求索）获取密钥",
+    ),
+    RESPONSES(
+        buttonLabel = "Responses",
+        headerTitle = "连接 OpenAI Responses 接口",
+        headerSubtitle = "适合只开放 /v1/responses 一个口子的中转站，或官方 OpenAI。其余流程与 Chat 方向一致。",
+        hint = "走 /v1/responses；chat 口子不可用的中转选这个。",
+        defaultLabel = "OpenAI",
+        defaultBase = "https://api.openai.com",
+        defaultKeyHelpUrl = "https://platform.openai.com/api-keys",
+        defaultKeyHelpLabel = "前往 OpenAI 官网获取密钥",
+    ),
+    ANTHROPIC(
+        buttonLabel = "Anthropic",
+        headerTitle = "连接 Anthropic 兼容接口",
+        headerSubtitle = "适合 Anthropic 兼容中转（Claude 系模型），请求走 /v1/messages。其余流程与 Chat 方向一致。",
+        hint = "走 /v1/messages；Anthropic 兼容中转选这个。",
+        defaultLabel = "Anthropic",
+        defaultBase = "https://api.anthropic.com",
+        defaultKeyHelpUrl = "https://console.anthropic.com/settings/keys",
+        defaultKeyHelpLabel = "前往 Anthropic 官网获取密钥",
+    ),
+}
+
+/** 编辑已有连接时按实例反显方向（anthropic 类型 → Anthropic；openAI + useResponsesAPI → Responses）。 */
+internal fun novexDirectionOf(instance: ProviderInstance?): NovexProviderDirection = when {
+    instance == null -> NovexProviderDirection.CHAT
+    instance.providerType == ProviderType.anthropic -> NovexProviderDirection.ANTHROPIC
+    instance.useResponsesAPI -> NovexProviderDirection.RESPONSES
+    else -> NovexProviderDirection.CHAT
+}
+
 internal fun novexProviderInstanceForSave(
     existing: ProviderInstance?,
     label: String,
     base: String,
     appendV1Suffix: Boolean,
-): ProviderInstance = (existing ?: ProviderInstance(
-    id = UUID.randomUUID().toString(),
-    label = label.ifBlank { "OpenAI 兼容接口" },
-    providerType = ProviderType.openAI,
-    credentialType = ProviderCredential.apiKey,
-)).copy(
-    label = label.ifBlank { "OpenAI 兼容接口" },
-    customBaseURL = base.trim().trimEnd('/'),
-    appendV1Suffix = appendV1Suffix,
-    isEnabled = true,
-)
+    direction: NovexProviderDirection = NovexProviderDirection.CHAT,
+): ProviderInstance {
+    val fallbackLabel = when (direction) {
+        NovexProviderDirection.CHAT -> "OpenAI 兼容接口"
+        NovexProviderDirection.RESPONSES -> "OpenAI Responses 接口"
+        NovexProviderDirection.ANTHROPIC -> "Anthropic 兼容接口"
+    }
+    val providerType = if (direction == NovexProviderDirection.ANTHROPIC) ProviderType.anthropic else ProviderType.openAI
+    return (existing ?: ProviderInstance(
+        id = UUID.randomUUID().toString(),
+        label = label.ifBlank { fallbackLabel },
+        providerType = providerType,
+        credentialType = ProviderCredential.apiKey,
+    )).copy(
+        label = label.ifBlank { fallbackLabel },
+        providerType = providerType,
+        customBaseURL = base.trim().trimEnd('/'),
+        appendV1Suffix = appendV1Suffix,
+        useResponsesAPI = direction == NovexProviderDirection.RESPONSES,
+        isEnabled = true,
+    )
+}
 
 /** Novex 的单一 OpenAI（开放人工智能）兼容接口设置页。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,6 +211,8 @@ fun NovexProviderSetupScreen(
     var appendV1Suffix by remember(instanceId) {
         mutableStateOf(existing?.appendV1Suffix ?: true)
     }
+    // [T-provider-direction] 接口方向：编辑时按实例反显，新建默认 Chat。
+    var direction by remember(instanceId) { mutableStateOf(novexDirectionOf(existing)) }
     var deleteConfirm by remember(instanceId) { mutableStateOf(false) }
     val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
     val initialModels = remember(instanceId) {
@@ -175,6 +243,24 @@ fun NovexProviderSetupScreen(
         checkingModelId = null
         error = null
         verificationResults.clear()
+    }
+    // [T-provider-direction] 切方向：默认地址/名称未动过则跟着换，清掉旧协议
+    // 拉取的模型缓存与未动过的 DeepSeek 预选，避免把 chat 拉的列表当成
+    // anthropic 口子的可用模型。已勾选的非默认模型保留（模型 id 常通用）。
+    fun switchDirection(next: NovexProviderDirection) {
+        if (next == direction) return
+        if (apiBase == direction.defaultBase) apiBase = next.defaultBase
+        if (label == direction.defaultLabel) label = next.defaultLabel
+        direction = next
+        if (next != NovexProviderDirection.CHAT &&
+            selectedModels.size == 1 && selectedModels.first() == NOVEX_DEFAULT_DEEPSEEK_MODEL
+        ) {
+            selectedModels.clear()
+        }
+        fetchedModels.clear()
+        fetchedMetadata.clear()
+        fetchedMetadataSource = null
+        invalidateVerification()
     }
     fun setSelectedModels(models: List<String>) {
         selectedModels.clear()
@@ -209,6 +295,7 @@ fun NovexProviderSetupScreen(
                     values.base,
                     values.key,
                     appendV1Suffix,
+                    direction,
                     listOf(modelId),
                     toolEnabledByModel = { toolsEnabled(it) },
                 )
@@ -266,9 +353,30 @@ fun NovexProviderSetupScreen(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("连接 OpenAI（开放人工智能）兼容接口", style = MaterialTheme.typography.headlineSmall)
-            Text("支持 DeepSeek（深度求索）与常见中转站。可直接保存启用，也可以按需检测当前模型或全部模型。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(direction.headerTitle, style = MaterialTheme.typography.headlineSmall)
+            Text(direction.headerSubtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            // [T-provider-direction] 接口方向三选一：选中项实底、其余描边。
+            Column {
+                Text("接口方向", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    NovexProviderDirection.values().forEach { option ->
+                        if (option == direction) {
+                            Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
+                        } else {
+                            OutlinedButton(onClick = { switchDirection(option) }, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
+                        }
+                    }
+                }
+                Text(
+                    direction.hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; invalidateVerification() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -317,7 +425,7 @@ fun NovexProviderSetupScreen(
                     fetchingModels = true
                     val metadataBase = novexCanonicalBase(values.base, appendV1Suffix)
                     scope.launch {
-                        val models = fetchModels(values.base, values.key, appendV1Suffix)
+                        val models = fetchModels(values.base, values.key, appendV1Suffix, direction)
                             .filterNot { looksLikeImageGenerationModel(it.id) }
                         fetchedMetadata.clear(); fetchedMetadata.putAll(models.associateBy { it.id })
                         fetchedMetadataSource = metadataBase to values.key
@@ -468,6 +576,7 @@ fun NovexProviderSetupScreen(
                         label = label,
                         base = values.base,
                         appendV1Suffix = appendV1Suffix,
+                        direction = direction,
                         key = values.key,
                         modelIds = values.models,
                         modelToolsEnabled = values.models.associateWith(::toolsEnabled),
@@ -480,10 +589,10 @@ fun NovexProviderSetupScreen(
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text("保存并启用（${selectedModels.size}）") }
             // [T-qianchen-preset] 取钥链接按实例自适应：内置预设带 keyHelpUrl
-            // （前尘 API → proxy.qianc.ltd）；其余实例保持 DeepSeek 默认指引。
-            val helpUrl = existing?.keyHelpUrl ?: "https://platform.deepseek.com/api_keys"
+            // （前尘 API → proxy.qianc.ltd）；其余按接口方向给默认指引。
+            val helpUrl = existing?.keyHelpUrl ?: direction.defaultKeyHelpUrl
             val helpLabel = existing?.keyHelpUrl?.let { "前往 ${existing.label} 官网获取密钥" }
-                ?: "前往 DeepSeek（深度求索）获取密钥"
+                ?: direction.defaultKeyHelpLabel
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(helpUrl))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(helpLabel) }
             Spacer(Modifier.height(24.dp))
         }
@@ -514,18 +623,34 @@ fun NovexProviderSetupScreen(
     }
 }
 
-private suspend fun fetchModels(base: String, key: String, appendV1Suffix: Boolean): List<LLMModel> = runCatching {
-    OpenAIModelsApi.fetchModels(
-        key,
-        novexCanonicalBase(base, appendV1Suffix),
-        forceRefresh = true,
-    ).distinctBy { it.id }
+private suspend fun fetchModels(
+    base: String,
+    key: String,
+    appendV1Suffix: Boolean,
+    direction: NovexProviderDirection,
+): List<LLMModel> = runCatching {
+    val canonical = novexCanonicalBase(base, appendV1Suffix)
+    val models = if (direction == NovexProviderDirection.ANTHROPIC) {
+        com.openminis.app.provider.anthropic.AnthropicModelsApi.fetchModels(
+            key,
+            canonical,
+            forceRefresh = true,
+        )
+    } else {
+        OpenAIModelsApi.fetchModels(
+            key,
+            canonical,
+            forceRefresh = true,
+        )
+    }
+    models.distinctBy { it.id }
 }.getOrDefault(emptyList())
 
 private suspend fun verifyConnection(
     base: String,
     key: String,
     appendV1Suffix: Boolean,
+    direction: NovexProviderDirection,
     modelIds: List<String>,
     toolEnabledByModel: (String) -> Boolean,
 ): ConnectionVerification = withContext(Dispatchers.IO) {
@@ -533,15 +658,32 @@ private suspend fun verifyConnection(
     fun fatal(message: String): ConnectionVerification {
         return ConnectionVerification(NovexModelVerification(emptyList(), emptyList()), message)
     }
-    val reachable = runCatching { client.newCall(Request.Builder().url("$canonical/models").build()).execute().use { it.code in 200..499 } }.getOrDefault(false)
+    // [T-provider-direction] Anthropic 方向的探活/鉴权探测带上版本头；
+    // 兼容中转普遍同时收 Bearer，与 AnthropicModelsApi 的自定义端点行为一致。
+    fun probeRequest(url: String, withKey: Boolean): Request = Request.Builder()
+        .url(url)
+        .apply { if (direction == NovexProviderDirection.ANTHROPIC) header("anthropic-version", "2023-06-01") }
+        .apply { if (withKey) header("Authorization", "Bearer $key") }
+        .build()
+    val reachable = runCatching { client.newCall(probeRequest("$canonical/models", withKey = false)).execute().use { it.code in 200..499 } }.getOrDefault(false)
     if (!reachable) return@withContext fatal("无法连接接口地址")
-    val authCode = runCatching { client.newCall(Request.Builder().url("$canonical/models").header("Authorization", "Bearer $key").build()).execute().use { it.code } }.getOrDefault(0)
+    val authCode = runCatching { client.newCall(probeRequest("$canonical/models", withKey = true)).execute().use { it.code } }.getOrDefault(0)
     if (authCode == 401 || authCode == 403) return@withContext fatal("密钥无效或访问被拒绝（HTTP $authCode）")
 
-    val instance = ProviderInstance(id = "novex-check", label = "连接检测", providerType = ProviderType.openAI, credentialType = ProviderCredential.apiKey, customBaseURL = base, appendV1Suffix = appendV1Suffix)
+    val instance = novexProviderInstanceForSave(
+        existing = null,
+        label = "连接检测",
+        base = base,
+        appendV1Suffix = appendV1Suffix,
+        direction = direction,
+    ).copy(id = "novex-check")
+    val providerDisplayName = when (direction) {
+        NovexProviderDirection.ANTHROPIC -> "Anthropic 兼容接口"
+        else -> "OpenAI（开放人工智能）兼容接口"
+    }
     val providerResults = mutableMapOf<String, Result<LLMProvider>>()
     fun providerFor(modelId: String): Result<LLMProvider> = providerResults.getOrPut(modelId) {
-        val model = LLMModel(modelId, novexModelDisplayName(modelId), "OpenAI（开放人工智能）兼容接口")
+        val model = LLMModel(modelId, novexModelDisplayName(modelId), providerDisplayName)
         runCatching { ProviderFactory.create(instance, key, model) }
     }
     val verificationTools = AgentTools.makeAgentTools(
@@ -629,6 +771,7 @@ private fun saveConnections(
     label: String,
     base: String,
     appendV1Suffix: Boolean,
+    direction: NovexProviderDirection,
     key: String,
     modelIds: List<String>,
     modelToolsEnabled: Map<String, Boolean>,
@@ -637,7 +780,7 @@ private fun saveConnections(
     require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(com.openminis.app.data.model.ChatModelSelection::imageOutput) == true }) {
         "请选择聊天模型，生图模型不能用于此对话"
     }
-    val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix)
+    val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix, direction)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)
