@@ -161,6 +161,29 @@ class OpenAIProvider private constructor(
             java.util.concurrent.ConcurrentHashMap.newKeySet()
 
         /**
+         * [T-image-optimistic-send] 图片学习式降级的进程级粘性：key = 模型 id。
+         * 2026-09-16 用户实锤：按名字猜视觉（vision/vl）会冤枉 claude/gemini/
+         * deepseek 等全部视觉模型——图片被换成「不支持」占位文本，模型复述给
+         * 用户造成"所有模型都不支持图片"的假象。现在默认真实发送图片像素；
+         * 仅当端点明确报图片相关错误后，把该模型记入此集，后续请求回落占位
+         * 文本（占位文案中性，不再让模型自述"不支持"）。重启后重新探测。
+         */
+        private val imageDegradedModels: MutableSet<String> =
+            java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+        /** [T-image-optimistic-send] 失败消息是否指向"端点不收图片输入"。 */
+        internal fun looksLikeImageRejection(message: String?): Boolean {
+            val value = message.orEmpty().lowercase()
+            if (!value.contains("image")) return false
+            return listOf("image_url", "input_image", "unknown variant", "modalit", "multimodal",
+                "not support", "unsupported", "invalid").any(value::contains)
+        }
+
+        /** [T-image-optimistic-send] 学习式降级后的中性占位——不再自述"不支持"。 */
+        internal const val IMAGE_DEGRADED_PLACEHOLDER =
+            "[本条消息附带过图片，但该端点未接受图片输入，本轮未见图片内容；如需图片细节请让用户描述图片或改用接受图片输入的模型]"
+
+        /**
          * [T-android-thinking-level-arch] Codex OAuth client version advertised
          * in the Version / User-Agent headers. Bumped 0.142.3 → 0.144.1 to
          * match the CLIProxyAPI/sub2api upstream (fixes a gpt-5.6-luna 404 seen
@@ -609,6 +632,42 @@ class OpenAIProvider private constructor(
     }
 
     override fun streamMessageClamped(
+        messages: List<LLMMessage>,
+        systemPrompt: String?,
+        maxTokens: Int,
+        temperature: Double?,
+        imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>,
+        thinkingLevel: ThinkingLevel,
+    ): Flow<LLMStreamChunk> {
+        // [T-image-optimistic-send] 外层：图片学习式降级。带图请求先按真实像素
+        // 发送；首块前失败且报错指向图片输入时，记入降级集并用中性占位重试
+        // 一次（重建请求体时 supportsImages 会读到降级集）。已降级或无图请求
+        // 直通，不增加任何开销。
+        val requestHasImages = imageParts.isNotEmpty() ||
+            messages.any { m -> m.imageParts.isNotEmpty() || m.contentParts.any { it is AgentContentPart.ImageData } }
+        if (!requestHasImages || model.id in imageDegradedModels) {
+            return withResponsesFallback(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+        }
+        var emittedAny = false
+        return withResponsesFallback(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
+            .onEach { emittedAny = true }
+            .catch { failure ->
+                if (failure is kotlinx.coroutines.CancellationException || emittedAny) throw failure
+                if (!looksLikeImageRejection(failure.message)) throw failure
+                com.openminis.app.logging.AppLogger.warning(
+                    "OpenAIProvider",
+                    "[ImageDegrade] endpoint rejected image input for ${model.id} " +
+                        "(${failure.message}) — retrying once with text placeholders",
+                )
+                imageDegradedModels.add(model.id)
+                emitAll(
+                    withResponsesFallback(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel),
+                )
+            }
+    }
+
+    private fun withResponsesFallback(
         messages: List<LLMMessage>,
         systemPrompt: String?,
         maxTokens: Int,
@@ -1896,7 +1955,10 @@ class OpenAIProvider private constructor(
         // server returns "400 unknown variant `image_url`". Decided once
         // here so the structured-contentParts loop and the legacy
         // imageParts loop below stay consistent.
-        val supportsImages = model.hasImageInput
+        // [T-image-optimistic-send] 2026-09-16：不再按名字猜——未学习降级的
+        // 模型一律真实发送像素；仅 imageDegradedModels 中的（端点明确拒绝过
+        // 图片并已自动降级重试）回落占位文本。
+        val supportsImages = model.hasImageInput || model.id !in imageDegradedModels || model.id !in imageDegradedModels
         val body = JSONObject()
         body.put("model", model.id)
         if (isOpenRouter) {
@@ -2106,7 +2168,7 @@ class OpenAIProvider private constructor(
                                                 contentArray.put(JSONObject().apply {
                                                     put("type", "text")
                                                     put("text", part.noVisionPlaceholder
-                                                        ?: "[Image attached but this model does not support vision input]")
+                                                        ?: IMAGE_DEGRADED_PLACEHOLDER)
                                                 })
                                             }
                                         }
@@ -2175,7 +2237,7 @@ class OpenAIProvider private constructor(
                                 contentArray.put(JSONObject().apply {
                                     put("type", "text")
                                     put("text", part.noVisionPlaceholder
-                                        ?: "[Image attached but this model does not support vision input]")
+                                        ?: IMAGE_DEGRADED_PLACEHOLDER)
                                 })
                             }
                         }
@@ -2312,6 +2374,7 @@ class OpenAIProvider private constructor(
         com.openminis.app.provider.ProviderWireCapture.record(
             if (useResponsesAPI) "openai-responses" else "openai-chat",
             bodyStr,
+            basePath.trimEnd('/') + if (useResponsesAPI) "/responses" else "/chat/completions",
         )
         val token = getToken()
 
@@ -2757,7 +2820,7 @@ class OpenAIProvider private constructor(
             put(
                 "text",
                 noVisionPlaceholder
-                    ?: "[Image attached but this model does not support vision input]",
+                    ?: IMAGE_DEGRADED_PLACEHOLDER,
             )
         }
     }
@@ -2791,7 +2854,7 @@ class OpenAIProvider private constructor(
         // keeping the two paths symmetric prevents future regressions when
         // a non-vision model gets routed through Responses (e.g. via
         // forceResponsesAPI on a custom provider).
-        val supportsImages = model.hasImageInput
+        val supportsImages = model.hasImageInput || model.id !in imageDegradedModels
         val body = JSONObject()
         body.put("model", model.id)
         body.put("stream", stream)
@@ -3023,7 +3086,7 @@ class OpenAIProvider private constructor(
                                             contentArray.put(JSONObject().apply {
                                                 put("type", "input_text")
                                                 put("text", part.noVisionPlaceholder
-                                                    ?: "[Image attached but this model does not support vision input]")
+                                                    ?: IMAGE_DEGRADED_PLACEHOLDER)
                                             })
                                         }
                                     }

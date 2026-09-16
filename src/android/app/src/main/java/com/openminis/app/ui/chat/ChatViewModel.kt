@@ -359,6 +359,15 @@ class ChatViewModel(
          * Mirrors iOS AIChatViewModel.maxAgentTurns.
          */
         private const val MAX_AGENT_TURNS = 200
+
+        // [T-tool-turn-pressure] 回合终止压力（2026-09-16 用户批④）：细粒度工具
+        // 协议下模型会把工具轮当成新提问无限续写（对话包实测一问 40 答）。
+        // 软顶 40 轮起注入收尾指令；200 硬顶仍是最后保险。
+        internal const val SOFT_TOOL_TURN_LIMIT = 40
+        internal const val TOOL_RESULT_HINT =
+            "(以下是本轮工具的执行结果，供完成当前任务使用；这不是用户发送的新消息。完成当前任务后请直接给出结果或总结，不要重新开场，也不要重复已完成的工作。)"
+        internal const val TOOL_TURN_BUDGET_NOTE =
+            "(系统提示：本轮工具调用轮数已达到上限。请利用已获得的结果直接向用户总结当前进展并结束本轮回复，不要再发起新的工具调用。)"
         private const val MIN_MAX_TOKENS = 1024
         /**
          * Hard ceiling on max_tokens we ever send to a provider, regardless
@@ -8824,7 +8833,7 @@ class ChatViewModel(
                         LLMMessage(
                             role = LLMMessage.Role.USER,
                             content = "",
-                            contentParts = providerResultParts,
+                            contentParts = providerResultParts + listOf(AgentContentPart.Text(TOOL_RESULT_HINT)),
                             dbMessageId = toolResultDbId,
                         ),
                     )
@@ -8886,10 +8895,15 @@ class ChatViewModel(
             val toolResultDbId = persistToolResultMessage(resultParts)
 
             // Add tool results to history
+            // [T-tool-turn-pressure] 工具结果轮附隐形提示（防中转翻译层把工具轮
+            // 变成"空用户消息"诱发重新开场）；软顶后追加收尾指令。
             agentHistory.add(LLMMessage(
                 role = LLMMessage.Role.USER,
                 content = "",
-                contentParts = resultParts,
+                contentParts = resultParts + buildList {
+                    add(AgentContentPart.Text(TOOL_RESULT_HINT))
+                    if (turn + 1 >= SOFT_TOOL_TURN_LIMIT) add(AgentContentPart.Text(TOOL_TURN_BUDGET_NOTE))
+                },
                 dbMessageId = toolResultDbId,
             ))
             emptyResponseContext = EmptyResponseContext.AFTER_TOOL_RESULT

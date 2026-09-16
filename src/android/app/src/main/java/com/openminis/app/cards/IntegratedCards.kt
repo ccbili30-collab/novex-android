@@ -132,7 +132,7 @@ class IntegratedCards(context:Context,
             val run=kotlinx.coroutines.currentCoroutineContext()[EditingRun]?:EditingRun(store,journal)
             run.images=images;run.created.clear()
             val created=run.created
-            val result=run.coordinator.submit(CardToolProtocol.parse(namespace,call),access.copy(readTargets=readable.targets),stop)
+            val result=submitWithRetry(run.coordinator,namespace,call,access,readable,stop)
             if(created.isNotEmpty())kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable){updateBinding {old->
                 created.fold(old) {value,target->
                     val marker="$namespace:$id:${target.targetId}"
@@ -146,6 +146,43 @@ class IntegratedCards(context:Context,
         catch(failure:Exception){return ToolExecutionResult(failure.message?:"卡片操作未完成",false,toolTitle="卡片操作未完成")}
         finally{if(activeStop===stop)activeStop=null}
     }
+    /**
+     * [T-card-auto-retry] 三层自动重试（2026-09-16 用户定：最多 5 次，退避
+     * 1-2-4-8-16 秒）。对话包实测最大元凶是草稿版本冲突连败（同错连吃 6 次），
+     * 版本过期→立即重读最新版本号、原参数重试（机械安全，不退避）；其他瞬时
+     * 故障（中断/超时字样）→ 指数退避；参数错已在解析层自纠（α批），纠不动
+     * 的直接返回不浪费重试。每次重试换 callId（同 id 会被回合日志当成重放），
+     * 模型只看到最终结果——不再产生连续红行。
+     */
+    private suspend fun submitWithRetry(coordinator:CardToolCoordinator,namespace:String,call:PendingTool,
+                                        access:CardToolPolicy,readable:CardToolPolicy,stop:ToolStop):CardToolResult {
+        val backoff=longArrayOf(1_000L,2_000L,4_000L,8_000L,16_000L)
+        var request=CardToolProtocol.parse(namespace,call)
+        var attempt=0
+        while(true) {
+            val result=coordinator.submit(request,access.copy(readTargets=readable.targets),stop)
+            if(result !is CardToolResult.Failed)return result
+            val reason=result.reason
+            val conflict=reason.contains("草稿已更新")||reason.contains("DraftConflict")||
+                (reason.contains("版本")&&reason.contains("过期"))
+            val transient=!conflict&&(reason.contains("中断")||reason.contains("超时")||
+                reason.contains("timeout",true)||reason.contains("暂时"))
+            if(!conflict&&!transient)return result
+            if(attempt>=5)return result
+            if(conflict) {
+                val fresh=runCatching {
+                    CardDrafts(store).read(request.target.rootId)?.version
+                        ?:("saved:"+requireNotNull(store.open(request.target.rootId)){"卡片不存在"}.revision)
+                }.getOrNull()?:return result
+                request=request.copy(callId="${call.id}#r$attempt",draftVersion=fresh)
+            }else{
+                kotlinx.coroutines.delay(backoff[attempt])
+                request=request.copy(callId="${call.id}#r$attempt")
+            }
+            attempt++
+        }
+    }
+
     private var materialCache:Triple<String,List<SourceSelection>,RequestMaterialDraft>?=null
     private var materialKey:String?=null
     private var imageCache:Pair<String,List<NovexSnapshotMedia>>?=null

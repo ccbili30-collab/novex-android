@@ -909,7 +909,7 @@ class AnthropicProvider(
      */
     private fun buildRequest(bodyStr: String, body: JSONObject): Request {
         // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）。
-        com.openminis.app.provider.ProviderWireCapture.record("anthropic", bodyStr)
+        com.openminis.app.provider.ProviderWireCapture.record("anthropic", bodyStr, "${basePath.trimEnd('/')}/v1/messages")
         // T192: `basePath` may already end in `/v1` because
         // `ProviderInstance.effectiveBaseURL` appends `/v1` when
         // `appendV1Suffix=true` and the user-entered base doesn't end in `/v1`.

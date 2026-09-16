@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Stable public reference. Device paths and storage identifiers never cross this seam. */
 data class NovexResourceRef(val value: String) {
     init {
-        require(value.startsWith("novex://")) { "资源引用必须使用 novex:// 协议" }
+        require(value.startsWith("novex://")) { "资源引用必须使用 novex:// 协议；读取会话工作区之外的一般文件（如技能 /var/minis/skills/…/SKILL.md）请改用 file_read 工具" }
         require(!value.contains("..")) { "资源引用不能包含路径逃逸" }
         require(value.removePrefix("novex://").contains('/')) { "资源引用必须包含类型和编号" }
     }
