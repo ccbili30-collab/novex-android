@@ -46,6 +46,7 @@ import com.openminis.app.R
 import com.openminis.app.data.MAX_CONVERSATION_PROMPT_CHARS
 import com.openminis.app.data.MAX_IMAGE_STYLE_PROMPT_CHARS
 import com.openminis.app.data.MAX_PER_TURN_PROMPT_CHARS
+import com.openminis.app.data.MAX_TEXT_STYLE_PROMPT_CHARS
 import com.openminis.app.data.character.CharacterCardStore
 import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.CharacterVersionProfile
