@@ -23,7 +23,7 @@ class SkillRepositoryBundledAssetSkillTest {
 
         val skill = repo.skills.value.firstOrNull { it.id == "wenyou-maker" }
         assertNotNull("wenyou-maker should be installed on first init", skill)
-        assertEquals("1.0.0", skill!!.version)
+        assertEquals("1.1.0", skill!!.version)
         assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
         assertTrue("name must be ASCII so slugify can derive the id", skill.name == "wenyou-maker")
         assertTrue(
@@ -55,7 +55,7 @@ class SkillRepositoryBundledAssetSkillTest {
         val second = newRepository()
         assertEquals("用户改过的引擎文本", edited.readText())
         val skill = second.skills.value.first { it.id == "wenyou-maker" }
-        assertEquals("1.0.0", skill.version)
+        assertEquals("1.1.0", skill.version)
     }
 
     @Test
@@ -87,5 +87,37 @@ class SkillRepositoryBundledAssetSkillTest {
             "fragment should point at the readable SKILL.md path",
             fragment.contains("/var/minis/skills/wenyou-maker/SKILL.md"),
         )
+    }
+
+    @Test
+    fun bundledCardOrganizerInstallsWithReferences() {
+        val repo = newRepository()
+
+        val skill = repo.skills.value.firstOrNull { it.id == "card-organizer" }
+        assertNotNull("card-organizer should be installed on first init", skill)
+        assertEquals("1.0.0", skill!!.version)
+        assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
+        assertTrue(
+            "description carries the trigger words",
+            skill.description.contains("建卡"),
+        )
+
+        val files = repo.listSkillFiles("card-organizer")
+        assertTrue("SKILL.md on disk: $files", files.contains("SKILL.md"))
+        assertTrue("organizing-rules on disk: $files", files.contains("references/organizing-rules.md"))
+        assertTrue("tic-ban on disk: $files", files.contains("references/tic-ban.md"))
+        val rules = repo.readSkillFile("card-organizer", "references/organizing-rules.md")
+        assertTrue("organizing rules intact", rules.orEmpty().contains("原文保真"))
+        val ban = repo.readSkillFile("card-organizer", "references/tic-ban.md")
+        assertTrue("tic ban table intact", ban.orEmpty().contains("不是……而是"))
+    }
+
+    @Test
+    fun wenyouMakerUpgradesToBundledVersion() {
+        val repo = newRepository()
+        val skill = repo.skills.value.first { it.id == "wenyou-maker" }
+        assertEquals("asset skill ships 1.1.0 with the discipline section", "1.1.0", skill.version)
+        assertTrue("SKILL.md body carries the discipline", skill.body.contains("整理纪律"))
+        assertTrue("SKILL.md body carries the human-only style rule", skill.body.contains("文风人工化"))
     }
 }
