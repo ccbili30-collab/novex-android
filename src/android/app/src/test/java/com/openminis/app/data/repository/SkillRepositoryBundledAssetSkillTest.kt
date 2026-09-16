@@ -23,7 +23,7 @@ class SkillRepositoryBundledAssetSkillTest {
 
         val skill = repo.skills.value.firstOrNull { it.id == "wenyou-maker" }
         assertNotNull("wenyou-maker should be installed on first init", skill)
-        assertEquals("1.0.0", skill!!.version)
+        assertEquals("1.1.0", skill!!.version)
         assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
         assertTrue("name must be ASCII so slugify can derive the id", skill.name == "wenyou-maker")
         assertTrue(
@@ -55,7 +55,7 @@ class SkillRepositoryBundledAssetSkillTest {
         val second = newRepository()
         assertEquals("用户改过的引擎文本", edited.readText())
         val skill = second.skills.value.first { it.id == "wenyou-maker" }
-        assertEquals("1.0.0", skill.version)
+        assertEquals("1.1.0", skill.version)
     }
 
     @Test
@@ -95,7 +95,7 @@ class SkillRepositoryBundledAssetSkillTest {
 
         val skill = repo.skills.value.firstOrNull { it.id == "card-organizer" }
         assertNotNull("card-organizer should be installed on first init", skill)
-        assertEquals("1.0.0", skill!!.version)
+        assertEquals("1.1.0", skill!!.version)
         assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
         assertTrue(
             "description carries the trigger words",
