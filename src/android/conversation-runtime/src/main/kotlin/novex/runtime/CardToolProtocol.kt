@@ -106,7 +106,7 @@ object CardToolProtocol {
             "replace_text_range"->{
                 listOf("module_id","block_id","content_ref").forEach {require(value.getString(it).isNotBlank()){"文字目标不能为空"}}
                 // [T-lenient-parse] 范围位置容忍字符串数字（模型常把整数写成文字）。
-                fun position(key:String):Long=when(val raw=value.get(key)){is Long->raw;is Int->raw.toLong();is String->raw.trim().toLongOrNull()?:error("$key 必须是整数");else->error("$key 必须是整数")}
+                fun position(key:String):Long=when(val raw=value.get(key)){is Long->raw;is Int->raw.toLong();is String->raw.trim().toLongOrNull();else->null}?:throw IllegalArgumentException("$key 必须是整数")
                 val start=position("start");val end=position("end")
                 require(start>=0 && end>=start){"文字修改范围无效"}
                 CardToolEdit.ReplaceTextRange(value.getString("module_id"),value.getString("block_id"),novex.content.ContentRef(value.getString("content_ref")),start,end,value.getString("text"))
