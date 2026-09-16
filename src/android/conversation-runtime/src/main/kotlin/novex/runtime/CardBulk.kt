@@ -73,7 +73,7 @@ object CardBulk {
         depth: Int = 1,
     ): List<ContentModule> {
         require(depth <= MAX_DEPTH) { "模块嵌套超过 $MAX_DEPTH 层（第 $depth 层）" }
-        val salt = java.util.UUID.randomUUID().toString.take(4)
+        val salt = java.util.UUID.randomUUID().toString().take(4)
         fun id(kind: String, index: Int) = "bulk-$kind$seed-$salt-$index"
         return nodes.map { node ->
             val index = counter[0]++
