@@ -1,0 +1,3 @@
+# 来源: github.com/op7418/Humanizer-zh (MIT, 17.3k stars) — Humanizer 汉化版，内容原样保留
+SKILL.md
+LICENSE

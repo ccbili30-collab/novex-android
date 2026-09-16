@@ -1,0 +1,8 @@
+# 来源: github.com/KKKKhazix/human-writing (MIT, 3.7k stars) — 活人感写作，内容原样保留
+SKILL.md
+LICENSE
+references/fiction.md
+references/formats.md
+references/forum-prose.md
+references/reality.md
+references/revision.md
