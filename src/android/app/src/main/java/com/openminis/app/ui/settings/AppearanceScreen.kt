@@ -64,6 +64,10 @@ const val KEY_THEME_MODE = "theme_mode"            // 0=System, 1=Light, 2=Dark
 const val KEY_RETURN_KEY_BEHAVIOR = "returnKeyBehavior"  // Int 0=Newline (default), 1=Send
 const val KEY_KEEP_SCREEN_AWAKE = "keepScreenAwakeDuringTasks"  // Boolean, default false
 const val KEY_TOOL_PREVIEW = "tool_preview"        // Boolean, default true
+// [T-chrome-autofade-setting] 对话页「挂篮」（顶栏+侧边组件+悬浮按钮）空闲
+// 6 秒自动淡出。2026-09-16 用户决策：默认关闭，仅点空白处手动淡出；需要
+// 沉浸的用户自行打开。
+const val KEY_CHROME_AUTO_FADE = "chat.chromeAutoFade"  // Boolean, default false
 const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // Boolean, default true
 // [T-keyboard-auto-pop default flip] Default ON — most users want the
 // composer ready for a follow-up immediately after the model finishes.
@@ -105,6 +109,10 @@ fun returnKeySendsMessage(context: Context): Boolean =
 
 fun keepScreenAwakeEnabled(context: Context): Boolean =
     getAppearancePrefs(context).getBoolean(KEY_KEEP_SCREEN_AWAKE, false)
+
+/** 对话页挂篮是否空闲 6 秒自动淡出；默认 false（仅点空白处手动淡出）。 */
+fun chromeAutoFadeEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_CHROME_AUTO_FADE, false)
 
 /** [T-android-auto-grouping] Default ON — see [KEY_AUTO_GROUPING]. */
 fun autoGroupingEnabled(context: Context): Boolean =
@@ -170,6 +178,7 @@ fun AppearanceScreen(
     var themeMode by remember { mutableIntStateOf(prefs.getInt(KEY_THEME_MODE, 0)) }
     var returnKeyBehavior by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
     var keepScreenAwake by remember { mutableStateOf(prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, false)) }
+    var chromeAutoFade by remember { mutableStateOf(prefs.getBoolean(KEY_CHROME_AUTO_FADE, false)) }
     var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
     var showContextMeter by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CONTEXT_METER, true)) }
     var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
@@ -294,6 +303,25 @@ fun AppearanceScreen(
                 onCheckedChange = {
                     keepScreenAwake = it
                     prefs.edit().putBoolean(KEY_KEEP_SCREEN_AWAKE, it).apply()
+                },
+                showDivider = false,
+            )
+        }
+
+        // [T-chrome-autofade-setting] 挂篮自动隐藏（2026-09-16 用户决策：
+        // 默认关闭；开启恢复 6 秒空闲自动淡出，关闭仅保留点空白处手动淡出）。
+        SettingsSection(
+            header = stringResource(R.string.appearance_section_chrome_autofade),
+            footer = stringResource(R.string.appearance_chrome_autofade_footer),
+        ) {
+            SettingsSwitchRow(
+                icon = com.openminis.app.ui.novex.NovexIcons.VisibilityOff,
+                iconColor = tilePurple,
+                title = stringResource(R.string.appearance_chrome_autofade_title),
+                checked = chromeAutoFade,
+                onCheckedChange = {
+                    chromeAutoFade = it
+                    prefs.edit().putBoolean(KEY_CHROME_AUTO_FADE, it).apply()
                 },
                 showDivider = false,
             )

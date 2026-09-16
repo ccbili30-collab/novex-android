@@ -363,15 +363,26 @@ private fun NovexConversationRow(
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
     ) {
-        NovexConversationThumbnailView(
-            thumbnail = resolveConversationThumbnail(
-                conversationId = session.id,
-                title = session.title,
-                characterAvatarPath = session.assistantAvatarPath.existingMediaFile()?.absolutePath,
-                worldImagePath = world?.imagePath.existingMediaFile()?.absolutePath,
-            ),
-            title = session.title ?: "对话",
-        )
+        // [T-launch-home-running-glow] 有流式任务在跑的会话：缩略图上叠一圈
+        // 旋转光环（与旧会话列表同款、同信号源 SessionActivityTracker）。
+        val activeSessions by com.openminis.app.service.SessionActivityTracker.activeSessions.collectAsState()
+        Box {
+            NovexConversationThumbnailView(
+                thumbnail = resolveConversationThumbnail(
+                    conversationId = session.id,
+                    title = session.title,
+                    characterAvatarPath = session.assistantAvatarPath.existingMediaFile()?.absolutePath,
+                    worldImagePath = world?.imagePath.existingMediaFile()?.absolutePath,
+                ),
+                title = session.title ?: "对话",
+            )
+            if (session.id in activeSessions) {
+                SpinningRing(
+                    color = NovexColors.Primary,
+                    modifier = Modifier.size(50.dp).align(Alignment.Center),
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .weight(1f)

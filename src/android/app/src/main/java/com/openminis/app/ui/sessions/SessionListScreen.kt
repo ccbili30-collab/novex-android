@@ -2815,7 +2815,9 @@ private fun DialogTextFieldFrame(content: @Composable () -> Unit) {
  * onAppear calls does not stack multiple rotation animations.
  */
 @Composable
-private fun SpinningRing(
+// [T-launch-home-running-glow] internal：启动首页（NovexConversationRoot）
+// 的会话行同样要显示运行光环（2026-09-16 用户反馈旧列表有、首页没有）。
+internal fun SpinningRing(
     color: Color,
     modifier: Modifier = Modifier,
 ) {
