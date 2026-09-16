@@ -301,6 +301,10 @@ class NovexConversationBundleExporter(private val context: Context, private val 
             if(withoutTrace.isNotEmpty()) missing += "${withoutTrace.size} 条用户文字消息未找到配套装配记录；可能尚未发起请求或旧版未记录，未用当前环境补造"
             json("environment/request-index.json", JSONObject().put("recordedRequestIds", JSONArray(tracedRequestIds.toList()))
                 .put("userMessagesWithoutTrace", JSONArray(withoutTrace.toList())))
+            // [T-provider-wire-capture] 诊断附件：工具轮请求原文抓取，存在才带
+            //（环形 4MB，随对话导出免 root 取出，用于定位中转翻译层问题）。
+            File(context.filesDir, "provider-wire-capture.jsonl").takeIf { it.isFile }
+                ?.let { copy("diagnostics/provider-wire-capture.jsonl", it) }
             for(ref in collectionRefs.toList()) {
                 val stem = NovexFrozenContextCodec.digest(ref)
                 val source = File(context.filesDir, "novex/learning/$stem.json")
