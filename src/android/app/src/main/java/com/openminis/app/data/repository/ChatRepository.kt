@@ -95,19 +95,18 @@ class ChatRepository(internal val dao: ChatDao) {
     val MAX_SIDE_CONVERSATIONS = 10
 
     /**
-     * Open a blank side conversation bound to [parentId]: it shares the parent's
-     * configuration snapshot (cards, prompts, identity) but carries NO history —
-     * neither the UI nor the model context ever sees the main line. The only
-     * bridge back is the handoff brief.
+     * [T-side-naming] 新侧边对话命名「侧边 N」（2026-09-16 用户决策：不再拼
+     * 主对话标题）。N 取现有侧边编号的最大值 +1——新旧两种命名（「侧边 N」/
+     * 「主对话标题·侧N」）都参与计数，删除中间一条后新建也不会重号。
      */
     suspend fun createSideSession(parentId: String): ChatSessionEntity {
         val parent = requireNotNull(dao.getSession(parentId)) { "主对话不存在" }
-        require(dao.listSideSessions(parentId).size < MAX_SIDE_CONVERSATIONS) {
+        val existingSides = dao.listSideSessions(parentId)
+        require(existingSides.size < MAX_SIDE_CONVERSATIONS) {
             "侧边对话最多 ${MAX_SIDE_CONVERSATIONS} 条，请先删除旧的"
         }
-        val index = dao.listSideSessions(parentId).size + 1
         val side = createSession(
-            title = "${parent.title}·侧${index}",
+            title = nextSideConversationTitle(existingSides.map { it.title ?: "" }),
             modelId = parent.modelId,
             memoryEnabled = parent.memoryEnabled != 0,
             characterId = parent.characterId,
@@ -1111,6 +1110,18 @@ class ChatRepository(internal val dao: ChatDao) {
         }
     }
 }
+
+/**
+ * [T-side-naming] 从侧边对话标题提取编号：兼容新命名「侧边 N」与旧命名
+ * 「主对话标题·侧N」；无编号返回 null。
+ */
+internal fun sideConversationNumber(title: String): Int? =
+    Regex("·侧(\\d+)\\s*$").find(title)?.groupValues?.get(1)?.toIntOrNull()
+        ?: Regex("侧边\\s*(\\d+)").find(title)?.groupValues?.get(1)?.toIntOrNull()
+
+/** [T-side-naming] 下一个侧边标题 = 现有最大编号 +1，避免删除后重号。 */
+internal fun nextSideConversationTitle(existingTitles: List<String>): String =
+    "侧边 ${(existingTitles.mapNotNull(::sideConversationNumber).maxOrNull() ?: 0) + 1}"
 
 /** T188: shape of a session row surfaced to `minis-sessions-cli list`. */
 data class SessionMeta(

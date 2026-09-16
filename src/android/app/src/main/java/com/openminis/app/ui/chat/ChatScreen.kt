@@ -725,8 +725,11 @@ fun ChatScreen(
         animationSpec = tween(220),
         label = "chromeFadeAlpha",
     )
+    // [T-chrome-autofade-setting] 空闲 6 秒自动淡出受「外观」开关控制，默认
+    // 关闭（2026-09-16 用户决策）——关闭时仅保留点空白处的手动淡出/唤回。
+    val chromeAutoFadeEnabled = remember { com.openminis.app.ui.settings.chromeAutoFadeEnabled(context) }
     LaunchedEffect(lastInteractionAt, chromeCollapsed, sideParentId) {
-        if (sideParentId != null || chromeCollapsed) return@LaunchedEffect
+        if (!chromeAutoFadeEnabled || sideParentId != null || chromeCollapsed) return@LaunchedEffect
         kotlinx.coroutines.delay(6_000)
         chromeCollapsed = true
         chromeHiddenAtMs = System.currentTimeMillis()

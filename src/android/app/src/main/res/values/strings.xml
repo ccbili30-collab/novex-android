@@ -709,6 +709,9 @@
     <string name="appearance_section_keep_awake">Keep Screen Awake</string>
     <string name="appearance_keep_awake_footer">Prevent the screen from sleeping while any session is running a task. May increase battery drain.</string>
     <string name="appearance_keep_awake_title">Keep Screen Awake</string>
+    <string name="appearance_section_chrome_autofade">Auto Hide Interface</string>
+    <string name="appearance_chrome_autofade_footer">When on, the chat top bar and floating controls fade out after 6 seconds of inactivity. When off, they only hide when you tap empty space.</string>
+    <string name="appearance_chrome_autofade_title">Auto hide interface (6s)</string>
     <string name="appearance_section_chat_title">Chat Title</string>
     <string name="appearance_show_chat_title">Show chat title</string>
     <string name="appearance_show_chat_title_subtitle">Show a sticky title pill while scrolling</string>

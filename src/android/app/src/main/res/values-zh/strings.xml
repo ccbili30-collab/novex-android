@@ -350,6 +350,9 @@
     <string name="appearance_section_keep_awake">屏幕常亮</string>
     <string name="appearance_keep_awake_footer">有会话任务运行时保持屏幕不熄灭，可能增加电量损耗。</string>
     <string name="appearance_keep_awake_title">屏幕常亮</string>
+    <string name="appearance_section_chrome_autofade">自动隐藏挂篮</string>
+    <string name="appearance_chrome_autofade_footer">开启后对话顶栏与悬浮按钮空闲 6 秒自动淡出；关闭后仅点按聊天空白处时隐藏。</string>
+    <string name="appearance_chrome_autofade_title">空闲 6 秒自动隐藏</string>
     <string name="appearance_section_chat_title">会话标题</string>
     <string name="appearance_show_chat_title">显示会话标题</string>
     <string name="appearance_show_chat_title_subtitle">滚动时显示当前会话标题</string>

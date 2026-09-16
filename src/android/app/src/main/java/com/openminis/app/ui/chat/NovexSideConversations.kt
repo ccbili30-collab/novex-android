@@ -44,8 +44,17 @@ private val BookmarkPalette = listOf(
 /** Rail id of the playthrough handle (UUIDs can never contain NUL). */
 private const val HUD_ID = "\u0000hud"
 
-/** 书签列/把手从容器顶部的起步距离（容器已在顶栏下方，只留呼吸间距）。 */
-private val RailTopInset = 16.dp
+/**
+ * [T-side-naming] 书签条短标签：显示侧边编号——新命名「侧边 N」与旧命名
+ * 「主对话标题·侧N」都提取数字；其余标题回落首字。条身半出屏后可见区
+ * 窄，只放数字（完整名字在侧边页标题与列表里看）。
+ */
+internal fun bookmarkTabLabel(title: String?): String {
+    val t = title.orEmpty()
+    Regex("·侧(\\d+)\\s*$").find(t)?.let { return it.groupValues[1] }
+    Regex("侧边\\s*(\\d+)").find(t)?.let { return it.groupValues[1] }
+    return t.trim().take(1).ifEmpty { "侧" }
+}
 
 /** State-handle participation: null = no playthrough state → no handle. */
 internal data class NovexEdgeHandleSpec(
@@ -120,7 +129,12 @@ internal fun NovexSideConversations(
         val screenW = with(density) { maxWidth.toPx() }
         val screenH = with(density) { maxHeight.toPx() }
         val bottomReserve = with(density) { 170.dp.toPx() }
-        val topInsetPx = with(density) { RailTopInset.toPx() }
+        // [T-bookmark-under-topbar] 顶栏悬浮盖在内容上（chrome-fade 改造），
+        // 书签列起点必须让出「顶栏高度 + 余量」，否则整列被顶栏埋住
+        // （2026-09-16 用户反馈）。本容器 y=0 已在状态栏之下。
+        val topInsetPx = with(density) {
+            (chatTopBarExpandedHeightDp(density.fontScale).dp + 8.dp).toPx()
+        }
 
         // ── Bookmark rail (left edge), top-down stacking with cumulative slots ──
         fun stripSize(id: String): Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> =
@@ -167,12 +181,15 @@ internal fun NovexSideConversations(
                 modifier = Modifier
                     .graphicsLayer { alpha = railAlpha }
                     .offset {
+                        // [T-bookmark-half-out] 半出屏：左半段（含圆头）永久
+                        // 留在屏幕外，屏内只露右半段与尖角，像书签从屏幕外探出；
+                        // 拖动排序时同样不整条滑出（2026-09-16 用户决策）。
                         IntOffset(
-                            0,
+                            -(stripLength.toPx() / 2f).roundToInt(),
                             (if (dragging) dragY else baseY).roundToInt(),
                         )
                     },
-                contentAlignment = Alignment.CenterStart,
+                contentAlignment = Alignment.CenterEnd,
                 onTap = if (collapsed) null else ({
                     if (!isCurrent) {
                         onOpenSide(side.id)
@@ -205,11 +222,12 @@ internal fun NovexSideConversations(
                 },
             ) {
                 Text(
-                    side.title.orEmpty().trim().take(1).ifEmpty { "侧" },
+                    bookmarkTabLabel(side.title),
                     color = androidx.compose.ui.graphics.Color(0xCC1C1C1E),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 5.dp),
+                    // 右端避开尖角斜面（tip = 16% 条长），文字落在屏内可见半段。
+                    modifier = Modifier.padding(end = stripLength * 0.16f + 4.dp),
                 )
             }
         }
