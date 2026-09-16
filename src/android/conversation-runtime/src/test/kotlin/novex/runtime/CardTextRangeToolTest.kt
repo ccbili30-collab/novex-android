@@ -77,10 +77,14 @@ class CardTextRangeToolTest {
         val readOnly=policy.copy(permission=ToolPermission.READ_ONLY)
         assertTrue(CardToolProtocol.definitions(readOnly).isEmpty())
         assertEquals(CardToolResult.Denied,coordinator.submit(request,readOnly))
-        for(invalid in listOf<Any>("1",1.5,-1,java.math.BigInteger("9223372036854775808"))) {
+        // [T-lenient-parse] 字符串整数"1"现在合法；小数/负数/溢出仍拒绝。
+        val stringNumber=CardToolProtocol.parse("chat",call.copy(arguments=JSONObject(call.arguments).put("start","1").toString()))
+        assertEquals(1L,(stringNumber.edit as CardToolEdit.ReplaceTextRange).start)
+        for(invalid in listOf<Any>(1.5,-1,java.math.BigInteger("9223372036854775808"))) {
             assertThrows(IllegalArgumentException::class.java){CardToolProtocol.parse("chat",call.copy(arguments=JSONObject(call.arguments).put("start",invalid).toString()))}
         }
-        assertThrows(IllegalArgumentException::class.java){CardToolProtocol.parse("chat",call.copy(arguments=JSONObject(call.arguments).put("permission","free").toString()))}
+        // 多余键忽略，解析照常成功。
+        CardToolProtocol.parse("chat",call.copy(arguments=JSONObject(call.arguments).put("permission","free").toString()))
         val stale=call.copy(arguments=JSONObject(call.arguments).put("content_ref","different/reference").toString())
         assertTrue(coordinator.submit(CardToolProtocol.parse("chat",stale),policy) is CardToolResult.Failed)
         assertEquals(old,store.open("world"));assertEquals(old.content,CardDrafts(store).read("world")!!.content)

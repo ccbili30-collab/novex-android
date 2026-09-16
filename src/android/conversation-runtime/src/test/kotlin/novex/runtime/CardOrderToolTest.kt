@@ -67,8 +67,12 @@ class CardOrderToolTest {
         assertEquals(CardToolResult.Denied,coordinator.submit(parsed,policy.copy(permission=ToolPermission.READ_ONLY)))
         assertEquals(CardToolResult.Denied,coordinator.submit(parsed,policy.copy(targets=emptySet())))
         assertTrue(coordinator.submit(parsed.copy(callId="stale",draftVersion="saved:old"),policy) is CardToolResult.Failed)
-        val wrong=call(store,"move_module","unknown")
-        assertThrows(IllegalArgumentException::class.java){CardToolProtocol.parse("chat",wrong.copy(arguments=JSONObject(wrong.arguments).put("delete",true).toString()))}
+        // [T-lenient-parse] 多余键（delete）现在忽略：解析照常成功；
+        // 非法目标（不存在的模块）仍被协调器拒绝且卡未变。
+        val lenient=CardToolProtocol.parse("chat",PendingTool("unknown","move_module",JSONObject()
+            .put("root_id","world").put("target_id","role").put("draft_version","saved:${store.open("world")!!.revision}")
+            .put("module_id","does-not-exist").put("before_id","").put("delete",true).toString()))
+        assertTrue(coordinator.submit(lenient,policy) is CardToolResult.Failed)
         assertEquals(old,store.open("world"))
     }
 }
