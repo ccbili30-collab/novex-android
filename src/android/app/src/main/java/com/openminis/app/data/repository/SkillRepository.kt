@@ -1135,6 +1135,12 @@ class SkillRepository(private val context: Context) {
 
     // -- Bundled Skills --
 
+    /** Asset-directory skills shipped with the app; installed/updated on every init. */
+    private val bundledAssetSkills = listOf(
+        "skills/wenyou-maker",
+        "skills/card-organizer",
+    )
+
     private fun installBundledSkills() {
         val bundledId = "skill-creator"
         val bundledVersion = "2.0.0"
@@ -1142,11 +1148,14 @@ class SkillRepository(private val context: Context) {
 
         // Skip if local version is same or newer
         if (existing != null && existing.version >= bundledVersion) {
-            installBundledAssetSkill(assetDir = "skills/wenyou-maker")
+            bundledAssetSkills.forEach(::installBundledAssetSkill)
             return
         }
 
-        val parsed = parseSkillMd(SKILL_CREATOR_CONTENT) ?: return
+        val parsed = parseSkillMd(SKILL_CREATOR_CONTENT) ?: run {
+            bundledAssetSkills.forEach(::installBundledAssetSkill)
+            return
+        }
         if (existing != null) {
             // Upgrade existing
             val updated = existing.copy(
@@ -1173,7 +1182,7 @@ class SkillRepository(private val context: Context) {
             Log.i(TAG, "Installed bundled skill: $bundledId (v$bundledVersion)")
         }
 
-        installBundledAssetSkill(assetDir = "skills/wenyou-maker")
+        bundledAssetSkills.forEach(::installBundledAssetSkill)
     }
 
     /**
