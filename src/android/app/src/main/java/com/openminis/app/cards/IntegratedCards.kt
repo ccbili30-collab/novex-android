@@ -15,6 +15,18 @@ import org.json.JSONArray
 
 /** 卡片与原会话的关联。消息、连接、权限决定仍由原应用持有。 */
 data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<SourceSelection> = emptyList(),val managed:Set<ManagementTarget> = emptySet(),val createdReceipts:Set<String> = emptySet(),val overrides:Map<String,Boolean> = emptyMap()) {
+    /**
+     * [T-prune-deleted-mounts] 剔除指向已不存在卡片（已删除/缺失）的主卡、背景卡
+     * 与管理项；一个都没剔除时返回 null（调用方据此跳过写回）。exists 由调用方
+     * 注入（CardStore::open 判存活），保持纯函数便于单测。
+     */
+    fun prunedDeleted(exists:(String)->Boolean):CardBinding? {
+        val primaryKept=primary?.takeIf { exists(it.rootId) }
+        val backgroundsKept=backgrounds.filter { exists(it.rootId) }
+        val managedKept=managed.filter { exists(it.rootId) }.toSet()
+        return if(primaryKept==primary && backgroundsKept.size==backgrounds.size && managedKept.size==managed.size)null
+        else copy(primary=primaryKept,backgrounds=backgroundsKept,managed=managedKept)
+    }
     fun encode():String {
         fun values(items:List<SourceSelection>)=JSONArray(items.map {JSONObject().put("root",it.rootId).put("target",it.targetId)})
         return JSONObject().put("primary",values(listOfNotNull(primary))).put("backgrounds",values(backgrounds))
@@ -54,6 +66,28 @@ class IntegratedCards(context:Context,
     @Volatile private var activeStop:ToolStop?=null
     fun stop(){activeStop?.stop()}
     fun binding(chat:String):CardBinding? = CardBinding.decode(readBinding())
+
+    /**
+     * [T-prune-deleted-mounts] 挂载的卡片被删除后，发送会在 candidates() 的
+     * 「采用的作品不存在」上整轮失败，且用户不知道要去对话背景里手动取消
+     * （2026-09-16 用户反馈）。发送入口先调用本函数：失效挂载自动移除并写回，
+     * 返回被移除卡片的名称（回收站可读原名，读不到回落编号前 8 位）供系统
+     * 提示；空列表=无需清理。写回走 updateBinding 闭包，对最新绑定做变换，
+     * 避免读-改-写覆盖并发修改。
+     */
+    suspend fun pruneDeletedMounts():List<String> {
+        val current=CardBinding.decode(readBinding())?:return emptyList()
+        val exists={id:String->store.open(id)!=null}
+        if(current.prunedDeleted(exists)==null)return emptyList()
+        val removedRoots=(listOfNotNull(current.primary)+current.backgrounds+current.managed.map {SourceSelection(it.rootId,it.targetId)})
+            .filterNot { exists(it.rootId) }.map { it.rootId }.distinct()
+        val names=removedRoots.map { root->
+            runCatching { store.deletedCard(root)?.content?.name }.getOrNull()
+                ?.takeIf(String::isNotBlank) ?: root.take(8)
+        }
+        updateBinding { binding -> binding.prunedDeleted(exists) ?: binding }
+        return names
+    }
     private fun policy(chat:String,readOnly:Boolean=false)=CardToolPolicy(binding(chat)?.managed?:emptySet(),if(readOnly)ToolPermission.READ_ONLY else ToolPermission.FREE)
     fun review(name:String,raw:String):String {
         val args=JSONObject(raw)

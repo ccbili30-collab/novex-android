@@ -6627,6 +6627,18 @@ class ChatViewModel(
                     return@launch
                 }
             }
+            // [T-prune-deleted-mounts] 挂载的卡片已被删除时，这里先自动清理绑定
+            // 并提示，否则 candidates() 的「采用的作品不存在」会拦下整轮发送，
+            // 用户还得自己去对话背景里找幽灵卡（2026-09-16 用户反馈）。
+            runCatching { integratedCards.pruneDeletedMounts() }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { removed ->
+                    appendSystemInfo(
+                        text = "挂载的卡片${removed.joinToString("、") { "「$it」" }}已删除，已自动从对话背景移除；在卡片库还原后需重新挂载。",
+                        iconKind = "card",
+                    )
+                }
             val currentAttachments = _attachments.value
             clearAttachments()
 
