@@ -2308,6 +2308,11 @@ class OpenAIProvider private constructor(
      * dropped by ~2× the body size (often tens of MB on long agent loops).
      */
     private suspend fun buildRequest(bodyStr: String): Request {
+        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）。
+        com.openminis.app.provider.ProviderWireCapture.record(
+            if (useResponsesAPI) "openai-responses" else "openai-chat",
+            bodyStr,
+        )
         val token = getToken()
 
         if (isOAuth && !forceChatCompletions) {

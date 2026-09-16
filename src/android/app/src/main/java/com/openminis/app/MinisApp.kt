@@ -283,6 +283,10 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // the exact launch where the user is trying to read the crash files.
         AppLogger.primeContext(this)
 
+        // [T-provider-wire-capture] 工具轮请求原文抓取目录（诊断中转翻译层
+        // 是否吞 tool_result）；未初始化时 record() 静默跳过。
+        com.openminis.app.provider.ProviderWireCapture.captureDir = filesDir
+
         // T-android-crash-freq-share: local fallback for Crashlytics (#458).
         // Scan filesDir/logs/ for crash-*.log + native-crash-*.log files
         // touched in the last hour; if THRESHOLD+ are present, stash the
