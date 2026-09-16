@@ -67,6 +67,15 @@ class IntegratedCards(context:Context,
     fun stop(){activeStop?.stop()}
     fun binding(chat:String):CardBinding? = CardBinding.decode(readBinding())
 
+    /** [T-unified-image-reference] 读取卡片图片资源的字节与媒体类型（生图参考图 card: 引用）。 */
+    fun cardImageBytes(rootId:String,resourceId:String):Pair<ByteArray,String>? = runCatching {
+        val card=requireNotNull(store.open(rootId)){"卡片不存在"}
+        val resource=ContentTargets.find(card.content,rootId).resources.firstOrNull {it.id==resourceId}
+            ?:error("卡片上没有资源 $resourceId")
+        val bytes=store.contents.open(resource.content).use{it.readBytes()}
+        bytes to resource.mediaType
+    }.getOrNull()
+
     /**
      * [T-prune-deleted-mounts] 挂载的卡片被删除后，发送会在 candidates() 的
      * 「采用的作品不存在」上整轮失败，且用户不知道要去对话背景里手动取消

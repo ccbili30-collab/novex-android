@@ -10322,18 +10322,44 @@ class ChatViewModel(
         val args = runCatching { JSONObject(argsJson) }.getOrElse {
             return ToolExecutionResult("生图参数不是有效的 JSON", false, toolTitle = "生成图片")
         }
-        val artifactId = args.optString("reference_artifact_id").trim()
-        val reference = if (artifactId.isEmpty()) {
+        // [T-unified-image-reference] 参考图统一引用面（2026-09-16 用户批γ）：
+        // conversation:图片编号 / card:卡片编号:资源编号 / artifact:成果编号；
+        // 旧 reference_artifact_id 仍按 artifact 处理。
+        val referenceRef = args.optString("reference_image").trim()
+            .ifEmpty { args.optString("reference_artifact_id").trim() }
+        val reference = if (referenceRef.isEmpty()) {
             null
         } else {
-            val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
-                return ToolExecutionResult(
-                    error.message ?: "无法读取指定参考图片成果",
-                    false,
-                    toolTitle = "生成图片",
-                )
+            when {
+                referenceRef.startsWith("conversation:") -> {
+                    val imageId = referenceRef.removePrefix("conversation:")
+                    val file = runCatching { integratedConversationImages()[imageId] }.getOrNull()
+                    if (file == null) {
+                        return ToolExecutionResult("对话图片目录里没有编号 $imageId；编号来自「对话图片目录」工具定义", false, toolTitle = "生成图片")
+                    }
+                    LLMMessage.ImagePart(file.readBytes(), "image/jpeg", null)
+                }
+                referenceRef.startsWith("card:") -> {
+                    val parts = referenceRef.removePrefix("card:").split(':', limit = 2)
+                    if (parts.size != 2) {
+                        return ToolExecutionResult("card: 引用格式是 card:卡片编号:资源编号", false, toolTitle = "生成图片")
+                    }
+                    val bytes = runCatching { integratedCards.cardImageBytes(parts[0], parts[1]) }.getOrNull()
+                        ?: return ToolExecutionResult("卡片 ${parts[0]} 上没有图片资源 ${parts[1]}；资源编号以 read_card 结构为准", false, toolTitle = "生成图片")
+                    LLMMessage.ImagePart(bytes.first, bytes.second, null)
+                }
+                else -> {
+                    val artifactId = referenceRef.removePrefix("artifact:")
+                    val resolved = loadAccessibleImageArtifact(artifactId).getOrElse { error ->
+                        return ToolExecutionResult(
+                            error.message ?: "无法读取指定参考图片成果",
+                            false,
+                            toolTitle = "生成图片",
+                        )
+                    }
+                    LLMMessage.ImagePart(resolved.bytes, resolved.mimeType, null)
+                }
             }
-            LLMMessage.ImagePart(resolved.bytes, resolved.mimeType, null)
         }
         return GenerateImageTool.execute(
             argsJson = argsJson,

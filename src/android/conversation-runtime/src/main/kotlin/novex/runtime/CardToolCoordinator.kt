@@ -13,6 +13,10 @@ data class ManagementTarget(val rootId:String,val targetId:String=rootId)
 data class CardToolPolicy(val targets:Set<ManagementTarget>,val permission:ToolPermission=ToolPermission.FREE,val readTargets:Set<ManagementTarget> = targets)
 sealed interface CardToolEdit {
     data class Create(val kind:novex.content.CardKind,val name:String):CardToolEdit
+    /** [T-bulk-tools] 宏通道：整卡一次成型（模块树整体校验后原子落库）。 */
+    data class CreateBulk(val kind:novex.content.CardKind,val name:String,val tree:List<BulkModuleNode>):CardToolEdit
+    /** [T-bulk-tools] 宏通道：向已有卡插入整棵模块子树（beforeId 空=根部末尾）。 */
+    data class AddModuleBulk(val beforeId:String?,val tree:List<BulkModuleNode>):CardToolEdit
     data class ConversationImage(val imageId:String,val moduleId:String?,val afterBlockId:String?):CardToolEdit
     data class Shared(val command:EditorCommand,val canonical:String):CardToolEdit
     data class RemoveModule(val moduleId:String):CardToolEdit
@@ -137,6 +141,26 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                 return finish(request,CardToolResult.Failed(failure.message?:"创建未完成"))
             }
         }
+        // [T-bulk-tools] 宏创建：整包校验→一次性构建完整文档→store.save 原子落库。
+        // 校验或写库失败时卡上没有任何残留（未走逐模块编辑），重放按操作标记查历史。
+        val bulkCreation=request.edit as? CardToolEdit.CreateBulk
+        if(bulkCreation!=null) {
+            if(stop.isStopped())return finish(request,CardToolResult.Stopped(null))
+            val operation="bulk:${request.target.rootId}"
+            try {
+                store.history(request.target.rootId,operation)?.let{return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,it.revision))}
+                require(store.open(request.target.rootId)==null && CardDrafts(store).read(request.target.rootId)==null){"新作品编号已被占用"}
+                val empty=novex.content.ContentDocument(request.target.rootId,bulkCreation.kind,bulkCreation.name.trim())
+                val built=empty.copy(modules=CardBulk.buildModules(bulkCreation.tree,request.target.rootId.take(8)){text->bulkTextRef(text)}).validate()
+                val savedCard=store.save(built,null,ChangeSource.AI,operation)
+                val ids=createdIds(empty,built)
+                return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,savedCard.revision,ids.first,ids.second))
+            }catch(failure:Exception){
+                val actual=store.history(request.target.rootId,operation)
+                if(actual!=null)return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,actual.revision))
+                return finish(request,CardToolResult.Failed(failure.message?:"整卡创建未完成，卡上无残留内容"))
+            }
+        }
         var updated:CardDraft?=null
         var beforeContent:novex.content.ContentDocument?=null
         var saved:SavedCard?=null
@@ -144,8 +168,32 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
             if(stop.isStopped())return finish(request,CardToolResult.Stopped(null))
             editing(request.target,"tool:${request.callId}") { lease ->
                 if(stop.isStopped())return finish(request,CardToolResult.Stopped(null))
+                // [T-bulk-tools] 宏插入：读当前草稿→构建子树→update 推进草稿→
+                // 与精确工具共用 journal.prepared/commitTarget 提交路径。
+                val addBulk=request.edit as? CardToolEdit.AddModuleBulk
+                if(addBulk!=null) {
+                    val before=requireNotNull(CardDrafts(store).read(request.target.rootId)){"没有可插入的草稿，请先读取卡片结构"}
+                    beforeContent=before.content
+                    val expected=if(request.draftVersion.startsWith("saved:")) {
+                        val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
+                        if(actual.revision!=request.draftVersion.removePrefix("saved:"))throw DraftConflict()
+                        val draft=CardDrafts(store).begin(request.target.rootId)
+                        if(draft.baseRevision!=actual.revision || draft.content!=actual.content)throw DraftConflict()
+                        draft.version
+                    } else request.draftVersion
+                    val built=CardBulk.buildModules(addBulk.tree,request.target.rootId.take(8)){text->bulkTextRef(text)}
+                    val modules=if(addBulk.beforeId.isNullOrBlank()) before.content.modules+built
+                    else {
+                        val at=before.content.modules.indexOfFirst {it.id==addBulk.beforeId}
+                        require(at>=0){"定位模块 ${addBulk.beforeId} 不在根部；插入位置仅支持根级模块之前"}
+                        val next=before.content.modules.toMutableList();next.addAll(at,built);next
+                    }
+                    updated=CardDrafts(store).update(request.target.rootId,expected,before.content.copy(modules=modules),EditorPosition(),ChangeSource.AI,lease)
+                } else {
                 val command=when(val edit=request.edit) {
                     is CardToolEdit.Create->error("创建操作不属于已有卡编辑")
+                    is CardToolEdit.CreateBulk->error("宏创建不属于已有卡编辑")
+                    is CardToolEdit.AddModuleBulk->error("宏插入已在上方独立处理")
                     is CardToolEdit.ConversationImage->EditorCommand.AdoptImage(CardImages(store).receive(requireNotNull(conversationImage){"当前入口没有对话图片来源"}(edit.imageId)),edit.moduleId,edit.afterBlockId)
                     is CardToolEdit.Shared->edit.command
                     is CardToolEdit.RemoveModule->EditorCommand.RemoveModule(edit.moduleId)
@@ -160,6 +208,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                     is CardToolEdit.MoveBlock->EditorCommand.MoveBlock(edit.moduleId,edit.blockId,edit.beforeId)
                     is CardToolEdit.ReplaceTextRange->EditorCommand.ReplaceTextRange(edit.moduleId,edit.blockId,edit.content,edit.start,edit.end,edit.text,EditorPosition())
                     is CardToolEdit.WriteText->EditorCommand.WriteText(edit.moduleId,edit.blockId,edit.name,edit.text,EditorPosition())
+                }
                 }
                 val expected=if(request.draftVersion.startsWith("saved:")){
                     val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
@@ -188,6 +237,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
     private fun recorded(request:CardToolRequest,record:StoredTurn):CardToolResult {
         if(record.state==TurnState.FINISHED)return ToolResultCodec.decode(JSONObject(journal.text(record.outcome!!))).also {grantCreated(request,it)}
         if(request.edit is CardToolEdit.Create)store.history(request.target.rootId,"create:${request.target.rootId}")?.let {return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,it.revision))}
+        if(request.edit is CardToolEdit.CreateBulk)store.history(request.target.rootId,"bulk:${request.target.rootId}")?.let {return finish(request,CardToolResult.Saved(request.target.rootId,request.target.rootId,it.revision))}
         val commit=record.trace?.let { JSONObject(journal.text(it)).optString("commit") }?.takeIf { it.isNotBlank() }
         val saved=commit?.let { store.history(request.target.rootId,it) }
         if(saved!=null){ContentTargets.find(saved.content,request.target.targetId);return finish(request,CardToolResult.Saved(request.target.rootId,request.target.targetId,saved.revision))}
@@ -197,6 +247,13 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
         }
         return CardToolResult.Unconfirmed
     }
+    /** [T-bulk-tools] 宏树正文写入内容存储并返回引用。 */
+    private fun bulkTextRef(text:String):novex.content.ContentRef {
+        val ref=store.contents.allocator()()
+        store.contents.receive(listOf(novex.content.ContentTransfer(novex.content.ContentRef("bulk-create"),ref))){text.byteInputStream()}
+        return ref
+    }
+
     /**
      * [T-saved-with-ids] 提交前后结构差集 = 本次新建的模块/块编号（含嵌套
      * 子模块与内部角色）。任一侧缺失（创建路径/崩溃恢复）返回空，模型回落
@@ -226,7 +283,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
     }
     private fun grantCreated(request:CardToolRequest,result:CardToolResult) {
         if(result !is CardToolResult.Saved)return
-        if(request.edit is CardToolEdit.Create)onCreated?.invoke(request.target)
+        if(request.edit is CardToolEdit.Create || request.edit is CardToolEdit.CreateBulk)onCreated?.invoke(request.target)
         val command=(request.edit as? CardToolEdit.Shared)?.command
         if(command is EditorCommand.AddCharacter || command is EditorCommand.CopyCharacter) {
             val saved=requireNotNull(store.history(result.rootId,result.revision))
@@ -237,6 +294,8 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
     private fun encode(request:CardToolRequest):String {
         val edit=when(val command=request.edit) {
             is CardToolEdit.Create->JSONObject().put("kind","create").put("cardKind",command.kind.name).put("name",command.name)
+            is CardToolEdit.CreateBulk->JSONObject().put("kind","create_bulk").put("cardKind",command.kind.name).put("name",command.name).put("modules",CardBulk.encodeTree(command.tree))
+            is CardToolEdit.AddModuleBulk->JSONObject().put("kind","add_module_bulk").put("before",command.beforeId?:JSONObject.NULL).put("modules",CardBulk.encodeTree(command.tree))
             is CardToolEdit.ConversationImage->JSONObject().put("kind","conversation_image").put("image",command.imageId).put("module",command.moduleId?:JSONObject.NULL).put("after",command.afterBlockId?:JSONObject.NULL)
             is CardToolEdit.Shared->JSONObject(command.canonical)
             is CardToolEdit.RemoveModule->JSONObject().put("kind","remove_module").put("module",command.moduleId)

@@ -65,13 +65,14 @@ object GenerateImageTool {
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "Short user-visible action title in the user's language."),
             "prompt" to AgentToolParam("string", "Complete visual prompt describing subject, composition, style, lighting, text, and constraints."),
-            "reference_artifact_id" to AgentToolParam("string", "需要编辑的可选 Novex 图片成果编号；不能使用设备路径。"),
+            "reference_image" to AgentToolParam("string", "参考图统一引用，三选一前缀：conversation:图片编号（来自对话图片目录）/ card:卡片编号:资源编号（来自卡片图片资源，read_card 可查）/ artifact:图片成果编号（本对话历史生成成果）。需要编辑或以图为参考时必填。"),
+            "reference_artifact_id" to AgentToolParam("string", "已弃用：等价于 reference_image 的 artifact: 形式；请改用 reference_image。"),
             "size" to AgentToolParam("string", "Optional provider size such as 1024x1024, 1536x1024, or 1024x1536."),
             "quality" to AgentToolParam("string", "Optional provider quality such as standard, high, or hd."),
             "count" to AgentToolParam("integer", "Number of images requested, from 1 to 4."),
         ),
         required = listOf("tool_title", "prompt"),
-        propertyOrdering = listOf("tool_title", "prompt", "reference_artifact_id", "size", "quality", "count"),
+        propertyOrdering = listOf("tool_title", "prompt", "reference_image", "reference_artifact_id", "size", "quality", "count"),
     )
 
     suspend fun execute(
