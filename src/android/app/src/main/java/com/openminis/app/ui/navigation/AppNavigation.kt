@@ -42,7 +42,6 @@ import com.openminis.app.ui.settings.AddCustomModelScreen
 import com.openminis.app.ui.settings.BackgroundSettingsScreen
 import com.openminis.app.ui.settings.AddModelsToGroupScreen
 import com.openminis.app.ui.settings.ShadowVoiceDetailScreen
-import com.openminis.app.ui.settings.AddProviderScreen
 import com.openminis.app.ui.settings.NovexProviderSetupScreen
 import com.openminis.app.ui.settings.ImageGenerationSettingsScreen
 import com.openminis.app.ui.settings.ImageGenerationSourceScreen
