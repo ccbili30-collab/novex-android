@@ -32,7 +32,8 @@ class CardBindingPruneTest {
             overrides = mapOf("m1" to true),
         )
         val pruned = binding.prunedDeleted { it != "dead" && it != "gone" }!!
-        assertEquals(source("alive"), pruned.primary)
+        // 主卡被剔除后不做背景卡补位——绑定退化为纯背景卡形态。
+        assertNull(pruned.primary)
         assertEquals(listOf(source("alive")), pruned.backgrounds)
         assertEquals(setOf(managed("alive")), pruned.managed)
         // 与挂载无关的字段原样保留。
