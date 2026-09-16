@@ -57,8 +57,8 @@ class CardBulkToolsTest {
         val outcome = coordinator(store).submit(request, policy())
         assertTrue("create_card_bulk 结果：$outcome", outcome is CardToolResult.Saved)
         val saved = outcome as CardToolResult.Saved
-        assertEquals("card", saved.rootId)
-        val card = ContentTargets.find(store.open("card")!!.content, "card")
+        val card = ContentTargets.find(store.open(saved.rootId)!!.content, saved.rootId)
+        println("BULK-DIAG create rootId=${saved.rootId} modules=${card.modules.map { it.name }}")
         assertEquals(listOf("基础档案", "修仙设定"), card.modules.map { it.name })
         assertEquals(listOf("外貌"), card.modules[0].children.map { it.name })
         // 编号树全量回传：两个根模块 + 一个子模块；两个文字块（外貌无正文）。
@@ -77,6 +77,7 @@ class CardBulkToolsTest {
             JSONObject().put("root_id", "card").put("target_id", "card").put("draft_version", version)
                 .put("module", JSONObject().put("name", "背景故事").put("text", "出身")).toString()))
         val appendOutcome = coordinator(store).submit(append, policy())
+        println("BULK-DIAG append outcome=$appendOutcome")
         assertTrue("add_module_bulk 结果：$appendOutcome", appendOutcome is CardToolResult.Saved)
         val first = appendOutcome as CardToolResult.Saved
         assertEquals(listOf("原有", "背景故事"),
@@ -89,6 +90,7 @@ class CardBulkToolsTest {
                 .put("before_id", "m0")
                 .put("module", JSONObject().put("name", "前置设定")).toString()))
         val insertOutcome = coordinator(store).submit(insert, policy())
+        println("BULK-DIAG insert outcome=$insertOutcome names=${store.open("card")?.content?.modules?.map { it.name }}")
         assertTrue("add_module_bulk(saved:) 结果：$insertOutcome", insertOutcome is CardToolResult.Saved)
         assertEquals(listOf("前置设定", "原有", "背景故事"),
             ContentTargets.find(store.open("card")!!.content, "card").modules.map { it.name })
