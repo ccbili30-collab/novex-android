@@ -121,7 +121,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
     }
     private fun allowed(request:CardToolRequest,policy:CardToolPolicy):Boolean {
         if(policy.permission==ToolPermission.READ_ONLY)return false
-        if(request.edit is CardToolEdit.Create)return true
+        if(request.edit is CardToolEdit.Create || request.edit is CardToolEdit.CreateBulk)return true
         if(request.target !in policy.targets)return false
         val command=(request.edit as? CardToolEdit.Shared)?.command
         return command !is EditorCommand.CopyCharacter || ManagementTarget(command.sourceId) in policy.readTargets
@@ -173,16 +173,22 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                 // 与精确工具共用 journal.prepared/commitTarget 提交路径。
                 val addBulk=request.edit as? CardToolEdit.AddModuleBulk
                 if(addBulk!=null) {
-                    val before=requireNotNull(CardDrafts(store).read(request.target.rootId)){"没有可插入的草稿，请先读取卡片结构"}
-                    beforeDraft=before
-                    beforeContent=before.content
-                    val expected=if(request.draftVersion.startsWith("saved:")) {
+                    // saved: 直链时草稿可能已被上次提交清理——用 begin 从正式内容
+                    // 重建（并对账）；草稿版本号则要求草稿在场。
+                    val before:CardDraft
+                    val expected:String
+                    if(request.draftVersion.startsWith("saved:")) {
                         val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
                         if(actual.revision!=request.draftVersion.removePrefix("saved:"))throw DraftConflict()
-                        val draft=CardDrafts(store).begin(request.target.rootId)
-                        if(draft.baseRevision!=actual.revision || draft.content!=actual.content)throw DraftConflict()
-                        draft.version
-                    } else request.draftVersion
+                        before=CardDrafts(store).begin(request.target.rootId)
+                        if(before.baseRevision!=actual.revision || before.content!=actual.content)throw DraftConflict()
+                        expected=before.version
+                    } else {
+                        before=requireNotNull(CardDrafts(store).read(request.target.rootId)){"没有可插入的草稿，请先读取卡片结构"}
+                        expected=request.draftVersion
+                    }
+                    beforeDraft=before
+                    beforeContent=before.content
                     val built=CardBulk.buildModules(addBulk.tree,request.target.rootId.take(8),textRef={text->bulkTextRef(text)})
                     val modules=if(addBulk.beforeId.isNullOrBlank()) before.content.modules+built
                     else {
