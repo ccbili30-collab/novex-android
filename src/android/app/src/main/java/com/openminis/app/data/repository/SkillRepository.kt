@@ -1135,13 +1135,14 @@ class SkillRepository(private val context: Context) {
 
     // -- Bundled Skills --
 
-    /** Asset-directory skills shipped with the app; installed/updated on every init. */
-    private val bundledAssetSkills = listOf(
-        "skills/wenyou-maker",
-        "skills/card-organizer",
-    )
-
     private fun installBundledSkills() {
+        // Local on purpose: an instance-property list would not be initialized
+        // yet when init{} calls this — property initializers run in declaration
+        // order and this section sits far below the init block.
+        val bundledAssetSkills = listOf(
+            "skills/wenyou-maker",
+            "skills/card-organizer",
+        )
         val bundledId = "skill-creator"
         val bundledVersion = "2.0.0"
         val existing = _skills.value.find { it.id == bundledId }
