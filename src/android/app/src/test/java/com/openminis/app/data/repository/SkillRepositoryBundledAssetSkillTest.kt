@@ -120,4 +120,37 @@ class SkillRepositoryBundledAssetSkillTest {
         assertTrue("SKILL.md body carries the discipline", skill.body.contains("整理纪律"))
         assertTrue("SKILL.md body carries the human-only style rule", skill.body.contains("文风人工化"))
     }
+
+    @Test
+    fun bundledDeslopSkillsInstallWithUpstreamContentIntact() {
+        val repo = newRepository()
+
+        val humanizer = repo.skills.value.firstOrNull { it.id == "humanizer-zh" }
+        assertNotNull("humanizer-zh should be installed on first init", humanizer)
+        assertTrue(
+            "upstream description survives (block-scalar frontmatter)",
+            humanizer!!.description.contains("AI 生成痕迹"),
+        )
+        assertTrue(
+            "upstream body survives",
+            humanizer.body.contains("AI 写作特征") || humanizer.body.isNotBlank(),
+        )
+
+        val humanWriting = repo.skills.value.firstOrNull { it.id == "human-writing" }
+        assertNotNull("human-writing should be installed on first init", humanWriting)
+        assertTrue(
+            "upstream trigger description survives",
+            humanWriting!!.description.contains("改稿"),
+        )
+
+        val refs = repo.listSkillFiles("human-writing")
+        assertTrue("references on disk: $refs", refs.contains("references/fiction.md"))
+        assertTrue("references on disk: $refs", refs.contains("references/forum-prose.md"))
+        val fiction = repo.readSkillFile("human-writing", "references/fiction.md")
+        assertTrue("reference content intact", fiction.orEmpty().isNotEmpty())
+        assertTrue(
+            "LICENSE attribution kept",
+            repo.listSkillFiles("humanizer-zh").contains("LICENSE"),
+        )
+    }
 }

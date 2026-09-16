@@ -1142,6 +1142,8 @@ class SkillRepository(private val context: Context) {
         val bundledAssetSkills = listOf(
             "skills/wenyou-maker",
             "skills/card-organizer",
+            "skills/humanizer-zh",
+            "skills/human-writing",
         )
         val bundledId = "skill-creator"
         val bundledVersion = "2.0.0"
