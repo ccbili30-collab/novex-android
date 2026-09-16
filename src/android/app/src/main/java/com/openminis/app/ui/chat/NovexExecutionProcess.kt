@@ -2,6 +2,7 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -73,28 +75,25 @@ internal fun NovexExecutionActivityStrip(
 
 @Composable
 internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
+    // [T-turn-single-card] 2026-09-16 用户批③：工作行只占一行——预览子行全撤
+    // （回合一张卡后子行只会更长），失败/停止以角标提示，完整时间线点开看。
     val active=process.statusLabel()=="进行中"
-    // Keep the compact preview short, but never hide a failed/stopped tool
-    // behind later successful rows. The folded row is the user's only clue
-    // that a turn needs attention; the dialog still contains every row.
-    val recent = if(active) process.tools.takeLast(3) else process.tools.takeLast(2)
-    val failed = process.tools.filter { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
-    val tools = (recent + failed).distinctBy { it.block.id }
-    Column(Modifier.fillMaxWidth().clickable(onClick=onOpen).padding(horizontal=8.dp,vertical=10.dp)) {
+    val failedCount=process.tools.count { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
+    Row(Modifier.fillMaxWidth().clickable(onClick=onOpen).padding(horizontal=8.dp,vertical=8.dp),
+        verticalAlignment=Alignment.CenterVertically) {
         Text(
-            "${if(active)"正在处理" else "工作记录"} · ${process.statusLabel()} · ${process.rows.size} 项 ›",
+            "${if(active)"⚙ 正在处理" else "⚙ 本轮"} ${process.rows.size} 步 · ${process.statusLabel()} ›",
             color=ChatColors.secondaryText,
             fontSize = 13.sp,
             lineHeight = 20.sp,
             fontWeight = FontWeight.Medium,
+            modifier=Modifier.weight(1f),
         )
-        tools.forEach { row->
-            val title=row.block.toolTitle.ifBlank {buildNovexStandardToolDetailPresentation(row.block.toolName,row.block.toolArgs,row.block.content)?.title ?: "查看操作详情"}
+        if(failedCount>0) {
             Text(
-                "${row.block.toolStatus.displayLabel()} · $title",
+                "⚠ $failedCount 步未完成",
                 color=ChatColors.secondaryText,
-                fontSize = 13.sp,
-                lineHeight = 20.sp,
+                fontSize = 12.sp,
             )
         }
     }

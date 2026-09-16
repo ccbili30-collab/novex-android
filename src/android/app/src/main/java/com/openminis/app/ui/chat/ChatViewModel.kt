@@ -5863,8 +5863,17 @@ class ChatViewModel(
 
     /** 触发一次回传：让侧边模型产出增量交接简报并并入主线。守卫：只认点击后
      *  新产生的助手回复；生成失败/超时绝不把旧回复当简报（决策 18）。 */
+    // [T-handoff-queue] 2026-09-16 用户批④·决策 7：生成中点回传→排队，本轮
+    // 结束自动执行（此前直接吞掉点击，用户以为回传失灵）。
+    @Volatile private var sideHandoffQueued = false
+
     fun startSideHandoff(sideParentId: String) {
-        if (_isStreaming.value || _sideHandoffState.value is SideHandoffState.Running) return
+        if (_sideHandoffState.value is SideHandoffState.Running) return
+        if (_isStreaming.value) {
+            sideHandoffQueued = true
+            appendSystemInfo("正在生成中：回传已排队，本轮结束后自动执行", "handoff")
+            return
+        }
         sideHandoffJob?.cancel()
         sideHandoffBaseIds = _messages.value.map { it.id }.toSet()
         _sideHandoffState.value = SideHandoffState.Running
@@ -5913,6 +5922,13 @@ class ChatViewModel(
     fun retrySideHandoff(sideParentId: String) {
         _sideHandoffState.value = SideHandoffState.Idle
         startSideHandoff(sideParentId)
+    }
+
+    /** [T-handoff-queue] 流结束后由页面调用：消费排队的回传。 */
+    fun runQueuedSideHandoff(sideParentId: String) {
+        if (!sideHandoffQueued || _isStreaming.value) return
+        sideHandoffQueued = false
+        if (_sideHandoffState.value is SideHandoffState.Idle) startSideHandoff(sideParentId)
     }
 
     // ── [T-cross-sync] /sync 双向沟通（2026-09-16 用户批δ，决策 1/2/3）──────
