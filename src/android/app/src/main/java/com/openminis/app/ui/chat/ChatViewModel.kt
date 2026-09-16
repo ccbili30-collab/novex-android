@@ -1754,6 +1754,13 @@ class ChatViewModel(
             title = "Thinking",
             subtitle = "",
         ),
+        // [T-cross-sync] 双向沟通：压缩自己的记忆发给另一边（2026-09-16 用户批δ）。
+        SlashCommand(
+            id = "sync",
+            icon = com.openminis.app.ui.novex.NovexIcons.Share,
+            title = "Sync",
+            subtitle = "",
+        ),
     )
 
     // [T-android-split-chat] filteredSlashCommands / updateSlashMenuState /
@@ -1815,6 +1822,7 @@ class ChatViewModel(
             "memory" -> toggleMemoryEnabled()
             "thinking" -> toggleThinking()
             "clear" -> _clearChatConfirmRequested.value = true
+            "sync" -> startCrossSync(currentInput.trim().removePrefix("/").removePrefix("／").substringAfter(' ', "").trim())
             else -> AppLogger.info(TAG, "[Slash] unrecognized id=${cmd.id} — no dispatch")
         }
         // [T-android-slash-menu-align-ios-prepend] Action command: restore the
@@ -1916,8 +1924,9 @@ class ChatViewModel(
         if (first != '/' && first != '／') return false
         val name = trimmed.drop(1).lowercase()
         val cmd = availableSlashCommands.firstOrNull { it.title.lowercase() == name }
+            ?: availableSlashCommands.firstOrNull { it.title.lowercase() == name.substringBefore(' ') }
             ?: return false
-        executeSlashCommand(cmd)
+        executeSlashCommand(cmd, trimmed.drop(1))
         return true
     }
 
@@ -2506,7 +2515,32 @@ class ChatViewModel(
         val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
         return budgetedRequestHistory(dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
             it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
-        }))
+        }).let { prependSideSnapshotHistory(it) })
+    }
+
+    /**
+     * [T-side-snapshot] 侧边请求前拼主线分裂点快照（2026-09-16 用户批δ）：
+     * 按创建时定格的消息 ID 只读拉取主线消息（含已被切换分支弃用的死分支
+     * 消息——认 ID 不认现状），映射后拼在侧边自己的历史之前；界面仍只显示
+     * 侧边消息。在预算裁剪**之前**拼接，主线历史与侧边历史一起过容量检查
+     * 与压缩机制。快照缺失（旧侧边/直连对话）原样返回。
+     */
+    private suspend fun prependSideSnapshotHistory(history: List<LLMMessage>): List<LLMMessage> {
+        if (history.isEmpty()) return history
+        val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+            ?: return history
+        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return history
+        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return history
+        val mainline = snapshot.messageIds.mapNotNull { id ->
+            runCatching { chatRepository.findMessageById(id) }.getOrNull()
+                ?.takeIf { it.session_id == sideOf }
+                ?.let { entity ->
+                    runCatching { entity.toLLMMessage() }.getOrNull()
+                }
+        }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
+        if (mainline.isEmpty()) return history
+        AppLogger.info(TAG, "[SideSnapshot] prepending ${mainline.size} mainline messages (split-point freeze) to side $activeSessionId")
+        return mainline + history
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -5879,6 +5913,104 @@ class ChatViewModel(
     fun retrySideHandoff(sideParentId: String) {
         _sideHandoffState.value = SideHandoffState.Idle
         startSideHandoff(sideParentId)
+    }
+
+    // ── [T-cross-sync] /sync 双向沟通（2026-09-16 用户批δ，决策 1/2/3）──────
+    // 任意一边调用：后台起一个独立压缩请求（不占两边上下文），把"自己的记忆"
+    // 压成简报；命令本身不落史，简报本体作为用户消息并入两边历史。侧边→主线；
+    // 主线→侧边（多条侧边时 /sync <编号> 指定，主线只压分裂点之后的增量）。
+    private val _crossSyncState = MutableStateFlow<String?>(null)
+    val crossSyncState: StateFlow<String?> = _crossSyncState.asStateFlow()
+
+    fun startCrossSync(argument: String = "") {
+        if (_isStreaming.value) {
+            appendSystemInfo("正在生成中；本轮结束后再执行 /sync 沟通", "sync")
+            return
+        }
+        if (_crossSyncState.value != null) return
+        _crossSyncState.value = "正在压缩记忆并发送…"
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runCrossSync(argument)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                appendSystemInfo("沟通失败：${failure.message ?: "未知错误"}", "sync")
+            } finally {
+                _crossSyncState.value = null
+            }
+        }
+    }
+
+    private suspend fun runCrossSync(argument: String) {
+        val session = chatRepository.getSession(activeSessionId) ?: return
+        val sideOf = session.sideOfSession
+        val targetId: String
+        val fromSide: Boolean
+        if (sideOf != null) {
+            targetId = sideOf; fromSide = true
+        } else {
+            val sides = chatRepository.listSideSessions(activeSessionId)
+            when {
+                sides.isEmpty() -> {
+                    appendSystemInfo("没有沟通对象：主线用 /sync 前请先开侧边对话；在侧边对话里用 /sync 是把摘要发给主线。", "sync"); return
+                }
+                sides.size == 1 -> targetId = sides.first().id
+                else -> {
+                    val byNumber = argument.toIntOrNull()?.let { n -> sides.firstOrNull { com.openminis.app.data.repository.sideConversationNumber(it.title ?: "") == n } }
+                    val byName = sides.firstOrNull { argument.isNotBlank() && (it.title ?: "").contains(argument.trim()) }
+                    val pick = byNumber ?: byName
+                    if (pick == null) {
+                        appendSystemInfo("这条主线有多条侧边，请用 /sync <编号> 指定（${sides.joinToString("、") { "${com.openminis.app.data.repository.sideConversationNumber(it.title ?: "")}·${it.title}" }}）", "sync"); return
+                    }
+                    targetId = pick.id
+                }
+            }
+            fromSide = false
+        }
+        // 压缩源：自己的可见文本历史；主线→侧边只压分裂点之后的增量。
+        val snapshotIds = if (!fromSide) SideSnapshotStore.read(context, targetId)?.messageIds?.toSet() else null
+        val transcript = chatRepository.loadActiveMessages(activeSessionId)
+            .filter { row -> row.role == "user" || row.role == "assistant" }
+            .filter { row -> snapshotIds == null || row.id !in snapshotIds }
+            .mapNotNull { row ->
+                val text = runCatching {
+                    val arr = org.json.JSONArray(row.partsJson)
+                    (0 until arr.length()).mapNotNull { i ->
+                        arr.optJSONObject(i)?.takeIf { it.optString("type") == "text" }?.optString("value")?.trim()
+                    }.filter { it.isNotEmpty() }.joinToString(" ")
+                }.getOrNull().orEmpty().ifBlank { null }
+                "${if (row.role == "user") "[用户]" else "[助手]"} $text"
+            }
+            .takeLast(60)
+            .joinToString("\n")
+        if (transcript.isBlank()) {
+            appendSystemInfo("还没有可沟通的内容（没有新的对话记录）", "sync"); return
+        }
+        val provider = currentProvider ?: run {
+            appendSystemInfo("请先选择模型再执行沟通", "sync"); return
+        }
+        val brief = provider.sendMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "以下是本对话的自有记录，请压缩成一份给另一条平行对话看的沟通简报：\n\n$transcript")),
+            "你是对话记忆压缩器。把输入的对话压缩为一份交接简报：保留关键事实、决定、数值、人物状态与未完成事项；丢弃寒暄、客套与过程描述。不超过 500 字，直接输出简报正文，不要任何前后缀说明。",
+            1024,
+        ).text.trim()
+        if (brief.isBlank()) {
+            appendSystemInfo("沟通失败：压缩结果为空", "sync"); return
+        }
+        val header = if (fromSide) "【沟通简报 · 来自侧边】" else "【沟通简报 · 来自主线】"
+        val text = "$header\n$brief"
+        val parts = org.json.JSONArray().put(org.json.JSONObject().put("type", "text").put("value", text)).toString()
+        val mine = chatRepository.appendMessage(activeSessionId, "user", parts)
+        recordActiveBranchMessage(mine.id)
+        agentHistory.add(LLMMessage(LLMMessage.Role.USER, text, dbMessageId = mine.id))
+        chatRepository.appendMessage(targetId, "user", parts)
+        if (fromSide) NovexSideHandoff.markParentDirty(context, targetId)
+        appendSystemInfo(
+            "已沟通：简报已并入两边的历史（${if (fromSide) "侧边 → 主线" else "主线 → 侧边"}）",
+            "sync",
+            payload = brief,
+        )
     }
 
     fun dismissSideHandoff() {

@@ -117,7 +117,17 @@ internal fun NovexSideConversations(
         onNewSideConsumed()
         scope.launch {
             runCatching { chatRepository.createSideSession(railSessionId) }
-                .onSuccess { side -> onOpenSide(side.id) }
+                .onSuccess { side ->
+                    // [T-side-snapshot] 分裂即定格：记下主线当前活跃路径的消息 ID，
+                    // 侧边后续请求按此清单只读拼接主线历史；主线再怎么走都不影响。
+                    runCatching {
+                        SideSnapshotStore.write(
+                            context, side.id, railSessionId,
+                            chatRepository.loadActiveConversation(railSessionId).activeMessages.map { it.id },
+                        )
+                    }
+                    onOpenSide(side.id)
+                }
                 .onFailure { android.widget.Toast.makeText(context, it.message ?: "创建侧边对话失败", android.widget.Toast.LENGTH_SHORT).show() }
         }
     }
