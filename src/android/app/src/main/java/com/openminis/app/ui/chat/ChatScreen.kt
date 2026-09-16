@@ -741,8 +741,9 @@ fun ChatScreen(
     // [T-handoff-queue] 生成结束后消费排队的回传（决策 7）。
     val isStreamingForHandoffQueue by viewModel.isStreaming.collectAsState()
     LaunchedEffect(isStreamingForHandoffQueue, sideParentId) {
-        if (!isStreamingForHandoffQueue && sideParentId != null) {
-            viewModel.runQueuedSideHandoff(sideParentId)
+        val parent = sideParentId
+        if (!isStreamingForHandoffQueue && parent != null) {
+            viewModel.runQueuedSideHandoff(parent)
         }
     }
     // 回传守卫（决策 18）与状态机已下沉 ChatViewModel（2026-09-15 ①）：

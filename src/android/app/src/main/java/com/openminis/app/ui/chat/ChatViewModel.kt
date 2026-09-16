@@ -2533,7 +2533,7 @@ class ChatViewModel(
         if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return history
         val mainline = snapshot.messageIds.mapNotNull { id ->
             runCatching { chatRepository.findMessageById(id) }.getOrNull()
-                ?.takeIf { it.session_id == sideOf }
+                ?.takeIf { it.sessionId == sideOf }
                 ?.let { entity ->
                     runCatching { entity.toLLMMessage() }.getOrNull()
                 }
