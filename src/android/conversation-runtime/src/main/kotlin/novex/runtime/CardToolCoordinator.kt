@@ -163,6 +163,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
         }
         var updated:CardDraft?=null
         var beforeContent:novex.content.ContentDocument?=null
+        var beforeDraft:CardDraft?=null
         var saved:SavedCard?=null
         try {
             if(stop.isStopped())return finish(request,CardToolResult.Stopped(null))
@@ -173,6 +174,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                 val addBulk=request.edit as? CardToolEdit.AddModuleBulk
                 if(addBulk!=null) {
                     val before=requireNotNull(CardDrafts(store).read(request.target.rootId)){"没有可插入的草稿，请先读取卡片结构"}
+                    beforeDraft=before
                     beforeContent=before.content
                     val expected=if(request.draftVersion.startsWith("saved:")) {
                         val actual=requireNotNull(store.open(request.target.rootId)){"卡片不存在"}
@@ -217,12 +219,13 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                         draft.version
                     } else request.draftVersion
                     val beforeEdit=requireNotNull(CardDrafts(store).read(request.target.rootId))
+                    beforeDraft=beforeEdit
                     beforeContent=beforeEdit.content
                     updated=CardEditor(store).apply(request.target.rootId,expected,request.target.targetId,command,ChangeSource.AI,lease)
                 }
                 journal.prepared(request.chatId,request.callId,JSONObject().put("commit",updated!!.version))
                 if(stop.isStopped())return finish(request,CardToolResult.Stopped(updated!!.version))
-                saved=CardDrafts(store).commitTarget(request.target.rootId,updated!!.version,request.target.targetId,beforeEdit,lease)
+                saved=CardDrafts(store).commitTarget(request.target.rootId,updated!!.version,request.target.targetId,beforeDraft,lease)
             }
             // [T-saved-with-ids] 对提交前后结构做差集，回传本次新建的模块/块编号。
             val created=createdIds(beforeContent,updated?.content)
