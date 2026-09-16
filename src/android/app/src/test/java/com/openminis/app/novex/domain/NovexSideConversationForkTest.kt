@@ -36,7 +36,8 @@ class NovexSideConversationForkTest {
 
             val side = repository.createSideSession(parent.id)
             assertEquals(parent.id, side.sideOfSession)
-            assertTrue(side.title.orEmpty().startsWith("主线故事·侧"))
+            // [T-side-naming] 2026-09-16 起不再拼主对话标题，直接「侧边 N」。
+            assertEquals("侧边 1", side.title)
             // Blank fork (decision 13): no main-line history in UI or model context.
             assertEquals(0, repository.loadActiveMessages(side.id).size)
             // Configuration snapshot is shared verbatim.
