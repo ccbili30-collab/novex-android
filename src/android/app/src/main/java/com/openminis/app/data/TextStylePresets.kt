@@ -36,7 +36,10 @@ object TextStylePresets {
                 var label = fileName.removeSuffix(".md")
                 var bodyStart = 0
                 if (lines.firstOrNull()?.trim() == "---") {
-                    val end = lines.indexOfFirst { it.trim() == "---" }
+                    var end = -1
+                    for (i in 1 until lines.size) {
+                        if (lines[i].trim() == "---") { end = i; break }
+                    }
                     if (end > 0) {
                         lines.subList(1, end).forEach { line ->
                             val idx = line.indexOf(':')
