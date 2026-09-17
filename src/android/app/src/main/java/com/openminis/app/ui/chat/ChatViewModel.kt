@@ -1009,9 +1009,10 @@ class ChatViewModel(
      * - 内存专属/就地投影（保留语义但**不保证条数**）：注入桥接段（已登记）、
      *   卸载就地改写（压缩不写本表——audit trail 保留原列表）、sanitizeAgentHistory
      *   （可插行/删行）、choice-repair 用户行改写、终端 UI 工具剥离、dbMessageId 回填；
-     * - **PR 2b 待收敛的违点**：clearChat（内存先行、DB 异步后补——崩溃窗口
-     *   重启会从 DB 复活已清对话）、handleUserCancelledCleanup（内存先行）、
-     *   retryLast（内存回滚靠事后 fork+install 对账）；
+     * - **PR 2b 已收敛**：clearChat（DB 删除先行、内存投影随后清）、
+     *   handleUserCancelledCleanup Case 2（DB 先行拿 dbId；纪元变化走 install 对账）；
+     * - **遗留待收敛（PR 2c）**：retryLast（内存回滚靠事后 fork+install 对账，
+     *   有 dropOrphaned+sanitize 双兜底；消息树分支化是产品级重写，单独评估）；
      * - 禁止新增：任何绕过 DB 的整表替换/清空（conv9 病根）。
      * 运行时稽查：出口 I1 历史守恒 + 影子装配强信号（shadow_assembly_diff）。
      */
@@ -5517,9 +5518,10 @@ class ChatViewModel(
         // so none re-adds an orphan side-channel entry after the wipe.
         clearAllStreamFlushStates()
         _streamingById.value = emptyMap()
-        // Memory state — match iOS clearChat() field list one-for-one.
-        _messages.value = emptyList()
-        agentHistory.clear()
+        // [T-single-writer] PR2b ①：真相源（agentHistory/_messages/压缩标记）改为
+        // DB 先行——下方协程先删库再清内存，崩溃窗口内重启不再复活已清对话。
+        // 删除是单条 SQL（毫秒级），UI 清屏延迟不可感知；其余非真相源状态保持
+        // 同步清以保即时反馈。
         activeNovexDocumentRefs = emptySet()
         activeNovexSourceCollectionRefs = emptySet()
         closeNovexLearningResponsePreview()
@@ -5529,7 +5531,6 @@ class ChatViewModel(
         _novexLearningTask.value = null
         _novexLearningStatus.value = null
         _error.value = null
-        _cachedLatestMarker = null
         toolLoopDetector.reset()
         _canResume.value = false
         _attachments.value = emptyList()
@@ -5553,6 +5554,11 @@ class ChatViewModel(
         viewModelScope.launch {
             chatRepository.dao.deleteMessages(sid)
             chatRepository.dao.deleteCompactMarkers(sid)
+            withContext(Dispatchers.Main) {
+                agentHistory.clear()
+                _messages.value = emptyList()
+                _cachedLatestMarker = null
+            }
             Log.i(TAG, "clearChat: session=$sid wiped (files preserved)")
         }
     }
@@ -8029,8 +8035,12 @@ class ChatViewModel(
             // New card excerpts can shrink; compact the retained conversation first,
             // then allocate the remainder to cards. Do not repeatedly compact a
             // static injected card because the preceding response reported it.
+            // [T-request-assembler] PR2b ③：回合级输入缓存——估算与 attempt 共用
+            // 同一 assemblyInputs 快照（旧序卡片场景双份只读 IO）。本迭代内此处
+            // 与 attempt 之间无历史写点；COMPACTED continue 时快照自然废弃。
+            val turnInputs = assemblyInputs()
             val retainedContext=if(integratedCards.binding(activeSessionId)!=null)
-                estimatePreparedRequest(effectiveAgentHistory(),systemPrompt,agentTools)
+                estimatePreparedRequest(RequestAssembler.assemble(turnInputs).assembled,systemPrompt,agentTools)
                 else null
             when (inLoopContextCheck(inLoopCompactions,retainedContext)) {
                 InLoopContextAction.PROCEED -> {}
@@ -8215,7 +8225,7 @@ class ChatViewModel(
                         emptyList()
                     }
                     val assembly = RequestAssembler.assemble(
-                        assemblyInputs().copy(
+                        turnInputs.copy(
                             pureChat = if (requestToolsEnabled) { history -> history } else ::pureChatHistory,
                             imageBudget = ::applyRequestImageBudget,
                             injections = { history ->
@@ -12545,18 +12555,62 @@ class ChatViewModel(
                     "<system-reminder>The user stopped this response. Content may be incomplete.</system-reminder>"
                 ),
             )
-            agentHistory.add(
-                LLMMessage(
-                    role = LLMMessage.Role.ASSISTANT,
-                    content = partialText,
-                    contentParts = parts,
-                )
-            )
-            viewModelScope.launch(Dispatchers.IO) {
-                val partsJson = buildAssistantPartsJson(parts)
-                chatRepository.appendMessage(activeSessionId, "assistant", partsJson)
+            // [T-single-writer] PR2b ②：DB 先行——先落库拿 dbMessageId 再入内存
+            // （旧序内存先 add 且不带 dbId，影子指纹天然看不见这条消息；崩溃
+            // 窗口内重启则丢中断标记）。落库毫秒级，_canResume 延迟不可感知。
+            // 净眼 P1-1 纪元门：落库往返期间若有别的写者推进了历史，不再直接
+            // add（agentHistory 非同步，并发写有 CME 面）——等流落定后走 install
+            // 权威对账（注意：与 7858 那类"自有流序言内的 install"不同，这里是
+            // 唯一可能与外部流并发的调用点，故必须先 join——净眼 N-P1-a）。
+            // 会话本身被切换则行属旧会话，无需动。
+            val sidAtCancel = activeSessionId
+            val historySizeAtCancel = agentHistory.size
+            viewModelScope.launch {
+                runCatching {
+                    val partsJson = buildAssistantPartsJson(parts)
+                    val entity = chatRepository.appendMessage(sidAtCancel, "assistant", partsJson)
+                    if (sidAtCancel != activeSessionId) {
+                        AppLogger.info(TAG_STREAM, "cancel-cleanup partial row landed in old session $sidAtCancel — memory untouched")
+                    } else if (agentHistory.size != historySizeAtCancel) {
+                        // 净眼 N-P1-a：等当前流（含 drain 起新流）全部结束再权威对账
+                        // ——9386 尾部 install 先归真一次，这里再 install 幂等兜底
+                        // partial 行（内存若在流中缺该行，I1 会拒发一次，流死 + 本
+                        // install 落地后自愈，不再有死锁面）。
+                        while (true) {
+                            val job = streamJob
+                            if (job == null || !job.isActive) break
+                            job.join()
+                        }
+                        if (sidAtCancel == activeSessionId) {
+                            AppLogger.info(TAG_STREAM, "cancel-cleanup reconciling via install after streams settled")
+                            installActiveConversation(chatRepository.loadActiveConversation(sidAtCancel))
+                        }
+                    } else {
+                        agentHistory.add(
+                            LLMMessage(
+                                role = LLMMessage.Role.ASSISTANT,
+                                content = partialText,
+                                contentParts = parts,
+                                dbMessageId = entity.id,
+                            )
+                        )
+                    }
+                }.onFailure { error ->
+                    // 净眼 N-P1-b：runCatching 吞 CancellationException 同型复发
+                    // （PR0 P1-1 之后第三次）——取消必须穿透；throw 顺带跳过下方
+                    // _canResume 置位，CE 逃逸 launch 后 SupervisorJob 静默收尾。
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    AppLogger.error(TAG_STREAM, "cancel-cleanup partial persist failed: ${error::class.java.simpleName}: ${error.message}")
+                    agentHistory.add(
+                        LLMMessage(
+                            role = LLMMessage.Role.ASSISTANT,
+                            content = partialText,
+                            contentParts = parts,
+                        )
+                    )
+                }
+                _canResume.value = true
             }
-            _canResume.value = true
         } else if (historyEndsWithAssistant) {
             // Already committed (tool cancel path above handled or prior turn
             // wrote an assistant row). Still allow resume.
