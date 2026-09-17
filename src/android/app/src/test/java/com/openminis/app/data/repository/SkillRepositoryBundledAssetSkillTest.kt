@@ -23,7 +23,7 @@ class SkillRepositoryBundledAssetSkillTest {
 
         val skill = repo.skills.value.firstOrNull { it.id == "wenyou-maker" }
         assertNotNull("wenyou-maker should be installed on first init", skill)
-        assertEquals("1.1.0", skill!!.version)
+        assertEquals("1.2.0", skill!!.version)
         assertEquals(SkillRepository.ImportSource.BUNDLED, skill.importSource)
         assertTrue("name must be ASCII so slugify can derive the id", skill.name == "wenyou-maker")
         assertTrue(
@@ -55,7 +55,7 @@ class SkillRepositoryBundledAssetSkillTest {
         val second = newRepository()
         assertEquals("用户改过的引擎文本", edited.readText())
         val skill = second.skills.value.first { it.id == "wenyou-maker" }
-        assertEquals("1.1.0", skill.version)
+        assertEquals("1.2.0", skill.version)
     }
 
     @Test
@@ -116,9 +116,11 @@ class SkillRepositoryBundledAssetSkillTest {
     fun wenyouMakerUpgradesToBundledVersion() {
         val repo = newRepository()
         val skill = repo.skills.value.first { it.id == "wenyou-maker" }
-        assertEquals("asset skill ships 1.1.0 with the discipline section", "1.1.0", skill.version)
+        assertEquals("asset skill ships 1.2.0 with the discipline section", "1.2.0", skill.version)
         assertTrue("SKILL.md body carries the discipline", skill.body.contains("整理纪律"))
         assertTrue("SKILL.md body carries the human-only style rule", skill.body.contains("文风人工化"))
+        // [T-schema-optional-fields] 1.2.0 批次：建卡配方改 bulk-first。
+        assertTrue("SKILL.md body teaches bulk-first card building", skill.body.contains("create_card_bulk"))
     }
 
     @Test
