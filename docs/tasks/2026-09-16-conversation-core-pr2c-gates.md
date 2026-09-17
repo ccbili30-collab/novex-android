@@ -74,3 +74,19 @@ finally——未解析引用编译必红；且若仅挪入 body 的 withContext 
 ①P0 括号修复复签过（终深 0，块内纯内存）；③P2-2 复签过。
 残留记录：clearChat 同 job 迟到 unwind 的 IDLE→AWAITING_RESUME 误报未消
 （stale 判定不覆盖"未替换仅取消"类）→ PR3 执法化前补降级条件。
+
+### 守纲裁决（agent_15ab3259，8823b4b，结论：退回一次最小修复后准予合并）
+
+六问全过（种子期双表示可接受附 PR3 收敛期限；五件套并发原语 PR3 必须收敛；
+五项挂账真关四项半，P2-2 半关如实挂账）。**第三层洋葱**：CI 第三红 =
+L12707 裸 delay 无 import（52eeb37 引入，前两红逐层挡住解析未暴露）。必改四项：
+①一行修复（全限定 delay）——修后 CI 绿即合并无需再审；②流程止血：不得再用
+push 当编译器；③台账补记第三红根因与环境事故代价（本地验证门丧失）；
+④PR3 任务书预载五件套收敛+世代号+迟到 unwind 降级。
+
+### 修复记录（第三红）
+
+- L12707 `delay(25)` → `kotlinx.coroutines.delay(25)`（全限定，与同批 Mutex/
+  currentCoroutineContext 风格一致——当时唯独它漏了限定）。
+- 流程检讨：三轮 push-as-compiler 的根因是环境事故后本地无 JDK；PR3 前恢复
+  本地编译门或以 CI draft PR 作为提交前检查。

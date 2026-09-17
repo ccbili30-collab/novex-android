@@ -12704,7 +12704,7 @@ class ChatViewModel(
                                         AppLogger.warning(TAG_STREAM, "cancel-cleanup join spin guard tripped (~4s) — proceeding")
                                         break
                                     }
-                                    delay(25)
+                                    kotlinx.coroutines.delay(25)
                                 }
                                 else -> job.join()
                             }
