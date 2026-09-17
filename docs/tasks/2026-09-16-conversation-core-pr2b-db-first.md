@@ -31,3 +31,35 @@
 ## 台账
 
 （待审后填）
+
+## 措辞更正（净眼一审 P2-6/P2-1）
+
+- ③④"完全一致/attempt 间不变"表述有误：retentionProject 闭包**装配时惰性读**
+  effectiveContextWindowTokens()——fallback 端点切换（installStreamFallback）后
+  保留集可变、dice 每 attempt 重掷。行为与改造前等价（非回归），PR2a 当年的
+  降级理由（要求新鲜读）已被惰性闭包化解，特此记一笔。
+- C1 论证更正：靠**排序**（内存清空严格后置于两条 DELETE）而非 isStreaming 门
+  ——cancelStream 恰把 isStreaming 置 false，sendMessage 未被门挡；存在反向窗口
+  "已清DB+未清内存"（毫秒级，P2 立账，PR2c 收口时加 in-flight 门）。
+
+## 台账
+
+### 净眼一审（agent_ffda1325，commit b7eb1f9，结论：退回 → P1-1 已修复待复核）
+
+| 编号 | 结论 | 处置 |
+|---|---|---|
+| P1-1 Case 2 延迟 add 无纪元门（与 drain/install 交错，agentHistory 非同步） | **采纳已修（修法改良）** | 纪元门= sid+size 双校验；**未按"丢弃内存应用"实现**——丢弃会让内存恒少一行、I1 把 drain 的发送永久拒掉（守恒断言反噬）；改为纪元变化时走 installActiveConversation 权威对账（7822 RESUME 同款惯用法），行序条数归真。会话切换则不动 |
+| P2-1 反向窗口+门论证失实 | **采纳已修（措辞）** | 见上"措辞更正"；in-flight 门挂 PR2c |
+| P2-3 协程无异常兜底 | **采纳已修** | runCatching + onFailure 保底回退旧行为（内存加无 id 消息）+ 留痕 |
+| P2-4 契约注释过期（clearChat/取消清理仍列违点） | **采纳已修** | 契约改为"PR 2b 已收敛/遗留 PR2c"分段 |
+| P2-5 stop→retry 走 fork 分支的行为变化 | **认知项记录** | dbMessageId 非空使 fork 锚点生效——有意变化，方向正确（分支化正是 retryLast 的收敛方向） |
+| P2-2 wipe 与 Case2 的 Room 写乱序（存量） | **挂账 PR2c** | 消息表写路径共用 Mutex/串行调度器 |
+| P2-6 任务书③④措辞与实现不符 | **采纳已修** | 见"措辞更正" |
+| P2-7 decideToolOperation 绕门+阻塞豁口幽灵追加（存量） | **挂账 PR2c** | 随状态机收口 |
+
+净眼确认：③ turnInputs 采集点与 attempt 之间无隐藏历史写点（逐行核过）；
+C2/C3/C4 过（C4 代码级零 diff）。
+
+### 净眼复核 / 守纲裁决
+
+（待填）

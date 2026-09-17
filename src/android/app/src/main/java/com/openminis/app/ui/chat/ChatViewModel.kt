@@ -1009,9 +1009,10 @@ class ChatViewModel(
      * - 内存专属/就地投影（保留语义但**不保证条数**）：注入桥接段（已登记）、
      *   卸载就地改写（压缩不写本表——audit trail 保留原列表）、sanitizeAgentHistory
      *   （可插行/删行）、choice-repair 用户行改写、终端 UI 工具剥离、dbMessageId 回填；
-     * - **PR 2b 待收敛的违点**：clearChat（内存先行、DB 异步后补——崩溃窗口
-     *   重启会从 DB 复活已清对话）、handleUserCancelledCleanup（内存先行）、
-     *   retryLast（内存回滚靠事后 fork+install 对账）；
+     * - **PR 2b 已收敛**：clearChat（DB 删除先行、内存投影随后清）、
+     *   handleUserCancelledCleanup Case 2（DB 先行拿 dbId；纪元变化走 install 对账）；
+     * - **遗留待收敛（PR 2c）**：retryLast（内存回滚靠事后 fork+install 对账，
+     *   有 dropOrphaned+sanitize 双兜底；消息树分支化是产品级重写，单独评估）；
      * - 禁止新增：任何绕过 DB 的整表替换/清空（conv9 病根）。
      * 运行时稽查：出口 I1 历史守恒 + 影子装配强信号（shadow_assembly_diff）。
      */
@@ -12557,17 +12558,43 @@ class ChatViewModel(
             // [T-single-writer] PR2b ②：DB 先行——先落库拿 dbMessageId 再入内存
             // （旧序内存先 add 且不带 dbId，影子指纹天然看不见这条消息；崩溃
             // 窗口内重启则丢中断标记）。落库毫秒级，_canResume 延迟不可感知。
+            // 净眼 P1-1 纪元门：落库往返期间若有别的写者推进了历史（drain/
+            // 新发送/重建），不再直接 add（agentHistory 非同步，并发写有 CME
+            // 面）——改走权威对账 installActiveConversation 从 DB 重建（7822
+            // RESUME 路径的同款惯用法），行序条数归真，I1/影子两侧一致。
+            // 会话本身被切换则行属旧会话，无需动。
+            val sidAtCancel = activeSessionId
+            val historySizeAtCancel = agentHistory.size
             viewModelScope.launch {
-                val partsJson = buildAssistantPartsJson(parts)
-                val entity = chatRepository.appendMessage(activeSessionId, "assistant", partsJson)
-                agentHistory.add(
-                    LLMMessage(
-                        role = LLMMessage.Role.ASSISTANT,
-                        content = partialText,
-                        contentParts = parts,
-                        dbMessageId = entity.id,
+                runCatching {
+                    val partsJson = buildAssistantPartsJson(parts)
+                    val entity = chatRepository.appendMessage(sidAtCancel, "assistant", partsJson)
+                    if (sidAtCancel != activeSessionId) {
+                        AppLogger.info(TAG_STREAM, "cancel-cleanup partial row landed in old session $sidAtCancel — memory untouched")
+                    } else if (agentHistory.size != historySizeAtCancel) {
+                        AppLogger.info(TAG_STREAM, "cancel-cleanup epoch changed during DB roundtrip — reconciling via install")
+                        installActiveConversation(chatRepository.loadActiveConversation(sidAtCancel))
+                    } else {
+                        agentHistory.add(
+                            LLMMessage(
+                                role = LLMMessage.Role.ASSISTANT,
+                                content = partialText,
+                                contentParts = parts,
+                                dbMessageId = entity.id,
+                            )
+                        )
+                    }
+                }.onFailure { error ->
+                    // 净眼 P2-3：落库失败不静默——保底恢复旧行为的可用性并留痕。
+                    AppLogger.error(TAG_STREAM, "cancel-cleanup partial persist failed: ${error::class.java.simpleName}: ${error.message}")
+                    agentHistory.add(
+                        LLMMessage(
+                            role = LLMMessage.Role.ASSISTANT,
+                            content = partialText,
+                            contentParts = parts,
+                        )
                     )
-                )
+                }
                 _canResume.value = true
             }
         } else if (historyEndsWithAssistant) {
