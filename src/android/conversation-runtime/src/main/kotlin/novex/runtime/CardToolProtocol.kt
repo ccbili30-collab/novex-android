@@ -117,7 +117,12 @@ object CardToolProtocol {
         val extra=when(call.name){"save_conversation_image"->setOf("image_id","module_id","after_id");"remove_module"->setOf("module_id");"remove_content_block"->setOf("module_id","block_id");"set_module_options"->setOf("module_id","tags","rule");"rename_card","add_module"->setOf("name");"set_card_image"->setOf("resource_id","purpose");"insert_owned_image"->setOf("module_id","resource_id","after_id");"replace_block_image"->setOf("module_id","block_id","resource_id");"move_module"->setOf("module_id","before_id");"move_content_block"->setOf("module_id","block_id","before_id");"write_module_text"->setOf("module_id","block_id","name","text");"replace_text_range"->setOf("module_id","block_id","content_ref","start","end","text");else->error("工具未提供")}
         // [T-lenient-parse] 键校验放宽：缺必需键报错并点名缺失项；多余键忽略；
         // 定位类可选键（block_id/before_id/after_id）缺省视为空串（新建/末尾）。
-        val defaulted=setOf("block_id","before_id","after_id")
+        // [T-schema-optional-fields] 守纲 Q2 反例：save_conversation_image 的
+        // module_id 已在 schema 标 optional（"为空则仅存入素材"），解析层
+        // 缺省须同样放行（执行分支本就按可空处理）；其余工具的 module_id
+        // 语义必填，不放开。
+        val defaulted=setOf("block_id","before_id","after_id") +
+            if(call.name=="save_conversation_image") setOf("module_id") else emptySet()
         val missing=(common+extra-defaulted)-value.keys().asSequence().toSet()
         require(missing.isEmpty()){"工具字段缺失：${missing.joinToString(", ")}"}
         (common+extra-setOf("start","end","tags","rule")-defaulted).forEach { require(value.get(it) is String){"工具字段必须为文字"} }

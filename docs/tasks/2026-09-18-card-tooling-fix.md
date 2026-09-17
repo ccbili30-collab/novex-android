@@ -82,8 +82,20 @@
 - P3（已修）：SKILL.md 微调句 bulk 语义错位（本 commit 修正）；
   任务书版本笔误 v1.1.1→1.1.0。
 
-- 守纲六问：待
-- CI：2051d4c 红（Kotlin 泛型默认值 >= 解析坑），语法修正推送后待
+### 守纲终裁（2026-09-18，裁决：准予合并）
+
+六问全过（零 diff/单一真相源无旁路/无新旧并存/无过度工程/层次正确/
+挂账边界守得住）。Q2 反例当场关账：save_conversation_image.module_id
+schema optional 但解析层 defaulted 不含 → 省略拼写抛"工具字段缺失"浪费
+一轮——已修（defaulted 按工具扩展 + 回归测试）。
+
+新增挂账（守纲 B）：
+- card-organizer/SKILL.md:26 仍教 create_card→add_module→write_module_text
+  骨架路径，与 bulk-first 工具描述矛盾——下个 skill 批次一并改。
+- optional 定位字段统一过滤显式 JSON null（"null" 字符串）与
+  ToolJsonRepair fuzzy 扩展（与净眼 P2/P3 合并为一条跟进项）。
+
+- CI：2051d4c 红（泛型默认值 >= 词法坑）；语法修正+守纲关账推送后待终版
 
 ## 遗留挂账
 

@@ -96,6 +96,16 @@ class CardToolProtocolLenientParseTest {
         assertNull((request.edit as CardToolEdit.WriteText).blockId)
     }
 
+    @Test fun saveConversationImageOmittedModuleIdIsAssetOnly() {
+        // 守纲 Q2 反例回归：schema 对 module_id 已 optional（"为空则仅存入
+        // 素材"），解析层缺省同样放行，不再抛"工具字段缺失：module_id"。
+        val request = CardToolProtocol.parse("chat", call("save_conversation_image",
+            """{"root_id":"r","target_id":"t","draft_version":"v1","image_id":"img1"}"""))
+        val edit = request.edit as CardToolEdit.ConversationImage
+        assertNull(edit.moduleId)
+        assertNull(edit.afterBlockId)
+    }
+
     // ── [T-bulk-string-tolerance] 字符串编码数组/对象兼容 + 教学报错 ──
 
     @Test fun createCardBulkAcceptsStringEncodedModules() {
