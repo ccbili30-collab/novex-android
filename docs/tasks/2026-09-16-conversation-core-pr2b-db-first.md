@@ -87,3 +87,14 @@ CE rethrow 确认跳过 _canResume 赋值且按取消静默收尾。
 ### 守纲裁决
 
 （待填）
+
+### 守纲裁决（agent_f6fc34ff，总结裁：准予合并）
+
+六问全过。要点：③违点收敛非双路径（三分支=同一写点互斥后继；onFailure=异常保底）；
+④判不过度不回退（三层复杂度与三轮净眼退回项一一对应；主收益是取消消息的
+结构性影子盲区修复；失败模式有界自愈）；⑤install 复用即骨架第 2 句本体用法。
+条件：①253d23a 文档轮 CI 绿后合（1a12c21 代码轮已 success）；②合并后观察
+`presend_contract_violation` I1 与 `cancel-cleanup reconciling via install`
+成对日志=自愈路径在工作，高频成对则回炉；③PR2c 任务书须逐项映射挂账五项
+（N-P2-a happens-before / clearChat in-flight 门 / P2-2 Room 写 Mutex /
+P2-7 decideToolOperation 绕门 / streamJob 已声明未启动空档）。
