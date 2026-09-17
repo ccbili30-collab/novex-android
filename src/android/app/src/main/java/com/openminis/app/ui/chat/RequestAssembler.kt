@@ -19,15 +19,18 @@ import com.openminis.app.data.model.LLMMessage
  */
 internal object RequestAssembler {
 
+    /** 附件图路径注释前缀（内存专属、不持久化）；构造点统一引用此常量防漂移。 */
+    internal const val ATTACHED_IMAGE_NOTE_PREFIX = "[attached image: "
+
     /**
-     * 只存在于内存、不持久化的 Text 部件前缀（净眼 P1-1：影子指纹噪音源）。
-     * 与 ChatViewModel.TOOL_RESULT_HINT / TOOL_TURN_BUDGET_NOTE、附件图路径
-     * 注释保持同步——改动文案时两处都要动。
+     * 只存在于内存、不持久化的 Text 部件（净眼 P1-1：影子指纹噪音源）。
+     * 前两项直接引用 ChatViewModel 的 const（编译期内联，无运行时耦合）——
+     * 文案改动时此列表自动跟随（净眼复核 P2-1'）。
      */
     internal val MEMORY_ONLY_TEXT_PREFIXES = listOf(
-        "(以下是本轮工具的执行结果",
-        "(系统提示：本轮工具调用轮数已达到上限",
-        "[attached image: ",
+        ChatViewModel.TOOL_RESULT_HINT,
+        ChatViewModel.TOOL_TURN_BUDGET_NOTE,
+        ATTACHED_IMAGE_NOTE_PREFIX,
     )
 
     /** 步骤全部注入；默认恒等，便于影子装配只跑到需要的阶段。 */
@@ -138,7 +141,7 @@ internal object RequestAssembler {
                 .filterNot { it is AgentContentPart.Text && isMemoryOnlyText(it.text) }
                 .joinToString(",") { part ->
                     when (part) {
-                        is AgentContentPart.ToolUse -> "U:${part.id}"
+                        is AgentContentPart.ToolUse -> "U:${part.id}:${part.input.length()}:${part.thoughtSignature != null}"
                         is AgentContentPart.ToolResult -> "R:${part.id}:${part.content.length}:${part.isError}"
                         is AgentContentPart.Text -> "T:${part.text.length}"
                         is AgentContentPart.ImageData -> "I:${part.data.size}"

@@ -62,6 +62,19 @@
 | P2-4 Gemini 流式口 record 在调用方调度器 | **挂账** | 与既有 provider 流式口模式一致，不单独破例；后续统一挪 IO |
 | P2-5 侧边 getSession 瞬时失败误入影子 | **挂账** | 罕见；PR2 收敛时顺手分流 |
 
+### 净眼修复后复查（同 agent，commit 7f3a313，结论：放行进入守纲）
+
+四项退回项全部兑现且证据链闭合（测试取值链/九段接线/删净核对/豁免接线/噪音分级逐项复签）。
+CI（android-validate）同轮全绿。新增问题全 P2 级：
+
+| 编号 | 结论 | 处置 |
+|---|---|---|
+| P2-1' MEMORY_ONLY 前缀是字面量拷贝，测试自引用 | **采纳已修** | 列表改引用 ChatViewModel 的 const（编译期内联）；附件图前缀提取 ATTACHED_IMAGE_NOTE_PREFIX 且三处构造点统一引用；测试锚定真实常量 |
+| P2-2' attempt 处注释过期（仍提 effectiveAgentHistory） | **采纳已修** | 注释更新为 assemblyInputs 口径 |
+| P2-3' ToolUse.input/thoughtSignature 两级指纹全盲（#179 同类） | **采纳已修** | fingerprint 的 U 项加 input.length 与 thoughtSignature 存在性（弱信号层） |
+| P2-4' 工具产图在 DB 不可还原 → 常态强信号 | **认知项记录** | 这是地震仪如实曝光持久化缺口，非误报；守纲与 PR2 排期知悉"强信号 ≠ 内存侧必有 bug" |
+| P2-5' 估算路径（retainedContextEstimate 等）仍内联 | **挂账 PR2** | 状态机收敛时统一走装配线 |
+
 ### 守纲裁决
 
 （待填）

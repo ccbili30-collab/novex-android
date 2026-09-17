@@ -6447,7 +6447,7 @@ class ChatViewModel(
         }
         prepared.imageParts.forEachIndexed { idx, part ->
             val path = prepared.imageUploadPaths.getOrNull(idx)
-            if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+            if (path != null) combinedParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
             combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
         }
         prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
@@ -6600,7 +6600,7 @@ class ChatViewModel(
             }
             prepared.imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) combinedParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
                 combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
             }
             prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
@@ -6855,7 +6855,7 @@ class ChatViewModel(
             if (trimmed.isNotEmpty()) userContentParts.add(AgentContentPart.Text(trimmed))
             imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) userContentParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) userContentParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
                 userContentParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
             }
             prepared.attachedFilesXml?.let { userContentParts.add(AgentContentPart.Text(it)) }
@@ -8170,10 +8170,11 @@ class ChatViewModel(
                     // Non-Anthropic providers ignore it (cast fails silently).
                     (currentProvider as? com.openminis.app.provider.anthropic.AnthropicProvider)
                         ?.enhancedCache = _enhancedCacheEnabled.value
-                    // Route through effectiveAgentHistory() so a populated
-                    // [_compactSummary] is prepended as a `<context-summary>`
-                    // user message. Falls through to the raw agentHistory when
-                    // no compact has happened, so the common path stays zero-copy.
+                    // [T-request-assembler] Route through the assembler's input
+                    // collector (assemblyInputs → effectiveAgentHistory wrapper
+                    // elsewhere) so a populated [_compactSummary] is prepended as
+                    // a `<context-summary>` user message. Falls through to the raw
+                    // agentHistory when no compact has happened.
                     val conversationTools = if (thisTurnIsForcedChoiceRepair) {
                         agentTools.filter { it.name == "present_choices" }
                     } else {

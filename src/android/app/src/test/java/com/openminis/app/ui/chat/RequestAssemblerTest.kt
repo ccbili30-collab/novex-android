@@ -94,8 +94,10 @@ class RequestAssemblerTest {
 
     @Test
     fun `structural ignores memory-only text parts and bridge messages`() {
-        val toolHint = AgentContentPart.Text(RequestAssembler.MEMORY_ONLY_TEXT_PREFIXES.first() + "……)")
-        val imageNote = AgentContentPart.Text("[attached image: /var/minis/x.png]")
+        // 锚定真实常量（const 编译期内联，不触发 ChatViewModel 类加载）——
+        // 文案漂移时此测试与 MEMORY_ONLY_TEXT_PREFIXES 一起红（净眼复核 P2-1'）。
+        val toolHint = AgentContentPart.Text(ChatViewModel.TOOL_RESULT_HINT)
+        val imageNote = AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "/var/minis/x.png]")
         val withMemoryOnlyParts = listOf(
             user("读", "u1"),
             LLMMessage(LLMMessage.Role.USER, "", dbMessageId = "r1", contentParts = listOf(
