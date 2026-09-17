@@ -1017,6 +1017,38 @@ class ChatViewModel(
      * 运行时稽查：出口 I1 历史守恒 + 影子装配强信号（shadow_assembly_diff）。
      */
     private val agentHistory = mutableListOf<LLMMessage>()
+
+    // ── [T-run-phase] PR2c 状态机种子与写者门 ──
+    /** 只审计不执法（D1）：PR3 依据审计数据决定执法化。 */
+    private enum class RunPhase { IDLE, STREAMING, AWAITING_RESUME }
+
+    @Volatile
+    private var runPhase = RunPhase.IDLE
+
+    private fun runPhaseTransitionTo(next: RunPhase, where: String) {
+        val previous = runPhase
+        runPhase = next
+        val legal = previous == next || when (previous) {
+            RunPhase.IDLE -> next == RunPhase.STREAMING
+            RunPhase.STREAMING -> next == RunPhase.IDLE || next == RunPhase.AWAITING_RESUME
+            RunPhase.AWAITING_RESUME -> next == RunPhase.STREAMING || next == RunPhase.IDLE
+        }
+        if (legal) {
+            AppLogger.info(TAG_STREAM, "[RunPhase] $previous -> $next ($where)")
+        } else {
+            AppLogger.warning(TAG_STREAM, "[RunPhase] ILLEGAL $previous -> $next ($where) — 仅审计记录，PR3 依据数据执法化")
+        }
+    }
+
+    /** D2：clearChat 协程期间挡住发送类入口（finally 复位）。 */
+    @Volatile
+    private var isWipingSession = false
+
+    /** D3：消息表关键写串行——wipe 的 DELETE 与取消清理的 append 互斥，消灭行复活（P2-2 关账）。 */
+    private val dbWriteSerial = kotlinx.coroutines.sync.Mutex()
+
+    /** D4：内存历史竞态对的 happens-before 锁（纪元读/用户行 add/install 重建/清空）。 */
+    private val historyWriteLock = Any()
     private val novexDocumentRepository by lazy {
         FileNovexDocumentSnapshotRepository(
             java.io.File(context.filesDir, "novex/derived/document-snapshots"),
@@ -1135,7 +1167,9 @@ class ChatViewModel(
                 }
                 novexToolExecution.decide(operation, approve)
                 withContext(Dispatchers.Main) {
-                    if (belongsToPendingTurn && !_isStreaming.value) { _canResume.value = true; resume() }
+                    // [T-run-phase] P2-7 关账：decideToolOperation 不再绕过清空门
+                    // 自置 canResume 触发恢复。
+                    if (belongsToPendingTurn && !_isStreaming.value && !isWipingSession) { _canResume.value = true; resume() }
                 }
             }
             catch (failure: Exception) { _error.value = failure.message ?: "操作批准未保存" }
@@ -5551,15 +5585,26 @@ class ChatViewModel(
         }
         // Persist: drop messages + compact markers. Files (workspace,
         // attachments, offloads) intentionally retained.
+        // [T-run-phase] D2/D3：isWiping 门 + dbWriteSerial 串行（P2-1/P2-2 关账）。
+        isWipingSession = true
         viewModelScope.launch {
-            chatRepository.dao.deleteMessages(sid)
-            chatRepository.dao.deleteCompactMarkers(sid)
-            withContext(Dispatchers.Main) {
-                agentHistory.clear()
-                _messages.value = emptyList()
-                _cachedLatestMarker = null
+            try {
+                dbWriteSerial.withLock {
+                    chatRepository.dao.deleteMessages(sid)
+                    chatRepository.dao.deleteCompactMarkers(sid)
+                }
+                withContext(Dispatchers.Main) {
+                    synchronized(historyWriteLock) {
+                        agentHistory.clear()
+                    }
+                    _messages.value = emptyList()
+                    _cachedLatestMarker = null
+                }
+                Log.i(TAG, "clearChat: session=$sid wiped (files preserved)")
+            } finally {
+                isWipingSession = false
+                runPhaseTransitionTo(RunPhase.IDLE, "clearChat")
             }
-            Log.i(TAG, "clearChat: session=$sid wiped (files preserved)")
         }
     }
 
@@ -5792,6 +5837,11 @@ class ChatViewModel(
     /** Retry from a user turn by retaining its existing reply as a sibling. */
     fun retryFromMessage(messageId: String) {
         if (_isStreaming.value) return
+        // [T-run-phase] D2：清空进行中不重试。
+        if (isWipingSession) {
+            appendSystemInfo(text = "正在清空对话，请稍候再重试。", iconKind = "compact")
+            return
+        }
         _canResume.value = false
         val messages = _messages.value
         val index = messages.indexOfFirst { it.id == messageId }
@@ -5999,6 +6049,11 @@ class ChatViewModel(
     }
 
     private suspend fun runCrossSync(argument: String) {
+        // [T-run-phase] D2：清空进行中不做双向沟通。
+        if (isWipingSession) {
+            appendSystemInfo(text = "正在清空对话，请稍候再使用 /sync。", iconKind = "compact")
+            return
+        }
         val session = chatRepository.getSession(activeSessionId) ?: return
         val sideOf = session.sideOfSession
         val targetId: String
@@ -6111,8 +6166,12 @@ class ChatViewModel(
         activeBranchPathIds = projection.activePathIds
         refreshNovexRuntimeProjection()
         excludedBranchMemoryWrites = projection.excludedMemoryWrites
-        agentHistory.clear()
-        agentHistory.addAll(llmHistory)
+        // [T-run-phase] ⑤：install 重建在 historyWriteLock 内（与纪元读/用户行
+        // add/清空互为 happens-before；块内纯内存操作，D4）。
+        synchronized(historyWriteLock) {
+            agentHistory.clear()
+            agentHistory.addAll(llmHistory)
+        }
         retainedTranscriptRows = emptyList()
         retainedTranscriptSessionId = null
         activeNovexDocumentRefs = novexDocumentRefsInHistory(llmHistory)
@@ -6634,12 +6693,15 @@ class ChatViewModel(
             val queuedUser = chatRepository.appendMessage(sid, "user", userPartsJson)
             recordActiveBranchMessage(queuedUser.id)
 
-            agentHistory.add(LLMMessage(
-                role = LLMMessage.Role.USER,
-                content = userText,
-                imageParts = prepared.imageParts,
-                contentParts = combinedParts,
-                dbMessageId = queuedUser.id,
+            // [T-run-phase] ⑤：drain 用户行 add 在锁内（与取消清理纪元读互为
+            // happens-before，N-P2-a 的 IO 写者侧）。
+            synchronized(historyWriteLock) {
+                agentHistory.add(LLMMessage(
+                    role = LLMMessage.Role.USER,
+                    content = userText,
+                    imageParts = prepared.imageParts,
+                    contentParts = combinedParts,
+                    dbMessageId = queuedUser.id,
             ))
 
             try {
@@ -6673,6 +6735,12 @@ class ChatViewModel(
      *   re-entry with `skipCompactCheck`.
      */
     private fun sendMessage(text: String, skipContextCheck: Boolean) {
+        // [T-run-phase] D2：清空进行中快速失败——半清状态上不产生发送。
+        if (isWipingSession) {
+            setInputText(text)
+            appendSystemInfo(text = "正在清空对话，请稍候再发送。", iconKind = "compact")
+            return
+        }
         // [T-android-send-silent-fail] 文游入口未就绪时此发送会静默丢弃——用户
         // 看到输入清空却没有任何反应。改为可见反馈 + 把文字放回输入框，
         // 绝不让一次按键无声消失。
@@ -6884,13 +6952,16 @@ class ChatViewModel(
             }
             prepared.attachedFilesXml?.let { userContentParts.add(AgentContentPart.Text(it)) }
 
-            agentHistory.add(LLMMessage(
-                role = LLMMessage.Role.USER,
-                content = trimmed,
-                imageParts = imageParts,
-                contentParts = userContentParts,
-                dbMessageId = persistedUser.id,
-            ))
+            // [T-run-phase] ⑤：sendMessage 用户行 add 在锁内（同上，N-P2-a 写者侧）。
+            synchronized(historyWriteLock) {
+                agentHistory.add(LLMMessage(
+                    role = LLMMessage.Role.USER,
+                    content = trimmed,
+                    imageParts = imageParts,
+                    contentParts = userContentParts,
+                    dbMessageId = persistedUser.id,
+                ))
+            }
 
             // Refresh OAuth token if needed before sending (mirrors iOS validAccessToken)
             if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
@@ -7193,6 +7264,11 @@ class ChatViewModel(
      */
     fun retryLast() {
         if (_isStreaming.value) return
+        // [T-run-phase] D2：清空进行中不重试。
+        if (isWipingSession) {
+            appendSystemInfo(text = "正在清空对话，请稍候再重试。", iconKind = "compact")
+            return
+        }
         _canResume.value = resumeEligibilityAfterRecoveryAction(RecoveryAction.RETRY)
         // T-streaming-side-channel: belt-and-suspenders flush in case any
         // delta survived an earlier abnormal exit; retryLast is gated on
@@ -7836,6 +7912,9 @@ class ChatViewModel(
                     .put("causeType", failure.cause?.javaClass?.name)
                     .put("cause", safeModelDiagnostic(failure.cause?.message.orEmpty())))
             throw failure
+        } finally {
+            // [T-run-phase] D1：审计记录终点相位，不执法。
+            runPhaseTransitionTo(if (_canResume.value) RunPhase.AWAITING_RESUME else RunPhase.IDLE, "runAgentLoop-end")
         }
     }
 
@@ -7847,6 +7926,7 @@ class ChatViewModel(
         recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
+        runPhaseTransitionTo(RunPhase.STREAMING, "runAgentLoop")
         val novexRequestMessage = latestNovexUserRequest(agentHistory)
         val failedToolProgress = com.openminis.app.agent.FailedToolProgress()
         if (recoveryOrigin == AgentRunRecoveryOrigin.RESUME) {
@@ -12564,36 +12644,61 @@ class ChatViewModel(
             // 唯一可能与外部流并发的调用点，故必须先 join——净眼 N-P1-a）。
             // 会话本身被切换则行属旧会话，无需动。
             val sidAtCancel = activeSessionId
-            val historySizeAtCancel = agentHistory.size
+            // [T-run-phase] ⑤（N-P2-a 关账）：纪元读在 historyWriteLock 内——
+            // 与用户行 add / install 重建 / 清空建立 happens-before。
+            val historySizeAtCancel = synchronized(historyWriteLock) { agentHistory.size }
             viewModelScope.launch {
                 runCatching {
                     val partsJson = buildAssistantPartsJson(parts)
-                    val entity = chatRepository.appendMessage(sidAtCancel, "assistant", partsJson)
-                    if (sidAtCancel != activeSessionId) {
+                    // D3：与 wipe 的 DELETE 互斥，消灭"插入落在删除后"的行复活。
+                    val entity = dbWriteSerial.withLock {
+                        chatRepository.appendMessage(sidAtCancel, "assistant", partsJson)
+                    }
+                    val needsReconcile = if (sidAtCancel != activeSessionId) {
                         AppLogger.info(TAG_STREAM, "cancel-cleanup partial row landed in old session $sidAtCancel — memory untouched")
-                    } else if (agentHistory.size != historySizeAtCancel) {
-                        // 净眼 N-P1-a：等当前流（含 drain 起新流）全部结束再权威对账
-                        // ——9386 尾部 install 先归真一次，这里再 install 幂等兜底
-                        // partial 行（内存若在流中缺该行，I1 会拒发一次，流死 + 本
-                        // install 落地后自愈，不再有死锁面）。
+                        false
+                    } else {
+                        // ⑤：复验与 add 同锁原子——IO 写者已推进则落对账分支，绝不并发 add。
+                        synchronized(historyWriteLock) {
+                            if (agentHistory.size == historySizeAtCancel) {
+                                agentHistory.add(
+                                    LLMMessage(
+                                        role = LLMMessage.Role.ASSISTANT,
+                                        content = partialText,
+                                        contentParts = parts,
+                                        dbMessageId = entity.id,
+                                    )
+                                )
+                                false
+                            } else {
+                                true
+                            }
+                        }
+                    }
+                    if (needsReconcile) {
+                        // 净眼 N-P1-a：install 不能与活跃循环并发；⑥"已声明未启动"
+                        // 空档自旋等待（上限 ~4s 放行留痕）。
+                        var spinGuard = 0
                         while (true) {
                             val job = streamJob
-                            if (job == null || !job.isActive) break
-                            job.join()
+                            when {
+                                job == null -> break
+                                !job.isActive && !_isStreaming.value -> break
+                                !job.isActive && _isStreaming.value -> {
+                                    spinGuard += 1
+                                    if (spinGuard > 160) {
+                                        AppLogger.warning(TAG_STREAM, "cancel-cleanup join spin guard tripped (~4s) — proceeding")
+                                        break
+                                    }
+                                    delay(25)
+                                }
+                                else -> job.join()
+                            }
                         }
                         if (sidAtCancel == activeSessionId) {
                             AppLogger.info(TAG_STREAM, "cancel-cleanup reconciling via install after streams settled")
                             installActiveConversation(chatRepository.loadActiveConversation(sidAtCancel))
                         }
-                    } else {
-                        agentHistory.add(
-                            LLMMessage(
-                                role = LLMMessage.Role.ASSISTANT,
-                                content = partialText,
-                                contentParts = parts,
-                                dbMessageId = entity.id,
-                            )
-                        )
                     }
                 }.onFailure { error ->
                     // 净眼 N-P1-b：runCatching 吞 CancellationException 同型复发
@@ -12601,13 +12706,15 @@ class ChatViewModel(
                     // _canResume 置位，CE 逃逸 launch 后 SupervisorJob 静默收尾。
                     if (error is kotlinx.coroutines.CancellationException) throw error
                     AppLogger.error(TAG_STREAM, "cancel-cleanup partial persist failed: ${error::class.java.simpleName}: ${error.message}")
-                    agentHistory.add(
-                        LLMMessage(
-                            role = LLMMessage.Role.ASSISTANT,
-                            content = partialText,
-                            contentParts = parts,
+                    synchronized(historyWriteLock) {
+                        agentHistory.add(
+                            LLMMessage(
+                                role = LLMMessage.Role.ASSISTANT,
+                                content = partialText,
+                                contentParts = parts,
+                            )
                         )
-                    )
+                    }
                 }
                 _canResume.value = true
             }
@@ -12649,6 +12756,11 @@ class ChatViewModel(
      */
     fun resume() {
         if (_isStreaming.value || !_canResume.value) return
+        // [T-run-phase] D2：清空进行中不恢复。
+        if (isWipingSession) {
+            appendSystemInfo(text = "正在清空对话，请稍候再继续。", iconKind = "compact")
+            return
+        }
         val provider = currentProvider ?: run {
             _error.value = "请先选择可用的模型"
             return
