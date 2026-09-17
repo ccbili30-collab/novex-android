@@ -2543,8 +2543,14 @@ class ChatViewModel(
                 }
         }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
         if (mainline.isEmpty()) return history
-        AppLogger.info(TAG, "[SideSnapshot] prepending ${mainline.size} mainline messages (split-point freeze) to side $activeSessionId")
-        return mainline + history
+        // 净眼 P2-2：快照段在 dropOrphanedToolParts 之后前拼，若定格发生在
+        // "tool_use 已入库、tool_result 未入库"的崩溃窗口，快照尾的未配对 use
+        // 会让 I3 在侧边每次请求都拒发且无自愈。对快照段单独跑同款孤儿修复
+        // （合成错误结果），配对恒成立。
+        val repairedMainline = dropOrphanedToolParts(mainline)
+        if (repairedMainline.isEmpty()) return history
+        AppLogger.info(TAG, "[SideSnapshot] prepending ${repairedMainline.size} mainline messages (split-point freeze) to side $activeSessionId")
+        return repairedMainline + history
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -8165,9 +8171,10 @@ class ChatViewModel(
                         agentTools
                     }
                     val requestToolsEnabled = conversationTools.isNotEmpty()
-                    val requestHistory = effectiveAgentHistory().let { history ->
-                        if (requestToolsEnabled) history else pureChatHistory(history)
-                    }
+                    val assembledHistory = effectiveAgentHistory()
+                    // pureChat 只在工具禁用时删"纯结构化部件"消息；I1 断言用 pureChat
+                    // 之前的 assembled 基线，与 DB 侧同构（见 PreSendContract 头注）。
+                    val requestHistory = if (requestToolsEnabled) assembledHistory else pureChatHistory(assembledHistory)
                     // Per-turn injection: applied to the request copy only (never persisted,
                     // never rendered) and BEFORE the estimate so it counts toward the
                     // context budget. Rebuilt from the blank-checking helper on every
@@ -8211,19 +8218,56 @@ class ChatViewModel(
                         diceRolls,
                         _textStylePrompt.value,
                     )
-                    // [T-user-image-never-offload] 发送前护栏：本轮用户消息带附件图
-                    // 但组装出的请求里一个图片块都没有 → 上下文管线出bug把图弄丢了。
-                    // 明确报错绝不静默发出无图请求（wire-capture 取证靠的就是这条
-                    // 不变量：带图请求必然留下带图记录）。
-                    val turnHasImages = requestHistory.lastOrNull { it.role == LLMMessage.Role.USER }
-                        ?.let { last -> last.imageParts.isNotEmpty() || last.contentParts.any { it is AgentContentPart.ImageData } } == true
-                    if (turnHasImages) {
-                        val requestCarriesImage = boundedHistory.any { m ->
-                            m.imageParts.isNotEmpty() || m.contentParts.any { it is AgentContentPart.ImageData }
-                        }
-                        if (!requestCarriesImage) {
-                            throw IllegalStateException("本轮附件图片在上下文组装时丢失（不应发生）：请导出对话包反馈，历史与图片文件均保留。")
-                        }
+                    // [T-presend-contract] PR 0 地震仪：出口三断言（I1 历史守恒 /
+                    // I2 图片守恒——沿用 [T-user-image-never-offload] 护栏语义—— /
+                    // I3 工具配对）。违反即拒发：宁可报错也不发明知残缺的请求
+                    // （conv9 队列注入空请求的教训）；证据三路落盘：audit 事件 +
+                    // wire-capture note 行 + 异常文案。
+                    // I1 仅在每轮发送的首请求（turn==0）重读 DB 定基线；工具循环
+                    // 中轮 DB 落后于内存，跳过（I2/I3 仍全量检查）。重读失败不
+                    // 拦截——地震仪不制造新故障。
+                    val dbExpectedMessages = if (turn == 0) {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                PreSendContract.substantiveCount(
+                                    chatRepository.loadActiveConversation(activeSessionId).activeMessages
+                                        .map { it.toLLMMessage() },
+                                )
+                            }
+                        }.onFailure { error ->
+                            // 净眼 P1-1：runCatching 会连 CancellationException 一起吞，
+                            // 用户点停止时不能把取消当"重读失败"继续跑。照抄 6616/7828 的 rethrow 范式。
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            AppLogger.error(TAG_STREAM, "presend-contract DB recount failed: ${error::class.java.simpleName}: ${error.message}")
+                        }.getOrNull()
+                    } else {
+                        null
+                    }
+                    val contractViolation = PreSendContract.firstViolation(
+                        assembled = assembledHistory,
+                        requestHistory = requestHistory,
+                        boundedHistory = boundedHistory,
+                        expectedFromDb = dbExpectedMessages,
+                        compactInProgress = _cachedLatestMarker != null && !_compactSummary.value.isNullOrBlank(),
+                    )
+                    if (contractViolation != null) {
+                        runtimeAudit?.event(
+                            "presend_contract_violation",
+                            JSONObject()
+                                .put("invariant", contractViolation.invariant)
+                                .put("detail", contractViolation.detail)
+                                .put("expected", dbExpectedMessages ?: -1)
+                                .put("assembled", assembledHistory.size),
+                        )
+                        com.openminis.app.provider.ProviderWireCapture.record(
+                            currentProvider.name, "", "",
+                            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(boundedHistory),
+                            note = "refused:${contractViolation.invariant}",
+                        )
+                        throw IllegalStateException(
+                            "发送前检查未通过（${contractViolation.invariant}）：${contractViolation.detail} " +
+                                "未发出任何请求；请导出对话包反馈，历史与图片文件均保留。",
+                        )
                     }
                     val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
                     _contextEstimated.value = true

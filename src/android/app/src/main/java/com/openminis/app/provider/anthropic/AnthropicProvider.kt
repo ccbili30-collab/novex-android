@@ -92,7 +92,10 @@ class AnthropicProvider(
         thinkingLevel: ThinkingLevel,
     ): LLMResponse = withContext(Dispatchers.IO) {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, stream = false, temperature = temperature, imageParts = imageParts, tools = tools, thinkingLevel = thinkingLevel)
-        val request = buildRequest(body.toString(), body)
+        val request = buildRequest(
+            body.toString(), body,
+            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(messages),
+        )
         val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
         audit?.event("wire_request", JSONObject()
             .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
@@ -142,7 +145,10 @@ class AnthropicProvider(
         // here, once inside buildRequest); each emitted string was tens of
         // MB on long agent loops and stacked under GC pressure.
         val bodyStr = body.toString()
-        val request = buildRequest(bodyStr, body)
+        val request = buildRequest(
+            bodyStr, body,
+            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(messages),
+        )
 
         val startTime = System.currentTimeMillis()
 
@@ -907,9 +913,17 @@ class AnthropicProvider(
      * inspects fields like `thinking`. See OpenAIProvider.buildRequest
      * for the same pattern.
      */
-    private fun buildRequest(bodyStr: String, body: JSONObject): Request {
-        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）。
-        com.openminis.app.provider.ProviderWireCapture.record("anthropic", bodyStr, "${basePath.trimEnd('/')}/v1/messages")
+    private fun buildRequest(
+        bodyStr: String,
+        body: JSONObject,
+        stats: com.openminis.app.provider.ProviderWireCapture.RequestStats =
+            com.openminis.app.provider.ProviderWireCapture.RequestStats(),
+    ): Request {
+        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
+        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
+        com.openminis.app.provider.ProviderWireCapture.record(
+            "anthropic", bodyStr, "${basePath.trimEnd('/')}/v1/messages", stats,
+        )
         // T192: `basePath` may already end in `/v1` because
         // `ProviderInstance.effectiveBaseURL` appends `/v1` when
         // `appendV1Suffix=true` and the user-entered base doesn't end in `/v1`.
