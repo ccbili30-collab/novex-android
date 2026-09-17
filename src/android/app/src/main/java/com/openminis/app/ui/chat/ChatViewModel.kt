@@ -2514,27 +2514,35 @@ class ChatViewModel(
             chatRepository.loadActiveMessages(activeSessionId), chatRepository.novexContextUsage(activeSessionId), scopeKey)
 
     private suspend fun effectiveAgentHistory(): List<LLMMessage> {
+        // [T-request-assembler] PR 1：内存侧组装改为装配线权威调用。A2 行为等价
+        // ——与旧内联路径同函数同参同序（scope→compact→blank→orphan→snapshot→
+        // retention），顺序定义只剩 assemble() 一处，漂移从根上不可能。
         val scopeKey = historyScopeKey()
         val projection = scopedHistory(agentHistory.toList(), scopeKey)
         val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
-        return budgetedRequestHistory(dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
-            it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
-        }).let { prependSideSnapshotHistory(it) })
+        return RequestAssembler.assemble(
+            RequestAssembler.Inputs(
+                scopedHistory = projection.messages,
+                sideSnapshotMainline = resolveSideSnapshotMainline(),
+                compactRebuild = { effectiveAgentHistoryUncounted(it, allowSummary) },
+                orphanRepair = ::dropOrphanedToolParts,
+                retentionProject = ::budgetedRequestHistory,
+            ),
+        ).assembled
     }
 
     /**
-     * [T-side-snapshot] 侧边请求前拼主线分裂点快照（2026-09-16 用户批δ）：
-     * 按创建时定格的消息 ID 只读拉取主线消息（含已被切换分支弃用的死分支
-     * 消息——认 ID 不认现状），映射后拼在侧边自己的历史之前；界面仍只显示
-     * 侧边消息。在预算裁剪**之前**拼接，主线历史与侧边历史一起过容量检查
-     * 与压缩机制。快照缺失（旧侧边/直连对话）原样返回。
+     * [T-side-snapshot] 解析侧边分裂点快照的原始主线消息（只读拉取，含已被切换
+     * 分支弃用的死分支消息——认 ID 不认现状）。界面仍只显示侧边消息；孤儿修复
+     * 与前拼由 [RequestAssembler.assemble] 的快照步骤统一负责（PR0 P2-2 上收）。
+     * 返回 null = 非侧边 / 无快照 / 快照缺失（旧侧边、直连对话）。
      */
-    private suspend fun prependSideSnapshotHistory(history: List<LLMMessage>): List<LLMMessage> {
-        if (history.isEmpty()) return history
+    private suspend fun resolveSideSnapshotMainline(): List<LLMMessage>? {
+        if (agentHistory.isEmpty()) return null
         val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
-            ?: return history
-        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return history
-        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return history
+            ?: return null
+        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return null
+        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return null
         val mainline = snapshot.messageIds.mapNotNull { id ->
             runCatching { chatRepository.findMessageById(id) }.getOrNull()
                 ?.takeIf { it.sessionId == sideOf }
@@ -2542,15 +2550,9 @@ class ChatViewModel(
                     runCatching { entity.toLLMMessage() }.getOrNull()
                 }
         }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
-        if (mainline.isEmpty()) return history
-        // 净眼 P2-2：快照段在 dropOrphanedToolParts 之后前拼，若定格发生在
-        // "tool_use 已入库、tool_result 未入库"的崩溃窗口，快照尾的未配对 use
-        // 会让 I3 在侧边每次请求都拒发且无自愈。对快照段单独跑同款孤儿修复
-        // （合成错误结果），配对恒成立。
-        val repairedMainline = dropOrphanedToolParts(mainline)
-        if (repairedMainline.isEmpty()) return history
-        AppLogger.info(TAG, "[SideSnapshot] prepending ${repairedMainline.size} mainline messages (split-point freeze) to side $activeSessionId")
-        return repairedMainline + history
+        if (mainline.isEmpty()) return null
+        AppLogger.info(TAG, "[SideSnapshot] resolved ${mainline.size} mainline messages (split-point freeze) for side $activeSessionId")
+        return mainline
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -7959,6 +7961,9 @@ class ChatViewModel(
         // request, restricted to that single tool, then stop visibly.
         var choiceRepairAttempted = false
         var forcedChoiceToolOnly = false
+        // [T-request-assembler] P2-1：队列注入产生的新逻辑轮的 turn 号——该轮
+        // 与 turn==0 一样重读 DB 定 I1 基线（attempt lambda 读取后复位）。
+        var pendingI1BaselineTurn = -1
         // Keep the request context explicit. The retry reminder mutates the
         // last history message by adding a Text part, so re-inferring this from
         // contentParts would incorrectly turn the second post-tool attempt
@@ -8226,13 +8231,40 @@ class ChatViewModel(
                     // I1 仅在每轮发送的首请求（turn==0）重读 DB 定基线；工具循环
                     // 中轮 DB 落后于内存，跳过（I2/I3 仍全量检查）。重读失败不
                     // 拦截——地震仪不制造新故障。
-                    val dbExpectedMessages = if (turn == 0) {
+                    // [T-request-assembler] P2-1：队列注入产生的新逻辑轮与 turn==0
+                    // 一样重读 DB 定 I1 基线；P2-3：DB 侧基线过同款投影
+                    // （scope→compact→blank→orphan），不再裸数行数；A3：DB 侧
+                    // 影子装配与内存侧指纹对比，只观察不拦截——双真相源的分歧
+                    // 在此显形，PR 2 切换后应归零。
+                    val runI1Baseline = turn == 0 || turn == pendingI1BaselineTurn
+                    if (runI1Baseline) pendingI1BaselineTurn = -1
+                    var shadowDbAssembled: List<LLMMessage>? = null
+                    val dbExpectedMessages = if (runI1Baseline) {
                         runCatching {
                             withContext(Dispatchers.IO) {
-                                PreSendContract.substantiveCount(
-                                    chatRepository.loadActiveConversation(activeSessionId).activeMessages
-                                        .map { it.toLLMMessage() },
+                                val conversation = chatRepository.loadActiveConversation(activeSessionId)
+                                val rows = conversation.activeMessages
+                                val scopeKey = historyScopeKey()
+                                val dbScoped = com.openminis.app.novex.adapter.NovexScopedConversationHistory.project(
+                                    rows.map { it.toLLMMessage() },
+                                    rows,
+                                    chatRepository.novexContextUsage(activeSessionId),
+                                    scopeKey,
+                                ).messages
+                                val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(
+                                    _cachedLatestMarker?.historyScopeKey, scopeKey,
                                 )
+                                val dbAssembled = RequestAssembler.assemble(
+                                    RequestAssembler.Inputs(
+                                        scopedHistory = dbScoped,
+                                        compactRebuild = { effectiveAgentHistoryUncounted(it, allowSummary) },
+                                        orphanRepair = ::dropOrphanedToolParts,
+                                    ),
+                                ).assembled
+                                val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+                                // 影子只比主线：侧边有快照前拼的合法差异（A3）。
+                                if (sideOf == null) shadowDbAssembled = dbAssembled
+                                dbAssembled.size
                             }
                         }.onFailure { error ->
                             // 净眼 P1-1：runCatching 会连 CancellationException 一起吞，
@@ -8242,6 +8274,25 @@ class ChatViewModel(
                         }.getOrNull()
                     } else {
                         null
+                    }
+                    shadowDbAssembled?.let { dbSide ->
+                        val fpMemory = RequestAssembler.fingerprint(assembledHistory)
+                        val fpDb = RequestAssembler.fingerprint(dbSide)
+                        if (fpMemory != fpDb) {
+                            val firstDivergence = fpMemory.zip(fpDb).indexOfFirst { (memory, db) -> memory != db }
+                            AppLogger.warning(
+                                TAG_STREAM,
+                                "[ShadowAssembly] memory/db 分歧: memory=${fpMemory.size} db=${fpDb.size} " +
+                                    "firstDivergence=$firstDivergence（双真相源分歧，PR 2 切换后应归零；仅记录不拦截）",
+                            )
+                            runtimeAudit?.event(
+                                "shadow_assembly_diff",
+                                JSONObject()
+                                    .put("memory", fpMemory.size)
+                                    .put("db", fpDb.size)
+                                    .put("firstDivergence", firstDivergence),
+                            )
+                        }
                     }
                     val contractViolation = PreSendContract.firstViolation(
                         assembled = assembledHistory,
@@ -9204,6 +9255,8 @@ class ChatViewModel(
                     allToolBlocks.clear()
                     allToolInputs.clear()
                     _canResume.value = false
+                    // [T-request-assembler] P2-1：注入的新逻辑轮恢复 I1 基线检查。
+                    pendingI1BaselineTurn = turn + 1
                     continue
                 }
                 // null return = empty-after-build / drain rejected; fall

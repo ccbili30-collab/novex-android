@@ -59,9 +59,16 @@ class GeminiProvider(
     ): LLMResponse = withContext(Dispatchers.IO) {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
         val url = "$basePath/models/${model.id}:generateContent?key=$apiKey"
+        // [T-presend-contract O-1] 守纲挂账补齐：Gemini 路径接入抓取摘要行。
+        // URL 必须剥查询串——key 在 query 里，密钥绝不进落盘文件（A6 不变量）。
+        val bodyStr = body.toString()
+        com.openminis.app.provider.ProviderWireCapture.record(
+            "gemini", bodyStr, url.substringBefore("?"),
+            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(messages),
+        )
         val request = Request.Builder()
             .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .post(bodyStr.toRequestBody("application/json".toMediaType()))
             // [T-android-default-ua] Brand the outbound UA so server logs
             // can trace the request back to the Minis build. Gemini has no
             // SDK-specific UA requirement, so the helper's default kicks in.
@@ -117,9 +124,15 @@ class GeminiProvider(
     ): Flow<LLMStreamChunk> = callbackFlow {
         val body = buildRequestBody(messages, systemPrompt, maxTokens, temperature, imageParts, tools, thinkingLevel)
         val url = "$basePath/models/${model.id}:streamGenerateContent?alt=sse&key=$apiKey"
+        // [T-presend-contract O-1] 同非流式分支：抓取摘要行，URL 剥查询串防密钥落盘。
+        val bodyStr = body.toString()
+        com.openminis.app.provider.ProviderWireCapture.record(
+            "gemini", bodyStr, url.substringBefore("?"),
+            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(messages),
+        )
         val request = Request.Builder()
             .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .post(bodyStr.toRequestBody("application/json".toMediaType()))
             // [T-android-default-ua] same intent as the non-streaming
             // branch above — brand outbound requests with Minis/<version>.
             .applyUserAgentOverride(null)
