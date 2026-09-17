@@ -40,7 +40,7 @@ ChatViewModel 内的功能调用点可以搬家，语义不变。做不到 = 切
 |---|---|---|
 | PR 0 地震仪 | 抓取盲区修复 + 出口三断言 + 默认容量 300K | 进行中 |
 | PR 1 装配线 | RequestAssembler 纯函数化（conversation-runtime）+ 影子模式 | 未开始 |
-| PR 2 状态机 | ConversationCore 接管 8 入口（可拆 2-3 个 PR，每拆一个走完整循环） | 未开始 |
+| PR 2 单一写者与状态机 | 2a 契约立约+基线顺延已实施；2b DB 先行收敛、2c 显式状态机 | 进行中 |
 | PR 3 测试墙 | 每条发送路径不变量测试 + 删旧路径死代码 | 未开始 |
 
 ## 方法论（映射 docs/review/README.md 三代理协议）
