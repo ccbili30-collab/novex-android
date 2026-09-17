@@ -12,7 +12,7 @@ private val NEW_BLOCK_HINTS=setOf("new","create","new_block","newblock","new tex
 object CardToolProtocol {
     fun definitions(policy:CardToolPolicy):List<ToolDefinition> {
         if(policy.permission==ToolPermission.READ_ONLY)return emptyList()
-        fun tool(name:String,description:String,extra:Map<String,String>,optional:Set<String>=emptySet()):ToolDefinition {
+        fun tool(name:String,description:String,extra:Map<String,String>,optional:Set<String> = emptySet()):ToolDefinition {
             val properties=JSONObject()
             (mapOf("root_id" to "根作品编号","target_id" to "实际目标卡编号","draft_version" to "读取时的草稿版本")+extra).forEach { (key,help) ->
                 properties.put(key,JSONObject().put("type",if(key in setOf("start","end"))"integer" else "string").put("description",help))
