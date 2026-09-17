@@ -57,10 +57,11 @@
 
 ## 默认容量
 
-`NovexConversationContextLimit.MINIMUM` 64_000 → 300_000。涟漪确认过：
-`minimum(modelWindow)=min(300K, window)`（小窗模型不受影响）；旧会话持久化的 64000 经
-`selection()` 上调到 min(300K, window)（用户意图：默认就该这么大）；`hasPersistentConfiguration`
-的 `!= MINIMUM` 比较语义自动跟随（旧行为不破坏）。
+`NovexConversationContextLimit.MINIMUM` 64_000 → 300_000。涟漪确认过（净眼复核后修正口径）：
+`minimum(modelWindow)=min(300K, window)`（小窗模型不受影响）；**旧会话保持已保存的 64K
+不自动迁移**（读取走 `effective()`，`selection()` 只在用户重存滑杆时介入）——保守安全，
+旧行为不破坏；是否要做"加载时迁移"留给用户决策（见台账）。`hasPersistentConfiguration`
+的 `!= MINIMUM` 比较语义自动跟随。
 
 ## 验收
 
@@ -103,6 +104,24 @@ android-validate CI 为准（与本地等价：`:app:testStableDebugUnitTest` �
 输出格式：逐不变量签"过/不过"；每个问题 = 严重度(P0/P1/P2) + 文件:行 + 证据 + 建议修法；
 最后给"是否放行进入守纲裁决"结论。
 
-## 台账（审查后填写）
+## 台账
 
-（待净眼/守纲审查后填）
+### 净眼审查（2026-09-16，agent_7df48070，结论：放行进入守纲，无 P0）
+
+| 编号 | 结论 | 处置 |
+|---|---|---|
+| P1-1 runCatching 吞 CancellationException（ChatViewModel DB 重读） | **采纳已修** | onFailure 首行 rethrow CE（照抄文件内 6616/7828 既有范式）。净眼确认无 P0 后果（取消的请求不会发出、streaming 状态会正常清理），但取消会被误记为"重读失败"日志 |
+| P2-1 turn>0 跳过 I1 → mid-loop 队列注入请求免检（覆盖缺口非缺陷） | **挂账 PR1** | 该请求仍留 wire-capture 摘要行（messages=N 可见），后验目标达成；PR1 把"注入后的新逻辑轮"重置 I1 基线 |
+| P2-2 侧边快照绕过孤儿修复，I3 可能永久拦死一个侧边会话（崩溃窗口定格） | **采纳已修** | prependSideSnapshotHistory 对快照段单独跑 dropOrphanedToolParts（合成错误结果），配对恒成立 |
+| P2-3 I1 两侧基线两处理论性不对称（scoped 脱敏空白行 / 孤儿整条删除） | **挂账 PR1** | 净眼标注"未确认（推演上关不上，实践找不到入口）"；PR1 装配线纯函数化时 expected 侧过同款投影，结构性消除 |
+| P2-4 任务书"旧 64K 经 selection() 上调"与实现不符 | **采纳已修（改文档）** | 代码注释与任务书均已改为准确口径：旧会话保持已保存值不迁移；是否加载时迁移待用户决策 |
+| P2-5 拒发行 provider 命名与正常行不一致（simpleName vs 协议名） | **采纳已修** | 改用 currentProvider.name（与协议命名一致） |
+| P2-6 "pureChat 减项正确扣除"验收项无单测 | **采纳已修** | 新增 `I1 baseline is pre-pureChat…` 测试固化设计决策 |
+
+净眼同时确认：违反路径 UX 与旧图片护栏同构（ISE → streamRecovery 直接抛 → setInlineError
+清 streaming 状态落 DB → finally 释放），不卡死会话；`fallbackStrategy == always` 时会先走
+一遍 fallback 链再抛（与旧护栏完全同构，观察项，不算缺陷）。
+
+### 守纲裁决
+
+（待填）

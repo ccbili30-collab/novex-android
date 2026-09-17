@@ -2543,8 +2543,14 @@ class ChatViewModel(
                 }
         }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
         if (mainline.isEmpty()) return history
-        AppLogger.info(TAG, "[SideSnapshot] prepending ${mainline.size} mainline messages (split-point freeze) to side $activeSessionId")
-        return mainline + history
+        // 净眼 P2-2：快照段在 dropOrphanedToolParts 之后前拼，若定格发生在
+        // "tool_use 已入库、tool_result 未入库"的崩溃窗口，快照尾的未配对 use
+        // 会让 I3 在侧边每次请求都拒发且无自愈。对快照段单独跑同款孤儿修复
+        // （合成错误结果），配对恒成立。
+        val repairedMainline = dropOrphanedToolParts(mainline)
+        if (repairedMainline.isEmpty()) return history
+        AppLogger.info(TAG, "[SideSnapshot] prepending ${repairedMainline.size} mainline messages (split-point freeze) to side $activeSessionId")
+        return repairedMainline + history
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -8229,6 +8235,9 @@ class ChatViewModel(
                                 )
                             }
                         }.onFailure { error ->
+                            // 净眼 P1-1：runCatching 会连 CancellationException 一起吞，
+                            // 用户点停止时不能把取消当"重读失败"继续跑。照抄 6616/7828 的 rethrow 范式。
+                            if (error is kotlinx.coroutines.CancellationException) throw error
                             AppLogger.error(TAG_STREAM, "presend-contract DB recount failed: ${error::class.java.simpleName}: ${error.message}")
                         }.getOrNull()
                     } else {
@@ -8251,7 +8260,7 @@ class ChatViewModel(
                                 .put("assembled", assembledHistory.size),
                         )
                         com.openminis.app.provider.ProviderWireCapture.record(
-                            currentProvider.javaClass.simpleName, "", "",
+                            currentProvider.name, "", "",
                             com.openminis.app.provider.ProviderWireCapture.RequestStats.of(boundedHistory),
                             note = "refused:${contractViolation.invariant}",
                         )

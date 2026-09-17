@@ -155,4 +155,24 @@ class PreSendContractTest {
         val partOnly = LLMMessage(LLMMessage.Role.ASSISTANT, "", contentParts = listOf(AgentContentPart.Text("x")))
         assertEquals(1, PreSendContract.substantiveCount(listOf(partOnly)))
     }
+
+    // 净眼 P2-6：固化"I1 用 pureChat 之前的 assembled 基线"这一设计决策——
+    // 工具禁用时 pureChat 会删纯工具消息，但两侧基线都不受影响。
+    @Test
+    fun `I1 baseline is pre-pureChat so tool-only messages are counted on both sides`() {
+        val (use, result) = toolPair("c1")
+        val history = listOf(
+            user("读一下", "u1"),
+            assistant("", use),
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(result)),
+        )
+        // assembled 含纯工具消息（pureChat 会删它们），expected 同基线计数 → 放行。
+        assertNull(PreSendContract.historyConservation(history, expectedFromDb = 3, compactInProgress = false))
+        // 真丢了非工具消息仍然拦。
+        assertNotNull(
+            PreSendContract.historyConservation(
+                history.drop(1), expectedFromDb = 3, compactInProgress = false,
+            ),
+        )
+    }
 }
