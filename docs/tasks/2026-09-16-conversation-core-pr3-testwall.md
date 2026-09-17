@@ -30,3 +30,22 @@
 ## 台账
 
 （待审后填）
+
+## 实施记录
+
+- ①测试墙：RunPhasePolicyTest（转换矩阵全枚举+唯一非法序列+终点抑制三分支+
+  九段全启用端到端+conv9 形状 I1 端到端含压缩豁免）；判定逻辑抽为
+  RunPhasePolicy 纯函数（ChatViewModel 只记录不判定）。
+- ②五件套收敛：世代号 AtomicInteger 取代 size 纪元（六写点锁内自增：清空/
+  install/sendMessage/drain/取消清理 add/回退 add；读侧同锁快照）；
+  终点相位降级接入 shouldSuppressEndPhase。
+- ③删旧路径核对：grep 复核——重整各刀已随刀删除（prependSideSnapshotHistory/
+  内联 appendRuntimeInjections/pureChat 三元/图片护栏旧块）；估算路径内联
+  compact→retention 为 PR1 守纲裁定保留（UI 路径免挂起 IO），非死代码。
+- ④本地验证门：本机无 JDK 且未获安装授权——确立纪律替代：**代码提交一律
+  draft-PR 先行，CI 绿后才标 ready/请求审查**（本 PR 起生效）；如需装 JDK
+  请拥有者示下。
+
+## 台账
+
+（待审后填）

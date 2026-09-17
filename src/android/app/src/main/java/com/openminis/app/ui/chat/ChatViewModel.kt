@@ -1018,22 +1018,15 @@ class ChatViewModel(
      */
     private val agentHistory = mutableListOf<LLMMessage>()
 
-    // ── [T-run-phase] PR2c 状态机种子与写者门 ──
-    /** 只审计不执法（D1）：PR3 依据审计数据决定执法化。 */
-    private enum class RunPhase { IDLE, STREAMING, AWAITING_RESUME }
-
+    // ── [T-run-phase] PR2c/PR3 状态机种子与写者门 ──
+    // 判定逻辑在 RunPhasePolicy（纯函数，测试墙 E1 覆盖）；这里只记录不执法。
     @Volatile
     private var runPhase = RunPhase.IDLE
 
     private fun runPhaseTransitionTo(next: RunPhase, where: String) {
         val previous = runPhase
         runPhase = next
-        val legal = previous == next || when (previous) {
-            RunPhase.IDLE -> next == RunPhase.STREAMING
-            RunPhase.STREAMING -> next == RunPhase.IDLE || next == RunPhase.AWAITING_RESUME
-            RunPhase.AWAITING_RESUME -> next == RunPhase.STREAMING || next == RunPhase.IDLE
-        }
-        if (legal) {
+        if (previous.isLegalTransitionTo(next)) {
             AppLogger.info(TAG_STREAM, "[RunPhase] $previous -> $next ($where)")
         } else {
             AppLogger.warning(TAG_STREAM, "[RunPhase] ILLEGAL $previous -> $next ($where) — 仅审计记录，PR3 依据数据执法化")
@@ -1049,6 +1042,13 @@ class ChatViewModel(
 
     /** D4：内存历史竞态对的 happens-before 锁（纪元读/用户行 add/install 重建/清空）。 */
     private val historyWriteLock = Any()
+
+    /**
+     * [T-run-phase] PR3 五件套收敛：世代号取代 size 纪元（E2——语义超集：
+     * 同长度换内容/重建也算纪元推进，净眼 P2-1 调度依赖面随之收窄）。
+     * 在 historyWriteLock 的写块内自增，读取侧同锁快照。
+     */
+    private val historyGeneration = java.util.concurrent.atomic.AtomicInteger(0)
     private val novexDocumentRepository by lazy {
         FileNovexDocumentSnapshotRepository(
             java.io.File(context.filesDir, "novex/derived/document-snapshots"),
@@ -5598,6 +5598,7 @@ class ChatViewModel(
                 withContext(Dispatchers.Main) {
                     synchronized(historyWriteLock) {
                         agentHistory.clear()
+                        historyGeneration.incrementAndGet()
                     }
                     _messages.value = emptyList()
                     _cachedLatestMarker = null
@@ -6173,6 +6174,7 @@ class ChatViewModel(
         synchronized(historyWriteLock) {
             agentHistory.clear()
             agentHistory.addAll(llmHistory)
+            historyGeneration.incrementAndGet()
         }
         retainedTranscriptRows = emptyList()
         retainedTranscriptSessionId = null
@@ -6705,6 +6707,7 @@ class ChatViewModel(
                     contentParts = combinedParts,
                     dbMessageId = queuedUser.id,
                 ))
+                historyGeneration.incrementAndGet()
             }
 
             try {
@@ -6964,6 +6967,7 @@ class ChatViewModel(
                     contentParts = userContentParts,
                     dbMessageId = persistedUser.id,
                 ))
+                historyGeneration.incrementAndGet()
             }
 
             // Refresh OAuth token if needed before sending (mirrors iOS validAccessToken)
@@ -7921,11 +7925,12 @@ class ChatViewModel(
                     .put("cause", safeModelDiagnostic(failure.cause?.message.orEmpty())))
             throw failure
         } finally {
-            // [T-run-phase] D1：审计记录终点相位，不执法。净眼 P1：过期 job 的
-            // 终点相位降级为 debug 记录——幻影终点不污染 PR3 执法化数据。
+            // [T-run-phase] D1：审计记录终点相位，不执法。PR3：stale-job 身份比对 +
+            // RunPhasePolicy 降级（清空已置 IDLE / 迟到尸体不得改写审计轨迹）。
             val staleJob = streamJob != null && streamJob !== jobAtLoopEntry
-            if (staleJob) {
-                AppLogger.info(TAG_STREAM, "[RunPhase] stale job end-phase suppressed (a newer stream owns the phase)")
+            val suppressed = staleJob || RunPhase.shouldSuppressEndPhase(runPhase, isWipingSession)
+            if (suppressed) {
+                AppLogger.info(TAG_STREAM, "[RunPhase] end-phase suppressed (stale=$staleJob wiping=$isWipingSession)")
             } else {
                 runPhaseTransitionTo(if (_canResume.value) RunPhase.AWAITING_RESUME else RunPhase.IDLE, "runAgentLoop-end")
             }
@@ -12658,9 +12663,9 @@ class ChatViewModel(
             // 唯一可能与外部流并发的调用点，故必须先 join——净眼 N-P1-a）。
             // 会话本身被切换则行属旧会话，无需动。
             val sidAtCancel = activeSessionId
-            // [T-run-phase] ⑤（N-P2-a 关账）：纪元读在 historyWriteLock 内——
-            // 与用户行 add / install 重建 / 清空建立 happens-before。
-            val historySizeAtCancel = synchronized(historyWriteLock) { agentHistory.size }
+            // [T-run-phase] ⑤（N-P2-a 关账）+ PR3 世代号：纪元读在锁内快照
+            // （世代号取代 size——同长度换内容/重建也算推进，语义超集）。
+            val historyEpochAtCancel = synchronized(historyWriteLock) { historyGeneration.get() }
             viewModelScope.launch {
                 runCatching {
                     val partsJson = buildAssistantPartsJson(parts)
@@ -12672,9 +12677,9 @@ class ChatViewModel(
                         AppLogger.info(TAG_STREAM, "cancel-cleanup partial row landed in old session $sidAtCancel — memory untouched")
                         false
                     } else {
-                        // ⑤：复验与 add 同锁原子——IO 写者已推进则落对账分支，绝不并发 add。
+                        // ⑤：复验与 add 同锁原子——写者已推进则落对账分支，绝不并发 add。
                         synchronized(historyWriteLock) {
-                            if (agentHistory.size == historySizeAtCancel) {
+                            if (historyGeneration.get() == historyEpochAtCancel) {
                                 agentHistory.add(
                                     LLMMessage(
                                         role = LLMMessage.Role.ASSISTANT,
@@ -12683,6 +12688,7 @@ class ChatViewModel(
                                         dbMessageId = entity.id,
                                     )
                                 )
+                                historyGeneration.incrementAndGet()
                                 false
                             } else {
                                 true
@@ -12728,6 +12734,7 @@ class ChatViewModel(
                                 contentParts = parts,
                             )
                         )
+                        historyGeneration.incrementAndGet()
                     }
                 }
                 _canResume.value = true
