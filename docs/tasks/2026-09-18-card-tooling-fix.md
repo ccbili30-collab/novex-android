@@ -95,7 +95,14 @@ schema optional 但解析层 defaulted 不含 → 省略拼写抛"工具字段�
 - optional 定位字段统一过滤显式 JSON null（"null" 字符串）与
   ToolJsonRepair fuzzy 扩展（与净眼 P2/P3 合并为一条跟进项）。
 
-- CI：2051d4c 红（泛型默认值 >= 词法坑）；语法修正+守纲关账推送后待终版
+- CI：2051d4c 红（泛型默认值 >= 词法坑）；a1b7a4d 红（skill 测试硬断言
+  1.1.0 被升版打破，断言对齐 1.2.0 + 补 bulk-first 教学断言）；**终版 4158e6a 绿**。
+
+## 终态
+
+三闸全过（净眼可合并 / 守纲准予含 Q2 当场关账 / CI 绿），PR #27 合并入
+next。交付：schema optional 化根治五字段 + bulk 字符串容忍/教学报错 +
+SKILL 1.2.0 bulk-first + 预期 3000 字卡从 15 轮回到 2-4 轮。
 
 ## 遗留挂账
 
