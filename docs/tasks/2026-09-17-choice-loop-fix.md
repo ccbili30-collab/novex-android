@@ -81,6 +81,28 @@ appendForcedChoiceHint / SELECTION_RESPONSE_REMINDER / endsWithLiveChoicesCard�
 - **记录 P3-6**：标记文本与恢复三条中文正则无匹配，不误触发（防回归）。
 - **记录 P3-7**：本机无 JDK，编译/单测由 CI 补（流水线）。
 
-净眼二审：待（窄复核 P1-1/P2-2/P2-3/P2-4 四处修复）
-- 守纲六问：待
-- CI：一审 ee844fe 红（测试漏 assertNotSame import，a3f474c 修复）；二审待
+净眼二审（2026-09-18，窄复核 83646e3 四处修复，裁决：**可合并**）：
+
+- P1-1 成立：卡块经 updateAssistantMessage 写回 canonical _messages 留存；
+  drain 与 runAgentLoop 同协程相邻无插入窗口；system 通知被谓词天然跳过；
+  "找到老卡回合"要求其后无任何 assistant，语义即"该卡就是最后回合"。
+- P2-2 成立：全库 reminder text 部件三源头盘点（标记/resume 提醒 8004/
+  停止截断 12703）；停止截断行的同类 content 不对称被顺带修复；resume 行
+  content 变空经三家 provider/pureChat/compact/UI/latestVisibleUserRequest
+  全消费方核验无回归。
+- P2-3 成立：forkBeforeEdit 后尾部=被编辑消息之前，挂/不挂方向均正确；
+  占位气泡落入 user 分支不挂＝安全方向（缺标记只退回旧行为，循环根因是
+  提示永久存在而非标记缺席）。
+- P2-4 成立：hintN1 空值与 107 行清零构成因果依赖（删 107 行即红）；
+  count 谓词非恒真非恒假。
+- 新问题：无 P0-P2；P3-a（count 谓词对挂错消息不敏感，同文件专用用例
+  兜底）/P3-b（VM 私有接线层无纯函数可测＝P3-8 已挂账）/P3-c（resume/
+  停止截断行 content 变化，方向良性）/P3-d（正文逐字以 <system-reminder>
+  开头的理论边角）。
+
+另：83646e3 CI 红——no-op 用例 assertSame 实参两次构造恒败（我的测试错，
+非产品代码），167f46e 修复。
+
+守纲六问：待
+- CI：一审 ee844fe 红（漏 import）；二审 83646e3 红（assertSame 两次构造）；
+  167f46e 待
