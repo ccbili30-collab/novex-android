@@ -8,14 +8,10 @@ import com.openminis.app.data.model.LLMMessage
  * 任务书：docs/tasks/2026-09-16-conversation-core-pr1-assembler.md
  *
  * 只拥有顺序与诊断，不拥有步骤实现：各步骤以 `(List) -> List` 函数注入
- * （IO 与 ViewModel 状态留在调用方闭包）。顺序唯一意味着：
- *  - 内存侧（effectiveAgentHistory）与 DB 侧（影子装配）走同一顺序；
- *  - 内联组装路径不复存在，顺序漂移从根上不可能；
- *  - PR 2 状态机切换入口时，装配顺序无需再动。
+ * （IO 与 ViewModel 状态留在调用方闭包）。九段顺序只在此定义一次：
  *
- * 阶段顺序（A1 不变量）：
  *  scoped(入参) → compactRebuild → blank 过滤 → orphanRepair →
- *  sideSnapshot（段内先过 orphanRepair 再前拼）→ retentionProject →
+ *  sideSnapshot（段内先过 snapshotOrphanRepair 再前拼）→ retentionProject →
  *  pureChat → imageBudget → injections
  *
  * 产物：assembled（pureChat 前基线，I1/PreSendContract 用）、request、bounded、
@@ -23,13 +19,30 @@ import com.openminis.app.data.model.LLMMessage
  */
 internal object RequestAssembler {
 
+    /**
+     * 只存在于内存、不持久化的 Text 部件前缀（净眼 P1-1：影子指纹噪音源）。
+     * 与 ChatViewModel.TOOL_RESULT_HINT / TOOL_TURN_BUDGET_NOTE、附件图路径
+     * 注释保持同步——改动文案时两处都要动。
+     */
+    internal val MEMORY_ONLY_TEXT_PREFIXES = listOf(
+        "(以下是本轮工具的执行结果",
+        "(系统提示：本轮工具调用轮数已达到上限",
+        "[attached image: ",
+    )
+
     /** 步骤全部注入；默认恒等，便于影子装配只跑到需要的阶段。 */
     data class Inputs(
         val scopedHistory: List<LLMMessage>,
-        /** 已解析的侧边快照主线（IO 在外完成）；null = 非侧边或无快照。段内孤儿修复由装配线负责。 */
+        /** 已解析的侧边快照主线（IO 在外完成）；null = 非侧边或无快照。 */
         val sideSnapshotMainline: List<LLMMessage>? = null,
         val compactRebuild: (List<LLMMessage>) -> List<LLMMessage> = { it },
         val orphanRepair: (List<LLMMessage>) -> List<LLMMessage> = { it },
+        /**
+         * 快照段专用孤儿修复：快照是冻结态，不存在"在飞"轮次，必须绕过
+         * dropOrphanedToolParts 的段尾豁免（净眼 P1-2）——否则定格在崩溃窗口
+         * 的快照尾 use 恰好被豁免放行，I3 拒发且无自愈。null 时退回 orphanRepair。
+         */
+        val snapshotOrphanRepair: ((List<LLMMessage>) -> List<LLMMessage>)? = null,
         val retentionProject: (List<LLMMessage>) -> List<LLMMessage> = { it },
         /** 工具禁用时传 pureChatHistory，否则恒等。 */
         val pureChat: (List<LLMMessage>) -> List<LLMMessage> = { it },
@@ -61,10 +74,9 @@ internal object RequestAssembler {
         val afterCompact = inputs.compactRebuild(inputs.scopedHistory)
         val afterBlank = afterCompact.filter(::substantive)
         val afterOrphan = inputs.orphanRepair(afterBlank)
-        // 快照段先过同款孤儿修复再前拼（PR0 P2-2 修复上收为结构步骤）：
-        // 定格在"tool_use 已入库、result 未入库"崩溃窗口的快照不能让 I3 永久拒发。
+        val snapshotRepair = inputs.snapshotOrphanRepair ?: inputs.orphanRepair
         val afterSnapshot = inputs.sideSnapshotMainline
-            ?.let { mainline -> inputs.orphanRepair(mainline) + afterOrphan }
+            ?.let { mainline -> snapshotRepair(mainline) + afterOrphan }
             ?: afterOrphan
         val assembled = inputs.retentionProject(afterSnapshot)
         val request = inputs.pureChat(assembled)
@@ -94,22 +106,48 @@ internal object RequestAssembler {
             message.imageParts.isNotEmpty() || message.audioParts.isNotEmpty()
 
     /**
-     * 影子装配对比用结构指纹（A3）：只认有 dbMessageId 的消息——队列注入的桥接
-     * spacer 无 dbId（合法内存专属），在飞轮次的消息同理不应产生伪差异；
-     * 图片字节不参与（ImagePart 的 ByteArray 是引用相等，逐字节比会产生噪声）。
+     * 影子装配的**强信号**指纹（净眼 P1-1 分流后）：角色/DB id/工具对 id/部件类
+     * 计数——不含任何文本长度或哈希；内存专属 Text 部件（提示语/图路径注释）剔除。
+     * 结构分歧 = 双真相源真的丢了/多了消息或工具对，才是要盯的信号。
+     */
+    fun structural(history: List<LLMMessage>): List<String> = history
+        .filter { it.dbMessageId != null }
+        .map { message ->
+            val parts = message.contentParts
+                .filterNot { it is AgentContentPart.Text && isMemoryOnlyText(it.text) }
+                .joinToString(",") { part ->
+                    when (part) {
+                        is AgentContentPart.ToolUse -> "U:${part.id}"
+                        is AgentContentPart.ToolResult -> "R:${part.id}"
+                        is AgentContentPart.Text -> "T"
+                        is AgentContentPart.ImageData -> "I"
+                    }
+                }
+            "${message.role}|${message.dbMessageId}|${message.imageParts.size}|${message.audioParts.size}|[$parts]"
+        }
+
+    /**
+     * 全量指纹（弱信号）：在 structural 之上叠加文本长度与哈希。两侧 structural
+     * 相同而 fingerprint 不同 = 已知投影噪音类（卸载改写、提示语版本差异等），
+     * 只计数不定位。桥接消息（无 dbMessageId）不参与。
      */
     fun fingerprint(history: List<LLMMessage>): List<String> = history
         .filter { it.dbMessageId != null }
         .map { message ->
-            val parts = message.contentParts.joinToString(",") { part ->
-                when (part) {
-                    is AgentContentPart.ToolUse -> "U:${part.id}"
-                    is AgentContentPart.ToolResult -> "R:${part.id}:${part.content.length}:${part.isError}"
-                    is AgentContentPart.Text -> "T:${part.text.length}"
-                    is AgentContentPart.ImageData -> "I:${part.data.size}"
+            val parts = message.contentParts
+                .filterNot { it is AgentContentPart.Text && isMemoryOnlyText(it.text) }
+                .joinToString(",") { part ->
+                    when (part) {
+                        is AgentContentPart.ToolUse -> "U:${part.id}"
+                        is AgentContentPart.ToolResult -> "R:${part.id}:${part.content.length}:${part.isError}"
+                        is AgentContentPart.Text -> "T:${part.text.length}"
+                        is AgentContentPart.ImageData -> "I:${part.data.size}"
+                    }
                 }
-            }
             "${message.role}|${message.dbMessageId}|${message.content.length}|${message.content.hashCode()}|" +
                 "${message.imageParts.size}|${message.audioParts.size}|[$parts]"
         }
+
+    private fun isMemoryOnlyText(text: String): Boolean =
+        MEMORY_ONLY_TEXT_PREFIXES.any { text.startsWith(it) }
 }

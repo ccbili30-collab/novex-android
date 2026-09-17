@@ -33,15 +33,35 @@
 
 ## 不变量
 
-- A1 顺序唯一：scope→compact→blank→orphan→snapshot(含段内孤儿修复)→retention→
-  pureChat→imageBudget→injections，只在 assemble() 定义一次；
-- A2 行为等价：内存侧 assemble 输出与旧内联路径逐字节同序同值（同函数同参同序）；
-- A3 影子只观察：DB 侧装配 diff 仅日志+audit 事件（shadow_assembly_diff），不拦截不阻塞；
-  仅主线会话参与（侧边有快照前拼的合法差异）；桥接消息（无 dbMessageId）不参与指纹；
+- A1 顺序唯一：九段顺序（scope→compact→blank→orphan→snapshot(段内孤儿修复)→
+  retention→pureChat→imageBudget→injections）只在 assemble() 定义一次，发送出口
+  消费 Result.assembled/request/injected；
+- A2 行为等价：内存侧 assemble 输出与旧内联路径同函数同参同序，主路径逐字节等价；
+  **一处已接受的边缘改进**：侧边"管线后为空但 agentHistory 非空"时旧代码不发快照、
+  新代码以快照主线为请求（侧边仍获主线上下文，方向更合理；净眼 P2-1 定级低危）；
+- A3 影子只观察：DB 侧装配 diff 仅日志+audit，不拦截不阻塞；两级信号——structural
+  （强：丢/多消息、工具对断裂）与 content（弱：卸载改写等已知投影噪音，只计数）；
+  内存专属 Text 部件（工具结果提示语/轮数提示/图路径注释）两侧剔除；仅主线参与；
 - A4 I1 基线重置：turn==0 或注入产生的新逻辑轮（pendingI1BaselineTurn）时重读 DB；
-- A5 expected 结构化：DB 侧基线过同款 compact/blank 投影（P2-3 关账）；
+- A5 expected 结构化：DB 侧基线过同款 compact/blank/retention 投影（P2-3 关账）；
 - A6 密钥不落盘：Gemini 抓取 URL 剥离查询串。
 
 ## 台账
 
-（待净眼/守纲审查后填）
+### 净眼审查（agent_8c78023b，结论：退回修复 → 已按最低修复集闭环）
+
+| 编号 | 结论 | 处置 |
+|---|---|---|
+| P0-1 快照测试断言必红（repaired 捕获的是输入而非输出） | **采纳已修** | 测试重写：断言 snapshotOrphanRepair 收到原始快照段、修复产物前拼、主列表只过 orphanRepair 一次 |
+| P1-1 影子四大噪音源（阶段差/TOOL_RESULT_HINT 不落盘/卸载改写/图路径注释） | **采纳已修** | ①DB 侧补 retentionProject 阶段对齐；②MEMORY_ONLY_TEXT_PREFIXES 两侧剔除；③两级信号分流：structural=强信号定位，content 差异=弱信号只计数（卸载改写归此类） |
+| P1-2 快照孤儿修复被"在飞豁免"挡住（净眼发现 PR0 P2-2 修复对崩溃窗口场景实际无效） | **采纳已修** | Inputs.snapshotOrphanRepair 独立注入，dropOrphanedToolParts 加 exemptTrailing 参数，快照段传 false（冻结态无在飞轮次）；测试复刻真实语义 |
+| P1-3 尾三段（pureChat/imageBudget/injections）未进装配线 | **采纳已修** | 出口改为 assemblyInputs().copy(尾三段闭包) → assemble() → 消费 Result；骰子先掷 |
+| P2-1 快照早退语义边缘分歧 | **采纳为已记录改进** | A2 口径已更新（见上），不再声称纯"按构造不变" |
+| P2-2 基线重置边角（fallback 重读口径/COMPACTED continue 吞标志/末轮过期标志） | **挂账 PR2** | 状态机统一 attempt/轮次语义时一并收敛 |
+| P2-3 firstDivergence 长度不等时 -1 误导 | **采纳已修** | tail(len a vs b) 显式标记 |
+| P2-4 Gemini 流式口 record 在调用方调度器 | **挂账** | 与既有 provider 流式口模式一致，不单独破例；后续统一挪 IO |
+| P2-5 侧边 getSession 瞬时失败误入影子 | **挂账** | 罕见；PR2 收敛时顺手分流 |
+
+### 守纲裁决
+
+（待填）

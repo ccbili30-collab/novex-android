@@ -5,11 +5,10 @@ import com.openminis.app.data.model.LLMMessage
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** [T-request-assembler] PR 1 装配线单测：顺序唯一、行为等价基线、影子指纹。 */
+/** [T-request-assembler] PR 1 装配线单测：顺序唯一、快照分段修复、两级影子指纹。 */
 class RequestAssemblerTest {
 
     private fun user(text: String, db: String? = null) =
@@ -51,60 +50,113 @@ class RequestAssemblerTest {
     }
 
     @Test
-    fun `snapshot mainline is orphan-repaired then prepended`() {
-        val (use, _) = AgentContentPart.ToolUse("c1", "read_text_block", JSONObject()) to
-            AgentContentPart.ToolResult("c1", "read_text_block", "ok")
-        // 快照定格在崩溃窗口：只有 use 没有 result。
+    fun `snapshot mainline goes through snapshotOrphanRepair then prepends`() {
+        val use = AgentContentPart.ToolUse("c1", "read_text_block", JSONObject())
+        // 快照定格在崩溃窗口：最后一条是持有未答 use 的 assistant。
         val snapshotMainline = listOf(user("主线", "m1"), assistant("", "m2", use))
-        var repaired: List<LLMMessage>? = null
+        var snapshotRepairInput: List<LLMMessage>? = null
+        var mainRepairCalls = 0
+        val synthesized = LLMMessage(
+            LLMMessage.Role.USER, "",
+            contentParts = listOf(AgentContentPart.ToolResult("c1", "read_text_block", "interrupted", isError = true)),
+        )
         val result = RequestAssembler.assemble(
             RequestAssembler.Inputs(
                 scopedHistory = listOf(user("侧边", "s1")),
                 sideSnapshotMainline = snapshotMainline,
-                orphanRepair = { history ->
-                    repaired = history
-                    // 模拟 dropOrphanedToolParts 的合成错误结果
-                    if (history === snapshotMainline) history + LLMMessage(
-                        LLMMessage.Role.USER, "",
-                        contentParts = listOf(AgentContentPart.ToolResult("c1", "read_text_block", "interrupted", isError = true)),
-                    ) else history
+                orphanRepair = { mainRepairCalls += 1; it },
+                snapshotOrphanRepair = { segment ->
+                    snapshotRepairInput = segment
+                    segment + synthesized // 模拟 dropOrphanedToolParts(exemptTrailing=false) 的合成
                 },
             ),
         )
-        // P2-2 结构化：快照段先过孤儿修复（修复函数收到的是原始快照段），再前拼。
-        assertEquals(3, repaired?.size)
+        // 快照段进的是 snapshotOrphanRepair（收到原始 2 条快照段），修复产物前拼。
+        assertEquals(2, snapshotRepairInput?.size)
+        assertEquals(1, mainRepairCalls) // 主列表只过 orphanRepair 一次
         assertEquals(4, result.assembled.size)
         assertEquals(3, result.diagnostics.snapshotPrepended)
     }
 
     @Test
-    fun `fingerprint ignores bridge messages and image byte identity`() {
+    fun `snapshot repair falls back to orphanRepair when not provided`() {
+        var calls = 0
+        val counter: (List<LLMMessage>) -> List<LLMMessage> = { calls += 1; it }
+        RequestAssembler.assemble(
+            RequestAssembler.Inputs(
+                scopedHistory = listOf(user("侧边", "s1")),
+                sideSnapshotMainline = listOf(user("主线", "m1")),
+                orphanRepair = counter,
+            ),
+        )
+        assertEquals(2, calls) // 主列表一次 + 快照段回退一次
+    }
+
+    @Test
+    fun `structural ignores memory-only text parts and bridge messages`() {
+        val toolHint = AgentContentPart.Text(RequestAssembler.MEMORY_ONLY_TEXT_PREFIXES.first() + "……)")
+        val imageNote = AgentContentPart.Text("[attached image: /var/minis/x.png]")
+        val withMemoryOnlyParts = listOf(
+            user("读", "u1"),
+            LLMMessage(LLMMessage.Role.USER, "", dbMessageId = "r1", contentParts = listOf(
+                AgentContentPart.ToolResult("c1", "t", "ok"), toolHint,
+            )),
+        )
+        val withoutThem = listOf(
+            user("读", "u1"),
+            LLMMessage(LLMMessage.Role.USER, "", dbMessageId = "r1", contentParts = listOf(
+                AgentContentPart.ToolResult("c1", "t", "ok"),
+            )),
+        )
+        // 内存专属 Text 部件不产生结构差异（净眼 P1-1b）。
+        assertEquals(RequestAssembler.structural(withMemoryOnlyParts), RequestAssembler.structural(withoutThem))
+        assertEquals(RequestAssembler.fingerprint(withMemoryOnlyParts), RequestAssembler.fingerprint(withoutThem))
+        // 桥接消息（无 dbMessageId）不参与指纹。
+        assertEquals(
+            RequestAssembler.structural(listOf(user("甲", "u1"), assistant("(bridge)"))),
+            RequestAssembler.structural(listOf(user("甲", "u1"))),
+        )
+    }
+
+    @Test
+    fun `structural is content-blind while fingerprint detects content divergence`() {
+        val a = user("甲", "u1")
+        val b = user("乙", "u1")
+        // 内容不同：结构相同（弱信号），全量指纹不同（强校验）。
+        assertEquals(RequestAssembler.structural(listOf(a)), RequestAssembler.structural(listOf(b)))
+        assertNotEquals(RequestAssembler.fingerprint(listOf(a)), RequestAssembler.fingerprint(listOf(b)))
+        // 真结构分歧：多/少一条消息、工具对缺失。
+        assertNotEquals(
+            RequestAssembler.structural(listOf(a, user("二", "u2"))),
+            RequestAssembler.structural(listOf(a)),
+        )
+    }
+
+    @Test
+    fun `fingerprint detects tool pairing divergence`() {
+        val use = AgentContentPart.ToolUse("c1", "read_text_block", JSONObject())
+        val result = AgentContentPart.ToolResult("c1", "read_text_block", "ok")
+        val paired = listOf(
+            user("读", "u1"), assistant("", "a1", use),
+            LLMMessage(LLMMessage.Role.USER, "", dbMessageId = "r1", contentParts = listOf(result)),
+        )
+        val orphanOnly = listOf(user("读", "u1"), assistant("", "a1", use))
+        assertNotEquals(RequestAssembler.fingerprint(paired), RequestAssembler.fingerprint(orphanOnly))
+        assertNotEquals(RequestAssembler.structural(paired), RequestAssembler.structural(orphanOnly))
+    }
+
+    @Test
+    fun `fingerprint ignores image byte identity`() {
         val withImage = user("看图", "u1").copy(
             imageParts = listOf(LLMMessage.ImagePart(ByteArray(4), "image/png")),
         )
         val sameStructureDifferentBytes = user("看图", "u1").copy(
             imageParts = listOf(LLMMessage.ImagePart(ByteArray(9), "image/png")),
         )
-        // 桥接消息（无 dbMessageId）不参与指纹。
-        val bridge = assistant("(bridge)")
         assertEquals(
-            RequestAssembler.fingerprint(listOf(withImage, bridge)),
+            RequestAssembler.fingerprint(listOf(withImage)),
             RequestAssembler.fingerprint(listOf(sameStructureDifferentBytes)),
         )
-        // 内容真分歧必须可见。
-        assertNotEquals(
-            RequestAssembler.fingerprint(listOf(user("甲", "u1"))),
-            RequestAssembler.fingerprint(listOf(user("乙", "u1"))),
-        )
-    }
-
-    @Test
-    fun `fingerprint detects tool pairing divergence`() {
-        val (use, result) = AgentContentPart.ToolUse("c1", "read_text_block", JSONObject()) to
-            AgentContentPart.ToolResult("c1", "read_text_block", "ok")
-        val paired = listOf(user("读", "u1"), assistant("", "a1", use), LLMMessage(LLMMessage.Role.USER, "", dbMessageId = "r1", contentParts = listOf(result)))
-        val orphanOnly = listOf(user("读", "u1"), assistant("", "a1", use))
-        assertNotEquals(RequestAssembler.fingerprint(paired), RequestAssembler.fingerprint(orphanOnly))
     }
 
     @Test
