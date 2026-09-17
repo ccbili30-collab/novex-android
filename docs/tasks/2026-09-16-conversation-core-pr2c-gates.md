@@ -55,3 +55,16 @@
 ## 台账
 
 （待审后填）
+
+## 台账
+
+### 净眼一审（agent_7f27144a，52eeb37，结论：退回 → P0/P1/P2-2 已修）
+
+| 编号 | 结论 | 处置 |
+|---|---|---|
+| P0 drain 站点 synchronized 缺闭合 }（文件括号失衡编译必败；CI 实红佐证） | **采纳已修** | `));` 后补 `}` 并归位缩进；净眼警告的"文件尾补括号=monitor 跨 runAgentLoop 死锁结构"已规避 |
+| P1 旧流尸体 end-finally 污染审计（IDLE→AWAITING_RESUME 误报+幻影终点） | **采纳已修** | 入口记 jobAtLoopEntry；finally 比 streamJob 身份，过期 job 降级 debug 记录 |
+| P2-1 dbWriteSerial 只互斥不保序（依赖未声明调度事实） | **挂账 PR3** | 建议：append 前复检 isWipingSession 或会话世代号 |
+| P2-2 clearChat 连点复位窗口 | **采纳已修** | 入口 `if (isWipingSession) return` |
+| P2-3 三项 PR2b 既有观察（resume 资格残留/删库异常半态/join 无界） | **挂账 PR3** | 与旧代码同型非回归 |
+| P2-4 任务书挂点与实现偏差（cancelStream/resume/retryLast 无直接转换调用） | **记录** | PR3 读审计数据前知悉 |

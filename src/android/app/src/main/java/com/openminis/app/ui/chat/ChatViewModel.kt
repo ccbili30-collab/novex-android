@@ -5543,6 +5543,8 @@ class ChatViewModel(
      * Cancels any in-flight stream first so the UI doesn't race the wipe.
      */
     fun clearChat() {
+        // 净眼 P2-2：连点两次的复位窗口门——第二个 wipe 未清内存前 isWiping 不得提前失效。
+        if (isWipingSession) return
         if (_isStreaming.value) cancelStream()
         val sid = activeSessionId
         // T-streaming-side-channel: ensure no stale stream delta survives a
@@ -6702,7 +6704,8 @@ class ChatViewModel(
                     imageParts = prepared.imageParts,
                     contentParts = combinedParts,
                     dbMessageId = queuedUser.id,
-            ))
+                ))
+            }
 
             try {
                 runAgentLoop(
@@ -7913,8 +7916,14 @@ class ChatViewModel(
                     .put("cause", safeModelDiagnostic(failure.cause?.message.orEmpty())))
             throw failure
         } finally {
-            // [T-run-phase] D1：审计记录终点相位，不执法。
-            runPhaseTransitionTo(if (_canResume.value) RunPhase.AWAITING_RESUME else RunPhase.IDLE, "runAgentLoop-end")
+            // [T-run-phase] D1：审计记录终点相位，不执法。净眼 P1：过期 job 的
+            // 终点相位降级为 debug 记录——幻影终点不污染 PR3 执法化数据。
+            val staleJob = streamJob != null && streamJob !== jobAtLoopEntry
+            if (staleJob) {
+                AppLogger.info(TAG_STREAM, "[RunPhase] stale job end-phase suppressed (a newer stream owns the phase)")
+            } else {
+                runPhaseTransitionTo(if (_canResume.value) RunPhase.AWAITING_RESUME else RunPhase.IDLE, "runAgentLoop-end")
+            }
         }
     }
 
@@ -7927,6 +7936,8 @@ class ChatViewModel(
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
         runPhaseTransitionTo(RunPhase.STREAMING, "runAgentLoop")
+        // 净眼 P1：记录本流身份——旧流尸体的 end-finally 迟到时不再污染审计。
+        val jobAtLoopEntry = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
         val novexRequestMessage = latestNovexUserRequest(agentHistory)
         val failedToolProgress = com.openminis.app.agent.FailedToolProgress()
         if (recoveryOrigin == AgentRunRecoveryOrigin.RESUME) {
