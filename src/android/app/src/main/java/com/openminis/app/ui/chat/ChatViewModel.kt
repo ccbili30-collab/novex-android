@@ -999,14 +999,21 @@ class ChatViewModel(
     /** Structured agent history for the agent loop (contentParts-based).
      *
      * [T-single-writer-contract] PR 2a 写点契约（任务书
-     * docs/tasks/2026-09-16-conversation-core-pr2-single-writer.md §②）：
-     * - 唯一权威重建：installActiveConversation（从 DB 活跃路径全量重建）；
-     * - 允许的增量写点：runAgentLoop 轮次追加（用户行/助手轮/工具对，先 DB 后
-     *   内存对偶）、injectQueuedPromptsAsNewTurn（桥接段=内存专属+已登记；用户
-     *   行=DB+内存对偶）、压缩/卸载的就地投影改写（只改内容保留条数）；
-     * - 禁止：任何绕过 DB 的整表替换/清空（conv9 队列注入空请求的病根）。
+     * docs/tasks/2026-09-16-conversation-core-pr2-single-writer.md §②）。
+     * **非穷尽清单**——净眼二审查明的已知例外全部点名，它们是 PR 2b 的收敛对象：
+     * - 权威重建：installActiveConversation；已知第二重建者 loadSession
+     *   （compact revert / branch change / recovery 均重载）；
+     * - 对偶增量（先 DB 后内存）：runAgentLoop 轮次追加（用户行/助手轮/工具对）、
+     *   injectQueuedPromptsAsNewTurn 用户行、sendMessage 用户行、drainQueuedPrompts、
+     *   runCrossSync；
+     * - 内存专属/就地投影（保留语义但**不保证条数**）：注入桥接段（已登记）、
+     *   压缩/卸载改写、sanitizeAgentHistory（可插行/删行）、choice-repair 用户行
+     *   改写、终端 UI 工具剥离、dbMessageId 回填；
+     * - **PR 2b 待收敛的违点**：clearChat（内存先行、DB 异步后补——崩溃窗口
+     *   重启会从 DB 复活已清对话）、handleUserCancelledCleanup（内存先行）、
+     *   retryLast（内存回滚靠事后 fork+install 对账）；
+     * - 禁止新增：任何绕过 DB 的整表替换/清空（conv9 病根）。
      * 运行时稽查：出口 I1 历史守恒 + 影子装配强信号（shadow_assembly_diff）。
-     * PR 2b 将把增量写点收敛为"DB 事件→内存投影"的单一写者。
      */
     private val agentHistory = mutableListOf<LLMMessage>()
     private val novexDocumentRepository by lazy {
@@ -8032,17 +8039,20 @@ class ChatViewModel(
                     // effectiveAgentHistory automatically — compaction already
                     // re-appends the recent turns, so no resume handoff is
                     // needed. A compaction iteration is space management, not
-                    // task progress, so it must NOT consume a turn slot:
-                    // decrementing cancels this iteration's advance. The
+                    // task progress — but `turn` is a for-range val, so the
+                    // continue DOES consume the iteration index (the
+                    // pendingI1BaselineTurn bump below compensates for it). The
                     // MAX_AGENT_TURNS ceiling is never reset, and
                     // maxInLoopCompactions bounds compact-thrash within a turn,
                     // so a loop that keeps compacting cannot defeat the runaway
                     // backstop.
                     inLoopCompactions++
-                    // [T-request-assembler] PR2a B1：压缩迭代顺延 I1 基线标志——
-                    // 注入设的 N+1 若被本 continue 跳过，标志过期、该逻辑轮的
-                    // I1 基线静默丢失（净眼 P2-2b 挂账清偿）。
-                    if (pendingI1BaselineTurn > turn) pendingI1BaselineTurn = turn + 1
+                    // [T-request-assembler] PR2a B1：压缩迭代顺延 I1 基线标志——注入
+                    // 设 N+1 后若本 continue 在 turn N+1 先于 attempt 命中，标志过期、
+                    // 该逻辑轮基线丢失（净眼 P2-2b）。净眼二审定案：循环不变量为
+                    // 标志 ≤ turn，故用 == 而非 >（> 恒假是死代码；>= 会复活过期
+                    // 标志到中轮造成 I1 误报）。
+                    if (pendingI1BaselineTurn == turn) pendingI1BaselineTurn = turn + 1
                     continue
                 }
                 InLoopContextAction.STOP -> {
