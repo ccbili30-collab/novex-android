@@ -1,6 +1,6 @@
 ---
 name: wenyou-maker
-version: 1.1.0
+version: 1.2.0
 description: 当用户想创建一个 AI 文字游戏（文游、人生模拟器、跑团规则书、生存模拟）时使用。把任意题材制作成一张可直接开局的世界卡：标准规则引擎 + 题材包 + 事件与人物数据库，全部装进卡片模块（含携带规则），并附每轮注入文本与可选角色卡。用户说"做个XX文游/模拟器/文字游戏"即触发。
 ---
 
@@ -31,7 +31,7 @@ description: 当用户想创建一个 AI 文字游戏（文游、人生模拟器
 
 ## 第三步 · 建卡（工具调用序列）
 
-用 `create_card`（kind=WORLD）建卡后，按下面的标准模块结构逐个 `add_module` / `add_child_module` + `write_module_text` 写入，并用 `set_module_options` 设携带规则：
+**一次成型，禁止搭骨架**：直接用 `create_card_bulk`（kind=WORLD）把下面的标准模块结构作为嵌套模块树一次写入——常驻模块（00-11）先一次成型；数据库模块（12-16）子模块多，可再追加 1-2 次 `add_module_bulk`。不要先 `create_card` 建空卡再逐个 `add_module`/`write_module_text` 地搭骨架填正文（那是建完卡后的微调路径，不是建卡路径）。携带规则 bulk 不带：树成型后逐个 `set_module_options` 设 manual/关键词规则。模块结构仍严格按下面的标准表：
 
 | 模块 | 携带规则 | 内容 |
 |---|---|---|
@@ -57,7 +57,7 @@ description: 当用户想创建一个 AI 文字游戏（文游、人生模拟器
 - 先写常驻模块（00-11），再写数据库模块（12-16）；**索引先行**：先写好 11·总索引，详情卡与索引 ID 严格对应。
 - 表格一律用 Markdown 表；数值必有公式，公式必有算例；禁止"酌情""尽量"类模糊条款。
 - 事件条目一行式：`ID. 情境一句话（可选行为以/分隔）`，不预写结果。
-- 大模块先 `add_module` 再 `write_module_text`；一次写不下就分多个文字块，**写完必须回读校验**（read_card），失败不得宣称完成。
+- 正文微调才用精确工具：整块替换 `write_module_text`/`write_module_markdown`，局部改动 `replace_text_range`；一次写不下就分多次 `add_module_bulk` 追加，**写完必须回读校验**（read_card），失败不得宣称完成。
 - 高危设定（秒杀线、时间线限定、归属）在正文里用**加粗**标出。
 - 角色卡：仅当用户在问卷第5步明确要求时，用 `create_card`（kind=CHARACTER）为核心 NPC 建独立角色卡，人格字段与 13·人物卡 同源。
 - **整理纪律**：规则、表格、骨架你来写；但世界观叙述性文字克制到最短——短句、白描、零修辞，逐条过共享禁句表 `/var/minis/skills/card-organizer/references/tic-ban.md`（该 skill 未安装时按 engine.md 文风总则执行）。用户的口癖会随卡放大，你的口癖也会——卡是长期资产，别把噪声写进去。

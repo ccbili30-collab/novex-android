@@ -26,7 +26,14 @@ object CardBulk {
 
     /** 递归解析并整包校验；任何违规抛 IllegalArgumentException，消息带 JSON 路径。 */
     fun parseTree(value: JSONObject, key: String): List<BulkModuleNode> {
-        val array = value.optJSONArray(key) ?: throw IllegalArgumentException("$key 缺失（模块数组）")
+        // [T-bulk-string-tolerance] 会话 b314941f：模型/中转常把数组整体编码成
+        // 字符串（"modules":"[{...}]"），optJSONArray 判缺失后模型只能盲猜格式
+        // 再试一轮（46 分钟建卡的浪费源之一）。容忍字符串编码；真缺/真坏时
+        // 报错附最小正确示例，照抄即对。
+        val array = value.optJSONArray(key) ?: (value.opt(key) as? String)?.let { raw ->
+            runCatching { JSONArray(raw) }.getOrNull()
+        } ?: throw IllegalArgumentException(
+            "$key 缺失或不是 JSON 数组（不要整体加引号）。正确形状：\"$key\":[{\"name\":\"模块名\",\"text\":\"正文\"}]")
         val nodes = parseArray(array, key)
         val totalText = nodes.sumOf { n -> (n.text?.length ?: 0) + n.childrenSum() }
         require(totalText <= MAX_TOTAL_TEXT_CHARS) { "$key 正文总量 ${totalText} 超过上限 $MAX_TOTAL_TEXT_CHARS，请拆成多次 add_module_bulk" }
