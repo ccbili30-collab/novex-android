@@ -1003,12 +1003,12 @@ class ChatViewModel(
      * **非穷尽清单**——净眼二审查明的已知例外全部点名，它们是 PR 2b 的收敛对象：
      * - 权威重建：installActiveConversation；已知第二重建者 loadSession
      *   （compact revert / branch change / recovery 均重载）；
-     * - 对偶增量（先 DB 后内存）：runAgentLoop 轮次追加（用户行/助手轮/工具对）、
-     *   injectQueuedPromptsAsNewTurn 用户行、sendMessage 用户行、drainQueuedPrompts、
-     *   runCrossSync；
+     * - 对偶增量（先 DB 后内存）：runAgentLoop 循环内追加（助手轮/工具对/工具
+     *   结果行——真用户行在循环外，见 sendMessage）、injectQueuedPromptsAsNewTurn
+     *   用户行、sendMessage 用户行、drainQueuedPrompts、runCrossSync；
      * - 内存专属/就地投影（保留语义但**不保证条数**）：注入桥接段（已登记）、
-     *   压缩/卸载改写、sanitizeAgentHistory（可插行/删行）、choice-repair 用户行
-     *   改写、终端 UI 工具剥离、dbMessageId 回填；
+     *   卸载就地改写（压缩不写本表——audit trail 保留原列表）、sanitizeAgentHistory
+     *   （可插行/删行）、choice-repair 用户行改写、终端 UI 工具剥离、dbMessageId 回填；
      * - **PR 2b 待收敛的违点**：clearChat（内存先行、DB 异步后补——崩溃窗口
      *   重启会从 DB 复活已清对话）、handleUserCancelledCleanup（内存先行）、
      *   retryLast（内存回滚靠事后 fork+install 对账）；
