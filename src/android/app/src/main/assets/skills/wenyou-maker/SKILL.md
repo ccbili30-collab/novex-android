@@ -57,7 +57,7 @@ description: 当用户想创建一个 AI 文字游戏（文游、人生模拟器
 - 先写常驻模块（00-11），再写数据库模块（12-16）；**索引先行**：先写好 11·总索引，详情卡与索引 ID 严格对应。
 - 表格一律用 Markdown 表；数值必有公式，公式必有算例；禁止"酌情""尽量"类模糊条款。
 - 事件条目一行式：`ID. 情境一句话（可选行为以/分隔）`，不预写结果。
-- 正文微调才用精确工具：整块替换 `write_module_text`/`write_module_markdown`，局部改动 `replace_text_range`；一次写不下就分多次 `add_module_bulk` 追加，**写完必须回读校验**（read_card），失败不得宣称完成。
+- 正文微调才用精确工具：整块替换 `write_module_text`/`write_module_markdown`，局部改动 `replace_text_range`；单模块一次写不下就分多个文字块依次保存（净眼 P3 语义修正：bulk 追加的是整棵模块子树，不是同模块文字）。建卡阶段内容过大时分多次 `add_module_bulk`，每次追加一棵子树。**写完必须回读校验**（read_card），失败不得宣称完成。
 - 高危设定（秒杀线、时间线限定、归属）在正文里用**加粗**标出。
 - 角色卡：仅当用户在问卷第5步明确要求时，用 `create_card`（kind=CHARACTER）为核心 NPC 建独立角色卡，人格字段与 13·人物卡 同源。
 - **整理纪律**：规则、表格、骨架你来写；但世界观叙述性文字克制到最短——短句、白描、零修辞，逐条过共享禁句表 `/var/minis/skills/card-organizer/references/tic-ban.md`（该 skill 未安装时按 engine.md 文风总则执行）。用户的口癖会随卡放大，你的口癖也会——卡是长期资产，别把噪声写进去。

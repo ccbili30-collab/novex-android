@@ -19,7 +19,7 @@
   `modules`/`module` 整体编码成字符串（#59 形状），optJSONArray/optJSONObject
   判"缺失"，报错无正确形状示例，模型盲猜重试一轮；add_module_bulk 失败后
   模型回退 15×add_module 单发。
-- **C【引导矛盾】SKILL.md 教慢路径**：wenyou-maker v1.1.1（SKILL.md 第三步）
+- **C【引导矛盾】SKILL.md 教慢路径**：wenyou-maker v1.1.0（SKILL.md 第三步）
   白纸黑字"建卡后逐个 add_module + write_module_text 写入"——与
   create_card_bulk 定义里"建整卡必须用它"直接矛盾，模型照 skill 走骨架弯路。
 - 外部因素（不修）：模型组延迟方差 31s↔11min 同形状（会话绑模型组，慢轮
@@ -64,9 +64,26 @@
 
 ## 台账
 
-- 净眼审查：待
+### 净眼一审（2026-09-18，裁决：可合并）
+
+六场景链全走通（optional 三拼写/真必填防线/桥接一致性含 provider strict
+排查/bulk 字符串链含上限仍生效/SKILL 升级链含字典序本次正确/三方文案）。
+无 P0/P1。
+
+- P2（挂账）：block_id 键名 typo（block_ld）旧版被 fuzzy 修复或预检拒，
+  新版静默降级"新建块"致重复正文——optionality 固有代价，
+  created_block_ids+read_card 可自愈；跟进项：ToolJsonRepair fuzzy 匹配
+  扩展到 properties 全集。
+- P3（挂账）：显式 JSON null 的 before_id/module_id 经 optString 得
+  "null" 字符串（write_module_text 因 NEW_BLOCK_HINTS 恰好安全）——
+  跟进项：optional 定位字段统一过滤 "null"。
+- P3（存量，记录）：depthOf 死代码/版本字典序比较/copyAssetTree 不清旧
+  文件。
+- P3（已修）：SKILL.md 微调句 bulk 语义错位（本 commit 修正）；
+  任务书版本笔误 v1.1.1→1.1.0。
+
 - 守纲六问：待
-- CI：待
+- CI：2051d4c 红（Kotlin 泛型默认值 >= 解析坑），语法修正推送后待
 
 ## 遗留挂账
 
