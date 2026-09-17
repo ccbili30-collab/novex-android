@@ -73,7 +73,11 @@ class RunPhasePolicyTest {
                 injections = { calls += "injections"; it },
             ),
         )
-        assertEquals(listOf("compact", "orphan", "retention", "pureChat", "imageBudget", "injections"), calls)
+        // 快照在场时 orphanRepair 调用两次（主列表 + 快照段各自修复后前拼）。
+        assertEquals(
+            listOf("compact", "orphan", "orphan", "retention", "pureChat", "imageBudget", "injections"),
+            calls,
+        )
         // 快照前拼 + blank 过滤 + 工具对保留：1(快照) + 3(实质) = 4。
         assertEquals(4, out.assembled.size)
         assertEquals(out.assembled, out.request)
