@@ -75,6 +75,16 @@ CI（android-validate）同轮全绿。新增问题全 P2 级：
 | P2-4' 工具产图在 DB 不可还原 → 常态强信号 | **认知项记录** | 这是地震仪如实曝光持久化缺口，非误报；守纲与 PR2 排期知悉"强信号 ≠ 内存侧必有 bug" |
 | P2-5' 估算路径（retainedContextEstimate 等）仍内联 | **挂账 PR2** | 状态机收敛时统一走装配线 |
 
-### 守纲裁决
+### 守纲裁决（agent_44b5268a，总结裁：准予合并）
 
-（待填）
+六问全过：①功能模块零 diff（5 文件；ATTACHED_IMAGE 三处逐字符等价，纯常量锚定）
+②出口唯一（sendMessage 其余调用点均为单发工具调用，PR 前既有；估算路径挂账合理——
+强行入线反给 UI 估算引入挂起 IO）③新旧不并存（旧内联三处删净；影子只观察；
+wrapper 与 attempt 共享同一 assemblyInputs 收集器）④无过度工程（两级指纹是噪音
+分流最低实现；snapshotOrphanRepair 是冻结态必要分离；pendingI1BaselineTurn 单 Int
+读后复位，非抢跑状态机）⑤不是第四种插槽（assemble 零 ViewModel/DB 读取，
+状态访问全在闭包侧）⑥净眼 8 项修复逐项抽验属实、5 项挂账有去处；const 内联引用
+判为可接受且是防漂移正确解。
+
+非阻塞备忘（挂 PR2）：卡片绑定场景 attempt 内 8015 估算与 8192 正式装配各跑一次
+assemblyInputs()（双份只读快照 IO）——与 P2-5' 同根，随估算路径入线收敛。
