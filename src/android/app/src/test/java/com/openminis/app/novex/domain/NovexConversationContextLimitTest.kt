@@ -5,7 +5,8 @@ import org.junit.Test
 
 class NovexConversationContextLimitTest {
     @Test fun newConversationStartsAtMinimumAndOldConfigurationKeepsInheritedPolicy() {
-        assertEquals(64_000, NovexConversationConfiguration.empty("new").snapshot.contextLimitTokens)
+        // [T-default-capacity-300k] 默认容量契约更新：64K → 300K（用户决策 2026-09-16）。
+        assertEquals(300_000, NovexConversationConfiguration.empty("new").snapshot.contextLimitTokens)
         val old = NovexConversationConfigurationCodec.decode("""{"version":1,"executionMode":"approval"}""", "old")
         assertNull(old.contextLimitTokens)
         assertEquals(128_000, NovexConversationContextLimit.effective(1_000_000, old.contextLimitTokens, 128_000))
@@ -17,7 +18,7 @@ class NovexConversationContextLimitTest {
         val restored = NovexConversationConfigurationCodec.decode(NovexConversationConfigurationCodec.encode(changed), "chat")
         assertEquals(1_000_000, restored.contextLimitTokens)
         assertEquals(1_000_000, NovexConversationContextLimit.effective(1_000_000, restored.contextLimitTokens, 128_000))
-        assertEquals(64_000, original.contextLimitTokens)
+        assertEquals(300_000, original.contextLimitTokens)
         assertTrue(restored.hasPersistentConfiguration)
     }
 

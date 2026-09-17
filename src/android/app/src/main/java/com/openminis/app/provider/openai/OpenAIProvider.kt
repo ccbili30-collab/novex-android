@@ -782,7 +782,10 @@ class OpenAIProvider private constructor(
                 memBefore, serStartNs, failure = null,
             )
         }
-        val request = buildRequest(bodyStr)
+        val request = buildRequest(
+            bodyStr,
+            com.openminis.app.provider.ProviderWireCapture.RequestStats.of(messages),
+        )
         val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
         val diagnosticSecrets = listOfNotNull(apiKey, request.header("Authorization")?.removePrefix("Bearer "), request.header("api-key"))
         audit?.event("wire_request", JSONObject()
@@ -2369,12 +2372,18 @@ class OpenAIProvider private constructor(
      * the OAuth byte build, and the OkHttp RequestBody. Per-call peak heap
      * dropped by ~2× the body size (often tens of MB on long agent loops).
      */
-    private suspend fun buildRequest(bodyStr: String): Request {
-        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）。
+    private suspend fun buildRequest(
+        bodyStr: String,
+        stats: com.openminis.app.provider.ProviderWireCapture.RequestStats =
+            com.openminis.app.provider.ProviderWireCapture.RequestStats(),
+    ): Request {
+        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
+        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
         com.openminis.app.provider.ProviderWireCapture.record(
             if (useResponsesAPI) "openai-responses" else "openai-chat",
             bodyStr,
             basePath.trimEnd('/') + if (useResponsesAPI) "/responses" else "/chat/completions",
+            stats,
         )
         val token = getToken()
 
