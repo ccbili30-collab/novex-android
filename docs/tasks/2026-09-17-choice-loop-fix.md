@@ -54,6 +54,33 @@ appendForcedChoiceHint / SELECTION_RESPONSE_REMINDER / endsWithLiveChoicesCard�
 
 ## 台账
 
-- 净眼审查：待（场景链：强制重试 / 点选 / 自由输入 / 重载 / 连续两卡 / drain 队列）
+### 净眼一审（2026-09-18，裁决：退回修复后复审）
+
+五场景：①强制重试链走通（取走清零仅四处出现/COMPACTED 不丢提示/提示只进
+请求副本不进影子比较/重试重入共享同一逻辑请求）；②点选链走通（时序/落盘
+内存同源同序/模型可见/UI 双路径干净）；③自由输入走通；④非卡链走通；
+⑤drain 队列链**走不通**（P1-1）。
+
+三分类处置（commit a3f474c 后追加修复）：
+
+- **采纳 P1-1**：enqueuePrompt 的排队占位气泡（role=user）恒垫 _messages
+  尾部，drain 读 lastOrNull() 恒 false、drain 半边死代码 → 改
+  `lastOrNull { it.role == "assistant" }`。
+- **采纳 P2-2**：toLLMMessage 把标记折进重载 content（live=原文 vs DB=原文+
+  标记）→ 影子 fingerprint 弱信号噪音 + latestVisibleUserRequest 不对称 →
+  text case 加 `startsWith("<system-reminder>")` 特判，只进 parts 不折
+  content（照 <user-attached-files> 先例）。
+- **采纳 P2-3**：pruneDeletedMounts/compact 的 system 通知先于检测插入尾部
+  → 标记静默丢失 → sendMessage 检测改
+  `lastOrNull { role=="assistant" || role=="user" }` 跳过 system 气泡。
+- **采纳 P2-4**：loop regression 硬编码 null 测不到接线 → 改状态机式驱动
+  （pending 变量取走即清零 + 同迭代重试共享不累积断言）。
+- **挂账 P3-5**：choiceRepairAttempted 现仅剩日志用途（非本次引入）。
+- **挂账 P3-8**：多段排队合并只挂一次标记——drain 合并整队为单行、
+  extraTextParts 传一次天然成立，VM 私有接线层无纯函数可测，记台账。
+- **记录 P3-6**：标记文本与恢复三条中文正则无匹配，不误触发（防回归）。
+- **记录 P3-7**：本机无 JDK，编译/单测由 CI 补（流水线）。
+
+净眼二审：待（窄复核 P1-1/P2-2/P2-3/P2-4 四处修复）
 - 守纲六问：待
-- CI：待
+- CI：一审 ee844fe 红（测试漏 assertNotSame import，a3f474c 修复）；二审待

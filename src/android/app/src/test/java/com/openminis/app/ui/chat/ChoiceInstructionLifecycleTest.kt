@@ -93,26 +93,37 @@ class ChoiceInstructionLifecycleTest {
 
     @Test
     fun `loop regression - hint is gone from every subsequent request`() {
-        // 事故形状复刻：第 N 轮触发恢复（本轮请求带提示），第 N+1 轮起
-        // 任何请求都不得再含有该提示。
+        // 事故形状复刻，且按真实接线形状驱动：循环里 pending 变量在每轮
+        // 迭代头部"取走即清零"（净眼 P2-4——硬编码 null 测不到这条语义）。
+        // 第 N 轮触发恢复（本轮请求带提示），第 N+1 轮起任何请求都不得
+        // 再含有该提示。
+        var pendingForcedChoiceHint: String? = ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT
         val history = listOf(
             user("选项工具"),
             assistant("(被撤下的散文尝试)"),
         )
-        val forcedRequest = ChoiceInstructionLifecycle.appendForcedChoiceHint(
-            history, ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT,
-        )
+        // —— 迭代 N：头部捕获即清零，attempt 用捕获值 ——
+        val hintN = pendingForcedChoiceHint
+        pendingForcedChoiceHint = null
+        val forcedRequest = ChoiceInstructionLifecycle.appendForcedChoiceHint(history, hintN)
         assertTrue(forcedRequest.any { m ->
             m.contentParts.any { it is AgentContentPart.Text && it.text == ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT }
         })
-        // 下一轮：取走即清零 → hint 为 null → 请求就是历史本身。
-        val nextTurnHint: String? = null
-        val nextRequest = ChoiceInstructionLifecycle.appendForcedChoiceHint(history + user("【最优】继续"), nextTurnHint)
+        // —— 迭代 N+1：玩家点选进场，pending 已空 ——
+        val hintN1 = pendingForcedChoiceHint
+        pendingForcedChoiceHint = null
+        val nextRequest = ChoiceInstructionLifecycle.appendForcedChoiceHint(history + user("【最优】继续"), hintN1)
         assertFalse(nextRequest.any { m ->
             m.contentParts.any { it is AgentContentPart.Text && "Do not write prose" in it.text }
         })
         assertFalse(nextRequest.any { m ->
             m.contentParts.any { it is AgentContentPart.Text && it.text == ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT }
+        })
+        // 同一迭代内的连接重试：attempt 重入仍用捕获值（同一逻辑请求共享），
+        // 且每次在新副本上追加、不累积。
+        val retryRequest = ChoiceInstructionLifecycle.appendForcedChoiceHint(history, hintN)
+        assertEquals(1, retryRequest.count { m ->
+            m.contentParts.count { it is AgentContentPart.Text && it.text == ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT } == 1
         })
     }
 

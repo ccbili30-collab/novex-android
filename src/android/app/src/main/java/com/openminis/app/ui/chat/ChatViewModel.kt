@@ -6703,7 +6703,10 @@ class ChatViewModel(
             // [T-choice-instruction-lifecycle] drain 的合并消息紧接着刚结束的
             // 助手回合：若那回合以选项卡收尾，这条排队消息就是对它的回应，
             // 与 sendMessage 同款标记（StateFlow.value 读取线程安全）。
-            val drainLast = _messages.value.lastOrNull()
+            // 必须跳过尾部找最后一条 assistant：排队占位气泡（role=user）
+            // 会一直垫在 _messages 尾部，读 lastOrNull() 恒命中占位、检测
+            // 恒 false——净眼 P1-1，drain 半边曾经的死代码。
+            val drainLast = _messages.value.lastOrNull { it.role == "assistant" }
             val drainReminder = if (ChoiceInstructionLifecycle.endsWithLiveChoicesCard(
                     drainLast?.role, drainLast?.toolBlocks?.map { it.toolName }.orEmpty(),
                 )
@@ -6949,7 +6952,10 @@ class ChatViewModel(
             // 回应"与"新元指令"（选项卡后只弹选项不写正文的另一半根因）。
             // 标记随用户行落盘：UI 走现成 system-reminder 剥离不渲染，模型
             // 后续每轮可见，内存/DB 两侧同源、影子装配天然平价。
-            val lastVisible = _messages.value.lastOrNull()
+            // 检测跳过 system 气泡（pruneDeletedMounts/compact 通知等会先于
+            // 发送插入尾部，净眼 P2-3）；占位气泡 role=user 归入"已有人回应"
+            // 的安全方向，不挂标记。
+            val lastVisible = _messages.value.lastOrNull { it.role == "assistant" || it.role == "user" }
             val selectionReminder = if (ChoiceInstructionLifecycle.endsWithLiveChoicesCard(
                     lastVisible?.role, lastVisible?.toolBlocks?.map { it.toolName }.orEmpty(),
                 )
@@ -13810,7 +13816,14 @@ class ChatViewModel(
                         // messages byte-identical so `.content` consumers
                         // (summary, title fallback, edit) see the same string
                         // as a fresh turn and don't get the XML twice.
-                        if (containsAgentAttachmentMetadata(value)) {
+                        // [T-choice-instruction-lifecycle] 选项回应标记同款
+                        // 特判（净眼 P2-2）：标记部件只进 contentParts 给模
+                        // 型，不折进重载后的 content——否则 live 侧行 content
+                        // 是玩家原文、DB 重建侧变成原文+标记，影子装配
+                        // fingerprint（含 content.hashCode）每次 turn-0 基线
+                        // 记一条弱信号噪音，latestVisibleUserRequest 也随之
+                        // live/重载不对称。
+                        if (containsAgentAttachmentMetadata(value) || value.startsWith("<system-reminder>")) {
                             contentParts.add(AgentContentPart.Text(value))
                         } else {
                             textContent += value
