@@ -5517,9 +5517,10 @@ class ChatViewModel(
         // so none re-adds an orphan side-channel entry after the wipe.
         clearAllStreamFlushStates()
         _streamingById.value = emptyMap()
-        // Memory state — match iOS clearChat() field list one-for-one.
-        _messages.value = emptyList()
-        agentHistory.clear()
+        // [T-single-writer] PR2b ①：真相源（agentHistory/_messages/压缩标记）改为
+        // DB 先行——下方协程先删库再清内存，崩溃窗口内重启不再复活已清对话。
+        // 删除是单条 SQL（毫秒级），UI 清屏延迟不可感知；其余非真相源状态保持
+        // 同步清以保即时反馈。
         activeNovexDocumentRefs = emptySet()
         activeNovexSourceCollectionRefs = emptySet()
         closeNovexLearningResponsePreview()
@@ -5529,7 +5530,6 @@ class ChatViewModel(
         _novexLearningTask.value = null
         _novexLearningStatus.value = null
         _error.value = null
-        _cachedLatestMarker = null
         toolLoopDetector.reset()
         _canResume.value = false
         _attachments.value = emptyList()
@@ -5553,6 +5553,11 @@ class ChatViewModel(
         viewModelScope.launch {
             chatRepository.dao.deleteMessages(sid)
             chatRepository.dao.deleteCompactMarkers(sid)
+            withContext(Dispatchers.Main) {
+                agentHistory.clear()
+                _messages.value = emptyList()
+                _cachedLatestMarker = null
+            }
             Log.i(TAG, "clearChat: session=$sid wiped (files preserved)")
         }
     }
@@ -8029,8 +8034,12 @@ class ChatViewModel(
             // New card excerpts can shrink; compact the retained conversation first,
             // then allocate the remainder to cards. Do not repeatedly compact a
             // static injected card because the preceding response reported it.
+            // [T-request-assembler] PR2b ③：回合级输入缓存——估算与 attempt 共用
+            // 同一 assemblyInputs 快照（旧序卡片场景双份只读 IO）。本迭代内此处
+            // 与 attempt 之间无历史写点；COMPACTED continue 时快照自然废弃。
+            val turnInputs = assemblyInputs()
             val retainedContext=if(integratedCards.binding(activeSessionId)!=null)
-                estimatePreparedRequest(effectiveAgentHistory(),systemPrompt,agentTools)
+                estimatePreparedRequest(RequestAssembler.assemble(turnInputs).assembled,systemPrompt,agentTools)
                 else null
             when (inLoopContextCheck(inLoopCompactions,retainedContext)) {
                 InLoopContextAction.PROCEED -> {}
@@ -8215,7 +8224,7 @@ class ChatViewModel(
                         emptyList()
                     }
                     val assembly = RequestAssembler.assemble(
-                        assemblyInputs().copy(
+                        turnInputs.copy(
                             pureChat = if (requestToolsEnabled) { history -> history } else ::pureChatHistory,
                             imageBudget = ::applyRequestImageBudget,
                             injections = { history ->
@@ -12545,18 +12554,22 @@ class ChatViewModel(
                     "<system-reminder>The user stopped this response. Content may be incomplete.</system-reminder>"
                 ),
             )
-            agentHistory.add(
-                LLMMessage(
-                    role = LLMMessage.Role.ASSISTANT,
-                    content = partialText,
-                    contentParts = parts,
-                )
-            )
-            viewModelScope.launch(Dispatchers.IO) {
+            // [T-single-writer] PR2b ②：DB 先行——先落库拿 dbMessageId 再入内存
+            // （旧序内存先 add 且不带 dbId，影子指纹天然看不见这条消息；崩溃
+            // 窗口内重启则丢中断标记）。落库毫秒级，_canResume 延迟不可感知。
+            viewModelScope.launch {
                 val partsJson = buildAssistantPartsJson(parts)
-                chatRepository.appendMessage(activeSessionId, "assistant", partsJson)
+                val entity = chatRepository.appendMessage(activeSessionId, "assistant", partsJson)
+                agentHistory.add(
+                    LLMMessage(
+                        role = LLMMessage.Role.ASSISTANT,
+                        content = partialText,
+                        contentParts = parts,
+                        dbMessageId = entity.id,
+                    )
+                )
+                _canResume.value = true
             }
-            _canResume.value = true
         } else if (historyEndsWithAssistant) {
             // Already committed (tool cancel path above handled or prior turn
             // wrote an assistant row). Still allow resume.
