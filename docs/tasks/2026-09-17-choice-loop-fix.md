@@ -103,6 +103,26 @@ appendForcedChoiceHint / SELECTION_RESPONSE_REMINDER / endsWithLiveChoicesCard�
 另：83646e3 CI 红——no-op 用例 assertSame 实参两次构造恒败（我的测试错，
 非产品代码），167f46e 修复。
 
-守纲六问：待
+守纲六问（2026-09-18，裁决：**准予合并**）：
+
+1. 功能模块零 diff——通过：diff 恰四处，九个 hunk 逐一核对无夹带（唯一
+   "顺带"是删除描述已死旧行为的过时注释，属必要清理）。
+2. 无私自开出口——通过：提示经装配线之后的 boundedHistory 追加且
+   PreSendContract 三断言直接收 boundedHistory 全过；标记经用户行 parts
+   落盘与 toLLMMessage 既有 text case；无 provider 层改动。
+3. 无新旧并存——通过：旧变异物理删除 23 行；grep 全源 FORCED 提示生成仅
+   一处、标记生成仅两个发送入口；恢复策略本体零 commit。
+4. 无过度工程——通过：新文件 66 行=两常量两纯函数，无钩子无配置。
+5. 不违插槽——通过：三层各就其位；提示寿命是循环局部态故不做成装配线
+   第十段（塞进 assemble() 会耦合 UI 循环态），顺序定义仍只在 assemble()。
+6. 上轮兑现——通过：四项闭环对上代码行号；P3-6 独立验证（正则不匹配+
+   latestVisibleUserRequest 既有过滤双保险）。
+
+附加判断：A（非文游面）——Bashism/EnvVar 提醒在 toolResult content 非
+text 部件、管理层请求直读 partsJson 不经 toLLMMessage，App 自写入的
+reminder text 部件只有新标记一种，特判是恢复平价非改行为。B（完整性）——
+两刀断两根因；四个第三入口（流中注入/retryLast/侧边/旧行）逐一排查，
+未覆盖处均退回旧行为、无新增错误路径。
+
 - CI：一审 ee844fe 红（漏 import）；二审 83646e3 红（assertSame 两次构造）；
-  167f46e 待
+  167f46e/d6ed863 待终版
