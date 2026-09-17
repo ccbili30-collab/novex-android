@@ -122,6 +122,22 @@ android-validate CI 为准（与本地等价：`:app:testStableDebugUnitTest` �
 清 streaming 状态落 DB → finally 释放），不卡死会话；`fallbackStrategy == always` 时会先走
 一遍 fallback 链再抛（与旧护栏完全同构，观察项，不算缺陷）。
 
-### 守纲裁决
+### 守纲裁决（2026-09-16，agent_56641ea2，总结裁：准予提交用户审批）
 
-（待填）
+六问全过：①功能模块零 diff（11 文件与任务书清单一致；P2-2 修复为纯防御，
+dropOrphanedToolParts 无孤儿时严格恒等，侧边认 ID 前拼语义未动）②出口仍唯一
+（streamMessage 单点 8281，断言块紧贴其前；本 PR 不动入口结构）③新旧不并存
+（旧护栏整体删除、报错文案唯一份、三处 record 全走新契约、无双契约测试）④无过度
+工程也无偷懒（无 PR1 机制混入；RequestStats/-1 缺失语义与阶段相称）⑤不越界成插槽
+（PreSendContract 纯函数只读不投影；不提前抄投影是对的——抄了反而制造第二投影）
+⑥净眼四项修复全兑现（P1-1 CE rethrow 8240-8244 / P2-2 快照段修复 2554 /
+P2-5 拒发行 name 8262 / P2-6 基线测试 169-178），挂账两项延后合理。
+
+守纲观察（非阻塞，挂账）：
+- **O-1**：GeminiProvider 有独立 OkHttp 发送路径且从未接 wire-capture——Google 路径
+  正常请求无摘要行（预存缺口，非本 PR 引入）；拒发行对全部 provider 生效。PR1 补齐。
+- **O-2**：拒发行 `currentProvider.name`（"Anthropic"）与正常行协议名（"anthropic"）
+  大小写/变体不同，openai 变体在该调用点不可得——name 是诚实值，行内
+  kind/note/stats 足以区分证据链。口径注记，不改。
+
+范围口径修正（守纲）：PR #20 实际 diff = `20a624e..HEAD`（next...HEAD 含已合并历史）。
