@@ -2513,28 +2513,38 @@ class ChatViewModel(
         com.openminis.app.novex.adapter.NovexScopedConversationHistory.project(history,
             chatRepository.loadActiveMessages(activeSessionId), chatRepository.novexContextUsage(activeSessionId), scopeKey)
 
-    private suspend fun effectiveAgentHistory(): List<LLMMessage> {
+    /** 装配线前六段的统一输入收集（scope 投影/快照解析是挂起 IO，在装配线外完成）。 */
+    private suspend fun assemblyInputs(): RequestAssembler.Inputs {
         val scopeKey = historyScopeKey()
         val projection = scopedHistory(agentHistory.toList(), scopeKey)
         val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(_cachedLatestMarker?.historyScopeKey, scopeKey)
-        return budgetedRequestHistory(dropOrphanedToolParts(effectiveAgentHistoryUncounted(projection.messages, allowSummary).filter {
-            it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() || it.audioParts.isNotEmpty()
-        }).let { prependSideSnapshotHistory(it) })
+        return RequestAssembler.Inputs(
+            scopedHistory = projection.messages,
+            sideSnapshotMainline = resolveSideSnapshotMainline(),
+            compactRebuild = { effectiveAgentHistoryUncounted(it, allowSummary) },
+            orphanRepair = ::dropOrphanedToolParts,
+            snapshotOrphanRepair = { dropOrphanedToolParts(it, exemptTrailing = false) },
+            retentionProject = ::budgetedRequestHistory,
+        )
     }
 
+    private suspend fun effectiveAgentHistory(): List<LLMMessage> =
+        // [T-request-assembler] PR 1：内存侧组装走装配线。A2 行为等价——与旧内联
+        // 路径同函数同参同序，顺序定义只剩 assemble() 一处（发送出口另接尾三段）。
+        RequestAssembler.assemble(assemblyInputs()).assembled
+
     /**
-     * [T-side-snapshot] 侧边请求前拼主线分裂点快照（2026-09-16 用户批δ）：
-     * 按创建时定格的消息 ID 只读拉取主线消息（含已被切换分支弃用的死分支
-     * 消息——认 ID 不认现状），映射后拼在侧边自己的历史之前；界面仍只显示
-     * 侧边消息。在预算裁剪**之前**拼接，主线历史与侧边历史一起过容量检查
-     * 与压缩机制。快照缺失（旧侧边/直连对话）原样返回。
+     * [T-side-snapshot] 解析侧边分裂点快照的原始主线消息（只读拉取，含已被切换
+     * 分支弃用的死分支消息——认 ID 不认现状）。界面仍只显示侧边消息；孤儿修复
+     * 与前拼由 [RequestAssembler.assemble] 的快照步骤统一负责（PR0 P2-2 上收）。
+     * 返回 null = 非侧边 / 无快照 / 快照缺失（旧侧边、直连对话）。
      */
-    private suspend fun prependSideSnapshotHistory(history: List<LLMMessage>): List<LLMMessage> {
-        if (history.isEmpty()) return history
+    private suspend fun resolveSideSnapshotMainline(): List<LLMMessage>? {
+        if (agentHistory.isEmpty()) return null
         val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
-            ?: return history
-        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return history
-        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return history
+            ?: return null
+        val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return null
+        if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return null
         val mainline = snapshot.messageIds.mapNotNull { id ->
             runCatching { chatRepository.findMessageById(id) }.getOrNull()
                 ?.takeIf { it.sessionId == sideOf }
@@ -2542,15 +2552,9 @@ class ChatViewModel(
                     runCatching { entity.toLLMMessage() }.getOrNull()
                 }
         }.filter { it.content.isNotBlank() || it.contentParts.isNotEmpty() || it.imageParts.isNotEmpty() }
-        if (mainline.isEmpty()) return history
-        // 净眼 P2-2：快照段在 dropOrphanedToolParts 之后前拼，若定格发生在
-        // "tool_use 已入库、tool_result 未入库"的崩溃窗口，快照尾的未配对 use
-        // 会让 I3 在侧边每次请求都拒发且无自愈。对快照段单独跑同款孤儿修复
-        // （合成错误结果），配对恒成立。
-        val repairedMainline = dropOrphanedToolParts(mainline)
-        if (repairedMainline.isEmpty()) return history
-        AppLogger.info(TAG, "[SideSnapshot] prepending ${repairedMainline.size} mainline messages (split-point freeze) to side $activeSessionId")
-        return repairedMainline + history
+        if (mainline.isEmpty()) return null
+        AppLogger.info(TAG, "[SideSnapshot] resolved ${mainline.size} mainline messages (split-point freeze) for side $activeSessionId")
+        return mainline
     }
 
     private fun effectiveAgentHistoryUncounted(history: List<LLMMessage>, allowSummary: Boolean): List<LLMMessage> {
@@ -2777,7 +2781,7 @@ class ChatViewModel(
      * Messages emptied by the drop are removed — a parts-less message is itself
      * invalid on several providers.
      */
-    private fun dropOrphanedToolParts(history: List<LLMMessage>): List<LLMMessage> {
+    private fun dropOrphanedToolParts(history: List<LLMMessage>, exemptTrailing: Boolean = true): List<LLMMessage> {
         val toolUseIds = HashSet<String>()
         val toolResultIds = HashSet<String>()
         for (msg in history) {
@@ -2802,8 +2806,10 @@ class ChatViewModel(
         // about to run normally, telling the model its tools had failed.
         // Trailing unanswered calls need no repair anyway: a request ending on
         // an assistant tool_use is exactly what the API expects mid-round.
+        // [T-request-assembler] 净眼 P1-2：exemptTrailing=false 供冻结态快照段
+        // 使用——快照不存在"在飞"轮次，段尾未答 use 必须合成错误结果。
         val last = history.lastOrNull()
-        if (last != null && last.role == LLMMessage.Role.ASSISTANT) {
+        if (exemptTrailing && last != null && last.role == LLMMessage.Role.ASSISTANT) {
             for (part in last.contentParts) {
                 if (part is AgentContentPart.ToolUse) orphanedUses.remove(part.id)
             }
@@ -6441,7 +6447,7 @@ class ChatViewModel(
         }
         prepared.imageParts.forEachIndexed { idx, part ->
             val path = prepared.imageUploadPaths.getOrNull(idx)
-            if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+            if (path != null) combinedParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
             combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
         }
         prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
@@ -6594,7 +6600,7 @@ class ChatViewModel(
             }
             prepared.imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) combinedParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) combinedParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
                 combinedParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
             }
             prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
@@ -6849,7 +6855,7 @@ class ChatViewModel(
             if (trimmed.isNotEmpty()) userContentParts.add(AgentContentPart.Text(trimmed))
             imageParts.forEachIndexed { idx, part ->
                 val path = prepared.imageUploadPaths.getOrNull(idx)
-                if (path != null) userContentParts.add(AgentContentPart.Text("[attached image: $path]"))
+                if (path != null) userContentParts.add(AgentContentPart.Text(RequestAssembler.ATTACHED_IMAGE_NOTE_PREFIX + "$path]"))
                 userContentParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
             }
             prepared.attachedFilesXml?.let { userContentParts.add(AgentContentPart.Text(it)) }
@@ -7959,6 +7965,9 @@ class ChatViewModel(
         // request, restricted to that single tool, then stop visibly.
         var choiceRepairAttempted = false
         var forcedChoiceToolOnly = false
+        // [T-request-assembler] P2-1：队列注入产生的新逻辑轮的 turn 号——该轮
+        // 与 turn==0 一样重读 DB 定 I1 基线（attempt lambda 读取后复位）。
+        var pendingI1BaselineTurn = -1
         // Keep the request context explicit. The retry reminder mutates the
         // last history message by adding a Text part, so re-inferring this from
         // contentParts would incorrectly turn the second post-tool attempt
@@ -8161,20 +8170,45 @@ class ChatViewModel(
                     // Non-Anthropic providers ignore it (cast fails silently).
                     (currentProvider as? com.openminis.app.provider.anthropic.AnthropicProvider)
                         ?.enhancedCache = _enhancedCacheEnabled.value
-                    // Route through effectiveAgentHistory() so a populated
-                    // [_compactSummary] is prepended as a `<context-summary>`
-                    // user message. Falls through to the raw agentHistory when
-                    // no compact has happened, so the common path stays zero-copy.
+                    // [T-request-assembler] Route through the assembler's input
+                    // collector (assemblyInputs → effectiveAgentHistory wrapper
+                    // elsewhere) so a populated [_compactSummary] is prepended as
+                    // a `<context-summary>` user message. Falls through to the raw
+                    // agentHistory when no compact has happened.
                     val conversationTools = if (thisTurnIsForcedChoiceRepair) {
                         agentTools.filter { it.name == "present_choices" }
                     } else {
                         agentTools
                     }
                     val requestToolsEnabled = conversationTools.isNotEmpty()
-                    val assembledHistory = effectiveAgentHistory()
+                    // [T-request-assembler] P1-3 关账：九段全部过装配线，顺序定义只剩
+                    // assemble() 一处（A1）。骰子先掷（注入是纯函数、给定 diceRolls），
+                    // 尾三段闭包在此接上，前六段输入由 assemblyInputs() 统一收集。
+                    val diceRolls = if (_diceInjectionEnabled.value) {
+                        List(com.openminis.app.data.RUNTIME_DICE_COUNT) { runtimeSecureRandom.nextInt(100) + 1 }
+                    } else {
+                        emptyList()
+                    }
+                    val assembly = RequestAssembler.assemble(
+                        assemblyInputs().copy(
+                            pureChat = if (requestToolsEnabled) { history -> history } else ::pureChatHistory,
+                            imageBudget = ::applyRequestImageBudget,
+                            injections = { history ->
+                                com.openminis.app.data.appendRuntimeInjections(
+                                    history,
+                                    _perTurnPrompt.value,
+                                    _diceInjectionEnabled.value,
+                                    _ledgerInjectionEnabled.value,
+                                    diceRolls,
+                                    _textStylePrompt.value,
+                                )
+                            },
+                        ),
+                    )
+                    val assembledHistory = assembly.assembled
                     // pureChat 只在工具禁用时删"纯结构化部件"消息；I1 断言用 pureChat
                     // 之前的 assembled 基线，与 DB 侧同构（见 PreSendContract 头注）。
-                    val requestHistory = if (requestToolsEnabled) assembledHistory else pureChatHistory(assembledHistory)
+                    val requestHistory = assembly.request
                     // Per-turn injection: applied to the request copy only (never persisted,
                     // never rendered) and BEFORE the estimate so it counts toward the
                     // context budget. Rebuilt from the blank-checking helper on every
@@ -8201,23 +8235,13 @@ class ChatViewModel(
                             ),
                         )
                     }
-                    val diceRolls = if (_diceInjectionEnabled.value) {
-                        List(com.openminis.app.data.RUNTIME_DICE_COUNT) { runtimeSecureRandom.nextInt(100) + 1 }
-                    } else {
-                        emptyList()
-                    }
                     val styleInjection = com.openminis.app.data.textStyleInjectionContent(_textStylePrompt.value)
                     if (styleInjection != null) {
                         runtimeAudit?.event("text_style_injection", JSONObject().put("chars", styleInjection.length))
                     }
-                    val boundedHistory = com.openminis.app.data.appendRuntimeInjections(
-                        applyRequestImageBudget(requestHistory),
-                        _perTurnPrompt.value,
-                        _diceInjectionEnabled.value,
-                        _ledgerInjectionEnabled.value,
-                        diceRolls,
-                        _textStylePrompt.value,
-                    )
+                    // Per-turn injection 已在装配线 injections 段完成：只改请求副本、
+                    // 不落库不渲染、在 estimate 之前计入预算（每 attempt 重建）。
+                    val boundedHistory = assembly.injected
                     // [T-presend-contract] PR 0 地震仪：出口三断言（I1 历史守恒 /
                     // I2 图片守恒——沿用 [T-user-image-never-offload] 护栏语义—— /
                     // I3 工具配对）。违反即拒发：宁可报错也不发明知残缺的请求
@@ -8226,13 +8250,42 @@ class ChatViewModel(
                     // I1 仅在每轮发送的首请求（turn==0）重读 DB 定基线；工具循环
                     // 中轮 DB 落后于内存，跳过（I2/I3 仍全量检查）。重读失败不
                     // 拦截——地震仪不制造新故障。
-                    val dbExpectedMessages = if (turn == 0) {
+                    // [T-request-assembler] P2-1：队列注入产生的新逻辑轮与 turn==0
+                    // 一样重读 DB 定 I1 基线；P2-3：DB 侧基线过同款投影
+                    // （scope→compact→blank→orphan），不再裸数行数；A3：DB 侧
+                    // 影子装配与内存侧指纹对比，只观察不拦截——双真相源的分歧
+                    // 在此显形，PR 2 切换后应归零。
+                    val runI1Baseline = turn == 0 || turn == pendingI1BaselineTurn
+                    if (runI1Baseline) pendingI1BaselineTurn = -1
+                    var shadowDbAssembled: List<LLMMessage>? = null
+                    val dbExpectedMessages = if (runI1Baseline) {
                         runCatching {
                             withContext(Dispatchers.IO) {
-                                PreSendContract.substantiveCount(
-                                    chatRepository.loadActiveConversation(activeSessionId).activeMessages
-                                        .map { it.toLLMMessage() },
+                                val conversation = chatRepository.loadActiveConversation(activeSessionId)
+                                val rows = conversation.activeMessages
+                                val scopeKey = historyScopeKey()
+                                val dbScoped = com.openminis.app.novex.adapter.NovexScopedConversationHistory.project(
+                                    rows.map { it.toLLMMessage() },
+                                    rows,
+                                    chatRepository.novexContextUsage(activeSessionId),
+                                    scopeKey,
+                                ).messages
+                                val allowSummary = com.openminis.app.novex.domain.NovexHistoryAccessScope.canReplay(
+                                    _cachedLatestMarker?.historyScopeKey, scopeKey,
                                 )
+                                val dbAssembled = RequestAssembler.assemble(
+                                    RequestAssembler.Inputs(
+                                        scopedHistory = dbScoped,
+                                        compactRebuild = { effectiveAgentHistoryUncounted(it, allowSummary) },
+                                        orphanRepair = ::dropOrphanedToolParts,
+                                        // 净眼 P1-1a：DB 侧同过 retention，与内存侧阶段对齐。
+                                        retentionProject = ::budgetedRequestHistory,
+                                    ),
+                                ).assembled
+                                val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+                                // 影子只比主线：侧边有快照前拼的合法差异（A3）。
+                                if (sideOf == null) shadowDbAssembled = dbAssembled
+                                dbAssembled.size
                             }
                         }.onFailure { error ->
                             // 净眼 P1-1：runCatching 会连 CancellationException 一起吞，
@@ -8242,6 +8295,49 @@ class ChatViewModel(
                         }.getOrNull()
                     } else {
                         null
+                    }
+                    shadowDbAssembled?.let { dbSide ->
+                        // 净眼 P1-1b/c：两级信号分流——structural（角色/DB id/工具对/
+                        // 部件类计数，剔除内存专属 Text）是强信号=双真相源真分歧；
+                        // structural 相同而全量指纹不同=已知投影噪音（卸载改写等），
+                        // 只计数。内存专属部件（提示语/图路径注释）已在指纹内剔除。
+                        val structMemory = RequestAssembler.structural(assembledHistory)
+                        val structDb = RequestAssembler.structural(dbSide)
+                        if (structMemory != structDb) {
+                            val zipped = structMemory.zip(structDb)
+                            val firstDivergence = if (zipped.none { (memory, db) -> memory != db }) {
+                                "tail(len ${structMemory.size} vs ${structDb.size})"
+                            } else {
+                                zipped.indexOfFirst { (memory, db) -> memory != db }.toString()
+                            }
+                            AppLogger.warning(
+                                TAG_STREAM,
+                                "[ShadowAssembly] 结构分歧(强信号): memory=${structMemory.size} db=${structDb.size} " +
+                                    "firstDivergence=$firstDivergence（双真相源分歧，PR 2 切换后应归零；仅记录不拦截）",
+                            )
+                            runtimeAudit?.event(
+                                "shadow_assembly_diff",
+                                JSONObject()
+                                    .put("memory", structMemory.size)
+                                    .put("db", structDb.size)
+                                    .put("firstDivergence", firstDivergence),
+                            )
+                        } else {
+                            val contentMismatches = RequestAssembler.fingerprint(assembledHistory)
+                                .zip(RequestAssembler.fingerprint(dbSide))
+                                .count { (memory, db) -> memory != db }
+                            if (contentMismatches > 0) {
+                                AppLogger.info(
+                                    TAG_STREAM,
+                                    "[ShadowAssembly] 内容差异(弱信号/已知噪音类): $contentMismatches 条 " +
+                                        "（卸载改写/提示语版本等投影差异，结构与工具对一致）",
+                                )
+                                runtimeAudit?.event(
+                                    "shadow_assembly_content_noise",
+                                    JSONObject().put("count", contentMismatches),
+                                )
+                            }
+                        }
                     }
                     val contractViolation = PreSendContract.firstViolation(
                         assembled = assembledHistory,
@@ -9204,6 +9300,8 @@ class ChatViewModel(
                     allToolBlocks.clear()
                     allToolInputs.clear()
                     _canResume.value = false
+                    // [T-request-assembler] P2-1：注入的新逻辑轮恢复 I1 基线检查。
+                    pendingI1BaselineTurn = turn + 1
                     continue
                 }
                 // null return = empty-after-build / drain rejected; fall
