@@ -6700,8 +6700,24 @@ class ChatViewModel(
             }
             prepared.attachedFilesXml?.let { combinedParts.add(AgentContentPart.Text(it)) }
 
+            // [T-choice-instruction-lifecycle] drain 的合并消息紧接着刚结束的
+            // 助手回合：若那回合以选项卡收尾，这条排队消息就是对它的回应，
+            // 与 sendMessage 同款标记（StateFlow.value 读取线程安全）。
+            // 必须跳过尾部找最后一条 assistant：排队占位气泡（role=user）
+            // 会一直垫在 _messages 尾部，读 lastOrNull() 恒命中占位、检测
+            // 恒 false——净眼 P1-1，drain 半边曾经的死代码。
+            val drainLast = _messages.value.lastOrNull { it.role == "assistant" }
+            val drainReminder = if (ChoiceInstructionLifecycle.endsWithLiveChoicesCard(
+                    drainLast?.role, drainLast?.toolBlocks?.map { it.toolName }.orEmpty(),
+                )
+            ) ChoiceInstructionLifecycle.SELECTION_RESPONSE_REMINDER else null
+            drainReminder?.let { combinedParts.add(AgentContentPart.Text(it)) }
+
             val userText = combinedText.toString()
-            val userPartsJson = buildUserPartsJson(userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
+            val userPartsJson = buildUserPartsJson(
+                userText, prepared.mediaRefPartsJson, prepared.attachedFilesXml,
+                extraTextParts = listOfNotNull(drainReminder),
+            )
             val queuedUser = chatRepository.appendMessage(sid, "user", userPartsJson)
             recordActiveBranchMessage(queuedUser.id)
 
@@ -6930,10 +6946,28 @@ class ChatViewModel(
 
             val prepared = prepareUserAttachments(currentAttachments, activeSessionId)
 
+            // [T-choice-instruction-lifecycle] 上一条可见消息是带 present_choices
+            // 卡的助手回合时，玩家这条发送就是对选项卡的回应。卡本身按终端
+            // UI 工具设计不会进模型历史，点选文本若裸进场，模型分不清"选择
+            // 回应"与"新元指令"（选项卡后只弹选项不写正文的另一半根因）。
+            // 标记随用户行落盘：UI 走现成 system-reminder 剥离不渲染，模型
+            // 后续每轮可见，内存/DB 两侧同源、影子装配天然平价。
+            // 检测跳过 system 气泡（pruneDeletedMounts/compact 通知等会先于
+            // 发送插入尾部，净眼 P2-3）；占位气泡 role=user 归入"已有人回应"
+            // 的安全方向，不挂标记。
+            val lastVisible = _messages.value.lastOrNull { it.role == "assistant" || it.role == "user" }
+            val selectionReminder = if (ChoiceInstructionLifecycle.endsWithLiveChoicesCard(
+                    lastVisible?.role, lastVisible?.toolBlocks?.map { it.toolName }.orEmpty(),
+                )
+            ) ChoiceInstructionLifecycle.SELECTION_RESPONSE_REMINDER else null
+
             // Save user message — text + persisted mediaRef parts so images survive
             // a session reload (T128). Non-image attachments still only contribute
             // their name (rendered as a file tile) and are not persisted.
-            val userPartsJson = buildUserPartsJson(trimmed, prepared.mediaRefPartsJson, prepared.attachedFilesXml)
+            val userPartsJson = buildUserPartsJson(
+                trimmed, prepared.mediaRefPartsJson, prepared.attachedFilesXml,
+                extraTextParts = listOfNotNull(selectionReminder),
+            )
             val persistedUser = chatRepository.appendMessage(activeSessionId, "user", userPartsJson)
             recordActiveBranchMessage(persistedUser.id)
 
@@ -6965,6 +6999,9 @@ class ChatViewModel(
                 userContentParts.add(AgentContentPart.ImageData(part.data, part.mimeType, linuxPath = path, noVisionPlaceholder = visionPlaceholderFor(path)))
             }
             prepared.attachedFilesXml?.let { userContentParts.add(AgentContentPart.Text(it)) }
+            // [T-choice-instruction-lifecycle] 与落盘 parts 同源同序：内存侧
+            // agentHistory 与 DB 行携带同一标记，影子装配两侧一致。
+            selectionReminder?.let { userContentParts.add(AgentContentPart.Text(it)) }
 
             // [T-run-phase] ⑤：sendMessage 用户行 add 在锁内（同上，N-P2-a 写者侧）。
             synchronized(historyWriteLock) {
@@ -8101,13 +8138,18 @@ class ChatViewModel(
         // request, restricted to that single tool, then stop visibly.
         var choiceRepairAttempted = false
         var forcedChoiceToolOnly = false
+        // [T-choice-instruction-lifecycle] 恢复指令的寿命＝被强制的那一个逻辑
+        // 请求。历史上这里直接把"Do not write prose"提醒永久写进 agentHistory
+        // 的用户消息（2026-09-17 会话 297e156a 只出选项死循环的根因）；改为
+        // 每轮迭代头部取走即清零，只在请求副本上追加（见
+        // ChoiceInstructionLifecycle），内存与 DB 零残留。
+        var pendingForcedChoiceHint: String? = null
         // [T-request-assembler] P2-1：队列注入产生的新逻辑轮的 turn 号——该轮
         // 与 turn==0 一样重读 DB 定 I1 基线（attempt lambda 读取后复位）。
         var pendingI1BaselineTurn = -1
-        // Keep the request context explicit. The retry reminder mutates the
-        // last history message by adding a Text part, so re-inferring this from
-        // contentParts would incorrectly turn the second post-tool attempt
-        // back into an INITIAL request and grant it another retry budget.
+        // Keep the request context explicit: re-inferring it from contentParts
+        // would incorrectly turn the second post-tool attempt back into an
+        // INITIAL request and grant it another retry budget.
         var emptyResponseContext = EmptyResponseContext.INITIAL
         for (turn in 0 until MAX_AGENT_TURNS) {
             val novexRequestMessage = latestNovexUserRequest(agentHistory)
@@ -8301,6 +8343,11 @@ class ChatViewModel(
             val maxTokens = dynamicMaxTokens(provider, lastContextTokens)
             val thisTurnIsForcedChoiceRepair = forcedChoiceToolOnly
             forcedChoiceToolOnly = false
+            // [T-choice-instruction-lifecycle] 取走即清零：本迭代内 attempt 的
+            // 每次重发（连接重试/降级）都携带同一份强制指令——它们是同一个
+            // 逻辑请求；下一轮迭代自然为空，指令到期。
+            val forcedChoiceHintForTurn = pendingForcedChoiceHint
+            pendingForcedChoiceHint = null
 
             var failedAttemptVisibleText = ""
             streamRecovery.collect(
@@ -8388,7 +8435,12 @@ class ChatViewModel(
                     }
                     // Per-turn injection 已在装配线 injections 段完成：只改请求副本、
                     // 不落库不渲染、在 estimate 之前计入预算（每 attempt 重建）。
-                    val boundedHistory = assembly.injected
+                    // [T-choice-instruction-lifecycle] 强制选项恢复指令同位追加：
+                    // 也只改请求副本（最后一个 user 消息），不进 agentHistory/DB，
+                    // 随本逻辑请求（含其连接重试）结束自动消失。
+                    val boundedHistory = ChoiceInstructionLifecycle.appendForcedChoiceHint(
+                        assembly.injected, forcedChoiceHintForTurn,
+                    )
                     // [T-presend-contract] PR 0 地震仪：出口三断言（I1 历史守恒 /
                     // I2 图片守恒——沿用 [T-user-image-never-offload] 护栏语义—— /
                     // I3 工具配对）。违反即拒发：宁可报错也不发明知残缺的请求
@@ -8608,29 +8660,12 @@ class ChatViewModel(
                 while (allToolBlocks.size > turnStartBlockIndex) {
                     allToolBlocks.removeAt(allToolBlocks.lastIndex)
                 }
-                val requestIndex = agentHistory.indexOfLast { message ->
-                    message.role == LLMMessage.Role.USER &&
-                        (message.content.isNotBlank() || message.contentParts.any {
-                            it is AgentContentPart.Text && !it.text.startsWith("<system-reminder>")
-                        })
-                }
-                if (requestIndex >= 0) {
-                    val request = agentHistory[requestIndex]
-                    val originalParts = request.contentParts.toMutableList().apply {
-                        if (none { it is AgentContentPart.Text && !it.text.startsWith("<system-reminder>") } &&
-                            request.content.isNotBlank()
-                        ) {
-                            add(0, AgentContentPart.Text(request.content))
-                        }
-                    }
-                    agentHistory[requestIndex] = request.copy(
-                        contentParts = originalParts + AgentContentPart.Text(
-                            "<system-reminder>The user explicitly requested native choice buttons. " +
-                                "Retry once and respond only with one present_choices tool call containing " +
-                                "2 to 12 concise choices. Do not write prose.</system-reminder>",
-                        ),
-                    )
-                }
+                // [T-choice-instruction-lifecycle] 只置瞬态提示，不再改写
+                // agentHistory 的用户消息。旧实现把"Do not write prose"永久
+                // 留在内存历史里，之后每一轮请求模型都看得见，导致只出选项
+                // 不出正文的死循环（2026-09-17 会话 297e156a）。现在提示由
+                // 下一轮迭代头部取走、只附加到该次请求的副本上。
+                pendingForcedChoiceHint = ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT
                 choiceRepairAttempted = true
                 forcedChoiceToolOnly = true
                 AppLogger.warning(
@@ -11879,6 +11914,9 @@ class ChatViewModel(
         // Persist it here as a text part (iOS parity); toLLMMessage restores
         // it via the plain "text" case with zero special-casing.
         attachedFilesXml: String? = null,
+        // [T-choice-instruction-lifecycle] 追加落盘文本部件（当前仅选项回应
+        // 标记）。与内存侧 userContentParts 同源同序，保证影子装配平价。
+        extraTextParts: List<String> = emptyList(),
     ): String {
         val parts = mutableListOf<String>()
         if (text.isNotEmpty() || mediaRefPartsJson.isEmpty()) {
@@ -11886,6 +11924,7 @@ class ChatViewModel(
         }
         parts.addAll(mediaRefPartsJson)
         attachedFilesXml?.let { parts.add("""{"type":"text","value":${escapeJson(it)}}""") }
+        extraTextParts.forEach { parts.add("""{"type":"text","value":${escapeJson(it)}}""") }
         return parts.joinToString(prefix = "[", postfix = "]", separator = ",")
     }
 
@@ -13777,7 +13816,14 @@ class ChatViewModel(
                         // messages byte-identical so `.content` consumers
                         // (summary, title fallback, edit) see the same string
                         // as a fresh turn and don't get the XML twice.
-                        if (containsAgentAttachmentMetadata(value)) {
+                        // [T-choice-instruction-lifecycle] 选项回应标记同款
+                        // 特判（净眼 P2-2）：标记部件只进 contentParts 给模
+                        // 型，不折进重载后的 content——否则 live 侧行 content
+                        // 是玩家原文、DB 重建侧变成原文+标记，影子装配
+                        // fingerprint（含 content.hashCode）每次 turn-0 基线
+                        // 记一条弱信号噪音，latestVisibleUserRequest 也随之
+                        // live/重载不对称。
+                        if (containsAgentAttachmentMetadata(value) || value.startsWith("<system-reminder>")) {
                             contentParts.add(AgentContentPart.Text(value))
                         } else {
                             textContent += value
