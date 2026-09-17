@@ -7896,6 +7896,11 @@ class ChatViewModel(
                 .put("displayModelId", currentModel?.id).put("providerModelId", provider.model.id)
                 .put("displayName", _modelName.value).put("displayProvider", _providerName.value)
                 .put("providerClass", provider.javaClass.simpleName))
+        // 净眼 P1：在 runAgentLoop 层捕获本流身份（五个调用点都在 streamJob 协程内
+        // 同层直调，此处捕获恰为 streamJob 本身）——旧流尸体的 end-finally 迟到时
+        // 不再污染审计。注意不能在 runAgentLoopBody 内捕获：双层 withContext 的
+        // 子 Job 永不等于 streamJob，stale 恒真=审计全盲。
+        val jobAtLoopEntry = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
         try {
             withContext(audit) {
                 require(currentProvider === provider && currentModel == provider.model) {
@@ -7936,8 +7941,6 @@ class ChatViewModel(
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
         runPhaseTransitionTo(RunPhase.STREAMING, "runAgentLoop")
-        // 净眼 P1：记录本流身份——旧流尸体的 end-finally 迟到时不再污染审计。
-        val jobAtLoopEntry = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
         val novexRequestMessage = latestNovexUserRequest(agentHistory)
         val failedToolProgress = com.openminis.app.agent.FailedToolProgress()
         if (recoveryOrigin == AgentRunRecoveryOrigin.RESUME) {

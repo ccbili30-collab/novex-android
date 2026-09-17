@@ -54,10 +54,6 @@
 
 ## 台账
 
-（待审后填）
-
-## 台账
-
 ### 净眼一审（agent_7f27144a，52eeb37，结论：退回 → P0/P1/P2-2 已修）
 
 | 编号 | 结论 | 处置 |
@@ -68,3 +64,13 @@
 | P2-2 clearChat 连点复位窗口 | **采纳已修** | 入口 `if (isWipingSession) return` |
 | P2-3 三项 PR2b 既有观察（resume 资格残留/删库异常半态/join 无界） | **挂账 PR3** | 与旧代码同型非回归 |
 | P2-4 任务书挂点与实现偏差（cancelStream/resume/retryLast 无直接转换调用） | **记录** | PR3 读审计数据前知悉 |
+
+### 净眼窄复核一（64dca90，结论：再退回 → 新 P0 已修）
+
+新 P0：jobAtLoopEntry 声明在 runAgentLoopBody、使用在兄弟函数 runAgentLoop 的
+finally——未解析引用编译必红；且若仅挪入 body 的 withContext 层内会捕获深层子 Job
+（恒 stale=审计全盲）。**已修**：捕获移至 runAgentLoop 体首行 try 之前（五个调用点
+都在 streamJob 协程内同层直调，该处捕获恰为 streamJob 本身）。
+①P0 括号修复复签过（终深 0，块内纯内存）；③P2-2 复签过。
+残留记录：clearChat 同 job 迟到 unwind 的 IDLE→AWAITING_RESUME 误报未消
+（stale 判定不覆盖"未替换仅取消"类）→ PR3 执法化前补降级条件。
