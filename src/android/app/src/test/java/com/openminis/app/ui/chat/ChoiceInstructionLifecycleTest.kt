@@ -67,16 +67,20 @@ class ChoiceInstructionLifecycleTest {
 
     @Test
     fun `no user message or empty history is a no-op`() {
+        // assertSame 要求"原实例原样返回"：必须传入同一实例，不能在实参里
+        // 两次构造（那断言的是两个不同对象——一审 CI 的红灯）。
+        val assistantOnly = listOf(assistant("只有助手"))
         assertSame(
-            listOf(assistant("只有助手")),
+            assistantOnly,
             ChoiceInstructionLifecycle.appendForcedChoiceHint(
-                listOf(assistant("只有助手")), ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT,
+                assistantOnly, ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT,
             ),
         )
+        val empty = emptyList<LLMMessage>()
         assertSame(
-            emptyList<LLMMessage>(),
+            empty,
             ChoiceInstructionLifecycle.appendForcedChoiceHint(
-                emptyList(), ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT,
+                empty, ChoiceInstructionLifecycle.FORCED_CHOICE_RECOVERY_HINT,
             ),
         )
     }
