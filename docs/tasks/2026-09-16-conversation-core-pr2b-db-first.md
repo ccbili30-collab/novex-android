@@ -72,3 +72,18 @@ C2/C3/C4 过（C4 代码级零 diff）。
 - N-P2-a 纪元读无 happens-before → **挂账 PR2c**（join 循环已收窄实际窗口；形式闭合需单写者）。
 - N-P2-b "7822 惯用法"引证失真 → **采纳已修**：注释更正（本体 7858，且注明并发语境差异）。
 - 分支①确认为防御性死枝（占位入列前 ensureSession 已完成，sid 不变），留注不纠。
+
+### 净眼复核二·窄复核（同 agent，1a12c21，结论：放行）
+
+两项窄幅整改均兑现且有值链支撑：join 每轮重读 @Volatile streamJob、无活锁面
+（新流要求前置 _isStreaming=false+用户动作）、9386 尾装先归真+本处幂等兜底成立、
+"至多 I1 拒发一次后自愈"推演成立（流取消路径 9386 不执行恰由本 install 补账）；
+CE rethrow 确认跳过 _canResume 赋值且按取消静默收尾。
+新问题：理论性 P2 空档（streamJob"已声明未启动"窗口，实践无有效触发器，
+自愈型后果）→ 挂账 PR2c 单写者一并形式闭合。
+净眼提示：合入后若见 `presend_contract_violation` I1 与
+`cancel-cleanup reconciling via install` 相邻出现，是本设计的预期自愈路径在工作。
+
+### 守纲裁决
+
+（待填）
