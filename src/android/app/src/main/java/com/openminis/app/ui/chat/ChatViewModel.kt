@@ -2399,15 +2399,19 @@ class ChatViewModel(
         // walk in reverse and protect the most recent images.
         data class ImageRef(val msgIdx: Int, val partIdx: Int, val image: ImageBudget.BudgetImage)
         val images = mutableListOf<ImageRef>()
+        // [T-user-image-never-offload] 最新一条用户消息里的图无条件保留——
+        // 那是本轮正在讨论的内容，裁掉等于让模型对着文件名猜图。
+        val lastUserIdx = messages.indexOfLast { it.role == LLMMessage.Role.USER }
         messages.forEachIndexed { mi, msg ->
             msg.contentParts.forEachIndexed { pi, part ->
                 when (part) {
                     is AgentContentPart.ImageData -> {
+                        if (mi == lastUserIdx) return@forEachIndexed
                         images.add(
                             ImageRef(
                                 mi, pi,
                                 ImageBudget.BudgetImage(part.data, part.linuxPath, part.mimeType),
-                            )
+                            ),
                         )
                     }
                     is AgentContentPart.ToolResult -> {
@@ -7617,6 +7621,7 @@ class ChatViewModel(
 
         val candidates = mutableListOf<OffloadCandidate>()
         var skippedAlreadyOffloaded = 0
+        var skippedUserImages = 0
         var skippedTooSmall = 0
 
         for (msgIdx in 0 until candidateUpper) {
@@ -7648,6 +7653,16 @@ class ChatViewModel(
                         candidates.add(OffloadCandidate(msgIdx, partIdx, tokens, bytes, part.id, part.name))
                     }
                     is AgentContentPart.ImageData -> {
+                        // [T-user-image-never-offload] 2026-09-16 用户实锤（wire
+                        // capture 证据链）：长会话触发上下文卸载后，用户附件图被
+                        // 换成"文件已转存"路径文字——模型只剩文件名可看。带
+                        // linuxPath 的 ImageData 是用户亲手上传的附件：永不卸载，
+                        // 上下文压力让位给文本/工具结果。仅工具产出/无路径的图
+                        // 仍可卸载。
+                        if (part.linuxPath != null) {
+                            skippedUserImages++
+                            continue
+                        }
                         if (part.data.size <= 1024) {
                             skippedTooSmall++
                             continue
@@ -7665,7 +7680,7 @@ class ChatViewModel(
         candidates.sortByDescending { it.tokens }
         val totalCandidateTokens = candidates.sumOf { it.tokens }
         AppLogger.info(TAG, "  Candidates: ${candidates.size} parts (~$totalCandidateTokens tokens total)")
-        AppLogger.info(TAG, "  Skipped: $skippedAlreadyOffloaded already offloaded, $skippedTooSmall too small")
+        AppLogger.info(TAG, "  Skipped: $skippedAlreadyOffloaded already offloaded, $skippedTooSmall too small, $skippedUserImages user images protected")
 
         var offloadedCount = 0
         var freedTokens = 0
@@ -8196,6 +8211,20 @@ class ChatViewModel(
                         diceRolls,
                         _textStylePrompt.value,
                     )
+                    // [T-user-image-never-offload] 发送前护栏：本轮用户消息带附件图
+                    // 但组装出的请求里一个图片块都没有 → 上下文管线出bug把图弄丢了。
+                    // 明确报错绝不静默发出无图请求（wire-capture 取证靠的就是这条
+                    // 不变量：带图请求必然留下带图记录）。
+                    val turnHasImages = requestHistory.lastOrNull { it.role == LLMMessage.Role.USER }
+                        ?.let { last -> last.imageParts.isNotEmpty() || last.contentParts.any { it is AgentContentPart.ImageData } } == true
+                    if (turnHasImages) {
+                        val requestCarriesImage = boundedHistory.any { m ->
+                            m.imageParts.isNotEmpty() || m.contentParts.any { it is AgentContentPart.ImageData }
+                        }
+                        if (!requestCarriesImage) {
+                            throw IllegalStateException("本轮附件图片在上下文组装时丢失（不应发生）：请导出对话包反馈，历史与图片文件均保留。")
+                        }
+                    }
                     val estimate = estimatePreparedRequest(boundedHistory, requestSystemPrompt, conversationTools)
                     _contextEstimated.value = true
                     _lastTurnContextTokens.value = estimate
