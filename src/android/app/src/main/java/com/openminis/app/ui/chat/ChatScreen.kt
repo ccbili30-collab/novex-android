@@ -1983,8 +1983,15 @@ fun ChatScreen(
                 },
                 actions = {
                     if (sideParentId != null) {
-                        // 侧边页顶栏只有删除（决策 16）：用"只能删除"表达从属关系，
-                        // 不放完整菜单。
+                        // 侧边页顶栏：删除（决策 16）+ 导出（2026-09-16 用户反馈侧边
+                        // 无法导出诊断包——图片问题取证时就卡在这）。导出复用主线
+                        // 弹窗与全局 wire-capture，无需绕回主线。
+                        IconButton(onClick = { viewModel.prepareNovexConversationExport() }) {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_arrow_up),
+                                contentDescription = "导出侧边对话包",
+                            )
+                        }
                         IconButton(onClick = { showSideDeleteDialog = true }) {
                             Icon(
                                 com.openminis.app.ui.novex.NovexIcons.Delete,
