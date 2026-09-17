@@ -63,3 +63,12 @@ C2/C3/C4 过（C4 代码级零 diff）。
 ### 净眼复核 / 守纲裁决
 
 （待填）
+
+### 净眼复核一（同 agent，1f9ea6e，结论：再退回窄幅 → 两项已修待窄复核）
+
+- 偏离决策（拒绝丢弃）**采纳**：I1 只罚 memory<DB 方向，丢弃=恒少一行=drain 永久拒发且重试不自愈，与代码实证一致。
+- N-P1-a install 与活跃循环并发（全文件首个无门 install；其余 10 处都在 !isStreaming 门内或自有流序言/收尾）→ **采纳已修**：join 循环等当前流（含 drain 起新流）落定后再 install；流中缺行至多 I1 拒发一次，流死+install 落地自愈，死锁面消除。
+- N-P1-b runCatching 吞 CE（同型第三次）→ **采纳已修**：onFailure 首行 rethrow，throw 顺带跳过 _canResume 置位。
+- N-P2-a 纪元读无 happens-before → **挂账 PR2c**（join 循环已收窄实际窗口；形式闭合需单写者）。
+- N-P2-b "7822 惯用法"引证失真 → **采纳已修**：注释更正（本体 7858，且注明并发语境差异）。
+- 分支①确认为防御性死枝（占位入列前 ensureSession 已完成，sid 不变），留注不纠。

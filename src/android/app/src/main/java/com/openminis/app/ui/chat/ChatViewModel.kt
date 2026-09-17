@@ -12558,10 +12558,10 @@ class ChatViewModel(
             // [T-single-writer] PR2b ②：DB 先行——先落库拿 dbMessageId 再入内存
             // （旧序内存先 add 且不带 dbId，影子指纹天然看不见这条消息；崩溃
             // 窗口内重启则丢中断标记）。落库毫秒级，_canResume 延迟不可感知。
-            // 净眼 P1-1 纪元门：落库往返期间若有别的写者推进了历史（drain/
-            // 新发送/重建），不再直接 add（agentHistory 非同步，并发写有 CME
-            // 面）——改走权威对账 installActiveConversation 从 DB 重建（7822
-            // RESUME 路径的同款惯用法），行序条数归真，I1/影子两侧一致。
+            // 净眼 P1-1 纪元门：落库往返期间若有别的写者推进了历史，不再直接
+            // add（agentHistory 非同步，并发写有 CME 面）——等流落定后走 install
+            // 权威对账（注意：与 7858 那类"自有流序言内的 install"不同，这里是
+            // 唯一可能与外部流并发的调用点，故必须先 join——净眼 N-P1-a）。
             // 会话本身被切换则行属旧会话，无需动。
             val sidAtCancel = activeSessionId
             val historySizeAtCancel = agentHistory.size
@@ -12572,8 +12572,19 @@ class ChatViewModel(
                     if (sidAtCancel != activeSessionId) {
                         AppLogger.info(TAG_STREAM, "cancel-cleanup partial row landed in old session $sidAtCancel — memory untouched")
                     } else if (agentHistory.size != historySizeAtCancel) {
-                        AppLogger.info(TAG_STREAM, "cancel-cleanup epoch changed during DB roundtrip — reconciling via install")
-                        installActiveConversation(chatRepository.loadActiveConversation(sidAtCancel))
+                        // 净眼 N-P1-a：等当前流（含 drain 起新流）全部结束再权威对账
+                        // ——9386 尾部 install 先归真一次，这里再 install 幂等兜底
+                        // partial 行（内存若在流中缺该行，I1 会拒发一次，流死 + 本
+                        // install 落地后自愈，不再有死锁面）。
+                        while (true) {
+                            val job = streamJob
+                            if (job == null || !job.isActive) break
+                            job.join()
+                        }
+                        if (sidAtCancel == activeSessionId) {
+                            AppLogger.info(TAG_STREAM, "cancel-cleanup reconciling via install after streams settled")
+                            installActiveConversation(chatRepository.loadActiveConversation(sidAtCancel))
+                        }
                     } else {
                         agentHistory.add(
                             LLMMessage(
@@ -12585,7 +12596,10 @@ class ChatViewModel(
                         )
                     }
                 }.onFailure { error ->
-                    // 净眼 P2-3：落库失败不静默——保底恢复旧行为的可用性并留痕。
+                    // 净眼 N-P1-b：runCatching 吞 CancellationException 同型复发
+                    // （PR0 P1-1 之后第三次）——取消必须穿透；throw 顺带跳过下方
+                    // _canResume 置位，CE 逃逸 launch 后 SupervisorJob 静默收尾。
+                    if (error is kotlinx.coroutines.CancellationException) throw error
                     AppLogger.error(TAG_STREAM, "cancel-cleanup partial persist failed: ${error::class.java.simpleName}: ${error.message}")
                     agentHistory.add(
                         LLMMessage(
