@@ -4814,11 +4814,14 @@ class ChatViewModel(
 
             // Rebuild agentHistory from persisted messages.
             // Pre-built off-Main inside the withContext(Dispatchers.IO) block
-            // above to avoid re-parsing partsJson on the UI thread. Safe to
-            // bulk-addAll here because loadSession runs once at init before
-            // any sender writes into agentHistory.
-            agentHistory.clear()
-            agentHistory.addAll(loaded.llmHistory)
+            // above to avoid re-parsing partsJson on the UI thread.
+            // 净眼 P2-1 关账："init 一次性"注释已失真（压缩回退/safe-mode 重试
+            // 会重入）——重建入锁并推世代号。
+            synchronized(historyWriteLock) {
+                agentHistory.clear()
+                agentHistory.addAll(loaded.llmHistory)
+                historyGeneration.incrementAndGet()
+            }
             activeNovexDocumentRefs = novexDocumentRefsInHistory(loaded.llmHistory)
             activeNovexSourceCollectionRefs = novexSourceCollectionRefsInHistory(loaded.llmHistory)
             closeNovexLearningResponsePreview()
@@ -6117,7 +6120,12 @@ class ChatViewModel(
         val parts = org.json.JSONArray().put(org.json.JSONObject().put("type", "text").put("value", text)).toString()
         val mine = chatRepository.appendMessage(activeSessionId, "user", parts)
         recordActiveBranchMessage(mine.id)
-        agentHistory.add(LLMMessage(LLMMessage.Role.USER, text, dbMessageId = mine.id))
+        // 净眼 P1-1 关账：/sync 的用户行 add 在 IO 线程——入锁+自增，否则落入
+        // 取消清理的世代号盲区（跨线程并发写 + partial 行落序）。
+        synchronized(historyWriteLock) {
+            agentHistory.add(LLMMessage(LLMMessage.Role.USER, text, dbMessageId = mine.id))
+            historyGeneration.incrementAndGet()
+        }
         chatRepository.appendMessage(targetId, "user", parts)
         if (fromSide) NovexSideHandoff.markParentDirty(context, targetId)
         appendSystemInfo(
@@ -7304,28 +7312,33 @@ class ChatViewModel(
         // 2. Pop ONLY a trailing assistant entry from agentHistory (mirrors
         //    iOS retry() :2107-2109). If the tail is already user(tool_result),
         //    the next-turn LLM call errored — leave history alone.
-        val poppedAssistant = if (agentHistory.lastOrNull()?.role == LLMMessage.Role.ASSISTANT) {
-            val last = agentHistory.removeAt(agentHistory.size - 1)
-            last
-        } else null
+        // 净眼 P1-2 关账：截断+孤儿 GC 是 IO/主线程可达的盲写——整体入锁并推世代号，
+        // 使取消清理的纪元复验必能看见本次重试已接管历史。
+        var poppedAssistant: LLMMessage? = null
+        synchronized(historyWriteLock) {
+            poppedAssistant = if (agentHistory.lastOrNull()?.role == LLMMessage.Role.ASSISTANT) {
+                agentHistory.removeAt(agentHistory.size - 1)
+            } else null
 
-        // 3. GC orphaned tool_result parts whose tool_use is gone (mirrors
-        //    iOS retry() :2114-2128). Walks backward so removeAt is safe.
-        val liveToolUseIds = agentHistory.flatMap { m ->
-            m.contentParts.filterIsInstance<AgentContentPart.ToolUse>().map { it.id }
-        }.toSet()
-        for (i in agentHistory.indices.reversed()) {
-            val m = agentHistory[i]
-            if (m.role != LLMMessage.Role.USER) continue
-            val cleanedParts = m.contentParts.filter { p ->
-                p !is AgentContentPart.ToolResult || p.id in liveToolUseIds
+            // 3. GC orphaned tool_result parts whose tool_use is gone (mirrors
+            //    iOS retry() :2114-2128). Walks backward so removeAt is safe.
+            val liveToolUseIds = agentHistory.flatMap { m ->
+                m.contentParts.filterIsInstance<AgentContentPart.ToolUse>().map { it.id }
+            }.toSet()
+            for (i in agentHistory.indices.reversed()) {
+                val m = agentHistory[i]
+                if (m.role != LLMMessage.Role.USER) continue
+                val cleanedParts = m.contentParts.filter { p ->
+                    p !is AgentContentPart.ToolResult || p.id in liveToolUseIds
+                }
+                when {
+                    cleanedParts.isEmpty() && m.contentParts.isNotEmpty() ->
+                        agentHistory.removeAt(i)
+                    cleanedParts.size < m.contentParts.size ->
+                        agentHistory[i] = m.copy(contentParts = cleanedParts)
+                }
             }
-            when {
-                cleanedParts.isEmpty() && m.contentParts.isNotEmpty() ->
-                    agentHistory.removeAt(i)
-                cleanedParts.size < m.contentParts.size ->
-                    agentHistory[i] = m.copy(contentParts = cleanedParts)
-            }
+            historyGeneration.incrementAndGet()
         }
 
         val initialProvider = currentProvider ?: return
@@ -7930,7 +7943,7 @@ class ChatViewModel(
             val staleJob = streamJob != null && streamJob !== jobAtLoopEntry
             val suppressed = staleJob || RunPhase.shouldSuppressEndPhase(runPhase, isWipingSession)
             if (suppressed) {
-                AppLogger.info(TAG_STREAM, "[RunPhase] end-phase suppressed (stale=$staleJob wiping=$isWipingSession)")
+                AppLogger.info(TAG_STREAM, "[RunPhase] end-phase suppressed (stale=$staleJob wiping=$isWipingSession phase=$runPhase)")
             } else {
                 runPhaseTransitionTo(if (_canResume.value) RunPhase.AWAITING_RESUME else RunPhase.IDLE, "runAgentLoop-end")
             }
@@ -12727,14 +12740,20 @@ class ChatViewModel(
                     if (error is kotlinx.coroutines.CancellationException) throw error
                     AppLogger.error(TAG_STREAM, "cancel-cleanup partial persist failed: ${error::class.java.simpleName}: ${error.message}")
                     synchronized(historyWriteLock) {
-                        agentHistory.add(
-                            LLMMessage(
-                                role = LLMMessage.Role.ASSISTANT,
-                                content = partialText,
-                                contentParts = parts,
+                        // 净眼 P2-2：落库失败期间他写者已推进则跳过回退 add——
+                        // DB 无此行，install 权威对账会补，盲插只会错序。
+                        if (historyGeneration.get() == historyEpochAtCancel) {
+                            agentHistory.add(
+                                LLMMessage(
+                                    role = LLMMessage.Role.ASSISTANT,
+                                    content = partialText,
+                                    contentParts = parts,
+                                )
                             )
-                        )
-                        historyGeneration.incrementAndGet()
+                            historyGeneration.incrementAndGet()
+                        } else {
+                            AppLogger.info(TAG_STREAM, "cancel-cleanup fallback add skipped — epoch advanced (install will reconcile)")
+                        }
                     }
                 }
                 _canResume.value = true
