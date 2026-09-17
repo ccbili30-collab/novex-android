@@ -996,7 +996,18 @@ class ChatViewModel(
     @Volatile private var currentProvider: LLMProvider? = null
     @Volatile private var currentModel: LLMModel? = null
 
-    /** Structured agent history for the agent loop (contentParts-based). */
+    /** Structured agent history for the agent loop (contentParts-based).
+     *
+     * [T-single-writer-contract] PR 2a 写点契约（任务书
+     * docs/tasks/2026-09-16-conversation-core-pr2-single-writer.md §②）：
+     * - 唯一权威重建：installActiveConversation（从 DB 活跃路径全量重建）；
+     * - 允许的增量写点：runAgentLoop 轮次追加（用户行/助手轮/工具对，先 DB 后
+     *   内存对偶）、injectQueuedPromptsAsNewTurn（桥接段=内存专属+已登记；用户
+     *   行=DB+内存对偶）、压缩/卸载的就地投影改写（只改内容保留条数）；
+     * - 禁止：任何绕过 DB 的整表替换/清空（conv9 队列注入空请求的病根）。
+     * 运行时稽查：出口 I1 历史守恒 + 影子装配强信号（shadow_assembly_diff）。
+     * PR 2b 将把增量写点收敛为"DB 事件→内存投影"的单一写者。
+     */
     private val agentHistory = mutableListOf<LLMMessage>()
     private val novexDocumentRepository by lazy {
         FileNovexDocumentSnapshotRepository(
@@ -8028,6 +8039,10 @@ class ChatViewModel(
                     // so a loop that keeps compacting cannot defeat the runaway
                     // backstop.
                     inLoopCompactions++
+                    // [T-request-assembler] PR2a B1：压缩迭代顺延 I1 基线标志——
+                    // 注入设的 N+1 若被本 continue 跳过，标志过期、该逻辑轮的
+                    // I1 基线静默丢失（净眼 P2-2b 挂账清偿）。
+                    if (pendingI1BaselineTurn > turn) pendingI1BaselineTurn = turn + 1
                     continue
                 }
                 InLoopContextAction.STOP -> {
