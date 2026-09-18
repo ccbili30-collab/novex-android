@@ -47,6 +47,25 @@
 
 ## 台账
 
-- 净眼审查：待
+### 净眼一审（2026-09-18，裁决：退回修复后复审）
+
+六场景链：直播/落定/边界/性能/Compose/测试真实性。三分类处置：
+
+- **P0 采纳已修**（3201d2d）：toolStatus 可空安全调用，null 按已落定折叠。
+- **P1-正则 驳回留痕**：净眼判 textField 正则强制闭引号致写作分支死路
+  ——系误读 Kotlin raw string 收尾边界（末尾三引号是字符串定界符、不是
+  正则内容）；当前正则无闭引号要求，CI 的 writing 用例实证。若 CI 红则
+  按净眼修法改。
+- **P1-恢复态残留 采纳**：journal 重放的历史 PENDING/RUNNING 块新规下
+  永不折叠、永久挂 shimmer+stop——AssistantToolUse 增加 messageIsStreaming
+  字段，飞行豁免只对活流成立；补回归用例。
+- **P2-label 采纳**：豁免后 statusLabel 的 states 分支不可达、退化"查看
+  记录"——AssistantProcess 增 liveToolStatuses（flush 收集被豁免飞行态），
+  标签优先判"进行中"；断言同步。
+- **P3 采纳两小项**：process.key 稳定性断言补回；N 字计数为 JSON 字符数
+  （非正文长度）措辞不改——挂账（与 nameField 80 上限同批）。
+- 记录：RUNNING 优先输出尾巴的分支在活链路等价 args 尾巴（执行期无增量
+  输出）——设计冗余保留，工具输出流式化时自然生效。
+
 - 守纲六问：待
-- CI：待
+- CI：704dc2e 红（可空调用，3201d2d 修复）；净眼关账 de10284 待终版
