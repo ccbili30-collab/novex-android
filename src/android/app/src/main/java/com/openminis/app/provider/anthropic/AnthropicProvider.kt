@@ -177,7 +177,22 @@ class AnthropicProvider(
         // watchdog 同样靠"协程直接 call.cancel() 解除阻塞"生效。
         val call = client.newCall(request)
         launch(Dispatchers.IO) {
-        val response = call.execute()
+        // [T-stream-stall-watchdog]（净眼 P3-2）连接建立失败原本以裸
+        // IOException 逃逸——不是 LLMError，NovexModelStreamRecovery 不判
+        // transient，用户看到硬失败而非自动重试。包成 NetworkError 经
+        // channel 投递，进既有重试链。
+        val response = try {
+            call.execute()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            val mapped = mapError(e)
+            audit?.event("connect_error", JSONObject()
+                .put("errorType", mapped.javaClass.simpleName)
+                .put("message", mapped.message))
+            close(mapped)
+            return@launch
+        }
         audit?.event("response_headers", JSONObject().put("status", response.code))
         val durationMs = System.currentTimeMillis() - startTime
 

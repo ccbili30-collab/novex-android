@@ -156,7 +156,21 @@ class GeminiProvider(
         // 对齐 AnthropicProvider 与 OpenAIProvider TTFB watchdog 的做法。
         val call = client.newCall(request)
         launch(Dispatchers.IO) {
-        val response = call.execute()
+        // [T-stream-stall-watchdog]（净眼 P3-2）连接建立失败原本以裸
+        // IOException 逃逸——不是 LLMError，不进 transient 重试链；包成
+        // NetworkError 投递（对齐 AnthropicProvider）。
+        val response = try {
+            call.execute()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            val mapped = mapError(e)
+            audit?.event("connect_error", JSONObject()
+                .put("errorType", mapped.javaClass.simpleName)
+                .put("message", mapped.message))
+            close(mapped)
+            return@launch
+        }
         audit?.event("response_headers", JSONObject().put("status", response.code))
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
