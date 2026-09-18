@@ -98,5 +98,12 @@
     →LLMError 转换（Anthropic/Gemini 连接失败裸 IOException 不进重试
     链的既有缺口一并处理）
   - 回归测试失效模式原为挂死（已用 JUnit timeout 修正）
-- 守纲六问：待
-- CI：第四轮（回归测试 timeout 修正）
+- 守纲六问：过（2026-09-18 05:1xZ）——零diff（10 文件与声明一致）/无私开
+  出口（NetworkError 进既有 recovery；CompositionLocal 走既有先例）/无新旧
+  并存（readTimeout 为 socket 层防线与 chunk 级 watchdog 异层非冗余；等待
+  显示仅 TypingIndicator 一处）/无过度工程（单常量对，跟进未混入）/不违插
+  槽（provider 业务语义逐字保留，ChatViewModel 只加状态）/上轮兑现（PR#28
+  无欠账，本轮三承诺全落地经净眼闭环）
+- CI：第四轮绿（9m18s，含真形态回归测试）
+- 合并：PR #29 → next（2026-09-18T05:14:15Z，abe24d4）
+- 发版：v3.0.3-beta.73
