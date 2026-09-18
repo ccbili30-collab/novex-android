@@ -48,6 +48,13 @@
 - 看门狗抛 `LLMError.NetworkError(SocketTimeoutException(…))` ⇒
   `isRetryable=true` ⇒ 无缝进 NovexModelStreamRecovery transient 链
   （重试 3 次 + 降级），该框架零改动。
+- 净眼 P1-1 修正后：provider 阻塞读（execute/readLine）必须位于
+  `launch(Dispatchers.IO)` 内，`awaitClose{call.cancel()}` 先行注册——
+  否则取消信号被 callbackFlow 的 coroutineScope 扣住 join 阻塞读，
+  判死超时（300s）形同虚设（回归测试
+  `watchdog error escapes a producer blocked on non-cancellable IO`）。
+- 产品取舍（净眼 P3）：首块 300s 预算从请求发出起算，覆盖上传期；
+  极慢上行大图或中转站整包缓冲超 5 分钟的长生成会被判死重试——可接受。
 - 任何 chunk 类型（含 ThinkingDelta/ReasoningContent/Started/Usage）都算
   活动——reasoning 流持续产出事件时计时必须被重置。
 - 思考静默 3 分钟以内（T171 实测）绝不误杀：300s 阈值留 90s 余量。

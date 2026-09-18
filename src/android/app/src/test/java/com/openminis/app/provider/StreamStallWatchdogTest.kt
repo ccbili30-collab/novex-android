@@ -90,4 +90,45 @@ class StreamStallWatchdogTest {
         job.join()
         // 走到这里未抛 NetworkError 即通过：取消路径静默、看门狗随 scope 结束。
     }
+
+    /**
+     * 净眼 P1-1 回归（真时钟）：provider 重构后的真实形态——阻塞读在
+     * launch(Dispatchers.IO) 里且不可取消，awaitClose 的 handler 是唯一
+     * 解锁手段（call.cancel() 等价物）。watchdog 的判死信号必须能在秒级
+     * 穿出这条链到达 collector；若 awaitClose 排在阻塞之后（修复前的
+     * producer 结构），信号会被 callbackFlow 的 coroutineScope 扣住，
+     * 本测试 5 秒兜底超时红。
+     */
+    @Test
+    fun `watchdog error escapes a producer blocked on non-cancellable IO`() {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val blockedProducer = kotlinx.coroutines.flow.callbackFlow {
+            launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    latch.await() // readLine 形态：线程阻塞，协程取消无效
+                    send(LLMStreamChunk.Text("late"))
+                    channel.close()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    cancel("Stream error", RuntimeException(e))
+                }
+            }
+            awaitClose { latch.countDown() } // call.cancel() 等价：取消时解锁
+        }
+        val guarded = blockedProducer.failOnStreamStall(
+            "test", firstChunkTimeoutMillis = 200, clock = System::currentTimeMillis,
+        )
+        val outcome = kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeout(5_000) {
+                try {
+                    guarded.toList()
+                    "completed"
+                } catch (e: LLMError.NetworkError) {
+                    "recovered"
+                }
+            }
+        }
+        assertEquals("recovered", outcome)
+    }
 }

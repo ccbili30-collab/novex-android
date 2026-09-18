@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -145,12 +146,16 @@ class GeminiProvider(
             .put("method", request.method).put("protocol", "gemini")
             .put("modelId", model.id).put("stream", true)
             .put("toolCount", tools.size).put("maxOutputTokens", body.optJSONObject("generationConfig")?.optInt("maxOutputTokens")))
-        // [T-stream-stall-watchdog] Keep the Call handle so awaitClose below
-        // can hard-cancel it — execute()/readLine() block on IO and ignore
-        // coroutine cancellation; Call.cancel() is the only reliable unblock
-        // when the stall watchdog (or the user's Stop) cancels this flow.
-        // Matches AnthropicProvider / OpenAIProvider.
+        // [T-stream-stall-watchdog]（净眼 P1-1 修正）execute() 与 readLine()
+        // 阻塞在 IO 且不响应协程取消；若留在 producer 协程主体，awaitClose
+        // 排在阻塞循环之后、handler 永远注册不上——下游取消（看门狗判死/
+        // 用户停止）会被 callbackFlow 的 coroutineScope 扣住 join 阻塞读，
+        // 直到 socket 自死。因此阻塞读整体移进 launch(Dispatchers.IO)，
+        // awaitClose{call.cancel()} 在 launch 之后立即挂起注册：取消到达
+        // 时同步硬断 Call，execute/readLine 立即抛 IOException 解除整链。
+        // 对齐 AnthropicProvider 与 OpenAIProvider TTFB watchdog 的做法。
         val call = client.newCall(request)
+        launch(Dispatchers.IO) {
         val response = call.execute()
         audit?.event("response_headers", JSONObject().put("status", response.code))
         if (!response.isSuccessful) {
@@ -159,7 +164,10 @@ class GeminiProvider(
                 com.openminis.app.diagnostics.ModelRequestAudit.safeText(
                     runCatching { JSONObject(errorBody).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty(), listOf(apiKey))))
             response.close()
-            throw mapHttpError(response.code, errorBody)
+            // Inside the IO launch: deliver through the channel so the
+            // collector throws it (was a bare `throw` in the producer body).
+            close(mapHttpError(response.code, errorBody))
+            return@launch
         }
 
         val reader = BufferedReader(InputStreamReader(response.body!!.byteStream()))
@@ -209,15 +217,20 @@ class GeminiProvider(
             }
             send(LLMStreamChunk.Finished(lastFinishReason ?: "end_turn"))
         } catch (e: Exception) {
+            // Inside the IO launch: cancellation must propagate, not be
+            // rewritten as an LLMError (awaitClose's call.cancel() normally
+            // surfaces as IOException instead, but stay safe either way).
+            if (e is kotlinx.coroutines.CancellationException) throw e
             cancel("Stream error", mapError(e))
         } finally {
             reader.close()
             response.close()
         }
         channel.close()
-        // [T-stream-stall-watchdog] Downstream cancellation (stall watchdog,
-        // user Stop, branch switch) must hard-cancel the Call — see the
-        // comment at `client.newCall` above.
+        } // launch(Dispatchers.IO)
+        // [T-stream-stall-watchdog] Registered BEFORE any waiting: runs
+        // synchronously on downstream cancellation and hard-cancels the
+        // Call, unblocking execute()/readLine() inside the IO launch above.
         awaitClose { try { call.cancel() } catch (_: Exception) {} }
     }
 
