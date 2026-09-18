@@ -898,7 +898,12 @@ class OpenAIProvider private constructor(
                     "no response from server (${STREAM_TTFB_TIMEOUT_MS / 1000}s TTFB) — check network/proxy",
                 )
             }
-            throw e
+            // [净眼 #30 P3-2] Connection-establishment failures used to
+            // escape as bare IOException — not an LLMError, so recovery
+            // never retried them. Map to NetworkError like the other two
+            // providers (Anthropic/Gemini connect_error path) so connect
+            // flakes go through the transient retry chain.
+            throw mapError(e)
         } finally {
             headersArrived.set(true)
             ttfbWatchdog.cancel()
@@ -966,6 +971,17 @@ class OpenAIProvider private constructor(
 
         val reader = BufferedReader(InputStreamReader(response.body!!.byteStream()))
 
+        // [T-stream-stall-watchdog]（净眼 #29 复审跟进项，对齐 Anthropic/
+        // Gemini）readLine() 阻塞在 IO 且不响应协程取消；留在 producer
+        // 协程主体则 awaitClose 排在循环之后注册不上——看门狗判死（300s）
+        // 的取消会被 callbackFlow 的 coroutineScope 扣住 join 阻塞读，直
+        // 到 socket 自死，"卡住将自动重连"对 OpenAI 兼容中转不兑现。因此
+        // 读循环整体移进 launch(Dispatchers.IO)，awaitClose 紧随其后先行
+        // 注册：取消到达时同步硬断 Call，readLine 立即抛 IOException 解
+        // 除整链。execute() 留在外面——其阻塞期已由上方 TTFB watchdog
+        // 直接 call.cancel() 覆盖。
+        launch(Dispatchers.IO) {
+
         // [T-codex-gpt-image2-oauth-android] gpt-image-2: the Codex backend
         // streams the image as a base64 blob (PNG / JPEG / WebP) inside the SSE
         // `image_generation_call` output item; there's no incremental text/tool
@@ -978,17 +994,17 @@ class OpenAIProvider private constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                cancel("Image stream error", mapError(e))
+                // [净眼 #30 P1] close(cause), NOT scope cancel(…) — see the
+                // main catch below for the receiver-flip rationale.
+                close(mapError(e))
             } finally {
                 reader.close()
                 response.close()
             }
             channel.close()
-            awaitClose {
-                try { call.cancel() } catch (_: Exception) {}
-                try { response.close() } catch (_: Exception) {}
-            }
-            return@callbackFlow
+            // Inside the IO launch now — the shared awaitClose below the
+            // launch owns call.cancel()/response.close() for this path too.
+            return@launch
         }
 
         // Chat Completions: tool calls are streamed as deltas keyed by index.
@@ -1520,6 +1536,10 @@ class OpenAIProvider private constructor(
                 )
             }
         } catch (e: Exception) {
+            // Inside the IO launch: cancellation (awaitClose's call.cancel()
+            // surfaces as IOException, but stay safe either way) must
+            // propagate, not be logged/rewritten as a stream error.
+            if (e is CancellationException) throw e
             // T321: never silently swallow — log message + top-3 stack frames.
             val frames = e.stackTrace.take(3).joinToString(" | ") { "${it.className}.${it.methodName}:${it.lineNumber}" }
             com.openminis.app.logging.AppLogger.error(
@@ -1528,17 +1548,29 @@ class OpenAIProvider private constructor(
                     "${e.javaClass.simpleName}: ${e.message} @ $frames " +
                     "(events=$sseEventCount contentLen=$contentLen reasoningLen=$reasoningLen)"
             )
-            cancel("Stream error", mapError(e))
+            // [净眼 #30 P1] close(cause), NOT scope cancel(…): inside
+            // launch{} the bare `cancel(msg, cause)` resolves to the
+            // CoroutineScope extension on the LAUNCH's own scope — it would
+            // cancel this child job, swallow the mapped error, and the
+            // collector would see a normal completion (mid-stream drop =
+            // silent truncation, no auto-retry). close(cause) fails the
+            // channel so the mapped error reaches the retry chain.
+            close(mapError(e))
         } finally {
             reader.close()
             response.close()
         }
         channel.close()
+        } // launch(Dispatchers.IO)
         // T171: when the coroutine is cancelled (user tapped stop), the
         // reader loop above is suspended inside the OkHttp source — only
         // call.cancel() will tear the socket down promptly. response.close()
         // is also explicit so connection-pool leaks are impossible if cancel
         // races with the finally block.
+        // [T-stream-stall-watchdog] Registered BEFORE any waiting (net-eye
+        // fix, mirrors Anthropic/Gemini): runs synchronously on downstream
+        // cancellation — stall-watchdog verdict, user stop, branch switch —
+        // and hard-cancels the Call to unblock readLine() in the IO launch.
         awaitClose {
             try { call.cancel() } catch (_: Exception) {}
             try { response.close() } catch (_: Exception) {}

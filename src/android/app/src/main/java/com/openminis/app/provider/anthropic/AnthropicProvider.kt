@@ -177,7 +177,22 @@ class AnthropicProvider(
         // watchdog 同样靠"协程直接 call.cancel() 解除阻塞"生效。
         val call = client.newCall(request)
         launch(Dispatchers.IO) {
-        val response = call.execute()
+        // [T-stream-stall-watchdog]（净眼 P3-2）连接建立失败原本以裸
+        // IOException 逃逸——不是 LLMError，NovexModelStreamRecovery 不判
+        // transient，用户看到硬失败而非自动重试。包成 NetworkError 经
+        // channel 投递，进既有重试链。
+        val response = try {
+            call.execute()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            val mapped = mapError(e)
+            audit?.event("connect_error", JSONObject()
+                .put("errorType", mapped.javaClass.simpleName)
+                .put("message", com.openminis.app.diagnostics.ModelRequestAudit.safeText(mapped.message.orEmpty(), listOf(apiKey))))
+            close(mapped)
+            return@launch
+        }
         audit?.event("response_headers", JSONObject().put("status", response.code))
         val durationMs = System.currentTimeMillis() - startTime
 
@@ -313,7 +328,14 @@ class AnthropicProvider(
             // cancellation reaches us any other way it must propagate, not
             // be rewritten as an LLMError).
             if (e is kotlinx.coroutines.CancellationException) throw e
-            cancel("Stream error", mapError(e))
+            // [净眼 #30 P1] Must be SendChannel.close, NOT scope cancel(…):
+            // inside launch{} the bare `cancel(msg, cause)` resolves to the
+            // CoroutineScope extension on the LAUNCH's own scope — it would
+            // cancel this child job, swallow the error, and the collector
+            // would see a normal completion (mid-stream drop = silent
+            // truncation, no auto-retry). close(cause) fails the channel so
+            // the collector throws the mapped error into the retry chain.
+            close(mapError(e))
         } finally {
             reader.close()
             response.close()

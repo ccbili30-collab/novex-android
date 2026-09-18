@@ -116,7 +116,10 @@ class StreamStallWatchdogTest {
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    cancel("Stream error", RuntimeException(e))
+                    // 净眼 #30 P1：provider 修复后的写法必须是
+                    // close(cause)——launch{} 里裸 cancel(…) 会翻转接收者
+                    // 取消子协程自身、吞掉错误。复刻块同 provider。
+                    close(LLMError.NetworkError(e))
                 }
             }
             awaitClose { latch.countDown() } // call.cancel() 等价：取消时解锁
@@ -132,6 +135,43 @@ class StreamStallWatchdogTest {
                 } catch (e: LLMError.NetworkError) {
                     "recovered"
                 }
+            }
+        }
+        assertEquals("recovered", outcome)
+    }
+
+    /**
+     * 净眼 #30 P1 守护（真时钟）：IO launch 内的中途异常必须以类型化
+     * LLMError 到达 collector。修复前 provider 写的 `cancel(msg, cause)` 在
+     * launch{} 内解析为取消子协程自身——错误被吞、下游看到"正常完成"，
+     * 中途断流从自动重试退化为静默截断（beta.73 在 Anthropic/Gemini 带入，
+     * #30 三家统一改为 close(mapError)）。谁再写回 cancel 形态，此测试红。
+     */
+    @Test(timeout = 10_000)
+    fun `mid-stream failure inside the IO launch reaches collector as typed error`() {
+        val producer = kotlinx.coroutines.flow.callbackFlow {
+            launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    send(LLMStreamChunk.Text("partial"))
+                    throw java.io.IOException("connection reset")
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    close(LLMError.NetworkError(e))
+                }
+                // 忠实还原 provider 尾部形态：错误被吞的退化写法会顺落到
+                // 这里把通道正常关闭，collector 得到 "completed" —— 断言
+                // 立即红（快红），而非挂死等 JUnit timeout（净眼复审 nit）。
+                channel.close()
+            }
+            awaitClose { }
+        }
+        val outcome = kotlinx.coroutines.runBlocking {
+            try {
+                producer.toList()
+                "completed"
+            } catch (e: LLMError.NetworkError) {
+                "recovered"
             }
         }
         assertEquals("recovered", outcome)
