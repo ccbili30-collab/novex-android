@@ -145,7 +145,13 @@ class GeminiProvider(
             .put("method", request.method).put("protocol", "gemini")
             .put("modelId", model.id).put("stream", true)
             .put("toolCount", tools.size).put("maxOutputTokens", body.optJSONObject("generationConfig")?.optInt("maxOutputTokens")))
-        val response = client.newCall(request).execute()
+        // [T-stream-stall-watchdog] Keep the Call handle so awaitClose below
+        // can hard-cancel it — execute()/readLine() block on IO and ignore
+        // coroutine cancellation; Call.cancel() is the only reliable unblock
+        // when the stall watchdog (or the user's Stop) cancels this flow.
+        // Matches AnthropicProvider / OpenAIProvider.
+        val call = client.newCall(request)
+        val response = call.execute()
         audit?.event("response_headers", JSONObject().put("status", response.code))
         if (!response.isSuccessful) {
             val errorBody = response.body?.string() ?: ""
@@ -209,7 +215,10 @@ class GeminiProvider(
             response.close()
         }
         channel.close()
-        awaitClose()
+        // [T-stream-stall-watchdog] Downstream cancellation (stall watchdog,
+        // user Stop, branch switch) must hard-cancel the Call — see the
+        // comment at `client.newCall` above.
+        awaitClose { try { call.cancel() } catch (_: Exception) {} }
     }
 
     private fun buildRequestBody(

@@ -165,7 +165,15 @@ class AnthropicProvider(
             .put("method", request.method).put("protocol", "anthropic")
             .put("modelId", body.optString("model")).put("stream", true)
             .put("toolCount", tools.size).put("maxOutputTokens", body.optInt("max_tokens")))
-        val response = client.newCall(request).execute()
+        // [T-stream-stall-watchdog] Keep the Call handle so awaitClose below
+        // can hard-cancel it. execute()/readLine() block on IO and ignore
+        // coroutine cancellation; Call.cancel() is the only reliable way to
+        // unblock them when the stall watchdog (or the user's Stop) cancels
+        // this flow — without it a dead relay socket outlives the collector
+        // for as long as readTimeout lets it (OpenAIProvider already does
+        // this; see its awaitClose).
+        val call = client.newCall(request)
+        val response = call.execute()
         audit?.event("response_headers", JSONObject().put("status", response.code))
         val durationMs = System.currentTimeMillis() - startTime
 
@@ -297,7 +305,10 @@ class AnthropicProvider(
             response.close()
         }
         channel.close()
-        awaitClose()
+        // [T-stream-stall-watchdog] Downstream cancellation (stall watchdog,
+        // user Stop, branch switch) must hard-cancel the Call — see the
+        // comment at `client.newCall` above.
+        awaitClose { try { call.cancel() } catch (_: Exception) {} }
     }
 
     /**
@@ -919,11 +930,6 @@ class AnthropicProvider(
         stats: com.openminis.app.provider.ProviderWireCapture.RequestStats =
             com.openminis.app.provider.ProviderWireCapture.RequestStats(),
     ): Request {
-        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
-        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
-        com.openminis.app.provider.ProviderWireCapture.record(
-            "anthropic", bodyStr, "${basePath.trimEnd('/')}/v1/messages", stats,
-        )
         // T192: `basePath` may already end in `/v1` because
         // `ProviderInstance.effectiveBaseURL` appends `/v1` when
         // `appendV1Suffix=true` and the user-entered base doesn't end in `/v1`.
@@ -934,8 +940,18 @@ class AnthropicProvider(
         val cleanBase = basePath.trimEnd('/').let {
             if (it.endsWith("/v1")) it.dropLast(3).trimEnd('/') else it
         }
+        // [T-stream-stall-watchdog] capture records the SAME cleaned URL the
+        // request below uses — the raw `"${basePath}/v1/messages"` it used to
+        // record showed `…/v1/v1/messages` for /v1-suffixed bases and misled
+        // relay diagnostics (conversation-f899bf05).
+        val resolvedUrl = "$cleanBase/v1/messages"
+        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
+        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
+        com.openminis.app.provider.ProviderWireCapture.record(
+            "anthropic", bodyStr, resolvedUrl, stats,
+        )
         val builder = Request.Builder()
-            .url("$cleanBase/v1/messages")
+            .url(resolvedUrl)
             .post(bodyStr.toRequestBody("application/json".toMediaType()))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
