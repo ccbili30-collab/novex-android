@@ -159,6 +159,10 @@ class StreamStallWatchdogTest {
                 } catch (e: Exception) {
                     close(LLMError.NetworkError(e))
                 }
+                // 忠实还原 provider 尾部形态：错误被吞的退化写法会顺落到
+                // 这里把通道正常关闭，collector 得到 "completed" —— 断言
+                // 立即红（快红），而非挂死等 JUnit timeout（净眼复审 nit）。
+                channel.close()
             }
             awaitClose { }
         }

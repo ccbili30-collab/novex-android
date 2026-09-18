@@ -65,11 +65,15 @@ launch(Dispatchers.IO)、awaitClose{call.cancel()} 先行注册。净眼复审
     已修**：四处统一 `close(mapError(e))`；测试复刻块同步改写法，新增
     `mid-stream failure … typed error` 守护测试（谁写回 cancel 形态即红）
   - P3-1 execute() 段普通下游取消无法解除（ttfbWatchdog 仅超时路径
-    call.cancel；用户停止最长挂 readTimeout，OpenAI 600s/两家 600s 级，
-    IO worker 级泄漏无 ANR）→ 挂账：execute 一并移入 launch 的更大
-    对齐（含 headers 前路径）独立处理
+    call.cancel；用户停止最长挂 readTimeout——**该残留仅 OpenAI**，两家
+    execute 已在 launch(IO) 内由 awaitClose handler 秒级解除；600s 只是
+    三家 readTimeout 兜底值，AnthropicProvider.kt:79 / GeminiProvider.kt:45）
+    → 挂账：execute 一并移入 launch 的更大对齐（含 headers 前路径）独立处理
   - P3-2 OpenAI execute 非 TTFB IOException 裸抛 → **顺手修**：
     `throw mapError(e)`（对称 Anthropic/Gemini connect_error 路径）
   - P3-3 connect_error 审计字段未过 safeText → **顺手修**（两处统一）
+- 净眼复审（同日，ec5a213）：P1/P3-2/P3-3 **闭环**；守护测试有效。三 nit
+  已清：台账 P3-1 表述修正（残留仅 OpenAI）、CI 结果回填、复刻块补
+  channel.close() 使退化形态快红
 - 守纲六问：待
-- CI：待（第二轮）
+- CI：第二轮绿（7m10s）
