@@ -19,7 +19,14 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
     // 回合末尾；叙述文字归组留在主文流，不再被过程块打断（此前"连续段折叠"
     // 会把一次建卡拆成 过程块×N + 叙述×N 交替，占屏且结构混乱）。
     fun foldable(row: FlatChatItem): Boolean = when (row) {
-        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
+        // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex）**活流中**的
+        // 飞行工具行不折叠：STREAMING/PENDING/RUNNING 留在主文流，配
+        // ToolCallPill 的滚动小字尾巴持续可见"正在写什么"；状态落定后的
+        // 下一次展平才收进工作行。messageIsStreaming 门槛把恢复路径（journal
+        // 重放）产出的历史 PENDING/RUNNING 块挡在外面——那些不是本回合的
+        // 活工具，照常折叠（净眼 P1）。
+        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution() &&
+            !(row.messageIsStreaming && row.block.toolStatus?.isInFlight() == true)
         is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
         is FlatChatItem.AssistantMarkdownBlock -> row.executionText
         // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
@@ -49,7 +56,13 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
                 is FlatChatItem.AssistantThinking -> first.messageId
                 else -> error("Unexpected execution row")
             }
-            val process = FlatChatItem.AssistantProcess(messageId, folded, first.key)
+            // [T-live-tool-tail]（净眼 P2）被豁免的飞行工具不在 rows 里，
+            // 但它们的存在必须反映在工作行状态——否则已折部分全落定时
+            // 标签退化成"查看记录"，进行中信号丢失。
+            val liveStatuses = turn.filterIsInstance<FlatChatItem.AssistantToolUse>()
+                .filter { it.messageIsStreaming && it.block.toolStatus?.isInFlight() == true }
+                .mapNotNull { it.block.toolStatus }
+            val process = FlatChatItem.AssistantProcess(messageId, folded, first.key, liveStatuses)
             // 叙述与交互类工具保留原位；唯一工作行钉在回合末尾。
             turn.forEach { row -> if (row.key !in keys) output += row }
             output += process
@@ -73,6 +86,9 @@ private fun AssistantBlock.canFoldExecution(): Boolean =
 internal fun FlatChatItem.AssistantProcess.statusLabel(): String {
     val states = tools.map { it.block.toolStatus }
     return when {
+        // [T-live-tool-tail] 主文流里还有飞行工具（被豁免未折）——回合仍在
+        // 进行，即使已折部分全部落定（净眼 P2 修复）。
+        liveToolStatuses.isNotEmpty() -> "进行中"
         states.any { it == ToolBlockStatus.RUNNING || it == ToolBlockStatus.STREAMING || it == ToolBlockStatus.PENDING } -> "进行中"
         states.any { it == ToolBlockStatus.FAILED || it == ToolBlockStatus.TIMEOUT } -> "有操作未完成"
         states.any { it == ToolBlockStatus.CANCELLED } -> "已停止"
@@ -80,3 +96,7 @@ internal fun FlatChatItem.AssistantProcess.statusLabel(): String {
         else -> "查看记录"
     }
 }
+
+/** [T-live-tool-tail] 工具是否仍在飞行中（参数流式/待执行/执行中）——飞行中不折叠、挂滚动尾巴。 */
+internal fun ToolBlockStatus.isInFlight(): Boolean =
+    this == ToolBlockStatus.STREAMING || this == ToolBlockStatus.PENDING || this == ToolBlockStatus.RUNNING

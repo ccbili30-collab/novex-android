@@ -301,7 +301,13 @@ internal sealed class FlatChatItem {
         override fun hashCode(): Int = message.hashCode() * 31 + precededByUser.hashCode()
     }
 
-    data class AssistantProcess(val messageId: String, val rows: List<FlatChatItem>, override val key: String) : FlatChatItem() {
+    data class AssistantProcess(
+        val messageId: String,
+        val rows: List<FlatChatItem>,
+        override val key: String,
+        /** [T-live-tool-tail] 被豁免留在主文流的飞行工具状态——驱动"进行中"标签。 */
+        val liveToolStatuses: List<ToolBlockStatus> = emptyList(),
+    ) : FlatChatItem() {
         override val contentType = "execution_process"
         val tools: List<AssistantToolUse> get() = rows.filterIsInstance<AssistantToolUse>()
     }
@@ -439,6 +445,12 @@ internal sealed class FlatChatItem {
         /** True if this is the last cancelled tool in its message — only one Retry button per message. */
         val isLastCancelled: Boolean = false,
         val isTurnStart: Boolean = false,
+        /**
+         * [T-live-tool-tail] 所属消息是否仍在流式。飞行豁免只对活流成立：
+         * 恢复路径（journal 重放）会产出历史 PENDING/RUNNING 块，那些不是
+         * 本回合的活工具，照常折叠（净眼 P1）。
+         */
+        val messageIsStreaming: Boolean = false,
     ) : FlatChatItem() {
         override val key = if (isTurnStart) "assistant-start:$messageId" else "tool:$messageId:${block.id}"
         override val contentType = "tool"
@@ -798,6 +810,7 @@ internal fun buildFlatChatItems(
                     allToolBlocks = toolPillBlocks,
                     isLastCancelled = block.id == lastCancelledToolId,
                     isTurnStart = claimTurnStartRow(),
+                    messageIsStreaming = message.isStreaming,
                 )))
             }
         }
