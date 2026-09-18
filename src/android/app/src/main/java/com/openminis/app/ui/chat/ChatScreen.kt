@@ -404,6 +404,8 @@ fun ChatScreen(
     }
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    // [T-stream-stall-watchdog] First-chunk wait timestamp for TypingIndicator.
+    val streamAwaitingSince by viewModel.streamAwaitingSince.collectAsState()
     val isCompactingNow by viewModel.isCompacting.collectAsState()
     val canResume by viewModel.canResume.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -2593,6 +2595,10 @@ fun ChatScreen(
                     LocalMessageBoundsRegistry provides messageBounds,
                     androidx.compose.ui.platform.LocalTextToolbar provides markdownToolbar,
                     LocalMinisSelectionController provides selectionController,
+                    // [T-stream-stall-watchdog] TypingIndicator reads this to
+                    // show "已等待 X 秒" while the first chunk of the in-flight
+                    // request has not arrived (silent-relay visibility).
+                    LocalStreamAwaitingSince provides streamAwaitingSince,
                 ) {
                 // Hoisted out of AlwaysStretchOverscrollBox lambda so
                 // SelectionDragTracker (which lives outside the lambda) can

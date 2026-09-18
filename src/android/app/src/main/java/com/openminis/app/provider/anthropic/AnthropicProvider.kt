@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -165,7 +166,18 @@ class AnthropicProvider(
             .put("method", request.method).put("protocol", "anthropic")
             .put("modelId", body.optString("model")).put("stream", true)
             .put("toolCount", tools.size).put("maxOutputTokens", body.optInt("max_tokens")))
-        val response = client.newCall(request).execute()
+        // [T-stream-stall-watchdog]（净眼 P1-1 修正）execute() 与 readLine()
+        // 阻塞在 IO 且不响应协程取消。若留在 producer 协程主体，awaitClose
+        // 只能排在阻塞循环之后、handler 永远注册不上——下游取消（看门狗
+        // 判死/用户停止）会被 callbackFlow 的 coroutineScope 扣住 join 阻塞
+        // 读，直到 socket 自死（f899bf05 黑洞 3069 秒正是此机制）。因此阻塞
+        // 读整体移进 launch(Dispatchers.IO)，awaitClose{call.cancel()} 在
+        // launch 之后立即挂起注册：取消到达时同步硬断 Call，execute/
+        // readLine 立即抛 IOException 解除整个链路。OpenAIProvider 的 TTFB
+        // watchdog 同样靠"协程直接 call.cancel() 解除阻塞"生效。
+        val call = client.newCall(request)
+        launch(Dispatchers.IO) {
+        val response = call.execute()
         audit?.event("response_headers", JSONObject().put("status", response.code))
         val durationMs = System.currentTimeMillis() - startTime
 
@@ -193,7 +205,11 @@ class AnthropicProvider(
                 )
             }
             android.util.Log.e("AnthropicProvider", "Stream failed: ${response.code} isOAuth=$isOAuth body=${errorBody.take(300)}")
-            throw mapHttpError(response.code, errorBody)
+            // Inside the IO launch: deliver the HTTP error through the
+            // channel so the collector throws it (was a bare `throw` when
+            // this body ran in the producer coroutine itself).
+            close(mapHttpError(response.code, errorBody))
+            return@launch
         }
 
         // Log successful request (debug builds only — see above)
@@ -291,13 +307,23 @@ class AnthropicProvider(
                 }
             }
         } catch (e: Exception) {
+            // Inside the IO launch: a CancellationException means this
+            // producer is being torn down (awaitClose's call.cancel() makes
+            // readLine throw IOException, not CancellationException — but if
+            // cancellation reaches us any other way it must propagate, not
+            // be rewritten as an LLMError).
+            if (e is kotlinx.coroutines.CancellationException) throw e
             cancel("Stream error", mapError(e))
         } finally {
             reader.close()
             response.close()
         }
         channel.close()
-        awaitClose()
+        } // launch(Dispatchers.IO)
+        // [T-stream-stall-watchdog] Registered BEFORE any waiting: runs
+        // synchronously on downstream cancellation and hard-cancels the
+        // Call, unblocking execute()/readLine() inside the IO launch above.
+        awaitClose { try { call.cancel() } catch (_: Exception) {} }
     }
 
     /**
@@ -919,11 +945,6 @@ class AnthropicProvider(
         stats: com.openminis.app.provider.ProviderWireCapture.RequestStats =
             com.openminis.app.provider.ProviderWireCapture.RequestStats(),
     ): Request {
-        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
-        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
-        com.openminis.app.provider.ProviderWireCapture.record(
-            "anthropic", bodyStr, "${basePath.trimEnd('/')}/v1/messages", stats,
-        )
         // T192: `basePath` may already end in `/v1` because
         // `ProviderInstance.effectiveBaseURL` appends `/v1` when
         // `appendV1Suffix=true` and the user-entered base doesn't end in `/v1`.
@@ -934,8 +955,18 @@ class AnthropicProvider(
         val cleanBase = basePath.trimEnd('/').let {
             if (it.endsWith("/v1")) it.dropLast(3).trimEnd('/') else it
         }
+        // [T-stream-stall-watchdog] capture records the SAME cleaned URL the
+        // request below uses — the raw `"${basePath}/v1/messages"` it used to
+        // record showed `…/v1/v1/messages` for /v1-suffixed bases and misled
+        // relay diagnostics (conversation-f899bf05).
+        val resolvedUrl = "$cleanBase/v1/messages"
+        // [T-provider-wire-capture] 工具轮原文抓取（诊断中转翻译层）；
+        // [T-presend-contract] PR 0 起纯文本请求也留摘要行（stats 全量传入）。
+        com.openminis.app.provider.ProviderWireCapture.record(
+            "anthropic", bodyStr, resolvedUrl, stats,
+        )
         val builder = Request.Builder()
-            .url("$cleanBase/v1/messages")
+            .url(resolvedUrl)
             .post(bodyStr.toRequestBody("application/json".toMediaType()))
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")

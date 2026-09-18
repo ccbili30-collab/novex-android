@@ -983,6 +983,18 @@ class ChatViewModel(
     private val _autoRetryCountdown = MutableStateFlow(0)
     val autoRetryCountdown: StateFlow<Int> = _autoRetryCountdown.asStateFlow()
 
+    /**
+     * [T-stream-stall-watchdog] Epoch millis of the in-flight request whose
+     * FIRST stream chunk has not arrived yet (null = not waiting). Set when an
+     * attempt dispatches, cleared on the first chunk of any type; drives the
+     * "已等待 X 秒" hint beside the typing dots (LocalStreamAwaitingSince) so
+     * a silent relay (conversation-f899bf05: 51-minute hole) is visible as a
+     * running counter instead of a frozen "thinking…" spinner. The stall
+     * watchdog itself lives at the provider layer — this is presentation only.
+     */
+    private val _streamAwaitingSince = MutableStateFlow<Long?>(null)
+    val streamAwaitingSince: StateFlow<Long?> = _streamAwaitingSince.asStateFlow()
+
     // [T-android-stale-streamjob-clears-isstreaming] @Volatile so cross-coroutine
     // reads (the orphaned previous streamJob's tail block running on a different
     // dispatcher) see the latest assignment. Without it, an old job's
@@ -8573,19 +8585,31 @@ class ChatViewModel(
                     require(estimate.toLong() + output + limit / 20 <= limit) {
                         "本轮上下文预计超出启用容量，尚未发送。请减少携带资料或压缩历史，原文保留。"
                     }
-                    currentProvider.streamMessage(
-                        boundedHistory,
-                        requestSystemPrompt, output,
-                        tools = if (requestToolsEnabled) conversationTools else emptyList(),
-                        thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
-                    ).collect { chunk ->
-                        streamedTurn.accept(chunk, currentProvider.streamTextIsMonolithic, ::publishStream)
-                        if (chunk is LLMStreamChunk.Usage && streamedTurn.contextTokens > 0) {
-                            lastContextTokens = streamedTurn.contextTokens
-                            _contextEstimated.value = false
-                            _lastTurnContextTokens.value = lastContextTokens
-                            _contextUsageReady.value = true
+                    // [T-stream-stall-watchdog] 等待计时窗口：本 attempt 的
+                    // 请求即将发出→置位；首个任意类型 chunk 到达→清零。重试/
+                    // 降级每次 attempt 都会重走这里，计时自然归零重来。
+                    _streamAwaitingSince.value = System.currentTimeMillis()
+                    try {
+                        currentProvider.streamMessage(
+                            boundedHistory,
+                            requestSystemPrompt, output,
+                            tools = if (requestToolsEnabled) conversationTools else emptyList(),
+                            thinkingLevel = if (currentModelSupportsReasoning) _thinkingLevel.value else ThinkingLevel.OFF,
+                        ).collect { chunk ->
+                            _streamAwaitingSince.value = null
+                            streamedTurn.accept(chunk, currentProvider.streamTextIsMonolithic, ::publishStream)
+                            if (chunk is LLMStreamChunk.Usage && streamedTurn.contextTokens > 0) {
+                                lastContextTokens = streamedTurn.contextTokens
+                                _contextEstimated.value = false
+                                _lastTurnContextTokens.value = lastContextTokens
+                                _contextUsageReady.value = true
+                            }
                         }
+                    } finally {
+                        // Covers normal completion AND every failure path
+                        // (watchdog timeout, HTTP error, cancellation): the
+                        // waiting hint must never outlive its attempt.
+                        _streamAwaitingSince.value = null
                     }
                     streamedTurn.finish(::publishStream)
                 },
