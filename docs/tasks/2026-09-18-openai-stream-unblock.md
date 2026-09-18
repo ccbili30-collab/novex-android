@@ -75,5 +75,11 @@ launch(Dispatchers.IO)、awaitClose{call.cancel()} 先行注册。净眼复审
 - 净眼复审（同日，ec5a213）：P1/P3-2/P3-3 **闭环**；守护测试有效。三 nit
   已清：台账 P3-1 表述修正（残留仅 OpenAI）、CI 结果回填、复刻块补
   channel.close() 使退化形态快红
-- 守纲六问：待
-- CI：第二轮绿（7m10s）
+- 守纲六问：过（2026-09-18 09:3xZ）——零diff（5 文件与声明一致）/无私开
+  出口（close(cause) 为既有 channel 失败语义，无新重试机制）/无新旧并存
+  （三家 producer 统一模式，grep 无 cancel 残留）/无过度工程（挂账未混入）
+  /不违插槽（500 行状态机逐字搬移经净眼 diff 核对）/上轮兑现（#29 挂账
+  的 OpenAI 跟进与 P3-2 兑现，顺手修掉 #29 带入的 P1）
+- CI：第三轮绿（9m3s）
+- 合并：PR #30 → next（2026-09-18T09:40:13Z，637917e）
+- 发版：beta.74 → promote stable 3.0.4
