@@ -7,19 +7,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NovexCardExecutionPresentationTest {
-    private fun tool(id: String, name: String = "document_read", status: ToolBlockStatus = ToolBlockStatus.SUCCESS, content: String = "{}") =
-        FlatChatItem.AssistantToolUse("reply", AssistantBlock(id, "tool_use", content, status, toolName = name), emptyList())
+    private fun tool(
+        id: String,
+        name: String = "document_read",
+        status: ToolBlockStatus = ToolBlockStatus.SUCCESS,
+        content: String = "{}",
+        messageIsStreaming: Boolean = false,
+    ) = FlatChatItem.AssistantToolUse(
+        "reply", AssistantBlock(id, "tool_use", content, status, toolName = name), emptyList(),
+        messageIsStreaming = messageIsStreaming,
+    )
     private fun text(id: String, value: String, execution: Boolean = false, streaming: Boolean = false) =
         FlatChatItem.AssistantText("reply", AssistantBlock(id, "text", value, executionText = execution), streaming, messageMarkdown = value)
 
     // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex）行为变更：
-    // 进行中（STREAMING/PENDING/RUNNING）的工具行不再折叠——留在主文流
-    // 配滚动尾巴；旧断言"pending 也折进工作行"随之改写。
+    // **活流中**（messageIsStreaming 且 STREAMING/PENDING/RUNNING）的工具行
+    // 不再折叠——留在主文流配滚动尾巴；旧断言"pending 也折进工作行"随之
+    // 改写。恢复路径产出的历史飞行块（无活流）仍照折。
     @Test fun inFlightToolsStayLiveWhileSettledOnesFold() {
         val intro = text("intro", "读取并整理资料", execution = true, streaming = true)
-        val streaming = tool("streaming", status = ToolBlockStatus.STREAMING)
-        val pending = tool("pending", status = ToolBlockStatus.PENDING)
-        val running = tool("running", status = ToolBlockStatus.RUNNING)
+        val streaming = tool("streaming", status = ToolBlockStatus.STREAMING, messageIsStreaming = true)
+        val pending = tool("pending", status = ToolBlockStatus.PENDING, messageIsStreaming = true)
+        val running = tool("running", status = ToolBlockStatus.RUNNING, messageIsStreaming = true)
         val failed = tool("failed", status = ToolBlockStatus.FAILED)
         val cancelled = tool("cancelled", status = ToolBlockStatus.CANCELLED)
         val final = text("final", "一张已保存，另一张未完成。")
@@ -32,8 +41,21 @@ class NovexCardExecutionPresentationTest {
         assertTrue(result.contains(final))
         val process = result.last() as FlatChatItem.AssistantProcess
         assertEquals(listOf<FlatChatItem>(intro, failed, cancelled), process.rows)
-        assertEquals("有操作未完成", process.statusLabel())
+        assertEquals(intro.key, process.key)
+        // 主文流仍有飞行工具 → 工作行标"进行中"（净眼 P2：不再退化为查看记录）。
+        assertEquals("进行中", process.statusLabel())
         assertEquals(5, result.size)
+    }
+
+    @Test fun restoredHistoricalInFlightBlocksStillFold() {
+        // 净眼 P1：journal 重放产出的历史 PENDING/RUNNING 块不是本回合活流
+        // （messageIsStreaming=false）——照常折叠，不永久挂 shimmer/尾巴。
+        val historicalPending = tool("restored-pending", status = ToolBlockStatus.PENDING)
+        val historicalRunning = tool("restored-running", status = ToolBlockStatus.RUNNING)
+        val result = foldNovexExecutionProcesses(listOf(historicalPending, historicalRunning))
+        val process = result.single() as FlatChatItem.AssistantProcess
+        assertTrue(process.rows.containsAll(listOf<FlatChatItem>(historicalPending, historicalRunning)))
+        assertEquals("进行中", process.statusLabel())
     }
 
     @Test fun settledToolStillFolds() {
