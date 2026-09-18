@@ -25,7 +25,7 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
         // （成功/失败/取消）后的下一次展平才收进工作行。此前进行中的工具
         // 也被折进"工作记录"，长建卡过程整体只剩一行静止的折叠行——
         // "看不到模型在干什么"的直接来源。
-        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution() && !row.block.toolStatus.isInFlight()
+        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution() && row.block.toolStatus?.isInFlight() != true
         is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
         is FlatChatItem.AssistantMarkdownBlock -> row.executionText
         // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
