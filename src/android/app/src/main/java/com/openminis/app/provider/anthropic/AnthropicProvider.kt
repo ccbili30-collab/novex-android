@@ -189,7 +189,7 @@ class AnthropicProvider(
             val mapped = mapError(e)
             audit?.event("connect_error", JSONObject()
                 .put("errorType", mapped.javaClass.simpleName)
-                .put("message", mapped.message))
+                .put("message", com.openminis.app.diagnostics.ModelRequestAudit.safeText(mapped.message.orEmpty(), listOf(apiKey))))
             close(mapped)
             return@launch
         }
@@ -328,7 +328,14 @@ class AnthropicProvider(
             // cancellation reaches us any other way it must propagate, not
             // be rewritten as an LLMError).
             if (e is kotlinx.coroutines.CancellationException) throw e
-            cancel("Stream error", mapError(e))
+            // [净眼 #30 P1] Must be SendChannel.close, NOT scope cancel(…):
+            // inside launch{} the bare `cancel(msg, cause)` resolves to the
+            // CoroutineScope extension on the LAUNCH's own scope — it would
+            // cancel this child job, swallow the error, and the collector
+            // would see a normal completion (mid-stream drop = silent
+            // truncation, no auto-retry). close(cause) fails the channel so
+            // the collector throws the mapped error into the retry chain.
+            close(mapError(e))
         } finally {
             reader.close()
             response.close()

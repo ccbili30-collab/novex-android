@@ -167,7 +167,7 @@ class GeminiProvider(
             val mapped = mapError(e)
             audit?.event("connect_error", JSONObject()
                 .put("errorType", mapped.javaClass.simpleName)
-                .put("message", mapped.message))
+                .put("message", com.openminis.app.diagnostics.ModelRequestAudit.safeText(mapped.message.orEmpty(), listOf(apiKey))))
             close(mapped)
             return@launch
         }
@@ -235,7 +235,13 @@ class GeminiProvider(
             // rewritten as an LLMError (awaitClose's call.cancel() normally
             // surfaces as IOException instead, but stay safe either way).
             if (e is kotlinx.coroutines.CancellationException) throw e
-            cancel("Stream error", mapError(e))
+            // [净眼 #30 P1] close(cause), NOT scope cancel(…): the bare
+            // `cancel(msg, cause)` inside launch{} resolves to the launch's
+            // own CoroutineScope — it cancels this child job, swallows the
+            // error and the collector sees normal completion (silent
+            // truncation, no auto-retry). close fails the channel so the
+            // mapped error reaches the retry chain.
+            close(mapError(e))
         } finally {
             reader.close()
             response.close()

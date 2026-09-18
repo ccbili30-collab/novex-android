@@ -898,7 +898,12 @@ class OpenAIProvider private constructor(
                     "no response from server (${STREAM_TTFB_TIMEOUT_MS / 1000}s TTFB) — check network/proxy",
                 )
             }
-            throw e
+            // [净眼 #30 P3-2] Connection-establishment failures used to
+            // escape as bare IOException — not an LLMError, so recovery
+            // never retried them. Map to NetworkError like the other two
+            // providers (Anthropic/Gemini connect_error path) so connect
+            // flakes go through the transient retry chain.
+            throw mapError(e)
         } finally {
             headersArrived.set(true)
             ttfbWatchdog.cancel()
@@ -989,7 +994,9 @@ class OpenAIProvider private constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                cancel("Image stream error", mapError(e))
+                // [净眼 #30 P1] close(cause), NOT scope cancel(…) — see the
+                // main catch below for the receiver-flip rationale.
+                close(mapError(e))
             } finally {
                 reader.close()
                 response.close()
@@ -1541,7 +1548,14 @@ class OpenAIProvider private constructor(
                     "${e.javaClass.simpleName}: ${e.message} @ $frames " +
                     "(events=$sseEventCount contentLen=$contentLen reasoningLen=$reasoningLen)"
             )
-            cancel("Stream error", mapError(e))
+            // [净眼 #30 P1] close(cause), NOT scope cancel(…): inside
+            // launch{} the bare `cancel(msg, cause)` resolves to the
+            // CoroutineScope extension on the LAUNCH's own scope — it would
+            // cancel this child job, swallow the mapped error, and the
+            // collector would see a normal completion (mid-stream drop =
+            // silent truncation, no auto-retry). close(cause) fails the
+            // channel so the mapped error reaches the retry chain.
+            close(mapError(e))
         } finally {
             reader.close()
             response.close()
