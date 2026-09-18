@@ -99,10 +99,12 @@ class StreamStallWatchdogTest {
      * launch(Dispatchers.IO) 里且不可取消，awaitClose 的 handler 是唯一
      * 解锁手段（call.cancel() 等价物）。watchdog 的判死信号必须能在秒级
      * 穿出这条链到达 collector；若 awaitClose 排在阻塞之后（修复前的
-     * producer 结构），信号会被 callbackFlow 的 coroutineScope 扣住，
-     * 本测试 5 秒兜底超时红。
+     * producer 结构），信号会被 callbackFlow 的 coroutineScope 扣住。
+     * JUnit timeout 让该失效模式干净红：withTimeout 的取消同样要等被扣
+     * 的 producer（净眼 P3 复审），只有线程中断（latch.await() 响应）能
+     * 立刻打断挂死的测试线程。
      */
-    @Test
+    @Test(timeout = 10_000)
     fun `watchdog error escapes a producer blocked on non-cancellable IO`() {
         val latch = java.util.concurrent.CountDownLatch(1)
         val blockedProducer = kotlinx.coroutines.flow.callbackFlow {

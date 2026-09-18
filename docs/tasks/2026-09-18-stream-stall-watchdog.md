@@ -81,6 +81,22 @@
 
 ## 台账
 
-- 净眼审查：待
+- 净眼一审（2026-09-18）：
+  - P1-1 看门狗判死信号被扣（callbackFlow producer 阻塞于 readLine，
+    awaitClose 排在阻塞后注册不上，call.cancel 不执行）→ **采纳，已修**
+    （8ff7b93：阻塞读整体移进 launch(Dispatchers.IO)，awaitClose 先行
+    注册；Anthropic/Gemini 两家）
+  - P2-1 测试名不副实（可取消上游掩盖 P1）→ **采纳，已修**（真形态
+    回归测试 + 复审加 @Test(timeout=10_000) 让退化干净红）
+  - P3-1 僵尸 attempt finally 清掉新计时 → 随 P1-1 闭环
+  - P3-2 首块预算含上传期 → 采纳为文档化取舍（上文不变量节）
+  - P3-3 300s 边界竞态 → 驳回留痕（原判概率可忽略，维持不动）
+- 净眼复审（同日）：P1-1/P2-1 **闭环**。新发现挂账：
+  - OpenAIProvider post-headers 黑洞同构缺陷（TTFB watchdog 只覆盖
+    headers 前；readLine 循环 awaitClose 仍在后）——下批跟进首位，
+    对齐 launch(IO)+awaitClose 先行注册，顺带补 execute IOException
+    →LLMError 转换（Anthropic/Gemini 连接失败裸 IOException 不进重试
+    链的既有缺口一并处理）
+  - 回归测试失效模式原为挂死（已用 JUnit timeout 修正）
 - 守纲六问：待
-- CI：待
+- CI：第四轮（回归测试 timeout 修正）
