@@ -671,9 +671,22 @@ internal fun ToolCallPill(
     // wrapper below so it opens beneath the tapped bubble.
     var showToolMenu by remember { mutableStateOf(false) }
 
+    // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex 的工具调用显示
+    // 流程）执行中的工具行下方挂暗色等宽小字尾巴：参数流式期显示累积参数
+    // 尾部（bulk 工具解析最近模块名），执行期优先显示输出尾部——长静默轮
+    // 也有"正在写什么"的持续反馈。完成后尾巴随折叠消失。
+    val liveTailSource = when {
+        !isRunning -> null
+        block.toolStatus == ToolBlockStatus.RUNNING && block.content.isNotBlank() -> block.content
+        else -> block.toolArgs
+    }
+    val liveTail = liveTailSource?.let { ToolLiveTail.liveTail(block.toolName, it) }
+
     // Pill stretches up to the full row width so long titles can ellipsize
     // without pushing the duration out of view. Title takes the remaining
     // space via weight(1f), duration stays fixed-width (softWrap=false).
+    // [T-live-tool-tail] 外层包 Column：工具行 + 活动尾巴两段。
+    Column(modifier = Modifier.fillMaxWidth()) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
       Box(modifier = Modifier.weight(1f, fill = false)) {
         Row(
@@ -822,6 +835,20 @@ internal fun ToolCallPill(
         // any more. retryLast() / retryFromMessage() remain reachable from
         // other entry points (long-press menu, etc.).
         // iOS: Spacer(minLength: 0) — pill stays content-width, not full-row-width
+    }
+
+    // [T-live-tool-tail] dsh/codex 式滚动尾巴：暗色等宽小字，与胶囊图标对齐。
+    if (!liveTail.isNullOrEmpty()) {
+        Text(
+            text = liveTail,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 26.dp, bottom = 2.dp),
+        )
+    }
     }
 
     generatedImageArtifact(block)?.let { artifact ->

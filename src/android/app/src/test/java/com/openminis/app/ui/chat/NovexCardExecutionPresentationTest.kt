@@ -12,22 +12,34 @@ class NovexCardExecutionPresentationTest {
     private fun text(id: String, value: String, execution: Boolean = false, streaming: Boolean = false) =
         FlatChatItem.AssistantText("reply", AssistantBlock(id, "text", value, executionText = execution), streaming, messageMarkdown = value)
 
-    @Test fun runningFailedAndCancelledOperationsFoldWithoutHidingTheFinalAnswer() {
+    // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex）行为变更：
+    // 进行中（STREAMING/PENDING/RUNNING）的工具行不再折叠——留在主文流
+    // 配滚动尾巴；旧断言"pending 也折进工作行"随之改写。
+    @Test fun inFlightToolsStayLiveWhileSettledOnesFold() {
         val intro = text("intro", "读取并整理资料", execution = true, streaming = true)
+        val streaming = tool("streaming", status = ToolBlockStatus.STREAMING)
         val pending = tool("pending", status = ToolBlockStatus.PENDING)
+        val running = tool("running", status = ToolBlockStatus.RUNNING)
         val failed = tool("failed", status = ToolBlockStatus.FAILED)
         val cancelled = tool("cancelled", status = ToolBlockStatus.CANCELLED)
         val final = text("final", "一张已保存，另一张未完成。")
-        val raw = listOf(intro, pending, failed, cancelled, final)
-        val result = foldNovexExecutionProcesses(raw)
-        assertEquals(2, result.size)
-        // [T-turn-single-card] 工作行钉在回合末尾，叙述在前。
+        val result = foldNovexExecutionProcesses(listOf(intro, streaming, pending, running, failed, cancelled, final))
+        // 三个飞行中的工具原样留在主文流（各配 ToolCallPill 尾巴），叙述保留，
+        // 其余（过程文字/失败/取消）折成唯一工作行钉在回合末尾。
+        assertTrue(result.contains(streaming))
+        assertTrue(result.contains(pending))
+        assertTrue(result.contains(running))
+        assertTrue(result.contains(final))
         val process = result.last() as FlatChatItem.AssistantProcess
-        assertEquals(raw.dropLast(1), process.rows)
-        assertEquals(intro.key, process.key)
-        assertEquals("进行中", process.statusLabel())
-        assertSame(final, result.first())
-        assertEquals(5, raw.size)
+        assertEquals(listOf<FlatChatItem>(intro, failed, cancelled), process.rows)
+        assertEquals("有操作未完成", process.statusLabel())
+        assertEquals(5, result.size)
+    }
+
+    @Test fun settledToolStillFolds() {
+        val done = tool("done", status = ToolBlockStatus.SUCCESS)
+        val result = foldNovexExecutionProcesses(listOf(done))
+        assertTrue(result.single() is FlatChatItem.AssistantProcess)
     }
     @Test fun textIsClassifiedByItsChannelInsteadOfPositionOrWording() {
         val formal = text("first", "先给你的完整回答")

@@ -19,7 +19,13 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
     // 回合末尾；叙述文字归组留在主文流，不再被过程块打断（此前"连续段折叠"
     // 会把一次建卡拆成 过程块×N + 叙述×N 交替，占屏且结构混乱）。
     fun foldable(row: FlatChatItem): Boolean = when (row) {
-        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution()
+        // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex）进行中的
+        // 工具行不折叠：STREAMING/PENDING/RUNNING 的工具留在主文流，配
+        // ToolCallPill 的滚动小字尾巴持续可见"正在写什么"；状态落定
+        // （成功/失败/取消）后的下一次展平才收进工作行。此前进行中的工具
+        // 也被折进"工作记录"，长建卡过程整体只剩一行静止的折叠行——
+        // "看不到模型在干什么"的直接来源。
+        is FlatChatItem.AssistantToolUse -> row.block.canFoldExecution() && !row.block.toolStatus.isInFlight()
         is FlatChatItem.AssistantText -> row.block.presentationChannel() == NovexPresentationChannel.PROCESS_TEXT
         is FlatChatItem.AssistantMarkdownBlock -> row.executionText
         // [T-thinking-live] 进行中的思考块不折叠（用户 2026-09-15：思考应
@@ -80,3 +86,7 @@ internal fun FlatChatItem.AssistantProcess.statusLabel(): String {
         else -> "查看记录"
     }
 }
+
+/** [T-live-tool-tail] 工具是否仍在飞行中（参数流式/待执行/执行中）——飞行中不折叠、挂滚动尾巴。 */
+internal fun ToolBlockStatus.isInFlight(): Boolean =
+    this == ToolBlockStatus.STREAMING || this == ToolBlockStatus.PENDING || this == ToolBlockStatus.RUNNING
