@@ -319,7 +319,8 @@ internal fun UserMessageBubble(
                     ) {
                         val textColor = if (isQueued) secondaryTextColor else MaterialTheme.colorScheme.onSurface
                         val bubbleBg = if (isQueued) Color.Transparent else userBubbleColor
-                        val shape = RoundedCornerShape(18.dp)
+                        // [feat/ui-rikkahub] 18dp → 16dp: RikkaHub bubble formula.
+                        val shape = RoundedCornerShape(16.dp)
                         val dashedStroke = if (isQueued) {
                             Modifier.drawBehind {
                                 val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
@@ -328,7 +329,7 @@ internal fun UserMessageBubble(
                                         floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f
                                     ),
                                 )
-                                val r = 18.dp.toPx()
+                                val r = 16.dp.toPx()
                                 drawRoundRect(
                                     color = secondaryTextColor.copy(alpha = 0.5f),
                                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r),

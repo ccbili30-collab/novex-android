@@ -285,11 +285,18 @@ internal fun AssistantHeader() {
 }
 
 /**
- * Character conversations use a visible left-side speech bubble. General
- * Nova conversations deliberately keep the existing borderless text layout.
+ * [feat/ui-rikkahub] Assistant replies render FLAT — full-width borderless
+ * text in every conversation mode (RikkaHub/豆包-style). The old character
+ * speech-bubble wrapper survives as [LegacyCharacterAssistantBubble] so the
+ * change is a one-line revert.
  */
 @Composable
 internal fun CharacterAssistantBubble(content: @Composable () -> Unit) {
+    content()
+}
+
+@Composable
+private fun LegacyCharacterAssistantBubble(content: @Composable () -> Unit) {
     if (!LocalImmersiveChatProfile.current.usesRolePresentation) {
         content()
         return

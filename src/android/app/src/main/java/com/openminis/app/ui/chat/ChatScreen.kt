@@ -2624,8 +2624,10 @@ fun ChatScreen(
                     // the bubble's 4dp = 8dp (≈22px), tighter but still a clear
                     // breath under the title bar. Bottom padding and inter-
                     // message spacing are untouched.
+                    // [feat/ui-rikkahub] top 4dp → 16dp: RikkaHub 16dp all-around
+                    // list breathing room (horizontal 16dp already set below).
                     contentPadding = PaddingValues(
-                        top = 4.dp,
+                        top = 16.dp,
                         bottom = if (bottomReserve == 0.dp) 12.dp else bottomReserve,
                     ),
                     modifier = Modifier
@@ -3672,8 +3674,11 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // [feat/ui-rikkahub] card radius 20 → 24dp + 1dp hairline
+                        // border (RikkaHub input-bar formula: big rounded container
+                        // with a low-alpha outline over the soft shadow).
                         .drawBehind {
-                            val radiusPx = 20.dp.toPx()
+                            val radiusPx = 24.dp.toPx()
                             val canvas = drawContext.canvas.nativeCanvas
                             // Pass 1: symmetric ambient halo — small blur, low alpha.
                             shadowPaint.setShadowLayer(
@@ -3696,6 +3701,11 @@ fun ChatScreen(
                                 shadowPaint,
                             )
                         }
+                        .border(
+                            1.dp,
+                            ChatColors.toolBorder.copy(alpha = 0.6f),
+                            RoundedCornerShape(24.dp),
+                        )
                         .padding(top = if (attachments.isNotEmpty()) 8.dp else 4.dp),
                 ) {
                     // T185: Move-to capsule lives INSIDE the composer card,
