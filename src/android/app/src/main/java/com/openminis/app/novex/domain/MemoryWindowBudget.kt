@@ -23,9 +23,10 @@ object MemoryWindowBudget {
         val outputReserveTokens: Int = windowTokens / OUTPUT_RESERVE_FRACTION
         /** 对话区配额（活性基数）。 */
         val dialogueQuotaTokens: Int = (windowTokens - systemTokens - outputReserveTokens).coerceAtLeast(0)
-        /** 水位百分比（配额为零视为满——降级为"总是触发"而非除零）。 */
+        /** 水位百分比（配额为零视为满——降级为"总是触发"而非除零；净眼 P3：clamp 防超界）。 */
         val waterLevelPercent: Int =
-            if (dialogueQuotaTokens <= 0) 100 else historyTokens * 100 / dialogueQuotaTokens
+            (if (dialogueQuotaTokens <= 0) 100 else historyTokens * 100 / dialogueQuotaTokens)
+                .coerceIn(0, 100)
     }
 
     /**

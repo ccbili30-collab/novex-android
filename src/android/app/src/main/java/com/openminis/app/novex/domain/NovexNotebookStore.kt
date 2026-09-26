@@ -108,7 +108,9 @@ class NovexNotebookStore(private val file: File) {
                     updatedAt = now,
                 ).takeIf { it.text.isNotBlank() }
             }.distinctBy { it.id }
-            SessionMemory(entries = parsed, updatedAt = now)
+            // [净眼 P3] 软上限代码强制：模型不守约时截最旧（prompt 已指示合并，
+            // 此为最后防线——超限丢最旧比无限膨胀安全）。
+            SessionMemory(entries = parsed.sortedBy { it.createdAt }.takeLast(SOFT_MAX_ENTRIES), updatedAt = now)
         }.getOrNull()
     }
 }
