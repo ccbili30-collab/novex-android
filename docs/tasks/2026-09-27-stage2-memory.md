@@ -37,6 +37,15 @@
 - NovexMemoryStoreTest：往返/损坏重置/上限合并标记。
 - 整理 prompt 输出解析：合法 JSON/非法静默跳过。
 
+## 3a/3b 增补（同夜冲刺，PR #34）
+
+- 阶段 3a：压缩产世界快照（NovexStateSnapshot——与既有 data class
+  NovexWorldSnapshot 重名改定，增量更新+latest/历史链）+ 常量模块重注入
+  （CONSTANT+DEFAULT 全文+元说明分工）+ 当前状态锚一行版
+- 阶段 3b：存档三元组（NovexSaveStore）+ /save /saves /load 命令组 +
+  压缩自动档；回档 v1=状态恢复+声明（硬 fork 挂账 PR-C）
+- 夜班事故：3a 接线脚本中途断言失败未落盘即提交（编译必红），已补全留痕
+
 ## 台账
 
 - 净眼/守纲/CI：待
