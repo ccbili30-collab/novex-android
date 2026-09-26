@@ -3429,7 +3429,11 @@ class OpenAIProvider private constructor(
             "HTTP $statusCode: ${body.take(1_500)}"
         }
 
-        if (statusCode == 401 || statusCode == 403) return LLMError.InvalidApiKey(message)
+        if (statusCode == 401 || statusCode == 403) {
+            // [T-opencode-sunset] see openCodeSunsetFriendlyError.
+            openCodeSunsetFriendlyError(message)?.let { return it }
+            return LLMError.InvalidApiKey(message)
+        }
         if (statusCode == 429) return LLMError.RateLimited(message)
 
         val transientCodes = setOf(500, 502, 503, 504, 529)
@@ -3694,3 +3698,20 @@ private class OkHttpNetTraceListener : EventListener() {
         )
     }
 }
+
+/**
+ * [T-opencode-sunset] OpenCode Zen's free tier 403s third-party callers
+ * ("free tier can only be used from within OpenCode", enforced server-side
+ * since 2025-09). Without this the 403 lands on InvalidApiKey ("API 密钥
+ * 错误"), which is wrong and sends users hunting for a key that never
+ * existed — the service itself is gone for us. Defensive path for sessions
+ * still bound to a disabled builtin-opencode-free instance.
+ */
+internal fun openCodeSunsetFriendlyError(message: String): LLMError.ProviderError? =
+    if (message.contains("free tier", ignoreCase = true)) {
+        LLMError.ProviderError(
+            "OpenCode 免费模型已停止服务：官方已限制仅 OpenCode 客户端内使用，请切换其他模型",
+        )
+    } else {
+        null
+    }

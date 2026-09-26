@@ -5188,7 +5188,16 @@ class ChatViewModel(
 
     private fun bindChatEntry(entry: com.openminis.app.data.model.ModelEntry,
         instance: com.openminis.app.data.model.ProviderInstance, apiKey: String) {
-        require(instance.isEnabled && entry.providerInstanceId == instance.id) { "模型连接已关闭或配置不一致" }
+        // [T-opencode-sunset]（净眼 P2）迁移生效后 sunset 实例在此失败，
+        // 到不了 403 映射——绑定层直接给人话，旧会话用户看到的不是
+        // "配置不一致"而是明确的停服提示。
+        require(instance.isEnabled && entry.providerInstanceId == instance.id) {
+            if (com.openminis.app.data.repository.isOpenCodeFreeInstanceId(instance.id)) {
+                "OpenCode 免费模型已停止服务：官方已限制仅 OpenCode 客户端内使用，请切换其他模型"
+            } else {
+                "模型连接已关闭或配置不一致"
+            }
+        }
         require(com.openminis.app.data.model.ChatModelSelection.eligible(entry)) { "请选择聊天模型，生图模型不能用于此对话" }
         val resolved = ProviderFactory.create(instance, apiKey, entry.model, context)
         check(resolved.model == entry.model) { "模型连接与所选配置不一致" }
@@ -5237,7 +5246,15 @@ class ChatViewModel(
                 }
                 else -> false
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // [T-opencode-sunset]（净眼 P2 复审）绑定失败默认静默回落默认
+            // 模型/组；但 sunset 实例的旧会话用户必须看到停服原因——
+            // 一次性置错误横幅，不阻断回落。
+            if (e is IllegalArgumentException &&
+                e.message?.contains("OpenCode 免费模型已停止服务") == true
+            ) {
+                _error.value = e.message
+            }
             false
         }
     }

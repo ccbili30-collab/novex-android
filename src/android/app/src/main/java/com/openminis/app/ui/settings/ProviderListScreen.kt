@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.NovexCheckToggle
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,7 +25,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.ModalBottomSheet
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -37,7 +33,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +47,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.key
 import sh.calvin.reorderable.ReorderableColumn
 import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ModelEntry
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
@@ -70,35 +64,12 @@ fun ProviderListScreen(
 ) {
     val config by providerRepository.config.collectAsState()
     val scope = rememberCoroutineScope()
-    var openCodeRefreshing by remember { mutableStateOf(false) }
-    var openCodeStatus by remember { mutableStateOf<String?>(null) }
-    var openCodePendingEntryId by remember { mutableStateOf<String?>(null) }
-    var openCodeExpanded by rememberSaveable { mutableStateOf(false) }
-    var openCodeQuickTestEntry by remember { mutableStateOf<ModelEntry?>(null) }
 
-    fun refreshOpenCode(force: Boolean) {
-        if (openCodeRefreshing) return
-        scope.launch {
-            openCodeRefreshing = true
-            openCodeStatus = null
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    providerRepository.refreshOpenCodeFreeModels(forceCatalogRefresh = force)
-                }
-            }
-            openCodeStatus = result.fold(
-                onSuccess = { count -> "已同步 $count 个当前可用的免费模型" },
-                onFailure = { error -> "同步失败：${error.message ?: error::class.java.simpleName}" },
-            )
-            openCodeRefreshing = false
-        }
-    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             providerRepository.ensureImageGenerationMigration()
         }
-        refreshOpenCode(force = false)
     }
     val instances = config.instances.filterNot {
         it.id in config.imageGenerationProviderInstanceIds || providerRepository.isOpenCodeFreeInstance(it.id)
@@ -157,25 +128,6 @@ fun ProviderListScreen(
             }
         },
     ) {
-        OpenCodeFreeSection(
-            entries = providerRepository.openCodeFreeEntries(),
-            expanded = openCodeExpanded,
-            refreshing = openCodeRefreshing,
-            status = openCodeStatus,
-            onExpandedChange = { openCodeExpanded = it },
-            onRefresh = { refreshOpenCode(force = true) },
-            onCheckedChange = { entryId, checked ->
-                if (checked && !providerRepository.hasAcceptedOpenCodeFreeDisclosure()) {
-                    openCodePendingEntryId = entryId
-                } else {
-                    providerRepository.setOpenCodeFreeModelEnabled(entryId, checked)
-                }
-            },
-            onToolsEnabledChange = { entryId, enabled ->
-                providerRepository.setOpenCodeFreeModelToolsEnabled(entryId, enabled)
-            },
-            onQuickTest = { openCodeQuickTestEntry = it },
-        )
 
         if (instances.isEmpty()) {
             Column(
@@ -376,157 +328,6 @@ fun ProviderListScreen(
         }
     }
 
-    if (openCodePendingEntryId != null) {
-        AlertDialog(
-            onDismissRequest = { openCodePendingEntryId = null },
-            title = { Text("启用 OpenCode 免费模型？") },
-            text = {
-                Text(
-                    "这是实验性服务。请求由本机直接发送到 OpenCode，受其公共 IP 每日限额、可用性和数据政策约束；不同免费模型的数据使用规则可能不同，请勿发送隐私或机密内容。",
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        providerRepository.acceptOpenCodeFreeDisclosure()
-                        openCodePendingEntryId?.let {
-                            providerRepository.setOpenCodeFreeModelEnabled(it, true)
-                        }
-                        openCodePendingEntryId = null
-                    },
-                ) { Text("了解并启用") }
-            },
-            dismissButton = {
-                TextButton(onClick = { openCodePendingEntryId = null }) { Text("取消") }
-            },
-        )
-    }
-
-    openCodeQuickTestEntry?.let { entry ->
-        com.openminis.app.ui.components.QuickTestSheet(
-            entry = entry,
-            providerRepository = providerRepository,
-            onDismiss = { openCodeQuickTestEntry = null },
-        )
-    }
-}
-
-@Composable
-private fun OpenCodeFreeSection(
-    entries: List<ModelEntry>,
-    expanded: Boolean,
-    refreshing: Boolean,
-    status: String?,
-    onExpandedChange: (Boolean) -> Unit,
-    onRefresh: () -> Unit,
-    onCheckedChange: (String, Boolean) -> Unit,
-    onToolsEnabledChange: (String, Boolean) -> Unit,
-    onQuickTest: (ModelEntry) -> Unit,
-) {
-    SettingsSection(
-        header = "OpenCode 免费模型 · 实验性",
-        footer = "无需填写 API Key。每个用户由本机直接请求 OpenCode；免费额度与模型可能随时变化。",
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onExpandedChange(!expanded) }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "免费模型 · 已启用 ${entries.count { !it.isHidden }}/${entries.size}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    when {
-                        refreshing -> "正在同步当前模型…"
-                        status != null -> status
-                        else -> "勾选后即可出现在模型选择器中"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (status?.startsWith("同步失败") == true) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            if (refreshing) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            } else {
-                IconButton(onClick = onRefresh) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = "刷新 OpenCode 模型")
-                }
-            }
-            Icon(
-                if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                contentDescription = if (expanded) "折叠免费模型" else "展开免费模型",
-            )
-        }
-        if (expanded && entries.isNotEmpty()) {
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 14.dp))
-        }
-        if (expanded) entries.forEachIndexed { index, entry ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onCheckedChange(entry.id, entry.isHidden) }
-                    .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(entry.model.displayName, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        entry.model.id,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                NovexCheckToggle(
-                    checked = !entry.isHidden,
-                    onCheckedChange = { onCheckedChange(entry.id, it) },
-                )
-                IconButton(
-                    onClick = {
-                        onToolsEnabledChange(entry.id, entry.model.supportsTools == false)
-                    },
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Build,
-                            contentDescription = if (entry.model.supportsTools != false) {
-                                "关闭 ${entry.model.displayName} 的工具调用"
-                            } else {
-                                "开启 ${entry.model.displayName} 的工具调用"
-                            },
-                            modifier = Modifier.size(20.dp),
-                            tint = if (entry.model.supportsTools != false) {
-                                Color(0xFF168A45)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                        Text(
-                            if (entry.model.supportsTools != false) "✓" else "×",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-                IconButton(onClick = { onQuickTest(entry) }) {
-                    Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Bolt,
-                        contentDescription = "测试 ${entry.model.displayName}",
-                    )
-                }
-            }
-            if (index < entries.lastIndex) {
-                HorizontalDivider(modifier = Modifier.padding(start = 14.dp, end = 14.dp))
-            }
-        }
-    }
 }
 
 @Composable
