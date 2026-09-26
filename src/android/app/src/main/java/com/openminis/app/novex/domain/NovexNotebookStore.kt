@@ -13,7 +13,7 @@ import org.json.JSONObject
  * 无 Room 迁移。损坏文件视为空重置（静默——记忆是潜在收益，不值得为它
  * 打断游玩）。
  */
-class NovexMemoryStore(private val file: File) {
+class NovexNotebookStore(private val file: File) {
 
     data class MemoryEntry(
         val id: String,
@@ -49,8 +49,8 @@ class NovexMemoryStore(private val file: File) {
         const val SOFT_MAX_ENTRIES = 60
         const val SOFT_MAX_CHARS = 8_000
 
-        fun forSession(context: Context, sessionId: String): NovexMemoryStore =
-            NovexMemoryStore(File(File(File(context.filesDir, "novex"), sessionId), "memory.json"))
+        fun forSession(context: Context, sessionId: String): NovexNotebookStore =
+            NovexNotebookStore(File(File(File(context.filesDir, "novex"), sessionId), "memory.json"))
 
         fun decode(raw: String): SessionMemory {
             val root = JSONObject(raw)

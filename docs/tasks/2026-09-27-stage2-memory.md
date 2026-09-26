@@ -4,7 +4,7 @@
 
 ## 切分
 
-- **PR-2a（本 PR）**：MemoryWindowBudget 纯函数（分区核算+刻度）+ NovexMemoryStore
+- **PR-2a（本 PR）**：MemoryWindowBudget 纯函数（分区核算+刻度）+ NovexNotebookStore
   （会话级记忆文件存储）+ 水位刻度触发后台记忆整理 + 笔记本常驻注入
 - **PR-2b**：设置页"AI 记忆"查看/编辑 UI
 
@@ -34,7 +34,7 @@
 ## 测试墙
 
 - MemoryWindowBudgetTest：分区算术/零配额/刻度跨越（含回落不触发）。
-- NovexMemoryStoreTest：往返/损坏重置/上限合并标记。
+- NovexNotebookStoreTest：往返/损坏重置/上限合并标记。
 - 整理 prompt 输出解析：合法 JSON/非法静默跳过。
 
 ## 3a/3b 增补（同夜冲刺，PR #34）

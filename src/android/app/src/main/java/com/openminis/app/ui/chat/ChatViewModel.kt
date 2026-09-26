@@ -999,10 +999,10 @@ class ChatViewModel(
 
     // ── [T-stage2-memory] AI 随身笔记本（总纲 §3.7）──
     /** 内存缓存：注入读它（buildSystemPrompt 在 Main，不碰 IO）；后台整理落盘后刷新。 */
-    private val _sessionMemory = MutableStateFlow(com.openminis.app.novex.domain.NovexMemoryStore.SessionMemory())
+    private val _sessionMemory = MutableStateFlow(com.openminis.app.novex.domain.NovexNotebookStore.SessionMemory())
     private val memoryConsolidating = java.util.concurrent.atomic.AtomicBoolean(false)
     private fun memoryStoreFor(sessionId: String) =
-        com.openminis.app.novex.domain.NovexMemoryStore.forSession(context, sessionId)
+        com.openminis.app.novex.domain.NovexNotebookStore.forSession(context, sessionId)
     // ── [T-stage3-snapshot] 世界快照缓存（总纲 §3.6；压缩时后台刷新）──
     private val _worldSnapshot = MutableStateFlow<com.openminis.app.novex.domain.NovexStateSnapshot.Snapshot?>(null)
 
@@ -1134,7 +1134,7 @@ class ChatViewModel(
         NovexWorkspaceAgentTools(novexConversationWorkspaceStore)
     }
     private val novexMemoryStore by lazy {
-        com.openminis.app.novex.domain.FileNovexMemoryStore(
+        com.openminis.app.novex.domain.FileNovexNotebookStore(
             java.io.File(context.filesDir, "novex/memory"),
         )
     }
@@ -1333,9 +1333,9 @@ class ChatViewModel(
             }
             val answer = provider.sendMessage(
                 listOf(LLMMessage(LLMMessage.Role.USER,
-                    com.openminis.app.novex.domain.NovexMemoryStore.consolidationPrompt(memory, recentTurns, cardName))),
+                    com.openminis.app.novex.domain.NovexNotebookStore.consolidationPrompt(memory, recentTurns, cardName))),
                 null, 4096)
-            val parsed = com.openminis.app.novex.domain.NovexMemoryStore
+            val parsed = com.openminis.app.novex.domain.NovexNotebookStore
                 .parseConsolidation(answer.text, System.currentTimeMillis()) ?: return
             val next = parsed.copy(highWaterTickPercent = tick)
             store.save(next)
@@ -2553,7 +2553,7 @@ class ChatViewModel(
                                 createdAt = snapshot.createdAt,
                                 anchorMessageId = null,
                                 snapshotJson = snapshot.rawJson,
-                                memoryJson = com.openminis.app.novex.domain.NovexMemoryStore
+                                memoryJson = com.openminis.app.novex.domain.NovexNotebookStore
                                     .encode(_sessionMemory.value).takeIf { _sessionMemory.value.entries.isNotEmpty() },
                                 ledgerJson = null,
                             ))
