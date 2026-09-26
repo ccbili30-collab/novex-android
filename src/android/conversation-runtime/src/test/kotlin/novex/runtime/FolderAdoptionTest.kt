@@ -22,7 +22,9 @@ class FolderAdoptionTest {
         val scope=MaterialScope(listOf(AdoptedSource(card.id,saved.revision,saved.content.modules)),emptySet())
         val window=TriggerWindow(1,setOf(MessageRole.USER))
         val manual=ModuleAdoption.plan(scope,emptyList(),window,manualForThisRequest=setOf(body.id))
-        assertEquals(listOf(body.blocks),manual.selected.map {it.module.blocks})
+        // [T-stage1-tags] 手选覆盖让 body 进（意图不变）；未配置的"经历"
+        // 如今默认进材料流，精确列表断言改为包含性断言。
+        assertEquals(listOf(body.blocks),manual.selected.map {it.module.blocks}.filter {it==body.blocks})
         val always=ModuleAdoption.plan(scope,emptyList(),window,overrides=mapOf(body.id to UseOverride.Rule(ModuleUse.Always)))
         // [T-stage1-tags] 未配置模块（新加的"经历"use=null）默认进材料流
         // （ROUTED_ACTIVATION）——常驻覆盖仍让 body 进；断言按新语义。
