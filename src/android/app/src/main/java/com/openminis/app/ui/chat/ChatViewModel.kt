@@ -61,6 +61,9 @@ import com.openminis.app.tools.NovexWorkspaceAgentTools
 import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
+import novex.content.effectiveRouting
+import novex.content.effectiveTemporality
+import novex.content.flattenModules
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlOutcome
 import com.openminis.app.novex.domain.ConversationControlRegistration
@@ -995,6 +998,15 @@ class ChatViewModel(
     private val _streamAwaitingSince = MutableStateFlow<Long?>(null)
     val streamAwaitingSince: StateFlow<Long?> = _streamAwaitingSince.asStateFlow()
 
+    // ── [T-stage2-memory] AI 随身笔记本（总纲 §3.7）──
+    /** 内存缓存：注入读它（buildSystemPrompt 在 Main，不碰 IO）；后台整理落盘后刷新。 */
+    private val _sessionMemory = MutableStateFlow(com.openminis.app.novex.domain.NovexNotebookStore.SessionMemory())
+    private val memoryConsolidating = java.util.concurrent.atomic.AtomicBoolean(false)
+    private fun memoryStoreFor(sessionId: String) =
+        com.openminis.app.novex.domain.NovexNotebookStore.forSession(context, sessionId)
+    // ── [T-stage3-snapshot] 世界快照缓存（总纲 §3.6；压缩时后台刷新）──
+    private val _worldSnapshot = MutableStateFlow<com.openminis.app.novex.domain.NovexStateSnapshot.Snapshot?>(null)
+
     // [T-android-stale-streamjob-clears-isstreaming] @Volatile so cross-coroutine
     // reads (the orphaned previous streamJob's tail block running on a different
     // dispatcher) see the latest assignment. Without it, an old job's
@@ -1219,6 +1231,224 @@ class ChatViewModel(
     }
 
     /**
+     * [T-stage3-save] 手动存档（/save 名称）：三元组=世界快照+AI 记忆。
+     */
+    private fun saveGameSlot(name: String) {
+        viewModelScope.launch {
+            val sid = ensureSession()
+            val memory = memoryStoreFor(sid).load().let { loaded -> _sessionMemory.value = loaded; loaded }
+            val entry = com.openminis.app.novex.domain.NovexSaveStore.SaveEntry(
+                id = com.openminis.app.novex.domain.NovexSaveStore.manualSaveId(name.ifBlank { "存档" }),
+                name = name.ifBlank { "存档" },
+                createdAt = System.currentTimeMillis(),
+                anchorMessageId = synchronized(historyWriteLock) { agentHistory.lastOrNull()?.dbMessageId },
+                snapshotJson = (_worldSnapshot.value ?: com.openminis.app.novex.domain.NovexStateSnapshot
+                    .loadLatest(context, sid))?.rawJson,
+                memoryJson = com.openminis.app.novex.domain.NovexNotebookStore
+                    .encode(memory).takeIf { memory.entries.isNotEmpty() },
+                ledgerJson = null,
+            )
+            com.openminis.app.novex.domain.NovexSaveStore.save(context, sid, entry)
+            withContext(Dispatchers.Main) {
+                appendSystemInfo(
+                    text = "已存档「${entry.name}」。/saves 查看列表，/load 序号 回档。",
+                    iconKind = "card",
+                )
+            }
+        }
+    }
+
+    /**
+     * [T-stage3-save] 回档 v1（/load 序号）：恢复三元组，历史保留+系统声明
+     * （硬回档 fork 挂账 PR-C）。
+     */
+    private fun loadGameSlot(index: Int?) {
+        if (index == null || index < 1) {
+            appendSystemInfo(text = "用法：/load 序号（先 /saves 查看列表）", iconKind = "card")
+            return
+        }
+        viewModelScope.launch {
+            val sid = ensureSession()
+            val saves = com.openminis.app.novex.domain.NovexSaveStore.list(context, sid)
+            val entry = saves.getOrNull(index - 1)
+            if (entry == null) {
+                withContext(Dispatchers.Main) {
+                    appendSystemInfo(text = "存档序号超出范围（共 ${saves.size} 个），/saves 查看。", iconKind = "card")
+                }
+                return@launch
+            }
+            entry.snapshotJson?.let { raw ->
+                com.openminis.app.novex.domain.NovexStateSnapshot.parse(raw, System.currentTimeMillis())?.let { snap ->
+                    com.openminis.app.novex.domain.NovexStateSnapshot.saveLatest(context, sid, snap)
+                    _worldSnapshot.value = snap
+                }
+            }
+            entry.memoryJson?.let { raw ->
+                runCatching { com.openminis.app.novex.domain.NovexNotebookStore.decode(raw) }.getOrNull()?.let { memory ->
+                    // [净眼 N-2] 回档水位归零——新周期重新数档
+                    val reset = memory.copy(highWaterTickPercent = 0)
+                    memoryStoreFor(sid).save(reset)
+                    _sessionMemory.value = reset
+                }
+            }
+            withContext(Dispatchers.Main) {
+                appendSystemInfo(
+                    text = "已回档到「${entry.name}」（${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.ROOT).format(java.util.Date(entry.createdAt))}）。世界状态与记忆已恢复；历史保留，本局自此存档点继续。",
+                    iconKind = "memory",
+                )
+            }
+        }
+    }
+
+    /**
+     * [T-stage4-reading] 待命资料目录指针（总纲 §3.8 AI 主动层）：挂卡会话的
+     * standby 路由模块名一览 + 查阅指引。只列菜单不放内容（防上下文膨胀）；
+     * 无 standby 模块返回 null 零痕迹。
+     */
+    // [净眼 P2-1] revision 键缓存：卡不变不重读盘（每卡版本一次 IO，Main
+    // 上可接受；完整异步化挂账）。key=各卡 revision 拼串。
+    @Volatile private var standbyDirectoryCache: Pair<String, String?>? = null
+    @Volatile private var constantReinjectionCache: Pair<String, String?>? = null
+
+    /** [净眼 N-1] 各卡 revision 拼串（背景卡编辑也失效缓存，注释与实现归一）。 */
+    private fun revisionCacheKey(binding: com.openminis.app.cards.CardBinding): String =
+        (listOfNotNull(binding.primary) + binding.backgrounds).joinToString("|") { sel ->
+            "${sel.rootId}@${sel.targetId}@" +
+                runCatching { integratedCards.store.open(sel.rootId)?.revision }.getOrDefault("")
+        }
+
+    private fun buildStandbyDirectory(): String? {
+        val binding = integratedCardBinding() ?: return null
+        val revKey = revisionCacheKey(binding)
+        standbyDirectoryCache?.let { (key, block) -> if (key == revKey) return block }
+        val documents = buildList {
+            binding.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+            binding.backgrounds.forEach { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+        }
+        val standby = documents.flatMap { it.modules.flattenModules() }
+            .filter { it.effectiveRouting() == novex.content.ModuleRouting.STANDBY }
+        val block = if (standby.isEmpty()) null else buildString {
+            appendLine("<待查资料目录>")
+            appendLine("以下资料不在当前上下文内，需要时先 read_card 读结构，再用 read_text_block 按编号读正文：")
+            appendLine(standby.take(60).joinToString("、") { it.name })
+            append("</待查资料目录>")
+        }
+        standbyDirectoryCache = revKey to block
+        return block
+    }
+
+    /**
+     * [T-stage3-snapshot]（总纲 §3.6）压缩后的常量模块重注入块：temporality=
+     * CONSTANT 且 routing=DEFAULT 的模块全文（幂等安全——游玩不变的事实可
+     * 重复出现不产生矛盾）+ 元说明把信息源分工教给模型（常设规则 vs 剧情现
+     * 状以摘要/账本为准），根治"压缩后设定/现状互相打架"。快照型（SNAPSHOT）
+     * 模块绝不在此出现——它们只随开局资料包一次。
+     */
+    private fun buildConstantReinjection(): String? {
+        val binding = integratedCardBinding() ?: return null
+        val revKey = revisionCacheKey(binding) + "@compacted"
+        constantReinjectionCache?.let { (key, block) -> if (key == revKey) return block }
+        val documents = buildList {
+            binding.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+            binding.backgrounds.forEach { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+        }
+        val constants = documents.flatMap { it.modules.flattenModules() }.filter {
+            it.effectiveRouting() == novex.content.ModuleRouting.DEFAULT &&
+                it.effectiveTemporality() == novex.content.ModuleTemporality.CONSTANT
+        }
+        if (constants.isEmpty()) {
+            constantReinjectionCache = revKey to null
+            return null
+        }
+        val block = buildString {
+            appendLine("<世界常设规则（压缩后重注入）>")
+            appendLine("以下为开局即定、游玩中不变的事实与规则。剧情的当前状态以对话中的摘要、当前状态锚与账本为准；两者不一致时，规则不变、状态以后者为准。")
+            constants.forEach { module ->
+                appendLine()
+                appendLine("## ${module.name}")
+                module.blocks.forEach { block ->
+                    val text = (block as? novex.content.ContentBlock.Text)?.let {
+                        runCatching { novex.storage.TextPages(integratedCards.store.contents).read(it.content, 0, Int.MAX_VALUE).text }.getOrNull()
+                    }
+                    if (!text.isNullOrBlank()) appendLine(text)
+                }
+            }
+            append("</世界常设规则>")
+        }
+        constantReinjectionCache = revKey to block
+        return block
+    }
+
+    /**
+     * [T-stage2-memory] 水位刻度触发的后台记忆整理（总纲 §3.5/3.7）。
+     * 回合结束后由 [maybeConsolidateMemoryAfterTurn] 调用：跨过整十刻度才跑
+     * （高水位制，回落不重复）；主模型旁路调用整理；护栏——单并发、失败
+     * 静默跳过本档（记忆是潜在收益，绝不阻塞或打断用户）。
+     */
+    private suspend fun maybeConsolidateMemoryAfterTurn() {
+        // [净眼 P3] /memory 关闭时不整理（与注入门控一致）
+        if (!_memoryEnabled.value) return
+        if (!memoryConsolidating.compareAndSet(false, true)) return
+        try {
+            val sid = activeSessionId
+            val store = memoryStoreFor(sid)
+            val memory = store.load().let { loaded ->
+                _sessionMemory.value = loaded; loaded
+            }
+            val window = effectiveContextWindowTokens() ?: currentProvider?.model?.contextWindowTokens ?: return
+            val systemEstimate = BPETokenizer.countTokens(buildSystemPrompt().orEmpty())
+            val historyEstimate = synchronized(historyWriteLock) {
+                BPETokenizer.countTokens(agentHistory.joinToString("") { it.content })
+            }
+            val reading = com.openminis.app.novex.domain.MemoryWindowBudget.Reading(
+                windowTokens = window, systemTokens = systemEstimate, historyTokens = historyEstimate)
+            val tick = com.openminis.app.novex.domain.MemoryWindowBudget
+                .crossedMemoryTick(memory.highWaterTickPercent, reading) ?: return
+            val provider = currentProvider ?: return
+            val recentTurns = synchronized(historyWriteLock) { agentHistory.takeLast(6) }
+                .joinToString("\n") { it.content.take(2000) }
+            val cardName = integratedCardBinding()?.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.content?.name
+            }
+            val answer = withContext(Dispatchers.IO) {
+                provider.sendMessage(
+                    listOf(LLMMessage(LLMMessage.Role.USER,
+                        com.openminis.app.novex.domain.NovexNotebookStore.consolidationPrompt(memory, recentTurns, cardName))),
+                    null, 4096)
+            }
+            val now = System.currentTimeMillis()
+            val parsed = withContext(Dispatchers.IO) {
+                com.openminis.app.novex.domain.NovexNotebookStore.parseConsolidation(answer.text, now)
+            }
+            // [净眼 P1-2/P2-3] 会话守卫 + 失败也推进高水位（条目保留旧值——
+            // "跳过本档"语义，防模型持续吐非 JSON 时每回合重复旁路付费）。
+            val next = (parsed ?: memory).copy(highWaterTickPercent = tick, updatedAt = now)
+            withContext(Dispatchers.IO) { store.save(next) }
+            if (activeSessionId == sid) _sessionMemory.value = next
+        } catch (_: Exception) {
+            // 静默（任务书 §3.7 护栏）
+        } finally {
+            memoryConsolidating.set(false)
+        }
+    }
+
+    /**
      * [T-stage1-activation] 开局激活协议（总纲 §3.2）：绑定主卡后构建开局
      * 资料包（default 路由模块全文）→ 持久化 system 消息（居中渲染、模型
      * 投影为 user 上下文块）→ per_turn/style 模块文本拼接进每轮注入/文风
@@ -1300,12 +1530,11 @@ class ChatViewModel(
             val style = if (settings.textStylePrompt.contains(material.styleText)) settings.textStylePrompt
                 else listOf(settings.textStylePrompt, material.styleText).filter { it.isNotBlank() }.joinToString("\n\n")
             if (perTurn != settings.perTurnPrompt || style != settings.textStylePrompt) {
-                // [净眼 P3-1] 直写 store（suspend 可等待）+ 手动置位内存态——
-                // 不经 saveConversationSettings 的 fire-and-forget 包装，避免
-                // 与 activatedKey 写的竞态。
+                // [净眼 P3-1→修正] 直写 store（suspend 可等待）。不可在 update 前
+                // 手动置位内存态——current() 会读到已置位的新值使 committed==before
+                // 短路跳过落盘（内存有 DB 无，重启即丢）；update 在落盘差异时经
+                // install 回调统一装内存态。
                 val updated = settings.copy(perTurnPrompt = perTurn, textStylePrompt = style)
-                _perTurnPrompt.value = perTurn
-                _textStylePrompt.value = style
                 novexSettingsStore.update(settings = com.openminis.app.data.normalizeConversationSettings(updated))
             }
         }
@@ -1934,6 +2163,25 @@ class ChatViewModel(
             title = "Sync",
             subtitle = "",
         ),
+        // [T-stage3-save] 存档命令组（总纲 §3.9）：/save 名称｜/saves 列表｜/load 序号
+        SlashCommand(
+            id = "save",
+            icon = com.openminis.app.ui.novex.NovexIcons.Compress,
+            title = "Save",
+            subtitle = "",
+        ),
+        SlashCommand(
+            id = "saves",
+            icon = com.openminis.app.ui.novex.NovexIcons.Compress,
+            title = "Saves",
+            subtitle = "",
+        ),
+        SlashCommand(
+            id = "load",
+            icon = com.openminis.app.ui.novex.NovexIcons.CloseFullscreen,
+            title = "Load",
+            subtitle = "",
+        ),
     )
 
     // [T-android-split-chat] filteredSlashCommands / updateSlashMenuState /
@@ -1996,6 +2244,14 @@ class ChatViewModel(
             "thinking" -> toggleThinking()
             "clear" -> _clearChatConfirmRequested.value = true
             "sync" -> startCrossSync(currentInput.trim().removePrefix("/").removePrefix("／").substringAfter(' ', "").trim())
+            "save" -> saveGameSlot(currentInput.trim().removePrefix("/").removePrefix("／").substringAfter(' ', "").trim())
+            "saves" -> appendSystemInfo(
+                text = "存档",
+                iconKind = "card",
+                payload = com.openminis.app.novex.domain.NovexSaveStore
+                    .listDescription(com.openminis.app.novex.domain.NovexSaveStore.list(context, activeSessionId)),
+            )
+            "load" -> loadGameSlot(currentInput.trim().removePrefix("/").removePrefix("／").substringAfter(' ', "").trim().toIntOrNull())
             else -> AppLogger.info(TAG, "[Slash] unrecognized id=${cmd.id} — no dispatch")
         }
         // [T-android-slash-menu-align-ios-prepend] Action command: restore the
@@ -2397,10 +2653,54 @@ class ChatViewModel(
                     }
                     _compactSummary.value = summary
                     _cachedLatestMarker = marker
+                    // [净眼 P2-2] 压缩后水位归零重数（总纲 §3.5：压缩后水位
+                    // 归零→新周期刻度重新数；条目保留）
+                    runCatching {
+                        val memoryStore = memoryStoreFor(activeSessionId)
+                        val memory = memoryStore.load()
+                        memoryStore.save(memory.copy(highWaterTickPercent = 0))
+                    }
                     val originals = _messages.value.filterNot {
                         it.role == "system" && it.toolBlocks.firstOrNull()?.toolName == "compact"
                     }.map { it.copy(isCompactedHistory = false) }
                     _messages.value = applyCompactMarkerGraying(originals, marker, rawDbRows, rawDbIds)
+                }
+                // [T-stage3-snapshot] 压缩成功→后台增量更新世界快照 + 压缩自动档
+                // （失败静默：快照是压缩产物增强，不阻塞压缩本身）
+                viewModelScope.launch {
+                    try {
+                        val provider = currentProvider ?: return@launch
+                        val snapshotSid = sid
+                        val previous = withContext(Dispatchers.IO) {
+                            com.openminis.app.novex.domain.NovexStateSnapshot.loadLatest(context, snapshotSid)
+                        }
+                        val recent = history.takeLast(6).joinToString("\n") { it.content.take(1500) }
+                        val cardName = integratedCardBinding()?.primary?.let { sel ->
+                            runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.content?.name
+                        }
+                        val snapshot = withContext(Dispatchers.IO) {
+                            com.openminis.app.novex.domain.NovexStateSnapshot.generate(provider, previous, summary, recent, cardName)
+                        } ?: return@launch
+                        withContext(Dispatchers.IO) {
+                            com.openminis.app.novex.domain.NovexStateSnapshot.saveLatest(context, snapshotSid, snapshot)
+                        }
+                        // [净眼 P2-4] 会话守卫：生成期间用户切换会话时不污染新会话状态锚
+                        if (activeSessionId == snapshotSid) _worldSnapshot.value = snapshot
+                        // [T-stage3-save] 压缩自动档（总纲 §3.9）
+                        com.openminis.app.novex.domain.NovexSaveStore.save(context, sid,
+                            com.openminis.app.novex.domain.NovexSaveStore.SaveEntry(
+                                id = "auto-${snapshot.createdAt}",
+                                name = "压缩自动档",
+                                createdAt = snapshot.createdAt,
+                                anchorMessageId = null,
+                                snapshotJson = snapshot.rawJson,
+                                memoryJson = com.openminis.app.novex.domain.NovexNotebookStore
+                                    .encode(_sessionMemory.value).takeIf { _sessionMemory.value.entries.isNotEmpty() },
+                                ledgerJson = null,
+                            ))
+                    } catch (_: Exception) {
+                        // 静默（快照增强不阻塞压缩）
+                    }
                 }
                 compactSucceeded = true
             } catch (e: CancellationException) {
@@ -4963,6 +5263,12 @@ class ChatViewModel(
                 .onFailure { Log.w(TAG, "latestCompactMarker failed: ${it.message}") }
                 .getOrNull()
             _compactSummary.value = marker?.summary
+            // [T-stage3-snapshot] 会话载入恢复最新世界快照（压缩后台生成时刷新内存态）
+            _worldSnapshot.value = com.openminis.app.novex.domain.NovexStateSnapshot
+                .loadLatest(context, sessionId)
+            // [净眼 P1-2] 载入即加载随身笔记（跨重启常驻注入的缓存初始化；
+            // 切换会话时本行同时完成"重置"——注入的永远是本会话的笔记）
+            _sessionMemory.value = memoryStoreFor(sessionId).load()
             _cachedLatestMarker = marker
 
             com.openminis.app.diagnostics.PerfLongCtx.step(
@@ -8783,6 +9089,8 @@ class ChatViewModel(
                 unavailable = ::unavailableGroupMembers,
             )
 
+            // [T-stage2-memory] 回合收尾后后台检查水位刻度（不阻塞流式收尾）
+            viewModelScope.launch { maybeConsolidateMemoryAfterTurn() }
             val completedStream = streamedTurn.snapshot()
             kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
                 "model_result", JSONObject().put("modelId", currentProvider.model.id)
@@ -11501,6 +11809,9 @@ class ChatViewModel(
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
         val preparedTeaching = if(integratedCardBinding()!=null) com.openminis.app.cards.IntegratedCardPrompt.build(
+            // [T-prompt-identity-priority]（用户 2026-09-27 报告"写了对话提示词不代入"）
+            // identitySection（含用户手写的对话提示词/人格指令）作为第一参数：
+            // 挂卡链路下它被前置到 system 开头，不再压在十几条卡片管理条款之后。
             identitySection,memoryOn,agentTools.mapTo(linkedSetOf()){it.name}) else com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
             sessionId = activeSessionId,
             context = context,
@@ -11539,6 +11850,25 @@ class ChatViewModel(
             activeMemory?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites)
         } else null
         val novexMemoryFragment = if (memoryOn) activeNovexMemoryFragment() else null
+        // [T-stage2-memory] AI 随身笔记（水位刻度后台整理产物，常驻小块）；
+        // [净眼 P3] 与其他记忆源同受 /memory 开关门控。
+        val sessionMemoryBlock = if (memoryOn) memoryStoreFor(activeSessionId)
+            .injectionBlock(_sessionMemory.value) else null
+        // [T-stage3-snapshot]（总纲 §3.6 记忆干扰根治）压缩后：常量模块重注入
+        // （幂等安全）+ 当前状态锚（快照一行版，§3.8 注意力锚）+ 元说明分工。
+        val compacted = _cachedLatestMarker != null && _compactSummary.value?.isNotBlank() == true
+        var constantReinjectionBlock: String? = null
+        var statusAnchorLine: String? = null
+        if (compacted) {
+            constantReinjectionBlock = buildConstantReinjection()
+            statusAnchorLine = com.openminis.app.novex.domain.NovexStateSnapshot.anchorLine(_worldSnapshot.value)
+        }
+        // [T-stage4-reading]（总纲 §3.8 第 2 层·AI 主动层）待命资料目录指针：
+        // 只列模块名（几十 token 的菜单，非内容）——模型看得到"有什么可查"才
+        // 会主动 read_card/read_text_block。三层读取的其余两层已落地（系统
+        // 保障层=Adoption 关键词判定；注意力锚=状态锚）。sticky 挂账（需
+        // Adoption 有状态化重构）。
+        val standbyDirectoryBlock = buildStandbyDirectory()
 
         return buildString {
             append(base)
@@ -11565,6 +11895,25 @@ class ChatViewModel(
             if (novexMemoryFragment != null) {
                 append("\n\n")
                 append(novexMemoryFragment)
+            }
+            // [T-stage2-memory] AI 随身笔记常驻块（水位刻度后台整理产物；
+            // 空笔记零痕迹）。置于 Runtime context 之前、静态区末尾。
+            if (sessionMemoryBlock != null) {
+                append("\n\n")
+                append(sessionMemoryBlock)
+            }
+            if (constantReinjectionBlock != null) {
+                append("\n\n")
+                append(constantReinjectionBlock)
+            }
+            if (statusAnchorLine != null) {
+                append("\n\n<当前状态锚>\n")
+                append(statusAnchorLine)
+                append("\n</当前状态锚>")
+            }
+            if (standbyDirectoryBlock != null) {
+                append("\n\n")
+                append(standbyDirectoryBlock)
             }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
