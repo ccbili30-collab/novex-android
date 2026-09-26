@@ -21,7 +21,9 @@ sealed interface CardToolEdit {
     data class Shared(val command:EditorCommand,val canonical:String):CardToolEdit
     data class RemoveModule(val moduleId:String):CardToolEdit
     data class RemoveBlock(val moduleId:String,val blockId:String):CardToolEdit
-    data class Options(val moduleId:String,val tags:List<String>,val use:novex.content.ModuleUse?):CardToolEdit
+    data class Options(val moduleId:String,val tags:List<String>,val use:novex.content.ModuleUse?,
+                       val routing:novex.content.ModuleRouting=novex.content.ModuleRouting.DEFAULT,
+                       val temporality:novex.content.ModuleTemporality=novex.content.ModuleTemporality.CONSTANT):CardToolEdit
     data class Rename(val name:String):CardToolEdit
     data class AddModule(val name:String):CardToolEdit
     data class Appearance(val resourceId:String,val cover:Boolean):CardToolEdit
@@ -206,7 +208,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
                     is CardToolEdit.Shared->edit.command
                     is CardToolEdit.RemoveModule->EditorCommand.RemoveModule(edit.moduleId)
                     is CardToolEdit.RemoveBlock->EditorCommand.RemoveBlock(edit.moduleId,edit.blockId)
-                    is CardToolEdit.Options->EditorCommand.ModuleOptions(edit.moduleId,edit.tags,edit.use)
+                    is CardToolEdit.Options->EditorCommand.ModuleOptions(edit.moduleId,edit.tags,edit.use,edit.routing,edit.temporality)
                     is CardToolEdit.Rename->EditorCommand.Rename(edit.name)
                     is CardToolEdit.AddModule->EditorCommand.AddModule(edit.name)
                     is CardToolEdit.Appearance->EditorCommand.Appearance(edit.resourceId,edit.cover)
@@ -310,6 +312,7 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
             is CardToolEdit.RemoveModule->JSONObject().put("kind","remove_module").put("module",command.moduleId)
             is CardToolEdit.RemoveBlock->JSONObject().put("kind","remove_block").put("module",command.moduleId).put("block",command.blockId)
             is CardToolEdit.Options->JSONObject().put("kind","options").put("module",command.moduleId).put("tags",org.json.JSONArray(command.tags)).put("rule",ModuleOptionsProtocol.encode(command.use))
+                .put("routing",ModuleOptionsProtocol.encodeRouting(command.routing)?:"default").put("temporality",ModuleOptionsProtocol.encodeTemporality(command.temporality)?:"constant")
             is CardToolEdit.Rename->JSONObject().put("kind","rename").put("name",command.name)
             is CardToolEdit.Appearance->JSONObject().put("kind","appearance").put("resource",command.resourceId).put("cover",command.cover)
             is CardToolEdit.InsertOwnedImage->JSONObject().put("kind","insert_image").put("module",command.moduleId).put("resource",command.resourceId).put("after",command.afterBlockId?:JSONObject.NULL)

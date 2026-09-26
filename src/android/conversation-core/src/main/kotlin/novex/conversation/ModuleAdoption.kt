@@ -15,7 +15,9 @@ sealed interface UseOverride {
     data object Disabled : UseOverride
     data class Rule(val use: ModuleUse) : UseOverride
 }
-enum class AdoptionReason { ALWAYS, KEYWORD_MATCH, MANUAL_SELECTED, CONDITION_MISSED, MANUAL_NOT_SELECTED, DISABLED, UNCONFIGURED, AI_SELECTED, AI_NOT_SELECTED, RECOVERY_READ }
+enum class AdoptionReason { ALWAYS, KEYWORD_MATCH, MANUAL_SELECTED, CONDITION_MISSED, MANUAL_NOT_SELECTED, DISABLED, UNCONFIGURED, AI_SELECTED, AI_NOT_SELECTED, RECOVERY_READ,
+    /** [T-stage1-tags] 路由标签分流出的模块——开局激活协议（阶段 1 PR-B）接管其注入。 */
+    ROUTED_ACTIVATION, ROUTED_SLOT }
 data class ModuleDecision(val cardId: String, val revision: String, val module: ContentModule,
                           val selected: Boolean, val reason: AdoptionReason, val matchedWords: List<String> = emptyList())
 data class MaterialPlan(val decisions: List<ModuleDecision>) {
@@ -42,8 +44,15 @@ object ModuleAdoption {
             val override = overrides[module.id]
             fun decision(selected: Boolean, reason: AdoptionReason, words: List<String> = emptyList()) =
                 ModuleDecision(source.cardId, source.revision, module, selected, reason, words)
+            // [T-stage1-tags] 路由标签先于 use 判定：default=视同 Always
+            // （开局/全程进，PR-B 落地后由激活协议写入历史承载）；per_turn/
+            // style=路由到槽位，不进材料流（PR-B 消费）；standby=沿用 use
+            // 三态触发。null（存量卡）=DEFAULT 语义（总纲"存量全标默认"）。
             if (override == UseOverride.Disabled) decision(false, AdoptionReason.DISABLED)
-            else when (val rule = (override as? UseOverride.Rule)?.use ?: module.use) {
+            else when (module.routing ?: ModuleRouting.DEFAULT) {
+                ModuleRouting.DEFAULT -> decision(true, AdoptionReason.ROUTED_ACTIVATION)
+                ModuleRouting.PER_TURN, ModuleRouting.STYLE -> decision(false, AdoptionReason.ROUTED_SLOT)
+                ModuleRouting.STANDBY -> when (val rule = (override as? UseOverride.Rule)?.use ?: module.use) {
                 ModuleUse.Always -> decision(true, AdoptionReason.ALWAYS)
                 ModuleUse.Manual -> if (module.id in manualForThisRequest) decision(true, AdoptionReason.MANUAL_SELECTED)
                     else decision(false, AdoptionReason.MANUAL_NOT_SELECTED)
@@ -53,6 +62,7 @@ object ModuleAdoption {
                     decision(selected, if (selected) AdoptionReason.KEYWORD_MATCH else AdoptionReason.CONDITION_MISSED, matched)
                 }
                 null -> decision(false, AdoptionReason.UNCONFIGURED)
+                }
             }
         })
     }

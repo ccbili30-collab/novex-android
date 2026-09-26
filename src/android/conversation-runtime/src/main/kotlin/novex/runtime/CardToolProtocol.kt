@@ -60,7 +60,7 @@ object CardToolProtocol {
             tool("save_conversation_image","将当前对话持有图片复制到允许管理的卡片并保存。image_id 从对话图片目录取得；module_id 为空则仅存入素材，after_id 为空则放模块末尾。不依赖原附件继续存在。",mapOf("image_id" to "对话图片编号","module_id" to "模块编号或空字符串","after_id" to "定位块编号或空字符串"),optional=setOf("module_id","after_id")),
             tool("remove_module","移除指定模块及其全部子模块、内容块并保存；保留卡片图片资源及历史版本，不删除其他模块。先读取最新结构，明确目标后操作。",mapOf("module_id" to "要移除的模块编号")),
             tool("remove_content_block","移除模块内一个文字或图片展示块并保存。图片资源、封面与头像保留；不删除整模块。",mapOf("module_id" to "所属模块编号","block_id" to "要移除的块编号")),
-            tool("set_module_options","修改模块标签和默认携带规则并保存，不改正文。本对话的显式停用仍优先；标签不是权限。",mapOf("module_id" to "目标模块编号","tags" to "完整的新标签列表","rule" to "新的默认携带规则")),
+            tool("set_module_options","修改模块标签和默认携带规则并保存，不改正文。本对话的显式停用仍优先；标签不是权限。routing 决定模块去向（default=进开局资料包；per_turn=作为每轮注入；style=作为文风；standby=待命按 rule 触发），temporality 决定压缩后是否可重注入（constant=不变事实可重注入；snapshot=开局状态不重注入）。",mapOf("module_id" to "目标模块编号","tags" to "完整的新标签列表","rule" to "新的默认携带规则","routing" to "模块去向：default/per_turn/style/standby 之一","temporality" to "时间性：constant 或 snapshot"),optional=setOf("routing","temporality")),
             readTool("read_card","读取目标卡最新模块结构、编辑版本和修改来源，不读取全部正文，也不新建草稿。修改前先读取。",emptyMap()),
             readTool("read_text_block","读取一个文字块或图片图注的一页。位置按万国码码点计算；has_more 为真时还未读完，继续使用 next_offset。图片本体未发送。",mapOf("draft_version" to "结构返回的编辑版本原样传入","module_id" to "模块编号","block_id" to "内容块编号","offset" to "首段从零开始，后续用返回位置","count" to "本页字符数，不超过结构返回的 page_limit")),
             tool("set_card_image","将目标卡已持有的图片设为封面或头像。先读取最新结构与图片资源目录；不会上传、生成或删除图片。资源目录不意味着已经看过图像。",mapOf("resource_id" to "当前目标卡图片资源编号","purpose" to "cover 表示封面，avatar 表示头像")),
@@ -114,7 +114,7 @@ object CardToolProtocol {
         if(call.name in CardEditingTools.names)return CardEditingTools.parse(chatId,call)
         val value=JSONObject(call.arguments)
         val common=setOf("root_id","target_id","draft_version")
-        val extra=when(call.name){"save_conversation_image"->setOf("image_id","module_id","after_id");"remove_module"->setOf("module_id");"remove_content_block"->setOf("module_id","block_id");"set_module_options"->setOf("module_id","tags","rule");"rename_card","add_module"->setOf("name");"set_card_image"->setOf("resource_id","purpose");"insert_owned_image"->setOf("module_id","resource_id","after_id");"replace_block_image"->setOf("module_id","block_id","resource_id");"move_module"->setOf("module_id","before_id");"move_content_block"->setOf("module_id","block_id","before_id");"write_module_text"->setOf("module_id","block_id","name","text");"replace_text_range"->setOf("module_id","block_id","content_ref","start","end","text");else->error("工具未提供")}
+        val extra=when(call.name){"save_conversation_image"->setOf("image_id","module_id","after_id");"remove_module"->setOf("module_id");"remove_content_block"->setOf("module_id","block_id");"set_module_options"->setOf("module_id","tags","rule","routing","temporality");"rename_card","add_module"->setOf("name");"set_card_image"->setOf("resource_id","purpose");"insert_owned_image"->setOf("module_id","resource_id","after_id");"replace_block_image"->setOf("module_id","block_id","resource_id");"move_module"->setOf("module_id","before_id");"move_content_block"->setOf("module_id","block_id","before_id");"write_module_text"->setOf("module_id","block_id","name","text");"replace_text_range"->setOf("module_id","block_id","content_ref","start","end","text");else->error("工具未提供")}
         // [T-lenient-parse] 键校验放宽：缺必需键报错并点名缺失项；多余键忽略；
         // 定位类可选键（block_id/before_id/after_id）缺省视为空串（新建/末尾）。
         // [T-schema-optional-fields] 守纲 Q2 反例：save_conversation_image 的
@@ -132,7 +132,12 @@ object CardToolProtocol {
             "save_conversation_image"->{require(value.getString("image_id").isNotBlank());val module=value.optString("module_id").takeIf {it.isNotBlank()};val after=value.optString("after_id").takeIf {it.isNotBlank()};require(module!=null || after==null);CardToolEdit.ConversationImage(value.getString("image_id"),module,after)}
             "remove_module"->CardToolEdit.RemoveModule(value.getString("module_id"))
             "remove_content_block"->{require(value.getString("block_id").isNotBlank());CardToolEdit.RemoveBlock(value.getString("module_id"),value.getString("block_id"))}
-            "set_module_options"->{val tags=runCatching{ModuleOptionsProtocol.strings(value.getJSONArray("tags"))}.getOrElse{emptyList()};CardToolEdit.Options(value.getString("module_id"),tags,ModuleOptionsProtocol.decodeLenient(value.opt("rule")))}
+            "set_module_options"->{val tags=runCatching{ModuleOptionsProtocol.strings(value.getJSONArray("tags"))}.getOrElse{emptyList()};CardToolEdit.Options(value.getString("module_id"),tags,ModuleOptionsProtocol.decodeLenient(value.opt("rule")),
+                // [T-stage1-tags] 与 tags/rule 同为全量设置语义：缺省即
+                // DEFAULT/CONSTANT（显式重置默认 = 省略参数）。解析层
+                // defaulted 集合同步（PR#27 契约先例）。
+                value.opt("routing")?.let{ModuleOptionsProtocol.decodeRouting(it)}?:novex.content.ModuleRouting.DEFAULT,
+                value.opt("temporality")?.let{ModuleOptionsProtocol.decodeTemporality(it)}?:novex.content.ModuleTemporality.CONSTANT)}
             "set_card_image"->{
                 require(value.getString("resource_id").isNotBlank())
                 require(value.getString("purpose") in setOf("cover","avatar")){"图片用途无效"}

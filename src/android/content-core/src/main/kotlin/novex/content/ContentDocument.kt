@@ -15,11 +15,30 @@ sealed interface ContentBlock {
 
 enum class ModuleLayout { VERTICAL, HORIZONTAL }
 
+/**
+ * [T-stage1-tags] 模块路由标签——开局激活协议用它决定模块进哪条通道：
+ * `default` 进开局资料包（存量卡缺字段即此语义，零迁移）；`perTurn` 路由
+ * 到对话的每轮注入槽位；`style` 路由到文风槽位；`standby` 不进开局，
+ * 由 [use] 触发规则或手动决定。与 ModuleUse 三态正交：routing 管"去哪"，
+ * use 管"待命时何时被带上"。
+ */
+enum class ModuleRouting { DEFAULT, PER_TURN, STYLE, STANDBY }
+
+/**
+ * [T-stage1-tags] 模块时间性标签——阶段 3 压缩重注入用它根治记忆干扰：
+ * `constant` 为游玩中不变的事实（压缩后可安全重注入，幂等）；`snapshot`
+ * 为开局时刻的状态（只随开局资料包出现一次，永不重注入，现状由压缩摘要
+ * 与快照承载）。存量卡缺字段即 constant（安全侧）。
+ */
+enum class ModuleTemporality { CONSTANT, SNAPSHOT }
+
 data class ContentModule(val id: String, val name: String, val blocks: List<ContentBlock>,
                          val tags: List<String> = emptyList(), val use: ModuleUse? = null,
                          val children: List<ContentModule> = emptyList(),
                          val layout: ModuleLayout = ModuleLayout.VERTICAL,
-                         val characterIds: List<String> = emptyList())
+                         val characterIds: List<String> = emptyList(),
+                         val routing: ModuleRouting? = null,
+                         val temporality: ModuleTemporality? = null)
 data class CardResource(val id: String, val content: ContentRef, val mediaType: String)
 enum class ReadingLayout { CONTINUOUS, PAGED }
 data class CardAppearance(val avatarResourceId: String? = null, val coverResourceId: String? = null,val readingLayout:ReadingLayout=ReadingLayout.PAGED)
