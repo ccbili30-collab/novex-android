@@ -32,6 +32,8 @@ object NovexCardActivation {
         /** default 路由模块数与正文字符数（清单/报错用）。 */
         val defaultModuleCount: Int,
         val defaultCharCount: Int,
+        /** 实际写入资料包的模块 id（净眼 N-1）——材料流关闸的快照依据。 */
+        val defaultModuleIds: Set<String> = emptySet(),
     )
 
     const val SYSTEM_ICON_KIND = "card-activation"
@@ -56,6 +58,7 @@ object NovexCardActivation {
         val perTurn = StringBuilder()
         val style = StringBuilder()
         val listing = StringBuilder()
+        val collectedModuleIds = mutableSetOf<String>()
         var defaultCount = 0
         var charCount = 0
         cards.forEach { card ->
@@ -66,6 +69,7 @@ object NovexCardActivation {
             }
             cardDefaults.forEach { (_, module) ->
                 defaultCount++
+                collectedModuleIds.add(module.id)
                 listing.appendLine("  · ${module.name}")
                 defaults.appendLine()
                 defaults.appendLine("## ${module.name}")
@@ -104,6 +108,7 @@ object NovexCardActivation {
         }
         return ActivationMaterial(
             packageText = packageText,
+            defaultModuleIds = collectedModuleIds,
             label = "已载入开局资料 · $defaultCount 个模块 · 约${formatChars(charCount)}",
             perTurnText = perTurn.toString().trim(),
             styleText = style.toString().trim(),
@@ -118,15 +123,17 @@ object NovexCardActivation {
             org.json.JSONObject().put("type", "text").put("value", material.packageText),
         ).toString()
 
-    /** 单条消息 parts_json 的安全上限（ChatRepository 截断阈值 500K 之内）。 */
+    /** 单条消息 parts_json 的安全上限（ChatRepository 截断阈值 500K 之内；
+     *  量的是 JSON 编码后长度——转义翻倍使原始字符数不等于落库长度，净眼 N-5）。 */
     const val MAX_PACKAGE_CHARS = 480_000
 
     /** 预算护栏：资料包 token 数超出可用预算、或字符数超单条消息上限 → 明确报错（不静默截断）。 */
     fun requireFits(material: ActivationMaterial, availableTokens: Int, count: (String) -> Int) {
         // [净眼 P2-3] 字符护栏先于 token：仓库层超 50 万字符会静默截断 parts，
         // 资料包残缺却仍自称"全部开局资料"。
-        require(material.packageText.length <= MAX_PACKAGE_CHARS) {
-            "开局资料包 ${material.packageText.length} 字超过单条消息上限 $MAX_PACKAGE_CHARS；" +
+        val encodedLength = partsJson(material).length
+        require(encodedLength <= MAX_PACKAGE_CHARS) {
+            "开局资料包编码后 $encodedLength 字符超过单条消息上限 $MAX_PACKAGE_CHARS；" +
                 "请在卡设置中减少默认模块或拆分卡片。${material.label}"
         }
         val cost = count(material.packageText)

@@ -15,8 +15,11 @@ import org.json.JSONArray
 
 /** 卡片与原会话的关联。消息、连接、权限决定仍由原应用持有。 */
 data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<SourceSelection> = emptyList(),val managed:Set<ManagementTarget> = emptySet(),val createdReceipts:Set<String> = emptySet(),val overrides:Map<String,Boolean> = emptyMap(),
-                       /** [T-stage1-activation] 已完成开局激活的绑定指纹（encode 全串）；换卡/换背景后不等→重新激活。 */
-                       val activatedKey:String? = null) {
+                       /** [T-stage1-activation] 已完成开局激活的绑定指纹（primary+backgrounds 的 encode）；换卡/换背景后不等→重新激活。 */
+                       val activatedKey:String? = null,
+                       /** [T-stage1-activation]（净眼 N-1）激活时实际写入资料包的模块 id 快照——材料流关闸以此为
+                        *  准（live 卡态推导会把"包里没有的"也关掉：内部角色模块、激活后新增的 default 等，静默丢失）。 */
+                       val activatedModules:List<String> = emptyList()) {
     /**
      * [T-prune-deleted-mounts] 剔除指向已不存在卡片（已删除/缺失）的主卡、背景卡
      * 与管理项；一个都没剔除时返回 null（调用方据此跳过写回）。exists 由调用方
@@ -33,7 +36,10 @@ data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<So
         fun values(items:List<SourceSelection>)=JSONArray(items.map {JSONObject().put("root",it.rootId).put("target",it.targetId)})
         return JSONObject().put("primary",values(listOfNotNull(primary))).put("backgrounds",values(backgrounds))
             .put("managed",values(managed.map {SourceSelection(it.rootId,it.targetId)})).put("createdReceipts",JSONArray(createdReceipts.toList())).put("overrides",JSONObject(overrides))
-            .apply { activatedKey?.let { put("activatedKey", it) } }.toString()
+            .apply {
+                activatedKey?.let { put("activatedKey", it) }
+                if (activatedModules.isNotEmpty()) put("activatedModules", JSONArray(activatedModules))
+            }.toString()
     }
     companion object {
         fun decode(raw:String?):CardBinding? {
@@ -44,7 +50,8 @@ data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<So
             return CardBinding(sources("primary").singleOrNull(),sources("backgrounds"),sources("managed").map {ManagementTarget(it.rootId,it.targetId)}.toSet(),
                 receipts?.let {a->(0 until a.length()).map(a::getString).toSet()}?:emptySet(),
                 value.optJSONObject("overrides")?.let {o->o.keys().asSequence().associateWith {o.getBoolean(it)}}?:emptyMap(),
-                value.optString("activatedKey").takeIf {it.isNotEmpty()})
+                value.optString("activatedKey").takeIf {it.isNotEmpty()},
+                value.optJSONArray("activatedModules")?.let {a->(0 until a.length()).map(a::getString)}?:emptyList())
         }
     }
 }
@@ -250,14 +257,14 @@ class IntegratedCards(context:Context,
             .put("budget",budget).put("allowDeferred",allowDeferred)
             .put("revisions",JSONArray(selections.map {source->listOf(source.rootId,source.targetId,requireNotNull(store.open(source.rootId)).revision)}))
             .put("messages",JSONArray(messages.map {listOf(it.id,it.role.name,it.text)})).toString()
-        // [T-stage1-activation]（净眼 P2-1）已激活：default 模块由开局资料包
-        // 在历史承载，材料流关闸防双重注入；未激活时材料流全进仍是保底。
-        val historyCarried = if (binding.activatedKey == null) emptySet() else selections.flatMap { sel ->
-            store.open(sel.rootId)?.let { root -> novex.content.ContentTargets.find(root.content, sel.targetId) }
-                ?.modules?.flattenModules()
-                ?.filter { it.effectiveRouting() == ModuleRouting.DEFAULT }
-                ?.map { it.id } ?: emptyList()
-        }.toSet()
+        // [T-stage1-activation]（净眼 P2-1 复审 N-1 返工）关闸集合=激活时
+        // 写入资料包的模块 id 快照（activatedModules），且仅在快照键与当前
+        // primary+backgrounds 匹配时生效——live 卡态推导会把"包里没有的"
+        // 也关掉（内部角色模块、激活后新增的 default），静默丢失；键不匹配
+        // （换卡未重激活/stale）时材料流全进兜底。
+        val currentActivationKey = com.openminis.app.cards.CardBinding(
+            primary = binding.primary, backgrounds = binding.backgrounds).encode()
+        val historyCarried = if (binding.activatedKey == currentActivationKey) binding.activatedModules.toSet() else emptySet()
         var draft=materialCache?.takeIf {materialKey==key}?.third?:materials.prepare(selections,binding.managed.map {it.targetId}.toSet(),messages.distinctBy {it.id},TriggerWindow(6,setOf(MessageRole.USER,MessageRole.ASSISTANT)),binding.overrides.mapValues {if(it.value)UseOverride.Rule(ModuleUse.Always) else UseOverride.Disabled},historyCarried)
         val automatic=draft.plan.decisions.filter {it.reason==AdoptionReason.UNCONFIGURED && it.module.blocks.isNotEmpty()}
         if(automatic.isNotEmpty()) {

@@ -1266,11 +1266,17 @@ class ChatViewModel(
             com.openminis.app.cards.NovexCardActivation.partsJson(material),
         )
         withContext(Dispatchers.Main) {
-            agentHistory.add(LLMMessage(
-                role = LLMMessage.Role.USER,
-                content = material.packageText,
-                dbMessageId = entity.id,
-            ))
+            // [净眼 N-3] 与 sendMessage 用户行同锁写入（锁纪律一致）。
+            synchronized(historyWriteLock) {
+                agentHistory.add(LLMMessage(
+                    role = LLMMessage.Role.USER,
+                    content = material.packageText,
+                    // [净眼 N-2] 与 DB 投影行齐平（text part 两侧同在），
+                    // 影子装配 structural 不产 [] vs [T] 强信号噪音。
+                    contentParts = listOf(com.openminis.app.data.model.AgentContentPart.Text(material.packageText)),
+                    dbMessageId = entity.id,
+                ))
+            }
             _messages.value = _messages.value + ChatMessage(
                 id = entity.id,
                 role = "system",
@@ -1303,10 +1309,13 @@ class ChatViewModel(
                 novexSettingsStore.update(settings = com.openminis.app.data.normalizeConversationSettings(updated))
             }
         }
-        // 幂等标记
+        // 幂等标记 + 包内模块快照（净眼 N-1：材料流关闸以此为据）
         novexSettingsStore.update { configuration ->
             val current = com.openminis.app.cards.CardBinding.decode(configuration.cardBindingJson) ?: return@update configuration
-            configuration.copy(cardBindingJson = current.copy(activatedKey = activationKey).encode())
+            configuration.copy(cardBindingJson = current.copy(
+                activatedKey = activationKey,
+                activatedModules = material.defaultModuleIds.toList(),
+            ).encode())
         }
         return if (target.kind == novex.content.CardKind.CHARACTER) {
             com.openminis.app.cards.NovexCardActivation.BOOTSTRAP_DIRECTIVE_CHARACTER
