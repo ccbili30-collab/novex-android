@@ -5246,7 +5246,15 @@ class ChatViewModel(
                 }
                 else -> false
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // [T-opencode-sunset]（净眼 P2 复审）绑定失败默认静默回落默认
+            // 模型/组；但 sunset 实例的旧会话用户必须看到停服原因——
+            // 一次性置错误横幅，不阻断回落。
+            if (e is IllegalArgumentException &&
+                e.message?.contains("OpenCode 免费模型已停止服务") == true
+            ) {
+                _error.value = e.message
+            }
             false
         }
     }

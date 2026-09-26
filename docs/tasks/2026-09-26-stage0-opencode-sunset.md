@@ -47,4 +47,8 @@ UA + x-opencode-* 四头伪造不通。拥有者拍板：直接下线（拒绝�
     键 → 接受（无害）
 - CI：第一轮基础设施 404（proot .92 被 Termux 下架）→ 升 .95 实测修复；
   第二轮绿（9m15s）
+- 净眼复审：P1 闭环（init 挂载竞态矩阵全过：装载赢/mutator 抢赢/
+  throw/双写/锁/持久化失败）；P2 一审分流"正确但不可见"（restoreFromBinding
+  吞异常静默回落）→ 二审采纳最小修复：catch 对 sunset 停服 require 置
+  _error 横幅（一次性、不阻断回落）
 - 守纲（含总纲偏离对照）：待
