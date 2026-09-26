@@ -24,6 +24,7 @@ class RequestMaterials(private val store: CardStore) {
     }
     fun prepare(selections: List<SourceSelection>, managedIds: Set<String>, messages: List<TriggerMessage>,
                 window: TriggerWindow, overrides: Map<String,UseOverride> = emptyMap(),
+                historyCarriedModuleIds: Set<String> = emptySet(),
                 manualForThisRequest: Set<String> = emptySet()): RequestMaterialDraft {
         val snapshots=selections.map { it.rootId }.distinct().associateWith { id ->
             requireNotNull(store.open(id)) { "采用作品不存在：$id" }
@@ -35,7 +36,7 @@ class RequestMaterials(private val store: CardStore) {
             names[target.id]=target
             AdoptedSource(target.id,saved.revision,target.modules)
         }
-        val plan=ModuleAdoption.plan(MaterialScope(sources,managedIds),messages,window,overrides,manualForThisRequest)
+        val plan=ModuleAdoption.plan(MaterialScope(sources,managedIds),messages,window,overrides,manualForThisRequest,historyCarriedModuleIds)
         val texts=mutableListOf<MaterialText>();val images=mutableListOf<ImagePlacement>()
         plan.decisions.forEach { decision -> decision.module.blocks.forEach { block ->
             when(block) {

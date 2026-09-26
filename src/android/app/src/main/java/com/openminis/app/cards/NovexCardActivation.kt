@@ -118,8 +118,17 @@ object NovexCardActivation {
             org.json.JSONObject().put("type", "text").put("value", material.packageText),
         ).toString()
 
-    /** 预算护栏：资料包 token 数超出可用预算 → 明确报错（不静默截断）。 */
+    /** 单条消息 parts_json 的安全上限（ChatRepository 截断阈值 500K 之内）。 */
+    const val MAX_PACKAGE_CHARS = 480_000
+
+    /** 预算护栏：资料包 token 数超出可用预算、或字符数超单条消息上限 → 明确报错（不静默截断）。 */
     fun requireFits(material: ActivationMaterial, availableTokens: Int, count: (String) -> Int) {
+        // [净眼 P2-3] 字符护栏先于 token：仓库层超 50 万字符会静默截断 parts，
+        // 资料包残缺却仍自称"全部开局资料"。
+        require(material.packageText.length <= MAX_PACKAGE_CHARS) {
+            "开局资料包 ${material.packageText.length} 字超过单条消息上限 $MAX_PACKAGE_CHARS；" +
+                "请在卡设置中减少默认模块或拆分卡片。${material.label}"
+        }
         val cost = count(material.packageText)
         require(cost <= availableTokens) {
             "开局资料包约 $cost token，超出本会话可用上下文 $availableTokens；" +
@@ -131,7 +140,7 @@ object NovexCardActivation {
         listOf(Unit to module) + module.children.flatMap(::flatten)
 
     private fun formatChars(count: Int): String = when {
-        count >= 10_000 -> "${"%.1f".format(count / 10_000.0)} 万字"
+        count >= 10_000 -> "${"%.1f".format(java.util.Locale.ROOT, count / 10_000.0)} 万字"
         else -> "$count 字"
     }
 }

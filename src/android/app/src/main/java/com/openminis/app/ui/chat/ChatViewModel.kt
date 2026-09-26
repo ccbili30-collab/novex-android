@@ -1230,9 +1230,12 @@ class ChatViewModel(
         sessionLoaded.first { it }
         val binding = integratedCardBinding() ?: return null
         val primary = binding.primary ?: return null
-        // 幂等键：主卡+目标+背景+管理的组合即激活身份（排除 activatedKey
-        // 自身防自引用）；换卡/换背景=重新激活。
-        val activationKey = binding.copy(activatedKey = null).encode()
+        // 幂等键（净眼 P1-2 修正）：只取 primary+backgrounds——managed/
+        // createdReceipts/overrides 的波动（AI 建卡自动入 managed、对话级
+        // 携带开关）不构成"换卡"，不得触发重激活（对齐 NovexHistoryAccessScope
+        // 的剥法）；换主卡/换背景=重新激活。
+        val activationKey = com.openminis.app.cards.CardBinding(
+            primary = binding.primary, backgrounds = binding.backgrounds).encode()
         if (binding.activatedKey == activationKey) return null
         val root = integratedCards.store.open(primary.rootId) ?: return null
         val target = novex.content.ContentTargets.find(root.content, primary.targetId)
@@ -1247,23 +1250,58 @@ class ChatViewModel(
             readText = { ref -> novex.storage.TextPages(integratedCards.store.contents).read(ref, 0, Int.MAX_VALUE).text },
         )
         // 预算护栏（fail-loud，绝不静默截断）
+        // [净眼 P2-4/P3-6] 窗口未知时保守兜底 200K（不再静默跳过激活）；
+        // 预算口径 3/5：资料包之外还要容纳 system/工具定义/输出预留/槽位注入/
+        // 用户文本——精确分区核算是阶段 2 的活，这里先取保守常数。
         val limit = effectiveContextWindowTokens()
-            ?: currentProvider?.model?.contextWindowTokens ?: return null
+            ?: currentProvider?.model?.contextWindowTokens ?: 200_000
         com.openminis.app.cards.NovexCardActivation.requireFits(
-            material, (limit * 4 / 5).coerceAtLeast(1024), com.openminis.app.data.BPETokenizer::countTokens)
-        // 落库 system 消息（对模型=对话流位置的 user 资料块；对 UI=居中资料包行）
-        chatRepository.appendMessage(
+            material, (limit * 3 / 5).coerceAtLeast(1024), com.openminis.app.data.BPETokenizer::countTokens)
+        // 落库 system 消息（对模型=对话流位置的 user 资料块；对 UI=居中资料包行）。
+        // [净眼 P1-1] 落库后必须同步双补内存——否则 I1 历史守恒在出口把本 VM
+        // 的所有发送拒死（DB 有行而 agentHistory/_messages 缺行），且首轮请求
+        // 与 UI 都看不到资料包。
+        val entity = chatRepository.appendMessage(
             activeSessionId, "system",
             com.openminis.app.cards.NovexCardActivation.partsJson(material),
         )
+        withContext(Dispatchers.Main) {
+            agentHistory.add(LLMMessage(
+                role = LLMMessage.Role.USER,
+                content = material.packageText,
+                dbMessageId = entity.id,
+            ))
+            _messages.value = _messages.value + ChatMessage(
+                id = entity.id,
+                role = "system",
+                content = "",
+                toolBlocks = listOf(com.openminis.app.ui.chat.AssistantBlock(
+                    id = "activation:${entity.id}",
+                    kind = "info",
+                    content = "已载入开局资料",
+                    toolName = com.openminis.app.cards.NovexCardActivation.SYSTEM_ICON_KIND,
+                    toolArgs = material.packageText,
+                    toolStatus = ToolBlockStatus.SUCCESS,
+                )),
+            )
+        }
         // 槽位拼接：空则填、有则追加（用户已写内容保留在前）
         if (material.perTurnText.isNotEmpty() || material.styleText.isNotEmpty()) {
             val settings = conversationSettingsSnapshot()
-            val perTurn = listOf(settings.perTurnPrompt, material.perTurnText)
-                .filter { it.isNotBlank() }.joinToString("\n\n")
-            val style = listOf(settings.textStylePrompt, material.styleText)
-                .filter { it.isNotBlank() }.joinToString("\n\n")
-            saveConversationSettings(settings.copy(perTurnPrompt = perTurn, textStylePrompt = style))
+            // 重激活（换卡）去重：同一文本已在槽内则不重复追加（净眼 P1-2）。
+            val perTurn = if (settings.perTurnPrompt.contains(material.perTurnText)) settings.perTurnPrompt
+                else listOf(settings.perTurnPrompt, material.perTurnText).filter { it.isNotBlank() }.joinToString("\n\n")
+            val style = if (settings.textStylePrompt.contains(material.styleText)) settings.textStylePrompt
+                else listOf(settings.textStylePrompt, material.styleText).filter { it.isNotBlank() }.joinToString("\n\n")
+            if (perTurn != settings.perTurnPrompt || style != settings.textStylePrompt) {
+                // [净眼 P3-1] 直写 store（suspend 可等待）+ 手动置位内存态——
+                // 不经 saveConversationSettings 的 fire-and-forget 包装，避免
+                // 与 activatedKey 写的竞态。
+                val updated = settings.copy(perTurnPrompt = perTurn, textStylePrompt = style)
+                _perTurnPrompt.value = perTurn
+                _textStylePrompt.value = style
+                novexSettingsStore.update(settings = com.openminis.app.data.normalizeConversationSettings(updated))
+            }
         }
         // 幂等标记
         novexSettingsStore.update { configuration ->
@@ -13253,17 +13291,23 @@ class ChatViewModel(
                         it.optString("type") == "text"
                     }?.optString("value").orEmpty()
                 }.getOrDefault("")
-                if (packageText.isNotBlank()) {
-                    blocks.add(AssistantBlock(
+                // [净眼 P2-2] 提前返回：全文只进 ⓘ sheet，绝不落入 content——
+                // 否则后续通用 text 循环会把它打进正文，经 legacy 回退把整包
+                // 资料渲染成 markdown 块。
+                return@mapNotNull ChatMessage(
+                    id = entity.id,
+                    role = "system",
+                    content = "",
+                    toolBlocks = listOf(AssistantBlock(
                         id = "activation:${entity.id}",
                         kind = "info",
                         content = "已载入开局资料",
                         toolName = com.openminis.app.cards.NovexCardActivation.SYSTEM_ICON_KIND,
                         toolArgs = packageText,
                         toolStatus = ToolBlockStatus.SUCCESS,
-                    ))
-                    text = "" // 全文只进 sheet，不做气泡正文
-                }
+                    )),
+                    sourceDbIds = listOf(entity.id),
+                )
             }
 
             if (entity.role == "assistant" && !entity.reasoningContent.isNullOrEmpty()) {

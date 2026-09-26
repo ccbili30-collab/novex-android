@@ -250,7 +250,15 @@ class IntegratedCards(context:Context,
             .put("budget",budget).put("allowDeferred",allowDeferred)
             .put("revisions",JSONArray(selections.map {source->listOf(source.rootId,source.targetId,requireNotNull(store.open(source.rootId)).revision)}))
             .put("messages",JSONArray(messages.map {listOf(it.id,it.role.name,it.text)})).toString()
-        var draft=materialCache?.takeIf {materialKey==key}?.third?:materials.prepare(selections,binding.managed.map {it.targetId}.toSet(),messages.distinctBy {it.id},TriggerWindow(6,setOf(MessageRole.USER,MessageRole.ASSISTANT)),binding.overrides.mapValues {if(it.value)UseOverride.Rule(ModuleUse.Always) else UseOverride.Disabled})
+        // [T-stage1-activation]（净眼 P2-1）已激活：default 模块由开局资料包
+        // 在历史承载，材料流关闸防双重注入；未激活时材料流全进仍是保底。
+        val historyCarried = if (binding.activatedKey == null) emptySet() else selections.flatMap { sel ->
+            store.open(sel.rootId)?.let { root -> novex.content.ContentTargets.find(root.content, sel.targetId) }
+                ?.modules?.flattenModules()
+                ?.filter { it.effectiveRouting() == ModuleRouting.DEFAULT }
+                ?.map { it.id } ?: emptyList()
+        }.toSet()
+        var draft=materialCache?.takeIf {materialKey==key}?.third?:materials.prepare(selections,binding.managed.map {it.targetId}.toSet(),messages.distinctBy {it.id},TriggerWindow(6,setOf(MessageRole.USER,MessageRole.ASSISTANT)),binding.overrides.mapValues {if(it.value)UseOverride.Rule(ModuleUse.Always) else UseOverride.Disabled},historyCarried)
         val automatic=draft.plan.decisions.filter {it.reason==AdoptionReason.UNCONFIGURED && it.module.blocks.isNotEmpty()}
         if(automatic.isNotEmpty()) {
             val directory=JSONArray(automatic.map {d->JSONObject().put("id",d.module.id).put("name",d.module.name).put("parent_name",draft.plan.decisions.firstOrNull {parent->parent.module.children.any {it.id==d.module.id}}?.module?.name?:JSONObject.NULL).put("tags",JSONArray(d.module.tags)).put("source",draft.sourceNames[d.cardId]).put("excerpt",materials.selectionExcerpt(draft,d.module.id))})
