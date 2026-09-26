@@ -130,7 +130,7 @@ world.novex.zip
 导出 → 导入 → 再导出，以下内容**必须逐项一致**（编号除外）：
 
 - 卡类（kind）、卡名；
-- 模块顺序、嵌套关系、layout、tags、use 规则、角色展示位；
+- 模块顺序、嵌套关系、layout、tags、use 规则、routing/temporality 标签、角色展示位；
 - 块顺序与类型（text/image）、图片说明（caption）的有无；
 - 每个正文/图片/扩展载荷的**字节内容**（按 SHA-256 对账）；
 - 资源数量与 mediaType、扩展键集合、外观语义（头像/封面指向、阅读布局）；

@@ -20,9 +20,10 @@ class BudgetedMaterialsTest {
         store.save(card,null,ChangeSource.HUMAN,"initial")
         val materials=RequestMaterials(store)
         val draft=materials.prepare(listOf(SourceSelection(card.id)),emptySet(),emptyList(),TriggerWindow(1,setOf(MessageRole.USER)))
-        // [T-stage1-tags] 本组测试守护"选中模块可截断分页"（AI_SELECTED 非
-        // required）——构造显式 standby 走选择器路径选中；use=null 未配置
-        // 模块如今是 ROUTED_ACTIVATION 必读（放不下整轮报错），不适合本组。
+        // [T-stage1-tags] 本组测试守护"AI 选中模块可截断分页"——构造显式
+        // standby 走选择器路径（AI_SELECTED）；use=null 未配置模块如今是
+        // ROUTED_ACTIVATION：排序优先、紧预算退 partial+翻页（两档语义，
+        // 硬报错只属显式 Always/手选）。
         return store to if(use==null) materials.selectAutomatic(draft,setOf("module")) else draft
     }
     @Test fun largeSelectedModuleUsesTheSamePagesAsTheReadingToolAndKeepsOriginal() {
