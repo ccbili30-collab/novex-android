@@ -1285,8 +1285,10 @@ class ChatViewModel(
             }
             entry.memoryJson?.let { raw ->
                 runCatching { com.openminis.app.novex.domain.NovexNotebookStore.decode(raw) }.getOrNull()?.let { memory ->
-                    memoryStoreFor(sid).save(memory)
-                    _sessionMemory.value = memory
+                    // [净眼 N-2] 回档水位归零——新周期重新数档
+                    val reset = memory.copy(highWaterTickPercent = 0)
+                    memoryStoreFor(sid).save(reset)
+                    _sessionMemory.value = reset
                 }
             }
             withContext(Dispatchers.Main) {
@@ -1308,11 +1310,16 @@ class ChatViewModel(
     @Volatile private var standbyDirectoryCache: Pair<String, String?>? = null
     @Volatile private var constantReinjectionCache: Pair<String, String?>? = null
 
+    /** [净眼 N-1] 各卡 revision 拼串（背景卡编辑也失效缓存，注释与实现归一）。 */
+    private fun revisionCacheKey(binding: com.openminis.app.cards.CardBinding): String =
+        (listOfNotNull(binding.primary) + binding.backgrounds).joinToString("|") { sel ->
+            "${sel.rootId}@${sel.targetId}@" +
+                runCatching { integratedCards.store.open(sel.rootId)?.revision }.getOrDefault("")
+        }
+
     private fun buildStandbyDirectory(): String? {
         val binding = integratedCardBinding() ?: return null
-        val revKey = (listOfNotNull(binding.primary) + binding.backgrounds)
-            .joinToString("|") { "${it.rootId}@${it.targetId}" } + "@" +
-            runCatching { integratedCards.store.open(binding.primary?.rootId ?: "")?.revision }.getOrDefault("")
+        val revKey = revisionCacheKey(binding)
         standbyDirectoryCache?.let { (key, block) -> if (key == revKey) return block }
         val documents = buildList {
             binding.primary?.let { sel ->
@@ -1347,10 +1354,7 @@ class ChatViewModel(
      */
     private fun buildConstantReinjection(): String? {
         val binding = integratedCardBinding() ?: return null
-        val revKey = (listOfNotNull(binding.primary) + binding.backgrounds)
-            .joinToString("|") { "${it.rootId}@${it.targetId}" } + "@" +
-            runCatching { integratedCards.store.open(binding.primary?.rootId ?: "")?.revision }.getOrDefault("") +
-            "@compacted"
+        val revKey = revisionCacheKey(binding) + "@compacted"
         constantReinjectionCache?.let { (key, block) -> if (key == revKey) return block }
         val documents = buildList {
             binding.primary?.let { sel ->
