@@ -62,6 +62,7 @@ import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
 import novex.content.effectiveRouting
+import novex.content.effectiveTemporality
 import novex.content.flattenModules
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlOutcome
@@ -2161,13 +2162,13 @@ class ChatViewModel(
         // [T-stage3-save] 存档命令组（总纲 §3.9）：/save 名称｜/saves 列表｜/load 序号
         SlashCommand(
             id = "save",
-            icon = com.openminis.app.ui.novex.NovexIcons.Bookmark,
+            icon = com.openminis.app.ui.novex.NovexIcons.Compress,
             title = "Save",
             subtitle = "",
         ),
         SlashCommand(
             id = "saves",
-            icon = com.openminis.app.ui.novex.NovexIcons.Bookmark,
+            icon = com.openminis.app.ui.novex.NovexIcons.Compress,
             title = "Saves",
             subtitle = "",
         ),
