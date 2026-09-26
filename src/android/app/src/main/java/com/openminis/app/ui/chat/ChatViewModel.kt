@@ -995,6 +995,13 @@ class ChatViewModel(
     private val _streamAwaitingSince = MutableStateFlow<Long?>(null)
     val streamAwaitingSince: StateFlow<Long?> = _streamAwaitingSince.asStateFlow()
 
+    // ── [T-stage2-memory] AI 随身笔记本（总纲 §3.7）──
+    /** 内存缓存：注入读它（buildSystemPrompt 在 Main，不碰 IO）；后台整理落盘后刷新。 */
+    private val _sessionMemory = MutableStateFlow(com.openminis.app.novex.domain.NovexMemoryStore.SessionMemory())
+    private val memoryConsolidating = java.util.concurrent.atomic.AtomicBoolean(false)
+    private fun memoryStoreFor(sessionId: String) =
+        com.openminis.app.novex.domain.NovexMemoryStore.forSession(context, sessionId)
+
     // [T-android-stale-streamjob-clears-isstreaming] @Volatile so cross-coroutine
     // reads (the orphaned previous streamJob's tail block running on a different
     // dispatcher) see the latest assignment. Without it, an old job's
@@ -1216,6 +1223,50 @@ class ChatViewModel(
         }
         // [T-stage1-activation] 已有会话挂卡=立即激活并自动开局（用户零输入）。
         activateBoundCard()?.let { bootstrap -> viewModelScope.launch { sendMessage(bootstrap) } }
+    }
+
+    /**
+     * [T-stage2-memory] 水位刻度触发的后台记忆整理（总纲 §3.5/3.7）。
+     * 回合结束后由 [maybeConsolidateMemoryAfterTurn] 调用：跨过整十刻度才跑
+     * （高水位制，回落不重复）；主模型旁路调用整理；护栏——单并发、失败
+     * 静默跳过本档（记忆是潜在收益，绝不阻塞或打断用户）。
+     */
+    private suspend fun maybeConsolidateMemoryAfterTurn() {
+        if (!memoryConsolidating.compareAndSet(false, true)) return
+        try {
+            val store = memoryStoreFor(activeSessionId)
+            val memory = store.load().let { loaded ->
+                _sessionMemory.value = loaded; loaded
+            }
+            val window = effectiveContextWindowTokens() ?: currentProvider?.model?.contextWindowTokens ?: return
+            val systemEstimate = BPETokenizer.countTokens(buildSystemPrompt().orEmpty())
+            val historyEstimate = synchronized(historyWriteLock) {
+                BPETokenizer.countTokens(agentHistory.joinToString("") { it.content })
+            }
+            val reading = com.openminis.app.novex.domain.MemoryWindowBudget.Reading(
+                windowTokens = window, systemTokens = systemEstimate, historyTokens = historyEstimate)
+            val tick = com.openminis.app.novex.domain.MemoryWindowBudget
+                .crossedMemoryTick(memory.highWaterTickPercent, reading) ?: return
+            val provider = currentProvider ?: return
+            val recentTurns = synchronized(historyWriteLock) { agentHistory.takeLast(6) }
+                .joinToString("\n") { it.content.take(2000) }
+            val cardName = integratedCardBinding()?.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.content?.name
+            }
+            val answer = provider.sendMessage(
+                listOf(LLMMessage(LLMMessage.Role.USER,
+                    com.openminis.app.novex.domain.NovexMemoryStore.consolidationPrompt(memory, recentTurns, cardName))),
+                null, 4096)
+            val parsed = com.openminis.app.novex.domain.NovexMemoryStore
+                .parseConsolidation(answer.text, System.currentTimeMillis()) ?: return
+            val next = parsed.copy(highWaterTickPercent = tick)
+            store.save(next)
+            _sessionMemory.value = next
+        } catch (_: Exception) {
+            // 静默跳过本档（任务书 §3.7 护栏）
+        } finally {
+            memoryConsolidating.set(false)
+        }
     }
 
     /**
@@ -8782,6 +8833,8 @@ class ChatViewModel(
                 unavailable = ::unavailableGroupMembers,
             )
 
+            // [T-stage2-memory] 回合收尾后后台检查水位刻度（不阻塞流式收尾）
+            viewModelScope.launch { maybeConsolidateMemoryAfterTurn() }
             val completedStream = streamedTurn.snapshot()
             kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]?.event(
                 "model_result", JSONObject().put("modelId", currentProvider.model.id)
@@ -11541,6 +11594,9 @@ class ChatViewModel(
             activeMemory?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites)
         } else null
         val novexMemoryFragment = if (memoryOn) activeNovexMemoryFragment() else null
+        // [T-stage2-memory] AI 随身笔记（水位刻度后台整理产物，常驻小块）
+        val sessionMemoryBlock = memoryStoreFor(activeSessionId)
+            .injectionBlock(_sessionMemory.value)
 
         return buildString {
             append(base)
@@ -11567,6 +11623,12 @@ class ChatViewModel(
             if (novexMemoryFragment != null) {
                 append("\n\n")
                 append(novexMemoryFragment)
+            }
+            // [T-stage2-memory] AI 随身笔记常驻块（水位刻度后台整理产物；
+            // 空笔记零痕迹）。置于 Runtime context 之前、静态区末尾。
+            if (sessionMemoryBlock != null) {
+                append("\n\n")
+                append(sessionMemoryBlock)
             }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
