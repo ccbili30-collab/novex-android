@@ -28,6 +28,10 @@ internal object CardStructureCodec {
         })).also {
             if (module.tags.isNotEmpty()) it.put("tags", JSONArray(module.tags))
             module.use?.let { rule -> it.put("use", encodeUse(rule)) }
+            // [T-stage1-tags] 编码省略 null——旧格式读者把缺失视为
+            // default/constant（decodeUse 同语义），往返不膨胀旧卡。
+            module.routing?.let { routing -> it.put("routing", routing.name) }
+            module.temporality?.let { temporality -> it.put("temporality", temporality.name) }
         }
 
     private fun strings(array: JSONArray): List<String> = (0 until array.length()).map(array::getString)
@@ -70,7 +74,7 @@ internal object CardStructureCodec {
     }
 
     private fun decodeModule(module: JSONObject): ContentModule {
-                fields(module, setOf("id", "name", "blocks") + setOf("tags", "use", "children", "layout", "characters").filter { module.has(it) })
+                fields(module, setOf("id", "name", "blocks") + setOf("tags", "use", "children", "layout", "characters", "routing", "temporality").filter { module.has(it) })
                 return ContentModule(module.getString("id"), module.getString("name"), objects(module.getJSONArray("blocks")).map {
                     when (it.getString("kind")) {
                         "text" -> { fields(it, setOf("kind", "id", "content")); ContentBlock.Text(it.getString("id"), ContentRef(it.getString("content"))) }
@@ -80,6 +84,11 @@ internal object CardStructureCodec {
                 }, tags = if (module.has("tags")) strings(module.getJSONArray("tags")) else emptyList(), use = if (module.has("use")) decodeUse(module.getJSONObject("use")) else null,
                     children = if (module.has("children")) objects(module.getJSONArray("children")).map(::decodeModule) else emptyList(),
                     layout = if (module.has("layout")) ModuleLayout.valueOf(module.getString("layout")) else ModuleLayout.VERTICAL,
-                    characterIds = if(module.has("characters")) strings(module.getJSONArray("characters")) else emptyList())
+                    characterIds = if(module.has("characters")) strings(module.getJSONArray("characters")) else emptyList(),
+                    // [T-stage1-tags] 缺失即 null（语义=default/constant），
+                    // 旧卡零迁移；未知取值不静默丢弃——valueOf 抛错符合
+                    // 本格式"严格校验"的既定行为。
+                    routing = if (module.has("routing")) ModuleRouting.valueOf(module.getString("routing")) else null,
+                    temporality = if (module.has("temporality")) ModuleTemporality.valueOf(module.getString("temporality")) else null)
     }
 }

@@ -14,11 +14,17 @@ class BudgetedMaterialsTest {
         val store=CardStore(temporary.newFolder().toPath())
         val ref=store.contents.allocator()()
         store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){"甲乙丙丁".repeat(500000).byteInputStream()}
-        val card=ContentDocument("world",CardKind.WORLD,"大世界",listOf(ContentModule("module","原文",listOf(ContentBlock.Text("block",ref)),use=use)))
+        val card=ContentDocument("world",CardKind.WORLD,"大世界",listOf(ContentModule("module","原文",listOf(ContentBlock.Text("block",ref)),use=use,
+            // [T-stage1-tags] use=null 时显式 standby 保持选择器候选身份（分页测试需 AI_SELECTED 可截断语义）。
+            routing=if(use==null)novex.content.ModuleRouting.STANDBY else null)))
         store.save(card,null,ChangeSource.HUMAN,"initial")
         val materials=RequestMaterials(store)
         val draft=materials.prepare(listOf(SourceSelection(card.id)),emptySet(),emptyList(),TriggerWindow(1,setOf(MessageRole.USER)))
-        return store to if(use==null)materials.selectAutomatic(draft,setOf("module")) else draft
+        // [T-stage1-tags] 本组测试守护"AI 选中模块可截断分页"——构造显式
+        // standby 走选择器路径（AI_SELECTED）；use=null 未配置模块如今是
+        // ROUTED_ACTIVATION：排序优先、紧预算退 partial+翻页（两档语义，
+        // 硬报错只属显式 Always/手选）。
+        return store to if(use==null) materials.selectAutomatic(draft,setOf("module")) else draft
     }
     @Test fun largeSelectedModuleUsesTheSamePagesAsTheReadingToolAndKeepsOriginal() {
         val (store,draft)=setup()
@@ -44,7 +50,10 @@ class BudgetedMaterialsTest {
         val modules=(1..3).map { i ->
             val ref=store.contents.allocator()()
             store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){("资料$i".repeat(1000)).byteInputStream()}
-            ContentModule("m$i","资料$i",listOf(ContentBlock.Text("b$i",ref)))
+            // [T-stage1-tags] 显式 standby 保持 UNCONFIGURED 候选身份——
+            // use=null 的未配置模块如今默认进材料流（ROUTED_ACTIVATION），
+            // 不再是选择器候选；恢复选料路径需要真实候选。
+            ContentModule("m$i","资料$i",listOf(ContentBlock.Text("b$i",ref)),routing=novex.content.ModuleRouting.STANDBY)
         }
         val card=ContentDocument("world",CardKind.WORLD,"世界",modules)
         store.save(card,null,ChangeSource.HUMAN,"initial")
