@@ -33,10 +33,20 @@ class ModuleRoutingAdoptionTest {
         overrides = if (overrideDisabled) mapOf(modules.first().id to UseOverride.Disabled) else emptyMap(),
     ).decisions.associateBy { it.module.id }
 
-    @Test fun `null routing (legacy card) selects as activation`() {
+    @Test fun `null routing with no use (legacy unconfigured) selects as activation`() {
         val d = plan(module(null))["m-null-noUse"]!!
         assertEquals(true, d.selected)
         assertEquals(AdoptionReason.ROUTED_ACTIVATION, d.reason)
+    }
+
+    @Test fun `null routing with explicit use keeps legacy trigger semantics`() {
+        // 存量检索型卡（use=keywords 未设 routing）：作者已表达触发意图，
+        // 视同 STANDBY——不被 DEFAULT 压过。
+        val keywords = plan(module(null, ModuleUse.Keywords(listOf("城门"), caseSensitive = false, requireAll = false)))["m-null-Keywords"]!!
+        assertEquals(AdoptionReason.KEYWORD_MATCH, keywords.reason)
+        val manual = plan(module(null, ModuleUse.Manual))["m-null-Manual"]!!
+        assertEquals(false, manual.selected)
+        assertEquals(AdoptionReason.MANUAL_NOT_SELECTED, manual.reason)
     }
 
     @Test fun `default routing selects as activation`() {

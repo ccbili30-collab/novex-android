@@ -20,13 +20,17 @@ class ModuleAdoptionTest {
         assertEquals("港口港口，灯塔",later.first().text)
         assertEquals(m,source.adopted.single().modules.single())
     }
-    @Test fun `重复来源去重而管理对象与标签不自动采用`() {
+    @Test fun `重复来源去重而管理对象不自动采用`() {
         val always=module("identity",ModuleUse.Always);val tag=module("tagged",tags=listOf("必须携带"))
         val source=scope(always,tag)
         val plan=ModuleAdoption.plan(source.copy(adopted=source.adopted+source.adopted),emptyList(),window)
-        assertEquals(listOf("identity"),plan.selected.map { it.module.id })
+        // [T-stage1-tags] 行为演进：未配置模块（use=null 且未设 routing）
+        // 从 UNCONFIGURED（AI 选择器管辖）改为 DEFAULT——直接进材料流
+        // （ROUTED_ACTIVATION）。管理对象仍不自动采用。
+        assertEquals(listOf("identity","tagged"),plan.selected.map { it.module.id })
         assertEquals(2,plan.decisions.size)
-        assertEquals(AdoptionReason.UNCONFIGURED,plan.decisions.last().reason)
+        assertEquals(AdoptionReason.ALWAYS,plan.decisions.first().reason)
+        assertEquals(AdoptionReason.ROUTED_ACTIVATION,plan.decisions.last().reason)
         assertFalse(plan.decisions.any { it.cardId=="managed-only" })
     }
     @Test fun `对话覆盖和本次手动选择不改变卡片或另一对话`() {
