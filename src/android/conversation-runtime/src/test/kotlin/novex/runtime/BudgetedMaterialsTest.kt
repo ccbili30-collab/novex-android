@@ -18,7 +18,10 @@ class BudgetedMaterialsTest {
         store.save(card,null,ChangeSource.HUMAN,"initial")
         val materials=RequestMaterials(store)
         val draft=materials.prepare(listOf(SourceSelection(card.id)),emptySet(),emptyList(),TriggerWindow(1,setOf(MessageRole.USER)))
-        return store to if(use==null)materials.selectAutomatic(draft,setOf("module")) else draft
+        // [T-stage1-tags] use=null 未配置模块已默认进材料流（ROUTED_
+        // ACTIVATION），无需再走 selectAutomatic——prepare 产物即含该
+        // 模块的分页读取面。
+        return store to draft
     }
     @Test fun largeSelectedModuleUsesTheSamePagesAsTheReadingToolAndKeepsOriginal() {
         val (store,draft)=setup()
@@ -44,7 +47,10 @@ class BudgetedMaterialsTest {
         val modules=(1..3).map { i ->
             val ref=store.contents.allocator()()
             store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){("资料$i".repeat(1000)).byteInputStream()}
-            ContentModule("m$i","资料$i",listOf(ContentBlock.Text("b$i",ref)))
+            // [T-stage1-tags] 显式 standby 保持 UNCONFIGURED 候选身份——
+            // use=null 的未配置模块如今默认进材料流（ROUTED_ACTIVATION），
+            // 不再是选择器候选；恢复选料路径需要真实候选。
+            ContentModule("m$i","资料$i",listOf(ContentBlock.Text("b$i",ref)),routing=novex.content.ModuleRouting.STANDBY)
         }
         val card=ContentDocument("world",CardKind.WORLD,"世界",modules)
         store.save(card,null,ChangeSource.HUMAN,"initial")
