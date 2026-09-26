@@ -225,6 +225,13 @@ class ProviderRepository(private val context: Context) {
                     // _configLoaded true and takes precedence; we must not clobber
                     // it with the stale on-disk snapshot.
                     if (!_configLoaded.value) {
+                        // [T-opencode-sunset]（净眼 P1）正常冷启动走的是本
+                        // 异步装载分支，ensureConfigLoaded 会被 _configLoaded
+                        // 短路——迁移必须挂在这里才必然执行。幂等、失败不
+                        // 阻断装载（内存态已生效，下次启动重试落盘）。
+                        if (applyOpenCodeSunset(loaded)) {
+                            runCatching { saveConfig(loaded) }
+                        }
                         _config.value = loaded
                         _configLoaded.value = true
                         android.util.Log.i(
