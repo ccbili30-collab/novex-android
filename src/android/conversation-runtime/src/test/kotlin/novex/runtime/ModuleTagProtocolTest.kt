@@ -64,7 +64,7 @@ class ModuleTagProtocolTest {
     @Test fun `illegal tag in bulk reports json path`() {
         val bad = JSONObject("""{"modules":[{"name":"x","text":"y","routing":"sideways"}]}""")
         val e = assertThrows(IllegalArgumentException::class.java) { CardBulk.parseTree(bad, "modules") }
-        assert(e.message.orEmpty().contains("modules[0].routing")) { e.message }
+        assert(e.message.orEmpty().contains("modules[0].routing")) { e.message ?: "" }
     }
 
     @Test fun `module schema exposes tag fields`() {
