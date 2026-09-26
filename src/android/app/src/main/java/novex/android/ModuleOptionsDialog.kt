@@ -20,6 +20,8 @@ import novex.content.ContentModule
 import novex.content.ModuleRouting
 import novex.content.ModuleTemporality
 import novex.content.ModuleUse
+import novex.content.effectiveRouting
+import novex.content.effectiveTemporality
 
 @Composable internal fun ModuleOptionsDialog(module:ContentModule,busy:Boolean=false,error:String?=null,onDismiss:()->Unit,
                                              onSave:(List<String>,ModuleUse?,ModuleRouting?,ModuleTemporality?)->Unit) {
@@ -27,8 +29,8 @@ import novex.content.ModuleUse
     // [T-stage1-tags]（净眼 P2-1）初值用 effective 值：use!=null 的存量模块
     // 显示 standby（隐式语义显式化），否则"无改动直接应用"会把隐式 standby
     // 物化为 default，静默摧毁触发规则。
-    var routing by rememberSaveable(module.id){mutableStateOf((module.routing?:if(module.use!=null)ModuleRouting.STANDBY else ModuleRouting.DEFAULT).name)}
-    var temporality by rememberSaveable(module.id){mutableStateOf((module.temporality?:ModuleTemporality.CONSTANT).name)}
+    var routing by rememberSaveable(module.id){mutableStateOf(module.effectiveRouting().name)}
+    var temporality by rememberSaveable(module.id){mutableStateOf(module.effectiveTemporality().name)}
     val original=module.use as? ModuleUse.Keywords
     var words by rememberSaveable(module.id){mutableStateOf(original?.words?.joinToString("\n").orEmpty())}
     var tags by rememberSaveable(module.id){mutableStateOf(module.tags.joinToString("\n"))}

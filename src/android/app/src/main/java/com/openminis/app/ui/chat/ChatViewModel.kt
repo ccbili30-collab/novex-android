@@ -1214,6 +1214,114 @@ class ChatViewModel(
             require(com.openminis.app.cards.CardBinding.decode(configuration.cardBindingJson)==expected){"卡片关联已更新，请返回后重新打开，避免覆盖新内容"}
             configuration.copy(cardBindingJson=value.encode())
         }
+        // [T-stage1-activation] 已有会话挂卡=立即激活并自动开局（用户零输入）。
+        activateBoundCard()?.let { bootstrap -> viewModelScope.launch { sendMessage(bootstrap) } }
+    }
+
+    /**
+     * [T-stage1-activation] 开局激活协议（总纲 §3.2）：绑定主卡后构建开局
+     * 资料包（default 路由模块全文）→ 持久化 system 消息（居中渲染、模型
+     * 投影为 user 上下文块）→ per_turn/style 模块文本拼接进每轮注入/文风
+     * 槽位（空则填、有则追加）→ 幂等（binding 记 activationKey）。返回
+     * 自动启动回合指令；null=已激活过（幂等跳过）或无可激活主卡。
+     * 放不下绝不静默漏：资料包超预算抛错并附携带清单。
+     */
+    suspend fun activateBoundCard(): String? {
+        sessionLoaded.first { it }
+        val binding = integratedCardBinding() ?: return null
+        val primary = binding.primary ?: return null
+        // 幂等键（净眼 P1-2 修正）：只取 primary+backgrounds——managed/
+        // createdReceipts/overrides 的波动（AI 建卡自动入 managed、对话级
+        // 携带开关）不构成"换卡"，不得触发重激活（对齐 NovexHistoryAccessScope
+        // 的剥法）；换主卡/换背景=重新激活。
+        val activationKey = com.openminis.app.cards.CardBinding(
+            primary = binding.primary, backgrounds = binding.backgrounds).encode()
+        if (binding.activatedKey == activationKey) return null
+        val root = integratedCards.store.open(primary.rootId) ?: return null
+        val target = novex.content.ContentTargets.find(root.content, primary.targetId)
+        val documents = mutableListOf(target)
+        binding.backgrounds.forEach { sel ->
+            runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { bg ->
+                novex.content.ContentTargets.find(bg.content, sel.targetId)?.let { documents += it }
+            }
+        }
+        val material = com.openminis.app.cards.NovexCardActivation.build(
+            documents,
+            readText = { ref -> novex.storage.TextPages(integratedCards.store.contents).read(ref, 0, Int.MAX_VALUE).text },
+        )
+        // 预算护栏（fail-loud，绝不静默截断）
+        // [净眼 P2-4/P3-6] 窗口未知时保守兜底 200K（不再静默跳过激活）；
+        // 预算口径 3/5：资料包之外还要容纳 system/工具定义/输出预留/槽位注入/
+        // 用户文本——精确分区核算是阶段 2 的活，这里先取保守常数。
+        val limit = effectiveContextWindowTokens()
+            ?: currentProvider?.model?.contextWindowTokens ?: 200_000
+        com.openminis.app.cards.NovexCardActivation.requireFits(
+            material, (limit * 3 / 5).coerceAtLeast(1024), com.openminis.app.data.BPETokenizer::countTokens)
+        // 落库 system 消息（对模型=对话流位置的 user 资料块；对 UI=居中资料包行）。
+        // [净眼 P1-1] 落库后必须同步双补内存——否则 I1 历史守恒在出口把本 VM
+        // 的所有发送拒死（DB 有行而 agentHistory/_messages 缺行），且首轮请求
+        // 与 UI 都看不到资料包。
+        val entity = chatRepository.appendMessage(
+            activeSessionId, "system",
+            com.openminis.app.cards.NovexCardActivation.partsJson(material),
+        )
+        withContext(Dispatchers.Main) {
+            // [净眼 N-3] 与 sendMessage 用户行同锁写入（锁纪律一致）。
+            synchronized(historyWriteLock) {
+                agentHistory.add(LLMMessage(
+                    role = LLMMessage.Role.USER,
+                    content = material.packageText,
+                    // [净眼 N-2] 与 DB 投影行齐平（text part 两侧同在），
+                    // 影子装配 structural 不产 [] vs [T] 强信号噪音。
+                    contentParts = listOf(com.openminis.app.data.model.AgentContentPart.Text(material.packageText)),
+                    dbMessageId = entity.id,
+                ))
+            }
+            _messages.value = _messages.value + ChatMessage(
+                id = entity.id,
+                role = "system",
+                content = "",
+                toolBlocks = listOf(com.openminis.app.ui.chat.AssistantBlock(
+                    id = "activation:${entity.id}",
+                    kind = "info",
+                    content = "已载入开局资料",
+                    toolName = com.openminis.app.cards.NovexCardActivation.SYSTEM_ICON_KIND,
+                    toolArgs = material.packageText,
+                    toolStatus = ToolBlockStatus.SUCCESS,
+                )),
+            )
+        }
+        // 槽位拼接：空则填、有则追加（用户已写内容保留在前）
+        if (material.perTurnText.isNotEmpty() || material.styleText.isNotEmpty()) {
+            val settings = conversationSettingsSnapshot()
+            // 重激活（换卡）去重：同一文本已在槽内则不重复追加（净眼 P1-2）。
+            val perTurn = if (settings.perTurnPrompt.contains(material.perTurnText)) settings.perTurnPrompt
+                else listOf(settings.perTurnPrompt, material.perTurnText).filter { it.isNotBlank() }.joinToString("\n\n")
+            val style = if (settings.textStylePrompt.contains(material.styleText)) settings.textStylePrompt
+                else listOf(settings.textStylePrompt, material.styleText).filter { it.isNotBlank() }.joinToString("\n\n")
+            if (perTurn != settings.perTurnPrompt || style != settings.textStylePrompt) {
+                // [净眼 P3-1] 直写 store（suspend 可等待）+ 手动置位内存态——
+                // 不经 saveConversationSettings 的 fire-and-forget 包装，避免
+                // 与 activatedKey 写的竞态。
+                val updated = settings.copy(perTurnPrompt = perTurn, textStylePrompt = style)
+                _perTurnPrompt.value = perTurn
+                _textStylePrompt.value = style
+                novexSettingsStore.update(settings = com.openminis.app.data.normalizeConversationSettings(updated))
+            }
+        }
+        // 幂等标记 + 包内模块快照（净眼 N-1：材料流关闸以此为据）
+        novexSettingsStore.update { configuration ->
+            val current = com.openminis.app.cards.CardBinding.decode(configuration.cardBindingJson) ?: return@update configuration
+            configuration.copy(cardBindingJson = current.copy(
+                activatedKey = activationKey,
+                activatedModules = material.defaultModuleIds.toList(),
+            ).encode())
+        }
+        return if (target.kind == novex.content.CardKind.CHARACTER) {
+            com.openminis.app.cards.NovexCardActivation.BOOTSTRAP_DIRECTIVE_CHARACTER
+        } else {
+            com.openminis.app.cards.NovexCardActivation.BOOTSTRAP_DIRECTIVE_WORLD
+        }
     }
     private suspend fun integratedConversationImages():Map<String,java.io.File> {
         val base=mediaStore.mediaBaseDir.canonicalFile
@@ -6892,6 +7000,18 @@ class ChatViewModel(
             try {
             // Ensure session exists in DB (creates on first message for draft sessions)
             val activeSessionId = ensureSession()
+
+            // [T-stage1-activation] draft 挂卡首条消息前插入开局资料包：
+            // 用户的话自然成为首轮（资料包必然先于它在历史里）；激活幂等。
+            // 失败（资料包放不下等）明示并拒发本轮——绝不静默漏。
+            runCatching { activateBoundCard() }.onFailure { failure ->
+                appendSystemInfo(
+                    text = "开局激活未完成：${failure.message ?: failure::class.java.simpleName}",
+                    iconKind = "card",
+                )
+                setInputText(text)
+                return@launch
+            }
 
             // [T-send-stall]（用户 2026-09-15：发送有时卡十多秒）世界模板写盘与
             // 发送前上下文检查此前同步跑在 UI 线程：前者过 PRoot 沙盒文件系统，
@@ -13171,6 +13291,34 @@ class ChatViewModel(
             // a session reload.
             val restoredAttachmentUris = mutableListOf<Uri>()
 
+            // [T-stage1-activation] 持久化 system 行 = 开局资料包：读回为居中
+            // divider + ⓘ 详情 sheet（与 compact divider 同管线）。text part
+            // 全文进 toolArgs，标签固定短文案。
+            if (entity.role == "system") {
+                val packageText = runCatching {
+                    org.json.JSONArray(entity.partsJson).optJSONObject(0)?.takeIf {
+                        it.optString("type") == "text"
+                    }?.optString("value").orEmpty()
+                }.getOrDefault("")
+                // [净眼 P2-2] 提前返回：全文只进 ⓘ sheet，绝不落入 content——
+                // 否则后续通用 text 循环会把它打进正文，经 legacy 回退把整包
+                // 资料渲染成 markdown 块。
+                return@mapNotNull ChatMessage(
+                    id = entity.id,
+                    role = "system",
+                    content = "",
+                    toolBlocks = listOf(AssistantBlock(
+                        id = "activation:${entity.id}",
+                        kind = "info",
+                        content = "已载入开局资料",
+                        toolName = com.openminis.app.cards.NovexCardActivation.SYSTEM_ICON_KIND,
+                        toolArgs = packageText,
+                        toolStatus = ToolBlockStatus.SUCCESS,
+                    )),
+                    sourceDbIds = listOf(entity.id),
+                )
+            }
+
             if (entity.role == "assistant" && !entity.reasoningContent.isNullOrEmpty()) {
                 blocks.add(AssistantBlock(
                     id = "thinking_restored_${entity.id}",
@@ -13836,7 +13984,10 @@ class ChatViewModel(
     }
 
     private fun MessageEntity.toLLMMessage(): LLMMessage {
-        val r = if (role == "user") LLMMessage.Role.USER else LLMMessage.Role.ASSISTANT
+        // [T-stage1-activation] 持久化 system 行（开局资料包）投影为对话流
+        // 位置的 user 上下文块——"像用户直接发的一样"，在历史里、AI 记得
+        // 自己开局读过。内存态 system 行不落库，不受此分支影响。
+        val r = if (role == "user" || role == "system") LLMMessage.Role.USER else LLMMessage.Role.ASSISTANT
         val contentParts = mutableListOf<AgentContentPart>()
         val imageParts = mutableListOf<LLMMessage.ImagePart>()
         var textContent = ""
