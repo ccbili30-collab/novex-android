@@ -51,8 +51,7 @@ object ModuleAdoption {
             // manual/always）=尊重既有意图按 STANDBY 走规则；完全未配置
             // （use 也为 null）才取 DEFAULT"存量全标默认"（总纲——能塞就
             // 塞，AI 选择器管辖的未配置模块从此直接进材料流）。
-            val effectiveRouting = module.routing
-                ?: if (module.use != null) ModuleRouting.STANDBY else ModuleRouting.DEFAULT
+            val effectiveRouting = module.effectiveRouting()
             if (override == UseOverride.Disabled) decision(false, AdoptionReason.DISABLED)
             else when (effectiveRouting) {
                 ModuleRouting.DEFAULT -> decision(true, AdoptionReason.ROUTED_ACTIVATION)

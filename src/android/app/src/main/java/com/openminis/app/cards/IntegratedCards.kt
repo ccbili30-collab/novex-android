@@ -14,7 +14,9 @@ import org.json.JSONObject
 import org.json.JSONArray
 
 /** 卡片与原会话的关联。消息、连接、权限决定仍由原应用持有。 */
-data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<SourceSelection> = emptyList(),val managed:Set<ManagementTarget> = emptySet(),val createdReceipts:Set<String> = emptySet(),val overrides:Map<String,Boolean> = emptyMap()) {
+data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<SourceSelection> = emptyList(),val managed:Set<ManagementTarget> = emptySet(),val createdReceipts:Set<String> = emptySet(),val overrides:Map<String,Boolean> = emptyMap(),
+                       /** [T-stage1-activation] 已完成开局激活的绑定指纹（encode 全串）；换卡/换背景后不等→重新激活。 */
+                       val activatedKey:String? = null) {
     /**
      * [T-prune-deleted-mounts] 剔除指向已不存在卡片（已删除/缺失）的主卡、背景卡
      * 与管理项；一个都没剔除时返回 null（调用方据此跳过写回）。exists 由调用方
@@ -30,7 +32,8 @@ data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<So
     fun encode():String {
         fun values(items:List<SourceSelection>)=JSONArray(items.map {JSONObject().put("root",it.rootId).put("target",it.targetId)})
         return JSONObject().put("primary",values(listOfNotNull(primary))).put("backgrounds",values(backgrounds))
-            .put("managed",values(managed.map {SourceSelection(it.rootId,it.targetId)})).put("createdReceipts",JSONArray(createdReceipts.toList())).put("overrides",JSONObject(overrides)).toString()
+            .put("managed",values(managed.map {SourceSelection(it.rootId,it.targetId)})).put("createdReceipts",JSONArray(createdReceipts.toList())).put("overrides",JSONObject(overrides))
+            .apply { activatedKey?.let { put("activatedKey", it) } }.toString()
     }
     companion object {
         fun decode(raw:String?):CardBinding? {
@@ -40,7 +43,8 @@ data class CardBinding(val primary:SourceSelection?=null,val backgrounds:List<So
             val receipts=value.optJSONArray("createdReceipts")
             return CardBinding(sources("primary").singleOrNull(),sources("backgrounds"),sources("managed").map {ManagementTarget(it.rootId,it.targetId)}.toSet(),
                 receipts?.let {a->(0 until a.length()).map(a::getString).toSet()}?:emptySet(),
-                value.optJSONObject("overrides")?.let {o->o.keys().asSequence().associateWith {o.getBoolean(it)}}?:emptyMap())
+                value.optJSONObject("overrides")?.let {o->o.keys().asSequence().associateWith {o.getBoolean(it)}}?:emptyMap(),
+                value.optString("activatedKey").takeIf {it.isNotEmpty()})
         }
     }
 }

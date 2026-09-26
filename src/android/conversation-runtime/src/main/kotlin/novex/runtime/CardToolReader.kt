@@ -38,8 +38,8 @@ class CardToolReader(private val store:CardStore,private val maximumPage:Int=819
                 // 现值才能在 set_module_options 中正确保留/修改（该工具缺省=保持
                 // 现值）。null+routing 未设但 use!=null 的存量模块按解析语义回显
                 // standby，显式化无害且诚实。
-                .put("routing",ModuleOptionsProtocol.encodeRouting(module.routing ?: if(module.use!=null)novex.content.ModuleRouting.STANDBY else novex.content.ModuleRouting.DEFAULT)?:JSONObject.NULL)
-                .put("temporality",ModuleOptionsProtocol.encodeTemporality(module.temporality?:novex.content.ModuleTemporality.CONSTANT)?:JSONObject.NULL)
+                .put("routing",ModuleOptionsProtocol.encodeRouting(module.effectiveRouting())?:JSONObject.NULL)
+                .put("temporality",ModuleOptionsProtocol.encodeTemporality(module.effectiveTemporality())?:JSONObject.NULL)
                 .put("blocks",JSONArray(module.blocks.map { block->JSONObject().put("id",block.id).put("kind",if(block is ContentBlock.Text)"text" else "image_caption").apply {if(block is ContentBlock.Image)put("resource_id",block.resourceId)} })) }))
         if(call.name=="read_card_image") {
             require(args.getString("draft_version")==source.version){"图片版本已变化，请重新读取"}
