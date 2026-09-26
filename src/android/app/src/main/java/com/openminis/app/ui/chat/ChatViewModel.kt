@@ -1300,12 +1300,11 @@ class ChatViewModel(
             val style = if (settings.textStylePrompt.contains(material.styleText)) settings.textStylePrompt
                 else listOf(settings.textStylePrompt, material.styleText).filter { it.isNotBlank() }.joinToString("\n\n")
             if (perTurn != settings.perTurnPrompt || style != settings.textStylePrompt) {
-                // [净眼 P3-1] 直写 store（suspend 可等待）+ 手动置位内存态——
-                // 不经 saveConversationSettings 的 fire-and-forget 包装，避免
-                // 与 activatedKey 写的竞态。
+                // [净眼 P3-1→修正] 直写 store（suspend 可等待）。不可在 update 前
+                // 手动置位内存态——current() 会读到已置位的新值使 committed==before
+                // 短路跳过落盘（内存有 DB 无，重启即丢）；update 在落盘差异时经
+                // install 回调统一装内存态。
                 val updated = settings.copy(perTurnPrompt = perTurn, textStylePrompt = style)
-                _perTurnPrompt.value = perTurn
-                _textStylePrompt.value = style
                 novexSettingsStore.update(settings = com.openminis.app.data.normalizeConversationSettings(updated))
             }
         }
@@ -11501,6 +11500,9 @@ class ChatViewModel(
         // same per-conversation switch.
         val memoryOn = _memoryEnabled.value
         val preparedTeaching = if(integratedCardBinding()!=null) com.openminis.app.cards.IntegratedCardPrompt.build(
+            // [T-prompt-identity-priority]（用户 2026-09-27 报告"写了对话提示词不代入"）
+            // identitySection（含用户手写的对话提示词/人格指令）作为第一参数：
+            // 挂卡链路下它被前置到 system 开头，不再压在十几条卡片管理条款之后。
             identitySection,memoryOn,agentTools.mapTo(linkedSetOf()){it.name}) else com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
             sessionId = activeSessionId,
             context = context,
