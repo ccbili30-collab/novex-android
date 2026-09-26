@@ -1230,6 +1230,37 @@ class ChatViewModel(
     }
 
     /**
+     * [T-stage4-reading] 待命资料目录指针（总纲 §3.8 AI 主动层）：挂卡会话的
+     * standby 路由模块名一览 + 查阅指引。只列菜单不放内容（防上下文膨胀）；
+     * 无 standby 模块返回 null 零痕迹。
+     */
+    private fun buildStandbyDirectory(): String? {
+        val binding = integratedCardBinding() ?: return null
+        val documents = buildList {
+            binding.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+            binding.backgrounds.forEach { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+        }
+        val standby = documents.flatMap { it.modules.flattenModules() }
+            .filter { it.effectiveRouting() == novex.content.ModuleRouting.STANDBY }
+        if (standby.isEmpty()) return null
+        val names = standby.take(60).joinToString("、") { it.name }
+        return buildString {
+            appendLine("<待查资料目录>")
+            appendLine("以下资料不在当前上下文内，需要时先 read_card 读结构，再用 read_text_block 按编号读正文：")
+            appendLine(names)
+            append("</待查资料目录>")
+        }
+    }
+
+    /**
      * [T-stage3-snapshot]（总纲 §3.6）压缩后的常量模块重注入块：temporality=
      * CONSTANT 且 routing=DEFAULT 的模块全文（幂等安全——游玩不变的事实可
      * 重复出现不产生矛盾）+ 元说明把信息源分工教给模型（常设规则 vs 剧情现
@@ -11687,6 +11718,12 @@ class ChatViewModel(
             constantReinjectionBlock = buildConstantReinjection()
             statusAnchorLine = com.openminis.app.novex.domain.NovexStateSnapshot.anchorLine(_worldSnapshot.value)
         }
+        // [T-stage4-reading]（总纲 §3.8 第 2 层·AI 主动层）待命资料目录指针：
+        // 只列模块名（几十 token 的菜单，非内容）——模型看得到"有什么可查"才
+        // 会主动 read_card/read_text_block。三层读取的其余两层已落地（系统
+        // 保障层=Adoption 关键词判定；注意力锚=状态锚）。sticky 挂账（需
+        // Adoption 有状态化重构）。
+        val standbyDirectoryBlock = buildStandbyDirectory()
 
         return buildString {
             append(base)
@@ -11728,6 +11765,10 @@ class ChatViewModel(
                 append("\n\n<当前状态锚>\n")
                 append(statusAnchorLine)
                 append("\n</当前状态锚>")
+            }
+            if (standbyDirectoryBlock != null) {
+                append("\n\n")
+                append(standbyDirectoryBlock)
             }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
