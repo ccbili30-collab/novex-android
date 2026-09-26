@@ -8670,8 +8670,7 @@ class ChatViewModel(
                     _contextEstimated.value = true
                     _lastTurnContextTokens.value = estimate
                     _contextUsageReady.value = true
-                    val limit = effectiveContextWindowTokens()
-            ?: currentProvider?.model?.contextWindowTokens ?: return null
+                    val limit = effectiveContextWindowTokens() ?: currentProvider.model.contextWindowTokens
                     val output = minOf(dynamicMaxTokens(currentProvider, estimate), (limit - estimate - limit / 20).coerceAtLeast(1))
                     require(estimate.toLong() + output + limit / 20 <= limit) {
                         "本轮上下文预计超出启用容量，尚未发送。请减少携带资料或压缩历史，原文保留。"
