@@ -38,16 +38,17 @@ class NovexCardActivationTest {
         "ref://style" to "文风正文。",
     )
 
-    private fun build(vararg cards: ContentDocument) = NovexCardActivation.build(cards.toList()) { ref ->
-        texts[ref.value] ?: ""
-    }
+    private fun build(vararg cards: ContentDocument) = NovexCardActivation.build(
+        cards.toList(),
+        readText = { ref -> texts[ref.value] ?: "" },
+    )
 
     @Test
     fun `package collects default-routed modules only`() {
         val material = build(
             card(
                 textModule("engine", "引擎宪法", "引擎宪法正文。"), // 未配置 → DEFAULT
-                textModule("events", "事件池", "事件池正文。", use = ModuleUse.Keywords(listOf("港口"))), // use 规则 → STANDBY 不进
+                textModule("events", "事件池", "事件池正文。", use = ModuleUse.Keywords(listOf("港口"), caseSensitive = false, requireAll = false)), // use 规则 → STANDBY 不进
                 textModule("perturn", "每轮注入", "每轮注入正文。", routing = ModuleRouting.PER_TURN),
                 textModule("style", "文风", "文风正文。", routing = ModuleRouting.STYLE),
                 textModule("explicit", "明示默认", "引擎宪法正文。", routing = ModuleRouting.DEFAULT),
@@ -77,7 +78,7 @@ class NovexCardActivationTest {
     fun `budget guard fails loud with listing`() {
         val material = build(card(textModule("big", "大模块", "引擎宪法正文。")))
         val e = assertThrows(IllegalArgumentException::class.java) {
-            NovexCardActivation.requireFits(material, availableTokens = 3) { it.length }
+            NovexCardActivation.requireFits(material, availableTokens = 3, count = { it.length })
         }
         assertTrue(e.message!!.contains("超出本会话可用上下文"))
         assertTrue(e.message!!.contains("已载入开局资料"))
@@ -85,7 +86,7 @@ class NovexCardActivationTest {
 
     @Test
     fun `binding activation key round-trips and excludes itself`() {
-        val binding = CardBinding(primary = SourceSelection("world"))
+        val binding = CardBinding(primary = novex.runtime.SourceSelection("world"))
         val key = binding.copy(activatedKey = null).encode()
         val activated = binding.copy(activatedKey = key)
         // encode→decode 往返保真
