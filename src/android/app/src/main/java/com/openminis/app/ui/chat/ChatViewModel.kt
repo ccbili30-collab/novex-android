@@ -1003,6 +1003,8 @@ class ChatViewModel(
     private val memoryConsolidating = java.util.concurrent.atomic.AtomicBoolean(false)
     private fun memoryStoreFor(sessionId: String) =
         com.openminis.app.novex.domain.NovexMemoryStore.forSession(context, sessionId)
+    // ── [T-stage3-snapshot] 世界快照缓存（总纲 §3.6；压缩时后台刷新）──
+    private val _worldSnapshot = MutableStateFlow<com.openminis.app.novex.domain.NovexWorldSnapshot.Snapshot?>(null)
 
     // [T-android-stale-streamjob-clears-isstreaming] @Volatile so cross-coroutine
     // reads (the orphaned previous streamJob's tail block running on a different
@@ -2496,6 +2498,37 @@ class ChatViewModel(
                         it.role == "system" && it.toolBlocks.firstOrNull()?.toolName == "compact"
                     }.map { it.copy(isCompactedHistory = false) }
                     _messages.value = applyCompactMarkerGraying(originals, marker, rawDbRows, rawDbIds)
+                }
+                // [T-stage3-snapshot] 压缩成功→后台增量更新世界快照 + 压缩自动档
+                // （失败静默：快照是压缩产物增强，不阻塞压缩本身）
+                viewModelScope.launch {
+                    try {
+                        val provider = currentProvider ?: return@launch
+                        val previous = com.openminis.app.novex.domain.NovexWorldSnapshot
+                            .loadLatest(context, sid)
+                        val recent = history.takeLast(6).joinToString("\n") { it.content.take(1500) }
+                        val cardName = integratedCardBinding()?.primary?.let { sel ->
+                            runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.content?.name
+                        }
+                        val snapshot = com.openminis.app.novex.domain.NovexWorldSnapshot
+                            .generate(provider, previous, summary, recent, cardName) ?: return@launch
+                        com.openminis.app.novex.domain.NovexWorldSnapshot.saveLatest(context, sid, snapshot)
+                        _worldSnapshot.value = snapshot
+                        // [T-stage3-save] 压缩自动档（总纲 §3.9）
+                        com.openminis.app.novex.domain.NovexSaveStore.save(context, sid,
+                            com.openminis.app.novex.domain.NovexSaveStore.SaveEntry(
+                                id = "auto-${snapshot.createdAt}",
+                                name = "压缩自动档",
+                                createdAt = snapshot.createdAt,
+                                anchorMessageId = null,
+                                snapshotJson = snapshot.rawJson,
+                                memoryJson = com.openminis.app.novex.domain.NovexMemoryStore
+                                    .encode(_sessionMemory.value).takeIf { _sessionMemory.value.entries.isNotEmpty() },
+                                ledgerJson = null,
+                            ))
+                    } catch (_: Exception) {
+                        // 静默（快照增强不阻塞压缩）
+                    }
                 }
                 compactSucceeded = true
             } catch (e: CancellationException) {
