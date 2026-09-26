@@ -20,6 +20,8 @@ import novex.content.ContentModule
 import novex.content.ModuleRouting
 import novex.content.ModuleTemporality
 import novex.content.ModuleUse
+import novex.content.effectiveRouting
+import novex.content.effectiveTemporality
 
 @Composable internal fun ModuleOptionsDialog(module:ContentModule,busy:Boolean=false,error:String?=null,onDismiss:()->Unit,
                                              onSave:(List<String>,ModuleUse?,ModuleRouting?,ModuleTemporality?)->Unit) {

@@ -1247,7 +1247,8 @@ class ChatViewModel(
             readText = { ref -> novex.storage.TextPages(integratedCards.store.contents).read(ref, 0, Int.MAX_VALUE).text },
         )
         // 预算护栏（fail-loud，绝不静默截断）
-        val limit = effectiveContextWindowTokens() ?: currentProvider.model.contextWindowTokens
+        val limit = effectiveContextWindowTokens()
+            ?: currentProvider?.model?.contextWindowTokens ?: return null
         com.openminis.app.cards.NovexCardActivation.requireFits(
             material, (limit * 4 / 5).coerceAtLeast(1024), com.openminis.app.data.BPETokenizer::countTokens)
         // 落库 system 消息（对模型=对话流位置的 user 资料块；对 UI=居中资料包行）
@@ -6962,7 +6963,7 @@ class ChatViewModel(
                     iconKind = "card",
                 )
                 setInputText(text)
-                return
+                return@launch
             }
 
             // [T-send-stall]（用户 2026-09-15：发送有时卡十多秒）世界模板写盘与
@@ -8669,7 +8670,8 @@ class ChatViewModel(
                     _contextEstimated.value = true
                     _lastTurnContextTokens.value = estimate
                     _contextUsageReady.value = true
-                    val limit = effectiveContextWindowTokens() ?: currentProvider.model.contextWindowTokens
+                    val limit = effectiveContextWindowTokens()
+            ?: currentProvider?.model?.contextWindowTokens ?: return null
                     val output = minOf(dynamicMaxTokens(currentProvider, estimate), (limit - estimate - limit / 20).coerceAtLeast(1))
                     require(estimate.toLong() + output + limit / 20 <= limit) {
                         "本轮上下文预计超出启用容量，尚未发送。请减少携带资料或压缩历史，原文保留。"
