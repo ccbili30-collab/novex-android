@@ -14,14 +14,16 @@ class BudgetedMaterialsTest {
         val store=CardStore(temporary.newFolder().toPath())
         val ref=store.contents.allocator()()
         store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){"甲乙丙丁".repeat(500000).byteInputStream()}
-        val card=ContentDocument("world",CardKind.WORLD,"大世界",listOf(ContentModule("module","原文",listOf(ContentBlock.Text("block",ref)),use=use)))
+        val card=ContentDocument("world",CardKind.WORLD,"大世界",listOf(ContentModule("module","原文",listOf(ContentBlock.Text("block",ref)),use=use,
+            // [T-stage1-tags] use=null 时显式 standby 保持选择器候选身份（分页测试需 AI_SELECTED 可截断语义）。
+            routing=if(use==null)novex.content.ModuleRouting.STANDBY else null)))
         store.save(card,null,ChangeSource.HUMAN,"initial")
         val materials=RequestMaterials(store)
         val draft=materials.prepare(listOf(SourceSelection(card.id)),emptySet(),emptyList(),TriggerWindow(1,setOf(MessageRole.USER)))
-        // [T-stage1-tags] use=null 未配置模块已默认进材料流（ROUTED_
-        // ACTIVATION），无需再走 selectAutomatic——prepare 产物即含该
-        // 模块的分页读取面。
-        return store to draft
+        // [T-stage1-tags] 本组测试守护"选中模块可截断分页"（AI_SELECTED 非
+        // required）——构造显式 standby 走选择器路径选中；use=null 未配置
+        // 模块如今是 ROUTED_ACTIVATION 必读（放不下整轮报错），不适合本组。
+        return store to if(use==null) materials.selectAutomatic(draft,setOf("module")) else draft
     }
     @Test fun largeSelectedModuleUsesTheSamePagesAsTheReadingToolAndKeepsOriginal() {
         val (store,draft)=setup()

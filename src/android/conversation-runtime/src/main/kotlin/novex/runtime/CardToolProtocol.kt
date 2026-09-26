@@ -121,11 +121,17 @@ object CardToolProtocol {
         // module_id 已在 schema 标 optional（"为空则仅存入素材"），解析层
         // 缺省须同样放行（执行分支本就按可空处理）；其余工具的 module_id
         // 语义必填，不放开。
+        // [T-stage1-tags] schema optional 契约（PR#27 先例）：routing/
+        // temporality 缺省=保持现值，必填检查放行。
         val defaulted=setOf("block_id","before_id","after_id") +
-            if(call.name=="save_conversation_image") setOf("module_id") else emptySet()
+            when {
+                call.name=="save_conversation_image" -> setOf("module_id")
+                call.name=="set_module_options" -> setOf("routing","temporality")
+                else -> emptySet()
+            }
         val missing=(common+extra-defaulted)-value.keys().asSequence().toSet()
         require(missing.isEmpty()){"工具字段缺失：${missing.joinToString(", ")}"}
-        (common+extra-setOf("start","end","tags","rule")-defaulted).forEach { require(value.get(it) is String){"工具字段必须为文字"} }
+        (common+extra-setOf("start","end","tags","rule","routing","temporality")-defaulted).forEach { require(value.get(it) is String){"工具字段必须为文字"} }
         common.forEach { require(value.getString(it).isNotBlank()){ "目标和版本不能为空" } }
         if("module_id" in extra && call.name!="save_conversation_image")require(value.getString("module_id").isNotBlank())
         val edit=when(call.name) {
