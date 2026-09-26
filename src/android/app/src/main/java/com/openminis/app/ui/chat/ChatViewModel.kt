@@ -61,6 +61,8 @@ import com.openminis.app.tools.NovexWorkspaceAgentTools
 import com.openminis.app.tools.NovexManagementTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
+import novex.content.effectiveRouting
+import novex.content.flattenModules
 import com.openminis.app.novex.domain.ConversationControlDefinition
 import com.openminis.app.novex.domain.ConversationControlOutcome
 import com.openminis.app.novex.domain.ConversationControlRegistration
@@ -1223,6 +1225,49 @@ class ChatViewModel(
         }
         // [T-stage1-activation] 已有会话挂卡=立即激活并自动开局（用户零输入）。
         activateBoundCard()?.let { bootstrap -> viewModelScope.launch { sendMessage(bootstrap) } }
+    }
+
+    /**
+     * [T-stage3-snapshot]（总纲 §3.6）压缩后的常量模块重注入块：temporality=
+     * CONSTANT 且 routing=DEFAULT 的模块全文（幂等安全——游玩不变的事实可
+     * 重复出现不产生矛盾）+ 元说明把信息源分工教给模型（常设规则 vs 剧情现
+     * 状以摘要/账本为准），根治"压缩后设定/现状互相打架"。快照型（SNAPSHOT）
+     * 模块绝不在此出现——它们只随开局资料包一次。
+     */
+    private fun buildConstantReinjection(): String? {
+        val binding = integratedCardBinding() ?: return null
+        val documents = buildList {
+            binding.primary?.let { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+            binding.backgrounds.forEach { sel ->
+                runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.let { root ->
+                    novex.content.ContentTargets.find(root.content, sel.targetId)?.let(::add)
+                }
+            }
+        }
+        val constants = documents.flatMap { it.modules.flattenModules() }.filter {
+            it.effectiveRouting() == novex.content.ModuleRouting.DEFAULT &&
+                (it.temporality ?: novex.content.ModuleTemporality.CONSTANT) == novex.content.ModuleTemporality.CONSTANT
+        }
+        if (constants.isEmpty()) return null
+        return buildString {
+            appendLine("<世界常设规则（压缩后重注入）>")
+            appendLine("以下为开局即定、游玩中不变的事实与规则。剧情的当前状态以对话中的摘要、当前状态锚与账本为准；两者不一致时，规则不变、状态以后者为准。")
+            constants.forEach { module ->
+                appendLine()
+                appendLine("## ${module.name}")
+                module.blocks.forEach { block ->
+                    val text = (block as? novex.content.ContentBlock.Text)?.let {
+                        runCatching { novex.storage.TextPages(integratedCards.store.contents).read(it.content, 0, Int.MAX_VALUE).text }.getOrNull()
+                    }
+                    if (!text.isNullOrBlank()) appendLine(text)
+                }
+            }
+            append("</世界常设规则>")
+        }
     }
 
     /**
@@ -5013,6 +5058,9 @@ class ChatViewModel(
                 .onFailure { Log.w(TAG, "latestCompactMarker failed: ${it.message}") }
                 .getOrNull()
             _compactSummary.value = marker?.summary
+            // [T-stage3-snapshot] 会话载入恢复最新世界快照（压缩后台生成时刷新内存态）
+            _worldSnapshot.value = com.openminis.app.novex.domain.NovexWorldSnapshot
+                .loadLatest(context, sessionId)
             _cachedLatestMarker = marker
 
             com.openminis.app.diagnostics.PerfLongCtx.step(
@@ -11597,6 +11645,15 @@ class ChatViewModel(
         // [T-stage2-memory] AI 随身笔记（水位刻度后台整理产物，常驻小块）
         val sessionMemoryBlock = memoryStoreFor(activeSessionId)
             .injectionBlock(_sessionMemory.value)
+        // [T-stage3-snapshot]（总纲 §3.6 记忆干扰根治）压缩后：常量模块重注入
+        // （幂等安全）+ 当前状态锚（快照一行版，§3.8 注意力锚）+ 元说明分工。
+        val compacted = _cachedLatestMarker != null && _compactSummary.value?.isNotBlank() == true
+        var constantReinjectionBlock: String? = null
+        var statusAnchorLine: String? = null
+        if (compacted) {
+            constantReinjectionBlock = buildConstantReinjection()
+            statusAnchorLine = com.openminis.app.novex.domain.NovexWorldSnapshot.anchorLine(_worldSnapshot.value)
+        }
 
         return buildString {
             append(base)
@@ -11629,6 +11686,15 @@ class ChatViewModel(
             if (sessionMemoryBlock != null) {
                 append("\n\n")
                 append(sessionMemoryBlock)
+            }
+            if (constantReinjectionBlock != null) {
+                append("\n\n")
+                append(constantReinjectionBlock)
+            }
+            if (statusAnchorLine != null) {
+                append("\n\n<当前状态锚>\n")
+                append(statusAnchorLine)
+                append("\n</当前状态锚>")
             }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
