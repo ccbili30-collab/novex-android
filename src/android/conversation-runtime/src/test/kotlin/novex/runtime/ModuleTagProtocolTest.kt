@@ -80,15 +80,17 @@ class ModuleTagProtocolTest {
             args.keys().asSequence().forEach { full.put(it, args.get(it)) }
             return (CardToolProtocol.parse("chat", PendingTool("c1", "set_module_options", full.toString())).edit as CardToolEdit.Options)
         }
-        val omitted = parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray(listOf("主线"))))
+        // rule 历来必填（模型全量语义总携带）；省略的只有两个新标签键。
+        val base = JSONObject().put("module_id", "m1").put("rule", """{"kind":"always"}""")
+        val omitted = parse(JSONObject(base.toString()).put("tags", org.json.JSONArray(listOf("主线"))))
         assertNull(omitted.routing)
         assertNull(omitted.temporality)
-        val explicit = parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray())
+        val explicit = parse(JSONObject(base.toString()).put("tags", org.json.JSONArray())
             .put("routing", "standby").put("temporality", "snapshot"))
         assertEquals(ModuleRouting.STANDBY, explicit.routing)
         assertEquals(ModuleTemporality.SNAPSHOT, explicit.temporality)
         assertThrows(IllegalArgumentException::class.java) {
-            parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray()).put("routing", "sideways"))
+            parse(JSONObject(base.toString()).put("tags", org.json.JSONArray()).put("routing", "sideways"))
         }
     }
 
