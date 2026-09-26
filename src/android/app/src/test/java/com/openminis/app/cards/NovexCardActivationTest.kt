@@ -69,9 +69,11 @@ class NovexCardActivationTest {
     @Test
     fun `parts json is a single text part carrying the package`() {
         val material = build(card(textModule("engine", "引擎", "引擎宪法正文。")))
-        val parts = JSONObject(NovexCardActivation.partsJson(material)).getJSONObject(0)
-        assertEquals("text", parts.getString("type"))
-        assertEquals(material.packageText, parts.getString("value"))
+        val array = org.json.JSONArray(NovexCardActivation.partsJson(material))
+        assertEquals(1, array.length())
+        val part = array.optJSONObject(0)!!
+        assertEquals("text", part.optString("type"))
+        assertEquals(material.packageText, part.optString("value"))
     }
 
     @Test
