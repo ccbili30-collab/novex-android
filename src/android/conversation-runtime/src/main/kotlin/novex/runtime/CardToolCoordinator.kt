@@ -21,9 +21,10 @@ sealed interface CardToolEdit {
     data class Shared(val command:EditorCommand,val canonical:String):CardToolEdit
     data class RemoveModule(val moduleId:String):CardToolEdit
     data class RemoveBlock(val moduleId:String,val blockId:String):CardToolEdit
+    /** routing/temporality 为 null=未提供=保持现值（净眼 P1-1）。 */
     data class Options(val moduleId:String,val tags:List<String>,val use:novex.content.ModuleUse?,
-                       val routing:novex.content.ModuleRouting=novex.content.ModuleRouting.DEFAULT,
-                       val temporality:novex.content.ModuleTemporality=novex.content.ModuleTemporality.CONSTANT):CardToolEdit
+                       val routing:novex.content.ModuleRouting?=null,
+                       val temporality:novex.content.ModuleTemporality?=null):CardToolEdit
     data class Rename(val name:String):CardToolEdit
     data class AddModule(val name:String):CardToolEdit
     data class Appearance(val resourceId:String,val cover:Boolean):CardToolEdit
@@ -311,8 +312,11 @@ class CardToolCoordinator(private val store:CardStore,private val journal:TurnJo
             is CardToolEdit.Shared->JSONObject(command.canonical)
             is CardToolEdit.RemoveModule->JSONObject().put("kind","remove_module").put("module",command.moduleId)
             is CardToolEdit.RemoveBlock->JSONObject().put("kind","remove_block").put("module",command.moduleId).put("block",command.blockId)
-            is CardToolEdit.Options->JSONObject().put("kind","options").put("module",command.moduleId).put("tags",org.json.JSONArray(command.tags)).put("rule",ModuleOptionsProtocol.encode(command.use))
-                .put("routing",ModuleOptionsProtocol.encodeRouting(command.routing)?:"default").put("temporality",ModuleOptionsProtocol.encodeTemporality(command.temporality)?:"constant")
+            is CardToolEdit.Options->JSONObject().put("kind","options").put("module",command.moduleId).put("tags",org.json.JSONArray(command.tags)).put("rule",ModuleOptionsProtocol.encode(command.use)).apply {
+                // 省略即不写键——与模型原始参数对账（raw==encode）兼容。
+                command.routing?.let{put("routing",ModuleOptionsProtocol.encodeRouting(it))}
+                command.temporality?.let{put("temporality",ModuleOptionsProtocol.encodeTemporality(it))}
+            }
             is CardToolEdit.Rename->JSONObject().put("kind","rename").put("name",command.name)
             is CardToolEdit.Appearance->JSONObject().put("kind","appearance").put("resource",command.resourceId).put("cover",command.cover)
             is CardToolEdit.InsertOwnedImage->JSONObject().put("kind","insert_image").put("module",command.moduleId).put("resource",command.resourceId).put("after",command.afterBlockId?:JSONObject.NULL)

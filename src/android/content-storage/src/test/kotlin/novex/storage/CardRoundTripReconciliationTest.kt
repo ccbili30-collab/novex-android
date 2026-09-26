@@ -100,6 +100,10 @@ class CardRoundTripReconciliationTest {
                     ModuleUse.Manual -> "manual"
                     is ModuleUse.Keywords -> "keywords:" + rule.words.joinToString("+") + "/cs=" + rule.caseSensitive + "/all=" + rule.requireAll
                 }) }
+                // [T-stage1-tags]（净眼 P2-4）标签进入对账基线——导出→导入→
+                // 再导出全链保真。
+                module.routing?.let { append("|routing=").append(it.name) }
+                module.temporality?.let { append("|temporality=").append(it.name) }
                 if (module.characterIds.isNotEmpty()) append("|ids=").append(module.characterIds.joinToString(",") { characterIndex[it]?.toString() ?: "?" })
                 module.blocks.forEach { block -> append('\n').append(depth).append("  block|").append(when (block) {
                     is ContentBlock.Text -> "text"

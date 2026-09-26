@@ -67,6 +67,29 @@ class ModuleTagProtocolTest {
         assert(e.message.orEmpty().contains("modules[0].routing")) { e.message ?: "" }
     }
 
+    /**
+     * [T-stage1-tags]（净眼 P1-1 测试空洞）set_module_options 解析层：
+     * 省略 routing/temporality = null 透传（应用处保持现值——改 tags 不得
+     * 摧毁存量卡的隐式 standby）；显式传值正常解码；非法值报错。
+     */
+    @Test fun `set_module_options omission keeps current tag values`() {
+        fun parse(args: JSONObject): CardToolEdit.Options {
+            val full = JSONObject().put("root_id", "w").put("target_id", "w").put("draft_version", "saved:r1")
+            args.keys().asSequence().forEach { full.put(it, args.get(it)) }
+            return (CardToolProtocol.parse("chat", PendingTool("c1", "set_module_options", full.toString())).edit as CardToolEdit.Options)
+        }
+        val omitted = parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray(listOf("主线"))))
+        assertNull(omitted.routing)
+        assertNull(omitted.temporality)
+        val explicit = parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray())
+            .put("routing", "standby").put("temporality", "snapshot"))
+        assertEquals(ModuleRouting.STANDBY, explicit.routing)
+        assertEquals(ModuleTemporality.SNAPSHOT, explicit.temporality)
+        assertThrows(IllegalArgumentException::class.java) {
+            parse(JSONObject().put("module_id", "m1").put("tags", org.json.JSONArray()).put("routing", "sideways"))
+        }
+    }
+
     @Test fun `module schema exposes tag fields`() {
         val schema = CardBulk.moduleSchema()
         val props = schema.getJSONObject("properties")

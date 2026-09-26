@@ -55,7 +55,7 @@ internal object ModuleOptionsProtocol {
         null, JSONObject.NULL -> null
         is String -> when(raw.trim().lowercase().replace("-","_")) {
             "default","startup","默认"->novex.content.ModuleRouting.DEFAULT
-            "per_turn","perTurn","directive"->novex.content.ModuleRouting.PER_TURN
+            "per_turn","directive"->novex.content.ModuleRouting.PER_TURN
             "style"->novex.content.ModuleRouting.STYLE
             "standby","on_demand"->novex.content.ModuleRouting.STANDBY
             else->throw IllegalArgumentException("模块路由必须是 default/per_turn/style/standby（收到：$raw）")

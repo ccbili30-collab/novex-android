@@ -11,7 +11,10 @@ class BudgetedMaterials(store:CardStore) {
     private val pages=TextPages(store.contents)
     fun read(draft:RequestMaterialDraft,budget:Int,count:(String)->Int,allowDeferred:Boolean):List<BudgetedText> {
         var remaining=budget.coerceAtLeast(0)
-        val required=draft.plan.decisions.filter {it.reason==AdoptionReason.ALWAYS || it.reason==AdoptionReason.MANUAL_SELECTED}.map {it.module.id}.toSet()
+        // [T-stage1-tags]（净眼 P2-2）ROUTED_ACTIVATION（default 路由）与
+        // ALWAYS 同为必读——default 模块视同 Always 的完整含义：优先排序且
+        // 放不下整轮报错，而不是可从中间截断的 partial。
+        val required=draft.plan.decisions.filter {it.reason==AdoptionReason.ALWAYS || it.reason==AdoptionReason.MANUAL_SELECTED || it.reason==AdoptionReason.ROUTED_ACTIVATION}.map {it.module.id}.toSet()
         val sources=draft.texts.sortedBy {if(it.moduleId in required)0 else 1}
         val recovery=draft.plan.decisions.any {it.reason==AdoptionReason.RECOVERY_READ}
         return sources.mapIndexed {index,source->

@@ -31,7 +31,7 @@ description: 当用户想创建一个 AI 文字游戏（文游、人生模拟器
 
 ## 第三步 · 建卡（工具调用序列）
 
-**一次成型，禁止搭骨架**：直接用 `create_card_bulk`（kind=WORLD）把下面的标准模块结构作为嵌套模块树一次写入——常驻模块（00-11）先一次成型；数据库模块（12-16）子模块多，可再追加 1-2 次 `add_module_bulk`。不要先 `create_card` 建空卡再逐个 `add_module`/`write_module_text` 地搭骨架填正文（那是建完卡后的微调路径，不是建卡路径）。**每个模块在建卡时就带上 `routing`/`temporality` 标签**（bulk 节点直接带，见下表"去向/时间性"两列）——routing 决定开局去向（default=进开局资料包；per_turn=作为本卡每轮注入；style=作为本卡文风；standby=待命按触发规则），temporality 决定长篇压缩后是否重注入（constant=不变事实；snapshot=开局状态）。待命模块的触发关键词仍按老办法：树成型后逐个 `set_module_options` 设关键词规则。模块结构仍严格按下面的标准表：
+**一次成型，禁止搭骨架**：直接用 `create_card_bulk`（kind=WORLD）把下面的标准模块结构作为嵌套模块树一次写入——常驻模块（00-11）先一次成型；数据库模块（12-16）子模块多，可再追加 1-2 次 `add_module_bulk`。不要先 `create_card` 建空卡再逐个 `add_module`/`write_module_text` 地搭骨架填正文（那是建完卡后的微调路径，不是建卡路径）。**每个模块在建卡时就带上 `routing`/`temporality` 标签**（bulk 节点直接带，见下表"去向/时间性"两列）——routing 决定开局去向（default=进开局资料包；per_turn=作为本卡每轮注入；style=作为本卡文风；standby=待命按触发规则），temporality 决定长篇压缩后是否重注入（constant=不变事实；snapshot=开局状态）。待命模块的触发关键词仍按老办法：树成型后逐个 `set_module_options` 设关键词规则（该工具省略 routing/temporality 时保持现值，不会丢掉 bulk 时打的标签）。模块结构仍严格按下面的标准表：
 
 | 模块 | 去向 routing | 时间性 temporality | 内容 |
 |---|---|---|---|

@@ -137,8 +137,10 @@ class CardEditor(private val store:CardStore) {
             }
             is EditorCommand.ModuleOptions->{
                 val original=module(command.moduleId)
+                // [T-stage1-tags] null=未提供=保持现值（工具省略时不清除；
+                // UI 侧始终传显式值不受影响）。
                 card=ContentChanges.apply(card,ContentChange.ReplaceModule(original.copy(tags=command.tags.toList(),use=command.use,
-                    routing=command.routing,temporality=command.temporality)))
+                    routing=command.routing?:original.routing,temporality=command.temporality?:original.temporality)))
             }
             is EditorCommand.RenameModule->{card=ContentChanges.apply(card,ContentChange.ReplaceModule(module(command.moduleId).copy(name=command.name)))}
             is EditorCommand.Rename->{require(command.name.isNotBlank()){ "名称不能为空" };card=card.copy(name=command.name.trim())}

@@ -24,9 +24,10 @@ import novex.content.ModuleUse
 @Composable internal fun ModuleOptionsDialog(module:ContentModule,busy:Boolean=false,error:String?=null,onDismiss:()->Unit,
                                              onSave:(List<String>,ModuleUse?,ModuleRouting?,ModuleTemporality?)->Unit) {
     var kind by rememberSaveable(module.id){mutableStateOf(when(module.use){ModuleUse.Always->"always";ModuleUse.Manual->"manual";is ModuleUse.Keywords->"keywords";null->"unset"})}
-    // [T-stage1-tags] 路由/时间性标签；缺省（null）在 UI 即"默认/常量"——
-    // 与存量卡零迁移语义一致，chip 直接以语义值呈现。
-    var routing by rememberSaveable(module.id){mutableStateOf((module.routing?:ModuleRouting.DEFAULT).name)}
+    // [T-stage1-tags]（净眼 P2-1）初值用 effective 值：use!=null 的存量模块
+    // 显示 standby（隐式语义显式化），否则"无改动直接应用"会把隐式 standby
+    // 物化为 default，静默摧毁触发规则。
+    var routing by rememberSaveable(module.id){mutableStateOf((module.routing?:if(module.use!=null)ModuleRouting.STANDBY else ModuleRouting.DEFAULT).name)}
     var temporality by rememberSaveable(module.id){mutableStateOf((module.temporality?:ModuleTemporality.CONSTANT).name)}
     val original=module.use as? ModuleUse.Keywords
     var words by rememberSaveable(module.id){mutableStateOf(original?.words?.joinToString("\n").orEmpty())}
