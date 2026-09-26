@@ -30,7 +30,7 @@ class NovexMemoryStore(private val file: File) {
         val updatedAt: Long = 0L,
     )
 
-    fun load(): SessionMemory = runCatching(::decode).getOrDefault(SessionMemory())
+    fun load(): SessionMemory = runCatching { decode(file.readText()) }.getOrDefault(SessionMemory())
 
     fun save(memory: SessionMemory) {
         file.parentFile?.mkdirs()

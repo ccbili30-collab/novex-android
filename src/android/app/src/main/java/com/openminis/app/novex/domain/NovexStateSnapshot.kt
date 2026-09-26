@@ -2,7 +2,7 @@ package com.openminis.app.novex.domain
 
 import android.content.Context
 import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMProvider
+import com.openminis.app.provider.LLMProvider
 import com.openminis.app.data.model.ThinkingLevel
 import java.io.File
 import org.json.JSONObject
@@ -16,7 +16,7 @@ import org.json.JSONObject
  * 打变化——不从头重写。持久化 `<novex>/<session>/snapshots/`（latest +
  * 历史链；存档三元组的快照分量复用）。
  */
-object NovexWorldSnapshot {
+object NovexStateSnapshot {
 
     data class Snapshot(
         val timeAnchor: String,

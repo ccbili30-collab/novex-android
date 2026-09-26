@@ -1004,7 +1004,7 @@ class ChatViewModel(
     private fun memoryStoreFor(sessionId: String) =
         com.openminis.app.novex.domain.NovexMemoryStore.forSession(context, sessionId)
     // ── [T-stage3-snapshot] 世界快照缓存（总纲 §3.6；压缩时后台刷新）──
-    private val _worldSnapshot = MutableStateFlow<com.openminis.app.novex.domain.NovexWorldSnapshot.Snapshot?>(null)
+    private val _worldSnapshot = MutableStateFlow<com.openminis.app.novex.domain.NovexStateSnapshot.Snapshot?>(null)
 
     // [T-android-stale-streamjob-clears-isstreaming] @Volatile so cross-coroutine
     // reads (the orphaned previous streamJob's tail block running on a different
@@ -2504,15 +2504,15 @@ class ChatViewModel(
                 viewModelScope.launch {
                     try {
                         val provider = currentProvider ?: return@launch
-                        val previous = com.openminis.app.novex.domain.NovexWorldSnapshot
+                        val previous = com.openminis.app.novex.domain.NovexStateSnapshot
                             .loadLatest(context, sid)
                         val recent = history.takeLast(6).joinToString("\n") { it.content.take(1500) }
                         val cardName = integratedCardBinding()?.primary?.let { sel ->
                             runCatching { integratedCards.store.open(sel.rootId) }.getOrNull()?.content?.name
                         }
-                        val snapshot = com.openminis.app.novex.domain.NovexWorldSnapshot
+                        val snapshot = com.openminis.app.novex.domain.NovexStateSnapshot
                             .generate(provider, previous, summary, recent, cardName) ?: return@launch
-                        com.openminis.app.novex.domain.NovexWorldSnapshot.saveLatest(context, sid, snapshot)
+                        com.openminis.app.novex.domain.NovexStateSnapshot.saveLatest(context, sid, snapshot)
                         _worldSnapshot.value = snapshot
                         // [T-stage3-save] 压缩自动档（总纲 §3.9）
                         com.openminis.app.novex.domain.NovexSaveStore.save(context, sid,
@@ -5092,7 +5092,7 @@ class ChatViewModel(
                 .getOrNull()
             _compactSummary.value = marker?.summary
             // [T-stage3-snapshot] 会话载入恢复最新世界快照（压缩后台生成时刷新内存态）
-            _worldSnapshot.value = com.openminis.app.novex.domain.NovexWorldSnapshot
+            _worldSnapshot.value = com.openminis.app.novex.domain.NovexStateSnapshot
                 .loadLatest(context, sessionId)
             _cachedLatestMarker = marker
 
@@ -11685,7 +11685,7 @@ class ChatViewModel(
         var statusAnchorLine: String? = null
         if (compacted) {
             constantReinjectionBlock = buildConstantReinjection()
-            statusAnchorLine = com.openminis.app.novex.domain.NovexWorldSnapshot.anchorLine(_worldSnapshot.value)
+            statusAnchorLine = com.openminis.app.novex.domain.NovexStateSnapshot.anchorLine(_worldSnapshot.value)
         }
 
         return buildString {
