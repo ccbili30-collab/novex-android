@@ -11,10 +11,12 @@ class BudgetedMaterials(store:CardStore) {
     private val pages=TextPages(store.contents)
     fun read(draft:RequestMaterialDraft,budget:Int,count:(String)->Int,allowDeferred:Boolean):List<BudgetedText> {
         var remaining=budget.coerceAtLeast(0)
-        // [T-stage1-tags]（净眼 P2-2）ROUTED_ACTIVATION（default 路由）与
-        // ALWAYS 同为必读——default 模块视同 Always 的完整含义：优先排序且
-        // 放不下整轮报错，而不是可从中间截断的 partial。
-        val required=draft.plan.decisions.filter {it.reason==AdoptionReason.ALWAYS || it.reason==AdoptionReason.MANUAL_SELECTED || it.reason==AdoptionReason.ROUTED_ACTIVATION}.map {it.module.id}.toSet()
+        // [T-stage1-tags]（净眼 P2-2 二次校准）两档语义：hardRequired（显式
+        // Always/手选）放不下整轮报错；ROUTED_ACTIVATION（default 路由，
+        // 含存量未配置模块）排序优先、预算优先供全、真放不下退 partial+
+        // 翻页提示（小卡小预算会话仍可玩——LargeCardEntryTest 的产品语义）。
+        val hardRequired=draft.plan.decisions.filter {it.reason==AdoptionReason.ALWAYS || it.reason==AdoptionReason.MANUAL_SELECTED}.map {it.module.id}.toSet()
+        val required=hardRequired+draft.plan.decisions.filter {it.reason==AdoptionReason.ROUTED_ACTIVATION}.map {it.module.id}.toSet()
         val sources=draft.texts.sortedBy {if(it.moduleId in required)0 else 1}
         val recovery=draft.plan.decisions.any {it.reason==AdoptionReason.RECOVERY_READ}
         return sources.mapIndexed {index,source->
@@ -38,8 +40,8 @@ class BudgetedMaterials(store:CardStore) {
                 if(body.length!=page.text.length || consumed==0)break
                 offset=next?:offset
             }
-            require(next==null || (allowDeferred && source.moduleId !in required)) {
-                if(source.moduleId in required)"必带模块「${source.moduleName.ifBlank {"未命名模块"}}」超过可用上下文；请调整必带设置或容量，原文保留"
+            require(next==null || (allowDeferred && source.moduleId !in hardRequired)) {
+                if(source.moduleId in hardRequired)"必带模块「${source.moduleName.ifBlank {"未命名模块"}}」超过可用上下文；请调整必带设置或容量，原文保留"
                 else "只读模式下所选资料超过可用上下文，无法调用分页工具；请减少携带资料或调整容量，原文保留"
             }
             BudgetedText(source,output.toString(),next)
