@@ -53,8 +53,8 @@ class ModuleRoutingAdoptionTest {
 
     @Test fun `standby keeps use semantics`() {
         val always = plan(module(ModuleRouting.STANDBY, ModuleUse.Always))["m-STANDBY-Always"]!!
-        val hit = plan(module(ModuleRouting.STANDBY, ModuleUse.Keywords(listOf("城门"))))["m-STANDBY-Keywords"]!!
-        val miss = plan(module(ModuleRouting.STANDBY, ModuleUse.Keywords(listOf("城门"))), keywordText = "别处")["m-STANDBY-Keywords"]!!
+        val hit = plan(module(ModuleRouting.STANDBY, ModuleUse.Keywords(listOf("城门"), caseSensitive = false, requireAll = false)))["m-STANDBY-Keywords"]!!
+        val miss = plan(module(ModuleRouting.STANDBY, ModuleUse.Keywords(listOf("城门"), caseSensitive = false, requireAll = false)), keywordText = "别处")["m-STANDBY-Keywords"]!!
         val unconfigured = plan(module(ModuleRouting.STANDBY, null))["m-STANDBY-noUse"]!!
         assertEquals(AdoptionReason.ALWAYS, always.reason)
         assertEquals(AdoptionReason.KEYWORD_MATCH, hit.reason)
