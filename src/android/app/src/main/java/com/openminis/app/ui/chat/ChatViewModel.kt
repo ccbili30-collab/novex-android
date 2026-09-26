@@ -1134,7 +1134,7 @@ class ChatViewModel(
         NovexWorkspaceAgentTools(novexConversationWorkspaceStore)
     }
     private val novexMemoryStore by lazy {
-        com.openminis.app.novex.domain.FileNovexNotebookStore(
+        com.openminis.app.novex.domain.FileNovexMemoryStore(
             java.io.File(context.filesDir, "novex/memory"),
         )
     }
