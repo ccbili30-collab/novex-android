@@ -219,6 +219,7 @@ import com.openminis.app.ui.novex.TextButton as NovexTextButton
 @OptIn(ExperimentalFoundationApi::class)
 internal fun UserMessageBubble(
     message: ChatMessage,
+    perTurnPrompt: String = "",
     // [T-android-candidate-bubble-gap] When true, this bubble directly
     // follows another user bubble (no AssistantHeader between them), so add
     // extra top padding to keep the two visually separated. Default false
@@ -410,7 +411,7 @@ internal fun UserMessageBubble(
                             it.kind == ContextSourceKind.CONVERSATION_PROMPT ||
                             it.kind == ContextSourceKind.ANSWER_IDENTITY
                     }
-                val injectedLabels = injectedSources.map { it.label }.distinct()
+                val injectedLabels = injectedSources.map { carriedDisplayLabel(it.label) }.distinct()
                 val readSourceLabels = message.novexContextUsage?.sourceReads.orEmpty()
                     .filterNot { it.sourceId == "answer-identity:nova" }.map { it.label }.distinct()
                 if (injectedLabels.isNotEmpty() || readSourceLabels.isNotEmpty()) {
@@ -566,6 +567,23 @@ internal fun UserMessageBubble(
                     color = ChatColors.secondaryText,
                     style = MaterialTheme.typography.bodySmall,
                 )
+                // [feat/ui-rikkahub] 你的每轮注入（会话设置里写的常设指令）随
+                // 系统提示每轮发送，此前界面从不显示——现在在这里亮出来。
+                if (perTurnPrompt.isNotBlank()) {
+                    Text(
+                        "「每轮注入」你的常设指令",
+                        color = ChatColors.primaryText,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        perTurnPrompt,
+                        color = ChatColors.secondaryText,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 // [feat/ui-rikkahub] 2026-09-27 系统内部条目（工具定义/系统提示/
                 // 回答身份）不暴露给用户——它们每轮固定重复，是管道不是资料。
                 // 教学装配诊断链接一并下掉。
@@ -584,7 +602,7 @@ internal fun UserMessageBubble(
                 userSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            "「${contextSourceKindLabel(source.kind)}」${source.label}",
+                            "「${contextSourceKindLabel(source.kind)}」${carriedDisplayLabel(source.label)}",
                             color = ChatColors.primaryText,
                             fontWeight = FontWeight.Medium,
                         )
@@ -633,6 +651,11 @@ private fun contextSourceKindLabel(kind: com.openminis.app.novex.domain.ContextS
     com.openminis.app.novex.domain.ContextSourceKind.TOOL_DEFINITION -> "工具定义"
     com.openminis.app.novex.domain.ContextSourceKind.TOOL_RESULT -> "工具结果"
 }
+
+/** [feat/ui-rikkahub] 携带展示名：卡类模块去掉归属前缀，显示"卡 · 模块"；
+ * 系统模块没有前缀，保持原名。 */
+private fun carriedDisplayLabel(label: String): String =
+    label.removePrefix("角色 · ").removePrefix("世界 · ").removePrefix("文游 · ")
 
 // ─── User Attachment List (iOS: UserAttachmentList — 64dp tiles, FlowRow, trailing) ─
 

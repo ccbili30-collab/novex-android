@@ -61,6 +61,7 @@ internal fun ChatTranscriptRow(
     state: ChatTranscriptRowState,
     selectionController: SelectionController,
     panelExpansionState: PanelExpansionState,
+    perTurnPrompt: String = "",
     onAction: (ChatTranscriptAction) -> Unit,
 ) {
     val context = LocalContext.current
@@ -77,6 +78,7 @@ internal fun ChatTranscriptRow(
             // selection, matching iOS UX.
             UserMessageBubble(
             message = item.message,
+            perTurnPrompt = perTurnPrompt,
             // [T-android-candidate-bubble-gap] extra top
             // gap when this bubble directly follows another
             // user bubble (back-to-back candidate sends).

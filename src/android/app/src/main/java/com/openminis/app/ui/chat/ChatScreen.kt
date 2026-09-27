@@ -385,6 +385,7 @@ fun ChatScreen(
     val gameEntryState by viewModel.gameEntryState.collectAsState()
     val messages by viewModel.uiMessages.collectAsState()
     val toolApprovals by viewModel.pendingToolApprovals.collectAsState()
+    val perTurnPrompt by viewModel.perTurnPrompt.collectAsState()
     LaunchedEffect(sessionId) { viewModel.restoreToolApprovals() }
     toolApprovals.firstOrNull()?.let { operation ->
         NovexToolApprovalDialog(operation,
@@ -2819,7 +2820,7 @@ fun ChatScreen(
                         ) {
                         ChatTranscriptRow(item,
                             ChatTranscriptRowState(isStreaming, canResume, viewModel.thinkingLevel.value, compactedHistoryExpanded),
-                            selectionController, panelExpansionState) { action ->
+                            selectionController, panelExpansionState, perTurnPrompt = perTurnPrompt) { action ->
                             when (action) {
                                 is ChatTranscriptAction.Share -> { pendingShareText = action.text; showMoveSheet = true }
                                 is ChatTranscriptAction.RetryFrom -> {
