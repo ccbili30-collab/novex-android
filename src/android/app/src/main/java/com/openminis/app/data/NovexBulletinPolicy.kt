@@ -4,11 +4,15 @@ internal data class NovexAnnouncement(
     val versionName: String,
     val title: String,
     val markdown: String,
+    /** [T-announcement-v2] 已读键：hub 道用索引文件名，GitHub 道默认=versionName。 */
+    val id: String = versionName,
 )
 
 internal data class NovexBulletin(
     val announcements: List<NovexAnnouncement>,
     val releaseNotes: List<UpdateChecker.ReleaseNote>,
+    /** [T-announcement-v2] 真=来自网络活源；内置归档回落为 false——跳脸只认活源新公告。 */
+    val live: Boolean = false,
 )
 
 /** Splits release bodies into durable announcements and ordinary version notes. */
@@ -108,60 +112,9 @@ internal object NovexBulletinPolicy {
 
 /** Immediate offline content while the official release list is loading or unavailable. */
 internal object NovexBulletinDefaults {
-    val value: NovexBulletin = NovexBulletinPolicy.build(
-        channel = UpdateChannel.STABLE,
-        releases = listOf(
-            fallbackRelease(
-                version = "0.2.16",
-                body = """
-                    ## 对话背景与世界会话修复
-
-                    - 修复对话设置无法选择、保存和恢复背景图片的问题。
-                    - 对话背景支持预览、更换，并可恢复为角色卡或世界来源背景。
-                    - 修复新建世界无法直接开始对话的问题；无需先创建角色卡或玩家身份。
-                    - 世界概述、设定模块和世界背景会正确加入新对话。
-                """.trimIndent(),
-            ),
-            fallbackRelease(
-                version = "0.2.14",
-                body = """
-                    ## 公告
-
-                    2026 年 9 月 4 日，让我们恭喜全人类迎来 AGI 时代！
-
-                    ## 对话定位修复
-
-                    - 修复发送消息后画面错误跳到上一轮对话的问题。
-                    - 新消息会按本轮消息准确定位，流式回复不再重复推动页面。
-                """.trimIndent(),
-            ),
-            fallbackRelease(
-                version = "0.2.9",
-                body = """
-                    **特别致哀**
-
-                    今年以来，台风、暴雨、洪涝与地质灾害侵袭祖国多地。每一则伤亡消息背后，都是一个家庭难以承受的离别。
-
-                    在西藏吉隆泥石流灾害发生之际，我们也一并向今年所有灾害中的遇难者致以沉痛哀悼，向遇难者家属和受灾群众致以深切慰问，向所有奋战在抢险救援一线的人们致以崇高敬意。
-
-                    愿逝者安息，愿伤者康复，愿失联者早日归来，愿所有受灾群众平安渡过难关，重建家园。
-
-                    **愿山河无恙，愿人间皆安**
-
-                    ---
-
-                    - 优化首页公告与稳定版更新入口。
-                """.trimIndent(),
-            ),
-        ),
-    )
-
-    private fun fallbackRelease(version: String, body: String) = PublishedUpdate(
-        tagName = "v$version",
-        versionName = version,
-        releaseName = "Novex $version",
-        changelog = body,
-        isPrerelease = false,
-        assets = emptyMap(),
-    )
+    // [T-bulletin-cache]（用户 2026-09-27 报告"硬编码遗留"）旧 MinisApp 时代
+    // 内置归档（0.2.x 公告/致哀/更新说明）退役：占位职责由磁盘缓存接管，
+    // 无缓存时展示空态。此对象保留为"失败回落"的空哨兵，内容必须为空
+    // ——NovexAnnouncementTest 守护不得回流。
+    val value: NovexBulletin = NovexBulletin(announcements = emptyList(), releaseNotes = emptyList())
 }

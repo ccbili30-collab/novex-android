@@ -3,6 +3,7 @@ package com.openminis.app.ui.settings
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +55,6 @@ import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.NovexAnnouncement
 import com.openminis.app.data.NovexBulletin
-import com.openminis.app.data.NovexBulletinDefaults
 import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
@@ -162,6 +162,42 @@ fun CheckUpdateSection() {
             updateChannelLabel(UpdateChecker.currentChannel),
         ),
     ) {
+        // [T-dual-update-source] 更新源切换（默认 Gitee/国内；GitHub/海外走
+        // 既有链路）。切换即清除本轮检查状态，下一次检查从新源取。
+        var updateSource by remember { mutableStateOf(com.openminis.app.data.UpdateSourceStore.current()) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            UpdateSourcePill(
+                selected = updateSource == com.openminis.app.data.UpdateSource.GITEE,
+                label = stringResource(R.string.update_source_gitee),
+                iconRes = R.drawable.ic_gitee,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    if (updateSource != com.openminis.app.data.UpdateSource.GITEE) {
+                        com.openminis.app.data.UpdateSourceStore.set(context, com.openminis.app.data.UpdateSource.GITEE)
+                        updateSource = com.openminis.app.data.UpdateSource.GITEE
+                        statusMessage = null; update = null; showReleasesLink = false
+                    }
+                },
+            )
+            UpdateSourcePill(
+                selected = updateSource == com.openminis.app.data.UpdateSource.GITHUB,
+                label = stringResource(R.string.update_source_github),
+                iconRes = R.drawable.ic_github,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    if (updateSource != com.openminis.app.data.UpdateSource.GITHUB) {
+                        com.openminis.app.data.UpdateSourceStore.set(context, com.openminis.app.data.UpdateSource.GITHUB)
+                        updateSource = com.openminis.app.data.UpdateSource.GITHUB
+                        statusMessage = null; update = null; showReleasesLink = false
+                    }
+                },
+            )
+        }
         SettingsRow(
             icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
             iconColor = Color(0xFF007AFF),
@@ -303,8 +339,13 @@ fun NovexUpdateAction() {
     var awaitingInstallPermission by remember { mutableStateOf(false) }
     var announcementOpen by remember { mutableStateOf(false) }
     var bulletinLoading by remember { mutableStateOf(false) }
-    var bulletin by remember { mutableStateOf(NovexBulletinDefaults.value) }
+    // [T-bulletin-cache] 点开面板第一时间显缓存（关闭前的公告），
+    // 后台刷新；失败保留缓存不覆盖（空回落=失败信号）
+    var bulletin by remember { mutableStateOf<NovexBulletin?>(null) }
     var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+    // [T-announcement-v2] 冷启动跳脸：活源未读公告非空→弹窗，关闭即已读
+    val monitorAnnouncements by NovexUpdateMonitor.announcements.collectAsState()
+    var faceAnnouncements by remember { mutableStateOf<List<NovexAnnouncement>?>(null) }
 
     fun openDetectedUpdateOrCheck() {
         val available = detectedUpdate
@@ -345,9 +386,28 @@ fun NovexUpdateAction() {
 
     LaunchedEffect(announcementOpen) {
         if (!announcementOpen) return@LaunchedEffect
-        bulletinLoading = true
-        bulletin = UpdateChecker.fetchBulletin()
+        if (bulletin == null) {
+            bulletin = com.openminis.app.data.BulletinCache.load(context.filesDir)
+            bulletinLoading = bulletin == null
+        }
+        val fresh = UpdateChecker.fetchBulletin()
+        val failed = !fresh.live && fresh.announcements.isEmpty() && fresh.releaseNotes.isEmpty()
+        when {
+            !failed -> {
+                bulletin = fresh
+                if (fresh.live) com.openminis.app.data.BulletinCache.save(context.filesDir, fresh)
+            }
+            // 失败但有缓存：保留缓存；失败且无缓存：空态（硬编码遗留已退役）
+            bulletin == null -> bulletin = fresh
+        }
         bulletinLoading = false
+    }
+
+    LaunchedEffect(monitorAnnouncements) {
+        val list = monitorAnnouncements ?: return@LaunchedEffect
+        val unread = com.openminis.app.data.NovexAnnouncementReadStore.unread(
+            list, com.openminis.app.data.NovexAnnouncementReadStore.readIds(context))
+        if (unread.isNotEmpty()) faceAnnouncements = unread
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -407,7 +467,7 @@ fun NovexUpdateAction() {
 
     if (announcementOpen) {
         AnnouncementDialog(
-            bulletin = bulletin,
+            bulletin = bulletin ?: NovexBulletin(announcements = emptyList(), releaseNotes = emptyList()),
             loading = bulletinLoading,
             checking = checking,
             onCheckUpdate = {
@@ -415,6 +475,21 @@ fun NovexUpdateAction() {
                 openDetectedUpdateOrCheck()
             },
             onDismiss = { announcementOpen = false },
+        )
+    }
+
+    faceAnnouncements?.let { unreadList ->
+        AnnouncementDialog(
+            bulletin = NovexBulletin(announcements = unreadList, releaseNotes = emptyList(), live = true),
+            loading = false,
+            checking = false,
+            showTabs = false,
+            dialogTitle = "新公告",
+            onCheckUpdate = {},
+            onDismiss = {
+                com.openminis.app.data.NovexAnnouncementReadStore.markRead(context, unreadList.map { it.id })
+                faceAnnouncements = null
+            },
         )
     }
 
@@ -695,12 +770,17 @@ private fun AnnouncementDialog(
     checking: Boolean,
     onCheckUpdate: () -> Unit,
     onDismiss: () -> Unit,
+    // [T-announcement-v2] 跳脸模式：只展示新公告列表，隐藏公告/更新切换
+    showTabs: Boolean = true,
+    dialogTitle: String = "公告",
 ) {
+    // [T-announcement-v2] 公告/更新两页切换（用户：「公告本身也要能切换公告/更新」）
+    var tab by rememberSaveable { mutableStateOf("ann") }
     AlertDialog(
         contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
-            Text("公告", fontWeight = FontWeight.Bold)
+            Text(dialogTitle, fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -713,6 +793,44 @@ private fun AnnouncementDialog(
                 if (loading) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
+                if (showTabs) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MinisTextButton(
+                            onClick = { tab = "ann" },
+                            enabled = tab != "ann",
+                        ) {
+                            Text(
+                                "公告",
+                                fontWeight = if (tab == "ann") FontWeight.Bold else FontWeight.Normal,
+                                color = if (tab == "ann") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        MinisTextButton(
+                            onClick = { tab = "notes" },
+                            enabled = tab != "notes",
+                        ) {
+                            Text(
+                                "更新",
+                                fontWeight = if (tab == "notes") FontWeight.Bold else FontWeight.Normal,
+                                color = if (tab == "notes") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (showTabs && tab == "notes") {
+                    // 更新页：版本说明列表（Gitee 道=当前版本单条；GitHub 道=完整历史）
+                    if (bulletin.releaseNotes.isEmpty()) {
+                        Text("暂无更新说明。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        bulletin.releaseNotes.forEach { note ->
+                            ReleaseNoteItem(
+                                note = note,
+                                latest = false,
+                                initiallyExpanded = false,
+                            )
+                        }
+                    }
+                } else {
                 bulletin.announcements.firstOrNull()?.let { latest ->
                     Text(
                         "最新公告",
@@ -732,20 +850,9 @@ private fun AnnouncementDialog(
                         AnnouncementItem(announcement = announcement, initiallyExpanded = false)
                     }
                 }
-                if (bulletin.releaseNotes.isNotEmpty()) {
-                    Text(
-                        "版本更新",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    bulletin.releaseNotes.forEach { note ->
-                        ReleaseNoteItem(
-                            note = note,
-                            latest = false,
-                            initiallyExpanded = false,
-                        )
-                    }
+                if (bulletin.announcements.isEmpty() && !loading) {
+                    Text("暂无公告。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 }
             }
         },
@@ -813,3 +920,43 @@ private fun updateChannelLabel(channel: UpdateChannel): String = stringResource(
         UpdateChannel.PREVIEW -> R.string.update_channel_preview
     },
 )
+
+/**
+ * [T-dual-update-source] 更新源切换胶囊：logo + 标签，选中态描边高亮。
+ * 纯展示组件，选中逻辑与持久化在调用方。
+ */
+@Composable
+private fun UpdateSourcePill(
+    selected: Boolean,
+    label: String,
+    iconRes: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    androidx.compose.foundation.layout.Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = borderColor,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.Unspecified else Color(0xFF9E9E9E),
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

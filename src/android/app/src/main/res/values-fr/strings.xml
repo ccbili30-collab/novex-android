@@ -38,6 +38,9 @@
     <string name="memory_save_error">Échec de l\'enregistrement : %1$s</string>
     <string name="memory_global_footer">Instructions et préférences persistantes visibles par l\'agent dans chaque session. L\'agent ne peut pas modifier ce fichier.</string>
     <string name="check_update_section_header">Mise à jour de l\'application</string>
+    <string name="update_source_row_title">Source de mise à jour</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">Version actuelle : %1$s</string>
     <string name="check_update_check_button">Vérifier les mises à jour</string>
     <string name="check_update_checking">Vérification…</string>
@@ -332,9 +335,8 @@
     <string name="skill_section_installed">Installé</string>
     <string name="skill_section_footer">Les Skills étendent l\'agent IA avec des instructions et des workflows spécialisés. Ils sont chargés dans le prompt système lorsqu\'ils sont activés.</string>
     <string name="skill_empty_title">Aucun Skill installé</string>
-    <string name="skill_empty_action">Appuyez sur + pour importer un SKILL.md ou parcourir Novex Skills.</string>
+    <string name="skill_empty_action">Touchez + pour importer un fichier SKILL.md, .zip ou .skill.</string>
     <string name="skill_import_modal_title">Importer un skill</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">Supprimer %1$s ?</string>
     <string name="skill_delete_confirm_text">Cela supprimera définitivement le skill et ses fichiers.</string>
     <string name="skill_import_sheet_title">Importer un skill</string>
@@ -382,15 +384,6 @@
     <string name="skill_detail_source_file">Import de fichier</string>
     <string name="skill_detail_source_bundled">Intégré</string>
     <string name="skill_detail_source_session">Créé en session</string>
-    <string name="skills_browser_title">Novex Skills</string>
-    <string name="skills_browser_import_button">Importer ceci</string>
-    <string name="skills_browser_hud_importing">Importation…</string>
-    <string name="skills_browser_error_not_folder">Sélectionnez d\'abord un dossier skill</string>
-    <string name="skills_browser_success_imported">%1$s importé</string>
-    <string name="skills_browser_error_no_skillmd">Aucun SKILL.md trouvé. Sélectionnez d\'abord un dossier skill.</string>
-    <string name="skills_browser_success_updated">%1$s mis à jour</string>
-    <string name="skills_browser_error_invalid">SKILL.md non valide ou existe déjà</string>
-    <string name="skills_browser_error_format">Contenu SKILL.md non valide</string>
     <string name="storage_title">Stockage</string>
     <string name="storage_section_overview">Vue d\'ensemble</string>
     <string name="storage_overview_shell">Conteneur Shell</string>

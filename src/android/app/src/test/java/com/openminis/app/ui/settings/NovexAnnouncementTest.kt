@@ -9,18 +9,12 @@ import org.junit.Test
 
 class NovexAnnouncementTest {
     @Test
-    fun `bundled archive keeps latest and prior announcements`() {
-        val announcements = NovexBulletinDefaults.value.announcements
-
-        assertEquals(listOf("0.2.14", "0.2.9"), announcements.map { it.versionName })
-        assertTrue(announcements.first().markdown.contains("迎来 AGI 时代"))
-        assertEquals("特别致哀", announcements.last().title)
-        assertTrue(announcements.last().markdown.contains("愿山河无恙，愿人间皆安"))
-
-        val releaseNotes = NovexBulletinDefaults.value.releaseNotes
-        assertEquals("0.2.16", releaseNotes.first().versionName)
-        assertTrue(releaseNotes.first().changelog.contains("对话背景"))
-        assertTrue(releaseNotes.first().changelog.contains("新建世界"))
+    fun `bundled defaults stay empty after legacy retirement`() {
+        // [T-bulletin-cache] 0.2.x 硬编码归档已退役（用户 2026-09-27 报告
+        // "硬编码遗留"）：占位职责由磁盘缓存接管，defaults 必须为空哨兵，
+        // 内容回流即红。
+        assertTrue(NovexBulletinDefaults.value.announcements.isEmpty())
+        assertTrue(NovexBulletinDefaults.value.releaseNotes.isEmpty())
     }
 
     @Test
@@ -37,7 +31,12 @@ class NovexAnnouncementTest {
         assertTrue(source.contains("onCheckUpdate"))
         assertTrue(source.contains("检查更新"))
         assertTrue(source.contains("往期公告"))
-        assertTrue(source.contains("版本更新"))
+        // [T-announcement-v2] 公告/更新改为弹窗内 tab 切换（旧"版本更新"小节退役）
+        assertTrue(source.contains("\"公告\""))
+        assertTrue(source.contains("\"更新\""))
+        assertTrue(source.contains("暂无更新说明。"))
+        assertTrue(source.contains("faceAnnouncements"))
+        assertTrue(source.contains("NovexAnnouncementReadStore.markRead"))
         assertTrue(source.contains("MarkdownText("))
         assertTrue(source.contains("ReleaseNotesList"))
         assertTrue(source.contains("包含的往期更新"))

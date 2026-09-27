@@ -38,6 +38,9 @@
     <string name="memory_save_error">Не удалось сохранить: %1$s</string>
     <string name="memory_global_footer">Постоянные инструкции и предпочтения, видимые агенту в каждой сессии. Агент не может изменять этот файл.</string>
     <string name="check_update_section_header">Обновление приложения</string>
+    <string name="update_source_row_title">Источник обновлений</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">Текущая версия: %1$s</string>
     <string name="check_update_check_button">Проверить обновления</string>
     <string name="check_update_checking">Проверка…</string>
@@ -608,9 +611,8 @@
     <string name="skill_section_installed">Установлено</string>
     <string name="skill_section_footer">Навыки расширяют ИИ-агента специализированными инструкциями и рабочими процессами. Они загружаются в системный промпт при включении.</string>
     <string name="skill_empty_title">Нет установленных навыков</string>
-    <string name="skill_empty_action">Нажмите +, чтобы импортировать SKILL.md или просмотреть Навыки Novex.</string>
+    <string name="skill_empty_action">Нажмите +, чтобы импортировать файл SKILL.md, .zip или .skill.</string>
     <string name="skill_import_modal_title">Импорт навыка</string>
-    <string name="skill_minis_skills_modal">Навыки Novex</string>
     <string name="skill_delete_confirm_title">Удалить %1$s?</string>
     <string name="skill_delete_confirm_text">Это безвозвратно удалит навык и его файлы.</string>
     <string name="skill_import_sheet_title">Импорт навыка</string>
@@ -658,15 +660,6 @@
     <string name="skill_detail_source_file">Импорт из файла</string>
     <string name="skill_detail_source_bundled">Встроенный</string>
     <string name="skill_detail_source_session">Создан в сессии</string>
-    <string name="skills_browser_title">Навыки Novex</string>
-    <string name="skills_browser_import_button">Импортировать это</string>
-    <string name="skills_browser_hud_importing">Импорт…</string>
-    <string name="skills_browser_error_not_folder">Сначала выберите папку навыка</string>
-    <string name="skills_browser_success_imported">%1$s импортирован</string>
-    <string name="skills_browser_error_no_skillmd">SKILL.md не найден. Сначала выберите папку навыка.</string>
-    <string name="skills_browser_success_updated">%1$s обновлён</string>
-    <string name="skills_browser_error_invalid">Недействительный SKILL.md или уже существует</string>
-    <string name="skills_browser_error_format">Недействительное содержимое SKILL.md</string>
     <string name="storage_title">Хранилище</string>
     <string name="storage_section_overview">Обзор</string>
     <string name="storage_overview_shell">Контейнер оболочки</string>

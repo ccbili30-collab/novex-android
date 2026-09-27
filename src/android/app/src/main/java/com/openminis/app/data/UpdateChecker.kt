@@ -34,14 +34,17 @@ object UpdateChecker {
 
     private const val TAG = "UpdateChecker"
     private const val OWNER = "ccbili30-collab"
-    // T133: the public repo is OpenMinis/OpenMinis (org + repo share a name).
-    // Previously pointed at OpenMinis/MinisApp, which is the private dev
-    // mirror — every API call 404'd, which we mistranslated as "no release
-    // published". The 0.1-preview release is published as a prerelease on
-    // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
+    // T133 history: this once pointed at OpenMinis/MinisApp (private dev
+    // mirror) — every API call 404'd and we mistranslated that as "no
+    // release published". The repo has since moved to ccbili30-collab/
+    // novex-android (public).
     private const val REPO = "novex-android"
     private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100"
     private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
+    // [T-dual-update-source] novex-hub（Gitee 官方国内分发站）的 update.json。
+    // raw 链接 302 到带签名的 raw.giteeusercontent.com 地址：okhttp 默认跟随
+    // 重定向即可，但签名会过期——不得缓存跳转结果（每轮检查都重新 GET）。
+    private const val GITEE_UPDATE_URL = "https://gitee.com/ccbili/novex/raw/main/update.json"
     /**
      * Sub-directory of `filesDir` where we stage downloaded update APKs. We
      * moved off `cacheDir/shared/` (the original location) so the OS can't
@@ -100,8 +103,60 @@ object UpdateChecker {
     val currentChannel: UpdateChannel
         get() = UpdateChannel.fromWireName(BuildConfig.UPDATE_CHANNEL)
 
-    /** Loads the official announcement and release archive without requiring an update to exist. */
-    internal suspend fun fetchBulletin(): NovexBulletin = withContext(Dispatchers.IO) {
+    /**
+     * Loads the official announcement and release archive without requiring
+     * an update to exist. [T-announcement-v2] 双源同源：两道公告都读 hub
+     * 形态索引（Gitee=hub 本站，GitHub=镜像仓库），一处写作互通；更新
+     * 说明分道——Gitee 道取 update.json 当前通道条目，GitHub 道保留
+     * releases API 完整历史。任一环节失败回落内置归档。
+     */
+    internal suspend fun fetchBulletin(source: UpdateSource = UpdateSourceStore.current()): NovexBulletin {
+        val base = when (source) {
+            UpdateSource.GITEE -> GiteeAnnouncementSource.GITEE_RAW_BASE
+            UpdateSource.GITHUB -> GiteeAnnouncementSource.GITHUB_MIRROR_RAW_BASE
+        }
+        val announcements = GiteeAnnouncementSource.fetchAnnouncements(client, base)
+            ?: return fallbackBulletin(source)
+        val releaseNotes = when (source) {
+            UpdateSource.GITEE -> fetchGiteeReleaseNotes()
+            UpdateSource.GITHUB -> fetchGitHubBulletin().releaseNotes
+        }
+        return NovexBulletin(announcements = announcements, releaseNotes = releaseNotes, live = true)
+    }
+
+    private suspend fun fallbackBulletin(source: UpdateSource): NovexBulletin = when (source) {
+        // Gitee 道公告源失败仍可给出更新说明（一次独立小请求）；两头都
+        // 空则内置归档。
+        UpdateSource.GITEE -> {
+            val notes = fetchGiteeReleaseNotes()
+            if (notes.isNotEmpty()) NovexBulletin(announcements = emptyList(), releaseNotes = notes, live = true)
+            else NovexBulletinDefaults.value
+        }
+        UpdateSource.GITHUB -> fetchGitHubBulletin()
+    }
+
+    /** Gitee 道更新页内容：update.json 当前通道的单条说明（最新即全部）。 */
+    private suspend fun fetchGiteeReleaseNotes(): List<ReleaseNote> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(GITEE_UPDATE_URL).build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList<ReleaseNote>()
+                val lane = JSONObject(resp.body?.string().orEmpty()).optJSONObject(currentChannel.wireName)
+                    ?: return@use emptyList()
+                val version = UpdateReleasePolicy.normalizeTag(lane.optString("version"))
+                if (version.isEmpty()) return@use emptyList()
+                listOf(
+                    ReleaseNote(
+                        versionName = version,
+                        releaseName = "Novex $version",
+                        changelog = lane.optString("notes").ifBlank { "该版本未提供更新说明。" },
+                    ),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun fetchGitHubBulletin(): NovexBulletin = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url(RELEASES_API_URL)
@@ -130,6 +185,87 @@ object UpdateChecker {
     }
 
     /**
+     * [T-dual-update-source] Route the check through the user-selected
+     * [UpdateSource] (default Gitee / 国内; GitHub / 海外 keeps the legacy
+     * releases-API behaviour). Both lanes read the same channel baked into
+     * this build, so preview and stable clients fetch independently.
+     */
+    suspend fun check(source: UpdateSource = UpdateSourceStore.current()): CheckResult =
+        when (source) {
+            UpdateSource.GITEE -> checkGitee(normalizeTag(BuildConfig.VERSION_NAME))
+            UpdateSource.GITHUB -> checkGitHub()
+        }
+
+    /**
+     * Gitee lane: fetch the hub's `update.json`, read ONLY this build's
+     * channel object (stable / preview are independent lanes by design),
+     * compare versions, and hand back the hub's attachment URL.
+     */
+    private suspend fun checkGitee(localVer: String): CheckResult = withContext(Dispatchers.IO) {
+        AppLogger.info(TAG, "GET $GITEE_UPDATE_URL (local=${BuildConfig.VERSION_NAME} lane=${currentChannel.wireName})")
+        try {
+            val request = Request.Builder().url(GITEE_UPDATE_URL).build()
+            client.newCall(request).execute().use { resp ->
+                AppLogger.info(TAG, "Gitee HTTP ${resp.code}")
+                if (resp.code == 404) return@withContext CheckResult.NoReleaseAvailable
+                if (!resp.isSuccessful) {
+                    return@withContext CheckResult.Error("Gitee HTTP ${resp.code}")
+                }
+                val body = resp.body?.string().orEmpty()
+                parseGiteeUpdate(body, currentChannel, localVer)
+            }
+        } catch (e: UnknownHostException) {
+            AppLogger.error(TAG, "gitee check failed: UnknownHostException: ${e.message}")
+            CheckResult.NetworkUnreachable
+        } catch (e: ConnectException) {
+            AppLogger.error(TAG, "gitee check failed: ConnectException: ${e.message}")
+            CheckResult.NetworkUnreachable
+        } catch (e: SocketTimeoutException) {
+            AppLogger.error(TAG, "gitee check failed: SocketTimeoutException: ${e.message}")
+            CheckResult.NetworkUnreachable
+        } catch (e: IOException) {
+            AppLogger.error(TAG, "gitee check failed: ${e.javaClass.simpleName}: ${e.message}")
+            CheckResult.NetworkUnreachable
+        } catch (e: Exception) {
+            AppLogger.error(TAG, "gitee check failed: ${e.javaClass.simpleName}: ${e.message}")
+            CheckResult.Error(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /**
+     * Pure decision over an update.json payload — unit-testable on the JVM.
+     * The hub publishes one object per channel; a null/missing lane means
+     * "nothing published for this channel", and a lane without a usable
+     * `download` URL surfaces as NoApkAsset (same UX as the GitHub lane).
+     */
+    internal fun parseGiteeUpdate(body: String, channel: UpdateChannel, localVersion: String): CheckResult {
+        val root = runCatching { JSONObject(body) }.getOrNull()
+            ?: return CheckResult.Error("invalid update.json")
+        val lane = root.optJSONObject(channel.wireName)
+            ?: return CheckResult.NoReleaseAvailable
+        val version = UpdateReleasePolicy.normalizeTag(lane.optString("version"))
+        if (version.isEmpty()) return CheckResult.NoReleaseAvailable
+        val url = lane.optString("download").takeIf { it.startsWith("http") }
+            ?: return CheckResult.NoApkAsset("v$version")
+        val notes = lane.optString("notes").ifBlank { "更新说明见发布页。" }
+        return if (UpdateReleasePolicy.compareVersions(version, localVersion) > 0) {
+            CheckResult.UpdateAvailable(
+                tagName = "v$version",
+                versionName = version,
+                releaseName = "Novex $version",
+                changelog = notes,
+                apkUrl = url,
+                apkSizeBytes = 0,
+                channel = channel,
+                isPrerelease = channel == UpdateChannel.PREVIEW,
+                releaseNotes = listOf(ReleaseNote(version, "Novex $version", notes)),
+            )
+        } else {
+            CheckResult.UpToDate
+        }
+    }
+
+    /**
      * Hit `repos/{owner}/{repo}/releases` (the list endpoint, NOT
      * `/releases/latest`), pick the highest-version non-draft release that
      * carries an APK asset, and decide whether the user should upgrade.
@@ -143,7 +279,7 @@ object UpdateChecker {
      * All network work happens on [Dispatchers.IO]; safe to call from any
      * coroutine scope.
      */
-    suspend fun check(): CheckResult = withContext(Dispatchers.IO) {
+    private suspend fun checkGitHub(): CheckResult = withContext(Dispatchers.IO) {
         val url = RELEASES_API_URL
         val localVer = normalizeTag(BuildConfig.VERSION_NAME)
         AppLogger.info(TAG, "GET $url (local=${BuildConfig.VERSION_NAME})")

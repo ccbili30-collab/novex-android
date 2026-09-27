@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [T-dual-update-source] Gitee mark（国内更新源标识）：品牌红 #C71D23 圆角
+     方底 + 白描边 G 字。G 以圆弧（右侧开口）+ 中右横杠构成，20dp 级别
+     芯片图标下清晰可辨。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#C71D23"
+        android:pathData="M5,1h14a4,4 0 0 1 4,4v14a4,4 0 0 1 -4,4h-14a4,4 0 0 1 -4,-4v-14a4,4 0 0 1 4,-4z" />
+    <path
+        android:pathData="M16.1,9.1a5.1,5.1 0 1 0 0,5.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M16.1,12h-3.6"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.1"
+        android:strokeLineCap="round" />
+</vector>

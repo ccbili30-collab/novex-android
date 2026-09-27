@@ -34,12 +34,14 @@ class NovexCardExecutionPresentationTest {
         val final = text("final", "一张已保存，另一张未完成。")
         val result = foldNovexExecutionProcesses(listOf(intro, streaming, pending, running, failed, cancelled, final))
         // 三个飞行中的工具原样留在主文流（各配 ToolCallPill 尾巴），叙述保留，
-        // 其余（过程文字/失败/取消）折成唯一工作行钉在回合末尾。
+        // 其余（过程文字/失败/取消）折成唯一工作行。[feat/ui-rikkahub]
+        // 2026-09-27 对齐 ZCode：工作行钉在回合开头（问题之后、回答之前），
+        // 保留行按原顺序跟在后面。
         assertTrue(result.contains(streaming))
         assertTrue(result.contains(pending))
         assertTrue(result.contains(running))
         assertTrue(result.contains(final))
-        val process = result.last() as FlatChatItem.AssistantProcess
+        val process = result.first() as FlatChatItem.AssistantProcess
         assertEquals(listOf<FlatChatItem>(intro, failed, cancelled), process.rows)
         assertEquals(intro.key, process.key)
         // 主文流仍有飞行工具 → 工作行标"进行中"（净眼 P2：不再退化为查看记录）。
@@ -67,8 +69,11 @@ class NovexCardExecutionPresentationTest {
         val formal = text("first", "先给你的完整回答")
         val progress = text("after", "正在保存下一张卡", execution = true)
         val rows = foldNovexExecutionProcesses(listOf(formal, tool("saved"), progress))
-        assertSame(formal, rows.first())
-        assertTrue((rows.last() as FlatChatItem.AssistantProcess).rows.contains(progress))
+        // [feat/ui-rikkahub] 工作行钉在回合开头，过程文字按渠道折进工作行，
+        // 正式回答保留在正文流末尾。
+        val process = rows.first() as FlatChatItem.AssistantProcess
+        assertTrue(process.rows.contains(progress))
+        assertSame(formal, rows.last())
         val live = foldNovexExecutionProcesses(listOf(text("live", "开始整理", true, true))).single()
         assertTrue(live is FlatChatItem.AssistantProcess)
         assertEquals("进行中", (live as FlatChatItem.AssistantProcess).statusLabel())
@@ -99,12 +104,13 @@ class NovexCardExecutionPresentationTest {
         val live = thinking("t2", "正在想……", last = true, streaming = true, trailing = true)
         val rows = foldNovexExecutionProcesses(listOf(done, call, live))
         // 已完成的思考与工具收进工作记录；进行中的思考留在直播区实时展开。
+        // [feat/ui-rikkahub] 工作行钉在回合开头，直播思考是唯一保留行，
+        // 留在回答末尾实时展开。
         val process = rows.filterIsInstance<FlatChatItem.AssistantProcess>().single()
         assertTrue(process.rows.contains(done))
         assertTrue(process.rows.contains(call))
-        // [T-turn-single-card] 直播思考是唯一保留行；工作行钉在回合末尾。
-        assertSame(live, rows.first())
-        assertSame(process, rows.last())
+        assertSame(process, rows.first())
+        assertSame(live, rows.last())
     }
     @Test fun creationReceiptsReportActualSavedCardsWithoutGuessingUserIntent() {
         assertNull(NovexCardCreationTask.evaluate(listOf(AssistantBlock("text", "text", "已经完成"))))

@@ -95,3 +95,20 @@
 - 普通高优先级问题：进入最近一次 `next` 候选，不直接污染 `main`。
 - 构建失败：修复原提交并生成新候选；不得手工替换已经验证过的候选产物。
 - 候选产物超过 30 天：重新运行预览候选流水线，获得新的完整验证和签名产物后再晋升。
+
+
+## 双源分发（2026-09-27 起）
+
+应用内更新双通道：Gitee（默认，国内）读 hub 的 update.json；GitHub
+（海外）读 dev 仓库 Releases API。预览/正式独立取道（build 烤入
+UPDATE_CHANNEL）。
+
+每轮发版的同步推送义务（GitHub release 完成后）：
+
+1. 下载该 release 的渠道资产到临时目录
+2. `novex-hub/publish.sh <apk> <版本号> <stable|preview> "<说明>"`
+   （自动建 Gitee Release+传附件+更新 update.json+推 gitee）
+3. `cd novex-hub && git push github main`（镜像 update.json/公告）
+4. 跑 AGENTS.md 三条验证清单（raw/直链/仓库公开）
+
+AGENTS.md（novex-hub 仓库）是发布站完整操作手册，零上下文可执行。
