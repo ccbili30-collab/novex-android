@@ -20,7 +20,8 @@ object NovexUpdateMonitor {
     // （内置归档回落不跳脸——否则每次冷启动弹老内容）。已读判定需要
     // Context，由 UI 层在 collect 时过滤；此处只承载原始公告列表。
     private val _announcements = MutableStateFlow<List<NovexAnnouncement>?>(null)
-    val announcements: StateFlow<List<NovexAnnouncement>?> = _announcements.asStateFlow()
+    // internal：NovexAnnouncement 为模块内类型，公开流会暴露 internal 类型参数
+    internal val announcements: StateFlow<List<NovexAnnouncement>?> = _announcements.asStateFlow()
 
     fun checkOnceOnColdStart() {
         if (!coldCheckStarted.compareAndSet(false, true)) return
