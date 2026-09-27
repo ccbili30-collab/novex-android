@@ -55,7 +55,6 @@ import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.NovexAnnouncement
 import com.openminis.app.data.NovexBulletin
-import com.openminis.app.data.NovexBulletinDefaults
 import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
@@ -340,7 +339,9 @@ fun NovexUpdateAction() {
     var awaitingInstallPermission by remember { mutableStateOf(false) }
     var announcementOpen by remember { mutableStateOf(false) }
     var bulletinLoading by remember { mutableStateOf(false) }
-    var bulletin by remember { mutableStateOf(NovexBulletinDefaults.value) }
+    // [T-bulletin-cache] 点开面板第一时间显缓存（关闭前的公告），
+    // 后台刷新；失败保留缓存不覆盖（空回落=失败信号）
+    var bulletin by remember { mutableStateOf<NovexBulletin?>(null) }
     var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
     // [T-announcement-v2] 冷启动跳脸：活源未读公告非空→弹窗，关闭即已读
     val monitorAnnouncements by NovexUpdateMonitor.announcements.collectAsState()
@@ -385,8 +386,20 @@ fun NovexUpdateAction() {
 
     LaunchedEffect(announcementOpen) {
         if (!announcementOpen) return@LaunchedEffect
-        bulletinLoading = true
-        bulletin = UpdateChecker.fetchBulletin()
+        if (bulletin == null) {
+            bulletin = com.openminis.app.data.BulletinCache.load(context.filesDir)
+            bulletinLoading = bulletin == null
+        }
+        val fresh = UpdateChecker.fetchBulletin()
+        val failed = !fresh.live && fresh.announcements.isEmpty() && fresh.releaseNotes.isEmpty()
+        when {
+            !failed -> {
+                bulletin = fresh
+                if (fresh.live) com.openminis.app.data.BulletinCache.save(context.filesDir, fresh)
+            }
+            // 失败但有缓存：保留缓存；失败且无缓存：空态（硬编码遗留已退役）
+            bulletin == null -> bulletin = fresh
+        }
         bulletinLoading = false
     }
 
@@ -454,7 +467,7 @@ fun NovexUpdateAction() {
 
     if (announcementOpen) {
         AnnouncementDialog(
-            bulletin = bulletin,
+            bulletin = bulletin ?: NovexBulletin(announcements = emptyList(), releaseNotes = emptyList()),
             loading = bulletinLoading,
             checking = checking,
             onCheckUpdate = {
