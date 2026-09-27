@@ -39,8 +39,8 @@
     <string name="memory_global_footer">Dauerhafte Anweisungen und Einstellungen, die dem Agenten in jeder Sitzung angezeigt werden. Der Agent kann diese Datei nicht ändern.</string>
     <string name="check_update_section_header">App-Update</string>
     <string name="update_source_row_title">Update-Quelle</string>
-    <string name="update_source_gitee">Gitee (China)</string>
-    <string name="update_source_github">GitHub (International)</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">Aktuelle Version: %1$s</string>
     <string name="check_update_check_button">Nach Updates suchen</string>
     <string name="check_update_checking">Suche läuft…</string>
@@ -337,7 +337,6 @@
     <string name="skill_empty_title">Keine Skills installiert</string>
     <string name="skill_empty_action">Auf + tippen, um SKILL.md zu importieren oder Novex Skills zu durchsuchen.</string>
     <string name="skill_import_modal_title">Skill importieren</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">%1$s löschen?</string>
     <string name="skill_delete_confirm_text">Skill und zugehörige Dateien werden dauerhaft entfernt.</string>
     <string name="skill_import_sheet_title">Skill importieren</string>

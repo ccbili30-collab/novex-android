@@ -39,8 +39,8 @@
     <string name="memory_global_footer">모든 세션에서 에이전트에게 표시되는 영구 지침 및 환경 설정입니다. 에이전트는 이 파일을 수정할 수 없습니다.</string>
     <string name="check_update_section_header">앱 업데이트</string>
     <string name="update_source_row_title">업데이트 소스</string>
-    <string name="update_source_gitee">Gitee(중국)</string>
-    <string name="update_source_github">GitHub(해외)</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">현재 버전: %1$s</string>
     <string name="check_update_check_button">업데이트 확인</string>
     <string name="check_update_checking">확인 중…</string>
@@ -337,7 +337,6 @@
     <string name="skill_empty_title">설치된 Skill 없음</string>
     <string name="skill_empty_action">+ 를 눌러 SKILL.md 를 가져오거나 Novex Skills 를 탐색하세요.</string>
     <string name="skill_import_modal_title">스킬 가져오기</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">%1$s 을(를) 삭제하시겠습니까?</string>
     <string name="skill_delete_confirm_text">이 skill 과 파일이 영구적으로 제거됩니다.</string>
     <string name="skill_import_sheet_title">스킬 가져오기</string>

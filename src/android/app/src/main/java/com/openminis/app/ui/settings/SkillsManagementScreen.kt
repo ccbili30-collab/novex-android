@@ -96,7 +96,6 @@ fun SkillsManagementScreen(
     skillRepository: SkillRepository,
     onBack: () -> Unit,
     onSkillClick: (String) -> Unit = {},
-    onMinisSkillsClick: () -> Unit = {},
 ) {
     val skills by skillRepository.skills.collectAsState()
     var showImportSheet by remember { mutableStateOf(false) }
@@ -313,21 +312,7 @@ fun SkillsManagementScreen(
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.skill_import_modal_title), style = MaterialTheme.typography.bodyLarge)
                 }
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            showAddMenu = false
-                            onMinisSkillsClick()
-                        }
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Language, contentDescription = null, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Text(stringResource(R.string.skill_minis_skills_modal), style = MaterialTheme.typography.bodyLarge)
-                }
+
             }
         }
     }

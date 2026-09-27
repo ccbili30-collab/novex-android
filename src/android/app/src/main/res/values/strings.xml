@@ -43,8 +43,8 @@
     <!-- Check Update -->
     <string name="check_update_section_header">App Update</string>
     <string name="update_source_row_title">Update Source</string>
-    <string name="update_source_gitee">Gitee (China)</string>
-    <string name="update_source_github">GitHub (Global)</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">Current version: %1$s</string>
     <string name="check_update_current_version_channel">Current version: %1$s · %2$s</string>
     <string name="update_channel_stable">Stable</string>
@@ -917,7 +917,6 @@
     <string name="skill_empty_title">No Skills Installed</string>
     <string name="skill_empty_action">Tap + to import a SKILL.md, .zip, or .skill file, or browse Novex Skills.</string>
     <string name="skill_import_modal_title">Import Skill</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">Delete %1$s?</string>
     <string name="skill_delete_confirm_text">This will permanently remove the skill and its files.</string>
     <string name="skill_import_sheet_title">Import Skill</string>
