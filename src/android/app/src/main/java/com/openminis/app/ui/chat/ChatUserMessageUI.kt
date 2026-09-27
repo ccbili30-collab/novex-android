@@ -411,7 +411,12 @@ internal fun UserMessageBubble(
                             it.kind == ContextSourceKind.CONVERSATION_PROMPT ||
                             it.kind == ContextSourceKind.ANSWER_IDENTITY
                     }
-                val injectedLabels = injectedSources.map { carriedDisplayLabel(it.label) }.distinct()
+                // [feat/ui-rikkahub] 每轮注入也是"带了东西"：写了就随每轮发送，
+                // 气泡行永远把它列在第一位，否则用户写了注入却看不见。
+                val injectedLabels = buildList {
+                    if (perTurnPrompt.isNotBlank()) add("每轮注入")
+                    injectedSources.map { carriedDisplayLabel(it.label) }.distinct().forEach(::add)
+                }.distinct()
                 val readSourceLabels = message.novexContextUsage?.sourceReads.orEmpty()
                     .filterNot { it.sourceId == "answer-identity:nova" }.map { it.label }.distinct()
                 if (injectedLabels.isNotEmpty() || readSourceLabels.isNotEmpty()) {
