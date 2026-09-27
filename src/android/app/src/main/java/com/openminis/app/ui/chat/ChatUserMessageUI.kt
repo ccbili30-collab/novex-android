@@ -209,6 +209,7 @@ import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
+import com.openminis.app.novex.domain.ContextSourceKind
 import com.openminis.app.ui.novex.NovexContentDialog
 import com.openminis.app.ui.novex.TextButton as NovexTextButton
 
@@ -540,9 +541,22 @@ internal fun UserMessageBubble(
                     color = ChatColors.secondaryText,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                usage.teachingTraceRef?.let { com.openminis.app.ui.novex.NovexTeachingTraceSection(it) }
-                usage.teachingTraceError?.let { Text("本轮装配证据未保存：$it", color = ChatColors.secondaryText) }
-                usage.includedSources.forEach { source ->
+                // [feat/ui-rikkahub] 2026-09-27 系统内部条目（工具定义/系统提示/
+                // 回答身份）不暴露给用户——它们每轮固定重复，是管道不是资料。
+                // 教学装配诊断链接一并下掉。
+                val userSources = usage.includedSources.filterNot {
+                    it.kind == ContextSourceKind.TOOL_DEFINITION ||
+                        it.kind == ContextSourceKind.ANSWER_IDENTITY ||
+                        it.kind == ContextSourceKind.CONVERSATION_PROMPT
+                }
+                if (userSources.isEmpty()) {
+                    Text(
+                        "本轮仅携带系统指令与工具定义，无用户资料注入",
+                        color = ChatColors.tertiaryText,
+                        fontSize = 12.sp,
+                    )
+                }
+                userSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             "「${contextSourceKindLabel(source.kind)}」${source.label}",
