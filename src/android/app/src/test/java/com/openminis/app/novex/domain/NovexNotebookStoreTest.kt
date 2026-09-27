@@ -54,4 +54,17 @@ class NovexNotebookStoreTest {
         assertNull(NovexNotebookStore.parseConsolidation("我觉得应该记点什么", now))
         assertNull(NovexNotebookStore.parseConsolidation("{\"entries\":\"不是数组\"}", now))
     }
+
+    /**
+     * [T-notebook-prompt-scope] 提示词契约（2026-09-27 codex 研究·模式
+     * 1/2 落地）：锁住窄身份+输出纪律前置、值得记/不值得记正反对照、
+     * 淘汰判据（不留新旧两版）。重写措辞弄丢任一句，本测即红。
+     */
+    @Test fun `consolidation prompt carries scope contract`() {
+        val text = NovexNotebookStore.consolidationPrompt(NovexNotebookStore.SessionMemory(), "近期", null)
+        org.junit.Assert.assertTrue(text.contains("无任何其他文字"))
+        org.junit.Assert.assertTrue(text.contains("值得记"))
+        org.junit.Assert.assertTrue(text.contains("不值得记"))
+        org.junit.Assert.assertTrue(text.contains("不要同时保留新旧两个版本"))
+    }
 }
