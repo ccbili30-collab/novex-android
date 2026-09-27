@@ -45,7 +45,7 @@ import novex.runtime.*
     var draft by rememberSaveable(chat,stateSaver=saver) {mutableStateOf<CardBinding?>(null)}
     var hydrated by rememberSaveable(chat){mutableStateOf(false)}
     var discard by remember {mutableStateOf(false)}
-    var choices by remember {mutableStateOf<List<Pair<SourceSelection,String>>>(emptyList())}
+    var choices by remember {mutableStateOf<List<Triple<SourceSelection,String,String?>>>(emptyList())}
     var modules by remember {mutableStateOf<Map<SourceSelection,List<Pair<String,String>>>>(emptyMap())}
     var expanded by remember {mutableStateOf<SourceSelection?>(null)}
     var error by remember {mutableStateOf<String?>(null)}
@@ -56,12 +56,15 @@ import novex.runtime.*
             val loaded=withContext(Dispatchers.IO){
                 run {LegacyCards(app).migrate();model.integratedCardBinding()} to cards.store.list().flatMap {summary->
                     val root=requireNotNull(cards.store.open(summary.id)).content
-                    listOf(SourceSelection(root.id) to root.name)+root.internalCharacters.map {SourceSelection(root.id,it.id) to "${root.name} · ${it.name}"}
+                    // [T-interaction-semantics-ui] 互动语义标签：世界根=GM 叙述（讲述世界并扮演其中人物），
+                    // 角色根/世界内角色=扮演（以该角色身份回答）
+                    val rootLabel=if(root.kind==novex.content.CardKind.WORLD)"GM 叙述" else "扮演"
+                    listOf(Triple(SourceSelection(root.id),root.name,rootLabel))+root.internalCharacters.map {Triple(SourceSelection(root.id,it.id),"${root.name} · ${it.name}","扮演")}
                 }
             };if(!hydrated){baseline=loaded.first;draft=loaded.first?:CardBinding();hydrated=true}
             val known=loaded.second.map {it.first}.toSet()
             val all=listOfNotNull(loaded.first?.primary)+loaded.first?.backgrounds.orEmpty()+loaded.first?.managed.orEmpty().map {SourceSelection(it.rootId,it.targetId)}
-            choices=loaded.second+(all.distinct()-known).map {it to "作品未找到（可取消关联）"}
+            choices=loaded.second+(all.distinct()-known).map {Triple(it,"作品未找到（可取消关联）",null)}
             modules=withContext(Dispatchers.IO){loaded.second.associate {(source,_)->
                 val card=novex.content.ContentTargets.find(requireNotNull(cards.store.open(source.rootId)).content,source.targetId)
                 source to (listOf(card)+card.internalCharacters).flatMap {c->c.modules.flattenModules().map {it.id to "${c.name} · ${it.name.ifBlank {"未命名模块"}}"}}
@@ -81,14 +84,22 @@ import novex.runtime.*
         }},modifier=Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)){Text("保存")}
     }) {padding->LazyColumn(Modifier.fillMaxSize().padding(padding),contentPadding=PaddingValues(16.dp)) {
         error?.let {item {Text(it,color=MaterialTheme.colorScheme.error)}}
-        item {Text("互动对象只选一个；背景可多选；允许管理不等于作为背景。工具权限继续使用对话设置。")}
+        item {Text("互动对象只选一个；背景可多选；允许管理不等于作为背景。工具权限继续使用对话设置。选「扮演」以该角色身份回答；选「GM 叙述」讲述世界并扮演其中人物。")}
         item {TextButton(enabled=!busy,onClick={draft=draft?.copy(primary=null)}){Text("清除主要互动对象")}}
-        items(choices,key={it.first.rootId+":"+it.first.targetId}){(target,name)->
+        items(choices,key={it.first.rootId+":"+it.first.targetId}){(target,name,interactLabel)->
             val current=draft
-            Text(name,style=MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                Text(name,style=MaterialTheme.typography.titleMedium)
+                // 类型徽标：一眼分清这张卡选为互动时意味着什么
+                interactLabel?.let {label->
+                    Text("  "+if(label=="GM 叙述")"世界" else "角色",
+                        style=MaterialTheme.typography.labelSmall,
+                        color=MaterialTheme.colorScheme.primary)
+                }
+            }
             androidx.compose.foundation.layout.FlowRow {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){RadioButton(selected=current?.primary==target,enabled=!busy,onClick={draft=current?.copy(primary=target)})
-                Text("互动")}
+                Text(interactLabel ?: "互动")}
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(checked=current?.backgrounds?.contains(target)==true,enabled=!busy,onCheckedChange={yes->draft=current?.copy(backgrounds=if(yes)(current.backgrounds+target).distinct() else current.backgrounds-target)})
                 Text("背景")}
                 val managed=ManagementTarget(target.rootId,target.targetId)
