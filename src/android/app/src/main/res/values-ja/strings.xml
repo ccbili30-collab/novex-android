@@ -335,7 +335,7 @@
     <string name="skill_section_installed">インストール済み</string>
     <string name="skill_section_footer">Skill は専用の指示やワークフローで AI エージェントを拡張します。有効時にシステムプロンプトに読み込まれます。</string>
     <string name="skill_empty_title">Skill が未インストール</string>
-    <string name="skill_empty_action">+ をタップして SKILL.md をインポートするか、Novex Skills を閲覧してください。</string>
+    <string name="skill_empty_action">+ をタップして SKILL.md、.zip、.skill ファイルを取り込みます。</string>
     <string name="skill_import_modal_title">スキルをインポート</string>
     <string name="skill_delete_confirm_title">%1$s を削除しますか？</string>
     <string name="skill_delete_confirm_text">この skill とファイルを完全に削除します。</string>
@@ -384,15 +384,6 @@
     <string name="skill_detail_source_file">ファイルインポート</string>
     <string name="skill_detail_source_bundled">内蔵</string>
     <string name="skill_detail_source_session">セッション作成</string>
-    <string name="skills_browser_title">Novex Skills</string>
-    <string name="skills_browser_import_button">これをインポート</string>
-    <string name="skills_browser_hud_importing">インポート中…</string>
-    <string name="skills_browser_error_not_folder">先に skill フォルダを選択してください</string>
-    <string name="skills_browser_success_imported">%1$s をインポートしました</string>
-    <string name="skills_browser_error_no_skillmd">SKILL.md が見つかりません。先に skill フォルダを選択してください。</string>
-    <string name="skills_browser_success_updated">%1$s を更新しました</string>
-    <string name="skills_browser_error_invalid">SKILL.md が無効、または既に存在します</string>
-    <string name="skills_browser_error_format">SKILL.md の内容が無効</string>
     <string name="storage_title">ストレージ</string>
     <string name="storage_section_overview">概要</string>
     <string name="storage_overview_shell">Shellコンテナ</string>
