@@ -19,7 +19,7 @@ import org.json.JSONObject
  * 索引条目可选 `channel`（stable|preview）：缺省/非法=通用（双版本
  * 互通）；通道条目只下发对应通道（[filterForChannel]）。
  *
- * 护栏沿 v1：file 限定 announcements/*.md 且拒 `..` 段；≤5 条截尾保头；
+ * 护栏沿 v1：file 限定 announcements 目录下 .md 且拒 `..` 段；≤5 条截尾保头；
  * 任一环节失败整体 null——调用方回落内置归档，绝不阻塞。
  */
 internal object GiteeAnnouncementSource {
