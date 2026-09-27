@@ -681,9 +681,8 @@ internal fun ToolCallPill(
             modifier = Modifier
                 .drawBehind {
                     // [feat/ui-rikkahub] ChainOfThought connector stubs —
-                    // same geometry as the thinking step, so thinking→tool
-                    // chains read as one continuous line.
-                    val x = 12.dp.toPx()
+                    // same left-edge rail (x=8dp) as the thinking step.
+                    val x = 8.dp.toPx()
                     val centerY = size.height / 2
                     val gap = 10.dp.toPx()
                     if (!isFirst) drawLine(
@@ -709,7 +708,7 @@ internal fun ToolCallPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                 // Status icon — always the typed tool icon. Color shifts to
                 // reflect terminal status (failed/cancelled keep loud colors);
                 // done/running are muted like the ChainOfThought nodes.
@@ -1051,8 +1050,8 @@ internal fun ThinkingBlock(
                 .fillMaxWidth()
                 .drawBehind {
                     // [feat/ui-rikkahub] ChainOfThought connector stubs: 1dp
-                    // lines at x=12dp with a 10dp gap around the node.
-                    val x = 12.dp.toPx()
+                    // lines on the left-edge rail at x=8dp, 10dp gap around node.
+                    val x = 8.dp.toPx()
                     val centerY = size.height / 2
                     val gap = 10.dp.toPx()
                     if (!isFirst) drawLine(
@@ -1079,7 +1078,7 @@ internal fun ThinkingBlock(
                 }
                 .padding(vertical = 8.dp),
         ) {
-            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = com.openminis.app.ui.novex.NovexIcons.Psychology,
                     contentDescription = null,

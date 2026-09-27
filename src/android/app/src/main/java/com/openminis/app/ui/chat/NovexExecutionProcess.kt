@@ -123,38 +123,23 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
         label = "processAlpha",
     )
     Column(modifier = Modifier.fillMaxWidth()) {
+        // [feat/ui-rikkahub] Collapsed header = ZCode: bare text + chevron
+        // hugging the label, no icon, no stub segments.
         Row(
             Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    val x = 12.dp.toPx()
-                    val centerY = size.height / 2
-                    val gap = 10.dp.toPx()
-                    drawLine(lineColor, Offset(x, 0f), Offset(x, centerY - gap), 1.dp.toPx())
-                    drawLine(lineColor, Offset(x, centerY + gap), Offset(x, size.height), 1.dp.toPx())
-                }
                 .clickable { expanded = !expanded }
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Build,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
             Text(
                 headLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .weight(1f)
-                    .alpha(if (active) shimmerAlpha else 1f),
+                modifier = Modifier.alpha(if (active) shimmerAlpha else 1f),
             )
             Icon(
                 imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
@@ -181,8 +166,8 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                     .drawBehind {
                         drawLine(
                             color = lineColor,
-                            start = Offset(12.dp.toPx(), 0f),
-                            end = Offset(12.dp.toPx(), size.height),
+                            start = Offset(8.dp.toPx(), 0f),
+                            end = Offset(8.dp.toPx(), size.height),
                             strokeWidth = 1.dp.toPx(),
                         )
                     },
@@ -237,8 +222,12 @@ private fun ProcessStepRow(
 ) {
     var open by remember(label) { mutableStateOf(false) }
     val hasDetail = content != null || args != null || result != null
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
             Icon(
                 icon,
                 contentDescription = null,
