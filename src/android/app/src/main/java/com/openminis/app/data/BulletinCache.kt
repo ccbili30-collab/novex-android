@@ -12,21 +12,21 @@ import java.io.File
  * 每次成功拉取（live）后落盘，点开面板先显缓存再后台刷新；刷新失败
  * 保留缓存不覆盖（fetchBulletin 的空回落即失败信号）。
  *
- * 目录由调用方注入（[Context.getFilesDir] 或测试 TemporaryFolder），
- * 存放 `novex/bulletin-cache.json`。损坏/缺失静默 null。
+ * 目录由调用方注入（Context.getFilesDir 或测试 TemporaryFolder），
+ * 存放 `novex` 目录下 `bulletin-cache.json`。损坏/缺失/空内容静默
+ * null。磁盘 I/O 全部走 [Dispatchers.IO]（净眼 S6 附注：面板路径
+ * 原为主线程同步读写）。
  */
 internal object BulletinCache {
 
     private const val FILE_NAME = "bulletin-cache.json"
 
-    fun load(dir: File): NovexBulletin? = runCatching {
-        val file = File(File(dir, "novex"), FILE_NAME)
-        if (!file.isFile) return null
-        val root = JSONObject(file.readText())
-        fun announcements(): List<NovexAnnouncement> {
-            val a = root.optJSONArray("announcements") ?: return emptyList()
-            return (0 until a.length()).mapNotNull { i ->
-                val o = a.optJSONObject(i) ?: return@mapNotNull null
+    suspend fun load(dir: File): NovexBulletin? = withContext(Dispatchers.IO) {
+        runCatching {
+            val file = File(File(dir, "novex"), FILE_NAME)
+            if (!file.isFile) return@runCatching null
+            val root = JSONObject(file.readText())
+            val announcements = readList(root.optJSONArray("announcements")) { o ->
                 NovexAnnouncement(
                     versionName = o.optString("versionName"),
                     title = o.optString("title"),
@@ -34,39 +34,44 @@ internal object BulletinCache {
                     id = o.optString("id").ifEmpty { o.optString("versionName") },
                 ).takeIf { it.title.isNotEmpty() && it.markdown.isNotEmpty() }
             }
-        }
-        fun releaseNotes(): List<UpdateChecker.ReleaseNote> {
-            val a = root.optJSONArray("releaseNotes") ?: return emptyList()
-            return (0 until a.length()).mapNotNull { i ->
-                val o = a.optJSONObject(i) ?: return@mapNotNull null
+            val releaseNotes = readList(root.optJSONArray("releaseNotes")) { o ->
                 UpdateChecker.ReleaseNote(
                     versionName = o.optString("versionName"),
                     releaseName = o.optString("releaseName"),
                     changelog = o.optString("changelog"),
                 ).takeIf { it.versionName.isNotEmpty() }
             }
-        }
-        NovexBulletin(announcements = announcements(), releaseNotes = releaseNotes(), live = true)
-            .takeIf { it.announcements.isNotEmpty() || it.releaseNotes.isNotEmpty() }
-    }.getOrNull()
+            NovexBulletin(announcements = announcements, releaseNotes = releaseNotes, live = true)
+                .takeIf { it.announcements.isNotEmpty() || it.releaseNotes.isNotEmpty() }
+        }.getOrNull()
+    }
 
-    fun save(dir: File, bulletin: NovexBulletin) = runCatching<Unit> {
-        val parent = File(dir, "novex").apply { mkdirs() }
-        val root = JSONObject()
-            .put("savedAt", System.currentTimeMillis())
-            .put("announcements", JSONArray(bulletin.announcements.map {
-                JSONObject()
-                    .put("id", it.id)
-                    .put("versionName", it.versionName)
-                    .put("title", it.title)
-                    .put("markdown", it.markdown)
-            }))
-            .put("releaseNotes", JSONArray(bulletin.releaseNotes.map {
-                JSONObject()
-                    .put("versionName", it.versionName)
-                    .put("releaseName", it.releaseName)
-                    .put("changelog", it.changelog)
-            }))
-        File(parent, FILE_NAME).writeText(root.toString())
-    } // 失败静默：缓存是增强，绝不阻塞公告链路
+    suspend fun save(dir: File, bulletin: NovexBulletin) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val parent = File(dir, "novex").apply { mkdirs() }
+                val root = JSONObject()
+                    .put("savedAt", System.currentTimeMillis())
+                    .put("announcements", JSONArray(bulletin.announcements.map {
+                        JSONObject()
+                            .put("id", it.id)
+                            .put("versionName", it.versionName)
+                            .put("title", it.title)
+                            .put("markdown", it.markdown)
+                    }))
+                    .put("releaseNotes", JSONArray(bulletin.releaseNotes.map {
+                        JSONObject()
+                            .put("versionName", it.versionName)
+                            .put("releaseName", it.releaseName)
+                            .put("changelog", it.changelog)
+                    }))
+                File(parent, FILE_NAME).writeText(root.toString())
+            } // 失败静默：缓存是增强，绝不阻塞公告链路
+        }
+    }
+
+    private fun <T> readList(array: JSONArray?, map: (JSONObject) -> T?): List<T> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let(map) }
+    }
 }

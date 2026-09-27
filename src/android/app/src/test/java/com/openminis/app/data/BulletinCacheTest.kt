@@ -7,6 +7,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import kotlinx.coroutines.runBlocking
 
 /**
  * [T-bulletin-cache] 公告缓存守护：落盘/读回往返（含 id 键与更新说明）、
@@ -27,8 +28,8 @@ class BulletinCacheTest {
             ),
             live = true,
         )
-        BulletinCache.save(dir, bulletin)
-        val loaded = BulletinCache.load(dir)!!
+        runBlocking { BulletinCache.save(dir, bulletin) }
+        val loaded = runBlocking { BulletinCache.load(dir) }!!
         assertEquals("announcements/a.md", loaded.announcements.single().id)
         assertEquals("发布站上线", loaded.announcements.single().title)
         assertEquals("3.0.5-beta.85", loaded.releaseNotes.single().versionName)
@@ -36,17 +37,17 @@ class BulletinCacheTest {
 
     @Test fun `missing and corrupted cache load null silently`() {
         val dir = temporary.newFolder()
-        assertNull(BulletinCache.load(dir))
+        assertNull(runBlocking { BulletinCache.load(dir) })
         val file = File(File(dir, "novex"), "bulletin-cache.json")
         file.parentFile.mkdirs()
         file.writeText("不是 JSON")
-        assertNull(BulletinCache.load(dir))
+        assertNull(runBlocking { BulletinCache.load(dir) })
     }
 
     @Test fun `empty bulletin is not persisted as cache`() {
         val dir = temporary.newFolder()
-        BulletinCache.save(dir, NovexBulletin(announcements = emptyList(), releaseNotes = emptyList(), live = true))
-        // 空内容落盘后 load 侧 takeIf 拒绝——面板显示空态而非假缓存
-        assertNull(BulletinCache.load(dir))
+        runBlocking { BulletinCache.save(dir, NovexBulletin(announcements = emptyList(), releaseNotes = emptyList(), live = true)) }
+        // 空内容即使落盘，load 侧 takeIf 也拒绝——面板显示空态而非假缓存
+        assertNull(runBlocking { BulletinCache.load(dir) })
     }
 }
