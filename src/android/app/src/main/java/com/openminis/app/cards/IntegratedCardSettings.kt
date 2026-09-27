@@ -152,7 +152,7 @@ import novex.runtime.*
                 items(characterChoices, key = { "c" + it.target.rootId + ":" + it.target.targetId }) { choice ->
                     UsageCheckRow(choice = choice, checked = draft?.backgrounds?.contains(choice.target) == true, enabled = !busy,
                         onToggle = { yes -> toggleBackground(choice.target, yes) })
-                    ModuleCarrySection(choice = choice, draft = draft, modules = modules, expanded = expanded,
+                    ModuleCarrySection(choice = choice, draft = draft, modules = modules, expanded = expanded, busy = busy,
                         onToggleExpand = { expanded = if (expanded == choice.target) null else choice.target },
                         onOverride = { moduleId, rule -> setOverride(moduleId, rule) })
                     HorizontalDivider()
@@ -161,7 +161,7 @@ import novex.runtime.*
                 items(worldChoices, key = { "w" + it.target.rootId }) { choice ->
                     UsageCheckRow(choice = choice, checked = draft?.backgrounds?.contains(choice.target) == true, enabled = !busy,
                         onToggle = { yes -> toggleBackground(choice.target, yes) })
-                    ModuleCarrySection(choice = choice, draft = draft, modules = modules, expanded = expanded,
+                    ModuleCarrySection(choice = choice, draft = draft, modules = modules, expanded = expanded, busy = busy,
                         onToggleExpand = { expanded = if (expanded == choice.target) null else choice.target },
                         onOverride = { moduleId, rule -> setOverride(moduleId, rule) })
                     HorizontalDivider()
@@ -246,6 +246,7 @@ internal data class UsageChoice(
     draft: CardBinding?,
     modules: Map<SourceSelection, List<Pair<String, String>>>,
     expanded: SourceSelection?,
+    busy: Boolean,
     onToggleExpand: () -> Unit,
     onOverride: (moduleId: String, rule: Boolean?) -> Unit,
 ) {
@@ -259,7 +260,7 @@ internal data class UsageChoice(
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Row {
                 listOf(null to "默认", true to "必带", false to "不带").forEach { (rule, title) ->
-                    TextButton(onClick = { onOverride(id, rule) }) {
+                    TextButton(onClick = { onOverride(id, rule) }, enabled = !busy) {
                         Text((if (draft?.overrides?.get(id) == rule) "✓ " else "") + title)
                     }
                 }
