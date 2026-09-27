@@ -1,5 +1,6 @@
 package com.openminis.app.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -22,12 +23,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.openminis.app.ui.novex.NovexContentDialog
@@ -89,11 +94,14 @@ internal fun NovexExecutionActivityStrip(
 }
 
 @Composable
-internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, onOpen: () -> Unit) {
+internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
     // [T-turn-single-card] 2026-09-16 用户批③：工作行只占一行——预览子行全撤
     // （回合一张卡后子行只会更长），失败/停止以角标提示，完整时间线点开看。
+    // [feat/ui-rikkahub] 2026-09-27 取消浮窗：点行原地内联展开完整时间线，
+    // 工具记录也在内联切换参数/结果，不再弹执行过程对话框。
     val active = process.statusLabel() == "进行中"
     val failedCount = process.tools.count { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
+    var expanded by remember { mutableStateOf(false) }
     // [feat/ui-rikkahub] ChainOfThought timeline step: 24dp node + connector
     // stubs (both drawn — the chain continues through this row), shimmer
     // label while running. Same geometry as the thinking/tool steps.
@@ -104,48 +112,140 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess, on
         infiniteRepeatable(tween(900, easing = LinearEasing)),
         label = "processAlpha",
     )
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                val x = 12.dp.toPx()
-                val centerY = size.height / 2
-                val gap = 10.dp.toPx()
-                drawLine(lineColor, Offset(x, 0f), Offset(x, centerY - gap), 1.dp.toPx())
-                drawLine(lineColor, Offset(x, centerY + gap), Offset(x, size.height), 1.dp.toPx())
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    val x = 12.dp.toPx()
+                    val centerY = size.height / 2
+                    val gap = 10.dp.toPx()
+                    drawLine(lineColor, Offset(x, 0f), Offset(x, centerY - gap), 1.dp.toPx())
+                    drawLine(lineColor, Offset(x, centerY + gap), Offset(x, size.height), 1.dp.toPx())
+                }
+                .clickable { expanded = !expanded }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    com.openminis.app.ui.novex.NovexIcons.Build,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp),
+                )
             }
-            .clickable(onClick = onOpen)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Text(
+                "本轮 ${process.rows.size} 步 · ${process.statusLabel()}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .weight(1f)
+                    .alpha(if (active) shimmerAlpha else 1f),
+            )
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.Build,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(14.dp),
             )
+            if (failedCount > 0) {
+                Text(
+                    "⚠ $failedCount 步未完成",
+                    color = ChatColors.secondaryText,
+                    fontSize = 12.sp,
+                )
+            }
         }
-        Text(
-            "本轮 ${process.rows.size} 步 · ${process.statusLabel()}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier
-                .weight(1f)
-                .alpha(if (active) shimmerAlpha else 1f),
-        )
-        if (active) {
-            Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), fontSize = 13.sp)
+        AnimatedVisibility(expanded) {
+            Column(modifier = Modifier.padding(start = 32.dp)) {
+                process.rows.forEach { row -> when (row) {
+                    is FlatChatItem.AssistantText -> Text(
+                        row.block.content,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                    is FlatChatItem.AssistantMarkdownBlock -> Text(
+                        row.rawText,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                    is FlatChatItem.AssistantThinking -> Text(
+                        row.block.content,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(vertical = 3.dp),
+                    )
+                    is FlatChatItem.AssistantToolUse -> InlineToolRecord(row.block)
+                    else -> Unit
+                } }
+            }
         }
-        if (failedCount > 0) {
+    }
+}
+
+/**
+ * [feat/ui-rikkahub] One tool record inside an inlined process timeline.
+ * Tap toggles its args/result in place — no sheets, no dialogs.
+ */
+@Composable
+private fun InlineToolRecord(block: AssistantBlock) {
+    var open by remember(block.id) { mutableStateOf(false) }
+    val title = block.toolTitle.ifBlank {
+        buildNovexStandardToolDetailPresentation(block.toolName, block.toolArgs, block.content)?.title
+            ?: "查看操作详情"
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.clickable { open = !open },
+        ) {
             Text(
-                "⚠ $failedCount 步未完成",
-                color = ChatColors.secondaryText,
+                "${block.toolStatus.displayLabel()} · $title",
                 fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            Icon(
+                imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                contentDescription = if (open) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(12.dp),
+            )
+        }
+        AnimatedVisibility(open) {
+            Column {
+                if (block.toolArgs.isNotBlank()) {
+                    Text(
+                        text = block.toolArgs,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (block.content.isNotBlank()) {
+                    Text(
+                        text = block.content,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        maxLines = 16,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
         }
     }
 }

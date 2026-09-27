@@ -216,7 +216,7 @@ internal fun ChatTranscriptRow(
                 )
             }
         }
-        is FlatChatItem.AssistantProcess -> NovexExecutionProcessRow(item) { onAction(ChatTranscriptAction.OpenProcess(item)) }
+        is FlatChatItem.AssistantProcess -> NovexExecutionProcessRow(item)
         is FlatChatItem.AssistantToolUse -> {
             if (item.block.toolName == "present_choices") {
                 NovexChoiceButtons(item.block.toolArgs) { choice ->

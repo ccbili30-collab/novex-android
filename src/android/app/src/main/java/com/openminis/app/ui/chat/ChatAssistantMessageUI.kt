@@ -851,15 +851,6 @@ internal fun ToolCallPill(
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                Text(
-                    text = "查看详情",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .clickable { onOpenDetail(block.id) },
-                )
             }
         }
         // T251: removed inline Retry affordance next to cancelled/failed pills —
