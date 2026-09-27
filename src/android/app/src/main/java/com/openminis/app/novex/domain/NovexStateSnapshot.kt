@@ -28,12 +28,14 @@ object NovexStateSnapshot {
         val createdAt: Long,
     )
 
-    const val SNAPSHOT_SYSTEM_PROMPT = "你是状态记录器。把更新为最新的世界状态快照。只输出 JSON 对象，无其他文字。"
+    const val SNAPSHOT_SYSTEM_PROMPT = "你是状态记录器，只维护一份世界状态快照。只输出一个 JSON 对象，无任何其他文字。"
 
     fun prompt(previous: Snapshot?, summary: String, recentText: String, cardName: String?): String = buildString {
-        appendLine("更新世界状态快照。以旧快照为基底，把摘要与近期对话带来的变化打上去；旧信息未被推翻的部分原样保留。")
+        appendLine("更新世界状态快照：以旧快照为基底，把压缩摘要与近期对话带来的剧情变化打上去；未被推翻的旧信息原样保留。")
+        appendLine("只记录游戏内剧情状态（时间/地点/主线/人物/伏笔）。创作、编辑、讨论写作的内容不属于剧情，一律不写入快照。")
+        appendLine("若本对话并非进行中的游戏（例如在创作或编辑卡片、讨论写作），输出全空：{\"time\":\"\",\"location\":\"\",\"main\":\"\",\"characters\":\"\",\"threads\":\"\"}——用空字符串，不要填\"无\"，也不要把正在创作的内容编造成剧情。")
         if (cardName != null) appendLine("本局：$cardName")
-        appendLine("只输出 JSON：{\"time\":\"游戏内时间锚点\",\"location\":\"当前所在地\",\"main\":\"主线进展一句话\",\"characters\":\"关键人物状态（每条一人，含存亡/关系/动向）\",\"threads\":\"未决伏笔与倒计时\"}")
+        appendLine("字段：time=游戏内时间锚点；location=当前所在地；main=主线进展一句话；characters=关键人物状态（每条一人，含存亡/关系/动向）；threads=未决伏笔与倒计时。")
         appendLine("旧快照：")
         appendLine(previous?.rawJson ?: "（无）")
         appendLine("本轮压缩摘要：")
