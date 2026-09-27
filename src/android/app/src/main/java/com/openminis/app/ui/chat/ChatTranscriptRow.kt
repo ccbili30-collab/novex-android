@@ -211,7 +211,7 @@ internal fun ChatTranscriptRow(
                 ThinkingBlock(
                     block = item.block,
                     isStreaming = item.isLastBlockOverall && item.messageIsStreaming,
-                    isLast = item.isLast,
+                    isLast = item.isLastBlockOverall && !item.messageIsStreaming,
                     isFirst = item.isTurnStart,
                 )
             }
@@ -271,6 +271,7 @@ internal fun ChatTranscriptRow(
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             },
+                isFirst = item.isTurnStart,
                 )
             }
         }

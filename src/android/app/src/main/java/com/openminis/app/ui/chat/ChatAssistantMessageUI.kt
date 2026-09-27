@@ -612,6 +612,10 @@ internal fun ToolCallPill(
     // streaming or when there's no preceding user turn to re-run from).
     onRerunFromHere: (() -> Unit)? = null,
     onCopyDetails: (() -> Unit)? = null,
+    // [feat/ui-rikkahub] ChainOfThought connector control: draw the top stub
+    // unless this is the turn's first step, bottom stub unless it's final.
+    isFirst: Boolean = false,
+    isLast: Boolean = false,
 ) {
     // T-android-jank-profile: this log was firing on every ToolCallPill
     // recomposition (every streaming token while a tool call is live),
@@ -641,8 +645,9 @@ internal fun ToolCallPill(
     val iconTint = when {
         isFailed -> ToolErrorColor
         isCancelled -> ToolCancelColor
-        isDone -> ToolCheckColor
-        else -> toolAccent
+        // [feat/ui-rikkahub] done/running stay muted like the thinking node;
+        // only failure states keep their loud colors for glanceability.
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     // iOS: always shows tool-type icon, only changes color based on status
@@ -655,86 +660,66 @@ internal fun ToolCallPill(
         else String.format("%.0fs", seconds)
     } else null
 
-    // T125: drop the spinner that used to replace the tool icon while
-    // running. iOS only animates a left→right shimmer sweep across the
-    // pill background and keeps the typed icon visible — the spinner
-    // both fought the icon for attention and looked stylistically off
-    // next to the iOS counterpart. The bottom FloatingToolStatusBar
-    // still shows a CircularProgressIndicator (that is the running-tool
-    // status surface, where a spinner reads correctly).
-    val shimmerTranslate = if (isRunning) {
-        val transition = rememberInfiniteTransition(label = "toolPillShimmer")
-        transition.animateFloat(
-            initialValue = -1f,
-            targetValue = 2f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 2800, easing = LinearEasing),
-            ),
-            label = "toolPillShimmerTranslate",
-        )
-    } else null
+    // T125: the iOS shimmer sweep died with the capsule pill
+    // ([feat/ui-rikkahub] timeline step). Running state now reads from the
+    // bouncing dots + muted label, same as RikkaHub's tool steps.
 
     // [T-android-tool-bubble-longpress-menu] Long-press menu state, scoped
     // to this pill. The DropdownMenu is anchored to the pill via the Box
     // wrapper below so it opens beneath the tapped bubble.
     var showToolMenu by remember { mutableStateOf(false) }
 
-    // Pill stretches up to the full row width so long titles can ellipsize
-    // without pushing the duration out of view. Title takes the remaining
-    // space via weight(1f), duration stays fixed-width (softWrap=false).
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-      Box(modifier = Modifier.weight(1f, fill = false)) {
+    // [feat/ui-rikkahub] Inline args/result expansion replaces the
+    // detail-sheet-on-tap routing; the sheet stays reachable from the
+    // expansion footer for the richer timestamp view.
+    var expanded by remember(block.id) { mutableStateOf(false) }
+    val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
-                .background(
-                    ChatColors.toolCapsuleBg,
-                    CircleShape,
-                )
-                .border(0.5.dp, ChatColors.toolBorder, CircleShape)
-                .clip(CircleShape)
-                .then(
-                    if (shimmerTranslate != null) {
-                        Modifier.drawWithContent {
-                            drawContent()
-                            val w = size.width
-                            val band = w * 0.6f
-                            val x = shimmerTranslate.value * w
-                            drawRect(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0f),
-                                        Color.White.copy(alpha = 0.18f),
-                                        Color.White.copy(alpha = 0f),
-                                    ),
-                                    start = Offset(x, 0f),
-                                    end = Offset(x + band, 0f),
-                                ),
-                            )
-                        }
-                    } else Modifier,
-                )
+                .drawBehind {
+                    // [feat/ui-rikkahub] ChainOfThought connector stubs —
+                    // same geometry as the thinking step, so thinking→tool
+                    // chains read as one continuous line.
+                    val x = 12.dp.toPx()
+                    val centerY = size.height / 2
+                    val gap = 10.dp.toPx()
+                    if (!isFirst) drawLine(
+                        color = lineColor,
+                        start = Offset(x, 0f),
+                        end = Offset(x, centerY - gap),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    if (!isLast) drawLine(
+                        color = lineColor,
+                        start = Offset(x, centerY + gap),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
                 .combinedClickable(
-                    onClick = { onOpenDetail(block.id) },
+                    onClick = { expanded = !expanded },
                     onLongClick = if (onRerunFromHere != null || onCopyDetails != null) {
                         { showToolMenu = true }
                     } else null,
                 )
-                .padding(horizontal = 12.dp)
-                .height(36.dp),
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Status icon — always the typed tool icon. Color shifts to
-            // reflect terminal status (success / failed / cancelled); while
-            // running it stays in the tool's accent color so the user can
-            // still recognize the tool at a glance.
-            Icon(
-                displayIcon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(14.dp),
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
+            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                // Status icon — always the typed tool icon. Color shifts to
+                // reflect terminal status (failed/cancelled keep loud colors);
+                // done/running are muted like the ChainOfThought nodes.
+                Icon(
+                    displayIcon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
 
             // [T-step-timestamp v2 aa8b1128] Inline HH:mm:ss prefix removed
             // — user found it visually noisy on every tool pill. Start
@@ -787,6 +772,12 @@ internal fun ToolCallPill(
                 Spacer(modifier = Modifier.width(8.dp))
                 ToolStopButton(onStop = onStop)
             }
+            Icon(
+                imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(14.dp),
+            )
         }
         // [T-android-tool-bubble-longpress-menu] Long-press menu anchored to
         // the pill. Items mirror the user-bubble menu's style (MinisMenu +
@@ -822,6 +813,55 @@ internal fun ToolCallPill(
             }
         }
       }
+        // [feat/ui-rikkahub] Inline args/result expansion (RikkaHub tool step):
+        // tap toggles here; the rich detail sheet stays reachable from the
+        // footer link below.
+        AnimatedVisibility(expanded) {
+            Column(modifier = Modifier.padding(start = 32.dp)) {
+                if (block.toolArgs.isNotBlank()) {
+                    Text(
+                        text = "参数",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                    Text(
+                        text = block.toolArgs,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (block.content.isNotBlank()) {
+                    Text(
+                        text = "结果",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    Text(
+                        text = block.content,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                        maxLines = 24,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Text(
+                    text = "查看详情",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .clickable { onOpenDetail(block.id) },
+                )
+            }
+        }
         // T251: removed inline Retry affordance next to cancelled/failed pills —
         // the pill's own status icon (yellow on FAILED, gray on CANCELLED) is
         // already the unified failure tip. The button was visually noisy and
