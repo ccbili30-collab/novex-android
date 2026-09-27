@@ -37,7 +37,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,10 +58,6 @@ private fun ToolBlockStatus?.displayLabel(): String = when (this) {
     ToolBlockStatus.TIMEOUT -> "已超时"
         null -> "记录"
 }
-
-// [feat/ui-rikkahub] 步骤结果语义色（iOS 系统绿/红）：成功绿、失败红、思考灰。
-private val StepOkColor = Color(0xFF34C759)
-private val StepFailColor = Color(0xFFFF3B30)
 
 /**
  * [T-execution-activity-strip] 生成中钉在输入栏上方的活动条（2026-09-15 用户
@@ -113,7 +108,13 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
     // [feat/ui-rikkahub] 2026-09-27 取消浮窗：点行原地内联展开完整时间线，
     // 工具记录也在内联切换参数/结果，不再弹执行过程对话框。
     val active = process.statusLabel() == "进行中"
-    val failedCount = process.tools.count { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
+    // [feat/ui-rikkahub] 2026-09-27 只回答"任务完成了没"：失败后被成功挽回
+    // 的步骤不算数——仅统计发生在最后一次成功**之后**的失败（真正烂尾）。
+    val lastSuccessIdx = process.tools.indexOfLast { it.block.toolStatus == ToolBlockStatus.SUCCESS }
+    val unresolvedFailures = process.tools.withIndex().count { (idx, row) ->
+        idx > lastSuccessIdx &&
+            row.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT)
+    }
     var expanded by remember { mutableStateOf(false) }
     // [feat/ui-rikkahub] ZCode-style collapsed header: total work time
     // (工具耗时合计，"已工作 X 分 X 秒") instead of step count; falls back
@@ -159,9 +160,9 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(14.dp),
             )
-            if (failedCount > 0) {
+            if (unresolvedFailures > 0) {
                 Text(
-                    "⚠ $failedCount 步未完成",
+                    "⚠ $unresolvedFailures 步未完成",
                     color = ChatColors.secondaryText,
                     fontSize = 12.sp,
                 )
@@ -210,11 +211,6 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                                 } + dur
                             },
                             copyText = formatToolDetailsForClipboard(row.block),
-                            statusTint = when (row.block.toolStatus) {
-                                ToolBlockStatus.SUCCESS -> StepOkColor
-                                ToolBlockStatus.FAILED, ToolBlockStatus.TIMEOUT -> StepFailColor
-                                else -> null
-                            },
                             errorDetail = row.block.content.takeIf {
                                 it.isNotBlank() && row.block.toolStatus in setOf(
                                     ToolBlockStatus.FAILED,
@@ -245,7 +241,6 @@ private fun ProcessStepRow(
     content: String? = null,
     errorDetail: String? = null,
     copyText: String? = null,
-    statusTint: Color? = null,
 ) {
     val context = LocalContext.current
     var open by remember(label) { mutableStateOf(false) }
@@ -285,7 +280,7 @@ private fun ProcessStepRow(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = statusTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(14.dp),
             )
         }
@@ -293,7 +288,7 @@ private fun ProcessStepRow(
             label,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = statusTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (expandable) {
             Icon(
