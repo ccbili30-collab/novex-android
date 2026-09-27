@@ -342,6 +342,9 @@ fun NovexUpdateAction() {
     var bulletinLoading by remember { mutableStateOf(false) }
     var bulletin by remember { mutableStateOf(NovexBulletinDefaults.value) }
     var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
+    // [T-announcement-v2] 冷启动跳脸：活源未读公告非空→弹窗，关闭即已读
+    val monitorAnnouncements by NovexUpdateMonitor.announcements.collectAsState()
+    var faceAnnouncements by remember { mutableStateOf<List<NovexAnnouncement>?>(null) }
 
     fun openDetectedUpdateOrCheck() {
         val available = detectedUpdate
@@ -385,6 +388,13 @@ fun NovexUpdateAction() {
         bulletinLoading = true
         bulletin = UpdateChecker.fetchBulletin()
         bulletinLoading = false
+    }
+
+    LaunchedEffect(monitorAnnouncements) {
+        val list = monitorAnnouncements ?: return@LaunchedEffect
+        val unread = com.openminis.app.data.NovexAnnouncementReadStore.unread(
+            list, com.openminis.app.data.NovexAnnouncementReadStore.readIds(context))
+        if (unread.isNotEmpty()) faceAnnouncements = unread
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -452,6 +462,21 @@ fun NovexUpdateAction() {
                 openDetectedUpdateOrCheck()
             },
             onDismiss = { announcementOpen = false },
+        )
+    }
+
+    faceAnnouncements?.let { unreadList ->
+        AnnouncementDialog(
+            bulletin = NovexBulletin(announcements = unreadList, releaseNotes = emptyList(), live = true),
+            loading = false,
+            checking = false,
+            showTabs = false,
+            dialogTitle = "新公告",
+            onCheckUpdate = {},
+            onDismiss = {
+                com.openminis.app.data.NovexAnnouncementReadStore.markRead(context, unreadList.map { it.id })
+                faceAnnouncements = null
+            },
         )
     }
 
@@ -732,12 +757,17 @@ private fun AnnouncementDialog(
     checking: Boolean,
     onCheckUpdate: () -> Unit,
     onDismiss: () -> Unit,
+    // [T-announcement-v2] 跳脸模式：只展示新公告列表，隐藏公告/更新切换
+    showTabs: Boolean = true,
+    dialogTitle: String = "公告",
 ) {
+    // [T-announcement-v2] 公告/更新两页切换（用户：「公告本身也要能切换公告/更新」）
+    var tab by rememberSaveable { mutableStateOf("ann") }
     AlertDialog(
         contentScrollsItself = true,
         onDismissRequest = onDismiss,
         title = {
-            Text("公告", fontWeight = FontWeight.Bold)
+            Text(dialogTitle, fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -750,6 +780,44 @@ private fun AnnouncementDialog(
                 if (loading) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
+                if (showTabs) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MinisTextButton(
+                            onClick = { tab = "ann" },
+                            enabled = tab != "ann",
+                        ) {
+                            Text(
+                                "公告",
+                                fontWeight = if (tab == "ann") FontWeight.Bold else FontWeight.Normal,
+                                color = if (tab == "ann") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        MinisTextButton(
+                            onClick = { tab = "notes" },
+                            enabled = tab != "notes",
+                        ) {
+                            Text(
+                                "更新",
+                                fontWeight = if (tab == "notes") FontWeight.Bold else FontWeight.Normal,
+                                color = if (tab == "notes") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (showTabs && tab == "notes") {
+                    // 更新页：版本说明列表（Gitee 道=当前版本单条；GitHub 道=完整历史）
+                    if (bulletin.releaseNotes.isEmpty()) {
+                        Text("暂无更新说明。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        bulletin.releaseNotes.forEach { note ->
+                            ReleaseNoteItem(
+                                note = note,
+                                latest = false,
+                                initiallyExpanded = false,
+                            )
+                        }
+                    }
+                } else {
                 bulletin.announcements.firstOrNull()?.let { latest ->
                     Text(
                         "最新公告",
@@ -769,20 +837,9 @@ private fun AnnouncementDialog(
                         AnnouncementItem(announcement = announcement, initiallyExpanded = false)
                     }
                 }
-                if (bulletin.releaseNotes.isNotEmpty()) {
-                    Text(
-                        "版本更新",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    bulletin.releaseNotes.forEach { note ->
-                        ReleaseNoteItem(
-                            note = note,
-                            latest = false,
-                            initiallyExpanded = false,
-                        )
-                    }
+                if (bulletin.announcements.isEmpty() && !loading) {
+                    Text("暂无公告。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 }
             }
         },

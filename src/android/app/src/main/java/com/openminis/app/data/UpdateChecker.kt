@@ -103,15 +103,58 @@ object UpdateChecker {
     val currentChannel: UpdateChannel
         get() = UpdateChannel.fromWireName(BuildConfig.UPDATE_CHANNEL)
 
-    /** Loads the official announcement and release archive without requiring an update to exist. */
-    internal suspend fun fetchBulletin(source: UpdateSource = UpdateSourceStore.current()): NovexBulletin =
-        when (source) {
-            // [T-announcement-system] Gitee 道公告随源读 hub announcements
-            // 索引；任一环节失败回落内置归档（与 GitHub 道同语义）。
-            UpdateSource.GITEE ->
-                GiteeAnnouncementSource.fetchBulletin(client) ?: NovexBulletinDefaults.value
-            UpdateSource.GITHUB -> fetchGitHubBulletin()
+    /**
+     * Loads the official announcement and release archive without requiring
+     * an update to exist. [T-announcement-v2] 双源同源：两道公告都读 hub
+     * 形态索引（Gitee=hub 本站，GitHub=镜像仓库），一处写作互通；更新
+     * 说明分道——Gitee 道取 update.json 当前通道条目，GitHub 道保留
+     * releases API 完整历史。任一环节失败回落内置归档。
+     */
+    internal suspend fun fetchBulletin(source: UpdateSource = UpdateSourceStore.current()): NovexBulletin {
+        val base = when (source) {
+            UpdateSource.GITEE -> GiteeAnnouncementSource.GITEE_RAW_BASE
+            UpdateSource.GITHUB -> GiteeAnnouncementSource.GITHUB_MIRROR_RAW_BASE
         }
+        val announcements = GiteeAnnouncementSource.fetchAnnouncements(client, base)
+            ?: return fallbackBulletin(source)
+        val releaseNotes = when (source) {
+            UpdateSource.GITEE -> fetchGiteeReleaseNotes()
+            UpdateSource.GITHUB -> fetchGitHubBulletin().releaseNotes
+        }
+        return NovexBulletin(announcements = announcements, releaseNotes = releaseNotes, live = true)
+    }
+
+    private suspend fun fallbackBulletin(source: UpdateSource): NovexBulletin = when (source) {
+        // Gitee 道公告源失败仍可给出更新说明（一次独立小请求）；两头都
+        // 空则内置归档。
+        UpdateSource.GITEE -> {
+            val notes = fetchGiteeReleaseNotes()
+            if (notes.isNotEmpty()) NovexBulletin(announcements = emptyList(), releaseNotes = notes, live = true)
+            else NovexBulletinDefaults.value
+        }
+        UpdateSource.GITHUB -> fetchGitHubBulletin()
+    }
+
+    /** Gitee 道更新页内容：update.json 当前通道的单条说明（最新即全部）。 */
+    private suspend fun fetchGiteeReleaseNotes(): List<ReleaseNote> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder().url(GITEE_UPDATE_URL).build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList<ReleaseNote>()
+                val lane = JSONObject(resp.body?.string().orEmpty()).optJSONObject(currentChannel.wireName)
+                    ?: return@use emptyList()
+                val version = UpdateReleasePolicy.normalizeTag(lane.optString("version"))
+                if (version.isEmpty()) return@use emptyList()
+                listOf(
+                    ReleaseNote(
+                        versionName = version,
+                        releaseName = "Novex $version",
+                        changelog = lane.optString("notes").ifBlank { "该版本未提供更新说明。" },
+                    ),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
 
     private suspend fun fetchGitHubBulletin(): NovexBulletin = withContext(Dispatchers.IO) {
         try {

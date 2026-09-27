@@ -16,9 +16,24 @@ object NovexUpdateMonitor {
     private val _available = MutableStateFlow<UpdateChecker.CheckResult.UpdateAvailable?>(null)
     val available: StateFlow<UpdateChecker.CheckResult.UpdateAvailable?> = _available.asStateFlow()
 
+    // [T-announcement-v2] 冷启动顺带拉公告；unread 只在拿到真源公告时非空
+    // （内置归档回落不跳脸——否则每次冷启动弹老内容）。已读判定需要
+    // Context，由 UI 层在 collect 时过滤；此处只承载原始公告列表。
+    private val _announcements = MutableStateFlow<List<NovexAnnouncement>?>(null)
+    // internal：NovexAnnouncement 为模块内类型，公开流会暴露 internal 类型参数
+    internal val announcements: StateFlow<List<NovexAnnouncement>?> = _announcements.asStateFlow()
+
     fun checkOnceOnColdStart() {
         if (!coldCheckStarted.compareAndSet(false, true)) return
-        scope.launch { refresh() }
+        scope.launch {
+            refresh()
+            // 公告与更新检查分道失败互不影响（公告失败静默下次再试）
+            runCatching {
+                val bulletin = UpdateChecker.fetchBulletin()
+                // 只认活源（内置归档回落不跳脸）
+                if (bulletin.live) _announcements.value = bulletin.announcements.takeIf { it.isNotEmpty() }
+            }
+        }
     }
 
     suspend fun refresh(): UpdateChecker.CheckResult {
