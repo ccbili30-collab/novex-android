@@ -38,10 +38,12 @@ class GiteeAnnouncementSourceTest {
     }
 
     @Test fun `skips blank titles and caps at five entries`() {
-        val items = (1..8).joinToString(",") {
+        val eight = (1..8).joinToString(",") {
             """{"file":"announcements/$it.md","title":"$it","date":"d$it"}"""
-        } + ""","""{"file":"announcements/x.md","title":"","date":"d"}"""
-        val parsed = GiteeAnnouncementSource.parseAnnouncementsIndex("""{"announcements":[$items]}""")!!
+        }
+        val blankTitle = """{"file":"announcements/x.md","title":"","date":"d"}"""
+        val body = """{"announcements":[$eight,$blankTitle]}"""
+        val parsed = GiteeAnnouncementSource.parseAnnouncementsIndex(body)!!
         assertEquals(GiteeAnnouncementSource.MAX_ENTRIES, parsed.size)
         assertEquals("1", parsed.first().title) // 索引顺序即优先级，截尾不掐头
     }
