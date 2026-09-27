@@ -511,8 +511,13 @@ fun AppNavigation(
             com.openminis.app.cards.IntegratedCardHost(kind=if(entry.arguments?.getBoolean("world")==true)novex.content.CardKind.WORLD else novex.content.CardKind.CHARACTER,
                 importUri=entry.arguments?.getString("uri"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
         }
-        composable("integrated-card-settings/{chat}",arguments=listOf(navArgument("chat"){type=NavType.StringType})) {entry->
-            com.openminis.app.cards.IntegratedCardSettings(requireNotNull(entry.arguments?.getString("chat")),onBack={navController.safePopBackStack()})
+        composable("integrated-card-settings/{chat}?mode={mode}",arguments=listOf(
+            navArgument("chat"){type=NavType.StringType},
+            navArgument("mode"){type=NavType.StringType;defaultValue="identity"})) {entry->
+            com.openminis.app.cards.IntegratedCardSettings(
+                requireNotNull(entry.arguments?.getString("chat")),
+                initialMode=entry.arguments?.getString("mode")?:"identity",
+                onBack={navController.safePopBackStack()})
         }
         composable("integrated-card?root={root}&target={target}",arguments=listOf(navArgument("root"){type=NavType.StringType;defaultValue=""},navArgument("target"){type=NavType.StringType;defaultValue=""})) {entry->
             com.openminis.app.cards.IntegratedCardHost(root=entry.arguments?.getString("root"),target=entry.arguments?.getString("target"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
@@ -681,7 +686,7 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
-                onCardSettings = {navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}")},
+                onCardSettings = {mode->navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}?mode=${android.net.Uri.encode(mode)}")},
                 onBack = { navController.safePopBackStack() },
             )
         }
