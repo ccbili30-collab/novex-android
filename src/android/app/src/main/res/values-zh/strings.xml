@@ -38,6 +38,9 @@
     <string name="memory_save_error">保存失败：%1$s</string>
     <string name="memory_global_footer">每个会话中对智能体可见的持久指令和偏好。智能体无法修改此文件。</string>
     <string name="check_update_section_header">应用更新</string>
+    <string name="update_source_row_title">更新源</string>
+    <string name="update_source_gitee">Gitee（国内）</string>
+    <string name="update_source_github">GitHub（海外）</string>
     <string name="check_update_current_version">当前版本：%1$s</string>
     <string name="check_update_current_version_channel">当前版本：%1$s · %2$s</string>
     <string name="update_channel_stable">稳定版</string>

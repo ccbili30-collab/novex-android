@@ -3,6 +3,7 @@ package com.openminis.app.ui.settings
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -162,6 +163,42 @@ fun CheckUpdateSection() {
             updateChannelLabel(UpdateChecker.currentChannel),
         ),
     ) {
+        // [T-dual-update-source] 更新源切换（默认 Gitee/国内；GitHub/海外走
+        // 既有链路）。切换即清除本轮检查状态，下一次检查从新源取。
+        var updateSource by remember { mutableStateOf(com.openminis.app.data.UpdateSourceStore.current()) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            UpdateSourcePill(
+                selected = updateSource == com.openminis.app.data.UpdateSource.GITEE,
+                label = stringResource(R.string.update_source_gitee),
+                iconRes = R.drawable.ic_gitee,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    if (updateSource != com.openminis.app.data.UpdateSource.GITEE) {
+                        com.openminis.app.data.UpdateSourceStore.set(context, com.openminis.app.data.UpdateSource.GITEE)
+                        updateSource = com.openminis.app.data.UpdateSource.GITEE
+                        statusMessage = null; update = null; showReleasesLink = false
+                    }
+                },
+            )
+            UpdateSourcePill(
+                selected = updateSource == com.openminis.app.data.UpdateSource.GITHUB,
+                label = stringResource(R.string.update_source_github),
+                iconRes = R.drawable.ic_github,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    if (updateSource != com.openminis.app.data.UpdateSource.GITHUB) {
+                        com.openminis.app.data.UpdateSourceStore.set(context, com.openminis.app.data.UpdateSource.GITHUB)
+                        updateSource = com.openminis.app.data.UpdateSource.GITHUB
+                        statusMessage = null; update = null; showReleasesLink = false
+                    }
+                },
+            )
+        }
         SettingsRow(
             icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
             iconColor = Color(0xFF007AFF),
@@ -813,3 +850,43 @@ private fun updateChannelLabel(channel: UpdateChannel): String = stringResource(
         UpdateChannel.PREVIEW -> R.string.update_channel_preview
     },
 )
+
+/**
+ * [T-dual-update-source] 更新源切换胶囊：logo + 标签，选中态描边高亮。
+ * 纯展示组件，选中逻辑与持久化在调用方。
+ */
+@Composable
+private fun UpdateSourcePill(
+    selected: Boolean,
+    label: String,
+    iconRes: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+    androidx.compose.foundation.layout.Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = borderColor,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.Unspecified else Color(0xFF9E9E9E),
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

@@ -38,6 +38,9 @@
     <string name="memory_save_error">Не удалось сохранить: %1$s</string>
     <string name="memory_global_footer">Постоянные инструкции и предпочтения, видимые агенту в каждой сессии. Агент не может изменять этот файл.</string>
     <string name="check_update_section_header">Обновление приложения</string>
+    <string name="update_source_row_title">Источник обновлений</string>
+    <string name="update_source_gitee">Gitee (Китай)</string>
+    <string name="update_source_github">GitHub (междунар.)</string>
     <string name="check_update_current_version">Текущая версия: %1$s</string>
     <string name="check_update_check_button">Проверить обновления</string>
     <string name="check_update_checking">Проверка…</string>

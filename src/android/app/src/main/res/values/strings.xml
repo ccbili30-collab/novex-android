@@ -42,6 +42,9 @@
 
     <!-- Check Update -->
     <string name="check_update_section_header">App Update</string>
+    <string name="update_source_row_title">Update Source</string>
+    <string name="update_source_gitee">Gitee (China)</string>
+    <string name="update_source_github">GitHub (Global)</string>
     <string name="check_update_current_version">Current version: %1$s</string>
     <string name="check_update_current_version_channel">Current version: %1$s · %2$s</string>
     <string name="update_channel_stable">Stable</string>

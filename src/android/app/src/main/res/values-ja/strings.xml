@@ -38,6 +38,9 @@
     <string name="memory_save_error">保存に失敗しました: %1$s</string>
     <string name="memory_global_footer">すべてのセッションでエージェントに表示される永続的な指示と設定です。エージェントはこのファイルを変更できません。</string>
     <string name="check_update_section_header">アプリ更新</string>
+    <string name="update_source_row_title">更新ソース</string>
+    <string name="update_source_gitee">Gitee（国内）</string>
+    <string name="update_source_github">GitHub（海外）</string>
     <string name="check_update_current_version">現在のバージョン: %1$s</string>
     <string name="check_update_check_button">更新を確認</string>
     <string name="check_update_checking">確認中…</string>
