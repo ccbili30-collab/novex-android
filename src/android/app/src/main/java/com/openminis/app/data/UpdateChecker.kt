@@ -106,9 +106,10 @@ object UpdateChecker {
     /** Loads the official announcement and release archive without requiring an update to exist. */
     internal suspend fun fetchBulletin(source: UpdateSource = UpdateSourceStore.current()): NovexBulletin =
         when (source) {
-            // 公告体系后置（用户 2026-09-27：「公告也从这里获取，更新来源同
-            // 更新源。公告体系后面搞」）——Gitee 侧落地前回落内置归档。
-            UpdateSource.GITEE -> NovexBulletinDefaults.value
+            // [T-announcement-system] Gitee 道公告随源读 hub announcements
+            // 索引；任一环节失败回落内置归档（与 GitHub 道同语义）。
+            UpdateSource.GITEE ->
+                GiteeAnnouncementSource.fetchBulletin(client) ?: NovexBulletinDefaults.value
             UpdateSource.GITHUB -> fetchGitHubBulletin()
         }
 
