@@ -1,6 +1,6 @@
 # 公告体系 v2：双版本互通+跳脸+通道定向+公告/更新切换+双源同源
 
-日期：2026-09-27 · 分支 task/announcement-v2 · 状态：进行中
+日期：2026-09-27 · 分支 task/announcement-v2 · 状态：终态（PR #41 已合并 → beta.85）
 
 ## 用户决议（2026-09-27 聊天定稿）
 
@@ -53,3 +53,18 @@
 - 已读只在成功展示后写入；公告内容更新（同文件）不重复跳脸
 - GitHub 道更新页（releases 历史）与公告页（镜像 json）数据源分离
   但同弹窗
+
+## 台账（终态）
+
+- 净眼七场景：S1-S6 过（通道过滤双向/跳脸时序已读键/live 三态防误弹/
+  弹窗括号平衡/编译面/GitHub 道切换无残留），S7 退回一项——
+  NovexAnnouncementTest 源文本契约"版本更新"随 tab 化失效，已随批更新
+- CI 四轮收敛（三轮红全留痕）：①老测试契约（净眼预判）②KDoc 通配
+  写法 announcements/*.md 触发 Kotlin 嵌套注释未闭合（v1 措辞无此雷，
+  v2 重写引入——教训：Kotlin 块注释可嵌套，注释文本禁写 /*）③公开
+  对象属性暴露 internal 类型参数（monitor 流改 internal）④绿
+- 双推完成：GitHub v3.0.5-beta.85 + Gitee publish.sh（首次尝试下载被
+  掐出 1.5MB 残片，清理后带大小门重试通过）+ github 镜像；update.json
+  preview=3.0.5-beta.85 直链 200
+- hub 侧配套：AGENTS.md channel 字段文档+announce.sh 一键模板（标题+
+  可选通道→md 模板+索引行+README 行）已双 forge 推送
