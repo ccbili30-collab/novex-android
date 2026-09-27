@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -132,6 +133,8 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
             Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
+                // [feat/ui-rikkahub] 头部文字与步骤标签同列（16dp 节点位 + 6dp 间距）。
+                .padding(start = 22.dp)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -201,6 +204,13 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                                 } + dur
                             },
                             copyText = formatToolDetailsForClipboard(row.block),
+                            errorDetail = row.block.content.takeIf {
+                                it.isNotBlank() && row.block.toolStatus in setOf(
+                                    ToolBlockStatus.FAILED,
+                                    ToolBlockStatus.TIMEOUT,
+                                    ToolBlockStatus.CANCELLED,
+                                )
+                            },
                         )
                         else -> Unit
                     } }
@@ -222,16 +232,18 @@ private fun ProcessStepRow(
     icon: ImageVector,
     label: String,
     content: String? = null,
+    errorDetail: String? = null,
     copyText: String? = null,
 ) {
     val context = LocalContext.current
     var open by remember(label) { mutableStateOf(false) }
+    val expandable = content != null || errorDetail != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 when {
-                    content != null -> Modifier.clickable { open = !open }
+                    expandable -> Modifier.clickable { open = !open }
                     copyText != null -> Modifier.combinedClickable(
                         onClick = {},
                         onLongClick = {
@@ -250,7 +262,14 @@ private fun ProcessStepRow(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
+        // 不透明节点垫：遮住身后的轨线，读作"线到节点断开、下方再续"，
+        // 而不是从图标上穿过去。
+        Box(
+            modifier = Modifier
+                .width(16.dp)
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(
                 icon,
                 contentDescription = null,
@@ -264,7 +283,7 @@ private fun ProcessStepRow(
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (content != null) {
+        if (expandable) {
             Icon(
                 imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                 contentDescription = if (open) "Collapse" else "Expand",
@@ -275,7 +294,7 @@ private fun ProcessStepRow(
     }
     AnimatedVisibility(open) {
         Text(
-            content.orEmpty(),
+            (content ?: errorDetail).orEmpty(),
             fontSize = 12.sp,
             lineHeight = 17.sp,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
