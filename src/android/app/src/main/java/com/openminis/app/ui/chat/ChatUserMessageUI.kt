@@ -401,29 +401,54 @@ internal fun UserMessageBubble(
                         }
                     }
                 }
-                val visibleContextSources = message.novexContextUsage?.includedSources.orEmpty()
+                // [feat/ui-rikkahub] 预览只显示用户的注入与模型的读取；
+                // 系统管道（工具定义/系统提示/回答身份）不进预览。
+                val injectedSources = message.novexContextUsage?.includedSources.orEmpty()
                     .filterNot { it.sourceId == "answer-identity:nova" }
-                val viewedSourceLabels = message.novexContextUsage?.sourceReads.orEmpty()
-                    .filterNot { it.sourceId == "answer-identity:nova" }.map { it.label }
-                val sourceLabels = (visibleContextSources.map { it.label } + viewedSourceLabels).distinct()
-                if (sourceLabels.isNotEmpty()) {
-                    val preview = sourceLabels.take(2).joinToString("、")
-                    val remaining = (sourceLabels.size - 2).coerceAtLeast(0)
-                    Text(
-                        text = buildString {
-                            append("资料：").append(preview)
-                            if (remaining > 0) append(" 等 ").append(sourceLabels.size).append(" 项")
-                        },
-                        color = ChatColors.tertiaryText,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { showContextUsage = true }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                    )
+                    .filterNot {
+                        it.kind == ContextSourceKind.TOOL_DEFINITION ||
+                            it.kind == ContextSourceKind.CONVERSATION_PROMPT ||
+                            it.kind == ContextSourceKind.ANSWER_IDENTITY
+                    }
+                val injectedLabels = injectedSources.map { it.label }.distinct()
+                val readSourceLabels = message.novexContextUsage?.sourceReads.orEmpty()
+                    .filterNot { it.sourceId == "answer-identity:nova" }.map { it.label }.distinct()
+                if (injectedLabels.isNotEmpty() || readSourceLabels.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (injectedLabels.isNotEmpty()) {
+                            val preview = injectedLabels.take(2).joinToString("、")
+                            val remaining = (injectedLabels.size - 2).coerceAtLeast(0)
+                            Text(
+                                text = buildString {
+                                    append("携带：").append(preview)
+                                    if (remaining > 0) append(" 等 ").append(injectedLabels.size).append(" 项")
+                                },
+                                color = ChatColors.tertiaryText,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { showContextUsage = true }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                            )
+                        }
+                        if (readSourceLabels.isNotEmpty()) {
+                            Text(
+                                text = "已读取：${readSourceLabels.take(2).joinToString("、")}",
+                                color = ChatColors.tertiaryText,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { showContextUsage = true }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
 
