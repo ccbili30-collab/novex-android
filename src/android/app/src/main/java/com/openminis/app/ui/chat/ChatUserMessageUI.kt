@@ -572,22 +572,35 @@ internal fun UserMessageBubble(
                     color = ChatColors.secondaryText,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                // [feat/ui-rikkahub] 你的每轮注入（会话设置里写的常设指令）随
-                // 系统提示每轮发送，此前界面从不显示——现在在这里亮出来。
+                // [feat/ui-rikkahub] 每轮注入：折叠行，点开展开常设指令原文。
                 if (perTurnPrompt.isNotBlank()) {
-                    Text(
-                        "「每轮注入」你的常设指令",
-                        color = ChatColors.primaryText,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        perTurnPrompt,
-                        color = ChatColors.secondaryText,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    var perTurnOpen by remember { mutableStateOf(false) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.clickable { perTurnOpen = !perTurnOpen },
+                    ) {
+                        Text(
+                            "每轮注入",
+                            color = ChatColors.primaryText,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Icon(
+                            imageVector = if (perTurnOpen) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                            contentDescription = if (perTurnOpen) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                    AnimatedVisibility(perTurnOpen) {
+                        Text(
+                            perTurnPrompt,
+                            color = ChatColors.secondaryText,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                 }
                 // [feat/ui-rikkahub] 2026-09-27 系统内部条目（工具定义/系统提示/
                 // 回答身份）不暴露给用户——它们每轮固定重复，是管道不是资料。
@@ -596,13 +609,6 @@ internal fun UserMessageBubble(
                     it.kind == ContextSourceKind.TOOL_DEFINITION ||
                         it.kind == ContextSourceKind.ANSWER_IDENTITY ||
                         it.kind == ContextSourceKind.CONVERSATION_PROMPT
-                }
-                if (userSources.isEmpty()) {
-                    Text(
-                        "本轮仅携带系统指令与工具定义，无用户资料注入",
-                        color = ChatColors.tertiaryText,
-                        fontSize = 12.sp,
-                    )
                 }
                 userSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
