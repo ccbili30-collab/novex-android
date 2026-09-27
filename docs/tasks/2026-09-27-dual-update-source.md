@@ -1,6 +1,6 @@
 # 双源更新：Gitee（默认）/GitHub 切换 + 同步推送
 
-日期：2026-09-27 · 分支 task/dual-update-source · 状态：进行中
+日期：2026-09-27 · 分支 task/dual-update-source · 状态：终态（PR #38 已合并）
 
 ## 用户指令原文
 
@@ -52,3 +52,22 @@
   （Gitee=update.json 通道键；GitHub=prerelease 过滤+资产名）
 - 下载渠道校验不动（matchesInstalledTrack 查 APK 元数据）
 - PendingUpdateStore/安装链路零改动（源切换只影响检查，不影响在途安装）
+
+## 台账（终态）
+
+- 净眼七场景过（通道独立/GitHub 道逐行搬迁机械 diff 为空/注水时序/
+  切换状态清理/图标资源/字符串全 locale/编译面）；非阻塞观察留痕：
+  update_source_row_title 预留未引用；源切换不清 NovexUpdateMonitor
+  available 角标（留存至下次刷新，无害）
+- 守纲六问过（含用户指令五要素逐条：默认 gitee/切换选项 logo 胶囊/
+  预览正式独立/公告随源/公告体系后置）；CI 绿；合并 PR #38 → next
+  （208ac7a）；发布 v3.0.5-beta.83
+- 首次同步推送完成：stable 3.0.4 + preview 3.0.5-beta.83 上 Gitee
+  （publish.sh），三条验证清单全过（raw 含新版本/APK 直链 200 且
+  Content-Length 与本地一致/仓库公开）；hub 仓库本体双推 gitee+github
+  镜像（ccbili30-collab/novex，api 验证镜像 update.json 两通道同步）；
+  AGENTS.md 版本表校正 3.0.x；publish.sh 修远端名回退（无 origin 取
+  gitee——hub 仓库远端名为 gitee/github）
+- 发布侧流程定型：每轮 GitHub 发版后本地 publish.sh 双推 + github
+  镜像 git push；CI 内置 Gitee 推送需 Actions 配 GITEE_TOKEN secret，
+  挂账后置
