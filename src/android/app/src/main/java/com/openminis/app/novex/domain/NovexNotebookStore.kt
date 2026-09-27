@@ -82,10 +82,12 @@ class NovexNotebookStore(private val file: File) {
 
         /** 整理 prompt（后台子任务用；输出=完整更新后条目集 JSON）。 */
         fun consolidationPrompt(memory: SessionMemory, recentTurns: String, cardName: String?): String = buildString {
-            appendLine("你是记忆整理器。整理下述对话笔记本：保留仍相关的内容，合并重复，淘汰过时；新增值得长期记住的事实/事件/人物/线索。")
+            appendLine("你是记忆整理器，只维护一份长期对话笔记本。只输出一个 JSON 对象，无任何其他文字。")
+            appendLine("整理笔记本：保留仍会影响后续对话的条目，合并重复；已被新信息推翻的旧条目直接淘汰，不要同时保留新旧两个版本。")
+            appendLine("值得记：已发生的事件、人物与关系变化、双方的约定与决定、用户的明确偏好、待办线索。不值得记：寒暄、与对话内容无关的闲聊、你自己对未来的猜测——不要写入。")
             if (cardName != null) appendLine("本局：$cardName")
             appendLine("软上限 ${SOFT_MAX_ENTRIES} 条/${SOFT_MAX_CHARS} 字——超限时把最旧的条目合并成一条摘要（kind=archive），不要静默丢弃整条信息。")
-            appendLine("只输出 JSON 对象：{\"entries\":[{\"id\":\"m1\",\"kind\":\"fact|event|person|thread|archive\",\"text\":\"...\"}]}，无其他文字。")
+            appendLine("只输出 JSON 对象：{\"entries\":[{\"id\":\"m1\",\"kind\":\"fact|event|person|thread|archive\",\"text\":\"...\"}]}。")
             appendLine("当前笔记本：")
             appendLine(if (memory.entries.isEmpty()) "（空）" else JSONObject().put("entries", JSONArray(memory.entries.map {
                 JSONObject().put("id", it.id).put("kind", it.kind).put("text", it.text)
