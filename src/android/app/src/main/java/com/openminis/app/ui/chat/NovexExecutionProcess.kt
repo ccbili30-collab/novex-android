@@ -184,6 +184,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                             } else {
                                 "${row.block.content.length} 字"
                             },
+                            content = row.block.content,
                             copyText = row.block.content,
                         )
                         is FlatChatItem.AssistantToolUse -> ProcessStepRow(
@@ -211,23 +212,27 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
 
 /**
  * [feat/ui-rikkahub] One step on the rail: typed icon + human-language label.
- * Per 方案 B (2026-09-27) payloads never render in the UI — long-press copies
- * diagnostics for bug reports instead.
+ * 思考 steps carry [content] and tap-expand inline (ZCode behavior); tool
+ * steps stay label-only per 方案 B — payloads never render, long-press copies
+ * diagnostics for bug reports.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProcessStepRow(
     icon: ImageVector,
     label: String,
+    content: String? = null,
     copyText: String? = null,
 ) {
     val context = LocalContext.current
+    var open by remember(label) { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (copyText != null) {
-                    Modifier.combinedClickable(
+                when {
+                    content != null -> Modifier.clickable { open = !open }
+                    copyText != null -> Modifier.combinedClickable(
                         onClick = {},
                         onLongClick = {
                             val cb = context.getSystemService(
@@ -239,8 +244,7 @@ private fun ProcessStepRow(
                             android.widget.Toast.makeText(context, "已复制诊断信息", android.widget.Toast.LENGTH_SHORT).show()
                         },
                     )
-                } else {
-                    Modifier
+                    else -> Modifier
                 },
             ),
         verticalAlignment = Alignment.Top,
@@ -259,6 +263,26 @@ private fun ProcessStepRow(
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (content != null) {
+            Icon(
+                imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                contentDescription = if (open) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(12.dp),
+            )
+        }
+    }
+    AnimatedVisibility(open) {
+        Text(
+            content.orEmpty(),
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+            modifier = Modifier
+                .padding(start = 22.dp, top = 2.dp, bottom = 4.dp)
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState()),
         )
     }
 }
