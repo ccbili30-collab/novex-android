@@ -41,7 +41,6 @@ import com.openminis.app.provider.anthropic.AnthropicModelsApi
 import com.openminis.app.provider.gemini.GeminiModelsApi
 import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.provider.openrouter.OpenRouterModelsApi
-import com.openminis.app.provider.opencode.OpenCodeFreeModelsApi
 import com.openminis.app.tools.migrateLegacyImageGenerationConfig
 import com.openminis.app.tools.resolveImageGenerationEntries
 import com.openminis.app.tools.resolveOrdinaryAgentLoopEntries
@@ -123,7 +122,6 @@ class ProviderRepository(private val context: Context) {
 
         /** [T-newchat-default-model-fallback-android] Global last-used model entry id. */
         private const val KEY_LAST_USED_ENTRY = "lastUsedModelEntryId"
-        private const val KEY_OPENCODE_FREE_DISCLOSURE = "opencodeFreeDisclosureAccepted"
 
         /**
          * [T-android-provider-voice] Normalize a base URL for shadow-voice
@@ -227,6 +225,13 @@ class ProviderRepository(private val context: Context) {
                     // _configLoaded true and takes precedence; we must not clobber
                     // it with the stale on-disk snapshot.
                     if (!_configLoaded.value) {
+                        // [T-opencode-sunset]（净眼 P1）正常冷启动走的是本
+                        // 异步装载分支，ensureConfigLoaded 会被 _configLoaded
+                        // 短路——迁移必须挂在这里才必然执行。幂等、失败不
+                        // 阻断装载（内存态已生效，下次启动重试落盘）。
+                        if (applyOpenCodeSunset(loaded)) {
+                            runCatching { saveConfig(loaded) }
+                        }
                         _config.value = loaded
                         _configLoaded.value = true
                         android.util.Log.i(
@@ -548,6 +553,13 @@ class ProviderRepository(private val context: Context) {
                     "[ProviderStore] ensureConfigLoaded failed; staying unloaded for retry: ${e.message}",
                 )
                 return
+            }
+            // [T-opencode-sunset] One-shot idempotent sunset migration rides
+            // the first load — every config-touching path funnels through
+            // here, so no UI call site is needed. Persist failure is
+            // non-fatal: the in-memory disable already holds for this run.
+            if (applyOpenCodeSunset(loaded)) {
+                runCatching { saveConfig(loaded) }
             }
             _config.value = loaded
             _configLoaded.value = true
@@ -1493,127 +1505,29 @@ class ProviderRepository(private val context: Context) {
         }
     }
 
+    /**
+     * [T-opencode-sunset] The builtin OpenCode Zen free instances were
+     * sunset (2026-09-26): the upstream free tier 403s third-party callers
+     * server-side. IDs inlined — OpenCodeFreeModelsApi is gone; this check
+     * survives so the one-shot migration below (and list filtering) can
+     * still recognize leftover instances in existing user configs.
+     */
     fun isOpenCodeFreeInstance(instanceId: String): Boolean =
-        instanceId == OpenCodeFreeModelsApi.CHAT_INSTANCE_ID ||
-            instanceId == OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID
-
-    fun openCodeFreeEntries(): List<ModelEntry> = _config.value.modelEntries.filter {
-        isOpenCodeFreeInstance(it.providerInstanceId)
-    }
-
-    fun hasAcceptedOpenCodeFreeDisclosure(): Boolean =
-        prefs.getBoolean(KEY_OPENCODE_FREE_DISCLOSURE, false)
-
-    fun acceptOpenCodeFreeDisclosure() {
-        prefs.edit().putBoolean(KEY_OPENCODE_FREE_DISCLOSURE, true).apply()
-    }
+        isOpenCodeFreeInstanceId(instanceId)
 
     /**
-     * Refresh the public OpenCode catalog and merge it without changing the
-     * user's checkboxes. New models always start hidden; removed models are
-     * dropped only after both the pricing catalog and the live gateway agree
-     * that they are no longer active.
+     * [T-opencode-sunset] One-shot idempotent migration: disable the two
+     * builtin free instances and hide their model entries. Nothing is
+     * deleted — entries stay in config so the sunset remains reversible;
+     * disabled instances simply stop appearing in provider/model pickers,
+     * and sessions still bound to one get the friendly 403 copy.
      */
-    suspend fun refreshOpenCodeFreeModels(forceCatalogRefresh: Boolean = false): Int {
-        val result = OpenCodeFreeModelsApi.fetch(forceCatalogRefresh)
-        applyOpenCodeFreeCatalog(result.models)
-        return result.models.size
-    }
-
-    fun setOpenCodeFreeModelEnabled(entryId: String, enabled: Boolean): Unit = synchronized(configLock) {
+    fun ensureOpenCodeSunsetMigration(): Unit = synchronized(configLock) {
         ensureConfigLoaded()
         val config = workingCopy()
-        val index = config.modelEntries.indexOfFirst {
-            it.id == entryId && isOpenCodeFreeInstance(it.providerInstanceId)
-        }
-        if (index < 0) return@synchronized
-        val current = config.modelEntries[index]
-        if (current.isHidden == !enabled) return@synchronized
-        config.modelEntries[index] = current.copy(
-            isHidden = !enabled,
-            userModifiedAt = System.currentTimeMillis(),
-        )
-        saveConfig(config)
+        if (applyOpenCodeSunset(config)) saveConfig(config)
     }
 
-    fun setOpenCodeFreeModelToolsEnabled(entryId: String, enabled: Boolean): Unit = synchronized(configLock) {
-        ensureConfigLoaded()
-        val config = workingCopy()
-        val index = config.modelEntries.indexOfFirst {
-            it.id == entryId && isOpenCodeFreeInstance(it.providerInstanceId)
-        }
-        if (index < 0) return@synchronized
-        val current = config.modelEntries[index]
-        if ((current.model.supportsTools != false) == enabled) return@synchronized
-        config.modelEntries[index] = current.copy(
-            overrides = current.overrides.copy(supportsTools = enabled),
-            userModifiedAt = System.currentTimeMillis(),
-        )
-        saveConfig(config)
-    }
-
-    private fun applyOpenCodeFreeCatalog(models: List<OpenCodeFreeModelsApi.FreeModel>): Unit =
-        synchronized(configLock) {
-            ensureConfigLoaded()
-            val config = workingCopy()
-            val instanceIds = setOf(
-                OpenCodeFreeModelsApi.CHAT_INSTANCE_ID,
-                OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID,
-            )
-            val existingByKey = config.modelEntries
-                .filter { it.providerInstanceId in instanceIds }
-                .associateBy { it.providerInstanceId to it.baseModel.id }
-
-            fun ensureInstance(id: String, responses: Boolean) {
-                val index = config.instances.indexOfFirst { it.id == id }
-                val desired = ProviderInstance(
-                    id = id,
-                    label = "OpenCode Zen",
-                    providerType = ProviderType.openAI,
-                    credentialType = ProviderCredential.apiKey,
-                    isEnabled = true,
-                    createdAt = config.instances.getOrNull(index)?.createdAt ?: System.currentTimeMillis(),
-                    customBaseURL = OpenCodeFreeModelsApi.BASE_URL,
-                    appendV1Suffix = false,
-                    useResponsesAPI = responses,
-                )
-                if (index < 0) config.instances += desired else config.instances[index] = desired
-            }
-
-            ensureInstance(OpenCodeFreeModelsApi.CHAT_INSTANCE_ID, responses = false)
-            ensureInstance(OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID, responses = true)
-
-            val refreshed = models.map { item ->
-                val instanceId = if (item.usesResponses) {
-                    OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID
-                } else {
-                    OpenCodeFreeModelsApi.CHAT_INSTANCE_ID
-                }
-                val prior = existingByKey[instanceId to item.model.id]
-                ModelEntry(
-                    providerInstanceId = instanceId,
-                    baseModel = item.model,
-                    overrides = prior?.overrides ?: ModelOverrides(),
-                    isCustom = false,
-                    isHidden = prior?.isHidden ?: true,
-                    uuid = prior?.id ?: java.util.UUID.randomUUID().toString(),
-                    userModifiedAt = prior?.userModifiedAt,
-                )
-            }
-            val removedIds = config.modelEntries
-                .filter { it.providerInstanceId in instanceIds }
-                .map { it.id }
-                .toSet() - refreshed.map { it.id }.toSet()
-            config.modelEntries.removeAll { it.providerInstanceId in instanceIds }
-            config.modelEntries.addAll(refreshed)
-            if (removedIds.isNotEmpty()) {
-                config.modelGroups.forEach { it.memberEntryIds.removeAll(removedIds) }
-                config.agentLoopModelEntryIds.removeAll(removedIds)
-            }
-            saveConfig(config)
-            saveApiKey(OpenCodeFreeModelsApi.CHAT_INSTANCE_ID, OpenCodeFreeModelsApi.PUBLIC_KEY)
-            saveApiKey(OpenCodeFreeModelsApi.RESPONSES_INSTANCE_ID, OpenCodeFreeModelsApi.PUBLIC_KEY)
-        }
 
     fun ensureImageGenerationMigration(): Unit = synchronized(configLock) {
         ensureConfigLoaded()
@@ -2475,14 +2389,9 @@ class ProviderRepository(private val context: Context) {
 
 
     suspend fun refreshModels(instance: ProviderInstance) {
-        // Built-in OpenCode Free entries are curated from the zero-cost
-        // models.dev catalog and intersected with the live gateway list. A
-        // generic OpenAI /models refresh would also import paid models and
-        // silently turn this section into an ordinary provider.
-        if (isOpenCodeFreeInstance(instance.id)) {
-            refreshOpenCodeFreeModels(forceCatalogRefresh = false)
-            return
-        }
+        // [T-opencode-sunset] Sunset instances are disabled and hidden;
+        // refreshing them is a no-op (the free tier 403s third-party calls).
+        if (isOpenCodeFreeInstance(instance.id)) return
         var apiKey = loadApiKey(instance.id)
 
         // For OAuth providers, try to refresh the token before using it (mirrors iOS validAccessToken)
@@ -3135,4 +3044,36 @@ class ProviderRepository(private val context: Context) {
         val bits = obj.optInt("modalityOverride", 0)
         return modalityListsFromBitfield(bits)
     }
+}
+
+// ── [T-opencode-sunset] pure helpers (testable without Context/Room) ─────────
+
+private val OPENCODE_FREE_INSTANCE_IDS = setOf(
+    "builtin-opencode-free-chat",
+    "builtin-opencode-free-responses",
+)
+
+fun isOpenCodeFreeInstanceId(instanceId: String): Boolean =
+    instanceId in OPENCODE_FREE_INSTANCE_IDS
+
+/**
+ * In-place, idempotent: disable sunset instances, hide their model entries.
+ * Returns true when anything changed (caller decides to persist). Nothing is
+ * deleted — the sunset stays reversible.
+ */
+fun applyOpenCodeSunset(config: ProviderConfig): Boolean {
+    var changed = false
+    config.instances.forEachIndexed { index, instance ->
+        if (isOpenCodeFreeInstanceId(instance.id) && instance.isEnabled) {
+            config.instances[index] = instance.copy(isEnabled = false)
+            changed = true
+        }
+    }
+    config.modelEntries.forEachIndexed { index, entry ->
+        if (isOpenCodeFreeInstanceId(entry.providerInstanceId) && !entry.isHidden) {
+            config.modelEntries[index] = entry.copy(isHidden = true)
+            changed = true
+        }
+    }
+    return changed
 }

@@ -7,27 +7,61 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NovexCardExecutionPresentationTest {
-    private fun tool(id: String, name: String = "document_read", status: ToolBlockStatus = ToolBlockStatus.SUCCESS, content: String = "{}") =
-        FlatChatItem.AssistantToolUse("reply", AssistantBlock(id, "tool_use", content, status, toolName = name), emptyList())
+    private fun tool(
+        id: String,
+        name: String = "document_read",
+        status: ToolBlockStatus = ToolBlockStatus.SUCCESS,
+        content: String = "{}",
+        messageIsStreaming: Boolean = false,
+    ) = FlatChatItem.AssistantToolUse(
+        "reply", AssistantBlock(id, "tool_use", content, status, toolName = name), emptyList(),
+        messageIsStreaming = messageIsStreaming,
+    )
     private fun text(id: String, value: String, execution: Boolean = false, streaming: Boolean = false) =
         FlatChatItem.AssistantText("reply", AssistantBlock(id, "text", value, executionText = execution), streaming, messageMarkdown = value)
 
-    @Test fun runningFailedAndCancelledOperationsFoldWithoutHidingTheFinalAnswer() {
+    // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex）行为变更：
+    // **活流中**（messageIsStreaming 且 STREAMING/PENDING/RUNNING）的工具行
+    // 不再折叠——留在主文流配滚动尾巴；旧断言"pending 也折进工作行"随之
+    // 改写。恢复路径产出的历史飞行块（无活流）仍照折。
+    @Test fun inFlightToolsStayLiveWhileSettledOnesFold() {
         val intro = text("intro", "读取并整理资料", execution = true, streaming = true)
-        val pending = tool("pending", status = ToolBlockStatus.PENDING)
+        val streaming = tool("streaming", status = ToolBlockStatus.STREAMING, messageIsStreaming = true)
+        val pending = tool("pending", status = ToolBlockStatus.PENDING, messageIsStreaming = true)
+        val running = tool("running", status = ToolBlockStatus.RUNNING, messageIsStreaming = true)
         val failed = tool("failed", status = ToolBlockStatus.FAILED)
         val cancelled = tool("cancelled", status = ToolBlockStatus.CANCELLED)
         val final = text("final", "一张已保存，另一张未完成。")
-        val raw = listOf(intro, pending, failed, cancelled, final)
-        val result = foldNovexExecutionProcesses(raw)
-        assertEquals(2, result.size)
-        // [T-turn-single-card] 工作行钉在回合末尾，叙述在前。
+        val result = foldNovexExecutionProcesses(listOf(intro, streaming, pending, running, failed, cancelled, final))
+        // 三个飞行中的工具原样留在主文流（各配 ToolCallPill 尾巴），叙述保留，
+        // 其余（过程文字/失败/取消）折成唯一工作行钉在回合末尾。
+        assertTrue(result.contains(streaming))
+        assertTrue(result.contains(pending))
+        assertTrue(result.contains(running))
+        assertTrue(result.contains(final))
         val process = result.last() as FlatChatItem.AssistantProcess
-        assertEquals(raw.dropLast(1), process.rows)
+        assertEquals(listOf<FlatChatItem>(intro, failed, cancelled), process.rows)
         assertEquals(intro.key, process.key)
+        // 主文流仍有飞行工具 → 工作行标"进行中"（净眼 P2：不再退化为查看记录）。
         assertEquals("进行中", process.statusLabel())
-        assertSame(final, result.first())
-        assertEquals(5, raw.size)
+        assertEquals(5, result.size)
+    }
+
+    @Test fun restoredHistoricalInFlightBlocksStillFold() {
+        // 净眼 P1：journal 重放产出的历史 PENDING/RUNNING 块不是本回合活流
+        // （messageIsStreaming=false）——照常折叠，不永久挂 shimmer/尾巴。
+        val historicalPending = tool("restored-pending", status = ToolBlockStatus.PENDING)
+        val historicalRunning = tool("restored-running", status = ToolBlockStatus.RUNNING)
+        val result = foldNovexExecutionProcesses(listOf(historicalPending, historicalRunning))
+        val process = result.single() as FlatChatItem.AssistantProcess
+        assertTrue(process.rows.containsAll(listOf<FlatChatItem>(historicalPending, historicalRunning)))
+        assertEquals("进行中", process.statusLabel())
+    }
+
+    @Test fun settledToolStillFolds() {
+        val done = tool("done", status = ToolBlockStatus.SUCCESS)
+        val result = foldNovexExecutionProcesses(listOf(done))
+        assertTrue(result.single() is FlatChatItem.AssistantProcess)
     }
     @Test fun textIsClassifiedByItsChannelInsteadOfPositionOrWording() {
         val formal = text("first", "先给你的完整回答")

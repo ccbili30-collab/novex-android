@@ -47,7 +47,9 @@ class CardRoundTripReconciliationTest {
                     ContentBlock.Image("main-image", "cover-png", caption),
                 ), tags = listOf("主线", "重要"), use = ModuleUse.Keywords(listOf("城门", "夜行"), caseSensitive = false, requireAll = true), characterIds = listOf("hero")),
                 ContentModule("branch", "支线容器", listOf(), layout = ModuleLayout.HORIZONTAL, children = listOf(
-                    ContentModule("branch-nested", "嵌套支线", listOf(ContentBlock.Text("nested-text", nestedText))),
+                    ContentModule("branch-nested", "嵌套支线", listOf(ContentBlock.Text("nested-text", nestedText)),
+                        // [T-stage1-tags] 带标签往返：导出→导入→再导出的对账基线覆盖两新字段。
+                        routing = ModuleRouting.PER_TURN, temporality = ModuleTemporality.SNAPSHOT),
                 )),
             ),
             resources = listOf(CardResource("cover-png", png, "image/png")),
@@ -100,6 +102,10 @@ class CardRoundTripReconciliationTest {
                     ModuleUse.Manual -> "manual"
                     is ModuleUse.Keywords -> "keywords:" + rule.words.joinToString("+") + "/cs=" + rule.caseSensitive + "/all=" + rule.requireAll
                 }) }
+                // [T-stage1-tags]（净眼 P2-4）标签进入对账基线——导出→导入→
+                // 再导出全链保真。
+                module.routing?.let { append("|routing=").append(it.name) }
+                module.temporality?.let { append("|temporality=").append(it.name) }
                 if (module.characterIds.isNotEmpty()) append("|ids=").append(module.characterIds.joinToString(",") { characterIndex[it]?.toString() ?: "?" })
                 module.blocks.forEach { block -> append('\n').append(depth).append("  block|").append(when (block) {
                     is ContentBlock.Text -> "text"

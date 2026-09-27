@@ -34,6 +34,12 @@ class CardToolReader(private val store:CardStore,private val maximumPage:Int=819
             .put("characters",JSONArray(source.target.internalCharacters.map {JSONObject().put("id",it.id).put("name",it.name)}))
             .put("resources",JSONArray(source.target.resources.filter {it.mediaType.startsWith("image/")}.map {JSONObject().put("id",it.id).put("media_type",it.mediaType)}))
             .put("modules",JSONArray(source.target.modules.flattenModules().map { module -> JSONObject().put("id",module.id).put("name",module.name).put("parent_id",source.target.modules.parentOfModule(module.id)?:JSONObject.NULL).put("children",JSONArray(module.children.map {it.id})).put("layout",module.layout.name).put("character_ids",JSONArray(module.characterIds)).put("tags",JSONArray(module.tags)).put("rule",ModuleOptionsProtocol.encode(module.use))
+                // [T-stage1-tags]（净眼 P1-1）回显 effective 标签：模型必须看得到
+                // 现值才能在 set_module_options 中正确保留/修改（该工具缺省=保持
+                // 现值）。null+routing 未设但 use!=null 的存量模块按解析语义回显
+                // standby，显式化无害且诚实。
+                .put("routing",ModuleOptionsProtocol.encodeRouting(module.effectiveRouting())?:JSONObject.NULL)
+                .put("temporality",ModuleOptionsProtocol.encodeTemporality(module.effectiveTemporality())?:JSONObject.NULL)
                 .put("blocks",JSONArray(module.blocks.map { block->JSONObject().put("id",block.id).put("kind",if(block is ContentBlock.Text)"text" else "image_caption").apply {if(block is ContentBlock.Image)put("resource_id",block.resourceId)} })) }))
         if(call.name=="read_card_image") {
             require(args.getString("draft_version")==source.version){"图片版本已变化，请重新读取"}

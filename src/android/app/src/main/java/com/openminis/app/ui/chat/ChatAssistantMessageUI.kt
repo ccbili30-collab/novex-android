@@ -669,8 +669,19 @@ internal fun ToolCallPill(
     // wrapper below so it opens beneath the tapped bubble.
     var showToolMenu by remember { mutableStateOf(false) }
 
-    // [feat/ui-rikkahub] 方案 B：工具行无负载展示，无展开态；诊断数据走
-    // 长按菜单的"复制详情"。
+    // [T-live-tool-tail]（2026-09-17 用户批：参照 dsh/codex 的工具调用显示
+    // 流程）执行中的工具行下方挂暗色等宽小字尾巴：参数流式期显示累积参数
+    // 尾部（bulk 工具解析最近模块名），执行期优先显示输出尾部——长静默轮
+    // 也有"正在写什么"的持续反馈。完成后尾巴随折叠消失。
+    val liveTailSource = when {
+        !isRunning -> null
+        block.toolStatus == ToolBlockStatus.RUNNING && block.content.isNotBlank() -> block.content
+        else -> block.toolArgs
+    }
+    val liveTail = liveTailSource?.let { ToolLiveTail.liveTail(block.toolName, it) }
+
+    // [feat/ui-rikkahub] 方案 B：工具行无负载展示（时间线步骤行）；运行中
+    // 的 live tail 保留（上游 T-live-tool-tail），渲染在步骤行下方。
     val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -812,6 +823,20 @@ internal fun ToolCallPill(
         // any more. retryLast() / retryFromMessage() remain reachable from
         // other entry points (long-press menu, etc.).
         // iOS: Spacer(minLength: 0) — pill stays content-width, not full-row-width
+    }
+
+    // [T-live-tool-tail] dsh/codex 式滚动尾巴：暗色等宽小字，与胶囊图标对齐。
+    if (!liveTail.isNullOrEmpty()) {
+        Text(
+            text = liveTail,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 26.dp, bottom = 2.dp),
+        )
+    }
     }
 
     generatedImageArtifact(block)?.let { artifact ->

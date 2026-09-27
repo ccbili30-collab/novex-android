@@ -19,7 +19,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -87,6 +91,28 @@ internal fun StreamingDotsText() {
 
 // ─── Typing Indicator (three dots pulsing) ────────────────────────────────────
 
+/**
+ * [T-stream-stall-watchdog] Epoch millis of the in-flight request whose FIRST
+ * stream chunk has not arrived yet; null when not waiting. Provided by
+ * ChatScreen from ChatViewModel.streamAwaitingSince and read by
+ * [TypingIndicator] so the "thinking…" dots never sit silent for minutes
+ * without telling the user how long the connection has been quiet
+ * (conversation-f899bf05: 51-minute hole with zero feedback).
+ */
+internal val LocalStreamAwaitingSince = compositionLocalOf<Long?> { null }
+
+/**
+ * [T-stream-stall-watchdog] Wait-time hint text for [TypingIndicator].
+ * null = don't render yet (first 3 s are normal latency, no hint); under a
+ * minute = plain seconds; at/over a minute the copy adds the auto-reconnect
+ * note so the user knows the 5-minute stall watchdog is armed.
+ */
+internal fun streamAwaitingHintText(seconds: Long): String? = when {
+    seconds < 3 -> null
+    seconds < 60 -> "已等待 $seconds 秒"
+    else -> "已等待 ${seconds / 60} 分 ${seconds % 60} 秒 · 卡住将自动重连"
+}
+
 @Composable
 internal fun TypingIndicator() {
     val infiniteTransition = rememberInfiniteTransition(label = "typing")
@@ -97,6 +123,19 @@ internal fun TypingIndicator() {
     // recompose the indicator immediately when it changes.
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
     val soulName = soulMeta.name.trim().ifEmpty { "Nova" }
+    // [T-stream-stall-watchdog] Elapsed-seconds ticker while awaiting the
+    // first chunk; recomposes at most once per second. elapsedTick only
+    // drives recomposition — the age itself is computed from the wall clock
+    // on each recomposition.
+    val awaitingSince = LocalStreamAwaitingSince.current
+    var elapsedTick by remember(awaitingSince) { mutableLongStateOf(0L) }
+    androidx.compose.runtime.LaunchedEffect(awaitingSince) {
+        while (awaitingSince != null) {
+            kotlinx.coroutines.delay(1_000)
+            elapsedTick++
+        }
+    }
+    val awaitingSeconds = awaitingSince?.let { (System.currentTimeMillis() - it) / 1000 }
 
     Row(
         modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
@@ -125,6 +164,17 @@ internal fun TypingIndicator() {
                 fontWeight = FontWeight.Bold,
                 color = ChatColors.tertiaryText,
                 modifier = Modifier.graphicsLayer { translationY = offsetY },
+            )
+        }
+        // [T-stream-stall-watchdog] Wait-time hint next to the dots — copy
+        // thresholds in [streamAwaitingHintText] (3 s grace, 60 s adds the
+        // auto-reconnect note so a dead relay reads as "armed", not "frozen").
+        streamAwaitingHintText(awaitingSeconds ?: -1)?.let { hint ->
+            Text(
+                text = hint,
+                fontSize = 13.sp,
+                color = ChatColors.tertiaryText,
+                modifier = Modifier.padding(start = 8.dp, bottom = 1.dp),
             )
         }
     }

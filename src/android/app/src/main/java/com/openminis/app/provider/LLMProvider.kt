@@ -65,6 +65,14 @@ interface LLMProvider {
     )
 
     /** See [sendMessage] — the clamped, provider-implemented counterpart. */
+    /**
+     * [T-stream-stall-watchdog] Stream counterpart of [sendMessage], and the
+     * single mount point of the stall watchdog (see [failOnStreamStall]): one
+     * mount covers every provider, and the watchdog's NetworkError feeds the
+     * existing auto-retry chain, so a relay that accepts the request and then
+     * goes silent is cut loose after 5 minutes instead of hanging the chat
+     * for the better part of an hour (conversation-f899bf05: 51-minute hole).
+     */
     fun streamMessage(
         messages: List<LLMMessage>,
         systemPrompt: String?,
@@ -76,7 +84,7 @@ interface LLMProvider {
     ): Flow<LLMStreamChunk> = streamMessageClamped(
         messages, systemPrompt, maxTokens, temperature, imageParts, tools,
         clampThinkingLevel(thinkingLevel),
-    )
+    ).failOnStreamStall(name)
 
     /**
      * [T-android-thinking-level-arch] Provider implementations override THIS

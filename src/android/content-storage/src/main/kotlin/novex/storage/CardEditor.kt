@@ -33,7 +33,8 @@ sealed interface EditorCommand {
     data class ModuleLayoutChange(val moduleId:String,val layout:ModuleLayout):EditorCommand
     data class MoveBlock(val moduleId:String,val blockId:String,val beforeBlockId:String?):EditorCommand
     data class MoveModule(val moduleId:String,val beforeId:String?):EditorCommand
-    data class ModuleOptions(val moduleId:String,val tags:List<String>,val use:ModuleUse?):EditorCommand
+    data class ModuleOptions(val moduleId:String,val tags:List<String>,val use:ModuleUse?,
+                             val routing:ModuleRouting?=null,val temporality:ModuleTemporality?=null):EditorCommand
     data class AddText(val moduleId:String,val afterBlockId:String?):EditorCommand
     data class WriteText(val moduleId:String,val blockId:String?,val moduleName:String,val text:String,val position:EditorPosition):EditorCommand
     data class ReplaceTextRange(val moduleId:String,val blockId:String,val expectedContent:ContentRef,val start:Long,val end:Long,val text:String,val position:EditorPosition,val moduleName:String?=null):EditorCommand
@@ -136,7 +137,10 @@ class CardEditor(private val store:CardStore) {
             }
             is EditorCommand.ModuleOptions->{
                 val original=module(command.moduleId)
-                card=ContentChanges.apply(card,ContentChange.ReplaceModule(original.copy(tags=command.tags.toList(),use=command.use)))
+                // [T-stage1-tags] null=未提供=保持现值（工具省略时不清除；
+                // UI 侧始终传显式值不受影响）。
+                card=ContentChanges.apply(card,ContentChange.ReplaceModule(original.copy(tags=command.tags.toList(),use=command.use,
+                    routing=command.routing?:original.routing,temporality=command.temporality?:original.temporality)))
             }
             is EditorCommand.RenameModule->{card=ContentChanges.apply(card,ContentChange.ReplaceModule(module(command.moduleId).copy(name=command.name)))}
             is EditorCommand.Rename->{require(command.name.isNotBlank()){ "名称不能为空" };card=card.copy(name=command.name.trim())}

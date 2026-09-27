@@ -86,11 +86,27 @@ world.novex.zip
     "kind": "keywords", "words": ["城门"], "caseSensitive": false, "requireAll": true
   },
   "children": [ ...子模块，可递归嵌套... ],    // 可选
-  "characters": ["角色卡id"]                  // 可选；角色展示位，必须指向本世界 internalCharacters 且不重复
+  "characters": ["角色卡id"],                 // 可选；角色展示位，必须指向本世界 internalCharacters 且不重复
+  "routing": "DEFAULT",                       // 可选；模块去向标签 [T-stage1-tags]，值为大写枚举名（同 kind/layout 惯例）
+  "temporality": "CONSTANT"                   // 可选；时间性标签 [T-stage1-tags]
 }
 ```
 
 `use` 三种：`{"kind":"always"}`、`{"kind":"manual"}`、`{"kind":"keywords", words, caseSensitive, requireAll}`。
+
+`routing`（[T-stage1-tags] 开局激活协议，缺省即 `DEFAULT`——存量卡零迁移）：
+- `DEFAULT` —— 进开局资料包；
+- `PER_TURN` —— 路由到对话的每轮注入槽位；
+- `STYLE` —— 路由到文风槽位；
+- `STANDBY` —— 不进开局，由 `use` 触发规则或手动决定。
+
+缺省解析：`routing` 未设但 `use` 已设 → 视同 `STANDBY`（尊重作者显式触发规则）；两者皆未设 → `DEFAULT`。
+
+`temporality`（阶段 3 压缩重注入依据，缺省即 `CONSTANT`）：
+- `CONSTANT` —— 游玩不变的事实，压缩后可安全重注入（幂等）；
+- `SNAPSHOT` —— 开局时刻的状态，只随开局资料包出现一次，永不重注入。
+
+两标签与 `use` 正交：routing 管"去哪"，use 管"待命时何时被带上"。
 
 ### 结构校验规则（导入时强制）
 
@@ -114,7 +130,7 @@ world.novex.zip
 导出 → 导入 → 再导出，以下内容**必须逐项一致**（编号除外）：
 
 - 卡类（kind）、卡名；
-- 模块顺序、嵌套关系、layout、tags、use 规则、角色展示位；
+- 模块顺序、嵌套关系、layout、tags、use 规则、routing/temporality 标签、角色展示位；
 - 块顺序与类型（text/image）、图片说明（caption）的有无；
 - 每个正文/图片/扩展载荷的**字节内容**（按 SHA-256 对账）；
 - 资源数量与 mediaType、扩展键集合、外观语义（头像/封面指向、阅读布局）；

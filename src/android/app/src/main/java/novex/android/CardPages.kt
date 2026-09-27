@@ -242,7 +242,7 @@ import androidx.compose.ui.semantics.semantics
     if(newCharacter)NewInternalCharacterDialog(state.busy,state.error,onDismiss={newCharacter=false}){name->model.createCharacter(name){newCharacter=false}}
     if(copyCharacter)CopyInternalCharacterDialog(model,onDismiss={copyCharacter=false}){id->model.copyCharacter(id){copyCharacter=false}}
     if(moduleOptions)state.shownDraft?.modules?.flattenModules()?.find {it.id==state.moduleId}?.let {module->
-        ModuleOptionsDialog(module,state.busy,state.error,onDismiss={moduleOptions=false}){tags,use->model.moduleOptions(tags,use){moduleOptions=false}}
+        ModuleOptionsDialog(module,state.busy,state.error,onDismiss={moduleOptions=false}){tags,use,routing,temporality->model.moduleOptions(tags,use,routing,temporality){moduleOptions=false}}
     }
 }
 

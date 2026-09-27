@@ -41,6 +41,39 @@ internal object ModuleOptionsProtocol {
         }
     }
     fun decode(rule:JSONObject):ModuleUse? = decodeLenient(rule)
+
+    /**
+     * [T-stage1-tags] 路由/时间性标签的工具边界编码（snake_case 与卡格式
+     * 的枚举名互转）。null 编码省略；decode 对 null 入参返回 null（未提
+     * 供），字符串容错与 kind 别名同 [decodeLenient] 风格。
+     */
+    fun encodeRouting(routing:novex.content.ModuleRouting?):String? = routing?.let {
+        when(it){novex.content.ModuleRouting.DEFAULT->"default";novex.content.ModuleRouting.PER_TURN->"per_turn"
+            novex.content.ModuleRouting.STYLE->"style";novex.content.ModuleRouting.STANDBY->"standby"}
+    }
+    fun decodeRouting(raw:Any?):novex.content.ModuleRouting? = when(raw) {
+        null, JSONObject.NULL -> null
+        is String -> when(raw.trim().lowercase().replace("-","_")) {
+            "default","startup","默认"->novex.content.ModuleRouting.DEFAULT
+            "per_turn","directive"->novex.content.ModuleRouting.PER_TURN
+            "style"->novex.content.ModuleRouting.STYLE
+            "standby","on_demand"->novex.content.ModuleRouting.STANDBY
+            else->throw IllegalArgumentException("模块路由必须是 default/per_turn/style/standby（收到：$raw）")
+        }
+        else->throw IllegalArgumentException("模块路由必须是字符串")
+    }
+    fun encodeTemporality(t:novex.content.ModuleTemporality?):String? = t?.let {
+        when(it){novex.content.ModuleTemporality.CONSTANT->"constant";novex.content.ModuleTemporality.SNAPSHOT->"snapshot"}
+    }
+    fun decodeTemporality(raw:Any?):novex.content.ModuleTemporality? = when(raw) {
+        null, JSONObject.NULL -> null
+        is String -> when(raw.trim().lowercase()) {
+            "constant","常量"->novex.content.ModuleTemporality.CONSTANT
+            "snapshot","快照"->novex.content.ModuleTemporality.SNAPSHOT
+            else->throw IllegalArgumentException("模块时间性必须是 constant/snapshot（收到：$raw）")
+        }
+        else->throw IllegalArgumentException("模块时间性必须是字符串")
+    }
     fun strings(array:JSONArray):List<String> = (0 until array.length()).map {require(array.get(it) is String);array.getString(it)}.also {
         require(it.all(String::isNotBlank) && it.distinct().size==it.size){"文字项不能为空或重复"}
     }

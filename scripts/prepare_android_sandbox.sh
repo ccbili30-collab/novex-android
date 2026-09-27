@@ -14,8 +14,8 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aa
 ALPINE_SHA256="ead8a4b37867bd19e7417dd078748e2312c0aea364403d96758d63ea8ff261ea"
 
 TERMUX_BASE="https://packages.termux.dev/apt/termux-main"
-PROOT_REL="pool/main/p/proot/proot_5.1.107.92_aarch64.deb"
-PROOT_SHA256="1f1c983509701f6826f568482c70673ee453a9ba38c9f5fa445a472d6b7524e9"
+PROOT_REL="pool/main/p/proot/proot_5.1.107.95_aarch64.deb"
+PROOT_SHA256="0a1b3d0f6ef76436c5ed924cd8e8f5a6b7186e99e1650eb2d9bc734e218a74cb"
 TALLOC_REL="pool/main/libt/libtalloc/libtalloc_2.4.3_aarch64.deb"
 TALLOC_SHA256="ac81ad623d74c209718b9f3acb2dd702cc8a88c431e820d212229910b4db29da"
 SHMEM_REL="pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb"

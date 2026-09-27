@@ -42,7 +42,10 @@ class LargeCardEntryTest {
         val cards=IntegratedCards(RuntimeEnvironment.getApplication(),{binding.encode()})
         val ref=cards.store.contents.allocator()()
         cards.store.contents.receive(listOf(ContentTransfer(ContentRef("input"),ref))){"安静的港口。".repeat(10000).byteInputStream()}
-        cards.store.save(ContentDocument("growing",CardKind.WORLD,"港口",listOf(ContentModule("m","设定",listOf(ContentBlock.Text("b",ref))))),null,ChangeSource.HUMAN,"initial")
+        // [T-stage1-tags] 显式 standby 保持选择器路径——use=null 的未配置
+        // 模块如今默认进材料流，不再触发选料调用；本测试守护的是"同请求
+        // 不重复选料"的回合级缓存语义。
+        cards.store.save(ContentDocument("growing",CardKind.WORLD,"港口",listOf(ContentModule("m","设定",listOf(ContentBlock.Text("b",ref)),routing=ModuleRouting.STANDBY))),null,ChangeSource.HUMAN,"initial")
         var selections=0
         val first=cards.candidates("chat","request","港口",emptyList(),8192,{it.length},true){selections++;"""{"modules":["m"]}"""}
         val next=cards.candidates("chat","request","港口",emptyList(),4096,com.openminis.app.data.BPETokenizer::countTokens,true){error("不得重复选择")}

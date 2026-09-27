@@ -240,9 +240,9 @@ class CardSessionModel(application:Application):AndroidViewModel(application) {
         state=CardSession(saved=loaded.first,draft=loaded.second,targetId=root,recoveryInput=preserved,busy=true)
     }
     fun dismissRecoveryInput(){state=state.copy(recoveryInput=null)}
-    fun moduleOptions(tags:List<String>,use:ModuleUse?,onSaved:()->Unit={})=action(onSaved) {
+    fun moduleOptions(tags:List<String>,use:ModuleUse?,routing:novex.content.ModuleRouting?=null,temporality:novex.content.ModuleTemporality?=null,onSaved:()->Unit={})=action(onSaved) {
         flush();val draft=requireNotNull(state.draft)
-        val command=EditorCommand.ModuleOptions(requireNotNull(state.moduleId),tags,use)
+        val command=EditorCommand.ModuleOptions(requireNotNull(state.moduleId),tags,use,routing,temporality)
         val next=withContext(Dispatchers.IO){CardEditor(store).apply(draft.content.id,draft.version,state.targetId?:draft.content.id,command)}
         state=state.copy(draft=next)
     }
