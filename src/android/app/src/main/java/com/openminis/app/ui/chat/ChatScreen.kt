@@ -2070,8 +2070,10 @@ fun ChatScreen(
                 },
                 windowInsets = WindowInsets.statusBars,
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    containerColor = ChatColors.background.copy(alpha = 0.92f),
-                    scrolledContainerColor = ChatColors.background.copy(alpha = 0.92f),
+                    // [feat/ui-rikkahub] 2026-09-27 不再半透明：滚动时内容从栏下
+                    // 经过即刻被遮住，不产生幽灵重影（顶部安全区已由列表让出）。
+                    containerColor = ChatColors.background,
+                    scrolledContainerColor = ChatColors.background,
                 ),
                 // Three title rows need a real font-scale-aware height budget.
                 // The former fixed 68 dp clipped the provider/model baseline
@@ -2624,10 +2626,11 @@ fun ChatScreen(
                     // the bubble's 4dp = 8dp (≈22px), tighter but still a clear
                     // breath under the title bar. Bottom padding and inter-
                     // message spacing are untouched.
-                    // [feat/ui-rikkahub] top 4dp → 16dp: RikkaHub 16dp all-around
-                    // list breathing room (horizontal 16dp already set below).
+                    // [feat/ui-rikkahub] 2026-09-27 顶部让出悬浮标题栏的真实高度
+                    // （76-120dp 按字号缩放）+ 8dp 呼吸：新对话的第一条消息不再
+                    // 被透明标题栏盖住（此前只让 4/16dp，首条直接顶进栏底）。
                     contentPadding = PaddingValues(
-                        top = 16.dp,
+                        top = chatTopBarExpandedHeightDp(LocalDensity.current.fontScale).dp + 8.dp,
                         bottom = if (bottomReserve == 0.dp) 12.dp else bottomReserve,
                     ),
                     modifier = Modifier

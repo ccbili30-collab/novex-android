@@ -544,7 +544,11 @@ internal fun UserMessageBubble(
                 usage.teachingTraceError?.let { Text("本轮装配证据未保存：$it", color = ChatColors.secondaryText) }
                 usage.includedSources.forEach { source ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(source.label, color = ChatColors.primaryText, fontWeight = FontWeight.Medium)
+                        Text(
+                            "「${contextSourceKindLabel(source.kind)}」${source.label}",
+                            color = ChatColors.primaryText,
+                            fontWeight = FontWeight.Medium,
+                        )
                         Text(
                             "${source.tokenCount} 词元${if (source.partial) " · 部分内容" else ""}",
                             color = ChatColors.tertiaryText,
@@ -575,6 +579,20 @@ internal fun UserMessageBubble(
             }
         }
     }
+}
+
+/** [feat/ui-rikkahub] 上下文来源类型的中文标签——弹窗里标明每条注入是什么。 */
+private fun contextSourceKindLabel(kind: com.openminis.app.novex.domain.ContextSourceKind): String = when (kind) {
+    com.openminis.app.novex.domain.ContextSourceKind.ANSWER_IDENTITY -> "回答身份"
+    com.openminis.app.novex.domain.ContextSourceKind.CONVERSATION_PROMPT -> "系统提示"
+    com.openminis.app.novex.domain.ContextSourceKind.ACTIVE_BRANCH_MESSAGE -> "对话消息"
+    com.openminis.app.novex.domain.ContextSourceKind.ATTACHED_DOCUMENT -> "附件"
+    com.openminis.app.novex.domain.ContextSourceKind.BACKGROUND_MODULE -> "背景模块"
+    com.openminis.app.novex.domain.ContextSourceKind.SUMMARY -> "摘要"
+    com.openminis.app.novex.domain.ContextSourceKind.MEMORY -> "记忆"
+    com.openminis.app.novex.domain.ContextSourceKind.PLAYTHROUGH_STATE -> "游玩状态"
+    com.openminis.app.novex.domain.ContextSourceKind.TOOL_DEFINITION -> "工具定义"
+    com.openminis.app.novex.domain.ContextSourceKind.TOOL_RESULT -> "工具结果"
 }
 
 // ─── User Attachment List (iOS: UserAttachmentList — 64dp tiles, FlowRow, trailing) ─
