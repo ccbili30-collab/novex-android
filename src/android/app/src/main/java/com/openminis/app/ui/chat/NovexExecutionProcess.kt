@@ -6,7 +6,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -181,7 +184,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                             } else {
                                 "${row.block.content.length} 字"
                             },
-                            content = row.block.content,
+                            copyText = row.block.content,
                         )
                         is FlatChatItem.AssistantToolUse -> ProcessStepRow(
                             icon = toolIconFor(row.block.toolName),
@@ -196,8 +199,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                                     )?.title ?: "工具调用"
                                 } + dur
                             },
-                            args = row.block.toolArgs.takeIf { it.isNotBlank() },
-                            result = row.block.content.takeIf { it.isNotBlank() },
+                            copyText = formatToolDetailsForClipboard(row.block),
                         )
                         else -> Unit
                     } }
@@ -208,22 +210,39 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
 }
 
 /**
- * [feat/ui-rikkahub] One step on the continuous rail: 24dp node column over
- * the rail line, label + chevron, tap toggles its detail inline — no sheets,
- * no dialogs anywhere.
+ * [feat/ui-rikkahub] One step on the rail: typed icon + human-language label.
+ * Per 方案 B (2026-09-27) payloads never render in the UI — long-press copies
+ * diagnostics for bug reports instead.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProcessStepRow(
     icon: ImageVector,
     label: String,
-    args: String? = null,
-    result: String? = null,
-    content: String? = null,
+    copyText: String? = null,
 ) {
-    var open by remember(label) { mutableStateOf(false) }
-    val hasDetail = content != null || args != null || result != null
+    val context = LocalContext.current
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (copyText != null) {
+                    Modifier.combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            val cb = context.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE,
+                            ) as android.content.ClipboardManager
+                            cb.setPrimaryClip(
+                                android.content.ClipData.newPlainText("step", copyText),
+                            )
+                            android.widget.Toast.makeText(context, "已复制诊断信息", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                    )
+                } else {
+                    Modifier
+                },
+            ),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -235,105 +254,12 @@ private fun ProcessStepRow(
                 modifier = Modifier.size(14.dp),
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (hasDetail) Modifier.clickable { open = !open } else Modifier),
-            ) {
-                Text(
-                    label,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (hasDetail) {
-                    Icon(
-                        imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                        contentDescription = if (open) "Collapse" else "Expand",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-            AnimatedVisibility(open) {
-                Column {
-                    result?.let { DetailBlock("结果", prettyToolJson(it)) }
-                    args?.let { DetailBlock("参数", prettyToolJson(it)) }
-                    content?.let { DetailBlock("思考", it) }
-                }
-            }
-        }
-    }
-}
-
-/** [feat/ui-rikkahub] Pretty-print JSON payloads; verbatim fallback for prose/malformed text. */
-internal fun prettyToolJson(raw: String): String {
-    if (raw.isBlank()) return raw
-    return try {
-        when (raw.trimStart().firstOrNull()) {
-            '{' -> org.json.JSONObject(raw).toString(2)
-            '[' -> org.json.JSONArray(raw).toString(2)
-            else -> raw
-        }
-    } catch (_: Exception) {
-        raw
-    }
-}
-
-/**
- * [feat/ui-rikkahub] Detail payload block: label + 10-line faded preview +
- * 展开全文 dialog. Never dumps an unbounded wall of text into the transcript.
- */
-@Composable
-internal fun DetailBlock(label: String, text: String) {
-    if (text.isBlank()) return
-    val lines = text.lines()
-    val truncated = lines.size > 10
-    var showFull by remember(text) { mutableStateOf(false) }
-    Column(modifier = Modifier.padding(top = 4.dp)) {
         Text(
             label,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            if (truncated) lines.take(10).joinToString("\n") else text,
-            fontSize = 11.sp,
-            lineHeight = 15.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            modifier = Modifier.padding(top = 1.dp),
-        )
-        if (truncated) {
-            Text(
-                "展开全文 · ${lines.size} 行",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .clickable { showFull = true },
-            )
-        }
-    }
-    if (showFull) {
-        NovexContentDialog(
-            label,
-            onDismiss = { showFull = false },
-            confirmButton = { TextButton(onClick = { showFull = false }) { Text("关闭") } },
-        ) {
-            Text(
-                text,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                modifier = Modifier
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState()),
-            )
-        }
     }
 }
 

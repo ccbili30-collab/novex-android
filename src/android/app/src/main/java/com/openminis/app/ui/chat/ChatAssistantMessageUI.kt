@@ -669,10 +669,8 @@ internal fun ToolCallPill(
     // wrapper below so it opens beneath the tapped bubble.
     var showToolMenu by remember { mutableStateOf(false) }
 
-    // [feat/ui-rikkahub] Inline args/result expansion replaces the
-    // detail-sheet-on-tap routing; the sheet stays reachable from the
-    // expansion footer for the richer timestamp view.
-    var expanded by remember(block.id) { mutableStateOf(false) }
+    // [feat/ui-rikkahub] 方案 B：工具行无负载展示，无展开态；诊断数据走
+    // 长按菜单的"复制详情"。
     val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -699,7 +697,7 @@ internal fun ToolCallPill(
                     )
                 }
                 .combinedClickable(
-                    onClick = { expanded = !expanded },
+                    onClick = {},
                     onLongClick = if (onRerunFromHere != null || onCopyDetails != null) {
                         { showToolMenu = true }
                     } else null,
@@ -771,12 +769,6 @@ internal fun ToolCallPill(
                 Spacer(modifier = Modifier.width(8.dp))
                 ToolStopButton(onStop = onStop)
             }
-            Icon(
-                imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(14.dp),
-            )
         }
         // [T-android-tool-bubble-longpress-menu] Long-press menu anchored to
         // the pill. Items mirror the user-bubble menu's style (MinisMenu +
@@ -812,21 +804,6 @@ internal fun ToolCallPill(
             }
         }
       }
-        // [feat/ui-rikkahub] Inline args/result expansion (RikkaHub tool step):
-        // tap toggles here; the rich detail sheet stays reachable from the
-        // footer link below.
-        AnimatedVisibility(expanded) {
-            Column(modifier = Modifier.padding(start = 32.dp)) {
-                // [feat/ui-rikkahub] result first, pretty-printed JSON, capped
-                // preview with 展开全文 dialog (shared DetailBlock).
-                if (block.content.isNotBlank()) {
-                    DetailBlock("结果", prettyToolJson(block.content))
-                }
-                if (block.toolArgs.isNotBlank()) {
-                    DetailBlock("参数", prettyToolJson(block.toolArgs))
-                }
-            }
-        }
         // T251: removed inline Retry affordance next to cancelled/failed pills —
         // the pill's own status icon (yellow on FAILED, gray on CANCELLED) is
         // already the unified failure tip. The button was visually noisy and
