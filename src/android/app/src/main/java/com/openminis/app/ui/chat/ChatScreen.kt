@@ -2659,6 +2659,10 @@ fun ChatScreen(
                 // tells us whether the bottleneck is row-list build,
                 // initial list measure, or per-row composition.
                 val perfFirstLayoutFired = remember(sessionId) { java.util.concurrent.atomic.AtomicBoolean(false) }
+                // [feat/ui-rikkahub] Per-reply action row anchors, recomputed
+                // with the flat list (the scan is O(n) against joins the
+                // builder already does per chunk).
+                val assistantActions = remember(flatItems) { assistantActionAnchors(flatItems) }
                 Box {
                 AlwaysStretchOverscrollBox { sharedEffect ->
                 LazyColumn(
@@ -2868,6 +2872,7 @@ fun ChatScreen(
                                     },
                                 ),
                         ) {
+                        Column {
                         ChatTranscriptRow(item,
                             ChatTranscriptRowState(isStreaming, canResume, viewModel.thinkingLevel.value, compactedHistoryExpanded),
                             selectionController, panelExpansionState, perTurnPrompt = perTurnPrompt) { action ->
@@ -2901,6 +2906,25 @@ fun ChatScreen(
                                 ChatTranscriptAction.ToggleCompactedHistory -> compactedHistoryExpanded = !compactedHistoryExpanded
                                 is ChatTranscriptAction.SwitchBranch -> safeMutate { viewModel.switchMessageBranch(action.messageId, action.delta) }
                             }
+                        }
+                        // [feat/ui-rikkahub] Per-reply action row — anchored
+                        // under the message's LAST flat item, inside the same
+                        // LazyColumn slot so showing it never inserts a row or
+                        // shifts the scroll anchor.
+                        assistantActions[item.key]?.let { anchor ->
+                            if (!anchor.isStreaming) {
+                                AssistantMessageActionRow(
+                                    markdown = anchor.markdown,
+                                    showMutations = !isStreaming,
+                                    onShare = { pendingShareText = anchor.markdown; showMoveSheet = true },
+                                    onRegenerate = {
+                                        safeMutate { viewModel.retryFromAssistantMessage(anchor.messageId) }
+                                        coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
+                                    },
+                                    onDelete = { pendingDeleteFromMessageId = anchor.messageId },
+                                )
+                            }
+                        }
                         }
                         } // Box (alpha wrapper)
                     }

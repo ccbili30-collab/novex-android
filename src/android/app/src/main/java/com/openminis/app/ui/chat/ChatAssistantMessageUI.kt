@@ -131,6 +131,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.boundsInWindow
@@ -1280,4 +1281,97 @@ private fun ThinkingFullContentDialog(content: String, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * [feat/ui-rikkahub] Ghost action row under a completed assistant reply —
+ * copy / regenerate / more. Long-press on AI text stays with text selection
+ * (the SelectionContainer owns that gesture and Compose offers no way to
+ * re-enter selection programmatically), so message-level actions surface
+ * here instead — the same division of labour as Doubao/RikkaHub: your own
+ * bubbles keep the long-press menu, replies wear a visible row.
+ */
+@Composable
+internal fun AssistantMessageActionRow(
+    markdown: String,
+    showMutations: Boolean,
+    onShare: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+) {
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+    val hasMenuEntries = onShare != null || (showMutations && onDelete != null)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 2.dp),
+    ) {
+        if (markdown.isNotBlank()) {
+            AssistantActionIcon(
+                icon = com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                contentDescription = "复制全文",
+            ) {
+                val clipboard = context.getSystemService(
+                    android.content.Context.CLIPBOARD_SERVICE,
+                ) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", markdown))
+                android.widget.Toast.makeText(context, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        // Same T119 gate as the user bubble: retry/delete would mutate an
+        // in-flight turn, so they vanish while any stream is running.
+        if (showMutations && onRegenerate != null) {
+            AssistantActionIcon(
+                icon = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                contentDescription = "重新生成本轮",
+                onClick = onRegenerate,
+            )
+        }
+        if (hasMenuEntries) {
+            Box {
+                AssistantActionIcon(
+                    icon = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
+                    contentDescription = "更多操作",
+                ) { showMenu = true }
+                MinisMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    if (onShare != null) {
+                        DropdownMenuItem(
+                            text = { Text("分享到其他文游") },
+                            onClick = { showMenu = false; onShare() },
+                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        )
+                    }
+                    if (showMutations && onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text("从此处删除") },
+                            onClick = { showMenu = false; onDelete() },
+                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** RikkaHub's ChatMessageActionButtons idiom: 16dp ghost icon, 8dp tap halo. */
+@Composable
+private fun AssistantActionIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Icon(
+        imageVector = icon,
+        contentDescription = contentDescription,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+            .size(16.dp),
+    )
 }

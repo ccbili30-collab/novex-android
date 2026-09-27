@@ -6283,6 +6283,17 @@ class ChatViewModel(
         return true
     }
 
+    /** [feat/ui-rikkahub] Retry the turn that produced an assistant reply —
+     * walks back to the reply's preceding user message and retries from
+     * there, so the old reply stays as a sibling branch. */
+    fun retryFromAssistantMessage(assistantMessageId: String) {
+        val messages = _messages.value
+        val index = messages.indexOfFirst { it.id == assistantMessageId }
+        if (index < 0) return
+        val userId = messages.subList(0, index).lastOrNull { it.role == "user" }?.id ?: return
+        retryFromMessage(userId)
+    }
+
     /** Retry from a user turn by retaining its existing reply as a sibling. */
     fun retryFromMessage(messageId: String) {
         if (_isStreaming.value) return

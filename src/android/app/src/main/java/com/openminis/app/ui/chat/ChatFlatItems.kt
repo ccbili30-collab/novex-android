@@ -884,3 +884,77 @@ internal fun buildFlatChatItems(
     }
     return out
 }
+
+/** Items bound to an assistant message that the action row can anchor under. */
+internal val FlatChatItem.ownerMessageId: String?
+    get() = when (this) {
+        is FlatChatItem.AssistantHeader -> messageId
+        is FlatChatItem.AssistantText -> messageId
+        is FlatChatItem.AssistantMarkdownBlock -> messageId
+        is FlatChatItem.AssistantThinking -> messageId
+        is FlatChatItem.AssistantToolUse -> messageId
+        is FlatChatItem.AssistantProcess -> messageId
+        is FlatChatItem.AssistantFallbackChoices -> messageId
+        is FlatChatItem.AssistantInfo -> messageId
+        is FlatChatItem.AssistantError -> messageId
+        is FlatChatItem.AssistantLegacyContent -> messageId
+        is FlatChatItem.BranchSwitcher -> messageId
+        else -> null
+    }
+
+/**
+ * [feat/ui-rikkahub] Per-reply action row anchor. The row renders under the
+ * LAST flat item of each assistant message (same LazyColumn item, no new
+ * row), copying that message's joined markdown.
+ */
+internal data class AssistantActionAnchor(
+    val messageId: String,
+    val lastItemKey: String,
+    val markdown: String,
+    /** Live signal of THIS message — the streaming reply keeps no action row. */
+    val isStreaming: Boolean,
+)
+
+internal fun assistantActionAnchors(items: List<FlatChatItem>): Map<String, AssistantActionAnchor> {
+    // Pass 1: each message's LAST owned item — the only place its row anchors.
+    val lastKeys = HashMap<String, String>()
+    for (item in items) item.ownerMessageId?.let { owner -> lastKeys[owner] = item.key }
+    // Pass 2: accumulate per-message markdown/streaming and emit one anchor
+    // per message, keyed by its anchored item's key — what the transcript
+    // loop has in hand when deciding whether to append the row.
+    val anchors = HashMap<String, AssistantActionAnchor>()
+    var prevOwner: String? = null
+    var prevMarkdown = ""
+    var prevStreaming = false
+    for (item in items) {
+        val owner = item.ownerMessageId ?: continue
+        if (owner != prevOwner) {
+            prevMarkdown = ""
+            prevStreaming = false
+        }
+        // Every text row carries the parent message's joined markdown, so the
+        // last text row seen is the final body even when a tool row follows.
+        val markdown = when (item) {
+            is FlatChatItem.AssistantText -> item.messageMarkdown
+            is FlatChatItem.AssistantMarkdownBlock -> item.messageMarkdown
+            else -> prevMarkdown
+        }
+        val streaming = when (item) {
+            is FlatChatItem.AssistantText -> item.isStreaming
+            is FlatChatItem.AssistantMarkdownBlock -> item.messageIsStreaming
+            is FlatChatItem.AssistantThinking -> item.messageIsStreaming
+            is FlatChatItem.AssistantToolUse -> item.messageIsStreaming
+            // In-flight exempted tools are the only live signal the folded
+            // work row carries.
+            is FlatChatItem.AssistantProcess -> item.liveToolStatuses.isNotEmpty()
+            else -> prevStreaming
+        }
+        if (lastKeys[owner] == item.key) {
+            anchors[item.key] = AssistantActionAnchor(owner, item.key, markdown, streaming)
+        }
+        prevOwner = owner
+        prevMarkdown = markdown
+        prevStreaming = streaming
+    }
+    return anchors
+}
