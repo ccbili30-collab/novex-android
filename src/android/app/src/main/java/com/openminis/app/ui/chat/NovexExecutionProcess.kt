@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -102,6 +103,15 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
     val active = process.statusLabel() == "进行中"
     val failedCount = process.tools.count { it.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT) }
     var expanded by remember { mutableStateOf(false) }
+    // [feat/ui-rikkahub] ZCode-style collapsed header: total work time
+    // (工具耗时合计，"已工作 X 分 X 秒") instead of step count; falls back
+    // to a step count when no timing data exists.
+    val workSeconds = (process.tools.sumOf { it.block.durationMs } / 1000L).toInt()
+    val headLabel = when {
+        workSeconds >= 60 -> "已工作 ${workSeconds / 60} 分 ${workSeconds % 60} 秒"
+        workSeconds > 0 -> "已工作 $workSeconds 秒"
+        else -> "本轮 ${process.rows.size} 步"
+    }
     // [feat/ui-rikkahub] ChainOfThought timeline step: 24dp node + connector
     // stubs (both drawn — the chain continues through this row), shimmer
     // label while running. Same geometry as the thinking/tool steps.
@@ -137,7 +147,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                 )
             }
             Text(
-                "本轮 ${process.rows.size} 步 · ${process.statusLabel()}",
+                headLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
@@ -161,89 +171,137 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
             }
         }
         AnimatedVisibility(expanded) {
-            Column(modifier = Modifier.padding(start = 32.dp)) {
-                process.rows.forEach { row -> when (row) {
-                    is FlatChatItem.AssistantText -> Text(
-                        row.block.content,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        modifier = Modifier.padding(vertical = 3.dp),
-                    )
-                    is FlatChatItem.AssistantMarkdownBlock -> Text(
-                        row.rawText,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        modifier = Modifier.padding(vertical = 3.dp),
-                    )
-                    is FlatChatItem.AssistantThinking -> Text(
-                        row.block.content,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(vertical = 3.dp),
-                    )
-                    is FlatChatItem.AssistantToolUse -> InlineToolRecord(row.block)
-                    else -> Unit
-                } }
+            // [feat/ui-rikkahub] Continuous left rail (ZCode-style): a single
+            // line at x=12dp behind every step node, instead of per-row stubs.
+            // Only working steps live in the timeline (思考/工具) — the answer
+            // prose renders outside, matching ZCode's own transcript logic.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .drawBehind {
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(12.dp.toPx(), 0f),
+                            end = Offset(12.dp.toPx(), size.height),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    },
+            ) {
+                Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                    process.rows.forEach { row -> when (row) {
+                        is FlatChatItem.AssistantThinking -> ProcessStepRow(
+                            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                            label = "思考 · " + if (row.block.content.length >= 1000) {
+                                "${row.block.content.length / 1000}K 字"
+                            } else {
+                                "${row.block.content.length} 字"
+                            },
+                            content = row.block.content,
+                        )
+                        is FlatChatItem.AssistantToolUse -> ProcessStepRow(
+                            icon = toolIconFor(row.block.toolName),
+                            label = run {
+                                val dur = if (row.block.durationMs > 0) {
+                                    val s = row.block.durationMs / 1000.0
+                                    " · " + if (s < 10) String.format("%.1f", s) + "s" else String.format("%.0f", s) + "s"
+                                } else ""
+                                "${row.block.toolStatus.displayLabel()} · " + row.block.toolTitle.ifBlank {
+                                    buildNovexStandardToolDetailPresentation(
+                                        row.block.toolName, row.block.toolArgs, row.block.content,
+                                    )?.title ?: "工具调用"
+                                } + dur
+                            },
+                            args = row.block.toolArgs.takeIf { it.isNotBlank() },
+                            result = row.block.content.takeIf { it.isNotBlank() },
+                        )
+                        else -> Unit
+                    } }
+                }
             }
         }
     }
 }
 
 /**
- * [feat/ui-rikkahub] One tool record inside an inlined process timeline.
- * Tap toggles its args/result in place — no sheets, no dialogs.
+ * [feat/ui-rikkahub] One step on the continuous rail: 24dp node column over
+ * the rail line, label + chevron, tap toggles its detail inline — no sheets,
+ * no dialogs anywhere.
  */
 @Composable
-private fun InlineToolRecord(block: AssistantBlock) {
-    var open by remember(block.id) { mutableStateOf(false) }
-    val title = block.toolTitle.ifBlank {
-        buildNovexStandardToolDetailPresentation(block.toolName, block.toolArgs, block.content)?.title
-            ?: "查看操作详情"
-    }
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.clickable { open = !open },
-        ) {
-            Text(
-                "${block.toolStatus.displayLabel()} · $title",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f, fill = false),
-            )
+private fun ProcessStepRow(
+    icon: ImageVector,
+    label: String,
+    args: String? = null,
+    result: String? = null,
+    content: String? = null,
+) {
+    var open by remember(label) { mutableStateOf(false) }
+    val hasDetail = content != null || args != null || result != null
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                contentDescription = if (open) "Collapse" else "Expand",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(12.dp),
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
             )
         }
-        AnimatedVisibility(open) {
-            Column {
-                if (block.toolArgs.isNotBlank()) {
-                    Text(
-                        text = block.toolArgs,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        modifier = Modifier.padding(top = 2.dp),
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (hasDetail) Modifier.clickable { open = !open } else Modifier),
+            ) {
+                Text(
+                    label,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (hasDetail) {
+                    Icon(
+                        imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                        contentDescription = if (open) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(12.dp),
                     )
                 }
-                if (block.content.isNotBlank()) {
-                    Text(
-                        text = block.content,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        maxLines = 16,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+            }
+            AnimatedVisibility(open) {
+                Column {
+                    if (args != null) {
+                        Text(
+                            args,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    if (result != null) {
+                        Text(
+                            result,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            maxLines = 16,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    if (content != null) {
+                        Text(
+                            content,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            maxLines = 16,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                 }
             }
         }
