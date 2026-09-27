@@ -350,6 +350,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             Log.w("MinisApp", "LaunchCycleBeacon.recordLaunch failed: ${t.message}")
         }
         com.openminis.app.diagnostics.HangDetector.start(this)
+        // [T-dual-update-source] 用户选的更新源要先于冷启动检查注水（默认 Gitee）
+        com.openminis.app.data.UpdateSourceStore.hydrate(this)
         NovexUpdateMonitor.checkOnceOnColdStart()
         postHomeReady = true
     }

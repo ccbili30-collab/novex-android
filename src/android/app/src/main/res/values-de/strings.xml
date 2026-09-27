@@ -38,6 +38,9 @@
     <string name="memory_save_error">Speichern fehlgeschlagen: %1$s</string>
     <string name="memory_global_footer">Dauerhafte Anweisungen und Einstellungen, die dem Agenten in jeder Sitzung angezeigt werden. Der Agent kann diese Datei nicht ändern.</string>
     <string name="check_update_section_header">App-Update</string>
+    <string name="update_source_row_title">Update-Quelle</string>
+    <string name="update_source_gitee">Gitee (China)</string>
+    <string name="update_source_github">GitHub (International)</string>
     <string name="check_update_current_version">Aktuelle Version: %1$s</string>
     <string name="check_update_check_button">Nach Updates suchen</string>
     <string name="check_update_checking">Suche läuft…</string>

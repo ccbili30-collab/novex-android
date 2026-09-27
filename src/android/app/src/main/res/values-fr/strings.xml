@@ -38,6 +38,9 @@
     <string name="memory_save_error">Échec de l\'enregistrement : %1$s</string>
     <string name="memory_global_footer">Instructions et préférences persistantes visibles par l\'agent dans chaque session. L\'agent ne peut pas modifier ce fichier.</string>
     <string name="check_update_section_header">Mise à jour de l\'application</string>
+    <string name="update_source_row_title">Source de mise à jour</string>
+    <string name="update_source_gitee">Gitee (Chine)</string>
+    <string name="update_source_github">GitHub (International)</string>
     <string name="check_update_current_version">Version actuelle : %1$s</string>
     <string name="check_update_check_button">Vérifier les mises à jour</string>
     <string name="check_update_checking">Vérification…</string>

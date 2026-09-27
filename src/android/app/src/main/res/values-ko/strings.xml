@@ -38,6 +38,9 @@
     <string name="memory_save_error">저장 실패: %1$s</string>
     <string name="memory_global_footer">모든 세션에서 에이전트에게 표시되는 영구 지침 및 환경 설정입니다. 에이전트는 이 파일을 수정할 수 없습니다.</string>
     <string name="check_update_section_header">앱 업데이트</string>
+    <string name="update_source_row_title">업데이트 소스</string>
+    <string name="update_source_gitee">Gitee(중국)</string>
+    <string name="update_source_github">GitHub(해외)</string>
     <string name="check_update_current_version">현재 버전: %1$s</string>
     <string name="check_update_check_button">업데이트 확인</string>
     <string name="check_update_checking">확인 중…</string>
