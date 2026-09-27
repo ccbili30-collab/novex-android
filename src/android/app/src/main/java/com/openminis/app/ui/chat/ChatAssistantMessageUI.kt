@@ -837,7 +837,6 @@ internal fun ToolCallPill(
             modifier = Modifier.padding(start = 26.dp, bottom = 2.dp),
         )
     }
-    }
 
     generatedImageArtifact(block)?.let { artifact ->
         GeneratedImageArtifactCard(artifact)
