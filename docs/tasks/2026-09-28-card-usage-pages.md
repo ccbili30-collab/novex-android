@@ -1,6 +1,6 @@
 # 卡片采用矩阵页退役：三专属页（身份/背景/管理）
 
-日期：2026-09-28 · 分支 task/card-usage-pages · 状态：进行中
+日期：2026-09-28 · 分支 task/card-usage-pages · 状态：终态（PR #44 已合并 → beta.88）
 
 ## 用户决议（讨论两轮定稿）
 
@@ -38,3 +38,15 @@ ConversationSettingsScreen/AppNavigation）零交集，ChatViewModel +11 行
   经 saveIntegratedCardBinding 触发既有激活流程（资料包/自动开场）
 - UsageChoice 数据（target/name/kind/isWorldRoot/missing）替换原
   Triple；modules/overrides 逻辑原样移植
+
+## 台账（终态）
+
+- 净眼七场景过（分组互斥完备/单多选语义/入口映射全表——顺带发现并
+  消除旧 set 里 images 死条目/保存链路逐字等价/数据流等价/编译面/
+  旧矩阵零残留）；非阻塞备注①模块三态按钮 busy 保护已补回（随批
+  一行修复）②基线分叉真 merge（净眼核冲突面零交集）
+- 守纲六问过；CI 两轮绿；合并 PR #44 → beta.88；双推完成（Gitee
+  preview=3.0.5-beta.88+镜像）
+- 流程事故留痕：提交前忘建新分支，提交落在 docs/semantics-final 上
+  ——branch 新分支+docs 分支 reset 回已推状态后重推，未污染远端
+  （教训沿用：改文件前先 git branch）
