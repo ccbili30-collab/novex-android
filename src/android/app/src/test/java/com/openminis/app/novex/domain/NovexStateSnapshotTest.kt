@@ -33,6 +33,20 @@ class NovexStateSnapshotTest {
         assertNull(NovexStateSnapshot.parse("""{"time":"","location":"","main":"","characters":"","threads":""}""", 1L))
     }
 
+    /**
+     * [T-snapshot-prompt-degrade] 提示词契约（2026-09-27 用户裁决：非游戏
+     * 会话的快照退化走提示词方案，不做代码守卫）。全空串在 parse 层已有
+     * null 拒绝（上一测），这里锁住提示词里的退化条款本身——重写措辞时
+     * 弄丢"空串而非'无'/不编造"任一句，本测即红。
+     */
+    @Test fun `prompt carries non game degrade clause`() {
+        val text = NovexStateSnapshot.prompt(null, "摘要", "近期原文", null)
+        org.junit.Assert.assertTrue(text.contains("并非进行中的游戏"))
+        org.junit.Assert.assertTrue(text.contains("空字符串"))
+        org.junit.Assert.assertTrue(text.contains("不要填\"无\""))
+        org.junit.Assert.assertTrue(text.contains("编造成剧情"))
+    }
+
     @Test fun `anchor line joins non blank fields`() {
         assertNull(NovexStateSnapshot.anchorLine(null))
         val snap = NovexStateSnapshot.Snapshot("嘉靖四十年三月", "北镇抚司", "", "", "", "{}", 1L)
