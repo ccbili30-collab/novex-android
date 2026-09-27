@@ -1,6 +1,6 @@
 # 公告体系：Gitee 道公告随源（hub announcements 索引）
 
-日期：2026-09-27 · 分支 task/announcement-system · 状态：进行中
+日期：2026-09-27 · 分支 task/announcement-system · 状态：终态（已合并 → beta.84）
 
 ## 用户指令
 
@@ -32,3 +32,7 @@
 - hub 侧（本 PR 外，直推 hub 仓库）：announcements.json 建立+README
   版本表刷新（v0.2.2 旧账→v3.0.4/beta.83）+AGENTS.md 公告工作流补
   索引步骤
+
+## 台账（终态）
+
+- 净眼一审退回两处（索引未拒 .. 穿越段/空数组应整体 null——CI 红即其预判断言）+测试跨串逗号语法错误（两轮 CI 编译期红根因，本机无 JDK 未拦住，教训：raw 字符串拼接避免跨串标点戏法）修复后绿；终验过；守纲六问过；合并 PR #40 → beta.84；hub 侧 announcements.json/README 刷新/AGENTS.md 工作流已直推（双 forge）

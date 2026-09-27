@@ -1,6 +1,6 @@
 # 小修批：更新源标签简化+关于页链接换仓+技能浏览器外部入口移除
 
-日期：2026-09-27 · 分支 task/hub-links-polish · 状态：进行中
+日期：2026-09-27 · 分支 task/hub-links-polish · 状态：终态（已合并 → beta.84）
 
 ## 用户三项决议（2026-09-27）
 
@@ -21,3 +21,7 @@
   skill_minis_skills_modal 七语言包清除
 - 预设技能（内置 bundled skills）不受影响——移除的只是外部 GitHub
   市场浏览入口
+
+## 台账（终态）
+
+- 净眼一审退回（63 条 skills_browser_* 孤儿串+skill_empty_action 8 包误导文案）修复后终验过；守纲六问过；CI 绿；合并 PR #39 → beta.84
