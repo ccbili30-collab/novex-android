@@ -65,7 +65,6 @@ import com.openminis.app.ui.settings.SkillDetailScreen
 import com.openminis.app.ui.settings.StorageManagementScreen
 import com.openminis.app.ui.settings.SkillFileViewerScreen
 import com.openminis.app.ui.settings.UsageStatsScreen
-import com.openminis.app.ui.settings.MinisSkillsBrowserScreen
 import com.openminis.app.ui.settings.MountDetailScreen
 import com.openminis.app.ui.settings.MountedFoldersScreen
 import com.openminis.app.ui.settings.SharedFolderDetailScreen
@@ -132,7 +131,6 @@ object Routes {
     const val SKILLS = "skills"
     const val SKILL_DETAIL = "skill/{skillId}"
     const val SKILL_FILE = "skill_file/{skillId}/{relativePath}"
-    const val MINIS_SKILLS_BROWSER = "minis_skills_browser"
 
     fun skillDetail(skillId: String) = "skill/$skillId"
     fun skillFile(skillId: String, relativePath: String = "SKILL.md"): String {
@@ -1383,7 +1381,6 @@ fun AppNavigation(
                     skillRepository = skillRepository,
                     onBack = { navController.safePopBackStack() },
                     onSkillClick = { skillId -> navController.safeNavigate(Routes.skillDetail(skillId)) },
-                    onMinisSkillsClick = { navController.safeNavigate(Routes.MINIS_SKILLS_BROWSER) },
                 )
             }
         }
@@ -1419,15 +1416,6 @@ fun AppNavigation(
                 SkillFileViewerScreen(
                     skillId = skillId,
                     relativePath = relativePath,
-                    skillRepository = skillRepository,
-                    onBack = { navController.safePopBackStack() },
-                )
-            }
-        }
-
-        composable(Routes.MINIS_SKILLS_BROWSER) {
-            if (skillRepository != null) {
-                MinisSkillsBrowserScreen(
                     skillRepository = skillRepository,
                     onBack = { navController.safePopBackStack() },
                 )

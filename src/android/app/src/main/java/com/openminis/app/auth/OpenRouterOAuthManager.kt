@@ -159,7 +159,7 @@ object OpenRouterOAuthManager {
             .url(KEYS_URL)
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/OpenMinis/OpenMinis")
+            .header("HTTP-Referer", "https://github.com/ccbili30-collab/novex-android")
             .header("X-Title", "Minis App")
             .build()
 

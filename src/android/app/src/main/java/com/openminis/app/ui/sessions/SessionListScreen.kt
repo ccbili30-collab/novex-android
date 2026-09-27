@@ -3000,7 +3000,7 @@ private fun OnboardingLanding(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 MinisTextButton(
-                    onClick = { uriHandler.openUri("https://github.com/OpenMinis/OpenMinis") },
+                    onClick = { uriHandler.openUri("https://github.com/ccbili30-collab/novex-android") },
                 ) {
                     Text(stringResource(R.string.novex_star_openminis))
                 }

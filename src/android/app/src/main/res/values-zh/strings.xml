@@ -39,8 +39,8 @@
     <string name="memory_global_footer">每个会话中对智能体可见的持久指令和偏好。智能体无法修改此文件。</string>
     <string name="check_update_section_header">应用更新</string>
     <string name="update_source_row_title">更新源</string>
-    <string name="update_source_gitee">Gitee（国内）</string>
-    <string name="update_source_github">GitHub（海外）</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">当前版本：%1$s</string>
     <string name="check_update_current_version_channel">当前版本：%1$s · %2$s</string>
     <string name="update_channel_stable">稳定版</string>
@@ -547,9 +547,8 @@
     <string name="skill_section_installed">已安装</string>
     <string name="skill_section_footer">Skill 通过专门的指令和工作流扩展 AI agent。启用后会被载入 system prompt。</string>
     <string name="skill_empty_title">未安装 Skill</string>
-    <string name="skill_empty_action">点击 + 导入 SKILL.md 或浏览 Novex Skills。</string>
+    <string name="skill_empty_action">点击 + 导入 SKILL.md、.zip 或 .skill 文件。</string>
     <string name="skill_import_modal_title">导入技能</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">删除 %1$s？</string>
     <string name="skill_delete_confirm_text">这将永久删除该 skill 及其文件。</string>
     <string name="skill_import_sheet_title">导入技能</string>
@@ -597,15 +596,6 @@
     <string name="skill_detail_source_file">文件导入</string>
     <string name="skill_detail_source_bundled">内置</string>
     <string name="skill_detail_source_session">会话创建</string>
-    <string name="skills_browser_title">Novex Skills</string>
-    <string name="skills_browser_import_button">导入此项</string>
-    <string name="skills_browser_hud_importing">导入中…</string>
-    <string name="skills_browser_error_not_folder">请先选择一个 skill 文件夹</string>
-    <string name="skills_browser_success_imported">%1$s 已导入</string>
-    <string name="skills_browser_error_no_skillmd">未找到 SKILL.md。请先选择一个 skill 文件夹。</string>
-    <string name="skills_browser_success_updated">%1$s 已更新</string>
-    <string name="skills_browser_error_invalid">SKILL.md 无效或已存在</string>
-    <string name="skills_browser_error_format">SKILL.md 内容无效</string>
     <string name="storage_title">存储</string>
     <string name="storage_section_overview">概览</string>
     <string name="storage_overview_shell">Shell 容器</string>

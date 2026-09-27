@@ -43,8 +43,8 @@
     <!-- Check Update -->
     <string name="check_update_section_header">App Update</string>
     <string name="update_source_row_title">Update Source</string>
-    <string name="update_source_gitee">Gitee (China)</string>
-    <string name="update_source_github">GitHub (Global)</string>
+    <string name="update_source_gitee">Gitee</string>
+    <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">Current version: %1$s</string>
     <string name="check_update_current_version_channel">Current version: %1$s · %2$s</string>
     <string name="update_channel_stable">Stable</string>
@@ -915,9 +915,8 @@
     <string name="skill_section_installed">Installed</string>
     <string name="skill_section_footer">Skills extend the AI agent with specialized instructions and workflows. They are loaded into the system prompt when enabled.</string>
     <string name="skill_empty_title">No Skills Installed</string>
-    <string name="skill_empty_action">Tap + to import a SKILL.md, .zip, or .skill file, or browse Novex Skills.</string>
+    <string name="skill_empty_action">Tap + to import a SKILL.md, .zip, or .skill file.</string>
     <string name="skill_import_modal_title">Import Skill</string>
-    <string name="skill_minis_skills_modal">Novex Skills</string>
     <string name="skill_delete_confirm_title">Delete %1$s?</string>
     <string name="skill_delete_confirm_text">This will permanently remove the skill and its files.</string>
     <string name="skill_import_sheet_title">Import Skill</string>
@@ -965,15 +964,6 @@
     <string name="skill_detail_source_file">File import</string>
     <string name="skill_detail_source_bundled">Built-in</string>
     <string name="skill_detail_source_session">Session created</string>
-    <string name="skills_browser_title">Novex Skills</string>
-    <string name="skills_browser_import_button">Import This</string>
-    <string name="skills_browser_hud_importing">Importing…</string>
-    <string name="skills_browser_error_not_folder">Select a skill folder first</string>
-    <string name="skills_browser_success_imported">%1$s imported</string>
-    <string name="skills_browser_error_no_skillmd">No SKILL.md found. Select a skill folder first.</string>
-    <string name="skills_browser_success_updated">%1$s updated</string>
-    <string name="skills_browser_error_invalid">Invalid SKILL.md or already exists</string>
-    <string name="skills_browser_error_format">Invalid SKILL.md content</string>
     <string name="storage_title">Storage</string>
     <string name="storage_section_overview">Overview</string>
     <string name="storage_overview_shell">Shell Container</string>
