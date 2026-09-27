@@ -12,6 +12,12 @@ import kotlinx.coroutines.launch
 /** Process-wide, non-blocking update state shared by cold-start and the home toolbar. */
 object NovexUpdateMonitor {
     private val coldCheckStarted = AtomicBoolean(false)
+    // [T-bulletin-cache] 冷启动写缓存需要 filesDir（Application 启动时注入）
+    @Volatile private var appContext: android.content.Context? = null
+
+    fun attachContext(context: android.content.Context) {
+        appContext = context.applicationContext
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _available = MutableStateFlow<UpdateChecker.CheckResult.UpdateAvailable?>(null)
     val available: StateFlow<UpdateChecker.CheckResult.UpdateAvailable?> = _available.asStateFlow()
@@ -30,8 +36,11 @@ object NovexUpdateMonitor {
             // 公告与更新检查分道失败互不影响（公告失败静默下次再试）
             runCatching {
                 val bulletin = UpdateChecker.fetchBulletin()
-                // 只认活源（内置归档回落不跳脸）
-                if (bulletin.live) _announcements.value = bulletin.announcements.takeIf { it.isNotEmpty() }
+                // 只认活源（失败空回落不跳脸）；成功即落盘缓存（点开面板即显）
+                if (bulletin.live) {
+                    _announcements.value = bulletin.announcements.takeIf { it.isNotEmpty() }
+                    appContext?.let { BulletinCache.save(it.filesDir, bulletin) }
+                }
             }
         }
     }
