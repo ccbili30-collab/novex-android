@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -42,13 +41,15 @@ internal object GiteeAnnouncementSource {
             for (i in 0 until items.length()) {
                 val e = items.optJSONObject(i) ?: continue
                 val file = e.optString("file").trim()
-                if (!file.startsWith(ENTRY_DIR) || !file.endsWith(".md")) continue
+                // [净眼 S1] 拒目录穿越：OkHttp 会规范化 ".." 段逃出白名单目录
+                if (!file.startsWith(ENTRY_DIR) || !file.endsWith(".md") || file.contains("..")) continue
                 val title = e.optString("title").trim()
                 if (title.isEmpty()) continue
                 add(AnnouncementEntry(file = file, title = title, date = e.optString("date").trim()))
             }
         }
-        return entries.take(MAX_ENTRIES)
+        // [净眼 S1] 空索引或全部条目无效 → 整体 null（调用方回落内置归档）
+        return entries.take(MAX_ENTRIES).takeIf { it.isNotEmpty() }
     }
 
     internal fun rawUrl(file: String): String = RAW_BASE + file
