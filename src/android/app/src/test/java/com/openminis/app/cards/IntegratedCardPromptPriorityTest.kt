@@ -40,4 +40,23 @@ class IntegratedCardPromptPriorityTest {
         assertTrue("memory=false 时应为关闭态",
             IntegratedCardPrompt.build("", memory = false, tools = emptySet()).prompt.contains("长期记忆当前关闭"))
     }
+
+    /**
+     * [T-card-prompt-restructure] 结构契约（codex 研究模式 6）：平铺 15 条
+     * 改分区块后，八个区块头+优先级声明必须在场；原句锚点抽样（编辑纪律/
+     * 批量工具/文中立）逐字保留。重排或重写时弄丢任一即红。
+     */
+    @Test fun `restructured prompt carries section contract`() {
+        val prompt = IntegratedCardPrompt.build(
+            identity = "测试身份", memory = true, tools = setOf("read_card"),
+        ).prompt
+        listOf(
+            "<优先级>", "<身份与对象>", "<资料与读取纪律>", "<卡片编辑协议>",
+            "<创作组织与布局>", "<批量写入与微调>", "<整理纪律>", "<对话与工具边界>",
+        ).forEach { section -> assertTrue("缺少区块 $section", prompt.contains(section)) }
+        assertTrue(prompt.contains("更具体、更新且有效的要求优先"))
+        assertTrue(prompt.contains("卡片编辑：先读取最新结构和版本"))
+        assertTrue(prompt.contains("create_card_bulk / add_module_bulk"))
+        assertTrue(prompt.contains("文中立：必须由你写的文字"))
+    }
 }
