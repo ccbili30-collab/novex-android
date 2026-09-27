@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -336,19 +339,83 @@ internal fun NovexExecutionProcessDialog(process: FlatChatItem.AssistantProcess,
 
 @Composable
 internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean, onOpenCard: (String, String) -> Unit, onContinue: () -> Unit) {
+    // [feat/ui-rikkahub] 2026-09-27 成果卡：回合的"附件"。旧三行尾巴
+    // （机器状态行 + 打开链接 + 恒挂的继续按钮）收成每卡一枚胶囊——
+    // 整行可点打开，状态徽章弱化，仅任务真未完成时出"继续核对与完成"。
+    // 灰色状态文本删除：其信息由过程行（⚠ + 可展开失败原因）与正文承担。
     val status = runCatching { JSONObject(block.toolArgs).optString("status") }.getOrDefault("incomplete")
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text(block.content, color = ChatColors.secondaryText)
-        val cards = runCatching { JSONObject(block.toolArgs).optJSONArray("cards") }.getOrNull()
-        if (cards != null) for (index in 0 until cards.length()) {
-            val card = cards.optJSONObject(index) ?: continue
-            val kind = card.optString("kind")
-            val id = card.optString("id")
-            val label = when (kind) { "integrated" -> "卡片"; "world" -> "世界卡"; "character_version" -> "角色卡"; "game" -> "文游卡"; else -> null }
-            if (label != null && id.isNotBlank()) TextButton(onClick = { onOpenCard(kind, id) }) {
-                Text(card.optString("name").takeIf(String::isNotBlank)?.let { "打开《$it》" } ?: "打开$label ${index + 1}")
+    val pending = status in setOf("incomplete", "saved_needs_review")
+    val cards = runCatching { JSONObject(block.toolArgs).optJSONArray("cards") }.getOrNull()
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        if (cards != null) {
+            for (index in 0 until cards.length()) {
+                val card = cards.optJSONObject(index) ?: continue
+                val kind = card.optString("kind")
+                val id = card.optString("id")
+                if (id.isBlank()) continue
+                val kindLabel = when (kind) {
+                    "integrated" -> "卡片"
+                    "world" -> "世界卡"
+                    "character_version" -> "角色卡"
+                    "game" -> "文游卡"
+                    else -> "卡片"
+                }
+                val name = card.optString("name").takeIf(String::isNotBlank)
+                CardResultChip(
+                    title = name?.let { "《$it》" } ?: kindLabel,
+                    meta = if (name != null) kindLabel else "",
+                    pending = pending,
+                    onClick = { onOpenCard(kind, id) },
+                )
             }
         }
-        if (canContinue && status in setOf("incomplete", "saved_needs_review")) TextButton(onClick = onContinue) { Text("继续核对与完成") }
+        if (pending && canContinue) {
+            TextButton(onClick = onContinue) { Text("继续核对与完成") }
+        }
+    }
+}
+
+@Composable
+private fun CardResultChip(title: String, meta: String, pending: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            com.openminis.app.ui.novex.NovexIcons.Book,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (meta.isNotBlank()) {
+            Text(
+                "· $meta",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            if (pending) "待完成 ⚠" else "已保存 ✓",
+            fontSize = 11.sp,
+            color = if (pending) {
+                ChatColors.secondaryText
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            },
+        )
     }
 }
