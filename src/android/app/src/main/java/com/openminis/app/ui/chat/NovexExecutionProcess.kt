@@ -260,39 +260,79 @@ private fun ProcessStepRow(
             }
             AnimatedVisibility(open) {
                 Column {
-                    if (args != null) {
-                        Text(
-                            args,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                    if (result != null) {
-                        Text(
-                            result,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            maxLines = 16,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                    if (content != null) {
-                        Text(
-                            content,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            maxLines = 16,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
+                    result?.let { DetailBlock("结果", prettyToolJson(it)) }
+                    args?.let { DetailBlock("参数", prettyToolJson(it)) }
+                    content?.let { DetailBlock("思考", it) }
                 }
             }
+        }
+    }
+}
+
+/** [feat/ui-rikkahub] Pretty-print JSON payloads; verbatim fallback for prose/malformed text. */
+internal fun prettyToolJson(raw: String): String {
+    if (raw.isBlank()) return raw
+    return try {
+        when (raw.trimStart().firstOrNull()) {
+            '{' -> org.json.JSONObject(raw).toString(2)
+            '[' -> org.json.JSONArray(raw).toString(2)
+            else -> raw
+        }
+    } catch (_: Exception) {
+        raw
+    }
+}
+
+/**
+ * [feat/ui-rikkahub] Detail payload block: label + 10-line faded preview +
+ * 展开全文 dialog. Never dumps an unbounded wall of text into the transcript.
+ */
+@Composable
+internal fun DetailBlock(label: String, text: String) {
+    if (text.isBlank()) return
+    val lines = text.lines()
+    val truncated = lines.size > 10
+    var showFull by remember(text) { mutableStateOf(false) }
+    Column(modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+        Text(
+            if (truncated) lines.take(10).joinToString("\n") else text,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            modifier = Modifier.padding(top = 1.dp),
+        )
+        if (truncated) {
+            Text(
+                "展开全文 · ${lines.size} 行",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .clickable { showFull = true },
+            )
+        }
+    }
+    if (showFull) {
+        NovexContentDialog(
+            label,
+            onDismiss = { showFull = false },
+            confirmButton = { TextButton(onClick = { showFull = false }) { Text("关闭") } },
+        ) {
+            Text(
+                text,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
         }
     }
 }

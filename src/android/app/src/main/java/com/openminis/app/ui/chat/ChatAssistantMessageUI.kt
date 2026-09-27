@@ -817,38 +817,13 @@ internal fun ToolCallPill(
         // footer link below.
         AnimatedVisibility(expanded) {
             Column(modifier = Modifier.padding(start = 32.dp)) {
-                if (block.toolArgs.isNotBlank()) {
-                    Text(
-                        text = "参数",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    )
-                    Text(
-                        text = block.toolArgs,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
+                // [feat/ui-rikkahub] result first, pretty-printed JSON, capped
+                // preview with 展开全文 dialog (shared DetailBlock).
                 if (block.content.isNotBlank()) {
-                    Text(
-                        text = "结果",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                    Text(
-                        text = block.content,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        maxLines = 24,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+                    DetailBlock("结果", prettyToolJson(block.content))
+                }
+                if (block.toolArgs.isNotBlank()) {
+                    DetailBlock("参数", prettyToolJson(block.toolArgs))
                 }
             }
         }
