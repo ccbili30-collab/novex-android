@@ -127,6 +127,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -947,7 +948,12 @@ private fun GeneratedImageArtifactCard(artifact: GeneratedImageArtifact) {
 // ─── Thinking Block (iOS: collapsible "Deep Thinking" section, blue tint) ────
 
 @Composable
-internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: Boolean = true) {
+internal fun ThinkingBlock(
+    block: AssistantBlock,
+    isStreaming: Boolean,
+    isLast: Boolean = true,
+    isFirst: Boolean = false,
+) {
     // Per-block expand state, keyed by block.id so the user's manual toggle on
     // an earlier (finished) thinking block survives recomposition while a
     // later block is still streaming. The previous LaunchedEffect snapped
@@ -990,23 +996,47 @@ internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: 
     val overHardCap = charCount > thinkingHardCap
     var showFullContent by remember(block.id) { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(thinkingBlue.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
-            .border(0.5.dp, thinkingBlue.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-            .clip(RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
+    // [feat/ui-rikkahub] Timeline step visual (ChainOfThought): 24dp node
+    // column with connector stubs at x=12dp, secondary-color label with
+    // shimmer while streaming, faded live preview when collapsed. The old
+    // blue card shell is gone; every behavior below is unchanged.
+    val lineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
+    val shimmer = rememberInfiniteTransition(label = "thoughtShimmer")
+    val shimmerAlpha by shimmer.animateFloat(
+        0.35f, 1f,
+        infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "thoughtAlpha",
+    )
+    val liveThinking = isStreaming && block.toolStatus != ToolBlockStatus.SUCCESS
+    Column(modifier = Modifier.fillMaxWidth()) {
         // Header row — only the header reacts to taps. Mirrors iOS, where
         // .onTapGesture is on the header HStack, not the whole VStack. With
         // clickable on the outer Column, a release after dragging in the
         // inner scroller registered as a tap and toggled `expanded`.
         Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .drawBehind {
+                    // [feat/ui-rikkahub] ChainOfThought connector stubs: 1dp
+                    // lines at x=12dp with a 10dp gap around the node.
+                    val x = 12.dp.toPx()
+                    val centerY = size.height / 2
+                    val gap = 10.dp.toPx()
+                    if (!isFirst) drawLine(
+                        color = lineColor,
+                        start = Offset(x, 0f),
+                        end = Offset(x, centerY - gap),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    if (!isLast) drawLine(
+                        color = lineColor,
+                        start = Offset(x, centerY + gap),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
                 .clickable {
                     userTouched = true
                     // [T-thinking-render-perf-android] Over the hard cap the
@@ -1015,42 +1045,25 @@ internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: 
                     // the (never-shown) inline expansion.
                     if (overHardCap) showFullContent = true
                     else expanded = !expanded
-                },
+                }
+                .padding(vertical = 8.dp),
         ) {
-            if (isStreaming && block.toolStatus != ToolBlockStatus.SUCCESS) {
-                // iOS: ProgressView().controlSize(.mini) while streaming
-                CircularProgressIndicator(
-                    modifier = Modifier.size(13.dp),
-                    color = thinkingBlue,
-                    strokeWidth = 1.5.dp,
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-            } else {
+            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = com.openminis.app.ui.novex.NovexIcons.Psychology,
                     contentDescription = null,
-                    tint = thinkingBlue,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp),
                 )
-                Spacer(modifier = Modifier.width(6.dp))
             }
             Text(
-                text = "Deep Thinking",
+                text = if (liveThinking) "思考中…" else "深度思考 · $charLabel",
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = thinkingBlue,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.alpha(if (liveThinking) shimmerAlpha else 1f),
             )
             Spacer(modifier = Modifier.weight(1f))
-            if (charCount > 0) {
-                Text(
-                    text = charLabel,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = FontFamily.Monospace,
-                    color = thinkingBlue.copy(alpha = 0.6f),
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-            }
             if (overHardCap) {
                 // [T-thinking-render-perf-android] No expand/collapse chevron —
                 // the content is too large for the inline Compose scroller.
@@ -1059,14 +1072,47 @@ internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: 
                     text = stringResource(R.string.thinking_view_full),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = thinkingBlue,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Icon(
                     imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
                     contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = thinkingBlue.copy(alpha = 0.5f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+
+        // [feat/ui-rikkahub] Collapsed live preview while streaming: tail of
+        // the thought capped at 100dp with a bottom fade — the ChainOfThought
+        // reasoning-step behavior from RikkaHub.
+        if (!expanded && liveThinking && !overHardCap && charCount > 0) {
+            val previewTail = remember(charCount) {
+                if (charCount > 600) block.content.substring(charCount - 600) else block.content
+            }
+            Box(
+                modifier = Modifier
+                    .padding(start = 32.dp)
+                    .heightIn(max = 100.dp)
+                    .clipToBounds(),
+            ) {
+                Text(
+                    text = previewTail,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                0.6f to Color.Transparent,
+                                1f to MaterialTheme.colorScheme.surface,
+                            )
+                        ),
                 )
             }
         }
@@ -1138,7 +1184,7 @@ internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: 
             }
             Column(
                 modifier = Modifier
-                    .padding(top = 6.dp)
+                    .padding(start = 32.dp, top = 6.dp)
                     .heightIn(max = 300.dp)
                     .verticalScroll(scrollState),
             ) {

@@ -212,6 +212,7 @@ internal fun ChatTranscriptRow(
                     block = item.block,
                     isStreaming = item.isLastBlockOverall && item.messageIsStreaming,
                     isLast = item.isLast,
+                    isFirst = item.isTurnStart,
                 )
             }
         }
