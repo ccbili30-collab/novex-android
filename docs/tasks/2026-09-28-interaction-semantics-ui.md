@@ -1,6 +1,6 @@
 # 互动语义前端清晰化（角色=扮演，世界=GM）
 
-日期：2026-09-28 · 分支 task/interaction-semantics-ui · 状态：进行中
+日期：2026-09-28 · 分支 task/interaction-semantics-ui · 状态：终态（PR #43 已合并 → beta.87）
 
 ## 用户裁决（2026-09-28 讨论定稿）
 
@@ -25,3 +25,10 @@ gm」——语义保留，前端标注。
 
 - 绑定语义零改动（primary/backgrounds/managed 结构与保存不变——
   仅展示层）；CardKind 仅 WORLD/CHARACTER 两类，无第三类混入
+
+## 台账（终态）
+
+- 净眼六场景过（三元化数据流全链类型一致/标签判定与激活指令同谓词/
+  徽标映射完备/保存链路零触碰/括号平衡+编译面/无外部消费者受影响）
+- 守纲六问过；CI 绿；合并 PR #43 → beta.87；双推完成（Gitee
+  preview=3.0.5-beta.87+镜像）
