@@ -136,8 +136,6 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
             Modifier
                 .fillMaxWidth()
                 .clickable { expanded = !expanded }
-                // [feat/ui-rikkahub] 头部文字与步骤标签同列（16dp 节点位 + 6dp 间距）。
-                .padding(start = 22.dp)
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -344,7 +342,11 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
     // 整行可点打开，状态徽章弱化，仅任务真未完成时出"继续核对与完成"。
     // 灰色状态文本删除：其信息由过程行（⚠ + 可展开失败原因）与正文承担。
     val status = runCatching { JSONObject(block.toolArgs).optString("status") }.getOrDefault("incomplete")
-    val pending = status in setOf("incomplete", "saved_needs_review")
+    // [feat/ui-rikkahub] 徽章永不报警：完整保存 → 已保存 ✓，其余一律 可查看
+    // （卡片本体就在那里，点开即看）。"继续核对与完成"仅作为可选动作挂在
+    // 未完成任务之后。
+    val saved = status == "saved"
+    val needsContinuation = status in setOf("incomplete", "saved_needs_review")
     val cards = runCatching { JSONObject(block.toolArgs).optJSONArray("cards") }.getOrNull()
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         if (cards != null) {
@@ -364,19 +366,19 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
                 CardResultChip(
                     title = name?.let { "《$it》" } ?: kindLabel,
                     meta = if (name != null) kindLabel else "",
-                    pending = pending,
+                    saved = saved,
                     onClick = { onOpenCard(kind, id) },
                 )
             }
         }
-        if (pending && canContinue) {
+        if (needsContinuation && canContinue) {
             TextButton(onClick = onContinue) { Text("继续核对与完成") }
         }
     }
 }
 
 @Composable
-private fun CardResultChip(title: String, meta: String, pending: Boolean, onClick: () -> Unit) {
+private fun CardResultChip(title: String, meta: String, saved: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -409,13 +411,9 @@ private fun CardResultChip(title: String, meta: String, pending: Boolean, onClic
         }
         Spacer(modifier = Modifier.weight(1f))
         Text(
-            if (pending) "待完成 ⚠" else "已保存 ✓",
+            if (saved) "已保存 ✓" else "可查看",
             fontSize = 11.sp,
-            color = if (pending) {
-                ChatColors.secondaryText
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
     }
 }
