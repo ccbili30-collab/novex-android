@@ -37,7 +37,12 @@ class NovexAnnouncementTest {
         assertTrue(source.contains("onCheckUpdate"))
         assertTrue(source.contains("检查更新"))
         assertTrue(source.contains("往期公告"))
-        assertTrue(source.contains("版本更新"))
+        // [T-announcement-v2] 公告/更新改为弹窗内 tab 切换（旧"版本更新"小节退役）
+        assertTrue(source.contains("\"公告\""))
+        assertTrue(source.contains("\"更新\""))
+        assertTrue(source.contains("暂无更新说明。"))
+        assertTrue(source.contains("faceAnnouncements"))
+        assertTrue(source.contains("NovexAnnouncementReadStore.markRead"))
         assertTrue(source.contains("MarkdownText("))
         assertTrue(source.contains("ReleaseNotesList"))
         assertTrue(source.contains("包含的往期更新"))
