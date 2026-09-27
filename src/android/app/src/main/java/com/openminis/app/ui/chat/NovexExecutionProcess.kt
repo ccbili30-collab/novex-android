@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -56,8 +57,12 @@ private fun ToolBlockStatus?.displayLabel(): String = when (this) {
     ToolBlockStatus.FAILED -> "未完成"
     ToolBlockStatus.CANCELLED -> "已停止"
     ToolBlockStatus.TIMEOUT -> "已超时"
-    null -> "记录"
+        null -> "记录"
 }
+
+// [feat/ui-rikkahub] 步骤结果语义色（iOS 系统绿/红）：成功绿、失败红、思考灰。
+private val StepOkColor = Color(0xFF34C759)
+private val StepFailColor = Color(0xFFFF3B30)
 
 /**
  * [T-execution-activity-strip] 生成中钉在输入栏上方的活动条（2026-09-15 用户
@@ -205,6 +210,11 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                                 } + dur
                             },
                             copyText = formatToolDetailsForClipboard(row.block),
+                            statusTint = when (row.block.toolStatus) {
+                                ToolBlockStatus.SUCCESS -> StepOkColor
+                                ToolBlockStatus.FAILED, ToolBlockStatus.TIMEOUT -> StepFailColor
+                                else -> null
+                            },
                             errorDetail = row.block.content.takeIf {
                                 it.isNotBlank() && row.block.toolStatus in setOf(
                                     ToolBlockStatus.FAILED,
@@ -235,6 +245,7 @@ private fun ProcessStepRow(
     content: String? = null,
     errorDetail: String? = null,
     copyText: String? = null,
+    statusTint: Color? = null,
 ) {
     val context = LocalContext.current
     var open by remember(label) { mutableStateOf(false) }
@@ -260,7 +271,7 @@ private fun ProcessStepRow(
                     else -> Modifier
                 },
             ),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // 不透明节点垫：遮住身后的轨线，读作"线到节点断开、下方再续"，
@@ -274,7 +285,7 @@ private fun ProcessStepRow(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = statusTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(14.dp),
             )
         }
@@ -282,7 +293,7 @@ private fun ProcessStepRow(
             label,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = statusTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (expandable) {
             Icon(
