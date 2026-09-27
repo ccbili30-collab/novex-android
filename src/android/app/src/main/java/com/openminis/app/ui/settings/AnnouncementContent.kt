@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +40,7 @@ import coil.compose.AsyncImage
 import com.openminis.app.R
 import com.openminis.app.data.NovexAnnouncement
 import com.openminis.app.ui.markdown.MarkdownParser
+import com.openminis.app.ui.markdown.MarkdownParser.Block
 
 /**
  * [T-announcement-hero] 公告面板的「版本中心」式渲染：发布公告（索引带
@@ -260,5 +260,3 @@ private fun InlineText(
         color = color,
     )
 }
-
-private typealias Block = MarkdownParser.Block
