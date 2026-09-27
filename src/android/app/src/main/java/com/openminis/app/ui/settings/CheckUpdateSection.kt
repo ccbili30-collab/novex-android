@@ -3,6 +3,7 @@ package com.openminis.app.ui.settings
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,10 +11,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.NovexDimensions
@@ -36,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -772,7 +777,8 @@ private fun AnnouncementDialog(
     onDismiss: () -> Unit,
     // [T-announcement-v2] 跳脸模式：只展示新公告列表，隐藏公告/更新切换
     showTabs: Boolean = true,
-    dialogTitle: String = "公告",
+    // [T-announcement-hero] 手动打开=版本中心视角（参考设计稿）；跳脸保持「新公告」
+    dialogTitle: String = "版本中心",
 ) {
     // [T-announcement-v2] 公告/更新两页切换（用户：「公告本身也要能切换公告/更新」）
     var tab by rememberSaveable { mutableStateOf("ann") }
@@ -794,27 +800,9 @@ private fun AnnouncementDialog(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 if (showTabs) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MinisTextButton(
-                            onClick = { tab = "ann" },
-                            enabled = tab != "ann",
-                        ) {
-                            Text(
-                                "公告",
-                                fontWeight = if (tab == "ann") FontWeight.Bold else FontWeight.Normal,
-                                color = if (tab == "ann") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        MinisTextButton(
-                            onClick = { tab = "notes" },
-                            enabled = tab != "notes",
-                        ) {
-                            Text(
-                                "更新",
-                                fontWeight = if (tab == "notes") FontWeight.Bold else FontWeight.Normal,
-                                color = if (tab == "notes") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                        BulletinTab("公告", selected = tab == "ann", onClick = { tab = "ann" })
+                        BulletinTab("更新", selected = tab == "notes", onClick = { tab = "notes" })
                     }
                 }
                 if (showTabs && tab == "notes") {
@@ -831,7 +819,12 @@ private fun AnnouncementDialog(
                         }
                     }
                 } else {
-                bulletin.announcements.firstOrNull()?.let { latest ->
+                val latest = bulletin.announcements.firstOrNull()
+                if (latest != null && latest.version != null) {
+                    // [T-announcement-hero] 发布公告：hero 横幅 + 块级正文
+                    AnnouncementHero(latest)
+                    AnnouncementBody(latest.markdown, heroMode = true)
+                } else if (latest != null) {
                     Text(
                         "最新公告",
                         style = MaterialTheme.typography.labelMedium,
@@ -858,7 +851,14 @@ private fun AnnouncementDialog(
         },
         confirmButton = {
             MinisButton(onClick = onCheckUpdate, enabled = !checking) {
-                Text("检查更新")
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("检查更新")
+                    Icon(
+                        painter = painterResource(R.drawable.ic_phosphor_arrow_clockwise),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
         },
         dismissButton = {
@@ -867,6 +867,34 @@ private fun AnnouncementDialog(
             }
         },
     )
+}
+
+/** [T-announcement-hero] 下划线式页签（参考设计稿），替换原文本按钮加粗。 */
+@Composable
+private fun BulletinTab(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.clickable(onClick = onClick).padding(vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box(
+            Modifier
+                .padding(top = 3.dp)
+                .width(22.dp)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent),
+        )
+    }
 }
 
 @Composable
@@ -902,9 +930,10 @@ private fun AnnouncementItem(
             )
         }
         if (expanded) {
-            MarkdownText(
+            // [T-announcement-hero] 往期条目统一块级渲染（简排版，无横幅）
+            AnnouncementBody(
                 markdown = announcement.markdown,
-                style = MaterialTheme.typography.bodyMedium,
+                heroMode = false,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 6.dp),

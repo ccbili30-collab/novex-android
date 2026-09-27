@@ -35,6 +35,26 @@ class BulletinCacheTest {
         assertEquals("3.0.5-beta.85", loaded.releaseNotes.single().versionName)
     }
 
+    @Test fun `cache round trips hero metadata and omits null fields`() {
+        val dir = temporary.newFolder()
+        val hero = NovexAnnouncement(
+            versionName = "2026-09-28", title = "3.0.5 发布", markdown = "正文", id = "announcements/h.md",
+            version = "3.0.5", badge = "正式版发布", tagline = "让创作更简单",
+            coverUrl = "https://gitee.com/ccbili/novex/raw/main/announcements/assets/3.0.5-cover.webp",
+            channel = "stable",
+        )
+        val plain = NovexAnnouncement(versionName = "2026-09-27", title = "发布站上线", markdown = "正文", id = "announcements/a.md")
+        runBlocking { BulletinCache.save(dir, NovexBulletin(announcements = listOf(hero, plain), releaseNotes = emptyList(), live = true)) }
+        val loaded = runBlocking { BulletinCache.load(dir) }!!
+        assertEquals("3.0.5", loaded.announcements[0].version)
+        assertEquals("正式版发布", loaded.announcements[0].badge)
+        assertEquals("让创作更简单", loaded.announcements[0].tagline)
+        assertEquals("stable", loaded.announcements[0].channel)
+        assertEquals(hero.coverUrl, loaded.announcements[0].coverUrl)
+        assertEquals(null, loaded.announcements[1].version)
+        assertEquals(null, loaded.announcements[1].coverUrl)
+    }
+
     @Test fun `missing and corrupted cache load null silently`() {
         val dir = temporary.newFolder()
         assertNull(runBlocking { BulletinCache.load(dir) })

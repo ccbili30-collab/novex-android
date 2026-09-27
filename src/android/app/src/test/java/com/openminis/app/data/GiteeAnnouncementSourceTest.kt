@@ -106,4 +106,33 @@ class GiteeAnnouncementSourceTest {
         // 全已读 → 空（跳脸不发生）
         assertEquals(emptyList<NovexAnnouncement>(), NovexAnnouncementReadStore.unread(list, setOf("a.md", "b.md", "c.md")))
     }
+
+    @Test fun `hero metadata parses and cover passes path guard`() {
+        val body = """{"announcements":[
+            {"file":"announcements/a.md","title":"发布","date":"2026-09-28","version":"3.0.5","badge":"正式版发布","tagline":"让创作更简单","cover":"announcements/assets/a.webp"},
+            {"file":"announcements/b.md","title":"目录穿越","date":"d","cover":"announcements/../secret.webp"},
+            {"file":"announcements/c.md","title":"非图片扩展","date":"d","cover":"announcements/assets/a.md"},
+            {"file":"announcements/d.md","title":"越出目录","date":"d","cover":"update.webp"}
+        ]}"""
+        val parsed = GiteeAnnouncementSource.parseAnnouncementsIndex(body)!!
+        assertEquals(4, parsed.size)
+        assertEquals("3.0.5", parsed[0].version)
+        assertEquals("正式版发布", parsed[0].badge)
+        assertEquals("让创作更简单", parsed[0].tagline)
+        assertEquals("announcements/assets/a.webp", parsed[0].cover)
+        // 护栏不过 → cover 退化为 null（条目本身保留，回落简排版）
+        assertEquals(null, parsed[1].cover)
+        assertEquals(null, parsed[2].cover)
+        assertEquals(null, parsed[3].cover)
+    }
+
+    @Test fun `sanitize cover trims and applies whitelist extensions`() {
+        assertEquals(
+            "announcements/assets/a.png",
+            GiteeAnnouncementSource.sanitizeCover(" announcements/assets/a.png "),
+        )
+        assertEquals(null, GiteeAnnouncementSource.sanitizeCover("announcements/assets/a.gif"))
+        assertEquals(null, GiteeAnnouncementSource.sanitizeCover(""))
+        assertEquals(null, GiteeAnnouncementSource.sanitizeCover("announcements/assets/../a.webp"))
+    }
 }
