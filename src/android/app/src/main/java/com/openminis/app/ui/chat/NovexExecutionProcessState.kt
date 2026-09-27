@@ -50,9 +50,24 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
                 else -> error("Unexpected execution row")
             }
             val process = FlatChatItem.AssistantProcess(messageId, folded, first.key)
-            // 叙述与交互类工具保留原位；唯一工作行钉在回合末尾。
-            turn.forEach { row -> if (row.key !in keys) output += row }
+            // [feat/ui-rikkahub] 2026-09-27 对齐 ZCode：工作行插在回合**问题
+            // 之后、回答之前**——跳过段首的用户气泡/名头再落位。叙述与交互
+            // 类工具保留原位。
+            val kept = turn.filter { it.key !in keys }
+            var idx = 0
+            while (idx < kept.size &&
+                (kept[idx] is FlatChatItem.UserBubble ||
+                    kept[idx] is FlatChatItem.BranchSwitcher ||
+                    kept[idx] is FlatChatItem.AssistantHeader)
+            ) {
+                output += kept[idx]
+                idx++
+            }
             output += process
+            while (idx < kept.size) {
+                output += kept[idx]
+                idx++
+            }
         }
         start = end
     }
