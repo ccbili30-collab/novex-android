@@ -45,6 +45,25 @@ class NovexAnnouncementTest {
     }
 
     @Test
+    fun `version center renders hero announcements with block body`() {
+        val source = File("src/main/java/com/openminis/app/ui/settings/CheckUpdateSection.kt").readText()
+        // [T-announcement-hero] 发布公告上 hero 横幅，正文走块级渲染；页签下划线式；检查更新带刷新图标
+        assertTrue(source.contains("AnnouncementHero("))
+        assertTrue(source.contains("AnnouncementBody("))
+        assertTrue(source.contains("BulletinTab("))
+        assertTrue(source.contains("版本中心"))
+        assertTrue(source.contains("R.drawable.ic_phosphor_arrow_clockwise"))
+        // 渲染层：分节符号按裁决只给亮点类节标题（sparkle/gear），封面走 AsyncImage
+        val renderer = File("src/main/java/com/openminis/app/ui/settings/AnnouncementContent.kt").readText()
+        assertTrue(renderer.contains("R.drawable.ic_phosphor_sparkle"))
+        assertTrue(renderer.contains("R.drawable.ic_phosphor_gear"))
+        assertTrue(renderer.contains("AsyncImage("))
+        // 解析层：cover 路径护栏在位
+        val parser = File("src/main/java/com/openminis/app/data/GiteeAnnouncementSource.kt").readText()
+        assertTrue(parser.contains("sanitizeCover"))
+    }
+
+    @Test
     fun `dismissed update restores announcement action until user checks again`() {
         assertEquals(
             NovexHomeAction.UPDATE,
