@@ -34,11 +34,10 @@ object UpdateChecker {
 
     private const val TAG = "UpdateChecker"
     private const val OWNER = "ccbili30-collab"
-    // T133: the public repo is OpenMinis/OpenMinis (org + repo share a name).
-    // Previously pointed at OpenMinis/MinisApp, which is the private dev
-    // mirror — every API call 404'd, which we mistranslated as "no release
-    // published". The 0.1-preview release is published as a prerelease on
-    // OpenMinis/OpenMinis with a MinisApp-*.apk asset attached.
+    // T133 history: this once pointed at OpenMinis/MinisApp (private dev
+    // mirror) — every API call 404'd and we mistranslated that as "no
+    // release published". The repo has since moved to ccbili30-collab/
+    // novex-android (public).
     private const val REPO = "novex-android"
     private const val RELEASES_API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100"
     private const val RELEASES_ATOM_URL = "https://github.com/$OWNER/$REPO/releases.atom"
