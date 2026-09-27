@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -132,17 +131,26 @@ internal fun AnnouncementHero(announcement: NovexAnnouncement, modifier: Modifie
 }
 
 /**
- * 公告正文块级渲染。[heroMode] 真=发布公告：跳过开头「**元信息**：」段
- * （已上横幅），首个正文段作导语（左侧色条强调）。非 hero 公告同渲染
- * 简排版。块类型覆盖公告所需（标题/段落/引用/列表/分隔线）；代码表、
- * 表格等富块公告不使用，忽略。
+ * hero 正文可见块：跳过开头 H1 标题与「**元信息**：」段（已上横幅）。
+ * 纯函数独立成测试锚点——净眼退回件：原 dropWhile 谓词漏 H1，首块恒为
+ * 「# 标题」导致跳过逻辑对真实公告一块都丢不掉。
+ */
+internal fun heroVisibleBlocks(blocks: List<MarkdownParser.Block>): List<MarkdownParser.Block> =
+    blocks.dropWhile {
+        (it is Block.Heading && it.level == 1) || (it is Block.Paragraph && metaLine.containsMatchIn(it.content))
+    }
+
+/**
+ * 公告正文块级渲染。[heroMode] 真=发布公告：跳过开头标题与元信息段，
+ * 首个正文段作导语（左侧色条强调）。非 hero 公告同渲染简排版。块类型
+ * 覆盖公告所需（标题/段落/引用/列表/分隔线）；代码表、表格等富块公告
+ * 不使用，忽略。
  */
 @Composable
 internal fun AnnouncementBody(markdown: String, heroMode: Boolean, modifier: Modifier = Modifier) {
     val blocks = remember(markdown) { MarkdownParser.parse(markdown) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        var visible = blocks
-        if (heroMode) visible = visible.dropWhile { it is Block.Paragraph && metaLine.containsMatchIn(it.content) }
+        val visible = if (heroMode) heroVisibleBlocks(blocks) else blocks
         var leadingParagraph = heroMode
         visible.forEach { block ->
             when (block) {
