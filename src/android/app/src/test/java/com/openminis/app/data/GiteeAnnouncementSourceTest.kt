@@ -54,10 +54,56 @@ class GiteeAnnouncementSourceTest {
         assertNull(GiteeAnnouncementSource.parseAnnouncementsIndex("""{"announcements":[]}"""))
     }
 
-    @Test fun `raw url joins base and file`() {
+    @Test fun `raw url joins base and file for both hosts`() {
         assertEquals(
             "https://gitee.com/ccbili/novex/raw/main/announcements/a.md",
-            GiteeAnnouncementSource.rawUrl("announcements/a.md"),
+            GiteeAnnouncementSource.rawUrl(GiteeAnnouncementSource.GITEE_RAW_BASE, "announcements/a.md"),
         )
+        assertEquals(
+            "https://raw.githubusercontent.com/ccbili30-collab/novex/main/announcements/a.md",
+            GiteeAnnouncementSource.rawUrl(GiteeAnnouncementSource.GITHUB_MIRROR_RAW_BASE, "announcements/a.md"),
+        )
+    }
+
+    @Test fun `channel field parses and invalid values fall back to common`() {
+        val body = """{"announcements":[
+            {"file":"announcements/a.md","title":"通用","date":"d"},
+            {"file":"announcements/b.md","title":"预览限定","date":"d","channel":"preview"},
+            {"file":"announcements/c.md","title":"稳定限定","date":"d","channel":"stable"},
+            {"file":"announcements/e.md","title":"非法通道当通用","date":"d","channel":"beta"}
+        ]}"""
+        val parsed = GiteeAnnouncementSource.parseAnnouncementsIndex(body)!!
+        assertEquals(4, parsed.size)
+        assertEquals(null, parsed[0].channel)
+        assertEquals("preview", parsed[1].channel)
+        assertEquals("stable", parsed[2].channel)
+        assertEquals(null, parsed[3].channel)
+    }
+
+    @Test fun `common announcements reach both channels while lane ones stay in lane`() {
+        fun entry(file: String, channel: String?) =
+            GiteeAnnouncementSource.AnnouncementEntry(file, "t", "d", channel)
+        val entries = listOf(
+            entry("announcements/common.md", null),
+            entry("announcements/p.md", "preview"),
+            entry("announcements/s.md", "stable"),
+        )
+        assertEquals(
+            listOf("announcements/common.md", "announcements/p.md"),
+            GiteeAnnouncementSource.filterForChannel(entries, UpdateChannel.PREVIEW).map { it.file },
+        )
+        assertEquals(
+            listOf("announcements/common.md", "announcements/s.md"),
+            GiteeAnnouncementSource.filterForChannel(entries, UpdateChannel.STABLE).map { it.file },
+        )
+    }
+
+    @Test fun `unread filter keeps order and keys on announcement id`() {
+        fun ann(id: String) = NovexAnnouncement(versionName = "d", title = id, markdown = "m", id = id)
+        val list = listOf(ann("a.md"), ann("b.md"), ann("c.md"))
+        val unread = NovexAnnouncementReadStore.unread(list, readIds = setOf("b.md"))
+        assertEquals(listOf("a.md", "c.md"), unread.map { it.id })
+        // 全已读 → 空（跳脸不发生）
+        assertEquals(emptyList<NovexAnnouncement>(), NovexAnnouncementReadStore.unread(list, setOf("a.md", "b.md", "c.md")))
     }
 }

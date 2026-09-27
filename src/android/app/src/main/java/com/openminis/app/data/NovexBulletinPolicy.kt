@@ -4,11 +4,15 @@ internal data class NovexAnnouncement(
     val versionName: String,
     val title: String,
     val markdown: String,
+    /** [T-announcement-v2] 已读键：hub 道用索引文件名，GitHub 道默认=versionName。 */
+    val id: String = versionName,
 )
 
 internal data class NovexBulletin(
     val announcements: List<NovexAnnouncement>,
     val releaseNotes: List<UpdateChecker.ReleaseNote>,
+    /** [T-announcement-v2] 真=来自网络活源；内置归档回落为 false——跳脸只认活源新公告。 */
+    val live: Boolean = false,
 )
 
 /** Splits release bodies into durable announcements and ordinary version notes. */
