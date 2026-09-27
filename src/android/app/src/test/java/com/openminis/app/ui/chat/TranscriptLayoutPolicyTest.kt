@@ -63,6 +63,23 @@ class TranscriptLayoutPolicyTest {
     }
 
     @Test
+    fun `a scroll settling at the tail re-grants follow after a drag`() {
+        val draggedAway = TranscriptFollowState()
+            .after(TranscriptFollowEvent.UserRequestedLatest)
+            .after(TranscriptFollowEvent.UserDragStarted)
+        assertFalse(draggedAway.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+
+        val restuck = draggedAway.after(TranscriptFollowEvent.UserRestingAtLatest)
+        assertTrue(restuck.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+        assertTrue(restuck.shouldMoveFor(TranscriptViewportMove.ToolCardMeasured))
+
+        // The effect layer only fires the event when the settle lands at the
+        // tail; the machine itself must not grant from stream completion alone.
+        val readingHistory = TranscriptFollowState().after(TranscriptFollowEvent.StreamCompleted)
+        assertFalse(readingHistory.shouldMoveFor(TranscriptViewportMove.PassiveStreamGrowth))
+    }
+
+    @Test
     fun `stream completion retains follow through persisted row settlement`() {
         val following = TranscriptFollowState().after(TranscriptFollowEvent.UserRequestedLatest)
         val completed = following.after(TranscriptFollowEvent.StreamCompleted)

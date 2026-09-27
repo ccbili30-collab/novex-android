@@ -73,19 +73,23 @@ internal fun allowsTranscriptViewportMove(reason: TranscriptViewportMove): Boole
 
 internal enum class TranscriptFollowEvent {
     UserRequestedLatest,
+    /** [feat/ui-rikkahub] A user scroll settled at the live tail — re-stick. */
+    UserRestingAtLatest,
     UserDragStarted,
     StreamCompleted,
 }
 
 /**
- * Explicit navigation to the live conversation follows layout growth until the user drags.
- * Stream completion can precede persistence and final row measurement, so it cannot revoke follow.
+ * Layout growth is followed after explicit navigation or a user scroll that
+ * settles at the live tail, until the next drag revokes it. Stream completion
+ * can precede persistence and final row measurement, so it cannot revoke follow.
  */
 internal data class TranscriptFollowState(
     val isFollowingLatest: Boolean = false,
 ) {
     fun after(event: TranscriptFollowEvent): TranscriptFollowState = when (event) {
-        TranscriptFollowEvent.UserRequestedLatest -> copy(isFollowingLatest = true)
+        TranscriptFollowEvent.UserRequestedLatest,
+        TranscriptFollowEvent.UserRestingAtLatest -> copy(isFollowingLatest = true)
         TranscriptFollowEvent.UserDragStarted -> copy(isFollowingLatest = false)
         TranscriptFollowEvent.StreamCompleted -> this
     }

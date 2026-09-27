@@ -1059,6 +1059,21 @@ fun ChatScreen(
     var submittedTurnNavigation by remember(sessionId) { mutableStateOf(SubmittedTurnNavigation()) }
     val scrollToLatestOnce: suspend (TranscriptViewportMove) -> Unit = scroll@{ reason ->
         if (!transcriptFollowState.shouldMoveFor(reason)) return@scroll
+        // [feat/ui-rikkahub] Passive growth is the per-frame hot path. Pin with
+        // requestScrollToItem — non-suspending, applied in the same frame —
+        // because the old withFrameNanos + scrollToItem ran one frame behind
+        // every streamed chunk and flickered the bottom edge. The in-progress
+        // guard (not the interaction timestamp) is what can actually observe a
+        // drag starting between this loop's emission and its collection.
+        if (reason == TranscriptViewportMove.PassiveStreamGrowth) {
+            if (listState.isScrollInProgress) return@scroll
+            latestTranscriptItemIndex(listState.layoutInfo.totalItemsCount)?.let { latest ->
+                // Same clamp semantics as the slow path below: a large forward
+                // offset lands on the final line, not merely the final row.
+                listState.requestScrollToItem(latest, Int.MAX_VALUE / 4)
+            }
+            return@scroll
+        }
         // One frame lets a newly-added or newly-measured row enter the list.
         // Explicit actions always pass; passive growth only passes while the
         // temporary “follow latest” state is active.
@@ -1114,6 +1129,35 @@ fun ChatScreen(
                 )
             }
             result
+        }
+    }
+
+    // [feat/ui-rikkahub] RikkaHub-style re-anchor: a scroll that SETTLES at the
+    // live tail re-grants follow, so glancing up mid-stream and flicking back
+    // down re-sticks the tail without the return-to-latest button. Upward
+    // drags still revoke at DragStart. Programmatic moves also settle at the
+    // tail, but they only run while follow is active or for explicit moves —
+    // re-granting there matches intent. The 8dp tolerance mirrors RikkaHub's
+    // isAtBottom(): a fling that decelerates just short of the end still
+    // counts as "at the bottom".
+    val settleGrantTolerancePx = with(LocalDensity.current) { 8.dp.toPx() }
+    LaunchedEffect(listState, sessionId) {
+        var wasScrolling = listState.isScrollInProgress
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            if (wasScrolling && !scrolling) {
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()
+                val settledAtLatest = !listState.canScrollForward ||
+                    (lastVisible != null &&
+                        lastVisible.index == latestTranscriptItemIndex(info.totalItemsCount) &&
+                        lastVisible.offset + lastVisible.size - info.viewportEndOffset <= settleGrantTolerancePx)
+                if (settledAtLatest) {
+                    transcriptFollowState = transcriptFollowState.after(
+                        TranscriptFollowEvent.UserRestingAtLatest,
+                    )
+                }
+            }
+            wasScrolling = scrolling
         }
     }
 
