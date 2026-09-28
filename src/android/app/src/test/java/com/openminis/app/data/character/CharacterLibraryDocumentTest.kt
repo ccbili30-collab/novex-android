@@ -2,6 +2,7 @@ package com.openminis.app.data.character
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,5 +69,36 @@ class CharacterLibraryDocumentTest {
             document.versions.single().modules.map { it.type },
         )
         assertTrue(document.versions.single().profileJson.contains("systemPrompt"))
+    }
+
+    @Test
+    fun summaryHoldingNestedProfileJsonUnwrapsInnerDescription() {
+        // [T-card-editor-polish] 酒馆风格卡把另一份 profile JSON 整个塞进 summary
+        val nested = JSONObject()
+            .put("profileSchema", "novex-character-version-profile-v1")
+            .put("name", "唐人")
+            .put(
+                "summary",
+                JSONObject().put("name", "堂吉诃德").put("description", "character:\r\nname: \"堂吉诃德\"\r\nalias: \"性斗骑士\"").toString(),
+            )
+        val parsed = CharacterVersionProfile.fromJson(nested.toString())
+        assertTrue(parsed.summary.startsWith("character:"))
+        assertFalse(parsed.summary.contains("profileSchema"))
+    }
+
+    @Test
+    fun plainSummaryAndBrokenJsonSummaryStayVerbatim() {
+        assertEquals(
+            "普通的简介文本",
+            CharacterVersionProfile.fromJson(JSONObject().put("summary", "普通的简介文本").toString()).summary,
+        )
+        val broken = JSONObject().put("summary", "{这不是JSON").toString()
+        assertEquals("{这不是JSON", CharacterVersionProfile.fromJson(broken).summary)
+        // 内层无 description → 原样保留（fail-open）
+        val noDescription = JSONObject()
+            .put("summary", JSONObject().put("name", "只有名字").toString())
+            .toString()
+        val parsed = CharacterVersionProfile.fromJson(noDescription)
+        assertTrue(parsed.summary.contains("只有名字"))
     }
 }

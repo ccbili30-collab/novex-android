@@ -65,7 +65,7 @@ data class CharacterVersionProfile(
                 age = json.optString("age"),
                 race = json.optString("race"),
                 occupation = json.optString("occupation"),
-                summary = json.optString("summary"),
+                summary = unwrapSummary(json.optString("summary")),
                 customAttributes = json.optJSONArray("customAttributes").objects { item ->
                     CharacterCustomAttribute(item.optString("name"), item.optString("value"))
                 },
@@ -78,6 +78,20 @@ data class CharacterVersionProfile(
                 },
                 preservedJson = json.toString(),
             )
+        }
+
+        /**
+         * [T-card-editor-polish]（用户 2026-09-28：「需要 json 解析」）酒馆
+         * 风格卡会把另一份 profile JSON 整个塞进 summary 字符串（编辑页
+         * 简介栏显示成原始 JSON）。识别后取内层 description 当简介；解析
+         * 失败/无 description 原样保留——fail-open，绝不让坏卡导入失败。
+         */
+        private fun unwrapSummary(raw: String): String {
+            val text = raw.trim()
+            if (!text.startsWith("{")) return raw
+            val inner = runCatching { JSONObject(text) }.getOrNull() ?: return raw
+            val description = inner.optString("description").trim()
+            return description.ifBlank { raw }
         }
     }
 }
