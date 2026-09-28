@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 上层盘片 -->
+    <path
+        android:pathData="M4,4.5 h16 a1.5,1.5 0 0 1 1.5,1.5 v3 a1.5,1.5 0 0 1 -1.5,1.5 h-16 a1.5,1.5 0 0 1 -1.5,-1.5 v-3 a1.5,1.5 0 0 1 1.5,-1.5 z M4,6 a0.5,0.5 0 0 0 -0.5,0.5 v3 a0.5,0.5 0 0 0 0.5,0.5 h16 a0.5,0.5 0 0 0 0.5,-0.5 v-3 A0.5,0.5 0 0 0 20,6 z"
+        android:fillColor="#000000" />
+    <!-- 下层盘片 -->
+    <path
+        android:pathData="M4,13 h16 a1.5,1.5 0 0 1 1.5,1.5 v3 a1.5,1.5 0 0 1 -1.5,1.5 h-16 a1.5,1.5 0 0 1 -1.5,-1.5 v-3 a1.5,1.5 0 0 1 1.5,-1.5 z M4,14.5 a0.5,0.5 0 0 0 -0.5,0.5 v3 a0.5,0.5 0 0 0 0.5,0.5 h16 a0.5,0.5 0 0 0 0.5,-0.5 v-3 a0.5,0.5 0 0 0 -0.5,-0.5 z"
+        android:fillColor="#000000" />
+    <!-- 指示点（下盘右侧） -->
+    <path
+        android:pathData="M17.5,16.25 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0"
+        android:fillColor="#000000" />
+</vector>
