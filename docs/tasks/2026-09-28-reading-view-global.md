@@ -20,7 +20,11 @@
    默认 `PAGED` 翻页）；hydrate 挂 MinisApp 冷启动。
 2. `CardPresentation.rootModulesHorizontal()` 改读 ReadingViewPrefs——
    阅读页滚动/翻页、手势翻页、「主要」槽判定全部跟随全局视图；
-   `usesMainSlot()` 随之（编辑器 ModuleTreeEditor 的入口显示同源）。
+   `usesMainSlot()` 随之。**净眼退回件**：编辑器「主要」槽入口必须与
+   CardEditor 结构转换的前置条件（卡内字段）同源，否则全局滚动+存量
+   PAGED 卡组合下新增模块撞 require、存量 CONTINUOUS 卡丢新增入口——
+   增设 `usesMainSlotByData()`（卡内字段语义）仅供 ModuleTreeEditor 入口
+   使用，阅读页三处仍走全局。
 3. `CardSessionModel.setReadingLayout` 简化为写偏好（同步、零 IO 链、
    不产生修订）；PR#47 的 commit+begin 逻辑随本决议退役。
 4. **编辑器数据组织规则保持现状**：PromoteModule/AddPresentedModule 的
@@ -31,6 +35,8 @@
    渲染忽略它。
 6. 编辑菜单「滚动模式/翻页模式」两项成为全局视图切换入口；阅读页内
    即时切换按钮挂账（需 UI 设计）。
+7. 挂账观察：AI 工具 `set_reading_layout`（CardEditingTools）仍读写字段，
+   与「字段不再是用户所见阅读视图」存在语义漂移，后续任务统一。
 
 ## 已知取舍
 
