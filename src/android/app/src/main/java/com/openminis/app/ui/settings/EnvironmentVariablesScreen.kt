@@ -12,12 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -76,7 +76,7 @@ fun EnvironmentVariablesScreen(
         // kept here for visual continuity.
         actions = {
             IconButton(onClick = { showAddSheet = true }) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.env_var_add))
+                Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.env_var_add))
             }
         },
     ) {
@@ -150,7 +150,7 @@ fun EnvironmentVariablesScreen(
                                         visibleKeys.value + entry.key
                                 }) {
                                     Icon(
-                                        if (isVisible) com.openminis.app.ui.novex.NovexIcons.Visibility else com.openminis.app.ui.novex.NovexIcons.VisibilityOff,
+                                        if (isVisible) novex.android.ui.NovexIcons.Visibility else novex.android.ui.NovexIcons.VisibilityOff,
                                         contentDescription = stringResource(R.string.env_var_toggle_visibility),
                                         modifier = Modifier.size(20.dp),
                                     )
@@ -160,14 +160,14 @@ fun EnvironmentVariablesScreen(
                                     clipboardManager.setText(AnnotatedString("${entry.key}=$v"))
                                 }) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                                        novex.android.ui.NovexIcons.ContentCopy,
                                         contentDescription = stringResource(R.string.common_copy),
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
                                 IconButton(onClick = { deleteEntryId = entry.id }) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.Delete,
+                                        novex.android.ui.NovexIcons.Delete,
                                         contentDescription = stringResource(R.string.common_delete),
                                         modifier = Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.error,

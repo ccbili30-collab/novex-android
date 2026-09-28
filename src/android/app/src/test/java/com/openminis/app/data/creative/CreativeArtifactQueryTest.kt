@@ -1,12 +1,12 @@
 package com.openminis.app.data.creative
 
-import com.openminis.app.novex.domain.CreativeArtifact
-import com.openminis.app.novex.domain.CreativeArtifactAttachment
-import com.openminis.app.novex.domain.CreativeArtifactKind
-import com.openminis.app.novex.domain.CreativeArtifactOrigin
-import com.openminis.app.novex.domain.CreativeArtifactRevision
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexContentKind
+import novex.core.CreativeArtifact
+import novex.core.CreativeArtifactAttachment
+import novex.core.CreativeArtifactKind
+import novex.core.CreativeArtifactOrigin
+import novex.core.CreativeArtifactRevision
+import novex.core.NovexContentAddress
+import novex.core.NovexContentKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

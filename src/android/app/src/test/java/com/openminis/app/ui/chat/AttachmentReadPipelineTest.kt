@@ -6,8 +6,8 @@ import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.model.*
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.adapter.NovexContextReadJournal
-import com.openminis.app.novex.domain.*
+import novex.android.adapter.NovexContextReadJournal
+import novex.core.*
 import com.openminis.app.tools.NovexDocumentAgentTools
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject

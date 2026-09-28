@@ -12,7 +12,7 @@ import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
 import com.openminis.app.data.model.*
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
 import java.util.UUID

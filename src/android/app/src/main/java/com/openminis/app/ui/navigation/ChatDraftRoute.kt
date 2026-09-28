@@ -1,11 +1,11 @@
 package com.openminis.app.ui.navigation
 
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexContentKind
-import com.openminis.app.novex.domain.ManagedAccess
-import com.openminis.app.novex.domain.NovexConversationCommand
-import com.openminis.app.novex.domain.NovexConversationConfiguration
-import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
+import novex.core.NovexContentAddress
+import novex.core.NovexContentKind
+import novex.core.ManagedAccess
+import novex.core.NovexConversationCommand
+import novex.core.NovexConversationConfiguration
+import novex.core.NovexConversationConfigurationSnapshot
 
 /** Context that must survive when a conversation creates another draft. */
 internal data class ChatDraftContext(

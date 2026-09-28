@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Checkbox
+import novex.android.ui.AlertDialog
+import novex.android.ui.Checkbox
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.openminis.app.novex.domain.NovexToolOperation
+import novex.core.NovexToolOperation
 import org.json.JSONObject
 
 /** Selection is inert; only explicit confirmation resolves this immutable operation once. */

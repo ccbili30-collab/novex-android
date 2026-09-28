@@ -928,12 +928,12 @@ fun MinisSelectionToolbarHost(
                     var overflowOpen by remember(items.size) { mutableStateOf(false) }
                     Box {
                         MinisToolbarButton(label = "⋯") { overflowOpen = true }
-                        com.openminis.app.ui.novex.DropdownMenu(
+                        novex.android.ui.DropdownMenu(
                             expanded = overflowOpen,
                             onDismissRequest = { overflowOpen = false },
                         ) {
                             for (item in overflowItems) {
-                                com.openminis.app.ui.novex.DropdownMenuItem(
+                                novex.android.ui.DropdownMenuItem(
                                     text = { Text(item.label) },
                                     onClick = {
                                         overflowOpen = false

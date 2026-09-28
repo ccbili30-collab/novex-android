@@ -1,7 +1,7 @@
 package com.openminis.app.cards
 
 import com.openminis.app.MinisApp
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import novex.content.CardKind

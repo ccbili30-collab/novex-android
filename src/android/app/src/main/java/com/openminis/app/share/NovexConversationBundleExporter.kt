@@ -6,7 +6,7 @@ import androidx.room.withTransaction
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -246,7 +246,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
 
             NovexMemoryToolExecutor.exportPlans(File(context.filesDir, "novex/memory-plans"), conversationId)
                 .forEach { (name, raw) -> write("execution/memory-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
-            com.openminis.app.novex.domain.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
+            novex.core.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
                 .forEach { (name, raw) -> write("execution/learning-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
             NovexOperationJournal(File(context.filesDir, "novex-operations")).exportRecords(conversationId)
                 .forEach { (operationId, raw) ->

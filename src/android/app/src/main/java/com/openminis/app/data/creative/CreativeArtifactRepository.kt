@@ -2,17 +2,17 @@ package com.openminis.app.data.creative
 
 import androidx.room.withTransaction
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.domain.CreativeArtifact
-import com.openminis.app.novex.domain.CreativeArtifactAttachment
-import com.openminis.app.novex.domain.CreativeArtifactKind
-import com.openminis.app.novex.domain.CreativeArtifactOrigin
-import com.openminis.app.novex.domain.CreativeArtifactRevision
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexContentKind
-import com.openminis.app.novex.domain.NovexCreativeArtifactReader
-import com.openminis.app.novex.domain.NovexCreativeArtifactSummary
-import com.openminis.app.novex.domain.NovexManagementArtifactPort
-import com.openminis.app.novex.domain.NovexManagedArtifactDescription
+import novex.core.CreativeArtifact
+import novex.core.CreativeArtifactAttachment
+import novex.core.CreativeArtifactKind
+import novex.core.CreativeArtifactOrigin
+import novex.core.CreativeArtifactRevision
+import novex.core.NovexContentAddress
+import novex.core.NovexContentKind
+import novex.core.NovexCreativeArtifactReader
+import novex.core.NovexCreativeArtifactSummary
+import novex.core.NovexManagementArtifactPort
+import novex.core.NovexManagedArtifactDescription
 import java.io.File
 import java.util.UUID
 
@@ -38,7 +38,7 @@ data class CreativeArtifactRecord(
 class CreativeArtifactRepository(
     private val database: AppDatabase,
     private val files: CreativeArtifactFileStore,
-    private val cardWorkspace: com.openminis.app.novex.domain.NovexWorkspace? = null,
+    private val cardWorkspace: novex.core.NovexWorkspace? = null,
 ) : NovexManagementArtifactPort, NovexCreativeArtifactReader {
     private val dao get() = database.creativeArtifactDao()
 
@@ -133,7 +133,7 @@ class CreativeArtifactRepository(
             ),
         )
         return selectAttachedModuleImageIds(records, owner).mapNotNull { (moduleId, artifactId) ->
-            if (cardWorkspace?.module(moduleId)?.module?.contentJson?.let(com.openminis.app.novex.domain.NovexModuleImageOrigins::ownsMainImage) == true) null
+            if (cardWorkspace?.module(moduleId)?.module?.contentJson?.let(novex.core.NovexModuleImageOrigins::ownsMainImage) == true) null
             else runCatching { moduleId to file(artifactId) }.getOrNull()
         }.toMap()
     }

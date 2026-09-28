@@ -1,7 +1,7 @@
 package com.openminis.app.ui.navigation
 
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexConversationConfiguration
+import novex.core.NovexContentAddress
+import novex.core.NovexConversationConfiguration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -110,6 +110,6 @@ class NovexChatDraftRouteTest {
 
         assertTrue(configured.backgroundSettings.isEmpty())
         assertEquals(NovexContentAddress.world("world-9"), configured.managedSubjects.single().subject)
-        assertEquals(com.openminis.app.novex.domain.ManagedAccess.EDIT, configured.managedSubjects.single().access)
+        assertEquals(novex.core.ManagedAccess.EDIT, configured.managedSubjects.single().access)
     }
 }

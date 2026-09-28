@@ -134,7 +134,7 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             val sub = if (trimmed.isNotEmpty()) trimmed else "Skill · v${skill.version}"
             SlashCommand(
                 id = "skill:${skill.id}",
-                icon = com.openminis.app.ui.novex.NovexIcons.Extension,
+                icon = novex.android.ui.NovexIcons.Extension,
                 title = skill.name,
                 subtitle = sub,
                 isSkill = true,
@@ -153,7 +153,7 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             val sub = if (note.isNotEmpty()) "[mcp] $note" else "[mcp] ${server.transportSummary}"
             SlashCommand(
                 id = "mcp:${server.id}",
-                icon = com.openminis.app.ui.novex.NovexIcons.Build,
+                icon = novex.android.ui.NovexIcons.Build,
                 title = server.id,
                 subtitle = sub,
                 isMcp = true,

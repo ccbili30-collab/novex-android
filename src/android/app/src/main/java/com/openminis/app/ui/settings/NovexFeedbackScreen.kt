@@ -14,9 +14,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +48,7 @@ fun NovexFeedbackScreen(onBack: () -> Unit) {
                 title = { Text("QQ 反馈与交流") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "返回")
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = "返回")
                     }
                 },
             )
@@ -66,16 +66,16 @@ fun NovexFeedbackScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 20.dp),
             )
-            FeedbackRow(com.openminis.app.ui.novex.NovexIcons.Groups, "Novex（诺文）交流群", NOVEX_GROUP_QQ) {
+            FeedbackRow(novex.android.ui.NovexIcons.Groups, "Novex（诺文）交流群", NOVEX_GROUP_QQ) {
                 copy(NOVEX_GROUP_QQ)
             }
             HorizontalDivider()
-            FeedbackRow(com.openminis.app.ui.novex.NovexIcons.Person, "作者个人 QQ", NOVEX_AUTHOR_QQ) {
+            FeedbackRow(novex.android.ui.NovexIcons.Person, "作者个人 QQ", NOVEX_AUTHOR_QQ) {
                 copy(NOVEX_AUTHOR_QQ)
             }
             HorizontalDivider()
             FeedbackRow(
-                com.openminis.app.ui.novex.NovexIcons.ReportProblem,
+                novex.android.ui.NovexIcons.ReportProblem,
                 "GitHub Issues（GitHub 问题反馈页）",
                 "Novex（诺文）问题反馈",
                 showCopy = false,
@@ -108,7 +108,7 @@ private fun FeedbackRow(
             Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(
-            if (showCopy) com.openminis.app.ui.novex.NovexIcons.ContentCopy else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+            if (showCopy) novex.android.ui.NovexIcons.ContentCopy else novex.android.ui.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )

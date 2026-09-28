@@ -27,8 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.domain.PlaythroughState
-import com.openminis.app.ui.novex.NovexColors
+import novex.core.PlaythroughState
+import novex.android.ui.NovexColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -287,7 +287,7 @@ internal fun NovexSideConversations(
                 },
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowLeft,
+                    novex.android.ui.NovexIcons.KeyboardArrowLeft,
                     contentDescription = "本局状态",
                     tint = NovexColors.SecondaryText,
                 )

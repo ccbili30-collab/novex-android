@@ -1,18 +1,18 @@
 package novex.android
 
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.DropdownMenu
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
+import novex.android.ui.DropdownMenu
 
-import com.openminis.app.ui.novex.NovexPageTopBar
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexPageTopBar
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
+import novex.android.ui.NovexIcons
 import novex.content.flattenModules
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult

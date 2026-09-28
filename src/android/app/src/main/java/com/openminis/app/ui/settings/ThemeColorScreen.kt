@@ -15,15 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.FilterChip
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -212,7 +212,7 @@ fun ThemeColorScreen(
 
             SettingsSection(header = stringResource(R.string.theme_colors_advanced_header)) {
                 SettingsRow(
-                    icon = com.openminis.app.ui.novex.NovexIcons.Palette,
+                    icon = novex.android.ui.NovexIcons.Palette,
                     title = stringResource(
                         if (advancedExpanded) {
                             R.string.theme_colors_advanced_hide
@@ -226,9 +226,9 @@ fun ThemeColorScreen(
                     trailing = {
                         Icon(
                             imageVector = if (advancedExpanded) {
-                                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                                novex.android.ui.NovexIcons.KeyboardArrowUp
                             } else {
-                                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                                novex.android.ui.NovexIcons.KeyboardArrowDown
                             },
                             contentDescription = null,
                         )
@@ -271,7 +271,7 @@ fun ThemeColorScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.CheckCircle,
+                                novex.android.ui.NovexIcons.CheckCircle,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
@@ -287,7 +287,7 @@ fun ThemeColorScreen(
                                 verticalAlignment = Alignment.Top,
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.WarningAmber,
+                                    novex.android.ui.NovexIcons.WarningAmber,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.error,
                                 )
@@ -371,7 +371,7 @@ private fun ThemeModeChip(
             )
         },
         leadingIcon = if (selected) {
-            { Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            { Icon(novex.android.ui.NovexIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
         } else {
             null
         },

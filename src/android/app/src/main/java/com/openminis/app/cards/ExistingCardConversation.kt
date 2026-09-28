@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import com.openminis.app.MinisApp
-import com.openminis.app.ui.novex.*
+import novex.android.ui.*
 import com.openminis.app.ui.chat.ChatViewModel
 import com.openminis.app.ui.chat.ChatViewModelStore
 import kotlinx.coroutines.launch

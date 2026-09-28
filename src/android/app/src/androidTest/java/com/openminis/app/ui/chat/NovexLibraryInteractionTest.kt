@@ -7,8 +7,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.NovexLibraryPicker
+import novex.core.*
+import novex.android.ui.NovexLibraryPicker
 import com.openminis.app.ui.sessions.NovexWorkGroupControls
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
@@ -124,7 +124,7 @@ class NovexLibraryInteractionTest {
     @Test fun settingsOverviewShowsFourGroupsAndOpensOnlyTheChosenEditor() {
         var page by mutableStateOf("")
         ui.setContent { MinisTheme(darkTheme = darkTheme) {
-            com.openminis.app.ui.novex.NovexDetailScaffold("对话设置", onBack = {}) {
+            novex.android.ui.NovexDetailScaffold("对话设置", onBack = {}) {
                 ConversationSettingsOverview("诺瓦", "未设置", 0, "未启动", 0, "批准", false, { page = it }, { page = "permission" })
             }
         } }

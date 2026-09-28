@@ -1,15 +1,15 @@
 package novex.android
 
-import com.openminis.app.ui.novex.NovexPageTopBar
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexSearchField
+import novex.android.ui.NovexPageTopBar
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexSearchField
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
 
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,7 +72,7 @@ import novex.content.CardKind
             if(opening?.error!=null && session.state.saved!=null)({session.dismissOpening();selected=session.state.saved?.id}) else null,exit)
         else CardPages(session,files,exitTarget=initialTarget?:initialRoot,onExport={
             exportRoot=requireNotNull(session.state.saved).id;exportTarget=session.state.targetId
-            exporter.launch(com.openminis.app.ui.novex.NovexExportFileName.build(session.state.shownSaved?.name ?: session.state.saved?.name))
+            exporter.launch(novex.android.ui.NovexExportFileName.build(session.state.shownSaved?.name ?: session.state.saved?.name))
         },onInteract={val root=requireNotNull(session.state.saved).id;onUse(root,session.state.targetId?:root,false)},
             onExisting={manage->val root=requireNotNull(session.state.saved).id;onExisting(root,session.state.targetId?:root,manage)},
             onManage={val root=requireNotNull(session.state.saved).id;onUse(root,session.state.targetId?:root,true)},onExit=exit)

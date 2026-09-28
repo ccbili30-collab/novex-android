@@ -14,7 +14,7 @@ import androidx.core.content.FileProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.share.*
-import com.openminis.app.ui.novex.NovexConversationExportDialog
+import novex.android.ui.NovexConversationExportDialog
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
 import java.util.UUID

@@ -36,11 +36,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.openminis.app.novex.domain.PlaythroughState
-import com.openminis.app.novex.domain.PlaythroughValue
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.TextButton
+import novex.core.PlaythroughState
+import novex.core.PlaythroughValue
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
+import novex.android.ui.TextButton
 
 internal val PanelDefaultWidth = 300.dp
 internal val PanelMinWidth = 240.dp
@@ -284,7 +284,7 @@ private fun CollapsibleHeader(
             )
             if (!forceOpen) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                    novex.android.ui.NovexIcons.KeyboardArrowDown,
                     contentDescription = null,
                     tint = NovexColors.TertiaryText,
                     modifier = Modifier.size(16.dp).rotate(if (isCollapsed) -90f else 0f),

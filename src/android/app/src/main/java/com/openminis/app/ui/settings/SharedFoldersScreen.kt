@@ -17,10 +17,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +54,7 @@ fun SharedFoldersScreen(
                 title = { Text(stringResource(R.string.shared_folders_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
             )
@@ -185,7 +185,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_shared,
             linuxPath = "/var/minis/shared",
             writable = true,
-            icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+            icon = novex.android.ui.NovexIcons.Folder,
             iconColor = Color(0xFF007AFF),
         ),
         SharedFolderEntry(
@@ -193,7 +193,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_skills,
             linuxPath = "/var/minis/skills",
             writable = false,
-            icon = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+            icon = novex.android.ui.NovexIcons.AutoAwesome,
             iconColor = Color(0xFFAF52DE),
         ),
         SharedFolderEntry(
@@ -201,7 +201,7 @@ internal object SharedFolderRegistry {
             nameRes = R.string.shared_folder_name_memory,
             linuxPath = "/var/minis/memory",
             writable = false,
-            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+            icon = novex.android.ui.NovexIcons.Psychology,
             iconColor = Color(0xFFFF2D55),
         ),
     )

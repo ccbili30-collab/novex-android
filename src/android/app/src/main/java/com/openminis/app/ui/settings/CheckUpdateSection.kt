@@ -19,10 +19,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.AlertDialog
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIconAction
+import novex.android.ui.NovexIcons
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -204,7 +204,7 @@ fun CheckUpdateSection() {
             )
         }
         SettingsRow(
-            icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
+            icon = novex.android.ui.NovexIcons.SystemUpdate,
             iconColor = Color(0xFF007AFF),
             title = stringResource(
                 if (checking) R.string.check_update_checking

@@ -23,15 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.RadioButton
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -385,7 +385,7 @@ fun BrowserSettingsSheet(
                                 modifier = Modifier.size(32.dp),
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Delete,
+                                    novex.android.ui.NovexIcons.Delete,
                                     contentDescription = stringResource(R.string.browser_settings_clear_cookies_for, domain),
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(16.dp),
@@ -673,7 +673,7 @@ private fun UaMismatchBanner(message: String) {
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Warning,
+            novex.android.ui.NovexIcons.Warning,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.tertiary,

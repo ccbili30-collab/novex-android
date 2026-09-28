@@ -6,8 +6,8 @@ import android.provider.Settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.AlertDialog
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -107,7 +107,7 @@ fun OffloadPermissionScreen(
         // system-layer status, and (when system-layer is not satisfied) a
         // deeplink back to the OS settings page that fixes it.
         IntegrationSection(
-            iconVector = com.openminis.app.ui.novex.NovexIcons.Accessibility,
+            iconVector = novex.android.ui.NovexIcons.Accessibility,
             iconTint = Color(0xFF34C759),
             sectionHeaderRes = R.string.perm_section_a11y,
             sectionFooterRes = R.string.perm_a11y_section_footer,
@@ -122,7 +122,7 @@ fun OffloadPermissionScreen(
         )
 
         IntegrationSection(
-            iconVector = com.openminis.app.ui.novex.NovexIcons.Shield,
+            iconVector = novex.android.ui.NovexIcons.Shield,
             iconTint = Color(0xFFAF52DE),
             // [T-android-privileged-backend] One section covers both Shizuku
             // and AXManager (they share the same binder slot + protocol);

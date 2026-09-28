@@ -9,8 +9,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
-import com.openminis.app.ui.novex.AlertDialog as NovexAlertDialog
-import com.openminis.app.ui.novex.NovexType
+import novex.android.ui.AlertDialog as NovexAlertDialog
+import novex.android.ui.NovexType
 
 /**
  * App-wide confirmation dialog. Tighter than the Material 3 default

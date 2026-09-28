@@ -2,12 +2,12 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.runtime.Composable
 import com.openminis.app.R
-import com.openminis.app.novex.domain.AnswerIdentity
-import com.openminis.app.novex.domain.ManagedAccess
-import com.openminis.app.novex.domain.NovexContentKind
-import com.openminis.app.ui.novex.NovexSearchableSelectionSheet
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSelectionSheet
+import novex.core.AnswerIdentity
+import novex.core.ManagedAccess
+import novex.core.NovexContentKind
+import novex.android.ui.NovexSearchableSelectionSheet
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSelectionSheet
 
 internal enum class ConversationPicker { ANSWER, ROLE, BACKGROUND, GAME, GAME_REFERENCE, MANAGED, BOTH }
 

@@ -110,12 +110,12 @@ class CapacityReductionRecoveryTest {
                         assertTrue("Old tool results must be reduced at 64K",occupied<before)
                         assertFalse(ConversationRetention.shouldCompact(history,0,window,occupied,NovexRequestEstimate::message))
                     }else assertEquals(history,projected)
-                    val budget=com.openminis.app.novex.domain.NovexContextBudgetPolicy.moduleBudget(window,occupied,8192+window/20)
+                    val budget=novex.core.NovexContextBudgetPolicy.moduleBudget(window,occupied,8192+window/20)
                     val material=cards.candidates("chat","resize-$window","继续",projected,budget,BPETokenizer::countTokens,true) {
                         JSONObject().put("modules",org.json.JSONArray(card.modules.map {it.id})).toString()
                     }
-                    val composition=com.openminis.app.novex.domain.NovexContextComposer.compose("继续",budget,material,BPETokenizer::countTokens)
-                    val finalPrompt=com.openminis.app.novex.domain.NovexContextPromptFormatter.appendTo(prompt,composition.fragments)
+                    val composition=novex.core.NovexContextComposer.compose("继续",budget,material,BPETokenizer::countTokens)
+                    val finalPrompt=novex.core.NovexContextPromptFormatter.appendTo(prompt,composition.fragments)
                     val finalCost=NovexRequestEstimate.total(projected,finalPrompt,tools)
                     assertTrue("window=$window final=$finalCost",finalCost+8192+window/20<=window)
                     println("resize: window=$window before=$before after=$occupied final=$finalCost")

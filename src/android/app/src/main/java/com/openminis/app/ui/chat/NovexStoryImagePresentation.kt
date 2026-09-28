@@ -8,8 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.openminis.app.novex.domain.NovexSnapshotMedia
-import com.openminis.app.novex.domain.NovexSnapshotMediaCodec
+import novex.core.NovexSnapshotMedia
+import novex.core.NovexSnapshotMediaCodec
 import java.io.File
 import org.json.JSONObject
 
@@ -44,7 +44,7 @@ internal fun NovexStoryImage(block: AssistantBlock) {
     else if (verified != true || failed) {
         Column {
             Text("${block.content}暂时无法读取；正文已保留，请恢复原图片附件。")
-            com.openminis.app.ui.novex.TextButton(onClick = { failed = false; retry++ }) { Text("重试") }
+            novex.android.ui.TextButton(onClick = { failed = false; retry++ }) { Text("重试") }
         }
     } else {
         AsyncImage(model = file, contentDescription = block.content, contentScale = ContentScale.Fit,

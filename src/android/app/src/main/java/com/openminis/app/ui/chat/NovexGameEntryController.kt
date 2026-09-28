@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
-import com.openminis.app.novex.domain.ConversationPlayerIdentity
-import com.openminis.app.novex.domain.NovexGamePlayerChoices
+import novex.core.ActiveInteractiveFictionSnapshot
+import novex.core.ConversationPlayerIdentity
+import novex.core.NovexGamePlayerChoices
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow

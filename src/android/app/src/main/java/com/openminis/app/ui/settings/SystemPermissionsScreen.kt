@@ -10,15 +10,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.TextButton
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,7 +90,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                 title = { Text(stringResource(R.string.system_permissions_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
             )
@@ -107,7 +107,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                 footer = stringResource(R.string.system_permissions_a11y_footer),
             ) {
                 SettingsRow(
-                    icon = com.openminis.app.ui.novex.NovexIcons.Accessibility,
+                    icon = novex.android.ui.NovexIcons.Accessibility,
                     iconColor = Color(0xFF34C759),
                     title = stringResource(R.string.system_permissions_a11y_row),
                     subtitle = if (a11yEnabled)
@@ -133,7 +133,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                     ),
                 ) {
                     SettingsRow(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Build,
+                        icon = novex.android.ui.NovexIcons.Build,
                         iconColor = Color(0xFFFF3B30),
                         title = stringResource(
                             if (shizukuReady) R.string.a11y_repair_row_shizuku
@@ -182,7 +182,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                     footer = stringResource(R.string.system_permissions_a11y_oem_footer, vendor),
                 ) {
                     SettingsRow(
-                        icon = com.openminis.app.ui.novex.NovexIcons.RestartAlt,
+                        icon = novex.android.ui.NovexIcons.RestartAlt,
                         iconColor = Color(0xFFFF9500),
                         title = stringResource(R.string.system_permissions_a11y_oem_autostart),
                         subtitle = stringResource(R.string.system_permissions_a11y_oem_autostart_sub),
@@ -193,7 +193,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                         },
                     )
                     SettingsRow(
-                        icon = com.openminis.app.ui.novex.NovexIcons.BatteryAlert,
+                        icon = novex.android.ui.NovexIcons.BatteryAlert,
                         iconColor = Color(0xFFFF9500),
                         title = stringResource(R.string.system_permissions_a11y_oem_battery),
                         subtitle = stringResource(R.string.system_permissions_a11y_oem_battery_sub),
@@ -222,7 +222,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                 footer = stringResource(R.string.voice_correction_footer),
             ) {
                 SettingsSwitchRow(
-                    icon = com.openminis.app.ui.novex.NovexIcons.RecordVoiceOver,
+                    icon = novex.android.ui.NovexIcons.RecordVoiceOver,
                     title = stringResource(R.string.voice_correction_toggle),
                     checked = correctionEnabled,
                     onCheckedChange = { on ->
@@ -236,7 +236,7 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                     },
                 )
                 SettingsRow(
-                    icon = com.openminis.app.ui.novex.NovexIcons.DeleteSweep,
+                    icon = novex.android.ui.NovexIcons.DeleteSweep,
                     iconColor = MaterialTheme.colorScheme.error,
                     title = stringResource(R.string.voice_correction_clear),
                     titleColor = MaterialTheme.colorScheme.error,

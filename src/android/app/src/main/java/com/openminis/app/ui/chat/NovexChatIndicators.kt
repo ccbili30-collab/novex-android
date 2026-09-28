@@ -18,8 +18,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.openminis.app.ui.theme.ChatColors
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.novex.domain.NovexDeepSeekPeakClock
+import novex.android.ui.NovexIcons
+import novex.core.NovexDeepSeekPeakClock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.time.Instant

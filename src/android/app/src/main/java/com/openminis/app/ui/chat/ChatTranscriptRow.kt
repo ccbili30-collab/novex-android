@@ -365,7 +365,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
+                imageVector = novex.android.ui.NovexIcons.ChevronLeft,
                 contentDescription = "上一分支",
                 modifier = Modifier.size(18.dp),
             )
@@ -384,7 +384,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronRight,
+                imageVector = novex.android.ui.NovexIcons.ChevronRight,
                 contentDescription = "下一分支",
                 modifier = Modifier.size(18.dp),
             )

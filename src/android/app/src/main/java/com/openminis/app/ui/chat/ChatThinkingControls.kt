@@ -26,7 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import com.openminis.app.ui.theme.ChatColors
 
 /** Thinking controls share presentation; the conversation host owns selected model and persistence. */
@@ -50,7 +50,7 @@ internal fun ThinkingLevelBadge(
             .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
+            imageVector = novex.android.ui.NovexIcons.Lightbulb,
             contentDescription = null,
             // Dimmed in the Off state (sheet Off-row convention) so "Off" reads
             // as "thinking disabled" at a glance.
@@ -117,7 +117,7 @@ internal fun ThinkingLevelSheet(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                 ) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Lightbulb,
+                        imageVector = novex.android.ui.NovexIcons.Lightbulb,
                         contentDescription = null,
                         tint = ChatColors.thinking.copy(
                             alpha = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) 0.4f else 1f,
@@ -133,7 +133,7 @@ internal fun ThinkingLevelSheet(
                     )
                     if (isSelected) {
                         Icon(
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
+                            imageVector = novex.android.ui.NovexIcons.Check,
                             contentDescription = null,
                             tint = ChatColors.thinking,
                             modifier = Modifier.size(18.dp),

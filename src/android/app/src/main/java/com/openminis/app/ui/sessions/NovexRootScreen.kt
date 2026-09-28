@@ -48,7 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.ui.novex.NovexColors
+import novex.android.ui.NovexColors
 import kotlinx.coroutines.launch
 
 private val NovexRootColors = NovexColors
@@ -245,7 +245,7 @@ private fun NovexRootDock(
                         Text(
                             novexRootSpaceLabel(destination),
                             color = NovexRootColors.Text,
-                            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
+                            fontSize = novex.android.ui.novexScaledSp(15),
                             fontWeight = if (selected == destination) FontWeight.SemiBold else FontWeight.Medium,
                         )
                     }

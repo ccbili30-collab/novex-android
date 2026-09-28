@@ -19,9 +19,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -125,11 +125,11 @@ private fun DownloadRow(
     ) {
         val (icon, tint) = when (entry.state) {
             BrowserTabPool.DownloadState.DOWNLOADING ->
-                com.openminis.app.ui.novex.NovexIcons.Download to MaterialTheme.colorScheme.primary
+                novex.android.ui.NovexIcons.Download to MaterialTheme.colorScheme.primary
             BrowserTabPool.DownloadState.COMPLETED ->
-                com.openminis.app.ui.novex.NovexIcons.CheckCircle to androidx.compose.ui.graphics.Color(0xFF34C759)
+                novex.android.ui.NovexIcons.CheckCircle to androidx.compose.ui.graphics.Color(0xFF34C759)
             BrowserTabPool.DownloadState.FAILED ->
-                com.openminis.app.ui.novex.NovexIcons.ErrorOutline to MaterialTheme.colorScheme.error
+                novex.android.ui.NovexIcons.ErrorOutline to MaterialTheme.colorScheme.error
         }
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
@@ -198,7 +198,7 @@ private fun DownloadRow(
             BrowserTabPool.DownloadState.DOWNLOADING -> {
                 IconButton(onClick = onCancel) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Cancel,
+                        novex.android.ui.NovexIcons.Cancel,
                         contentDescription = stringResource(R.string.browser_downloads_cancel),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -207,7 +207,7 @@ private fun DownloadRow(
             BrowserTabPool.DownloadState.COMPLETED -> {
                 IconButton(onClick = onOpen) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.OpenInNew,
+                        novex.android.ui.NovexIcons.OpenInNew,
                         contentDescription = stringResource(R.string.browser_downloads_open),
                         tint = MaterialTheme.colorScheme.primary,
                     )

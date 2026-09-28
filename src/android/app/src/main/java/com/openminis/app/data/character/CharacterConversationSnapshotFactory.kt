@@ -70,7 +70,7 @@ class CharacterConversationSnapshotFactory(
         val experience = characterModules.withType(ContentModuleType.WORLD_EXPERIENCE)
         val appearance = characterModules.withType(ContentModuleType.APPEARANCE_PERSONALITY)
         val knowledge = characterModules.filterNot {
-            com.openminis.app.novex.domain.NovexModuleVisibility.isPrivate(it.type) || it.type in setOf(
+            novex.core.NovexModuleVisibility.isPrivate(it.type) || it.type in setOf(
                 ContentModuleType.QUOTES,
                 ContentModuleType.WORLD_EXPERIENCE,
                 ContentModuleType.APPEARANCE_PERSONALITY,

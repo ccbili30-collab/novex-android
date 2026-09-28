@@ -3,8 +3,8 @@ package novex.android
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -40,5 +40,5 @@ import novex.content.ContentRef
     val id=role.appearance.avatarResourceId?:role.appearance.coverResourceId
     val resource=role.resources.firstOrNull {it.id==id}
     if(resource!=null)CardThumbnail(resource.content,model,"角色头像")
-    else com.openminis.app.ui.novex.NovexArtwork(com.openminis.app.ui.novex.NovexArtworkKind.CHARACTER,role.id,null,"角色头像占位",Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
+    else novex.android.ui.NovexArtwork(novex.android.ui.NovexArtworkKind.CHARACTER,role.id,null,"角色头像占位",Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
 }

@@ -324,7 +324,7 @@ private fun ExpandedCapsule(
             modifier = Modifier.widthIn(max = 130.dp).clickable(onClick = onModelTap),
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.GraphicEq,
+                novex.android.ui.NovexIcons.GraphicEq,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(13.dp),
@@ -343,7 +343,7 @@ private fun ExpandedCapsule(
             // that the chip is a switcher, not a label. UnfoldMore is the
             // Material equivalent (stacked up/down chevrons).
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.UnfoldMore,
+                novex.android.ui.NovexIcons.UnfoldMore,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.size(12.dp),
@@ -385,7 +385,7 @@ private fun ExpandedCapsule(
         Spacer(Modifier.width(10.dp))
         // Close — read-replies fully off (capsule hides).
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Close,
+            novex.android.ui.NovexIcons.Close,
             contentDescription = stringResource(R.string.standard_sheet_close),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp).clickable(onClick = onClose),
@@ -398,7 +398,7 @@ private fun ExpandedCapsule(
 private fun SpeakerGlyph(muted: Boolean, synthesizing: Boolean, ring: androidx.compose.ui.unit.Dp) {
     Box(contentAlignment = Alignment.Center) {
         Icon(
-            if (muted) com.openminis.app.ui.novex.NovexIcons.VolumeOff else com.openminis.app.ui.novex.NovexIcons.VolumeUp,
+            if (muted) novex.android.ui.NovexIcons.VolumeOff else novex.android.ui.NovexIcons.VolumeUp,
             contentDescription = null,
             tint = if (muted) MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.primary,

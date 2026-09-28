@@ -4,11 +4,11 @@ import com.openminis.app.data.character.ContentModuleEntity
 import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.novex.domain.NovexCommand
-import com.openminis.app.novex.domain.NovexImageChange
-import com.openminis.app.novex.domain.NovexModuleDraft
-import com.openminis.app.ui.novex.ContentModuleDraftList
-import com.openminis.app.ui.novex.NovexImageDraft
+import novex.core.NovexCommand
+import novex.core.NovexImageChange
+import novex.core.NovexModuleDraft
+import novex.android.ui.ContentModuleDraftList
+import novex.android.ui.NovexImageDraft
 import org.json.JSONArray
 
 internal fun nextDefaultWorldName(existingNames: Collection<String>): String {

@@ -1,11 +1,11 @@
 package com.openminis.app.data.creative
 
-import com.openminis.app.novex.domain.CreativeArtifactKind
-import com.openminis.app.novex.domain.CreativeArtifactOrigin
-import com.openminis.app.novex.domain.NovexConversationWorkspaceScope
-import com.openminis.app.novex.domain.NovexConversationWorkspaceStore
-import com.openminis.app.novex.domain.NovexWorkspaceEntry
-import com.openminis.app.novex.domain.NovexWorkspaceFileRef
+import novex.core.CreativeArtifactKind
+import novex.core.CreativeArtifactOrigin
+import novex.core.NovexConversationWorkspaceScope
+import novex.core.NovexConversationWorkspaceStore
+import novex.core.NovexWorkspaceEntry
+import novex.core.NovexWorkspaceFileRef
 import java.security.MessageDigest
 import org.json.JSONObject
 
@@ -26,8 +26,8 @@ class WorkspaceCreativeArtifactBridge(
     }
 
     suspend fun registerImported(entry: NovexWorkspaceEntry): CreativeArtifactRecord {
-        require(entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.SOURCES)
-        val scope = com.openminis.app.novex.domain.NovexWorkspaceImport.scope(entry.workspaceRef.conversationId)
+        require(entry.workspaceRef.area == novex.core.NovexWorkspaceArea.SOURCES)
+        val scope = novex.core.NovexWorkspaceImport.scope(entry.workspaceRef.conversationId)
         val previous = artifacts.bySource(scope.conversationId, entry.workspaceRef.value)
         if (previous?.artifact?.isTrashed == true) artifacts.restore(previous.artifact.id)
         return register(entry, scope, previous)
@@ -61,7 +61,7 @@ class WorkspaceCreativeArtifactBridge(
             CreativeArtifactOrigin(entry.provenance.conversationId, entry.provenance.branchId,
                 entry.provenance.messageId, entry.provenance.toolCallId),
             sourcePath = entry.workspaceRef.value,
-            allowEmpty = entry.workspaceRef.area == com.openminis.app.novex.domain.NovexWorkspaceArea.SOURCES &&
+            allowEmpty = entry.workspaceRef.area == novex.core.NovexWorkspaceArea.SOURCES &&
                 entry.workspaceRef.relativePath.startsWith("imports/"))
     }
 }

@@ -3,8 +3,8 @@ package com.openminis.app.ui.chat
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.*
+import novex.core.*
+import novex.android.ui.*
 
 /** Read-only saved snapshot. Leaving this view never starts or pauses a model request. */
 @Composable

@@ -47,10 +47,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,9 +68,9 @@ import androidx.compose.ui.res.stringResource
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.ui.components.openExternalUrl
-import com.openminis.app.ui.novex.NovexSettingsRow
-import com.openminis.app.ui.novex.NovexSettingsScaffold
-import com.openminis.app.ui.novex.NovexSettingsSection
+import novex.android.ui.NovexSettingsRow
+import novex.android.ui.NovexSettingsScaffold
+import novex.android.ui.NovexSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

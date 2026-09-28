@@ -1,10 +1,10 @@
 package com.openminis.app.cards
 
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 
-import com.openminis.app.ui.novex.Button
+import novex.android.ui.Button
 
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 
 import androidx.compose.runtime.*
 import androidx.compose.material3.*

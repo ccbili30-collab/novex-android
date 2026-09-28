@@ -20,8 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -46,19 +46,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.domain.NovexWorkspace
-import com.openminis.app.ui.novex.NovexArtwork
-import com.openminis.app.ui.novex.NovexArtworkKind
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexPageTone
-import com.openminis.app.ui.novex.color
-import com.openminis.app.ui.novex.novexPagePadding
-import com.openminis.app.ui.novex.NovexFilterTabs
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexSearchField
-import com.openminis.app.ui.novex.NovexSectionTitle
-import com.openminis.app.ui.novex.NovexTextActionRow
+import novex.core.NovexWorkspace
+import novex.android.ui.NovexArtwork
+import novex.android.ui.NovexArtworkKind
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexPageTone
+import novex.android.ui.color
+import novex.android.ui.novexPagePadding
+import novex.android.ui.NovexFilterTabs
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexSearchField
+import novex.android.ui.NovexSectionTitle
+import novex.android.ui.NovexTextActionRow
 import com.openminis.app.ui.settings.existingMediaFile
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -253,7 +253,7 @@ fun NovexConversationRoot(
             NovexConversationSearchInput(searchState)
         }
 
-        com.openminis.app.ui.novex.NovexConversationCardLookup(onOpenSession)
+        novex.android.ui.NovexConversationCardLookup(onOpenSession)
         Spacer(Modifier.height(12.dp))
 
         when {
@@ -391,7 +391,7 @@ private fun NovexConversationRow(
             Text(
                 session.title?.takeIf(String::isNotBlank) ?: "新对话",
                 color = NovexColors.Text,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
+                fontSize = novex.android.ui.novexScaledSp(16),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -406,7 +406,7 @@ private fun NovexConversationRow(
                 Text(
                     preview,
                     color = NovexColors.SecondaryText,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
+                    fontSize = novex.android.ui.novexScaledSp(13),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp),
@@ -416,7 +416,7 @@ private fun NovexConversationRow(
                 Text(
                     versionLine,
                     color = NovexColors.SecondaryText,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                    fontSize = novex.android.ui.novexScaledSp(12),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 3.dp),
@@ -426,7 +426,7 @@ private fun NovexConversationRow(
         Text(
             conversationTime(session.updatedAt),
             color = NovexColors.SecondaryText,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+            fontSize = novex.android.ui.novexScaledSp(12),
             modifier = Modifier.padding(start = 8.dp, top = 1.dp),
         )
         // [T-novex-conversation-row-overflow] 用户决策 2026-09-14："做成三点菜单，
@@ -500,7 +500,7 @@ private fun NovexConversationEmptyState(
                 else -> "还没有带设定的对话"
             },
             color = NovexColors.Text,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(18),
+            fontSize = novex.android.ui.novexScaledSp(18),
             fontWeight = FontWeight.SemiBold,
         )
         if (!searching) {
@@ -511,13 +511,13 @@ private fun NovexConversationEmptyState(
                     "从一个新的想法开始"
                 },
                 color = NovexColors.SecondaryText,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(14),
+                fontSize = novex.android.ui.novexScaledSp(14),
                 modifier = Modifier.padding(top = 7.dp),
             )
             Text(
                 if (filter == SessionHomeFilter.WITH_CONTEXT) "前往世界" else "新建对话",
                 color = NovexColors.Primary,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
+                fontSize = novex.android.ui.novexScaledSp(15),
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .padding(top = 18.dp)
@@ -566,7 +566,7 @@ private fun NovexConversationThumbnailView(
             Text(
                 thumbnail.text,
                 color = Color.White,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(21),
+                fontSize = novex.android.ui.novexScaledSp(21),
                 fontWeight = FontWeight.SemiBold,
             )
         }

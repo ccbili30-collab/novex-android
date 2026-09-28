@@ -239,7 +239,7 @@ fun FullscreenImageViewer(
                         .padding(8.dp),
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Close,
+                        novex.android.ui.NovexIcons.Close,
                         contentDescription = "Close",
                         tint = Color.White,
                         modifier = Modifier.size(28.dp),
@@ -279,7 +279,7 @@ fun FullscreenImageViewer(
                 ) {
                     // Copy
                     ImageActionButton(
-                        icon = com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                        icon = novex.android.ui.NovexIcons.ContentCopy,
                         label = stringResource(R.string.image_action_copy),
                         onClick = {
                             // T139: copyBitmapToClipboard is now self-contained —
@@ -292,7 +292,7 @@ fun FullscreenImageViewer(
                     // concurrent loadBitmap coroutines (OOM on big PNGs).
                     var sharing by remember { mutableStateOf(false) }
                     ImageActionButton(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Share,
+                        icon = novex.android.ui.NovexIcons.Share,
                         label = stringResource(R.string.image_action_share),
                         onClick = onClick@{
                             if (sharing) return@onClick
@@ -310,7 +310,7 @@ fun FullscreenImageViewer(
                     val savedToAlbumMsg = stringResource(R.string.image_saved_to_album_toast)
                     val saveFailedMsg = stringResource(R.string.image_save_failed_toast)
                     ImageActionButton(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Download,
+                        icon = novex.android.ui.NovexIcons.Download,
                         label = stringResource(R.string.image_action_save),
                         onClick = {
                             scope.launch {

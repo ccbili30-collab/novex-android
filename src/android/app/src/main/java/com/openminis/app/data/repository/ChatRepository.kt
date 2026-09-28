@@ -8,8 +8,8 @@ import com.openminis.app.data.db.CompactMarkerEntity
 import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.db.MessageEntity
 import com.openminis.app.data.db.NovexContextUsageRecordEntity
-import com.openminis.app.novex.domain.ContextUsageRecord
-import com.openminis.app.novex.domain.NovexContextUsageCodec
+import novex.core.ContextUsageRecord
+import novex.core.NovexContextUsageCodec
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 

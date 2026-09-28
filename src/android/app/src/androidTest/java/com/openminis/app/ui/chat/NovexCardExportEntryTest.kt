@@ -11,8 +11,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.*
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.NovexCardExportDialog
+import novex.core.*
+import novex.android.ui.NovexCardExportDialog
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject

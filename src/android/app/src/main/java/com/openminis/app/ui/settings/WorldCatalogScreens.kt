@@ -22,12 +22,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,36 +53,36 @@ import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.novex.domain.NovexCommand
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexImageChange
-import com.openminis.app.novex.domain.NovexModuleDraft
-import com.openminis.app.novex.domain.NovexWorldSnapshot
-import com.openminis.app.novex.domain.requireNativeCard
-import com.openminis.app.novex.domain.requireVersion
-import com.openminis.app.novex.domain.requireWorld
-import com.openminis.app.ui.novex.NovexArtwork
-import com.openminis.app.ui.novex.NovexArtworkKind
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexContentModuleList
-import com.openminis.app.ui.novex.NovexContentSection
-import com.openminis.app.ui.novex.NovexContentDialog
-import com.openminis.app.ui.novex.NovexDetailScaffold
-import com.openminis.app.ui.novex.NovexDraftPreviewScaffold
-import com.openminis.app.ui.novex.NovexEditorScaffold
-import com.openminis.app.ui.novex.NovexEditorFoldRow
-import com.openminis.app.ui.novex.NovexEditorSection
-import com.openminis.app.ui.novex.NovexOptionalImageRow
-import com.openminis.app.ui.novex.NovexInlineField
-import com.openminis.app.ui.novex.NovexNoticeDialog
-import com.openminis.app.ui.novex.NovexOutlineButton
-import com.openminis.app.ui.novex.NovexPrimaryButton
-import com.openminis.app.ui.novex.NovexSummaryRow
-import com.openminis.app.ui.novex.NovexTextActionRow
-import com.openminis.app.ui.novex.NovexTextField
-import com.openminis.app.ui.novex.NovexTopAction
-import com.openminis.app.ui.novex.rememberNovexWorkspace
+import novex.core.NovexCommand
+import novex.core.NovexContentAddress
+import novex.core.NovexImageChange
+import novex.core.NovexModuleDraft
+import novex.core.NovexWorldSnapshot
+import novex.core.requireNativeCard
+import novex.core.requireVersion
+import novex.core.requireWorld
+import novex.android.ui.NovexArtwork
+import novex.android.ui.NovexArtworkKind
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexContentModuleList
+import novex.android.ui.NovexContentSection
+import novex.android.ui.NovexContentDialog
+import novex.android.ui.NovexDetailScaffold
+import novex.android.ui.NovexDraftPreviewScaffold
+import novex.android.ui.NovexEditorScaffold
+import novex.android.ui.NovexEditorFoldRow
+import novex.android.ui.NovexEditorSection
+import novex.android.ui.NovexOptionalImageRow
+import novex.android.ui.NovexInlineField
+import novex.android.ui.NovexNoticeDialog
+import novex.android.ui.NovexOutlineButton
+import novex.android.ui.NovexPrimaryButton
+import novex.android.ui.NovexSummaryRow
+import novex.android.ui.NovexTextActionRow
+import novex.android.ui.NovexTextField
+import novex.android.ui.NovexTopAction
+import novex.android.ui.rememberNovexWorkspace
 import com.openminis.app.ui.navigation.NovexEditorBackAction
 import com.openminis.app.ui.navigation.novexEditorBackAction
 import java.io.File
@@ -162,7 +162,7 @@ fun CatalogWorldDetailScreen(
     }
     val current = data
     val isImportedSource = current?.modules?.any {
-        com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+        novex.core.NovexExternalCardImport.isVerbatimModule(it.contentJson)
     } == true
     fun beginWorldConversation() {
         if (current != null) onStartWorldNovax(null)
@@ -203,11 +203,11 @@ fun CatalogWorldDetailScreen(
                 CircularProgressIndicator()
             }
             else -> {
-                com.openminis.app.ui.novex.NovexCardDetailSections(
+                novex.android.ui.NovexCardDetailSections(
                     cardId = worldId,
                     content = { WorldPrimaryContent(current, onOpenModule) },
                     relations = {
-                com.openminis.app.ui.novex.NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
+                novex.android.ui.NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
                 WorldCharacterStrip(
                     data = current,
                     onOpenCharacter = onOpenCharacter,
@@ -239,13 +239,13 @@ fun CatalogWorldDetailScreen(
                     selectedVersionId = current.versions.first().id
                     startCharacterChat = true
                 })
-                com.openminis.app.ui.novex.NovexSubjectConversationLinks(
-                    com.openminis.app.novex.domain.NovexContentAddress.world(worldId), onOpenSession)
+                novex.android.ui.NovexSubjectConversationLinks(
+                    novex.core.NovexContentAddress.world(worldId), onOpenSession)
                     },
                     management = {
-                com.openminis.app.ui.novex.NovexWorldParallelSection(worldId, onBack)
-                com.openminis.app.ui.novex.NovexCardCopySection(com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
-                com.openminis.app.ui.novex.NovexCardRevisionSection(com.openminis.app.novex.domain.NovexContentAddress.world(worldId))
+                novex.android.ui.NovexWorldParallelSection(worldId, onBack)
+                novex.android.ui.NovexCardCopySection(novex.core.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
+                novex.android.ui.NovexCardRevisionSection(novex.core.NovexContentAddress.world(worldId))
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
                         label = "导出诺文世界卡",
@@ -259,8 +259,8 @@ fun CatalogWorldDetailScreen(
             }
         }
     }
-    if(exportCard) com.openminis.app.ui.novex.NovexCardExportDialog(
-        com.openminis.app.novex.domain.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId)) { exportCard = false }
+    if(exportCard) novex.android.ui.NovexCardExportDialog(
+        novex.core.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId)) { exportCard = false }
     if (addCharacter && current != null) NovexContentDialog(
         title = "从角色库添加",
         onDismiss = { addCharacter = false },
@@ -595,8 +595,8 @@ fun CatalogWorldEditorScreen(
         NovexNoticeDialog("保存失败", message ?: "未知错误") { error = null }
     }
     if (confirmDelete && worldId != null) {
-        val referenceImpact = com.openminis.app.ui.novex.rememberNovexReferenceDeletionImpact(listOf(NovexContentAddress.world(worldId)))
-        com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog(
+        val referenceImpact = novex.android.ui.rememberNovexReferenceDeletionImpact(listOf(NovexContentAddress.world(worldId)))
+        novex.android.ui.NovexDestructiveConfirmationDialog(
             title = "删除世界？",
             message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
             confirming = deleting,
@@ -748,7 +748,7 @@ private fun WorldPrimaryContent(
 ) {
     WorldHero(data, mediaModels)
     val verbatim = data.modules.any {
-        com.openminis.app.novex.domain.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+        novex.core.NovexExternalCardImport.isVerbatimModule(it.contentJson)
     }
     if (!verbatim || data.world.overview.isNotBlank()) WorldOverviewBlock(data.world)
     if (data.modules.isNotEmpty()) androidx.compose.material3.HorizontalDivider(

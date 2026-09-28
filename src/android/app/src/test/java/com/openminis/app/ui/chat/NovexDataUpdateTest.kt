@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.PlaythroughState
-import com.openminis.app.novex.domain.PlaythroughValue
+import novex.core.PlaythroughState
+import novex.core.PlaythroughValue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

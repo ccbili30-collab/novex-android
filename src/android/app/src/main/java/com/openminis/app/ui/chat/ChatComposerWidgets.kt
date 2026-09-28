@@ -84,7 +84,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -258,7 +258,7 @@ internal fun AttachmentChip(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                        novex.android.ui.NovexIcons.InsertDriveFile,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
@@ -289,7 +289,7 @@ internal fun AttachmentChip(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.Close,
+                novex.android.ui.NovexIcons.Close,
                 contentDescription = "Remove",
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 modifier = Modifier.size(13.dp),
@@ -354,7 +354,7 @@ internal fun MicButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (isVoiceActive) com.openminis.app.ui.novex.NovexIcons.Keyboard else com.openminis.app.ui.novex.NovexIcons.Mic,
+            if (isVoiceActive) novex.android.ui.NovexIcons.Keyboard else novex.android.ui.NovexIcons.Mic,
             contentDescription = if (isVoiceActive) "Switch to keyboard"
             else if (isRecording) "Stop recording" else "Voice input",
             tint = tint,
@@ -647,7 +647,7 @@ private fun ToolPreviewThumbnail(
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Language,
+                            novex.android.ui.NovexIcons.Language,
                             contentDescription = null,
                             tint = toolAccent.copy(alpha = 0.6f),
                             modifier = Modifier.size(24.dp),
@@ -782,10 +782,10 @@ internal fun FloatingToolStatusBar(
                 )
             } else {
                 val (icon, tint) = when {
-                    isDone -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
-                    isFailed -> com.openminis.app.ui.novex.NovexIcons.Error to ToolErrorColor
-                    isCancelled -> com.openminis.app.ui.novex.NovexIcons.Close to ToolCancelColor
-                    else -> com.openminis.app.ui.novex.NovexIcons.Build to MaterialTheme.colorScheme.onSurfaceVariant
+                    isDone -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
+                    isFailed -> novex.android.ui.NovexIcons.Error to ToolErrorColor
+                    isCancelled -> novex.android.ui.NovexIcons.Close to ToolCancelColor
+                    else -> novex.android.ui.NovexIcons.Build to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
             }
@@ -821,7 +821,7 @@ internal fun FloatingToolStatusBar(
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
+                        novex.android.ui.NovexIcons.ChevronLeft,
                         contentDescription = "Previous",
                         tint = if (currentIndex > 0) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
@@ -841,7 +841,7 @@ internal fun FloatingToolStatusBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.ChevronRight,
+                        novex.android.ui.NovexIcons.ChevronRight,
                         contentDescription = "Next",
                         tint = if (currentIndex < toolBlocks.lastIndex) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
@@ -858,7 +858,7 @@ internal fun FloatingToolStatusBar(
             if (!isRunning && onDismiss != null) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Close,
+                    novex.android.ui.NovexIcons.Close,
                     contentDescription = "关闭",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -980,7 +980,7 @@ internal fun ThinkingLevelPicker(
                 )
                 if (isClampedHighlight) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                        imageVector = novex.android.ui.NovexIcons.KeyboardArrowUp,
                         contentDescription = null,
                         tint = fg,
                         modifier = Modifier.size(12.dp),

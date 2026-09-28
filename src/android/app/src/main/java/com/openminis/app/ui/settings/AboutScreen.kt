@@ -96,7 +96,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
         SettingsSection(header = stringResource(R.string.about_links)) {
             SettingsRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Code,
+                icon = novex.android.ui.NovexIcons.Code,
                 iconColor = tileBlue,
                 title = stringResource(R.string.about_github_repository),
                 // Settings → ABOUT siblings (Privacy Policy / Submit GitHub

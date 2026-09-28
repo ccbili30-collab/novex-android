@@ -1,4 +1,4 @@
-package com.openminis.app.ui.novex
+package novex.android.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth

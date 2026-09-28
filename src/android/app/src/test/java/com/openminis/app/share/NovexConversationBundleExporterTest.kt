@@ -6,9 +6,9 @@ import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.adapter.NovexConversationContextAdoption
-import com.openminis.app.novex.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
-import com.openminis.app.novex.domain.*
+import novex.android.adapter.NovexConversationContextAdoption
+import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
+import novex.core.*
 import java.io.File
 import java.util.zip.ZipFile
 import kotlinx.coroutines.runBlocking

@@ -1,7 +1,7 @@
 package novex.android
 
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.Button
+import novex.android.ui.TextButton
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -16,9 +16,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
+import novex.android.ui.NovexIcons
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
@@ -74,8 +74,8 @@ internal fun ContentDocument.bodyModules():List<ContentModule> {
             .then(if(onImage!=null)Modifier.clickable(enabled=!model.state.busy,onClick=onImage).semantics {contentDescription="编辑卡片主图"} else Modifier),contentAlignment=Alignment.Center) {
             val resource=card.resources.firstOrNull {it.id==image}
             if(resource!=null)ReadingImage(resource.content,model,Modifier.fillMaxSize(),ContentScale.Crop)
-            else com.openminis.app.ui.novex.NovexArtwork(
-                kind=if(card.kind==CardKind.WORLD)com.openminis.app.ui.novex.NovexArtworkKind.WORLD else com.openminis.app.ui.novex.NovexArtworkKind.CHARACTER,
+            else novex.android.ui.NovexArtwork(
+                kind=if(card.kind==CardKind.WORLD)novex.android.ui.NovexArtworkKind.WORLD else novex.android.ui.NovexArtworkKind.CHARACTER,
                 seed=card.id,imageModel=null,contentDescription="默认占位图",modifier=Modifier.fillMaxSize())
         }
         if(editing) {

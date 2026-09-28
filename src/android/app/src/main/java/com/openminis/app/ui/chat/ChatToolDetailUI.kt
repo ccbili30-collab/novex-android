@@ -85,7 +85,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -96,7 +96,7 @@ import com.openminis.app.ui.components.MinisMenuDivider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -257,7 +257,7 @@ internal fun ToolDetailSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Close,
+                        novex.android.ui.NovexIcons.Close,
                         contentDescription = "Close",
                         tint = ChatColors.primaryText,
                         modifier = Modifier.size(16.dp),
@@ -365,10 +365,10 @@ internal fun ToolDetailSheet(
                 ) {
                     Icon(
                         when {
-                            copyDone -> com.openminis.app.ui.novex.NovexIcons.Check
-                            isShellTool -> com.openminis.app.ui.novex.NovexIcons.Terminal
-                            isBrowserTool -> com.openminis.app.ui.novex.NovexIcons.Public
-                            else -> com.openminis.app.ui.novex.NovexIcons.ContentCopy
+                            copyDone -> novex.android.ui.NovexIcons.Check
+                            isShellTool -> novex.android.ui.NovexIcons.Terminal
+                            isBrowserTool -> novex.android.ui.NovexIcons.Public
+                            else -> novex.android.ui.NovexIcons.ContentCopy
                         },
                         contentDescription = when {
                             isShellTool -> "Open in terminal"
@@ -607,7 +607,7 @@ internal fun ToolDetailSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.EditNote,
+                                        novex.android.ui.NovexIcons.EditNote,
                                         contentDescription = null,
                                         tint = Color(0xFFFF9500),
                                         modifier = Modifier.size(12.dp),
@@ -737,8 +737,8 @@ internal fun ToolDetailSheet(
                         }
                         EditorCard(
                             title = fileName.ifEmpty { "file" },
-                            icon = if (block.toolName == "file_read") com.openminis.app.ui.novex.NovexIcons.Description
-                                   else com.openminis.app.ui.novex.NovexIcons.NoteAdd,
+                            icon = if (block.toolName == "file_read") novex.android.ui.NovexIcons.Description
+                                   else novex.android.ui.NovexIcons.NoteAdd,
                             iconTint = ChatColors.secondaryText,
                             titleColor = ChatColors.primaryText,
                             sizeColor = ChatColors.tertiaryText,
@@ -919,7 +919,7 @@ internal fun ToolDetailSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
-                                            com.openminis.app.ui.novex.NovexIcons.Language,
+                                            novex.android.ui.NovexIcons.Language,
                                             contentDescription = null,
                                             tint = ChatColors.tertiaryText,
                                             modifier = Modifier.size(12.dp),
@@ -963,7 +963,7 @@ internal fun ToolDetailSheet(
                             "Keywords: $keywords\n\n" else ""
                         EditorCard(
                             title = block.toolName,
-                            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                            icon = novex.android.ui.NovexIcons.Psychology,
                             iconTint = ToolMemoryAccent.copy(alpha = 0.6f),
                             titleColor = ToolMemoryAccent,
                             sizeColor = ToolMemoryAccent.copy(alpha = 0.5f),
@@ -1120,11 +1120,11 @@ internal fun ToolDetailSheet(
                         )
                     } else {
                         val (icon, tint) = when (block.toolStatus) {
-                            ToolBlockStatus.SUCCESS -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
-                            ToolBlockStatus.FAILED -> com.openminis.app.ui.novex.NovexIcons.Error to ToolErrorColor
-                            ToolBlockStatus.CANCELLED -> com.openminis.app.ui.novex.NovexIcons.Cancel to ToolCancelColor
-                            ToolBlockStatus.TIMEOUT -> com.openminis.app.ui.novex.NovexIcons.Schedule to ToolErrorColor
-                            else -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.SUCCESS -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.FAILED -> novex.android.ui.NovexIcons.Error to ToolErrorColor
+                            ToolBlockStatus.CANCELLED -> novex.android.ui.NovexIcons.Cancel to ToolCancelColor
+                            ToolBlockStatus.TIMEOUT -> novex.android.ui.NovexIcons.Schedule to ToolErrorColor
+                            else -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
                         }
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
                     }
@@ -1198,7 +1198,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.SkipPrevious,
+                            novex.android.ui.NovexIcons.SkipPrevious,
                             contentDescription = "Previous",
                             tint = if (currentIdx > 0) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),
@@ -1244,7 +1244,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.SkipNext,
+                            novex.android.ui.NovexIcons.SkipNext,
                             contentDescription = "Next",
                             tint = if (currentIdx < toolBlocks.lastIndex) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),

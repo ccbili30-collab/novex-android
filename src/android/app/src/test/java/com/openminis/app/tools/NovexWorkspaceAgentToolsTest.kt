@@ -1,9 +1,9 @@
 package com.openminis.app.tools
 
-import com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore
-import com.openminis.app.novex.domain.NovexConversationWorkspaceScope
-import com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter
-import com.openminis.app.novex.domain.NovexWorkspaceProvenance
+import novex.core.FileNovexConversationWorkspaceStore
+import novex.core.NovexConversationWorkspaceScope
+import novex.core.NovexConversationWorkspaceToolRouter
+import novex.core.NovexWorkspaceProvenance
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

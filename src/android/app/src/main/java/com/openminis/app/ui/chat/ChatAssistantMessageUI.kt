@@ -85,8 +85,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -252,7 +252,7 @@ internal fun AssistantHeader() {
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Person,
+                        imageVector = novex.android.ui.NovexIcons.Person,
                         contentDescription = "$displayName 默认头像",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
@@ -264,7 +264,7 @@ internal fun AssistantHeader() {
                 colors = listOf(SparkleColor1, SparkleColor2),
             )
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                imageVector = novex.android.ui.NovexIcons.AutoAwesome,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier
@@ -468,7 +468,7 @@ internal fun InlineErrorBanner(error: String, onRetry: (() -> Unit)? = null) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Error,
+            imageVector = novex.android.ui.NovexIcons.Error,
             contentDescription = null,
             tint = Color(0xFFFF3B30),
             modifier = Modifier.size(14.dp),
@@ -494,7 +494,7 @@ internal fun InlineErrorBanner(error: String, onRetry: (() -> Unit)? = null) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                    imageVector = novex.android.ui.NovexIcons.Refresh,
                     contentDescription = null,
                     tint = Color(0xFFFF3B30),
                     modifier = Modifier.size(10.dp),
@@ -804,14 +804,14 @@ internal fun ToolCallPill(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.tool_longpress_rerun_from_here)) },
                     onClick = { showToolMenu = false; onRerunFromHere() },
-                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
             }
             if (onCopyDetails != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.tool_longpress_copy_details)) },
                     onClick = { showToolMenu = false; onCopyDetails() },
-                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
             }
         }
@@ -1057,7 +1057,7 @@ internal fun ThinkingBlock(
         ) {
             Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                    imageVector = novex.android.ui.NovexIcons.Psychology,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp),
@@ -1083,7 +1083,7 @@ internal fun ThinkingBlock(
                 )
             } else {
                 Icon(
-                    imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                    imageVector = if (expanded) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                     contentDescription = if (expanded) "Collapse" else "Expand",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier.size(14.dp),
@@ -1308,7 +1308,7 @@ internal fun AssistantMessageActionRow(
     ) {
         if (markdown.isNotBlank()) {
             AssistantActionIcon(
-                icon = com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                icon = novex.android.ui.NovexIcons.ContentCopy,
                 contentDescription = "复制全文",
             ) {
                 val clipboard = context.getSystemService(
@@ -1322,7 +1322,7 @@ internal fun AssistantMessageActionRow(
         // in-flight turn, so they vanish while any stream is running.
         if (showMutations && onRegenerate != null) {
             AssistantActionIcon(
-                icon = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                icon = novex.android.ui.NovexIcons.Refresh,
                 contentDescription = "重新生成本轮",
                 onClick = onRegenerate,
             )
@@ -1330,7 +1330,7 @@ internal fun AssistantMessageActionRow(
         if (hasMenuEntries) {
             Box {
                 AssistantActionIcon(
-                    icon = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
+                    icon = novex.android.ui.NovexIcons.MoreHoriz,
                     contentDescription = "更多操作",
                 ) { showMenu = true }
                 MinisMenu(
@@ -1341,14 +1341,14 @@ internal fun AssistantMessageActionRow(
                         DropdownMenuItem(
                             text = { Text("分享到其他文游") },
                             onClick = { showMenu = false; onShare() },
-                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            leadingIcon = { Icon(novex.android.ui.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         )
                     }
                     if (showMutations && onDelete != null) {
                         DropdownMenuItem(
                             text = { Text("从此处删除") },
                             onClick = { showMenu = false; onDelete() },
-                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            leadingIcon = { Icon(novex.android.ui.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         )
                     }
                 }

@@ -1,8 +1,8 @@
 package com.openminis.app.data.attachments
 
-import com.openminis.app.novex.domain.InMemoryNovexDocumentSnapshotCache
-import com.openminis.app.novex.domain.NovexDocumentBlockKind
-import com.openminis.app.novex.domain.NovexDocumentStatus
+import novex.core.InMemoryNovexDocumentSnapshotCache
+import novex.core.NovexDocumentBlockKind
+import novex.core.NovexDocumentStatus
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream

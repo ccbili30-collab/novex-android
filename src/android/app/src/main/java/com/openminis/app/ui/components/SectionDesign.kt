@@ -15,8 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
 
 /**
  * Single source of truth for Settings section-card visual rhythm.
@@ -121,7 +121,7 @@ fun SectionHeader(
 ) {
     Text(
         text = text,
-        style = com.openminis.app.ui.novex.NovexType.Metadata,
+        style = novex.android.ui.NovexType.Metadata,
         fontWeight = FontWeight.SemiBold,
         color = NovexColors.SecondaryText,
         modifier = modifier.padding(
@@ -142,7 +142,7 @@ fun SectionFooter(
 ) {
     Text(
         text = text,
-        style = com.openminis.app.ui.novex.NovexType.Metadata,
+        style = novex.android.ui.NovexType.Metadata,
         color = SectionDesign.footerColor(),
         modifier = modifier.padding(
             start = SectionDesign.ScreenHorizontalPadding,
@@ -164,7 +164,7 @@ fun SectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    com.openminis.app.ui.novex.NovexSectionSurface(
+    novex.android.ui.NovexSectionSurface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = SectionDesign.ScreenHorizontalPadding),

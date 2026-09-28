@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openminis.app.MinisApp
 import com.openminis.app.cards.*
-import com.openminis.app.novex.domain.NovexWorkGroupSnapshot
-import com.openminis.app.ui.novex.*
+import novex.core.NovexWorkGroupSnapshot
+import novex.android.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import novex.android.FileTransferModel
@@ -115,7 +115,7 @@ import sh.calvin.reorderable.*
                             Icon(NovexIcons.MoreVert,"${card.name}的更多操作",tint=if(kind==CardKind.WORLD)Color.White else NovexColors.Text)
                         }
                         NovexActionMenu(expanded=more,onDismissRequest={more=false},actions=listOf(
-                            NovexMenuAction(label="导出",icon=com.openminis.app.R.drawable.ic_phosphor_download_simple,onClick={more=false;exportId=card.id;exporter.launch(com.openminis.app.ui.novex.NovexExportFileName.build(card.name))}),
+                            NovexMenuAction(label="导出",icon=com.openminis.app.R.drawable.ic_phosphor_download_simple,onClick={more=false;exportId=card.id;exporter.launch(novex.android.ui.NovexExportFileName.build(card.name))}),
                             NovexMenuAction(label="删除",icon=com.openminis.app.R.drawable.ic_phosphor_trash,destructive=true,onClick={more=false;deleting=card})
                         ))
                     }

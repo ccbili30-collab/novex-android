@@ -48,26 +48,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexWorkGroupSnapshot
-import com.openminis.app.ui.novex.rememberNovexWorkGroups
-import com.openminis.app.ui.novex.TextButton
+import novex.core.NovexContentAddress
+import novex.core.NovexWorkGroupSnapshot
+import novex.android.ui.rememberNovexWorkGroups
+import novex.android.ui.TextButton
 import kotlinx.coroutines.launch
 import com.openminis.app.data.character.CharacterEntity
 import com.openminis.app.data.character.CharacterVersionProfile
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
-import com.openminis.app.ui.novex.NovexArtwork
-import com.openminis.app.ui.novex.NovexArtworkKind
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexPageTone
-import com.openminis.app.ui.novex.color
-import com.openminis.app.ui.novex.novexPagePadding
-import com.openminis.app.ui.novex.NovexSearchField
-import com.openminis.app.ui.novex.NovexTextActionRow
-import com.openminis.app.ui.novex.rememberNovexWorkspace
+import novex.android.ui.NovexArtwork
+import novex.android.ui.NovexArtworkKind
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexPageTone
+import novex.android.ui.color
+import novex.android.ui.novexPagePadding
+import novex.android.ui.NovexSearchField
+import novex.android.ui.NovexTextActionRow
+import novex.android.ui.rememberNovexWorkspace
 import com.openminis.app.ui.settings.existingMediaFile
 import com.openminis.app.ui.settings.rememberNovexNativeCardImporter
 import sh.calvin.reorderable.ReorderableItem
@@ -309,7 +309,7 @@ private fun rememberNovexCatalogResumeRevision(): Int {
     val database = (LocalContext.current.applicationContext as com.openminis.app.MinisApp).database
     var revision by remember { mutableStateOf(0) }
     LaunchedEffect(database) {
-        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect { revision++ }
+        novex.android.adapter.observeNovexLibraryChanges(database).collect { revision++ }
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -400,7 +400,7 @@ private fun NovexVisualCatalogCard(
             Text(
                 title,
                 color = Color.White,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(17),
+                fontSize = novex.android.ui.novexScaledSp(17),
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -409,7 +409,7 @@ private fun NovexVisualCatalogCard(
                 Text(
                     summary,
                     color = Color.White.copy(alpha = 0.88f),
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                    fontSize = novex.android.ui.novexScaledSp(12),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -418,7 +418,7 @@ private fun NovexVisualCatalogCard(
             Text(
                 metadata,
                 color = Color.White.copy(alpha = 0.9f),
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                fontSize = novex.android.ui.novexScaledSp(12),
                 modifier = Modifier.padding(top = 5.dp),
             )
         }
@@ -483,7 +483,7 @@ private fun NovexCharacterRow(
             Text(
                 row.character.name,
                 color = NovexRootColors.Text,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
+                fontSize = novex.android.ui.novexScaledSp(16),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -492,8 +492,8 @@ private fun NovexCharacterRow(
                 Text(
                     row.profile.summary,
                     color = NovexRootColors.SecondaryText,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
-                    lineHeight = com.openminis.app.ui.novex.novexScaledSp(18),
+                    fontSize = novex.android.ui.novexScaledSp(13),
+                    lineHeight = novex.android.ui.novexScaledSp(18),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
@@ -502,7 +502,7 @@ private fun NovexCharacterRow(
             Text(
                 "本体${if (row.variantCount > 0) " · ${row.variantCount} 个分身" else ""}",
                 color = NovexRootColors.SecondaryText,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                fontSize = novex.android.ui.novexScaledSp(12),
                 modifier = Modifier.padding(top = 7.dp),
             )
         }
@@ -570,11 +570,11 @@ private fun NovexEmptyWorldLibrary(onCreateWorld: () -> Unit, onImportWorld: () 
                         .align(Alignment.BottomStart)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
-                    Text("建立第一个世界", color = Color.White, fontSize = com.openminis.app.ui.novex.novexScaledSp(17), fontWeight = FontWeight.Bold)
+                    Text("建立第一个世界", color = Color.White, fontSize = novex.android.ui.novexScaledSp(17), fontWeight = FontWeight.Bold)
                     Text(
                         "只需一个名称，封面和内容都可以稍后添加",
                         color = Color.White.copy(alpha = 0.9f),
-                        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                        fontSize = novex.android.ui.novexScaledSp(12),
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
@@ -615,20 +615,20 @@ private fun NovexEmptyCharacterLibrary(onCreateCharacter: () -> Unit, onImportCh
                     Text(
                         "创建第一个角色",
                         color = NovexRootColors.Text,
-                        fontSize = com.openminis.app.ui.novex.novexScaledSp(16),
+                        fontSize = novex.android.ui.novexScaledSp(16),
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         "先写下名字，头像、背景和角色模块都可以留空",
                         color = NovexRootColors.SecondaryText,
-                        fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
-                        lineHeight = com.openminis.app.ui.novex.novexScaledSp(18),
+                        fontSize = novex.android.ui.novexScaledSp(13),
+                        lineHeight = novex.android.ui.novexScaledSp(18),
                         modifier = Modifier.padding(top = 4.dp),
                     )
                     Text(
                         "本体",
                         color = NovexRootColors.SecondaryText,
-                        fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                        fontSize = novex.android.ui.novexScaledSp(12),
                         modifier = Modifier.padding(top = 7.dp),
                     )
                 }
@@ -653,7 +653,7 @@ private fun NovexLoading() {
 @Composable
 private fun NovexEmptyMessage(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = NovexRootColors.SecondaryText, fontSize = com.openminis.app.ui.novex.novexScaledSp(14))
+        Text(text, color = NovexRootColors.SecondaryText, fontSize = novex.android.ui.novexScaledSp(14))
     }
 }
 

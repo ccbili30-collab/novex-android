@@ -1,9 +1,9 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.NovexDocumentPromptReceipt
-import com.openminis.app.novex.domain.NovexDocumentSnapshot
-import com.openminis.app.novex.domain.NovexResourceRef
-import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
+import novex.core.NovexDocumentPromptReceipt
+import novex.core.NovexDocumentSnapshot
+import novex.core.NovexResourceRef
+import novex.core.NovexSourceCollectionPromptReceipt
 
 internal data class UserAttachedFilePromptMeta(
     val linuxPath: String,

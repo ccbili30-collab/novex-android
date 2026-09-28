@@ -18,28 +18,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.FilterChip
+import novex.android.ui.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.SegmentedButton
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
+import novex.android.ui.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
+import novex.android.ui.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.material3.TimeInput
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -214,7 +214,7 @@ fun ScheduledTaskEditScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                            novex.android.ui.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.back),
                         )
                     }
@@ -402,7 +402,7 @@ private fun EditFormBody(
                         selected = targetKind == kind,
                         onClick = { onTargetKindChange(kind) },
                         shape = SegmentedButtonDefaults.itemShape(idx, targetOpts.size),
-                    ) { Text(stringResource(resId), fontSize = com.openminis.app.ui.novex.novexScaledSp(13)) }
+                    ) { Text(stringResource(resId), fontSize = novex.android.ui.novexScaledSp(13)) }
                 }
             }
             if (targetKind != TargetKind.NEW) {
@@ -448,7 +448,7 @@ private fun EditFormBody(
                         selected = repeatMode == mode,
                         onClick = { onRepeatModeChange(mode) },
                         shape = SegmentedButtonDefaults.itemShape(idx, options.size),
-                    ) { Text(stringResource(resId), fontSize = com.openminis.app.ui.novex.novexScaledSp(13)) }
+                    ) { Text(stringResource(resId), fontSize = novex.android.ui.novexScaledSp(13)) }
                 }
             }
             if (repeatMode == ScheduledRepeatMode.CUSTOM) {
@@ -472,7 +472,7 @@ private fun EditFormBody(
                                 }
                                 onCustomDaysChange(next)
                             },
-                            label = { Text(name, fontSize = com.openminis.app.ui.novex.novexScaledSp(12)) },
+                            label = { Text(name, fontSize = novex.android.ui.novexScaledSp(12)) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -519,7 +519,7 @@ private fun EditFormBody(
         } else {
             Text(
                 stringResource(R.string.scheduled_task_rerun_note),
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                fontSize = novex.android.ui.novexScaledSp(12),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -535,7 +535,7 @@ private fun EditFormBody(
         HorizontalDivider()
 
         OutlinedButton(onClick = onRunNow, enabled = canRunNow, modifier = Modifier.fillMaxWidth()) {
-            Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(novex.android.ui.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.scheduled_task_run_now))
         }
@@ -670,7 +670,7 @@ private fun PickerRow(
         trailingIcon = if (onClear != null) {
             {
                 IconButton(onClick = onClear) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(0.dp))
+                    Icon(novex.android.ui.NovexIcons.PlayArrow, contentDescription = null, modifier = Modifier.size(0.dp))
                     Text("✕", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -749,7 +749,7 @@ private fun MessagePickerDialog(
                             Modifier.fillMaxWidth().clickable { onPick(m.id, m.preview) }
                                 .padding(vertical = 10.dp),
                         ) {
-                            Text(m.preview, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = com.openminis.app.ui.novex.novexScaledSp(14))
+                            Text(m.preview, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = novex.android.ui.novexScaledSp(14))
                         }
                     }
                 }

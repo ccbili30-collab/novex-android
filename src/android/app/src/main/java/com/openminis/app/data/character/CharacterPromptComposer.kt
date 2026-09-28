@@ -85,7 +85,7 @@ $toolRule
 </角色对话协议>
 
 """.trimIndent())
-            append("\n\n").append(com.openminis.app.novex.domain.NovexProductToolGuide.build(enabledTools)).append("\n\n")
+            append("\n\n").append(novex.core.NovexProductToolGuide.build(enabledTools)).append("\n\n")
             memoryContext?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 append("<角色长期记忆>\n").append(it).append("\n</角色长期记忆>\n\n")
             }

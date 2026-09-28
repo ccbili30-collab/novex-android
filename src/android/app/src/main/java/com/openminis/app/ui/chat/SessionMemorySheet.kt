@@ -121,7 +121,7 @@ fun SessionMemorySheet(
                     }
                 }) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                        imageVector = novex.android.ui.NovexIcons.ArrowBack,
                         contentDescription = stringResource(R.string.memory_action_back),
                     )
                 }
@@ -269,7 +269,7 @@ private fun DetailToolbar(
         if (showEdit) {
             IconButton(onClick = onEdit) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Edit,
+                    novex.android.ui.NovexIcons.Edit,
                     contentDescription = stringResource(R.string.memory_action_edit),
                 )
             }
@@ -282,7 +282,7 @@ private fun DetailToolbar(
         if (showRevoke) {
             IconButton(onClick = onRevoke) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Undo,
+                    novex.android.ui.NovexIcons.Undo,
                     contentDescription = stringResource(R.string.memory_action_revoke),
                     tint = MaterialTheme.colorScheme.error,
                 )

@@ -288,7 +288,7 @@ fun ModelEntryDetailScreen(
         ) {
             SettingsRow(
                 title = stringResource(R.string.quicktest_button),
-                icon = com.openminis.app.ui.novex.NovexIcons.Bolt,
+                icon = novex.android.ui.NovexIcons.Bolt,
                 showChevron = false,
                 showDivider = false,
                 onClick = { showQuickTest = true },

@@ -85,8 +85,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -469,10 +469,10 @@ internal fun FallbackInfoBlock(
         // Compress squeeze. Other system rows (legacy compact notices that
         // pre-date the dedicated compactor) keep the squeeze for backward
         // visual continuity if any old sessions still hold them.
-        "compact" -> com.openminis.app.ui.novex.NovexIcons.CloseFullscreen
-        "memory" -> com.openminis.app.ui.novex.NovexIcons.Psychology
-        "thinking" -> com.openminis.app.ui.novex.NovexIcons.Lightbulb
-        else -> com.openminis.app.ui.novex.NovexIcons.Info
+        "compact" -> novex.android.ui.NovexIcons.CloseFullscreen
+        "memory" -> novex.android.ui.NovexIcons.Psychology
+        "thinking" -> novex.android.ui.NovexIcons.Lightbulb
+        else -> novex.android.ui.NovexIcons.Info
     }
     // Mirrors iOS systemDividerRow: HStack { Divider, label, Divider }.
     // Implemented via SubcomposeLayout so the centered label can be measured
@@ -538,7 +538,7 @@ internal fun FallbackInfoBlock(
                 )
                 if (hasDetail) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Info,
+                        imageVector = novex.android.ui.NovexIcons.Info,
                         contentDescription = "Show full summary",
                         tint = fg,
                         modifier = Modifier
@@ -549,9 +549,9 @@ internal fun FallbackInfoBlock(
                 if (compactedHistoryExpanded != null) {
                     Icon(
                         imageVector = if (compactedHistoryExpanded) {
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                            novex.android.ui.NovexIcons.KeyboardArrowUp
                         } else {
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                            novex.android.ui.NovexIcons.KeyboardArrowDown
                         },
                         contentDescription = if (compactedHistoryExpanded) {
                             "折叠已压缩对话"
@@ -633,7 +633,7 @@ private fun CompactSummarySheet(
                 }
             }) {
                 Icon(
-                    imageVector = if (copied) com.openminis.app.ui.novex.NovexIcons.Check else com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                    imageVector = if (copied) novex.android.ui.NovexIcons.Check else novex.android.ui.NovexIcons.ContentCopy,
                     contentDescription = "Copy",
                     tint = if (copied) Color(0xFF34C759) else ChatColors.secondaryText,
                 )
@@ -661,7 +661,7 @@ private fun CompactSummarySheet(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 ) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        imageVector = novex.android.ui.NovexIcons.Refresh,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(18.dp),
@@ -888,7 +888,7 @@ internal fun ResumeBanner(onResume: () -> Unit) {
             modifier = Modifier.weight(1f),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+                imageVector = novex.android.ui.NovexIcons.PlayArrow,
                 contentDescription = null,
                 tint = orange,
                 modifier = Modifier.size(12.dp),
@@ -913,7 +913,7 @@ internal fun ResumeBanner(onResume: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+                imageVector = novex.android.ui.NovexIcons.PlayArrow,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(10.dp),
@@ -995,7 +995,7 @@ internal fun SwipeToSendHint(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
+                imageVector = novex.android.ui.NovexIcons.ArrowUpward,
                 contentDescription = null,
                 tint = chipFg,
                 modifier = Modifier.size(18.dp),

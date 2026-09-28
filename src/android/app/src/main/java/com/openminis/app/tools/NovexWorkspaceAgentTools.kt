@@ -1,12 +1,12 @@
 package com.openminis.app.tools
 
 import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.novex.domain.NovexConversationWorkspaceScope
-import com.openminis.app.novex.domain.NovexConversationWorkspaceStore
-import com.openminis.app.novex.domain.NovexConversationWorkspaceToolRouter
-import com.openminis.app.novex.domain.NovexConversationWorkspaceTools
-import com.openminis.app.novex.domain.NovexToolCapability
-import com.openminis.app.novex.domain.NovexWorkspaceProvenance
+import novex.core.NovexConversationWorkspaceScope
+import novex.core.NovexConversationWorkspaceStore
+import novex.core.NovexConversationWorkspaceToolRouter
+import novex.core.NovexConversationWorkspaceTools
+import novex.core.NovexToolCapability
+import novex.core.NovexWorkspaceProvenance
 
 /** Thin Android/provider adapter; storage paths and provider schemas stay outside the model contract. */
 class NovexWorkspaceAgentTools(
@@ -22,8 +22,8 @@ class NovexWorkspaceAgentTools(
     ): ToolExecutionResult {
         val router = NovexConversationWorkspaceToolRouter(
             NovexConversationWorkspaceTools(scope,
-                if (visibleImports == null) store else com.openminis.app.novex.domain.NovexWorkspaceVisibility(store, visibleImports), provenance,
-                { entry, raw -> com.openminis.app.novex.domain.NovexCheckpointReadProjection.projectArchive(entry, raw, historyScopeKey) }),
+                if (visibleImports == null) store else novex.core.NovexWorkspaceVisibility(store, visibleImports), provenance,
+                { entry, raw -> novex.core.NovexCheckpointReadProjection.projectArchive(entry, raw, historyScopeKey) }),
         )
         val result = router.execute(name, argumentsJson)
         return ToolExecutionResult(

@@ -355,7 +355,7 @@ object OffloadPermissionManager {
      */
     suspend fun checkPermission(toolName: String, toolTitle: String, sessionId: String): Boolean {
         if (sessionId != OFFLOAD_GLOBAL_SESSION_ID) {
-            return com.openminis.app.novex.domain.NovexActiveToolAuthorization.allows(sessionId)
+            return novex.core.NovexActiveToolAuthorization.allows(sessionId)
         }
         val level = getLevel(toolName)
         return when (level) {

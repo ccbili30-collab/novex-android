@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.*
+import novex.core.*
 
 data class NovexConversationStatus(
     val answer: String = "Nova（诺瓦）",

@@ -16,16 +16,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Surface
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -93,7 +93,7 @@ fun MountDetailScreen(
                 title = { Text(stringResource(R.string.mount_detail_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -185,7 +185,7 @@ fun MountDetailScreen(
 
             Spacer(Modifier.height(20.dp))
             ActionRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+                icon = novex.android.ui.NovexIcons.Folder,
                 tint = Color(0xFF007AFF),
                 label = stringResource(R.string.mount_detail_browse_files),
                 onClick = onBrowseFiles,
@@ -193,7 +193,7 @@ fun MountDetailScreen(
 
             Spacer(Modifier.height(12.dp))
             ActionRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+                icon = novex.android.ui.NovexIcons.Folder,
                 tint = MaterialTheme.colorScheme.error,
                 label = stringResource(R.string.mount_unmount_confirm),
                 destructive = true,
@@ -251,7 +251,7 @@ private fun HeaderCard(entry: MountedFoldersStore.Entry) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.FolderShared,
+                    imageVector = novex.android.ui.NovexIcons.FolderShared,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp),

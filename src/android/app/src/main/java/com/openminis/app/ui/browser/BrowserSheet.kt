@@ -132,9 +132,9 @@ fun BrowserSheet(
             IconButton(onClick = { showSettings = true }) {
                 Icon(
                     when (userAgentProfile) {
-                        UserAgentProfile.MOBILE_CHROME -> com.openminis.app.ui.novex.NovexIcons.PhoneAndroid
-                        UserAgentProfile.DESKTOP_CHROME -> com.openminis.app.ui.novex.NovexIcons.Computer
-                        UserAgentProfile.CUSTOM -> com.openminis.app.ui.novex.NovexIcons.Edit
+                        UserAgentProfile.MOBILE_CHROME -> novex.android.ui.NovexIcons.PhoneAndroid
+                        UserAgentProfile.DESKTOP_CHROME -> novex.android.ui.NovexIcons.Computer
+                        UserAgentProfile.CUSTOM -> novex.android.ui.NovexIcons.Edit
                     },
                     contentDescription = stringResource(R.string.browser_settings_title),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -158,7 +158,7 @@ fun BrowserSheet(
                     enabled = tabs.size < 3 && !isAgentBusy,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.browser_new_tab), modifier = Modifier.size(20.dp))
+                    Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.browser_new_tab), modifier = Modifier.size(20.dp))
                 }
                 LazyRow(
                     modifier = Modifier
@@ -200,7 +200,7 @@ fun BrowserSheet(
                     enabled = !isAgentBusy,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.History, contentDescription = stringResource(R.string.browser_history_action), modifier = Modifier.size(20.dp))
+                    Icon(novex.android.ui.NovexIcons.History, contentDescription = stringResource(R.string.browser_history_action), modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -270,7 +270,7 @@ fun BrowserSheet(
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Close,
+                                novex.android.ui.NovexIcons.Close,
                                 contentDescription = stringResource(R.string.browser_stop),
                                 modifier = Modifier.size(14.dp),
                             )
@@ -340,7 +340,7 @@ fun BrowserSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Download,
+                        novex.android.ui.NovexIcons.Download,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = accent,
@@ -375,13 +375,13 @@ fun BrowserSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ToolbarIcon(
-                    icon = com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                    icon = novex.android.ui.NovexIcons.ArrowBack,
                     contentDesc = stringResource(R.string.browser_nav_back),
                     enabled = canGoBack && !isAgentBusy,
                     onClick = { selectedTab?.manager?.goBack() },
                 )
                 ToolbarIcon(
-                    icon = com.openminis.app.ui.novex.NovexIcons.ArrowForward,
+                    icon = novex.android.ui.NovexIcons.ArrowForward,
                     contentDesc = stringResource(R.string.browser_nav_forward),
                     enabled = canGoForward && !isAgentBusy,
                     onClick = { selectedTab?.manager?.goForward() },
@@ -400,7 +400,7 @@ fun BrowserSheet(
                         },
                     ) {
                         ToolbarIcon(
-                            icon = com.openminis.app.ui.novex.NovexIcons.Download,
+                            icon = novex.android.ui.NovexIcons.Download,
                             contentDesc = stringResource(R.string.browser_downloads_title),
                             enabled = true,
                             tint = accent,
@@ -410,7 +410,7 @@ fun BrowserSheet(
                 }
                 if (isLoading) {
                     ToolbarIcon(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Close,
+                        icon = novex.android.ui.NovexIcons.Close,
                         contentDesc = stringResource(R.string.browser_stop),
                         enabled = !isAgentBusy,
                         tint = accent,
@@ -418,7 +418,7 @@ fun BrowserSheet(
                     )
                 } else {
                     ToolbarIcon(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        icon = novex.android.ui.NovexIcons.Refresh,
                         contentDesc = stringResource(R.string.browser_reload),
                         enabled = !isAgentBusy,
                         tint = accent,
@@ -498,7 +498,7 @@ private fun TabChip(
                 modifier = Modifier.size(16.dp),
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Close,
+                    novex.android.ui.NovexIcons.Close,
                     contentDescription = stringResource(R.string.browser_close_tab),
                     modifier = Modifier.size(10.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -541,7 +541,7 @@ private fun BrowserAddressBarIcon(isLoading: Boolean, accent: Color) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Language,
+            novex.android.ui.NovexIcons.Language,
             contentDescription = null,
             modifier = Modifier.size(14.dp),
             tint = if (isLoading) accent else MaterialTheme.colorScheme.onSurfaceVariant,

@@ -16,7 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -150,7 +150,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Warning,
+                        novex.android.ui.NovexIcons.Warning,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp),
@@ -183,7 +183,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                        novex.android.ui.NovexIcons.AutoAwesome,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -218,7 +218,7 @@ fun GroupPickerSheet(
                             )
                         } else {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                                novex.android.ui.NovexIcons.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp),
@@ -273,7 +273,7 @@ fun GroupPickerSheet(
                             GroupRow(
                                 title = label,
                                 subtitle = hint,
-                                icon = com.openminis.app.ui.novex.NovexIcons.FolderOff,
+                                icon = novex.android.ui.NovexIcons.FolderOff,
                                 onClick = { onChoose(GroupChoice.RemoveFromGroup) },
                                 // Merge the two lines for screen readers;
                                 // announced separately they read as unrelated
@@ -294,7 +294,7 @@ fun GroupPickerSheet(
                             subtitle = folder.description?.takeIf { it.isNotBlank() }
                                 ?: if (count > 0) stringResource(R.string.group_n_chats, count)
                                 else stringResource(R.string.group_empty),
-                            icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+                            icon = novex.android.ui.NovexIcons.Folder,
                             onClick = { onChoose(GroupChoice.Existing(folder.id)) },
                         )
                     }

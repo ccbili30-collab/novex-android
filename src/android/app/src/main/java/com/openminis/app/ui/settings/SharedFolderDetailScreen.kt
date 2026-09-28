@@ -20,10 +20,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -65,7 +65,7 @@ fun SharedFolderDetailScreen(
                 title = { Text(stringResource(R.string.shared_folder_detail_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
             )
@@ -95,7 +95,7 @@ fun SharedFolderDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Folder,
+                        imageVector = novex.android.ui.NovexIcons.Folder,
                         contentDescription = null,
                         tint = Color(0xFF007AFF),
                     )

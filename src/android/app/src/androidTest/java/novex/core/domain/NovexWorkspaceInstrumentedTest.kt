@@ -1,0 +1,839 @@
+package novex.core
+
+import androidx.room.Room
+import androidx.room.withTransaction
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.openminis.app.data.character.CharacterLibraryDocument
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleDocumentCodec
+import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.NovexCardKind
+import com.openminis.app.data.character.NovexCardPackageCodec
+import com.openminis.app.data.character.NovexCardTransferParser
+import com.openminis.app.data.character.NovexCharacterImportDocument
+import com.openminis.app.data.character.NovexWorldImportDocument
+import com.openminis.app.data.character.CharacterModuleDocument
+import com.openminis.app.data.character.CharacterVersionDocument
+import com.openminis.app.data.character.CharacterVersionKind
+import com.openminis.app.data.character.MediaAssetSlot
+import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.ModuleReferenceTarget
+import com.openminis.app.data.db.AppDatabase
+import com.openminis.app.data.creative.CreativeArtifactFileStore
+import com.openminis.app.data.creative.CreativeArtifactRepository
+import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
+import novex.android.adapter.NovexWorkspaceFactory
+import novex.android.adapter.WorkspaceNovexContextLoader
+import java.io.File
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class NovexWorkspaceInstrumentedTest {
+    private lateinit var database: AppDatabase
+    private lateinit var mediaRoot: File
+    private lateinit var workspace: NovexWorkspace
+
+    @Before
+    fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        mediaRoot = File(context.cacheDir, "novex-workspace-${System.nanoTime()}").apply { mkdirs() }
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        mediaRoot.deleteRecursively()
+    }
+
+    @Test
+    fun savedWorldModuleOrderAndContentRecoverThroughANewWorkspace() = runBlocking {
+        val created = workspace.apply(
+            NovexCommand.CreateWorld(name = "旧名称", overview = "旧概述", tagsJson = "[]", now = 10),
+        ).requireWorld()
+        workspace.apply(
+            NovexCommand.SaveWorld(
+                world = created.copy(
+                    name = "云岚书院",
+                    overview = "悬于群山云海之间的书院",
+                    tagsJson = "[\"仙侠\",\"学院\"]",
+                ),
+                now = 20,
+            ),
+        )
+        val timeline = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(created.id),
+                type = ContentModuleType.TIMELINE,
+                name = "时间线",
+                now = 30,
+            ),
+        ).requireModule()
+        val map = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(created.id),
+                type = ContentModuleType.MAP,
+                name = "地图",
+                now = 31,
+            ),
+        ).requireModule()
+        workspace.apply(
+            NovexCommand.SaveModule(
+                moduleId = map.id,
+                name = "山海地图",
+                contentJson = "{\"text\":\"九峰环湖\"}",
+                now = 40,
+            ),
+        )
+        workspace.apply(NovexCommand.MoveModule(map.id, toIndex = 0, now = 50))
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = requireNotNull(workspace.world(created.id))
+
+        assertEquals("云岚书院", restored.world.name)
+        assertEquals("悬于群山云海之间的书院", restored.world.overview)
+        assertEquals(listOf(map.id, timeline.id), restored.modules.map { it.id })
+        assertEquals("山海地图", restored.modules.first().name)
+        assertEquals("{\"text\":\"九峰环湖\"}", restored.modules.first().contentJson)
+    }
+
+    @Test
+    fun longformWorkspaceLoadsMoreThanOneHundredModulesAcrossWorldCharacterAndGameWithoutLoadingManagedOnlyContent() = runBlocking {
+        val worlds = (0 until 3).map { worldIndex ->
+            workspace.apply(
+                NovexCommand.CreateWorld(
+                    name = "压力世界 $worldIndex",
+                    overview = "第 $worldIndex 个世界的核心规则",
+                    now = worldIndex.toLong() + 1,
+                ),
+            ).requireWorld().also { world ->
+                workspace.apply(
+                    NovexCommand.SaveModules(
+                        owner = ModuleOwner.world(world.id),
+                        modules = (0 until 40).map { moduleIndex ->
+                            NovexModuleDraft(
+                                id = "world-$worldIndex-module-$moduleIndex",
+                                type = ContentModuleType.CUSTOM,
+                                name = "世界 $worldIndex 设定 $moduleIndex",
+                                contentJson = ContentModuleDocumentCodec.encode(
+                                    ContentModuleDocument.Article(
+                                        if (worldIndex == 2 && moduleIndex == 39) {
+                                            "白塔盟约由沈砚见证，第七枚印章藏在北塔钟后。"
+                                        } else {
+                                            "结构化长篇资料 $worldIndex-$moduleIndex"
+                                        },
+                                    ),
+                                ),
+                            )
+                        },
+                        now = 100,
+                    ),
+                )
+            }
+        }
+        val character = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = null,
+                versionId = null,
+                sourceVersionId = null,
+                createVariant = false,
+                rootName = "苏晚晴",
+                label = "本体",
+                profileJson = "{\"name\":\"苏晚晴\",\"summary\":\"白塔盟约相关人物\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "character-history",
+                        type = ContentModuleType.WORLD_EXPERIENCE,
+                        name = "世界经历",
+                        contentJson = ContentModuleDocumentCodec.encode(
+                            ContentModuleDocument.Article("曾在雾港追查第七枚印章。"),
+                        ),
+                    ),
+                ),
+                now = 200,
+            ),
+        ).requireCharacter()
+        val game = workspace.apply(
+            NovexCommand.SaveInteractiveFictionPage(
+                projectId = null,
+                name = "雾港漫游",
+                summary = "跨世界长篇文游",
+                launchMode = InteractiveFictionLaunchMode.FIXED_IDENTITY,
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "game-rules",
+                        type = ContentModuleType.GAME_NARRATIVE_RULES,
+                        name = "叙事规则",
+                        contentJson = ContentModuleDocumentCodec.encode(
+                            ContentModuleDocument.Article("不替玩家做决定。"),
+                        ),
+                    ),
+                ),
+                now = 300,
+            ),
+        ).requireInteractiveFiction()
+        val activeGame = InteractiveFictionRuntimeSnapshotFactory.create(
+            requireNotNull(workspace.interactiveFiction(game.id)),
+        )
+        val managedOnly = NovexContentAddress.creativeArtifact("artifact-not-background")
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "pressure-chat",
+            answerIdentity = AnswerIdentity.CharacterVersion(character.original.id),
+            backgroundSettings = worlds.map { BackgroundSetting(NovexContentAddress.world(it.id)) } +
+                BackgroundSetting(NovexContentAddress.characterVersion(character.original.id)),
+            managedSubjects = worlds.map {
+                ManagedSubject(NovexContentAddress.world(it.id), ManagedAccess.EDIT)
+            } + ManagedSubject(managedOnly, ManagedAccess.EDIT) +
+                ManagedSubject(NovexContentAddress.interactiveFiction(game.id), ManagedAccess.EDIT),
+            activeInteractiveFiction = activeGame,
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val candidates = WorkspaceNovexContextLoader(workspace).load(configuration)
+        val composition = NovexContextComposer.compose(
+            query = "谁见证白塔盟约，第七枚印章在哪里？",
+            tokenBudget = 8_000,
+            candidates = candidates,
+        )
+
+        assertTrue(candidates.size >= 126)
+        assertTrue(composition.fragments.any { it.sourceId == "world-2-module-39" })
+        assertTrue(composition.fragments.any { it.kind == ContextSourceKind.ANSWER_IDENTITY })
+        assertTrue(composition.fragments.any { it.sourceId.startsWith("game:${activeGame.snapshotId}") })
+        assertFalse(candidates.any { it.sourceId.contains("artifact-not-background") })
+    }
+
+    @Test
+    fun moduleDraftsStayInMemoryUntilOneExplicitSaveAndThenRecoverInOrder() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val timeline = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(world.id),
+                type = ContentModuleType.TIMELINE,
+                name = "时间线",
+                contentJson = "{\"text\":\"旧内容\"}",
+                now = 2,
+            ),
+        ).requireModule()
+        val map = workspace.apply(
+            NovexCommand.AddModule(
+                owner = ModuleOwner.world(world.id),
+                type = ContentModuleType.MAP,
+                name = "地图",
+                contentJson = "{\"text\":\"旧地图\"}",
+                now = 3,
+            ),
+        ).requireModule()
+        val drafts = listOf(
+            NovexModuleDraft(
+                id = "new-faction",
+                type = ContentModuleType.FACTION,
+                name = "势力",
+                contentJson = "{\"text\":\"四方势力\"}",
+            ),
+            NovexModuleDraft(
+                id = timeline.id,
+                type = ContentModuleType.TIMELINE,
+                name = "王朝时间线",
+                contentJson = "{\"text\":\"新内容\"}",
+            ),
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        assertEquals(listOf(timeline.id, map.id), workspace.world(world.id)!!.modules.map { it.id })
+        assertEquals("旧内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(
+            workspace.world(world.id)!!.modules.first().contentJson,
+        ))
+
+        workspace.apply(
+            NovexCommand.SaveModules(
+                owner = ModuleOwner.world(world.id),
+                modules = drafts,
+                now = 10,
+            ),
+        )
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = workspace.world(world.id)!!.modules
+
+        assertEquals(listOf("new-faction", timeline.id), restored.map { it.id })
+        assertEquals(listOf("势力", "王朝时间线"), restored.map { it.name })
+        assertEquals(listOf(0, 1), restored.map { it.position })
+        assertEquals("新内容", com.openminis.app.data.character.ContentModuleTextCodec.decode(restored.last().contentJson))
+    }
+
+    @Test
+    fun confirmedManagementBatchRollsBackEveryChangeWhenOneOperationFails() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("事务世界", now = 1)).requireWorld()
+        val artifacts = CreativeArtifactRepository(
+            database,
+            CreativeArtifactFileStore(File(mediaRoot, "artifacts")),
+        )
+        val service = NovexManagementService(workspace, artifacts)
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-transaction",
+            managedSubjects = listOf(
+                ManagedSubject(NovexContentAddress.world(world.id), ManagedAccess.EDIT),
+            ),
+        )
+        val proposal = service.propose(
+            configuration = configuration,
+            changesJson = """[
+              {"operation":"add_module","subject_kind":"world","subject_id":"${world.id}","module_type":"MAP","name":"第一张地图","content_json":{}},
+              {"operation":"add_module","subject_kind":"world","subject_id":"${world.id}","module_type":"MAP","name":"重复地图","content_json":{}}
+            ]""".trimIndent(),
+            latestUserRequest = "添加地图模块",
+            planId = "transaction-proposal",
+        )
+
+        val failed = runCatching {
+            database.withTransaction {
+                service.apply(configuration, proposal, "")
+            }
+        }
+
+        assertTrue(failed.isFailure)
+        assertTrue(workspace.modules(ModuleOwner.world(world.id)).modules.isEmpty())
+    }
+
+    @Test
+    fun worldPageDraftSavesIdentityModulesAndOptionalImagesAsOneCommit() = runBlocking {
+        val created = workspace.apply(
+            NovexCommand.SaveWorldPage(
+                worldId = null,
+                name = "云岚书院",
+                overview = "悬于云海之上的修行书院",
+                tagsJson = "[\"仙侠\",\"学院\"]",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "draft-map",
+                        type = ContentModuleType.MAP,
+                        name = "山海地图",
+                        contentJson = "{\"version\":1,\"kind\":\"single_image\",\"description\":\"九峰环湖\"}",
+                    ),
+                    NovexModuleDraft(
+                        id = "draft-factions",
+                        type = ContentModuleType.FACTION,
+                        name = "势力",
+                        contentJson = "{\"version\":1,\"kind\":\"collection\",\"items\":[]}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        slot = MediaAssetSlot.WORLD_COVER,
+                        bytes = byteArrayOf(7, 11, 13, 17),
+                        mimeType = "image/png",
+                    ),
+                ),
+                now = 100,
+            ),
+        ).requireWorld()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = requireNotNull(workspace.world(created.id))
+        assertEquals("云岚书院", restored.world.name)
+        assertEquals("悬于云海之上的修行书院", restored.world.overview)
+        assertEquals(listOf("draft-map", "draft-factions"), restored.modules.map { it.id })
+        assertEquals(
+            byteArrayOf(7, 11, 13, 17).toList(),
+            File(restored.media.getValue(MediaAssetSlot.WORLD_COVER).managedPath).readBytes().toList(),
+        )
+
+        workspace.apply(
+            NovexCommand.SaveWorldPage(
+                worldId = created.id,
+                name = "云岚书院·新章",
+                overview = restored.world.overview,
+                tagsJson = restored.world.tagsJson,
+                modules = listOf(NovexModuleDraft.from(restored.modules.last())),
+                imageChanges = listOf(NovexImageChange.Remove(MediaAssetSlot.WORLD_COVER)),
+                now = 200,
+            ),
+        )
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val edited = requireNotNull(workspace.world(created.id))
+        assertEquals("云岚书院·新章", edited.world.name)
+        assertEquals(listOf("draft-factions"), edited.modules.map { it.id })
+        assertTrue(MediaAssetSlot.WORLD_COVER !in edited.media)
+    }
+
+    @Test
+    fun nativeSampleCardsPreviewImportDisplayAndReExportAsOneClosedLoop() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val worldPreview = context.assets.open("novex/cards/cloud-academy.novexworld").use {
+            NovexCardPackageCodec.decode(it.readBytes())
+        }
+        val characterPreview = context.assets.open("novex/cards/su-wanqing.novexcharacter").use {
+            NovexCardPackageCodec.decode(it.readBytes())
+        }
+        val worldImport = NovexCardTransferParser.parse(worldPreview)
+        val characterImport = NovexCardTransferParser.parse(characterPreview)
+
+        assertEquals(NovexCardKind.WORLD, worldPreview.kind)
+        assertEquals(NovexCardKind.CHARACTER, characterPreview.kind)
+        assertTrue(workspace.worlds().isEmpty())
+        assertTrue(workspace.characters().isEmpty())
+
+        val importedWorld = workspace.apply(NovexCommand.ImportNativeCard(worldImport))
+            .requireNativeImport()
+        val worldBeforeCharacter = requireNotNull(workspace.world(importedWorld.localId))
+        assertEquals("云岚书院", worldBeforeCharacter.world.name)
+        assertEquals(listOf(ContentModuleType.MAP, ContentModuleType.FACTION, ContentModuleType.REGION), worldBeforeCharacter.modules.map { it.type })
+        assertEquals(4, worldBeforeCharacter.moduleItemImages.values.single { it.size == 4 }.size)
+        assertTrue(worldBeforeCharacter.versions.isEmpty())
+
+        val importedCharacter = workspace.apply(NovexCommand.ImportNativeCard(characterImport))
+            .requireNativeImport()
+        val character = requireNotNull(workspace.character(importedCharacter.localId))
+        assertEquals(3, character.character.allVersions.size)
+        assertEquals(3, character.mediaByVersion.values.count { it.isNotEmpty() })
+        assertTrue(character.modulesByVersion.values.all { it.size == 3 })
+        val worldAfterCharacter = requireNotNull(workspace.world(importedWorld.localId))
+        assertEquals(listOf("云岚分身"), worldAfterCharacter.versions.map { it.label })
+
+        val exportedWorld = workspace.apply(NovexCommand.ExportNativeWorld(importedWorld.localId))
+            .requireNativeCard()
+        val exportedCharacter = workspace.apply(NovexCommand.ExportNativeCharacter(importedCharacter.localId))
+            .requireNativeCard()
+        val worldRoundTrip = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exportedWorld)),
+        ).document as NovexWorldImportDocument
+        val characterRoundTrip = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exportedCharacter)),
+        ).document as NovexCharacterImportDocument
+
+        assertEquals("云岚书院", worldRoundTrip.name)
+        assertEquals(listOf(ContentModuleType.MAP, ContentModuleType.FACTION, ContentModuleType.REGION), worldRoundTrip.modules.map { it.type })
+        assertEquals(4, worldRoundTrip.modules.single { it.type == ContentModuleType.FACTION }.itemImagePaths.size)
+        assertEquals(listOf("本体", "医馆时期", "云岚分身"), characterRoundTrip.versions.map { it.label })
+        assertEquals(3, characterRoundTrip.versions.first().modules.size)
+    }
+
+    @Test
+    fun interactiveFictionSavesImportsExportsAndCopiesInVisibleModuleOrder() = runBlocking {
+        val saved = workspace.apply(
+            NovexCommand.SaveInteractiveFictionPage(
+                projectId = null,
+                name = "云岚问道",
+                summary = "一段可共创世界后开始的文游",
+                launchMode = InteractiveFictionLaunchMode.CO_CREATE_WORLD,
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "rules",
+                        type = ContentModuleType.GAME_NARRATIVE_RULES,
+                        name = "叙事规则",
+                        contentJson = "{\"version\":1,\"kind\":\"article\",\"text\":\"不替玩家做决定\"}",
+                    ),
+                    NovexModuleDraft(
+                        id = "opening",
+                        type = ContentModuleType.GAME_OPENING,
+                        name = "开局说明",
+                        contentJson = "{\"version\":1,\"kind\":\"article\",\"text\":\"山门初开\"}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        MediaAssetSlot.INTERACTIVE_FICTION_COVER,
+                        byteArrayOf(2, 3, 5, 7),
+                        "image/png",
+                    ),
+                ),
+                now = 100,
+            ),
+        ).requireInteractiveFiction()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val snapshot = requireNotNull(workspace.interactiveFiction(saved.id))
+        assertEquals(listOf("rules", "opening"), snapshot.modules.map { it.id })
+        assertEquals(
+            byteArrayOf(2, 3, 5, 7).toList(),
+            File(snapshot.media.getValue(MediaAssetSlot.INTERACTIVE_FICTION_COVER).managedPath).readBytes().toList(),
+        )
+
+        val fullText = workspace.apply(NovexCommand.ExportInteractiveFictionText(saved.id)).requireText()
+        assertTrue(fullText.indexOf("## 叙事规则") < fullText.indexOf("## 开局说明"))
+
+        val exported = workspace.apply(NovexCommand.ExportNativeInteractiveFiction(saved.id)).requireNativeCard()
+        assertEquals(NovexCardKind.GAME, exported.kind)
+        val parsed = NovexCardTransferParser.parse(
+            NovexCardPackageCodec.decode(NovexCardPackageCodec.encode(exported)),
+        )
+        val imported = workspace.apply(NovexCommand.ImportNativeCard(parsed)).requireNativeImport()
+        val importedSnapshot = requireNotNull(workspace.interactiveFiction(imported.localId))
+        assertNotEquals(saved.id, imported.localId)
+        assertEquals("云岚问道", importedSnapshot.project.name)
+        assertEquals(listOf("rules", "opening"), importedSnapshot.modules.map { it.id })
+    }
+
+    @Test
+    fun failedNativeImportRollsBackDatabaseRowsAndNewManagedFilesTogether() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val preview = context.assets.open("novex/cards/cloud-academy.novexworld").use {
+            NovexCardTransferParser.parse(NovexCardPackageCodec.decode(it.readBytes()))
+        }
+        val world = preview.document as NovexWorldImportDocument
+        val duplicateMap = world.modules.first().copy(sourceId = "duplicate-map")
+        val invalid = preview.copy(document = world.copy(modules = listOf(world.modules.first(), duplicateMap)))
+
+        var failed = false
+        try {
+            workspace.apply(NovexCommand.ImportNativeCard(invalid))
+        } catch (_: IllegalArgumentException) {
+            failed = true
+        }
+
+        assertTrue(failed)
+        assertTrue(workspace.worlds().isEmpty())
+        assertTrue(mediaRoot.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun worldLinksAndSharedMediaRemainValidWhenOneOwnerIsDeleted() = runBlocking {
+        val worldA = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 10)).requireWorld()
+        val worldB = workspace.apply(NovexCommand.CreateWorld("雾港", now = 11)).requireWorld()
+        val character = workspace.apply(
+            NovexCommand.CreateCharacter(name = "苏晚晴", profileJson = "{\"name\":\"苏晚晴\"}", now = 12),
+        ).requireCharacter()
+        workspace.apply(NovexCommand.LinkCharacterVersion(worldA.id, character.original.id, 0, now = 20))
+        workspace.apply(NovexCommand.LinkCharacterVersion(worldB.id, character.original.id, 0, now = 21))
+
+        val bytes = byteArrayOf(1, 4, 9, 16)
+        val assetA = workspace.apply(
+            NovexCommand.AttachImage(
+                owner = ModuleOwner.world(worldA.id),
+                slot = MediaAssetSlot.WORLD_COVER,
+                bytes = bytes,
+                mimeType = "image/png",
+                now = 30,
+            ),
+        ).requireMedia()
+        val assetB = workspace.apply(
+            NovexCommand.AttachImage(
+                owner = ModuleOwner.world(worldB.id),
+                slot = MediaAssetSlot.WORLD_COVER,
+                bytes = bytes,
+                mimeType = "image/png",
+                now = 31,
+            ),
+        ).requireMedia()
+        assertEquals(assetA.id, assetB.id)
+        assertEquals(
+            listOf(worldA.id, worldB.id),
+            workspace.character(character.character.id)!!.worldsByVersion.getValue(character.original.id).map { it.id },
+        )
+
+        workspace.apply(NovexCommand.DeleteWorld(worldA.id))
+
+        val survivingWorld = requireNotNull(workspace.world(worldB.id))
+        assertEquals(assetB.id, survivingWorld.media.getValue(MediaAssetSlot.WORLD_COVER).id)
+        assertNotEquals(false, File(assetB.managedPath).exists())
+        assertNotNull(workspace.character(character.character.id))
+    }
+
+    @Test
+    fun savingForOneWorldCreatesAnIndependentVariantWithoutChangingOtherWorlds() = runBlocking {
+        val worldA = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val worldB = workspace.apply(NovexCommand.CreateWorld("雾港", now = 2)).requireWorld()
+        val character = workspace.apply(
+            NovexCommand.CreateCharacter("苏晚晴", profileJson = "{\"name\":\"苏晚晴\"}", now = 3),
+        ).requireCharacter()
+        workspace.apply(NovexCommand.LinkCharacterVersion(worldA.id, character.original.id, 0, now = 4))
+        workspace.apply(NovexCommand.LinkCharacterVersion(worldB.id, character.original.id, 0, now = 5))
+        workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.characterVersion(character.original.id),
+                ContentModuleType.WORLD_EXPERIENCE,
+                "世界经历",
+                "{\"text\":\"幼承家学\"}",
+                now = 6,
+            ),
+        )
+        val avatar = workspace.apply(
+            NovexCommand.AttachImage(
+                ModuleOwner.characterVersion(character.original.id),
+                MediaAssetSlot.CHARACTER_AVATAR,
+                byteArrayOf(2, 3, 5, 7),
+                "image/png",
+                now = 7,
+            ),
+        ).requireMedia()
+
+        val variant = workspace.apply(
+            NovexCommand.SaveAsWorldVariant(character.original.id, worldA.id, now = 20),
+        ).requireVersion()
+
+        assertEquals(listOf(variant.id), workspace.world(worldA.id)!!.versions.map { it.id })
+        assertEquals(listOf(character.original.id), workspace.world(worldB.id)!!.versions.map { it.id })
+        val restoredCharacter = workspace.character(character.character.id)!!
+        assertEquals(
+            "{\"text\":\"幼承家学\"}",
+            restoredCharacter.modulesByVersion.getValue(variant.id).single().contentJson,
+        )
+        assertEquals(
+            avatar.id,
+            restoredCharacter.mediaByVersion.getValue(variant.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+        )
+    }
+
+    @Test
+    fun duplicatedCharacterCanChangeAndDeleteIndependentlyThroughCommands() = runBlocking {
+        val source = workspace.apply(
+            NovexCommand.CreateCharacter("林深", profileJson = "{\"name\":\"林深\"}", now = 1),
+        ).requireCharacter()
+        workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.characterVersion(source.original.id),
+                ContentModuleType.TALENT_SKILL,
+                "技能",
+                "{\"text\":\"追踪\"}",
+                now = 2,
+            ),
+        )
+        val avatar = workspace.apply(
+            NovexCommand.AttachImage(
+                ModuleOwner.characterVersion(source.original.id),
+                MediaAssetSlot.CHARACTER_AVATAR,
+                byteArrayOf(11, 13, 17),
+                "image/png",
+                now = 3,
+            ),
+        ).requireMedia()
+
+        val copy = workspace.apply(
+            NovexCommand.DuplicateCharacter(source.character.id, now = 10),
+        ).requireCharacter()
+        val copiedModule = workspace.character(copy.character.id)!!
+            .modulesByVersion.getValue(copy.original.id).single()
+        workspace.apply(
+            NovexCommand.SaveModule(copiedModule.id, "技能", "{\"text\":\"潜行\"}", now = 11),
+        )
+        workspace.apply(NovexCommand.DeleteCharacter(source.character.id))
+
+        val survivingCopy = workspace.character(copy.character.id)!!
+        assertEquals(
+            "{\"text\":\"潜行\"}",
+            survivingCopy.modulesByVersion.getValue(copy.original.id).single().contentJson,
+        )
+        assertEquals(
+            avatar.id,
+            survivingCopy.mediaByVersion.getValue(copy.original.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+        )
+        val exported = workspace.apply(NovexCommand.ExportCharacter(copy.character.id)).requireDocument()
+        assertEquals("林深 副本", exported.name)
+        assertEquals("{\"text\":\"潜行\"}", exported.versions.single().modules.single().contentJson)
+    }
+
+    @Test
+    fun importedCharacterDocumentIsImmediatelyReadableAsOneRootWithVersions() = runBlocking {
+        val imported = workspace.apply(
+            NovexCommand.ImportCharacter(
+                CharacterLibraryDocument(
+                    name = "伊薇",
+                    versions = listOf(
+                        CharacterVersionDocument(
+                            kind = CharacterVersionKind.ORIGINAL,
+                            label = "本体",
+                            profileJson = "{\"name\":\"伊薇\"}",
+                            modules = listOf(
+                                CharacterModuleDocument(
+                                    type = ContentModuleType.QUOTES,
+                                    name = "语录",
+                                    contentJson = "{\"text\":\"晚上好\"}",
+                                    collapsed = false,
+                                ),
+                            ),
+                        ),
+                        CharacterVersionDocument(
+                            kind = CharacterVersionKind.VARIANT,
+                            label = "赛博分身",
+                            profileJson = "{\"name\":\"EVE\"}",
+                        ),
+                    ),
+                ),
+                now = 100,
+            ),
+        ).requireCharacter()
+
+        val restored = workspace.character(imported.character.id)!!
+        assertEquals(listOf("本体", "赛博分身"), restored.character.allVersions.map { it.label })
+        assertEquals("语录", restored.modulesByVersion.getValue(imported.original.id).single().name)
+    }
+
+    @Test
+    fun characterAndVariantEditsUseTheSameCommandsAsFutureAutomation() = runBlocking {
+        val root = workspace.apply(
+            NovexCommand.CreateCharacter("旧库名", profileJson = "{\"name\":\"旧姓名\"}", now = 1),
+        ).requireCharacter()
+        workspace.apply(
+            NovexCommand.SaveCharacterVersion(
+                characterId = root.character.id,
+                versionId = root.original.id,
+                rootName = "苏晚晴",
+                label = "本体",
+                profileJson = "{\"name\":\"苏晚晴\"}",
+                now = 2,
+            ),
+        )
+        val variant = workspace.apply(
+            NovexCommand.CreateVariant(
+                characterId = root.character.id,
+                label = "医馆时期",
+                profileJson = "{\"name\":\"苏姑娘\"}",
+                now = 3,
+            ),
+        ).requireVersion()
+        workspace.apply(
+            NovexCommand.SaveCharacterVersion(
+                characterId = root.character.id,
+                versionId = variant.id,
+                rootName = "不会覆盖根名称",
+                label = "云岚分身",
+                profileJson = "{\"name\":\"晚晴\"}",
+                now = 4,
+            ),
+        )
+
+        val edited = workspace.character(root.character.id)!!.character
+        assertEquals("苏晚晴", edited.character.name)
+        assertEquals("云岚分身", edited.variants.single().label)
+        assertEquals("{\"name\":\"晚晴\"}", edited.variants.single().profileJson)
+
+        workspace.apply(NovexCommand.DeleteVariant(variant.id))
+        assertEquals(emptyList<String>(), workspace.character(root.character.id)!!.character.variants.map { it.id })
+    }
+
+    @Test
+    fun characterPageDraftSavesProfileModulesImagesAndVariantInheritanceAsOneCommit() = runBlocking {
+        val world = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val root = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = null,
+                versionId = null,
+                sourceVersionId = null,
+                createVariant = false,
+                rootName = "苏晚晴",
+                label = "本体",
+                profileJson = "{\"name\":\"苏晚晴\",\"occupation\":\"医师\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "root-quotes",
+                        type = ContentModuleType.QUOTES,
+                        name = "语录",
+                        contentJson = "{\"version\":1,\"kind\":\"collection\",\"items\":[]}",
+                    ),
+                ),
+                imageChanges = listOf(
+                    NovexImageChange.Replace(
+                        MediaAssetSlot.CHARACTER_AVATAR,
+                        byteArrayOf(2, 3, 5, 7),
+                        "image/png",
+                    ),
+                ),
+                linkWorldId = world.id,
+                now = 10,
+            ),
+        ).requireCharacter()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val rootSnapshot = requireNotNull(workspace.character(root.character.id))
+        assertEquals("苏晚晴", rootSnapshot.character.character.name)
+        assertEquals(listOf("root-quotes"), rootSnapshot.modulesByVersion.getValue(root.original.id).map { it.id })
+        assertEquals(listOf("云岚书院"), rootSnapshot.worldsByVersion.getValue(root.original.id).map { it.name })
+        assertEquals(
+            byteArrayOf(2, 3, 5, 7).toList(),
+            File(
+                rootSnapshot.mediaByVersion.getValue(root.original.id)
+                    .getValue(MediaAssetSlot.CHARACTER_AVATAR).managedPath,
+            ).readBytes().toList(),
+        )
+
+        val withVariant = workspace.apply(
+            NovexCommand.SaveCharacterPage(
+                characterId = root.character.id,
+                versionId = null,
+                sourceVersionId = root.original.id,
+                createVariant = true,
+                rootName = "苏晚晴",
+                label = "云岚分身",
+                profileJson = "{\"name\":\"苏晚晴\",\"occupation\":\"书院医师\"}",
+                modules = listOf(
+                    NovexModuleDraft(
+                        id = "variant-experience",
+                        type = ContentModuleType.WORLD_EXPERIENCE,
+                        name = "世界经历",
+                        contentJson = "{\"version\":1,\"kind\":\"timeline\",\"nodes\":[]}",
+                    ),
+                ),
+                linkWorldId = world.id,
+                now = 20,
+            ),
+        ).requireCharacter()
+
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+        val restored = requireNotNull(workspace.character(root.character.id))
+        val variant = withVariant.variants.single()
+        assertEquals(listOf("variant-experience"), restored.modulesByVersion.getValue(variant.id).map { it.id })
+        assertNotEquals(
+            restored.mediaByVersion.getValue(root.original.id).getValue(MediaAssetSlot.CHARACTER_AVATAR),
+            null,
+        )
+        assertEquals(
+            restored.mediaByVersion.getValue(root.original.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+            restored.mediaByVersion.getValue(variant.id).getValue(MediaAssetSlot.CHARACTER_AVATAR).id,
+        )
+        assertEquals(listOf("云岚书院"), restored.worldsByVersion.getValue(variant.id).map { it.name })
+    }
+
+    @Test
+    fun moduleReferencesRecoverAndCanBeRemovedThroughWorkspaceCommands() = runBlocking {
+        val sourceWorld = workspace.apply(NovexCommand.CreateWorld("云岚书院", now = 1)).requireWorld()
+        val targetWorld = workspace.apply(NovexCommand.CreateWorld("雾港", now = 2)).requireWorld()
+        val map = workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.world(sourceWorld.id),
+                ContentModuleType.MAP,
+                "山海地图",
+                now = 3,
+            ),
+        ).requireModule()
+        val timeline = workspace.apply(
+            NovexCommand.AddModule(
+                ModuleOwner.world(sourceWorld.id),
+                ContentModuleType.TIMELINE,
+                "书院时间线",
+                now = 4,
+            ),
+        ).requireModule()
+        val worldTarget = ModuleReferenceTarget.world(targetWorld.id)
+        val moduleTarget = ModuleReferenceTarget.module(timeline.id)
+
+        workspace.apply(NovexCommand.AddModuleReference(map.id, worldTarget, position = 0))
+        workspace.apply(NovexCommand.AddModuleReference(map.id, moduleTarget, position = 1))
+        workspace = NovexWorkspaceFactory.create(database, mediaRoot)
+
+        assertEquals(
+            listOf(worldTarget, moduleTarget),
+            workspace.module(map.id)!!.references.map { it.target },
+        )
+        assertEquals(
+            setOf(worldTarget, moduleTarget),
+            workspace.module(map.id)!!.referenceOptions.map { it.target }.toSet(),
+        )
+
+        workspace.apply(NovexCommand.RemoveModuleReference(map.id, worldTarget))
+        assertEquals(listOf(moduleTarget), workspace.module(map.id)!!.references.map { it.target })
+    }
+}
