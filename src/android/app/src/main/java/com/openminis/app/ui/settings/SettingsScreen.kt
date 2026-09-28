@@ -79,7 +79,8 @@ fun SettingsScreen(
     onProvidersClick: () -> Unit,
     onModelGroupsClick: () -> Unit,
     onImageGenerationClick: () -> Unit = {},
-    onRootfsClick: () -> Unit = {},
+    // [T-storage-entry] 存储管理入口（原 onRootfsClick 参数名与去向不符，改名归位）
+    onStorageClick: () -> Unit = {},
     onEnvVarsClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
@@ -131,6 +132,18 @@ fun SettingsScreen(
                 subtitle = "集中查看对话生成的文档、图片、地图和卡片",
                 showDivider = false,
                 onClick = onCreativeLibraryClick,
+            )
+        }
+        NovexSettingsSection(
+            title = "数据与存储",
+            footer = "会话文件、数据库、卡片数据与修订历史、沙箱容器的占用与清理",
+        ) {
+            NovexSettingsRow(
+                icon = R.drawable.ic_phosphor_hard_drive,
+                title = "存储管理",
+                subtitle = "查看会话、卡片与沙箱的空间占用",
+                showDivider = false,
+                onClick = onStorageClick,
             )
         }
         NovexSettingsSection(
