@@ -820,9 +820,11 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             // 像素堆积在 GC 够不到的 native/graphics 区）。Coil 默认按可用
             // 内存比例给缓存（largeHeap 再放大）——改为固定 128MB 封顶，
             // 到顶丢最旧；磁盘文件不受影响。
-            .memoryCache { builder ->
-                builder.maxSizeBytes(128L * 1024 * 1024)
-            }
+            .memoryCache(
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizeBytes(128L * 1024 * 1024)
+                    .build()
+            )
             .build()
 
     /**
