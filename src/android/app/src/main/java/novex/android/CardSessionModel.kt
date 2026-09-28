@@ -323,7 +323,15 @@ class CardSessionModel(application:Application):AndroidViewModel(application) {
         state=state.copy(draft=next)
         loadModule(moduleId,next.position.blockId)
     }
-    fun setReadingLayout(layout:ReadingLayout)=applyComposition(EditorCommand.Layout(layout))
+    // [T-reading-layout-live] 布局是展示偏好：apply 后立即 commit（saved 同步，
+    // 阅读页即时生效），但保留 draft 与当前页面——不能走 save()（会清草稿并
+    // 跳回详情页，打断编辑）。
+    fun setReadingLayout(layout:ReadingLayout)=action {
+        flush();val draft=requireNotNull(state.draft)
+        val next=withContext(Dispatchers.IO){CardEditor(store).apply(draft.content.id,draft.version,state.targetId?:draft.content.id,EditorCommand.Layout(layout))}
+        val committed=withContext(Dispatchers.IO){CardDrafts(store).commit(next.content.id,next.version)}
+        state=state.copy(draft=next,saved=committed.content)
+    }
     fun removeResource(id:String,removeUses:Boolean,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveResource(id,removeUses),onSaved)
     fun removeCharacter(id:String,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveCharacter(id),onSaved)
     private fun applyComposition(command:EditorCommand,onSaved:()->Unit={})=action(onSaved) {
