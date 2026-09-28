@@ -389,6 +389,8 @@
     <string name="storage_overview_shell">Conteneur Shell</string>
     <string name="storage_overview_database">Base de données des chats</string>
     <string name="storage_overview_sessions">Fichiers de session</string>
+    <string name="storage_overview_card_content">Contenu des cartes</string>
+    <string name="storage_overview_card_revisions">Révisions de cartes</string>
     <string name="storage_section_sessions">Sessions</string>
     <string name="storage_no_sessions">Aucune session</string>
     <string name="storage_section_minis_files">Fichiers Novex</string>

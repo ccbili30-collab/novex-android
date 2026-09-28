@@ -665,6 +665,8 @@
     <string name="storage_overview_shell">Контейнер оболочки</string>
     <string name="storage_overview_database">База данных чатов</string>
     <string name="storage_overview_sessions">Файлы сессий</string>
+    <string name="storage_overview_card_content">Содержимое карточек</string>
+    <string name="storage_overview_card_revisions">Ревизии карточек</string>
     <string name="storage_section_sessions">Сессии</string>
     <string name="storage_no_sessions">Нет сессий</string>
     <string name="storage_section_minis_files">Файлы Novex</string>

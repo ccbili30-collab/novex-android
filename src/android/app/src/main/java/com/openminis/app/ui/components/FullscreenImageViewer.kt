@@ -62,8 +62,9 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import coil.ImageLoader
+import coil.imageLoader
 import coil.compose.AsyncImage
+import coil.size.Size
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -313,7 +314,7 @@ fun FullscreenImageViewer(
                         label = stringResource(R.string.image_action_save),
                         onClick = {
                             scope.launch {
-                                val bmp = loadBitmap(context, model)
+                                val bmp = loadBitmap(context, model, Size.ORIGINAL)
                                 if (bmp != null) {
                                     val saved = saveToGallery(context, bmp)
                                     val msg = if (saved) savedToAlbumMsg else saveFailedMsg
@@ -363,12 +364,24 @@ internal fun ImageActionButton(
 
 // ── Image loading helpers ──────────────────────────────────────────────────────
 
-internal suspend fun loadBitmap(context: Context, model: Any): Bitmap? =
+internal suspend fun loadBitmap(
+    context: Context,
+    model: Any,
+    // [T-memory-cap-and-storage] 复制/分享默认 2048 边（下游会再压）；保存
+    // 相册是导出产物本身，传 Size.ORIGINAL 保原图（净眼退回件）。
+    size: Size = Size(2048, 2048),
+): Bitmap? =
     withContext(Dispatchers.IO) {
         try {
-            val loader = ImageLoader(context)
-            val req = ImageRequest.Builder(context).data(model).allowHardware(false).build()
-            val result = loader.execute(req)
+            // [T-memory-cap-and-storage] 每次新建 ImageLoader 会各带一份独立
+            // 缓存且 allowHardware(false)+toBitmap 把全尺寸像素压进 Java heap
+            //（4K 图约 38MB）——改用全局单例（常驻像素仍受 128MB 封顶）。
+            val req = ImageRequest.Builder(context)
+                .data(model)
+                .allowHardware(false)
+                .size(size)
+                .build()
+            val result = context.imageLoader.execute(req)
             (result as? SuccessResult)?.drawable?.toBitmap()
         } catch (e: Exception) {
             null

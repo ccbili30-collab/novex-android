@@ -834,4 +834,6 @@
     <string name="update_source_row_title">更新源</string>
     <string name="update_source_gitee">Gitee</string>
     <string name="update_source_github">GitHub</string>
+    <string name="storage_overview_card_content">卡片內容</string>
+    <string name="storage_overview_card_revisions">卡片修訂歷史</string>
 </resources>

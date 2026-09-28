@@ -389,6 +389,8 @@
     <string name="storage_overview_shell">셸 컨테이너</string>
     <string name="storage_overview_database">채팅 데이터베이스</string>
     <string name="storage_overview_sessions">세션 파일</string>
+    <string name="storage_overview_card_content">카드 내용</string>
+    <string name="storage_overview_card_revisions">카드 리비전</string>
     <string name="storage_section_sessions">세션</string>
     <string name="storage_no_sessions">세션 없음</string>
     <string name="storage_section_minis_files">Novex 파일</string>
