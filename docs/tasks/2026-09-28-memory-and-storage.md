@@ -26,6 +26,12 @@
 2. 语言包 8 语言（de/fr/ja/ko/ru/zh/zh-rTW + 默认）同步新串；
 3. 清理入口本轮不加（先可见性）；修订历史压缩/清理挂账。
 
+## 净眼退回件（已修）
+
+- 保存相册是导出产物：loadBitmap 加 size 参数（复制/分享默认 2048 边），
+  两个 Save 调用点传 Size.ORIGINAL 保原图；
+- 删未用 import coil.ImageLoader。
+
 ## 验收
 
 - 图片缓存占用封顶 128MB；全屏看图/复制不再新建 ImageLoader；

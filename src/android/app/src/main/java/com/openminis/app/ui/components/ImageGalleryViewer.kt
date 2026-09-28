@@ -295,7 +295,7 @@ fun ImageGalleryViewer(
                                 label = stringResource(R.string.image_action_save),
                                 onClick = {
                                     scope.launch {
-                                        val bmp = loadBitmap(context, currentItem.model)
+                                        val bmp = loadBitmap(context, currentItem.model, coil.size.Size.ORIGINAL)
                                         if (bmp != null) {
                                             val saved = saveToGallery(context, bmp)
                                             val msg = if (saved) savedToAlbumMsg else saveFailedMsg
