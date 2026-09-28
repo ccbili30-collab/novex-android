@@ -324,13 +324,16 @@ class CardSessionModel(application:Application):AndroidViewModel(application) {
         loadModule(moduleId,next.position.blockId)
     }
     // [T-reading-layout-live] 布局是展示偏好：apply 后立即 commit（saved 同步，
-    // 阅读页即时生效），但保留 draft 与当前页面——不能走 save()（会清草稿并
-    // 跳回详情页，打断编辑）。
+    // 阅读页即时生效），编辑器留在原地——不能走 save()（会清草稿并跳回详情页）。
+    // 注意 commit 会删除磁盘草稿文件（CardDraftsTest 钉死），必须 begin 重建
+    // 草稿再入 state，否则后续 flush/保存全部报「草稿不存在」（净眼 S2 退回件）。
+    // 连带语义：切换布局会发布当时草稿的全部未保存修改，并产生一个修订。
     fun setReadingLayout(layout:ReadingLayout)=action {
         flush();val draft=requireNotNull(state.draft)
         val next=withContext(Dispatchers.IO){CardEditor(store).apply(draft.content.id,draft.version,state.targetId?:draft.content.id,EditorCommand.Layout(layout))}
         val committed=withContext(Dispatchers.IO){CardDrafts(store).commit(next.content.id,next.version)}
-        state=state.copy(draft=next,saved=committed.content)
+        val redraft=withContext(Dispatchers.IO){CardDrafts(store).begin(next.content.id)}
+        state=state.copy(draft=redraft,saved=committed.content)
     }
     fun removeResource(id:String,removeUses:Boolean,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveResource(id,removeUses),onSaved)
     fun removeCharacter(id:String,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveCharacter(id),onSaved)
