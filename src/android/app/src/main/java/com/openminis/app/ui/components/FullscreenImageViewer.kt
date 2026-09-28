@@ -63,6 +63,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.ImageLoader
+import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -366,9 +367,16 @@ internal fun ImageActionButton(
 internal suspend fun loadBitmap(context: Context, model: Any): Bitmap? =
     withContext(Dispatchers.IO) {
         try {
-            val loader = ImageLoader(context)
-            val req = ImageRequest.Builder(context).data(model).allowHardware(false).build()
-            val result = loader.execute(req)
+            // [T-memory-cap-and-storage] 每次新建 ImageLoader 会各带一份独立
+            // 缓存且 allowHardware(false)+toBitmap 把全尺寸像素压进 Java heap
+            //（4K 图约 38MB）——改用全局单例并降采样到 2048 边（复制/分享
+            // 用途足够）。
+            val req = ImageRequest.Builder(context)
+                .data(model)
+                .allowHardware(false)
+                .size(2048)
+                .build()
+            val result = context.imageLoader.execute(req)
             (result as? SuccessResult)?.drawable?.toBitmap()
         } catch (e: Exception) {
             null

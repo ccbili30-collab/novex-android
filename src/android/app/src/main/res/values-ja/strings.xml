@@ -389,6 +389,8 @@
     <string name="storage_overview_shell">Shellコンテナ</string>
     <string name="storage_overview_database">チャットデータベース</string>
     <string name="storage_overview_sessions">セッションファイル</string>
+    <string name="storage_overview_card_content">カード内容</string>
+    <string name="storage_overview_card_revisions">カード履歴</string>
     <string name="storage_section_sessions">セッション</string>
     <string name="storage_no_sessions">セッションなし</string>
     <string name="storage_section_minis_files">Novex ファイル</string>

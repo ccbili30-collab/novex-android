@@ -601,6 +601,8 @@
     <string name="storage_overview_shell">Shell 容器</string>
     <string name="storage_overview_database">对话数据库</string>
     <string name="storage_overview_sessions">会话文件</string>
+    <string name="storage_overview_card_content">卡片内容</string>
+    <string name="storage_overview_card_revisions">卡片修订历史</string>
     <string name="storage_section_sessions">会话</string>
     <string name="storage_no_sessions">无会话</string>
     <string name="storage_section_minis_files">Novex 文件</string>

@@ -816,6 +816,13 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
                 add(MinisImageFetcher.MtimeKeyer())
                 add(MinisImageFetcher.StringMtimeKeyer())
             }
+            // [T-memory-cap-and-storage] 用户实测内存 1-5G（GH#206 同病：位图
+            // 像素堆积在 GC 够不到的 native/graphics 区）。Coil 默认按可用
+            // 内存比例给缓存（largeHeap 再放大）——改为固定 128MB 封顶，
+            // 到顶丢最旧；磁盘文件不受影响。
+            .memoryCache { builder ->
+                builder.maxSizeBytes(128L * 1024 * 1024)
+            }
             .build()
 
     /**

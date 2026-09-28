@@ -71,6 +71,10 @@ fun StorageManagementScreen(
     var isLoading by remember { mutableStateOf(true) }
     var shellSize by remember { mutableLongStateOf(0L) }
     var dbSize by remember { mutableLongStateOf(0L) }
+    // [T-memory-cap-and-storage] 卡片数据拆两桶：修订历史（revisions/）每次
+    // 保存累积一个文件、无上限——1.98G 数据目录的主嫌，必须单独可见。
+    var cardContentSize by remember { mutableLongStateOf(0L) }
+    var cardRevisionSize by remember { mutableLongStateOf(0L) }
     var sessions by remember { mutableStateOf<List<SessionStorageInfo>>(emptyList()) }
 
     fun reload() {
@@ -79,6 +83,11 @@ fun StorageManagementScreen(
             withContext(Dispatchers.IO) {
                 shellSize = directorySize(File(context.filesDir, "alpine-rootfs"))
                 dbSize = databaseSize(context)
+
+                val cardDir = File(context.filesDir, "rewrite-content")
+                val revisions = directorySize(File(cardDir, "revisions"))
+                cardRevisionSize = revisions
+                cardContentSize = (directorySize(cardDir) - revisions).coerceAtLeast(0L)
 
                 val allSessions = chatDao.listSessions()
                 val sessionsDir = File(context.filesDir, "minis-sessions")
@@ -123,6 +132,18 @@ fun StorageManagementScreen(
                 color = Color(0xFF5856D6),
                 label = stringResource(R.string.storage_overview_sessions),
                 value = Formatter.formatFileSize(context, totalSessionSize),
+                showDivider = true,
+            )
+            StorageOverviewRow(
+                color = Color(0xFF34C759),
+                label = stringResource(R.string.storage_overview_card_content),
+                value = Formatter.formatFileSize(context, cardContentSize),
+                showDivider = true,
+            )
+            StorageOverviewRow(
+                color = Color(0xFFFF9500),
+                label = stringResource(R.string.storage_overview_card_revisions),
+                value = Formatter.formatFileSize(context, cardRevisionSize),
                 showDivider = false,
             )
         }

@@ -969,6 +969,8 @@
     <string name="storage_overview_shell">Shell Container</string>
     <string name="storage_overview_database">Chat Database</string>
     <string name="storage_overview_sessions">Session Files</string>
+    <string name="storage_overview_card_content">Card Content</string>
+    <string name="storage_overview_card_revisions">Card Revisions</string>
     <string name="storage_section_sessions">Sessions</string>
     <string name="storage_no_sessions">No sessions</string>
     <string name="storage_section_minis_files">Novex Files</string>
