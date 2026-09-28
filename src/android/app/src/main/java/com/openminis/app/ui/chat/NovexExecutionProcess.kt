@@ -116,7 +116,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
             row.block.toolStatus in setOf(ToolBlockStatus.FAILED, ToolBlockStatus.CANCELLED, ToolBlockStatus.TIMEOUT)
     }
     var expanded by remember { mutableStateOf(false) }
-    // [feat/ui-rikkahub] ZCode-style collapsed header: total work time
+    // [feat/ui-rikkahub] mainstream-style collapsed header: total work time
     // (工具耗时合计，"已工作 X 分 X 秒") instead of step count; falls back
     // to a step count when no timing data exists.
     val workSeconds = (process.tools.sumOf { it.block.durationMs } / 1000L).toInt()
@@ -136,7 +136,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
         label = "processAlpha",
     )
     Column(modifier = Modifier.fillMaxWidth()) {
-        // [feat/ui-rikkahub] Collapsed header = ZCode: bare text + chevron
+        // [feat/ui-rikkahub] Collapsed header = mainstream style: bare text + chevron
         // hugging the label, no icon, no stub segments.
         Row(
             Modifier
@@ -169,10 +169,10 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
             }
         }
         AnimatedVisibility(expanded) {
-            // [feat/ui-rikkahub] Continuous left rail (ZCode-style): a single
+            // [feat/ui-rikkahub] Continuous left rail (mainstream style): a single
             // line at x=12dp behind every step node, instead of per-row stubs.
             // Only working steps live in the timeline (思考/工具) — the answer
-            // prose renders outside, matching ZCode's own transcript logic.
+            // prose renders outside, matching mainstream transcript logic.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -229,7 +229,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
 
 /**
  * [feat/ui-rikkahub] One step on the rail: typed icon + human-language label.
- * 思考 steps carry [content] and tap-expand inline (ZCode behavior); tool
+ * 思考 steps carry [content] and tap-expand inline (mainstream behavior); tool
  * steps stay label-only per 方案 B — payloads never render, long-press copies
  * diagnostics for bug reports.
  */

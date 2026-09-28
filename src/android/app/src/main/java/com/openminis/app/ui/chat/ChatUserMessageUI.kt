@@ -321,7 +321,7 @@ internal fun UserMessageBubble(
                     ) {
                         val textColor = if (isQueued) secondaryTextColor else MaterialTheme.colorScheme.onSurface
                         val bubbleBg = if (isQueued) Color.Transparent else userBubbleColor
-                        // [feat/ui-rikkahub] 18dp → 16dp: RikkaHub bubble formula.
+                        // [feat/ui-rikkahub] 18dp → 16dp: mainstream chat bubble formula.
                         val shape = RoundedCornerShape(16.dp)
                         val dashedStroke = if (isQueued) {
                             Modifier.drawBehind {

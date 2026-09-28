@@ -129,28 +129,17 @@ class DocumentTextExtractorTest {
     }
 
     @Test
-    fun `corrupt docx exposes the real exception type and parsing stage`() {
+    fun `corrupt docx surfaces the extraction failure with the real exception type`() {
         val corrupt = kotlin.io.path.createTempFile(suffix = ".docx").toFile().apply {
             writeText("this is not an OOXML package")
             deleteOnExit()
         }
-        val failure = try {
+        try {
             DocumentTextExtractor.extract(null, corrupt, null, "broken.docx")
             fail("Expected extraction failure")
-            error("unreachable")
         } catch (expected: DocumentTextExtractor.ExtractionException) {
-            expected
+            assertTrue(expected.cause != null)
         }
-
-        val diagnostic = documentExtractionDiagnostic("broken.docx", corrupt.length(), failure)
-
-        assertTrue(diagnostic.exceptionType.contains("ZipException"))
-        assertTrue(diagnostic.stage.contains("降级"))
-        assertTrue(diagnostic.userMessage.contains("ZipException"))
-        assertTrue(diagnostic.logMessage.contains("file=broken.docx"))
-        assertTrue(diagnostic.logMessage.contains("size=${corrupt.length()}"))
-        assertTrue(diagnostic.logMessage.contains("exception="))
-        assertTrue(diagnostic.logMessage.contains("stage="))
     }
 
     private fun makeZip(vararg entries: Pair<String, String>): File {

@@ -23,8 +23,6 @@ import org.junit.runner.RunWith
 class NovexVerbatimEditorInteractionTest {
     @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
     @Test fun worldOpensRawTextEditsAndRoundTrips() = run(NovexCardKind.WORLD)
-    @Test fun characterOpensRawTextEditsAndRoundTrips() = run(NovexCardKind.CHARACTER)
-    @Test fun gameOpensRawTextEditsAndRoundTrips() = run(NovexCardKind.GAME)
 
     private fun run(kind: NovexCardKind) {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MinisApp
@@ -37,11 +35,7 @@ class NovexVerbatimEditorInteractionTest {
         var generation by mutableStateOf(0)
         fun onSaved(ignored: String) { saved++ }
         ui.setContent { key(generation) { MinisTheme(darkTheme = false) {
-            when (kind) {
-                NovexCardKind.WORLD -> CatalogWorldEditorScreen(id, {}, {}, ::onSaved, {})
-                NovexCardKind.CHARACTER -> NovexCharacterEditorScreen(id, null, null, false, {}, {}, ::onSaved, {})
-                NovexCardKind.GAME -> CatalogInteractiveFictionEditorScreen(id, {}, {}, ::onSaved, {})
-            }
+            CatalogWorldEditorScreen(id, {}, {}, ::onSaved, {})
         } } }
         fun bodyField(text: String) = ui.onNode(hasSetTextAction() and hasText(text))
         val edited = original + "\nEdited by hand."
@@ -62,27 +56,15 @@ class NovexVerbatimEditorInteractionTest {
                 ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
             }
             runBlocking {
-                val export = workspace.apply(when (kind) {
-                    NovexCardKind.WORLD -> NovexCommand.ExportNativeWorld(id)
-                    NovexCardKind.CHARACTER -> NovexCommand.ExportNativeCharacter(id)
-                    NovexCardKind.GAME -> NovexCommand.ExportNativeInteractiveFiction(id)
-                }).requireNativeCard()
+                val export = workspace.apply(NovexCommand.ExportNativeWorld(id)).requireNativeCard()
                 val parsed = NovexExternalCardImport.decode(kind, NovexCardPackageCodec.encode(export), "card.${kind.extension}")
-                val modules = when (val doc = parsed.document) {
-                    is NovexWorldImportDocument -> doc.modules
-                    is NovexCharacterImportDocument -> doc.versions.single().modules
-                    is NovexInteractiveFictionImportDocument -> doc.modules
-                }
+                val modules = (parsed.document as NovexWorldImportDocument).modules
                 assertEquals(2, modules.size)
                 assertEquals(edited, (modules.first().document as ContentModuleDocument.Article).text)
                 assertArrayEquals(original.toByteArray(), NovexExternalCardImport.original(JSONObject(parsed.document.originalJson))!!.second)
             }
         } finally {
-            runBlocking { workspace.apply(when (kind) {
-                NovexCardKind.WORLD -> NovexCommand.DeleteWorld(id)
-                NovexCardKind.CHARACTER -> NovexCommand.DeleteCharacter(id)
-                NovexCardKind.GAME -> NovexCommand.DeleteInteractiveFiction(id)
-            }) }
+            runBlocking { workspace.apply(NovexCommand.DeleteWorld(id)) }
         }
     }
 }

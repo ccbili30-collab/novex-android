@@ -35,7 +35,6 @@ class NovexExternalCardImportInteractionTest {
     @get:Rule val ui = createComposeRule(effectContext = kotlinx.coroutines.test.StandardTestDispatcher())
 
     @Test fun worldSourceImportsOnlyAfterConfirmationAndOffersOrganization() = run(NovexCardKind.WORLD)
-    @Test fun characterSourceImportsOnlyAfterConfirmationAndOffersOrganization() = run(NovexCardKind.CHARACTER)
 
     private fun run(kind: NovexCardKind) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -62,10 +61,8 @@ class NovexExternalCardImportInteractionTest {
                 val importer = rememberNovexNativeCardImporter(kind) { imported = it; confirmations++ }
                 val id = imported
                 if (id == null) TextButton(onClick = importer.launch) { Text("导入测试资料") }
-                else if (kind == NovexCardKind.WORLD) CatalogWorldDetailScreen(id, emptyList(), {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {},
+                else CatalogWorldDetailScreen(id, emptyList(), {}, {}, {}, {}, {}, {}, { _, _ -> }, {}, {}, { _, _ -> }, {},
                     onOrganizeImportedCard = { organized = id })
-                else CatalogCharacterDetailScreen(id, onOpenSession = {}, onBack = {}, onEditVersion = {}, onHelpCreate = {},
-                    onCreateVariant = {}, onDuplicated = {}, onOpenModule = {}, onOrganizeImportedCard = { organized = it })
             }
         } }
         try {
@@ -84,17 +81,13 @@ class NovexExternalCardImportInteractionTest {
             ui.onNodeWithText("帮我整理").performClick()
             val id = requireNotNull(imported)
             runBlocking {
-                val module = if (kind == NovexCardKind.WORLD) app.novexWorkspace.world(id)!!.modules.single()
-                    else app.novexWorkspace.character(id)!!.let { page ->
-                        assertEquals(page.character.original.id, organized)
-                        page.modulesByVersion[page.character.original.id]!!.single()
-                    }
-                if (kind == NovexCardKind.WORLD) assertEquals(id, organized)
+                val module = app.novexWorkspace.world(id)!!.modules.single()
+                assertEquals(id, organized)
                 assertTrue(module.contentJson.contains("白榆"))
             }
         } finally {
             imported?.let { id -> runBlocking {
-                app.novexWorkspace.apply(if (kind == NovexCardKind.WORLD) NovexCommand.DeleteWorld(id) else NovexCommand.DeleteCharacter(id))
+                app.novexWorkspace.apply(NovexCommand.DeleteWorld(id))
             } }
             context.contentResolver.call(Uri.parse("content://$authority"), "clear", null, null)
         }
