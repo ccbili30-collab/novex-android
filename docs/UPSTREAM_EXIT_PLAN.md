@@ -54,27 +54,27 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 
 ### P0 · 死代码删除 — 绿档 — 28 文件 4,831 行 — [ ]
 
-- [ ] ui.settings：CatalogPagePresentation, CharacterCatalogScreens,
+- [x] ui.settings：CatalogPagePresentation, CharacterCatalogScreens,
       CharacterEditorDraftState, InteractiveFictionCatalogScreens,
       InteractiveFictionEditorDraftState, KimiDeviceLoginDialog,
       NovexCharacterEditorScreen, ThinkingRuleEditor, ThinkingRulesSection
       （均为被新编辑器/新设置体系替代的旧代界面）
-- [ ] ui.onboarding：OnboardingScreen（启动流已被 NovexLaunchActivity 替代）
-- [ ] data：DeviceIdentity, SessionForkManager（被 conversation 模块替代）
-- [ ] providers：MinisDocumentsProvider（未在 Manifest 注册）
-- [ ] offload：CalendarManager, HealthManager（上游助理遗留）
-- [ ] auth/provider.antigravity：AntigravityOAuthManager, AntigravityModelsApi
-- [ ] tools：BrowserUseTool（ChatViewModel 另有自带实现，删前确认）
-- [ ] ui.terminal：AnsiParser
-- [ ] data.attachments：DocumentExtractionDiagnostics, NovexMediaWikiHttpTransport
-- [ ] sandbox：ShellTimeoutPolicy
-- [ ] speech：ToolSpeech
-- [ ] ui.markdown：SyntaxHighlighter
-- [ ] crash：CrashFileReporter
-- [ ] service：BackgroundInterruptionTracker
-- [ ] ui.chat：ConversationTimelineMutation
-- [ ] novex.android：ModuleList
-- [ ] 捎带：ui/chat 注释里的「RikkaHub/ZCode-style」措辞改为
+- [x] ui.onboarding：OnboardingScreen（启动流已被 NovexLaunchActivity 替代）
+- [x] data：DeviceIdentity, SessionForkManager（被 conversation 模块替代）
+- [x] providers：MinisDocumentsProvider（未在 Manifest 注册）
+- [x] offload：CalendarManager, HealthManager（上游助理遗留）
+- [x] auth/provider.antigravity：AntigravityOAuthManager, AntigravityModelsApi
+- [x] tools：BrowserUseTool（ChatViewModel 另有自带实现，删前确认）
+- [x] ui.terminal：AnsiParser
+- [x] data.attachments：DocumentExtractionDiagnostics, NovexMediaWikiHttpTransport
+- [x] sandbox：ShellTimeoutPolicy
+- [x] speech：ToolSpeech
+- [x] ui.markdown：SyntaxHighlighter
+- [x] crash：CrashFileReporter
+- [x] service：BackgroundInterruptionTracker
+- [x] ui.chat：ConversationTimelineMutation
+- [x] novex.android：ModuleList
+- [x] 捎带：ui/chat 注释里的「RikkaHub/ZCode-style」措辞改为
       「主流聊天客户端惯例」（尽观感友好，非法律义务）
 
 ### P1 · Novex 自有代码机械搬家 — 绿档 — 379 文件 50.2k 行 — [ ]
@@ -145,3 +145,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 日期 | PR | 动作 | 度量快照 |
 |---|---|---|---|
 | 2026-09-28 | — | 建立本计划 + 审计工具 scripts/upstream_audit.py | 死代码 28f/4.8k；活代码血统 63.7k/101.8k/50.2k |
+| 2026-09-28 | #52 | P0 完成：删 28 死文件（4,831 行）+ 5 死测试整删 + 6 测试修剪 + 16 处注释中性化 | 上游命名空间血统存量 -4.8k；测试源集死引用清零 |
