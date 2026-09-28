@@ -49,8 +49,7 @@ class RootfsManager private constructor(private val context: Context) {
                 archFile.readText().trim() == ARCH
 
     /**
-     * Observable install progress. UI layers (OnboardingScreen,
-     * RootfsManagementScreen) bind this and render a progress bar during
+     * Observable install progress. UI layers (RootfsManagementScreen) bind this and render a progress bar during
      * `installIfNeeded()` / `reset()`. Emits `Installed` on success and
      * `Failed` on error so callers can surface retry affordances.
      */

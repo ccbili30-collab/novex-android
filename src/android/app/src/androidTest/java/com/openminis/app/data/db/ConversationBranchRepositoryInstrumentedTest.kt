@@ -115,8 +115,6 @@ class ConversationBranchRepositoryInstrumentedTest {
             .put(org.json.JSONObject().put("type", "text").put("value", text))
             .toString()
 
-    private fun textValue(partsJson: String): String =
-        org.json.JSONArray(partsJson).getJSONObject(0).getString("value")
 
     private fun marker(
         id: String,

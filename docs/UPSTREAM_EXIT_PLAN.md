@@ -52,7 +52,7 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 原则：**绿档随时可发**（行为零变化），**黄档逐个子系统**（parity 验证后
 合并，合并窗口以天计），**红档最后动**（崩溃线）。
 
-### P0 · 死代码删除 — 绿档 — 28 文件 4,831 行 — [ ]
+### P0 · 死代码删除 — 绿档 — 28 文件 4,831 行（实测删除 4,803）— [x]
 
 - [x] ui.settings：CatalogPagePresentation, CharacterCatalogScreens,
       CharacterEditorDraftState, InteractiveFictionCatalogScreens,
@@ -145,4 +145,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 日期 | PR | 动作 | 度量快照 |
 |---|---|---|---|
 | 2026-09-28 | — | 建立本计划 + 审计工具 scripts/upstream_audit.py | 死代码 28f/4.8k；活代码血统 63.7k/101.8k/50.2k |
-| 2026-09-28 | #52 | P0 完成：删 28 死文件（4,831 行）+ 5 死测试整删 + 6 测试修剪 + 16 处注释中性化 | 上游命名空间血统存量 -4.8k；测试源集死引用清零 |
+| 2026-09-28 | #52 | P0 完成：删 28 死文件（实测 4,803 行）+ 5 死测试整删 + 6 测试修剪 + 16 处注释中性化 | 上游命名空间血统存量 -4.8k；测试源集死引用清零 |

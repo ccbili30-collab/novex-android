@@ -392,8 +392,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     // T283: ACRA — local crash report capture. acra-core only (no http
-    // sender, no network permission). CrashFileSender writes reports to
-    // filesDir/logs/ where LogManagementScreen surfaces them.
+    // sender, no network permission).
     implementation("ch.acra:acra-core:5.12.0")
 
     // T322: Shizuku SDK — offloads privileged Android system APIs (PackageManager,
