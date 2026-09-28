@@ -136,7 +136,7 @@ fun SettingsScreen(
         }
         NovexSettingsSection(
             title = "数据与存储",
-            footer = "会话文件、卡片数据与修订历史、沙箱容器的占用与清理",
+            footer = "会话文件、数据库、卡片数据与修订历史、沙箱容器的占用与清理",
         ) {
             NovexSettingsRow(
                 icon = R.drawable.ic_phosphor_hard_drive,

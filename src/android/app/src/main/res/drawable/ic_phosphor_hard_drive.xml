@@ -1,18 +1,18 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- 上层盘片 -->
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <!-- 上层盘片（外圈顺时针/内圈逆时针成镂空） -->
     <path
-        android:pathData="M4,4.5 h16 a1.5,1.5 0 0 1 1.5,1.5 v3 a1.5,1.5 0 0 1 -1.5,1.5 h-16 a1.5,1.5 0 0 1 -1.5,-1.5 v-3 a1.5,1.5 0 0 1 1.5,-1.5 z M4,6 a0.5,0.5 0 0 0 -0.5,0.5 v3 a0.5,0.5 0 0 0 0.5,0.5 h16 a0.5,0.5 0 0 0 0.5,-0.5 v-3 A0.5,0.5 0 0 0 20,6 z"
-        android:fillColor="#000000" />
+        android:pathData="M43,48 h170 a16,16 0 0 1 16,16 v32 a16,16 0 0 1 -16,16 h-170 a16,16 0 0 1 -16,-16 v-32 a16,16 0 0 1 16,-16 z M43,64 a5.3,5.3 0 0 0 -5.3,5.3 v32 a5.3,5.3 0 0 0 5.3,5.3 h170 a5.3,5.3 0 0 0 5.3,-5.3 v-32 a5.3,5.3 0 0 0 -5.3,-5.3 z"
+        android:fillColor="#FF000000" />
     <!-- 下层盘片 -->
     <path
-        android:pathData="M4,13 h16 a1.5,1.5 0 0 1 1.5,1.5 v3 a1.5,1.5 0 0 1 -1.5,1.5 h-16 a1.5,1.5 0 0 1 -1.5,-1.5 v-3 a1.5,1.5 0 0 1 1.5,-1.5 z M4,14.5 a0.5,0.5 0 0 0 -0.5,0.5 v3 a0.5,0.5 0 0 0 0.5,0.5 h16 a0.5,0.5 0 0 0 0.5,-0.5 v-3 a0.5,0.5 0 0 0 -0.5,-0.5 z"
-        android:fillColor="#000000" />
-    <!-- 指示点（下盘右侧） -->
+        android:pathData="M43,139 h170 a16,16 0 0 1 16,16 v32 a16,16 0 0 1 -16,16 h-170 a16,16 0 0 1 -16,-16 v-32 a16,16 0 0 1 16,-16 z M43,155 a5.3,5.3 0 0 0 -5.3,5.3 v32 a5.3,5.3 0 0 0 5.3,5.3 h170 a5.3,5.3 0 0 0 5.3,-5.3 v-32 a5.3,5.3 0 0 0 -5.3,-5.3 z"
+        android:fillColor="#FF000000" />
+    <!-- 指示点（下盘右侧，r≈10.7 对应原 r1） -->
     <path
-        android:pathData="M17.5,16.25 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0"
-        android:fillColor="#000000" />
+        android:pathData="M186.7,173.3 m-10.7,0 a10.7,10.7 0 1 0 21.4,0 a10.7,10.7 0 1 0 -21.4,0"
+        android:fillColor="#FF000000" />
 </vector>
