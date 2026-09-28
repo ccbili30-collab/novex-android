@@ -323,18 +323,10 @@ class CardSessionModel(application:Application):AndroidViewModel(application) {
         state=state.copy(draft=next)
         loadModule(moduleId,next.position.blockId)
     }
-    // [T-reading-layout-live] 布局是展示偏好：apply 后立即 commit（saved 同步，
-    // 阅读页即时生效），编辑器留在原地——不能走 save()（会清草稿并跳回详情页）。
-    // 注意 commit 会删除磁盘草稿文件（CardDraftsTest 钉死），必须 begin 重建
-    // 草稿再入 state，否则后续 flush/保存全部报「草稿不存在」（净眼 S2 退回件）。
-    // 连带语义：切换布局会发布当时草稿的全部未保存修改，并产生一个修订。
-    fun setReadingLayout(layout:ReadingLayout)=action {
-        flush();val draft=requireNotNull(state.draft)
-        val next=withContext(Dispatchers.IO){CardEditor(store).apply(draft.content.id,draft.version,state.targetId?:draft.content.id,EditorCommand.Layout(layout))}
-        val committed=withContext(Dispatchers.IO){CardDrafts(store).commit(next.content.id,next.version)}
-        val redraft=withContext(Dispatchers.IO){CardDrafts(store).begin(next.content.id)}
-        state=state.copy(draft=redraft,saved=committed.content)
-    }
+    // [T-reading-view-global] 布局降级为全局视图偏好（用户裁决：纯渲染模式，
+    // 数据不变，默认翻页）——写偏好即生效，不碰卡数据、不产生修订。
+    // 卡内 appearance.readingLayout 只剩编辑器归置新模块的存量信号。
+    fun setReadingLayout(layout:ReadingLayout)=ReadingViewPrefs.set(getApplication(), layout)
     fun removeResource(id:String,removeUses:Boolean,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveResource(id,removeUses),onSaved)
     fun removeCharacter(id:String,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveCharacter(id),onSaved)
     private fun applyComposition(command:EditorCommand,onSaved:()->Unit={})=action(onSaved) {
