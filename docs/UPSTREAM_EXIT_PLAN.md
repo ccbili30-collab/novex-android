@@ -1,0 +1,146 @@
+# 去上游化路线图（Upstream Exit Plan）
+
+> 目的：把「替换上游 OpenMinis 血统代码」拆成可随时挂载在正常发版节奏里的
+> 小刀，每刀独立验证、独立合并。商业采用要求最终分发物不含上游衍生代码
+> （proot 是否作为独立 GPL 组件保留见「决策挂账」D1）。
+>
+> 本文件是活文档：每完成一勾，在「进度日志」追加日期 + PR 号 + 度量快照。
+
+## 0. 度量工具（随时重跑）
+
+```bash
+python3 scripts/upstream_audit.py --json /tmp/audit.json
+```
+
+- 基线 = 仓库根提交（上游 OpenMinis 整包导入 `82c2eb0`，2026-08-29）
+- 血统三分类 + Manifest 根出发的可达性闭包，覆盖 import / 同包符号 /
+  全限定名内联调用三种引用方式
+- **已知盲区（fail-open 方向保守）**：反射、按名字的 DI、纯字符串类名发现
+  不出来，一律按「活」处理。删除执行前仍须编译 + 全量测试 + 冒烟兜底。
+- **历史教训**：初版工具漏了 FQN 内联调用，把 102 个活文件（含
+  FullscreenImageViewer/ImageGalleryViewer 图片查看器两件套）误判为死代码。
+  任何「删了没影响」的结论必须以最新工具 + 编译 + 冒烟三重验证为准。
+
+## 1. 基线数据（2026-09-28 @ next `dfaf1e4`）
+
+血统三分类（Kotlin，`src/android/`）：
+
+| 分类 | 文件 | 行数 | 处置 |
+|---|---|---|---|
+| 上游原样未动 | 261 | 63,725 | P3/P4 人工重写 |
+| 上游改动过（混合） | 159 | 101,752 | 随 P3 逐文件甄别，重写上游部分 |
+| Novex 新增（零上游血统） | 379 | 50,247 | P1 机械搬家即可 |
+| **死代码候选** | **28** | **4,831** | **P0 直接删除** |
+
+活代码重灾区（重写主战场）：ui/chat 47.4k、ui/settings 19.9k、
+sandbox.offload 11.7k、novex.domain 11.0k（自有）、data.repository 7.5k、
+ui.sessions 7.3k、ui.novex 6.3k（自有）、debug 5.7k。
+
+GPL 实体（Android 分发物内）：
+
+| 实体 | 许可 | 处置 |
+|---|---|---|
+| libproot-loader.so / libproot-loader32.so | GPL-2.0 (proot) | 独立进程 exec，**不参与代码重写**；是否保留见 D1 |
+| assets/alpine-minirootfs.tar.gz 内 BusyBox | GPL-2.0 | P2 换 toybox(BSD) 自建 rootfs |
+| ~~iSH（GPL-3.0）~~ | — | 已随 iOS 层整体删除 |
+
+Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md），
+含 Shizuku（dev.rikka.shizuku，MIT——注意与 RikkaHub 无关）。
+
+## 2. 阶段计划
+
+原则：**绿档随时可发**（行为零变化），**黄档逐个子系统**（parity 验证后
+合并，合并窗口以天计），**红档最后动**（崩溃线）。
+
+### P0 · 死代码删除 — 绿档 — 28 文件 4,831 行 — [ ]
+
+- [ ] ui.settings：CatalogPagePresentation, CharacterCatalogScreens,
+      CharacterEditorDraftState, InteractiveFictionCatalogScreens,
+      InteractiveFictionEditorDraftState, KimiDeviceLoginDialog,
+      NovexCharacterEditorScreen, ThinkingRuleEditor, ThinkingRulesSection
+      （均为被新编辑器/新设置体系替代的旧代界面）
+- [ ] ui.onboarding：OnboardingScreen（启动流已被 NovexLaunchActivity 替代）
+- [ ] data：DeviceIdentity, SessionForkManager（被 conversation 模块替代）
+- [ ] providers：MinisDocumentsProvider（未在 Manifest 注册）
+- [ ] offload：CalendarManager, HealthManager（上游助理遗留）
+- [ ] auth/provider.antigravity：AntigravityOAuthManager, AntigravityModelsApi
+- [ ] tools：BrowserUseTool（ChatViewModel 另有自带实现，删前确认）
+- [ ] ui.terminal：AnsiParser
+- [ ] data.attachments：DocumentExtractionDiagnostics, NovexMediaWikiHttpTransport
+- [ ] sandbox：ShellTimeoutPolicy
+- [ ] speech：ToolSpeech
+- [ ] ui.markdown：SyntaxHighlighter
+- [ ] crash：CrashFileReporter
+- [ ] service：BackgroundInterruptionTracker
+- [ ] ui.chat：ConversationTimelineMutation
+- [ ] novex.android：ModuleList
+- [ ] 捎带：ui/chat 注释里的「RikkaHub/ZCode-style」措辞改为
+      「主流聊天客户端惯例」（尽观感友好，非法律义务）
+
+### P1 · Novex 自有代码机械搬家 — 绿档 — 379 文件 50.2k 行 — [ ]
+
+com.openminis.app 命名空间内的自有代码整体迁入 novex 命名空间
+（ui.novex 54f、novex.domain 84f、novex.adapter 存活 8f、novex.android 18f、
+data/character 与 ui/settings 里的 Novex 新文件等）。纯 git mv + 包名/ import
+替换，编译 + 全量测试即验收。完成后上游命名空间只剩真血统。
+
+### P2 · rootfs 去 GPL — 黄档 — [ ]
+
+自建最小 rootfs：musl(MIT) + toybox(BSD)，逐包过许可清单；替换
+alpine-minirootfs.tar.gz。纯数据层改动，App 代码零变化；容器内命令行为
+差异单独回归（重点：PS1、applet 覆盖、挂载脚本）。
+
+### P3 · 子系统绞杀 — 黄档 — 顺序即依赖序 — [ ]
+
+每项 = 一个 timebox 分支 + parity 验收（同输入同输出/UI 对齐）后合并：
+
+1. provider 接入（openai/anthropic/gemini/thinking/voice/image ≈10k）
+   → 并入自有 model-transport 模块
+2. data.db（Room minis.db）+ data.repository → 自有存储模块
+3. sandbox 应用侧 Kotlin（PRootKernel/RootfsManager/ExecutionCoordinator 等，
+   ≈19k）→ 同接口重写（对 proot 的接口面：spawn 命令行 + pty fd + rootfs 布局）
+4. browser + ui.browser、speech（活 12f）、debug 面板、config、tools、
+   offload、share、ui.settings 剩余屏、ui.chat 逐块 → conversation-runtime
+   + ui.novex 持续绞杀
+5. 159 个混合文件随所在子系统一并甄别：Novex 部分保留搬家，上游部分重写
+
+### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
+
+MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
+（MainActivity/NovexLaunchActivity/NovexHomeActivity）、导航图、Room 装配、
+provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成。
+
+### P5 · 协议切换与法律动作 — [ ]
+
+- [ ] 分发物内上游代码清零的审计复核（重跑本工具 + 抽查）
+- [ ] LICENSE 更换（Apache-2.0 或专有，按公司法务拍板）、THIRD_PARTY 更新
+- [ ] 软著登记、Novex 商标注册（GPL 不带走商标权，商标才是自己的）
+- [ ] proot GPL 组件的源码随附/指引页（若 D1 决定保留）
+
+## 3. 每刀执行协议
+
+1. 从本计划表取 scope → 任务书
+2. 分支 `tasks/exit-N`（或并入功能 PR 捎带，仅限绿档）
+3. 实现 → CI（Android quick validation）绿
+4. 全量测试绿
+5. 冒烟清单（下节）逐项过
+6. 净眼局部审查 → 合并 next → 随正常 beta 发布
+7. 回填本文件勾选框 + 进度日志（日期/PR/度量快照）
+
+冒烟清单（八流程）：启动进首页 / 会话列表与切换 / 对话收发（含工具执行）/
+沙箱终端开合 / 设置各页 / 存储管理 / 版本中心检查更新 / 导入导出卡片。
+
+## 4. 决策挂账
+
+- **D1（公司法务）**：proot（GPL-2.0，独立进程 + 源码公开）可否作为最终
+  分发物内的隔离组件保留？可 → P3 第 3 项照做、P5 挂源码指引；
+  否 → 仅剩自研 ptrace 加载器（人年级）或砍沙箱功能两条路。
+- **D2（发版节奏）**：P0/P1 何时开刀（绿档，可与任意待发功能同车）。
+- 上游（OpenMinis）后续同步策略：P0 合并后冻结非安全类同步，避免血统
+  复活。
+
+## 5. 进度日志
+
+| 日期 | PR | 动作 | 度量快照 |
+|---|---|---|---|
+| 2026-09-28 | — | 建立本计划 + 审计工具 scripts/upstream_audit.py | 死代码 28f/4.8k；活代码血统 63.7k/101.8k/50.2k |
