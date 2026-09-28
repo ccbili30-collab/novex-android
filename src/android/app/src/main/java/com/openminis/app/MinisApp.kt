@@ -822,7 +822,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             // 到顶丢最旧；磁盘文件不受影响。
             .memoryCache(
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizeBytes(128L * 1024 * 1024)
+                    .maxSizeBytes(128 * 1024 * 1024)
                     .build()
             )
             .build()
