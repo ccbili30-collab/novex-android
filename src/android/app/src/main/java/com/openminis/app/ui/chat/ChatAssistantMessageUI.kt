@@ -288,7 +288,7 @@ internal fun AssistantHeader() {
 
 /**
  * [feat/ui-rikkahub] Assistant replies render FLAT — full-width borderless
- * text in every conversation mode (RikkaHub/豆包-style). The old character
+ * text in every conversation mode (mainstream chat client style). The old character
  * speech-bubble wrapper survives as [LegacyCharacterAssistantBubble] so the
  * change is a one-line revert.
  */
@@ -663,7 +663,7 @@ internal fun ToolCallPill(
 
     // T125: the iOS shimmer sweep died with the capsule pill
     // ([feat/ui-rikkahub] timeline step). Running state now reads from the
-    // bouncing dots + muted label, same as RikkaHub's tool steps.
+    // bouncing dots + muted label, same as mainstream chat clients' tool steps.
 
     // [T-android-tool-bubble-longpress-menu] Long-press menu state, scoped
     // to this pill. The DropdownMenu is anchored to the pill via the Box
@@ -1093,7 +1093,7 @@ internal fun ThinkingBlock(
 
         // [feat/ui-rikkahub] Collapsed live preview while streaming: tail of
         // the thought capped at 100dp with a bottom fade — the ChainOfThought
-        // reasoning-step behavior from RikkaHub.
+        // reasoning-step behavior from mainstream chat clients.
         if (!expanded && liveThinking && !overHardCap && charCount > 0) {
             val previewTail = remember(charCount) {
                 if (charCount > 600) block.content.substring(charCount - 600) else block.content
@@ -1288,7 +1288,7 @@ private fun ThinkingFullContentDialog(content: String, onDismiss: () -> Unit) {
  * copy / regenerate / more. Long-press on AI text stays with text selection
  * (the SelectionContainer owns that gesture and Compose offers no way to
  * re-enter selection programmatically), so message-level actions surface
- * here instead — the same division of labour as Doubao/RikkaHub: your own
+ * here instead — the same division of labour as mainstream chat clients: your own
  * bubbles keep the long-press menu, replies wear a visible row.
  */
 @Composable
@@ -1357,7 +1357,7 @@ internal fun AssistantMessageActionRow(
     }
 }
 
-/** RikkaHub's ChatMessageActionButtons idiom: 16dp ghost icon, 8dp tap halo. */
+/** Mainstream chat client action-button idiom: 16dp ghost icon, 8dp tap halo. */
 @Composable
 private fun AssistantActionIcon(
     icon: ImageVector,

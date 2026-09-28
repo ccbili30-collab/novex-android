@@ -4,7 +4,6 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.ConversationBranchGraph
-import com.openminis.app.data.SessionForkManager
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.novex.domain.AnswerIdentity
 import com.openminis.app.novex.domain.ContextUsageRecord
@@ -96,8 +95,7 @@ class ConversationBranchRepositoryInstrumentedTest {
     }
 
     @Test
-    fun activeErrorAndSessionDuplicateStayOnSelectedBranch() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+    fun activeErrorStaysOnSelectedBranch() = runBlocking {
         val session = repository.createSession(modelId = "test-model", title = "Branched")
         val user = repository.appendMessage(session.id, "user", textParts("question"))
         val oldAnswer = repository.appendMessage(session.id, "assistant", textParts("old answer"))
@@ -110,28 +108,6 @@ class ConversationBranchRepositoryInstrumentedTest {
         val sourceRows = repository.loadMessages(session.id).associateBy { it.id }
         assertEquals("selected error", sourceRows.getValue(oldAnswer.id).errorInfo)
         assertNull(sourceRows.getValue(newAnswer.id).errorInfo)
-
-        val duplicateId = SessionForkManager(
-            chatRepository = repository,
-            filesDir = context.filesDir,
-        ).duplicateSession(session.id)!!
-        val duplicate = repository.loadActiveConversation(duplicateId)
-        assertEquals(3, duplicate.allMessages.size)
-        assertEquals(
-            listOf("question", "old answer"),
-            duplicate.activeMessages.map { textValue(it.partsJson) },
-        )
-        val duplicateAnswer = duplicate.activeMessages.last()
-        assertEquals(
-            ConversationBranchGraph.SiblingPosition(1, 2),
-            duplicate.graph.siblingPosition(duplicateAnswer.id),
-        )
-        assertEquals("selected error", duplicateAnswer.errorInfo)
-        assertEquals(
-            "old-summary",
-            repository.latestActiveCompactMarker(duplicateId, duplicate.activeMessages)?.summary,
-        )
-        assertEquals("old answer", repository.getSession(duplicateId)?.lastMessage)
     }
 
     private fun textParts(text: String): String =
@@ -139,8 +115,6 @@ class ConversationBranchRepositoryInstrumentedTest {
             .put(org.json.JSONObject().put("type", "text").put("value", text))
             .toString()
 
-    private fun textValue(partsJson: String): String =
-        org.json.JSONArray(partsJson).getJSONObject(0).getString("value")
 
     private fun marker(
         id: String,

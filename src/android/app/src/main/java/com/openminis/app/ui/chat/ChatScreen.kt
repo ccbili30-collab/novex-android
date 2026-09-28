@@ -1132,12 +1132,12 @@ fun ChatScreen(
         }
     }
 
-    // [feat/ui-rikkahub] RikkaHub-style re-anchor: a scroll that SETTLES at the
+    // [feat/ui-rikkahub] mainstream-style re-anchor: a scroll that SETTLES at the
     // live tail re-grants follow, so glancing up mid-stream and flicking back
     // down re-sticks the tail without the return-to-latest button. Upward
     // drags still revoke at DragStart. Programmatic moves also settle at the
     // tail, but they only run while follow is active or for explicit moves —
-    // re-granting there matches intent. The 8dp tolerance mirrors RikkaHub's
+    // re-granting there matches intent. The 8dp tolerance mirrors mainstream clients'
     // isAtBottom(): a fling that decelerates just short of the end still
     // counts as "at the bottom".
     val settleGrantTolerancePx = with(LocalDensity.current) { 8.dp.toPx() }
@@ -3753,7 +3753,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         // [feat/ui-rikkahub] card radius 20 → 24dp + 1dp hairline
-                        // border (RikkaHub input-bar formula: big rounded container
+                        // border (mainstream input-bar formula: big rounded container
                         // with a low-alpha outline over the soft shadow).
                         .drawBehind {
                             val radiusPx = 24.dp.toPx()
