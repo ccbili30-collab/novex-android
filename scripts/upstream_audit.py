@@ -147,9 +147,12 @@ def closure(roots, files, index):
 
 
 def root_commit():
-    return subprocess.run(
-        ["git", "rev-list", "--max-parents=0", "HEAD"],
-        capture_output=True, text=True, check=True).stdout.strip()
+    try:
+        return subprocess.run(
+            ["git", "rev-list", "--max-parents=0", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sys.exit("错误：需要在仓库根的 git 工作区内运行（找不到 HEAD 提交）。")
 
 
 def git_changed_files(base):
@@ -165,6 +168,10 @@ def main():
     args = ap.parse_args()
 
     files = load_files()
+    if not files:
+        sys.exit(f"错误：在 {APP_MAIN} 下没找到 Kotlin 文件，请在仓库根运行。")
+    if not os.path.exists(MANIFEST):
+        sys.exit(f"错误：找不到 {MANIFEST}，请在仓库根运行。")
     index = build_symbol_index(files)
     roots, missing_roots = manifest_roots(index)
     live, unresolved = closure(roots, files, index)

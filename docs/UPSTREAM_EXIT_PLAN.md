@@ -40,7 +40,7 @@ GPL 实体（Android 分发物内）：
 
 | 实体 | 许可 | 处置 |
 |---|---|---|
-| libproot-loader.so / libproot-loader32.so | GPL-2.0 (proot) | 独立进程 exec，**不参与代码重写**；是否保留见 D1 |
+| proot 全家（proot-aarch64、libproot.so、libproot-loader.so/-loader32.so） | GPL-2.0 (proot) | 独立进程 exec，**不参与代码重写**；是否保留见 D1 |
 | assets/alpine-minirootfs.tar.gz 内 BusyBox | GPL-2.0 | P2 换 toybox(BSD) 自建 rootfs |
 | ~~iSH（GPL-3.0）~~ | — | 已随 iOS 层整体删除 |
 
@@ -80,9 +80,10 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 ### P1 · Novex 自有代码机械搬家 — 绿档 — 379 文件 50.2k 行 — [ ]
 
 com.openminis.app 命名空间内的自有代码整体迁入 novex 命名空间
-（ui.novex 54f、novex.domain 84f、novex.adapter 存活 8f、novex.android 18f、
-data/character 与 ui/settings 里的 Novex 新文件等）。纯 git mv + 包名/ import
-替换，编译 + 全量测试即验收。完成后上游命名空间只剩真血统。
+（ui.novex 主源集 42f/全源集 54f、novex.domain 84f、novex.adapter 25f、
+novex.android 18f、data/character 与 ui/settings 里的 Novex 新文件等）。
+纯 git mv + 包名/ import 替换，编译 + 全量测试即验收。完成后上游命名空间
+只剩真血统。包计数以审计工具主源集口径为准。
 
 ### P2 · rootfs 去 GPL — 黄档 — [ ]
 
