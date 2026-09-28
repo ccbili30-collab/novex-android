@@ -59,6 +59,9 @@ import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.ui.markdown.MarkdownText
+import com.openminis.app.ui.bulletin.BulletinEntryIcon
+import com.openminis.app.ui.bulletin.BulletinStackFace
+import com.openminis.app.ui.bulletin.BulletinHubPage
 import kotlinx.coroutines.launch
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
@@ -80,17 +83,6 @@ internal object NovexUpdateAnnouncementStore {
             .putString(LAST_SHOWN, releaseKey)
             .apply()
     }
-}
-
-internal enum class NovexHomeAction { ANNOUNCEMENT, UPDATE }
-
-internal fun resolveNovexHomeAction(
-    detectedVersion: String?,
-    dismissedVersion: String?,
-): NovexHomeAction = if (detectedVersion != null && detectedVersion != dismissedVersion) {
-    NovexHomeAction.UPDATE
-} else {
-    NovexHomeAction.ANNOUNCEMENT
 }
 
 /**
@@ -326,90 +318,29 @@ fun CheckUpdateSection() {
     }
 }
 
-/** Compact home-toolbar variant used by Novex. */
+/**
+ * Compact home-toolbar variant used by Novex.
+ * [T-bulletin-v3] 入口=叠卡图形（带红点）；跳脸=卡片交叠（公告在上、更新在下，
+ * 单新单卡）；点开=公告中心全屏页。下载/安装流程沿用既有 UpdateDialog。
+ */
 @Composable
 fun NovexUpdateAction() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var checking by remember { mutableStateOf(false) }
     val detectedUpdate by NovexUpdateMonitor.available.collectAsState()
+    val bulletin by com.openminis.app.data.NovexBulletinMonitor.state.collectAsState()
+    var hubOpen by remember { mutableStateOf(false) }
     var dialogUpdate by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var awaitingInstallPermission by remember { mutableStateOf(false) }
-    var announcementOpen by remember { mutableStateOf(false) }
-    var bulletinLoading by remember { mutableStateOf(false) }
-    // [T-bulletin-cache] 点开面板第一时间显缓存（关闭前的公告），
-    // 后台刷新；失败保留缓存不覆盖（空回落=失败信号）
-    var bulletin by remember { mutableStateOf<NovexBulletin?>(null) }
-    var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
-    // [T-announcement-v2] 冷启动跳脸：活源未读公告非空→弹窗，关闭即已读
-    val monitorAnnouncements by NovexUpdateMonitor.announcements.collectAsState()
-    var faceAnnouncements by remember { mutableStateOf<List<NovexAnnouncement>?>(null) }
 
-    fun openDetectedUpdateOrCheck() {
-        val available = detectedUpdate
-        if (available != null) {
-            dismissedUpdateVersion = null
-            dialogUpdate = available
-            NovexUpdateAnnouncementStore.markShown(context, available)
-            return
-        }
-        checking = true
-        scope.launch {
-            when (val result = NovexUpdateMonitor.refresh()) {
-                is UpdateChecker.CheckResult.UpdateAvailable -> {
-                    dialogUpdate = result
-                    NovexUpdateAnnouncementStore.markShown(context, result)
-                }
-                UpdateChecker.CheckResult.UpToDate ->
-                    android.widget.Toast.makeText(context, "Novex（诺文）已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
-                UpdateChecker.CheckResult.NoReleaseAvailable ->
-                    android.widget.Toast.makeText(context, "暂无可用的发布版本", android.widget.Toast.LENGTH_SHORT).show()
-                is UpdateChecker.CheckResult.NoApkAsset ->
-                    android.widget.Toast.makeText(context, "新版本尚未附带安装包", android.widget.Toast.LENGTH_SHORT).show()
-                UpdateChecker.CheckResult.Forbidden,
-                UpdateChecker.CheckResult.NetworkUnreachable ->
-                    android.widget.Toast.makeText(context, "无法连接 GitHub（代码托管平台），请检查网络后重试", android.widget.Toast.LENGTH_LONG).show()
-                is UpdateChecker.CheckResult.Error ->
-                    android.widget.Toast.makeText(context, "检查更新失败：${result.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
-            checking = false
-        }
+    fun openUpdateDialog(available: UpdateChecker.CheckResult.UpdateAvailable) {
+        dialogUpdate = available
+        NovexUpdateAnnouncementStore.markShown(context, available)
     }
 
-    LaunchedEffect(detectedUpdate?.versionName) {
-        if (dismissedUpdateVersion != detectedUpdate?.versionName) {
-            dismissedUpdateVersion = null
-        }
-    }
-
-    LaunchedEffect(announcementOpen) {
-        if (!announcementOpen) return@LaunchedEffect
-        if (bulletin == null) {
-            bulletin = com.openminis.app.data.BulletinCache.load(context.filesDir)
-            bulletinLoading = bulletin == null
-        }
-        val fresh = UpdateChecker.fetchBulletin()
-        val failed = !fresh.live && fresh.announcements.isEmpty() && fresh.releaseNotes.isEmpty()
-        when {
-            !failed -> {
-                bulletin = fresh
-                if (fresh.live) com.openminis.app.data.BulletinCache.save(context.filesDir, fresh)
-            }
-            // 失败但有缓存：保留缓存；失败且无缓存：空态（硬编码遗留已退役）
-            bulletin == null -> bulletin = fresh
-        }
-        bulletinLoading = false
-    }
-
-    LaunchedEffect(monitorAnnouncements) {
-        val list = monitorAnnouncements ?: return@LaunchedEffect
-        val unread = com.openminis.app.data.NovexAnnouncementReadStore.unread(
-            list, com.openminis.app.data.NovexAnnouncementReadStore.readIds(context))
-        if (unread.isNotEmpty()) faceAnnouncements = unread
-    }
-
+    // Resume the install flow on ON_RESUME (permission granted or pending APK intact).
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -427,69 +358,32 @@ fun NovexUpdateAction() {
         lifecycleOwner.lifecycle.addObserver(observer)
     }
 
-    val homeAction = resolveNovexHomeAction(
-        detectedVersion = detectedUpdate?.versionName,
-        dismissedVersion = dismissedUpdateVersion,
+    BulletinEntryIcon(
+        hasBadge = bulletin.hasBadge || detectedUpdate != null,
+        onClick = { hubOpen = true },
     )
 
-    val openHomeAction = {
-        if (homeAction == NovexHomeAction.UPDATE) {
-            dialogUpdate = detectedUpdate
-        } else {
-            announcementOpen = true
-        }
-    }
-    if (checking) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(NovexDimensions.HeaderActionSize),
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(NovexDimensions.HeaderActionIconSize),
-                strokeWidth = 2.dp,
-            )
-        }
-    } else {
-        NovexIconAction(
-            icon = if (homeAction == NovexHomeAction.UPDATE) {
-                R.drawable.ic_phosphor_download_simple
-            } else {
-                R.drawable.ic_phosphor_bell
+    if (bulletin.stack.isNotEmpty()) {
+        BulletinStackFace(
+            state = bulletin,
+            onDismissFront = { com.openminis.app.data.NovexBulletinMonitor.dismissFront() },
+            onUpdateAction = { available ->
+                com.openminis.app.data.NovexBulletinMonitor.dismissFront()
+                openUpdateDialog(available)
             },
-            contentDescription = if (homeAction == NovexHomeAction.UPDATE) {
-                "打开 Novex（诺文）更新"
-            } else {
-                "打开 Novex（诺文）公告"
-            },
-            onClick = openHomeAction,
+            onOpenHub = { hubOpen = true },
         )
     }
 
-    if (announcementOpen) {
-        AnnouncementDialog(
-            bulletin = bulletin ?: NovexBulletin(announcements = emptyList(), releaseNotes = emptyList()),
-            loading = bulletinLoading,
-            checking = checking,
-            onCheckUpdate = {
-                announcementOpen = false
-                openDetectedUpdateOrCheck()
-            },
-            onDismiss = { announcementOpen = false },
-        )
-    }
-
-    faceAnnouncements?.let { unreadList ->
-        AnnouncementDialog(
-            bulletin = NovexBulletin(announcements = unreadList, releaseNotes = emptyList(), live = true),
-            loading = false,
-            checking = false,
-            showTabs = false,
-            dialogTitle = "新公告",
-            onCheckUpdate = {},
-            onDismiss = {
-                com.openminis.app.data.NovexAnnouncementReadStore.markRead(context, unreadList.map { it.id })
-                faceAnnouncements = null
-            },
+    if (hubOpen) {
+        BulletinHubPage(
+            state = bulletin,
+            onDismiss = { hubOpen = false },
+            onRefresh = { com.openminis.app.data.NovexBulletinMonitor.refresh() },
+            onToggle = { com.openminis.app.data.NovexBulletinMonitor.toggleExpand(it) },
+            onRetry = { com.openminis.app.data.NovexBulletinMonitor.ensureBody(it) },
+            onCheckUpdate = { com.openminis.app.data.NovexBulletinMonitor.manualCheckUpdate() },
+            onUpdateAction = { available -> available?.let(::openUpdateDialog) },
         )
     }
 
@@ -530,7 +424,6 @@ fun NovexUpdateAction() {
             onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
             onDismiss = {
                 if (downloadProgress == null) {
-                    dismissedUpdateVersion = available.versionName
                     dialogUpdate = null
                     downloadError = null
                     awaitingInstallPermission = false
@@ -755,156 +648,6 @@ private fun ReleaseNoteItem(
             MarkdownText(
                 markdown = note.changelog,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnnouncementDialog(
-    bulletin: NovexBulletin,
-    loading: Boolean,
-    checking: Boolean,
-    onCheckUpdate: () -> Unit,
-    onDismiss: () -> Unit,
-    // [T-announcement-v2] 跳脸模式：只展示新公告列表，隐藏公告/更新切换
-    showTabs: Boolean = true,
-    dialogTitle: String = "公告",
-) {
-    // [T-announcement-v2] 公告/更新两页切换（用户：「公告本身也要能切换公告/更新」）
-    var tab by rememberSaveable { mutableStateOf("ann") }
-    AlertDialog(
-        contentScrollsItself = true,
-        onDismissRequest = onDismiss,
-        title = {
-            Text(dialogTitle, fontWeight = FontWeight.Bold)
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (loading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                if (showTabs) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MinisTextButton(
-                            onClick = { tab = "ann" },
-                            enabled = tab != "ann",
-                        ) {
-                            Text(
-                                "公告",
-                                fontWeight = if (tab == "ann") FontWeight.Bold else FontWeight.Normal,
-                                color = if (tab == "ann") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        MinisTextButton(
-                            onClick = { tab = "notes" },
-                            enabled = tab != "notes",
-                        ) {
-                            Text(
-                                "更新",
-                                fontWeight = if (tab == "notes") FontWeight.Bold else FontWeight.Normal,
-                                color = if (tab == "notes") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                if (showTabs && tab == "notes") {
-                    // 更新页：版本说明列表（Gitee 道=当前版本单条；GitHub 道=完整历史）
-                    if (bulletin.releaseNotes.isEmpty()) {
-                        Text("暂无更新说明。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        bulletin.releaseNotes.forEach { note ->
-                            ReleaseNoteItem(
-                                note = note,
-                                latest = false,
-                                initiallyExpanded = false,
-                            )
-                        }
-                    }
-                } else {
-                bulletin.announcements.firstOrNull()?.let { latest ->
-                    Text(
-                        "最新公告",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    AnnouncementItem(announcement = latest, initiallyExpanded = true)
-                }
-                if (bulletin.announcements.size > 1) {
-                    Text(
-                        "往期公告",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    bulletin.announcements.drop(1).forEach { announcement ->
-                        AnnouncementItem(announcement = announcement, initiallyExpanded = false)
-                    }
-                }
-                if (bulletin.announcements.isEmpty() && !loading) {
-                    Text("暂无公告。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                }
-            }
-        },
-        confirmButton = {
-            MinisButton(onClick = onCheckUpdate, enabled = !checking) {
-                Text("检查更新")
-            }
-        },
-        dismissButton = {
-            MinisTextButton(onClick = onDismiss, enabled = !checking) {
-                Text("关闭")
-            }
-        },
-    )
-}
-
-@Composable
-private fun AnnouncementItem(
-    announcement: NovexAnnouncement,
-    initiallyExpanded: Boolean,
-) {
-    var expanded by rememberSaveable("announcement-${announcement.versionName}-${announcement.title}") {
-        mutableStateOf(initiallyExpanded)
-    }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "${announcement.title} · ${announcement.versionName}",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = if (initiallyExpanded) FontWeight.SemiBold else FontWeight.Medium,
-            )
-            Icon(
-                if (expanded) NovexIcons.KeyboardArrowUp else NovexIcons.KeyboardArrowDown,
-                contentDescription = if (expanded) {
-                    "收起 ${announcement.title}"
-                } else {
-                    "展开 ${announcement.title}"
-                },
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        if (expanded) {
-            MarkdownText(
-                markdown = announcement.markdown,
-                style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 6.dp),

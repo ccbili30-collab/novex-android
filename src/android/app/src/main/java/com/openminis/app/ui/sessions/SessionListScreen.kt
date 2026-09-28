@@ -53,6 +53,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import com.openminis.app.ui.novex.DropdownMenu
 import com.openminis.app.ui.novex.DropdownMenuItem
+import com.openminis.app.ui.settings.NovexUpdateAction
 import androidx.compose.material3.Surface
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
@@ -635,6 +636,8 @@ fun SessionListScreen(
                             )
                         }
                     } else {
+                        // [T-bulletin-v3] 叠卡公告入口：跳脸叠卡与公告中心页由此挂载
+                        NovexUpdateAction()
                         IconButton(onClick = {
                             if (isSearchActive) {
                                 viewModel.searchQuery.value = ""

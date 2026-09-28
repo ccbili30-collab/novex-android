@@ -117,6 +117,10 @@ internal object NovexDimensions {
     val SettingsRowMinHeight = 56.dp
     val Hairline = 0.75.dp
     val ActionIconTile = 30.dp
+    // [feat/ui-rikkahub] CardGroup 分组卡：组外角 20dp、组内相邻行 4dp
+    //（RikkaHub 招牌手法，按下时外角收拢为内角）。
+    val GroupCardCorner = 20.dp
+    val GroupCardInnerCorner = 4.dp
 }
 
 /** Explicit display sizes still participate in the application's appearance preference. */

@@ -1,6 +1,22 @@
 package com.openminis.app.ui.novex
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -370,4 +386,98 @@ internal fun DropdownMenu(
         border = border,
         content = content,
     )
+}
+
+// ---------------------------------------------------------------------------
+// [feat/ui-rikkahub] 新语言基础件：药丸按钮 / 幽灵图标钮 / 全宽分段控件。
+// 业务页一律从这里取件，不得在业务文件内私造同名件或回落旧 Minis 层。
+// ---------------------------------------------------------------------------
+
+/** 药丸动作按钮：主操作实心 Primary，次操作幽灵（filled=false）。 */
+@Composable
+internal fun PillButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    filled: Boolean = true,
+    enabled: Boolean = true,
+) {
+    val container = if (filled) NovexColors.Primary else Color.Transparent
+    val content = if (filled) MaterialTheme.colorScheme.onPrimary else NovexColors.SecondaryText
+    Box(
+        modifier
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(RoundedCornerShape(50))
+            .background(container)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = if (filled) 22.dp else 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = content,
+        )
+    }
+}
+
+/** 幽灵图标钮：无底色、圆形裁剪点击区、SecondaryText 色调（RikkaHub 消息操作行同款）。 */
+@Composable
+internal fun GhostIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconSize: Dp = 20.dp,
+) {
+    Box(
+        modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = NovexColors.SecondaryText,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+/** 全宽分段选择：SurfaceMuted 轨道 + 选中浮层（SurfaceBright）。 */
+@Composable
+internal fun SegmentedTabs(
+    tabs: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(50))
+            .background(NovexColors.SurfaceMuted)
+            .padding(3.dp),
+    ) {
+        tabs.forEachIndexed { i, label ->
+            val active = i == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (active) MaterialTheme.colorScheme.surfaceBright else Color.Transparent)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal),
+                    color = if (active) NovexColors.Text else NovexColors.SecondaryText,
+                )
+            }
+        }
+    }
 }

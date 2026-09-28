@@ -35,6 +35,8 @@ internal object GiteeAnnouncementSource {
         val title: String,
         val date: String,
         val channel: String? = null,
+        /** [T-bulletin-v3] 作者改稿 +1；客户端据此重拉已缓存正文。缺省 1。 */
+        val rev: Int = 1,
     )
 
     /** 纯解析：新到旧索引 → 受信条目（路径校验+通道字段+上限）；非法/空整体 null。 */
@@ -51,7 +53,8 @@ internal object GiteeAnnouncementSource {
                 if (title.isEmpty()) continue
                 val channel = e.optString("channel").trim().lowercase()
                     .takeIf { it == "stable" || it == "preview" }
-                add(AnnouncementEntry(file = file, title = title, date = e.optString("date").trim(), channel = channel))
+                val rev = e.optString("rev").toIntOrNull()?.coerceAtLeast(1) ?: 1
+                add(AnnouncementEntry(file = file, title = title, date = e.optString("date").trim(), channel = channel, rev = rev))
             }
         }
         // 空索引或全部条目无效 → 整体 null（调用方回落内置归档）
