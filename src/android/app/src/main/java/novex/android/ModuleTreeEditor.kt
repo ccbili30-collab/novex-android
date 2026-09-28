@@ -228,7 +228,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
         }
     }.verticalScroll(vertical),verticalArrangement=Arrangement.spacedBy(0.dp)) {
         header()
-        if(card.usesMainSlot()) {
+        if(card.usesMainSlotByData()) {
             val mainScroll=rememberScrollState()
             DisposableEffect(card.id){onDispose {tracks.remove(card.id)}}
             Row(Modifier.fillMaxWidth().onGloballyPositioned {tracks[card.id]=HorizontalTrack(it.boundsInRoot(),mainScroll)}
