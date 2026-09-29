@@ -8,6 +8,7 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -266,19 +267,29 @@ class NovexTransportProviderTest {
     }
 
     @Test
-    fun `无视觉输入的模型以占位文本顶替图片`() {
+    fun `无视觉输入的模型乐观发送像素 仅学习降级后才占位顶替`() {
         val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
-        val body = JSONObject(
-            provider(call = call).buildStreamRequest(
-                listOf(LLMMessage(LLMMessage.Role.USER, "看图")),
-                null, 128,
-                imageParts = listOf(LLMMessage.ImagePart(byteArrayOf(1, 2, 3), "image/png")),
-                tools = emptyList(), thinkingLevel = ThinkingLevel.OFF,
-            ).encode(),
+        val request = listOf(LLMMessage(LLMMessage.Role.USER, "看图"))
+        val parts = listOf(LLMMessage.ImagePart(byteArrayOf(1, 2, 3), "image/png"))
+
+        // 未学习降级：即使模型未声明视觉输入也真实发送像素（乐观发送策略）。
+        val optimistic = JSONObject(
+            provider(call = call).buildStreamRequest(request, null, 128, parts, emptyList(), ThinkingLevel.OFF).encode(),
         )
-        val message = body.getJSONArray("messages").getJSONObject(0)
-        assertTrue(message.get("content") is String)
-        assertTrue(message.getString("content").contains("不支持图片输入"))
+        assertTrue(optimistic.getJSONArray("messages").getJSONObject(0).get("content") is org.json.JSONArray)
+
+        // 已学习降级（端点明确拒绝过图片）：占位文本顶替像素。
+        OpenAIProvider.imageDegradedModels.add("test-model")
+        try {
+            val degraded = JSONObject(
+                provider(call = call).buildStreamRequest(request, null, 128, parts, emptyList(), ThinkingLevel.OFF).encode(),
+            )
+            val message = degraded.getJSONArray("messages").getJSONObject(0)
+            assertTrue(message.get("content") is String)
+            assertTrue(message.getString("content").contains("不支持图片输入"))
+        } finally {
+            OpenAIProvider.imageDegradedModels.remove("test-model")
+        }
     }
 
     @Test

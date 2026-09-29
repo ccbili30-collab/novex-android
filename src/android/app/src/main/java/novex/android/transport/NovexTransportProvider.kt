@@ -135,7 +135,7 @@ class NovexTransportProvider(
             val lastUserIndex = messages.indexOfLast { it.role == LLMMessage.Role.USER }
             for ((index, message) in messages.withIndex()) {
                 if (message.contentParts.isNotEmpty()) addAll(structuredParts(message, thinkingLevel, idRegistry))
-                else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel, idRegistry))
+                else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel))
             }
         }
         val toolDefs = tools.map { definition ->
@@ -154,19 +154,26 @@ class NovexTransportProvider(
         thinkingLevel: ThinkingLevel,
         idRegistry: ToolCallIdRegistry,
     ): List<WireMessage> = when (message.role) {
-        LLMMessage.Role.ASSISTANT -> listOf(
-            WireMessage(
-                role = "assistant",
-                text = message.contentParts.filterIsInstance<AgentContentPart.Text>().joinToString("") { it.text },
-                toolCalls = message.contentParts.filterIsInstance<AgentContentPart.ToolUse>().map { use ->
-                    PendingTool(idRegistry.canonical(use.id), use.name, use.input.toString())
-                },
-                reasoningContent = echoReasoningContent(message, thinkingLevel),
-            ),
-        )
+        LLMMessage.Role.ASSISTANT -> {
+            idRegistry.beginBatch()
+            listOf(
+                WireMessage(
+                    role = "assistant",
+                    text = message.contentParts.filterIsInstance<AgentContentPart.Text>().joinToString("") { it.text },
+                    toolCalls = message.contentParts.filterIsInstance<AgentContentPart.ToolUse>().map { use ->
+                        PendingTool(idRegistry.declare(use.id), use.name, use.input.toString())
+                    },
+                    reasoningContent = echoReasoningContent(message, thinkingLevel),
+                ),
+            )
+        }
         LLMMessage.Role.USER -> buildList {
             for (result in message.contentParts.filterIsInstance<AgentContentPart.ToolResult>()) {
-                add(WireMessage(role = "tool", text = result.content, toolCallId = idRegistry.canonical(result.id)))
+                // 无法配对到本批工具调用的孤儿结果直接丢弃：发出去整单必被
+                // 网关 400，丢弃只是少一条历史污染。
+                idRegistry.resolve(result.id)?.let { paired ->
+                    add(WireMessage(role = "tool", text = result.content, toolCallId = paired))
+                }
             }
             val text = StringBuilder()
             for (part in message.contentParts.filterIsInstance<AgentContentPart.Text>()) {
@@ -190,7 +197,6 @@ class NovexTransportProvider(
         isLastUser: Boolean,
         imageParts: List<LLMMessage.ImagePart>,
         thinkingLevel: ThinkingLevel,
-        idRegistry: ToolCallIdRegistry,
     ): List<WireMessage> {
         if (message.role == LLMMessage.Role.ASSISTANT) {
             return listOf(
@@ -345,6 +351,23 @@ class NovexTransportProvider(
             return@callbackFlow
         }
         val call = openCall()
+        // [诊断 parity] 与上游同款的 ModelRequestAudit 事件：wire_request /
+        // response_headers / http_error，凭据照走 safeText/safeUrl 脱敏。
+        val audit = kotlinx.coroutines.currentCoroutineContext()[com.openminis.app.diagnostics.ModelRequestAudit]
+        val secrets = listOfNotNull(tokenOrNull())
+        audit?.event(
+            "wire_request",
+            JSONObject()
+                .put("url", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                    com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(completionUrl().toString()), secrets))
+                .put("providerInstanceId", instanceId)
+                .put("method", "POST")
+                .put("protocol", "chat_completions")
+                .put("modelId", model.id)
+                .put("stream", true)
+                .put("toolCount", tools.size)
+                .put("maxOutputTokens", maxTokens),
+        )
         val bridge = StreamBridge { chunk -> trySend(chunk) }
         launch(Dispatchers.IO) {
             val outcome = try {
@@ -354,9 +377,25 @@ class NovexTransportProvider(
                 return@launch
             }
             when (outcome) {
-                StreamResult.Completed, StreamResult.Cancelled -> close()
+                StreamResult.Completed -> {
+                    // chat completions 的 SSE 成功响应恒为 200；自有传输只报
+                    // 「2xx 已到」，此处以 200 记账。
+                    audit?.event("response_headers", JSONObject().put("status", 200))
+                    close()
+                }
+                StreamResult.Cancelled -> close()
                 StreamResult.Failed -> {
-                    val error = bridge.failure?.let(::errorOf) ?: LLMError.ProviderError("流在错误状态结束")
+                    val failure = bridge.failure
+                    audit?.event(
+                        "http_error",
+                        JSONObject()
+                            .put("status", failure?.status ?: -1)
+                            .put("errorType", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                                failure?.category ?: "", secrets))
+                            .put("message", com.openminis.app.diagnostics.ModelRequestAudit.safeText(
+                                failure?.message ?: "stream failed", secrets)),
+                    )
+                    val error = failure?.let(::errorOf) ?: LLMError.ProviderError("流在错误状态结束")
                     AppLogger.warning("NovexTransport", "[$name] stream failed: ${error.message}")
                     close(error)
                 }
@@ -537,16 +576,19 @@ class NovexTransportProvider(
 }
 
 /**
- * 工具调用 id 规范化：超长 id 折成确定性短 id（同一原文 → 同一短 id，
- * 保证 assistant 调用与 tool 结果仍可配对）；跨消息重复 id 改名，否则
- * 部分兼容网关会以 tool_call_id 重复为由整单 400。
+ * 工具调用 id 规范化（按批次配对）：
+ *  - assistant 声明批次（beginBatch + declare）：超长 id 折成确定性短 id，
+ *    跨消息重复 id 改名——部分兼容网关以 tool_call_id 重复为由整单 400；
+ *  - tool 结果（resolve）取本批配对 id；配不上的孤儿结果由调用方丢弃。
+ * 同一批内配对一致性由 WireMessage 的装配校验兜底。
  */
 private class ToolCallIdRegistry {
-    private val canonical = mutableMapOf<String, String>()
     private val used = mutableSetOf<String>()
+    private var openBatch: Map<String, String> = emptyMap()
 
-    fun canonical(raw: String): String {
-        canonical[raw]?.let { return it }
+    fun beginBatch() { openBatch = emptyMap() }
+
+    fun declare(raw: String): String {
         val base = if (raw.length <= MAX_TOOL_CALL_ID_LENGTH) raw else shorten(raw)
         var chosen = base
         if (base in used) {
@@ -557,9 +599,11 @@ private class ToolCallIdRegistry {
             } while (chosen in used)
         }
         used += chosen
-        canonical[raw] = chosen
+        openBatch = openBatch + (raw to chosen)
         return chosen
     }
+
+    fun resolve(raw: String): String? = openBatch[raw]
 
     private fun shorten(raw: String): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
