@@ -109,18 +109,26 @@ install -m 0755 "$DASH_SRC/usr/bin/dash" "$ROOTFS_SRC/usr/bin/dash"
 # minirootfs uses split /bin + /usr/bin, so sweep both.
 find "$ROOTFS_SRC" -name '*busybox*' -exec rm -rf {} +
 find "$ROOTFS_SRC" -type l -lname '*busybox*' -delete
-# apk world 仍登记 busybox：不清除的话 apk upgrade 会静默重装它
+# BusyBox 从包管理账本里了断：world 只是声明，apk upgrade 遍历的是已安装
+# DB——把 P:busybox 与 P:busybox-binsh 两个条目块从 installed DB 剔除
+# （已验证无其他已装包反向依赖；/bin/sh 届时是无主的 dash 符号链接），
+# 否则上游 busybox 一 bump，设备上一次 apk upgrade 就静默重装它。
 if [ -f "$ROOTFS_SRC/etc/apk/world" ]; then
     grep -v '^busybox$' "$ROOTFS_SRC/etc/apk/world" > "$ROOTFS_SRC/etc/apk/world.tmp" || true
     mv "$ROOTFS_SRC/etc/apk/world.tmp" "$ROOTFS_SRC/etc/apk/world"
 fi
-# 交互 shell 首启一次性预装工具集（后台、幂等）：填补 busybox 出包后的命令真空期
+if [ -f "$ROOTFS_SRC/lib/apk/db/installed" ]; then
+    awk 'BEGIN{RS="";ORS="\n\n"} $0 !~ /(^|\n)P:busybox(-binsh)?\n/ {print $0 "\n"}' \
+        "$ROOTFS_SRC/lib/apk/db/installed" > "$ROOTFS_SRC/lib/apk/db/installed.tmp"
+    mv "$ROOTFS_SRC/lib/apk/db/installed.tmp" "$ROOTFS_SRC/lib/apk/db/installed"
+fi
+mkdir -p "$ROOTFS_SRC/var/novex"
+# 交互 shell 首启一次性预装工具集（后台、幂等）：填补 busybox 出包后的命令
+# 真空期。/var/novex 已在构建期预建，这里只用 shell 内建，装成功才落标记。
 cat > "$ROOTFS_SRC/etc/profile.d/novex-tools.sh" <<'PROF'
 # novex-degpl-1: one-time best-effort toolset provision (BusyBox-free rootfs)
-if [ ! -x /usr/bin/ls ] && [ -x /sbin/apk ] && [ ! -f /var/novex/.tools-installing ]; then
-    mkdir -p /var/novex
-    : > /var/novex/.tools-installing
-    (apk add -q bash coreutils coreutils-env sed grep findutils >/dev/null 2>&1; rm -f /var/novex/.tools-installing) &
+if [ ! -x /usr/bin/ls ] && [ -x /sbin/apk ] && [ ! -f /var/novex/.tools-done ]; then
+    (apk add -q bash coreutils coreutils-env sed grep findutils >/dev/null 2>&1 && : > /var/novex/.tools-done) &
 fi
 PROF
 # /bin/sh must use a RELATIVE target: the app's tar extractor resolves link

@@ -610,9 +610,9 @@ object PRootKernel {
         // (ext4/F2FS as mounted by zygote) refuses cross-directory hardlinks
         // for app uids, so PRoot would otherwise pass link() straight through
         // to the host kernel and the host kernel rejects with EPERM. Alpine's
-        // apk installs busybox-applet packages (binutils, gcc deps, etc.) by
-        // hardlinking ar/ld/nm/strip → busybox; without this flag every such
-        // install fails with "Permission denied". Symlinks are functionally
+        // apk installs some packages by hardlinking ar/ld/nm/strip into place;
+        // without this flag every such install fails with "Permission denied".
+        // Symlinks are functionally
         // equivalent for the apk consumer.
         cmd.add("--link2symlink")
 
@@ -742,10 +742,10 @@ object PRootKernel {
      * Always rewritten so improvements ship with each app update.
      */
     private fun installShellWrappers(binDir: File) {
-        // busybox `top` walks all of /proc and aborts on the first unreadable
+        // GNU/procps `top` walks all of /proc and aborts on the first unreadable
         // /proc/<pid>/stat (Android sandbox blocks reads of other UIDs' procfs).
-        // busybox in this rootfs doesn't accept `-p PIDS` either. Workaround:
-        // simulate `top` with `ps` in a refresh loop, scoped to our session
+        // Workaround: simulate `top` with `ps` in a refresh loop, scoped to our
+        // session
         // (only PIDs whose /proc/<pid>/stat is actually readable by us).
         val topWrapper = File(binDir, "top")
         topWrapper.writeText(
@@ -829,6 +829,8 @@ object PRootKernel {
             |# Interactive mode: clear screen + redraw each interval. Exits on
             |# Ctrl+C OR when the user presses 'q' / 'Q'. We put the TTY into
             |# raw, no-echo mode so single keypresses are read without Enter.
+            |command -v sleep >/dev/null 2>&1 || { echo 'top: sleep not installed yet (run: apk add coreutils)'; exit 0; }
+            |
             |if [ -t 0 ]; then
             |    saved_stty=${'$'}(stty -g 2>/dev/null)
             |    stty -echo -icanon min 0 time 0 2>/dev/null
@@ -885,7 +887,7 @@ object PRootKernel {
         val configFile = File(rootfs, "var/minis/.mount-readonly-prefixes")
 
         if (readOnlyLinuxPrefixes.isEmpty()) {
-            // No read-only mounts — remove the config + wrappers so plain busybox
+            // No read-only mounts — remove the config + wrappers so plain commands
             // commands run unimpeded.
             runCatching { configFile.delete() }
             for (name in guardedCmds) {
