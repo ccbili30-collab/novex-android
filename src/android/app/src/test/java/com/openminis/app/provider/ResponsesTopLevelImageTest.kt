@@ -2,7 +2,9 @@ package com.openminis.app.provider
 
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
-import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.provider.ImageDegradationLearning
+import novex.android.transport.NovexTransportProvider
+import novex.model.WireProtocol
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -68,11 +70,11 @@ class ResponsesTopLevelImageTest {
         inputModalities = listOf("text"),
     )
 
-    private fun responsesProvider(model: LLMModel) = OpenAIProvider(
+    private fun responsesProvider(model: LLMModel) = NovexTransportProvider(
         apiKey = "test-key",
         model = model,
         basePath = server.url("/").toString().trimEnd('/'),
-        useResponsesAPI = true,
+        protocol = WireProtocol.RESPONSES,
     )
 
     /** Run one request and return the JSON body that actually went out. */
@@ -177,7 +179,7 @@ class ResponsesTopLevelImageTest {
 
     @Test
     fun `a learned-degraded model gets the placeholder, never raw pixels`() {
-        OpenAIProvider.imageDegradedModels.add("text-only-model")
+        ImageDegradationLearning.imageDegradedModels.add("text-only-model")
         try {
             val body = capturedBody(
                 textOnlyModel(),
@@ -201,7 +203,7 @@ class ResponsesTopLevelImageTest {
                 texts.any { it.contains("call read_image") },
             )
         } finally {
-            OpenAIProvider.imageDegradedModels.remove("text-only-model")
+            ImageDegradationLearning.imageDegradedModels.remove("text-only-model")
         }
     }
 

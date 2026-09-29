@@ -256,6 +256,69 @@ P3.1d 绞杀收尾（PR 见进度日志，2026-09-29）——**删除上游 prov
   删除，包内剩 OpenAIProvider + ThinkPrefixStreamParser（3,920 行血统）。
   适配器对 imageDegradedModels/looksLikeImageRejection 的共用（跨实现学习集）
   随 P3.1e 一并迁移。
+P3.1e OpenAIProvider 终局退役（PR 见进度日志，2026-09-28）——**删除上游
+provider/openai/ 整包（OpenAIProvider + ThinkPrefixStreamParser，审计口径 3,920 行）及其测试**，九类实例全部换管自有传输：
+- **ResponsesWire**（novex.model 自有，零上游依赖）：Responses 请求编码
+  （input items/instructions/扁平工具/store:false/prompt_cache_key 会话稳定
+  缓存键/reasoning{effort,summary}/include 加密思考回放（仅 codex）/
+  max_output_tokens（codex 指纹体不写）/input_image 裸字符串形态/function_call
+  双 id（id=fc_… + call_id）逐字回放与 fc_syn 合成）+ SSE 事件族解码
+  （output_text/reasoning_text/reasoning_summary_text 增量、output_item
+  added|done、function_call_arguments 增量、completed|failed|incomplete 终态、
+  无 [DONE] 哨兵时按 finishReason 补收尾、completed 的 output 里整块
+  function_call/image_generation_call 防御补块）+ **gpt-image-2 codex 生图流**
+  （固定指纹体 gpt-5.5+image_generation 工具；文本增量转拒答文案、图块转
+  媒体附件、无图以 Failure 收流——Done 只随图产出，不被 finishReason 盖掉）。
+- **Azure 形态**：ModelEndpoint 增 tokenHeader（api-key 头替代 Bearer）+
+  permitQueryParams；适配器 azureUrl 剥离游离 /v1 与 /openai 段拼
+  deployments 路径并保留 ?api-version 查询；聊天/Responses/生图（ImagesClient
+  显式端点覆盖）三路同规则。
+- **动态 OAuth bearer**：适配器 oauthTokenProvider 每请求挂起解析（刷新感知；
+  解析失败按 InvalidApiKey 收流不进重试链），Codex/xAI/Kimi 三家共用；codex
+  客户端指纹头（Version/Openai-Beta/Originator/codex_cli_rs UA/账号 id 可空）。
+- **OpenRouter 附加头**（HTTP-Referer/X-Title 经 extraHeaders 后合并替换）+
+  anthropic/ 前缀模型顶层 cache_control 断点（[OpenMinis#191] 3-6 倍成本修复）。
+- **前尘 responses 回退语义保真**：chat 首块前失败自动改走 /v1/responses 重试
+  一次；进程级粘性按实例 id（工厂重建的 provider 对象同样命中，省一次必败
+  chat 往返）；粘性等重试真的产出首块再落（responses 也失败则下回合仍从 chat
+  试起）；已发块后的失败不触发回退。
+- **imageDegradedModels 学习集迁移**：app 侧自有 ImageDegradationLearning
+  （imageDegradedModels/looksLikeImageRejection/中性占位文案）；chat+responses
+  两方言参与降级学习，anthropic/gemini 恒真实发送。openCodeSunsetFriendlyError
+  随 401/403 分类矩阵迁至适配器（测试随迁）。
+- **LAN 明文政策（与 P3.1c 一致）**：自有传输只收 https/本机回环；局域网明文
+  http 中继以确定性中文 ProviderError 收流（请求前置预检，含动态 OAuth 令牌
+  装配后的端点形校验），工厂不再有任何回退实现可躲。
+- Responses 方言发裸 `application/json`（无 charset 后缀——部分第三方 Responses
+  中转严格拒收）；response.failed 的 server_error/rate_limit_exceeded 按瞬态
+  分类（仅 responses 线；chat 线同名字符串 code 仍走上游 optInt 默认 0 的供应
+  商错误口径）。
+- P3.1d 净眼三建议采纳：① gemini 目录拉取网络异常 IOException 上抛（对齐被删
+  语义，不再静默回内置表）+ OAuth 目录补品牌 UA；② ImagesClient b64 重试匹配
+  lowercase（大写 Response_Format 拼写同样触发去键重试）；③ anthropic 线工具
+  结果图 mime 缺失按魔数探测（不再假定 png）。
+- 存量行为测试换管续跑：ThinkingWireGoldenSnapshot（119 行金表经适配器原样
+  通过）、MistralReasoningField/OpenRouterCacheControl/ThinkingRulesRegression/
+  ResponsesTopLevelImage/ResponsesApiFinished/StreamDropNoFinish/OpenAIEditImage/
+  ModelRequestAudit/DocxAttachmentRequestChain/DocumentContinuationBudget 全部改
+  经 NovexTransportProvider 钉同一批行为；OpenAIProviderTest/ThinkPrefix
+  StreamParserTest/OpenAIHttpErrorDetailTest 删除（思考金表由快照与回归测试
+  承担、<think> 前缀拆分自 P3.1b 起记录在案不迁移、HTTP 错误体细节由模块
+  ChatCompletionStreamTest 钉）。
+- 已知 judgment calls（记录在案）：responses 线 usage 不做 fresh-only 减法
+  （沿 chat 线口径，cacheRead 原样透传）；output_item.done 的 function_call
+  权威 arguments 以增量流为准（StreamChunk 契约，服务端修正载荷罕见）；codex
+  生图 url 条目下载不含（后端只走 base64 result）；temperature 丢弃沿旧规；
+  TTFB 分相看门狗/OkHttp 线路追踪不上移（自有传输统一 300s 读超时+停滞看门
+  狗，P3.1b 已记录）。
+九类路由对照：①Codex-OAuth→RESPONSES@chatgpt.com 后端+指纹头+codex 生图体
+②官方直连→CHAT@api.openai.com/v1 ③useResponsesAPI→RESPONSES@自定基址
+④Azure→deployments 路径+api-key 头（chat/responses/生图同规则）⑤前尘回退→
+CHAT 起步失败自动切 RESPONSES（进程粘性）⑥LAN 明文→适配器预检确定性报错
+⑦OpenRouter→CHAT@openrouter.ai+附加头+anthropic cache_control ⑧xAI→CHAT
+@api.x.ai/v1（OAuth 动态 bearer）⑨Kimi→CHAT@api.kimi.com/coding/v1（OAuth
+动态 bearer）。`grep OpenAIProvider src/android/app/src` 归零（注释墓碑中性化）；
+`grep 'import com.openminis' src/android/model-transport/` 保持归零。
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -311,3 +374,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | #63 | P3.1b 适配器换管：OpenAI 兼容中转（自定 base 纯 chat）聊天流量切自有 novex.model 传输；model-transport 小进化（附加头/reasoning 回放/音频块/附加参数，ChatCompletionClient +54/-12）；净眼退回两修（流桥 trySendBlocking 背压、token 上限键按主机选择）+ 流中 error 数字 code 矩阵；44 条新增单测（模块 7 + 适配器 28 + 工厂 9） | 上游 OpenAIProvider 及其测试零改动（P3.1d 处置）；model-transport 零上游依赖不变 |
 | 2026-09-28 | #64 | P3.1c 原生协议换管：anthropic/gemini 聊天流量切自有 novex.model 传输（模块新增 AnthropicWire 322 行 + GeminiWire 208 行；适配器分线路由 +374/−68；ChatCompletionClient +30/−11、Stream +65/−15；工厂两分支改构造适配器；ThinkingRuleResolver.anthropicThinkingShape 委托 novex.model；ChatViewModel 的 isOAuth/enhancedCache 盖章改指适配器）；净眼退回一修三采纳（LAN 明文预检确定性 ProviderError、HTTP 错误体三方言解析、gemini 缺省 end_turn、台账口径）；三线全走自有传输；49 条新增单测（模块 anthropic 17 + gemini 14 + 适配器原生线 18，含 MockWebServer 端到端 2） | 上游 anthropic/ 两包（3f ~1.4k）与 gemini/（2f ~0.7k）聊天流量清零、工厂零引用（文件留存，P3.1d 删）；model-transport 零上游依赖不变 |
 | 2026-09-29 | 本 PR（P3.1d） | 绞杀收尾：删上游 anthropic/（3f 1,430 行）+ gemini/（2f 683 行）+ OpenAIModelsApi（212 行）+ 两测试（1,035 行）；移植 ImagesClient（novex.model 生图）与 ModelsCatalog/ModelsCatalogApi（三方言模型目录）；适配器 imageDelegate 切自有传输、消费方改走 ImagesCapableProvider 接口；净眼挂账五条全清（a 工具结果图片补发/b 孤儿过一条 user 即失效/c usage 缓存计量/d 协议防呆/e OAuth 前缀注入）；Anthropic*/Gemini* 主代码引用清零（仅注释墓碑）| 血统：上游未动 191f/39,865 → 186f/37,943（−1,922 行），上游改动 161f/100,520 → 160f/100,153；Novex 新增 379f/50,349 → 382f/51,691（+ImagesClient/ModelsCatalog/ImagesCapableProvider/ModelsCatalogApi）；provider.openai 留存 2f/3,920 行（活码，P3.1e）；model-transport 零上游依赖不变 |
+| 2026-09-28 | 本 PR（P3.1e） | OpenAIProvider 终局退役：删上游 provider/openai/ 整包（2f 3,920 行）+ 旧测试 3 件；novex.model 新增 ResponsesWire（请求编码+SSE 事件族+codex 生图流）与 ModelEndpoint tokenHeader/permitQueryParams、ImagesClient 端点覆盖；适配器九类路由（Codex-OAuth/官方直连/useResponsesAPI/Azure/前尘回退/LAN 明文/OpenRouter/xAI/Kimi）+ 动态 OAuth bearer + 前尘回退进程粘性 + OpenRouter 附加头与 anthropic cache_control；imageDegradedModels 迁 app 侧 ImageDegradationLearning；P3.1d 净眼三建议采纳；存量行为测试 10 件换管续跑、模块+适配器+工厂新增 40+ 用例 | 血统：上游未动 186f/37,943 → 183f/37,623，上游改动 160f/100,153 → 159f/96,412（openai 整包归零）；Novex 新增 382f/51,691 → 383f/52,063；model-transport 新增 ResponsesWire（+~470 行）零上游依赖不变 |

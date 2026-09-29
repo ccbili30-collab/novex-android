@@ -754,7 +754,7 @@ class ProviderRepository(private val context: Context) {
      * responses 同 host 的 /v1/responses 亦通）；不内置密钥；密钥链接指向官网；
      * 附带一条 gemini-* → 完全省略的思考规则（中转会把根级 reasoning_effort 错译成
      * Claude thinking 参数触发 400）；chat 失败自动改走 responses（见
-     * OpenAIProvider 的 responsesFallback）。
+     * 适配器 NovexTransportProvider 的 responsesFallback）。
      */
     private fun seedQianchenPreset() {
         val prefs = context.getSharedPreferences("novex_provider_presets", Context.MODE_PRIVATE)

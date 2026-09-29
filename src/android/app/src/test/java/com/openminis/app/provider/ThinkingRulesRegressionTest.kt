@@ -3,7 +3,8 @@ package com.openminis.app.provider
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
+import novex.model.WireProtocol
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -30,7 +31,7 @@ import org.junit.Test
  * request body, and positive assertions are paired with mutually-exclusive negative
  * ones (e.g. root `reasoning_effort` present AND absent from inside `thinking`).
  *
- * The body is captured through the genuine production path: a real [OpenAIProvider]
+ * The body is captured through the genuine production path: a real [NovexTransportProvider]
  * is pointed at a [MockWebServer] URL whose path carries the vendor literal the
  * production predicate greps for (`isMistral` = `basePath.contains("mistral.ai")`,
  * `usesUnifiedReasoningEffort` = contains `api.venice.ai` / `volces` / `ark.`). This
@@ -101,7 +102,7 @@ class ThinkingRulesRegressionTest {
                 MockResponse().setHeader("Content-Type", "application/json").setBody(ok),
             )
         }
-        val provider = OpenAIProvider(apiKey = "test-key", model = model, basePath = basePath)
+        val provider = NovexTransportProvider(apiKey = "test-key", model = model, basePath = basePath)
         runCatching {
             runBlocking {
                 provider.sendMessageClamped(
@@ -199,11 +200,11 @@ class ThinkingRulesRegressionTest {
                     MockResponse().setHeader("Content-Type", "application/json").setBody(ok),
                 )
             }
-            val provider = OpenAIProvider(
+            val provider = NovexTransportProvider(
                 apiKey = "test-key",
                 model = model("mistral-large-latest", reasoningEffortValues = listOf("low", "high")),
                 basePath = server.url("/mistral.ai/v1").toString().trimEnd('/'),
-                useResponsesAPI = true,
+                protocol = WireProtocol.RESPONSES,
             )
             runCatching {
                 runBlocking {
@@ -240,11 +241,11 @@ class ThinkingRulesRegressionTest {
                 MockResponse().setHeader("Content-Type", "application/json").setBody(ok),
             )
         }
-        val provider = OpenAIProvider(
+        val provider = NovexTransportProvider(
             apiKey = "test-key",
             model = model("gpt-5.3", reasoningEffortValues = listOf("low", "medium", "high")),
             basePath = server.url("/v1").toString().trimEnd('/'),
-            useResponsesAPI = true,
+            protocol = WireProtocol.RESPONSES,
         )
         runCatching {
             runBlocking {

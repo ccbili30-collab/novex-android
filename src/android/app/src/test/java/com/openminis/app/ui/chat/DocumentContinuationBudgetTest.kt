@@ -5,7 +5,7 @@ import com.openminis.app.cards.*
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.model.*
 import novex.core.*
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.flow.toList
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.MockResponse
@@ -90,7 +90,7 @@ class DocumentContinuationBudgetTest {
                     "data: {\"choices\":[{\"delta\":{\"content\":\"Document received\"},\"finish_reason\":null}]}\n\n"+
                     "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"+
                     "data: [DONE]\n\n"))
-                val provider=OpenAIProvider("test",LLMModel.gpt4oMini,server.url("/v1").toString().trimEnd('/'))
+                val provider=NovexTransportProvider("test",LLMModel.gpt4oMini,server.url("/v1").toString().trimEnd('/'))
                 val response=provider.streamMessage(history,prompt,8192,tools=tools).toList()
                 assertTrue(response.any {it is LLMStreamChunk.Text && it.text=="Document received"})
                 val body=JSONObject(requireNotNull(server.takeRequest(5,TimeUnit.SECONDS)).body.readUtf8())

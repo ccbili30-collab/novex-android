@@ -3,7 +3,7 @@ package com.openminis.app.provider
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -109,7 +109,7 @@ class ThinkingWireGoldenSnapshotTest {
         repeat(4) {
             server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(ok))
         }
-        val provider = OpenAIProvider(apiKey = "test-key", model = m, basePath = basePath)
+        val provider = NovexTransportProvider(apiKey = "test-key", model = m, basePath = basePath)
         runCatching {
             runBlocking {
                 provider.sendMessageClamped(

@@ -188,7 +188,7 @@ object GenerateImageTool {
         try {
             val provider = ProviderFactory.create(instance, credential, entry.model, context)
             // [P3.1d] 生图接口面：适配器（OpenAI 兼容中转线）的 imageDelegate 走自有
-            // novex.model ImagesClient；仍由上游 OpenAIProvider 承担的线路（官方直连/
+            // novex.model ImagesClient；该九类线路自 P3.1e 起全由适配器 imageDelegate 承担（官方直连/
             // Azure/Responses/OpenRouter/xAI/Kimi，P3.1e 换管）实现同一接口，行为不变。
             val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
                 ?: provider as? com.openminis.app.provider.ImagesCapableProvider

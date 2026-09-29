@@ -14,7 +14,8 @@ import com.openminis.app.data.model.ThinkingLevel
  * the whole point of the rule registry is that a vendor contract is described ONCE.
  *
  * PHASE 1 SCOPE: models the OpenAI-compatible family only (everything flowing through
- * [com.openminis.app.provider.openai.OpenAIProvider]). Gemini and Anthropic have their
+ * the OpenAI-compatible wire lane; 墓碑：P3.1e 前该线由上游 openai 包实现，整包已删，
+ * 现为 novex.android.transport 适配器). Gemini and Anthropic have their
  * own emitters and are deliberately NOT routed here yet — their formats are declared so
  * the vocabulary is complete, but nothing resolves to them on this path. Phase 2 wires
  * them up.

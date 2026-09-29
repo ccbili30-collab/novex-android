@@ -13,7 +13,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * （gemini 的 alt=sse）；默认禁止查询串——历史原因是防令牌进 URL。
  */
 class ModelEndpoint(val completionUrl: URI, private val token: String?, private val extraHeaders: Map<String,String> = emptyMap(),
-                    permitQueryParams: Boolean = false) {
+                    permitQueryParams: Boolean = false,
+                    /** 非 Bearer 鉴权头名（Azure OpenAI 的 api-key）；null=Authorization: Bearer。 */
+                    val tokenHeader: String? = null) {
     init {
         require(completionUrl.userInfo == null && completionUrl.fragment == null && (permitQueryParams || completionUrl.query == null))
         require(completionUrl.scheme == "https" || (completionUrl.scheme == "http" && completionUrl.host in setOf("127.0.0.1","localhost","::1")))
@@ -24,7 +26,10 @@ class ModelEndpoint(val completionUrl: URI, private val token: String?, private 
         }
     }
     internal fun authorize(connection: HttpURLConnection) {
-        if (!token.isNullOrBlank()) connection.setRequestProperty("Authorization","Bearer $token")
+        if (!token.isNullOrBlank()) {
+            if (tokenHeader != null) connection.setRequestProperty(tokenHeader, token)
+            else connection.setRequestProperty("Authorization","Bearer $token")
+        }
         extraHeaders.forEach { (name,value) -> connection.setRequestProperty(name,value) }
     }
 }
@@ -117,14 +122,15 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
 }
 data class PendingTool(val id: String,val name: String,val arguments: String,val thoughtSignature: String? = null)
 
-/** 线协议方言：决定 [ChatCompletionCall] 流式读取用的 SSE 解码器。非流式 [ChatCompletionCall.execute] 只实现 OpenAI 兼容线（anthropic/gemini 由调用方经流式聚合）。 */
-enum class WireProtocol { CHAT_COMPLETIONS, ANTHROPIC_MESSAGES, GEMINI_GENERATE_CONTENT }
+/** 线协议方言：决定 [ChatCompletionCall] 流式读取用的 SSE 解码器。非流式 [ChatCompletionCall.execute] 只实现 OpenAI 兼容线（anthropic/gemini/responses 由调用方经流式聚合）。 */
+enum class WireProtocol { CHAT_COMPLETIONS, ANTHROPIC_MESSAGES, GEMINI_GENERATE_CONTENT, RESPONSES }
 
 /** 线协议 ↔ 请求体方言配套判定（[ChatCompletionCall] 开连接前的防呆，错配早失败）。 */
 internal fun CompletionStreamRequest.matchesProtocol(protocol: WireProtocol): Boolean = when (protocol) {
     WireProtocol.CHAT_COMPLETIONS -> this is StreamRequest
     WireProtocol.ANTHROPIC_MESSAGES -> this is AnthropicMessagesRequest
     WireProtocol.GEMINI_GENERATE_CONTENT -> this is GeminiGenerateContentRequest
+    WireProtocol.RESPONSES -> this is ResponsesStreamRequest
 }
 
 internal val WireProtocol.requestTypeName: String
@@ -132,6 +138,7 @@ internal val WireProtocol.requestTypeName: String
         WireProtocol.CHAT_COMPLETIONS -> "StreamRequest"
         WireProtocol.ANTHROPIC_MESSAGES -> "AnthropicMessagesRequest"
         WireProtocol.GEMINI_GENERATE_CONTENT -> "GeminiGenerateContentRequest"
+        WireProtocol.RESPONSES -> "ResponsesStreamRequest"
     }
 sealed interface ModelResult {
     data class Reply(val text: String,val inputTokens: Long?,val outputTokens: Long?) : ModelResult
@@ -177,7 +184,7 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
             connection.instanceFollowRedirects=false
             connection.requestMethod="POST";connection.doOutput=true
             connection.connectTimeout=timeoutMillis;connection.readTimeout=timeoutMillis
-            connection.setRequestProperty("Content-Type","application/json; charset=utf-8")
+            connection.setRequestProperty("Content-Type", contentTypeOf())
             endpoint.authorize(connection)
             val bytes=body.toByteArray(Charsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.size)
             networkAttempted=true
@@ -225,7 +232,7 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
             connection.instanceFollowRedirects=false
             connection.requestMethod="POST";connection.doOutput=true
             connection.connectTimeout=timeoutMillis;connection.readTimeout=timeoutMillis
-            connection.setRequestProperty("Content-Type","application/json; charset=utf-8")
+            connection.setRequestProperty("Content-Type", contentTypeOf())
             endpoint.authorize(connection)
             val bytes=body.toByteArray(Charsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.size)
             networkAttempted=true
@@ -240,6 +247,9 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
                 WireProtocol.CHAT_COMPLETIONS->SseDecoder()
                 WireProtocol.ANTHROPIC_MESSAGES->AnthropicSseDecoder()
                 WireProtocol.GEMINI_GENERATE_CONTENT->GeminiSseDecoder()
+                // codex 生图流（gpt-image-2）需要带标志构造：文本增量转拒答文案、
+                // image_generation_call 转媒体块。标志从请求体自带，免开工厂参数。
+                WireProtocol.RESPONSES->ResponsesSseDecoder(request is ResponsesStreamRequest && request.codexImageRun)
             }
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val buffer=CharArray(8192)
@@ -267,6 +277,14 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
     }
 
     /**
+     * 请求体 Content-Type：Responses 方言发裸 `application/json`——部分第三方
+     * Responses 中转对 `; charset=utf-8` 后缀严格拒收（对齐被替换实现的绕行）；
+     * 其余方言沿用 `application/json; charset=utf-8`。
+     */
+    private fun contentTypeOf(): String =
+        if (protocol == WireProtocol.RESPONSES) "application/json" else "application/json; charset=utf-8"
+
+    /**
      * HTTP 非 200 → 失败块。错误体照读并按协议方言解析出可诊断的 message 与
      * code（恢复换管后 400 的可诊断性；无体或非 JSON 时退回「HTTP 状态码」字样）：
      *  - OpenAI 兼容线：error.message（附 error.request_id，贴上游口径）；
@@ -283,7 +301,7 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
         val error=root?.optJSONObject("error")
         var code:String?=null
         val message=when(protocol) {
-            WireProtocol.CHAT_COMPLETIONS -> {
+            WireProtocol.CHAT_COMPLETIONS, WireProtocol.RESPONSES -> {
                 val detail=error?.streamText("message").orEmpty()
                 val requestId=(error?.streamText("request_id") ?: root?.streamText("request_id") ?: "")
                     .takeIf { it.isNotEmpty() && it !in detail }

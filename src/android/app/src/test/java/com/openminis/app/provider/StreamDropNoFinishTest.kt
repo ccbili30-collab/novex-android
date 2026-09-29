@@ -4,7 +4,7 @@ import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -38,7 +38,7 @@ class StreamDropNoFinishTest {
                 .setHeader("Content-Type", "text/event-stream")
                 .setBody(body),
         )
-        val provider = OpenAIProvider(
+        val provider = NovexTransportProvider(
             apiKey = "test-key",
             model = LLMModel.gpt4oMini,
             basePath = server.url("/v1").toString().trimEnd('/'),

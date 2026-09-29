@@ -3,7 +3,7 @@ package com.openminis.app.provider
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -76,7 +76,7 @@ class MistralReasoningFieldTest {
                     .setBody(ok),
             )
         }
-        val provider = OpenAIProvider(
+        val provider = NovexTransportProvider(
             apiKey = "test-key",
             model = reasoningModel,
             basePath = basePath,
