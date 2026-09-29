@@ -114,10 +114,18 @@ minis-mcp-cli（#!/usr/bin/env 依赖 coreutils-env）、命令真空期预装�
 
 ### P3 · 子系统绞杀 — 黄档 — 顺序即依赖序 — [ ]
 
-每项 = 一个 timebox 分支 + parity 验收（同输入同输出/UI 对齐）后合并：
+**P3.0 执行纲领（摸底结论，2026-09-29）**：provider.* 与全部待绞杀子系统
+都是**上游血统**代码——正确路线是「以自有模块重写等价功能 → parity 验收 →
+删除上游原件」，**绝不能把上游文件搬进干净模块**（搬家即污染 novex-core/
+model-transport 的零血统状态，前面 P1 的成果就白费了）。每个子系统的
+workorder：①可达面甄别（audit 工具 + 29 个消费文件逐一核对真实用到的
+API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.ui）
+→ ③parity 验收（单测钉行为；网络层用 mock/response 钉格式）→ ④删上游
+原件 → ⑤CI + 净眼 + 冒烟。顺序即依赖序：
 
-1. provider 接入（openai/anthropic/gemini/thinking/voice/image ≈10k）
-   → 并入自有 model-transport 模块
+1. provider 接入（openai/anthropic/gemini/thinking/voice/image ≈10k，
+   29 个消费文件）→ 以自有 model-transport（novex.model，现有
+   ChatCompletionClient）为底座重写后删除上游原件
 2. data.db（Room minis.db）+ data.repository → 自有存储模块
 3. sandbox 应用侧 Kotlin（PRootKernel/RootfsManager/ExecutionCoordinator 等，
    ≈19k）→ 同接口重写（对 proot 的接口面：spawn 命令行 + pty fd + rootfs 布局）
