@@ -6,21 +6,38 @@ The selected interface icons under `src/android/app/src/main/res/drawable/ic_pho
 are derived from Phosphor Icons and used under the MIT License. The complete
 license text is included in `src/android/app/src/main/res/raw/phosphor_icons_license.txt`.
 
-OpenMinis bundles, links, or depends on the following third-party components. Versions reflect the current source tree; license types were verified against each project's repository (GitHub license metadata / LICENSE files).
+Novex bundles, links, or depends on the following third-party components. Versions reflect the current source tree; license types were verified against each project's repository (GitHub license metadata / LICENSE files).
 
-## Native C/C++ dependencies (`deps/`)
+> **GPL=0 declaration（Android 分发物，2026-09-29）**：随着沙箱退役
+> （upstream-exit P2.5/R2），Android 分发物**不含任何 GPL 组件**——
+> KaTeX（MIT）、jieba/cppjieba（MIT）、Shizuku（MIT），其余均为
+> Apache-2.0。历史上的 GPL/传染风险实体（iSH、proot、talloc、Alpine
+> rootfs 内的 apk-tools）全部只存在于 iOS 时代或沙箱时代的构建产物中，
+> 现已出清（见下表 Removed / historical）。
+
+## Native C/C++ components
+
+### Currently shipped (Android)
 
 | Component | Version / Source | License | Notes |
 |---|---|---|---|
-| [iSH](https://github.com/OpenMinis/ish-arm64) (ARM64 fork) | git submodule `deps/ish` | **GPL-3.0** (post-`0e3a414` contributions also under GPL-2.0), with an App Store distribution exception (`LICENSE.IOS`) | x86 Linux usermode emulation on iOS; core reason the app is GPLv3 |
-| [proot](https://github.com/OpenMinis/proot) (fork) | git submodule `deps/proot` | **GPL-2.0** | Linux sandbox on Android (`libproot.so`, `proot-aarch64`) |
-| [FFmpeg](https://ffmpeg.org) | 6.1.2, built by `deps/build_ffmpeg.sh` | **LGPL-2.1-or-later** (built without `--enable-gpl` / `--enable-nonfree`) | Dynamic frameworks on iOS; keep the LGPL configuration |
-| [LAME](https://lame.sourceforge.io) | 3.100, vendored at `deps/lame-3.100` | **LGPL-2.0-or-later** | MP3 encoder, linked into FFmpeg via `--enable-libmp3lame` |
-| [talloc](https://talloc.samba.org) (Samba) | vendored at `deps/talloc` | **LGPL-3.0-or-later** | Memory allocator required by proot |
-| [cppjieba](https://github.com/yanyiwu/cppjieba) | vendored (iOS `Vendor/cppjieba`, Android `jieba_jni`) | **MIT** | Chinese word segmentation (header-only + dictionaries) |
-| Alpine Linux minirootfs (de-GPL variant) | downloaded at build time by `scripts/prepare_android_sandbox.sh` | musl **MIT**, dash **BSD-2-Clause**, apk-tools **GPL-2.0-or-later** (kept: isolated runtime component per upstream-exit D1, source on dl-cdn) | BusyBox **removed** from the bundled rootfs (upstream-exit P2); bash/coreutils/grep/sed/findutils are apk-installed on device at runtime and are not distributed by this app. Marker: `/etc/novex-rootfs.marker` |
+| [cppjieba](https://github.com/yanyiwu/cppjieba) | vendored at `src/android/app/src/main/cpp/cppjieba` (+ `jieba_jni.cpp`, dictionaries in `assets/jieba/`) | **MIT** | Chinese word segmentation (header-only + dictionaries) |
 
-## iOS — Swift Package Manager dependencies
+### Removed / historical
+
+| Component | Version / Source | License | Notes |
+|---|---|---|---|
+| [iSH](https://github.com/OpenMinis/ish-arm64) (ARM64 fork) | former git submodule `deps/ish` | **GPL-3.0** (post-`0e3a414` contributions also under GPL-2.0), with an App Store distribution exception (`LICENSE.IOS`) | iOS-era x86 Linux usermode emulation on iOS; deleted with the iOS layer — never part of the Android distribution |
+| [proot](https://github.com/OpenMinis/proot) (fork) | former git submodule `deps/proot` | **GPL-2.0** | Linux sandbox on Android (`libproot.so`, `proot-aarch64`) — **removed** (upstream-exit P2.5, 2026-09-29) |
+| [talloc](https://talloc.samba.org) (Samba) | former vendored `deps/talloc` | **LGPL-3.0-or-later** | Memory allocator required by proot — **removed** (upstream-exit P2.5, 2026-09-29), gone with proot |
+| [FFmpeg](https://ffmpeg.org) | 6.1.2, former `deps/build_ffmpeg.sh` | **LGPL-2.1-or-later** (built without `--enable-gpl` / `--enable-nonfree`) | iOS-era dynamic frameworks; removed with `deps/` |
+| [LAME](https://lame.sourceforge.io) | 3.100, former vendored `deps/lame-3.100` | **LGPL-2.0-or-later** | MP3 encoder, linked into FFmpeg via `--enable-libmp3lame`; iOS-era, removed with `deps/` |
+| Alpine Linux minirootfs (de-GPL variant) | former download in `scripts/prepare_android_sandbox.sh` | musl **MIT**, dash **BSD-2-Clause**, apk-tools **GPL-2.0-or-later** | **已移除（沙箱退役，upstream-exit P2.5/R2）** — BusyBox 早已在 P2 出包，rootfs 整体随沙箱执行层拆除，脚本与资产一并删除 |
+
+## iOS — Swift Package Manager dependencies（历史口径）
+
+> 以下为 iOS 时代依赖清单，仅作历史记录；Android 分发物不含其中任何
+> 组件（Android 已出清，见顶部 GPL=0 宣告）。
 
 Direct packages declared in `src/ios/Minis.xcodeproj`:
 
@@ -57,6 +74,6 @@ Test-only dependencies: JUnit 4.13.2 (**EPL-1.0**), MockWebServer 4.12.0 (**Apac
 | KaTeX | Android `app/src/main/assets/katex/` | **MIT** |
 | jieba dictionaries | iOS bundle / Android `assets/jieba/` | **MIT** (cppjieba distribution) |
 
-## Removed / historical
+## Other removed / historical
 
 - **swift-markdown-ui** (MIT) — formerly vendored under `deps/swift-markdown-ui`; no longer referenced by the Xcode project or imported by any source file, and is not part of the open-source tree.

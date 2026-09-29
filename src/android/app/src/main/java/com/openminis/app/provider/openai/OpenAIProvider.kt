@@ -250,8 +250,9 @@ class OpenAIProvider private constructor(
      * modeled (e.g. Volcengine Seedream's `image` for image-to-image,
      * `watermark`, `tools`). User keys WIN over our defaults (response_format)
      * but never replace the resolved `model`. Empty = no passthrough. Set
-     * per-call by ModelUseOffloadHandler on a freshly-built provider; never
-     * persisted. Values are raw JSON (String/Number/Boolean/JSONObject/JSONArray).
+     * per-call on a freshly-built provider by the `minis-model-use` request
+     * envelope; never persisted. Values are raw JSON
+     * (String/Number/Boolean/JSONObject/JSONArray).
      */
     var imageExtraBody: Map<String, Any?> = emptyMap()
 
@@ -273,8 +274,8 @@ class OpenAIProvider private constructor(
     /**
      * Arbitrary extra fields merged into the chat/completions AND responses
      * request bodies, mirroring [imageExtraBody] on the image path. Populated
-     * per-call by ModelUseOffloadHandler from the input JSON's explicit
-     * `extra_body` / `passthrough.body` envelope (never from implicit top-level
+     * per-call from the request envelope's explicit
+     * `extra_body` / `passthrough.body` fields (never from implicit top-level
      * keys — the chat schema owns its top level). User keys WIN over our
      * defaults (e.g. `plugins`, `web_search_options`, provider-specific knobs)
      * but `model` is force-restored after the merge. Empty = no passthrough.
@@ -608,7 +609,7 @@ class OpenAIProvider private constructor(
         var usage: LLMUsage? = null
         // [T-codex-gpt-image2-oauth-android] Collect model-generated media
         // (gpt-image-2 images) so non-streaming callers — notably
-        // minis-model-use (ModelUseOffloadHandler) — get them on
+        // minis-model-use image runs — get them on
         // LLMResponse.mediaAttachments and can write the image to --output.
         val media = mutableListOf<LLMMediaAttachment>()
         streamMessage(
@@ -1659,7 +1660,7 @@ class OpenAIProvider private constructor(
     /**
      * [T-android-image-endpoint-mode] Generate an image via the OpenAI Images
      * API (`POST $basePath/images/generations`). Mirrors iOS
-     * OpenAIProvider.generateImage. Used only by ModelUseOffloadHandler's
+     * OpenAIProvider.generateImage. Used only by minis-model-use
      * image-output routing for API-key OpenAI-compat instances — the Codex
      * OAuth gpt-image-2 path goes through the existing isCodexImageModel branch
      * and never reaches here.

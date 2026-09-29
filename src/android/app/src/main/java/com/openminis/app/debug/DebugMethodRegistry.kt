@@ -56,7 +56,7 @@ object DebugMethodRegistry {
         ),
         MethodSpec(
             name = "debug.modelUse.exec",
-            description = "DEBUG-only: invoke ModelUseOffloadHandler directly with the given argv. Parallels debug.shizuku.exec — lets harnesses trigger `minis-model-use run/list/search` without an in-shell prompt.",
+            description = "DEBUG-only: invoke minis-model-use directly with the given argv. Parallels debug.shizuku.exec — lets harnesses trigger `minis-model-use run/list/search` without an in-shell prompt. Retained as a registration stub: the sandbox offload handlers were retired (upstream-exit R2), so the call now returns an explicit retirement error.",
             params = listOf(
                 ParamSpec("args", "[string]", required = false, description = "argv past `minis-model-use` (e.g. [\"run\", \"--model\", \"gpt-5.3-codex\"])."),
                 ParamSpec("command", "string", required = false, description = "Whitespace-separated alternative to args."),

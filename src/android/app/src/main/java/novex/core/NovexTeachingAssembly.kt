@@ -35,7 +35,7 @@ object NovexTeachingCandidate {
         val selected = requireNotNull(Regex("### $identityKey\\. .*?(?=\\n### [NGRX]\\. |\\z)", RegexOption.DOT_MATCHES_ALL).find(identities)) { "候选身份教学缺失" }.value
         val tasks = between("## C. 共用任务教学正文", "## D. 工具教学正文")
         val rawTools = between("## D. 工具教学正文", "## E. 用户风格")
-        val toolPattern = Regex("\\b(?:novex_[a-z_]+|save_checkpoint|render_panel|present_choices|register_controls|update_playthrough_state|end_interactive_fiction|document_[a-z_]+|learning_[a-z_]+|workspace_[a-z_]+|read_image|generate_image|browser_use)\\b")
+        val toolPattern = Regex("\\b(?:novex_[a-z_]+|save_checkpoint|render_panel|present_choices|register_controls|update_playthrough_state|end_interactive_fiction|document_[a-z_]+|learning_[a-z_]+|workspace_[a-z_]+|read_image|generate_image)\\b")
         // Same paragraph selection as the existing experiment; task teaching remains complete.
         val teaching = rawTools.split(Regex("(?=### U\\d{2}\\.)")).mapNotNull { chunk ->
             if(!chunk.startsWith("### U")) return@mapNotNull null

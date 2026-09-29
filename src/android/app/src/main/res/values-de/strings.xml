@@ -84,20 +84,6 @@
     <string name="bg_section_footer">Lang laufende Agent-Aufgaben brauchen die Erlaubnis, die CPU bei ausgeschaltetem Bildschirm wach zu halten. Ohne diese Einstellungen kann das System die Inferenz nach wenigen Minuten im Hintergrund pausieren.</string>
     <string name="bg_service_channel_name">Agent-Status</string>
     <string name="bg_service_channel_description">Zeigt den Status laufender Agent-Sitzungen an.</string>
-    <string name="a11y_repair_dialog_title">Bedienungshilfe deaktiviert</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex hat seine Berechtigung für Bedienungshilfen verloren – das passiert nach einem Beenden erzwingen. Shizuku ist verfügbar und kann sie sofort wiederherstellen, ohne die Einstellungen zu öffnen.</string>
-    <string name="a11y_repair_dialog_message_manual">Novex hat seine Berechtigung für Bedienungshilfen verloren – das passiert nach einem Beenden erzwingen. Aktiviere Novex erneut unter Einstellungen → Bedienungshilfen.</string>
-    <string name="a11y_repair_action_repair">Jetzt reparieren</string>
-    <string name="a11y_repair_action_open_settings">Einstellungen öffnen</string>
-    <string name="a11y_repair_cancel">Später</string>
-    <string name="a11y_repair_section_header">Aktion erforderlich</string>
-    <string name="a11y_repair_row_shizuku">Berechtigung reparieren</string>
-    <string name="a11y_repair_row_manual">Bedienungshilfe reaktivieren</string>
-    <string name="a11y_repair_row_sub">Die Berechtigung wurde entzogen, wahrscheinlich durch Beenden erzwingen</string>
-    <string name="a11y_repair_in_progress">Wird repariert…</string>
-    <string name="a11y_repair_failed">Reparatur fehlgeschlagen – bitte in den Einstellungen aktivieren</string>
-    <string name="a11y_repair_footer_shizuku">Android entfernt die Bedienungshilfen-Berechtigung, sobald eine App zwangsweise beendet wird, und stellt sie nicht automatisch wieder her. Shizuku kann sie direkt zurückschreiben.</string>
-    <string name="a11y_repair_footer_manual">Android entfernt die Bedienungshilfen-Berechtigung, sobald eine App zwangsweise beendet wird, und stellt sie nicht automatisch wieder her. Mit Shizuku geht das künftig mit einem Tipp.</string>
     <string name="bg_service_notification_title">Novex Agent aktiv</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">Aufgabe abgeschlossen</string>
@@ -307,19 +293,12 @@
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">Konfigurationstool</string>
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (de) -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">Bedienungshilfen</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli ermöglicht dem Agenten, die UI-Struktur zu lesen, Tippen und Gesten auszuführen sowie Systemereignisse zu beobachten. Beide Zeilen unten müssen gesetzt sein: Agent-Berechtigung wählen und Bedienungshilfen-Dienst in den Systemeinstellungen aktivieren.</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli gewährt dem Agenten privilegierte Android-APIs (Paket-Installation, settings put, Force-Stop, …) über den Shizuku-Dienst, autorisiert via WLAN-ADB oder Root. Beide Zeilen unten müssen gesetzt sein.</string>
-    <string name="perm_a11y_cli_description">Agent darf Bildschirm-UI lesen, tippen, eingeben, Ereignisse beobachten</string>
     <string name="perm_shizuku_cli_description">Privilegierte Android-APIs über den Shizuku-Dienst</string>
-    <string name="perm_a11y_open_settings">Bedienungshilfen-Einstellungen öffnen</string>
     <string name="perm_system_authorization">Systemautorisierung</string>
     <string name="perm_agent_policy">Agent-Berechtigung</string>
-    <string name="perm_a11y_system_ready">Dienst aktiviert</string>
-    <string name="perm_a11y_system_disabled">Dienst nicht aktiviert</string>
     <string name="perm_allow_minis_config">minis-config zulassen</string>
     <string name="perm_minis_config_desc">Wenn deaktiviert, kann der Agent über minis-config keine Einstellungen lesen oder ändern. Der Verlauf unter Logs → Konfigurationsänderungen bleibt weiterhin zugänglich. Der Agent erhält einen permission_denied-Fehler und kann dich stattdessen über Deep Links anleiten.</string>
     <string name="perm_section_privacy">Datenschutz</string>

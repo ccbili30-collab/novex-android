@@ -84,9 +84,8 @@ object OffloadPermissionManager {
         // T330: integrations — opt-in by default. These tools can drive
         // other apps and read on-screen content, so the safer posture is
         // NOT_ALLOWED until the user picks otherwise even when the
-        // underlying system layer (Shizuku binder / Accessibility service)
-        // is already authorized.
-        ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // underlying system layer (Shizuku binder) is already authorized.
+        // (The a11y_cli entry was retired with the sandbox exit.)
         ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
     )
 

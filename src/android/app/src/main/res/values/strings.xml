@@ -128,20 +128,6 @@
     <string name="overlay_completion_timeout">Timed out</string>
     <!-- [T-android-a11y-force-stop-recovery] Accessibility grant repair. Shown
          when a force-stop has stripped the service out of Settings.Secure. -->
-    <string name="a11y_repair_dialog_title">Accessibility turned off</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex lost its accessibility permission — this happens after the app is force-stopped. Shizuku is available, so it can be restored right now without opening Settings.</string>
-    <string name="a11y_repair_dialog_message_manual">Novex lost its accessibility permission — this happens after the app is force-stopped. Re-enable Novex under Settings → Accessibility to continue.</string>
-    <string name="a11y_repair_action_repair">Repair now</string>
-    <string name="a11y_repair_action_open_settings">Open Settings</string>
-    <string name="a11y_repair_cancel">Not now</string>
-    <string name="a11y_repair_section_header">Needs attention</string>
-    <string name="a11y_repair_row_shizuku">Repair accessibility permission</string>
-    <string name="a11y_repair_row_manual">Re-enable accessibility</string>
-    <string name="a11y_repair_row_sub">The permission was revoked, likely by a force-stop</string>
-    <string name="a11y_repair_in_progress">Repairing…</string>
-    <string name="a11y_repair_failed">Repair failed — try enabling it in Settings</string>
-    <string name="a11y_repair_footer_shizuku">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Shizuku can write it back directly.</string>
-    <string name="a11y_repair_footer_manual">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Install and authorize Shizuku to repair this in one tap in future.</string>
     <string name="bg_service_notification_title">Novex Agent Active</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <!-- Shown on the ongoing notification / Live Update chip once the agent
@@ -788,19 +774,12 @@
          the CLI title + description, the agent tri-state policy, and
          the system-layer authorization status with an inline action
          row when system Settings need attention. -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">Accessibility</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli lets the agent read on-screen UI structure, perform taps and gestures, and watch system events. Both rows below must be set: pick an Agent permission and enable the Accessibility service in system Settings.</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli grants the agent privileged Android APIs (package install, settings put, force-stop, …) via the Shizuku service authorized over wireless ADB or root. Both rows below must be set.</string>
-    <string name="perm_a11y_cli_description">Lets the agent read screen UI, tap, type, and watch events</string>
     <string name="perm_shizuku_cli_description">Privileged Android APIs via the Shizuku service</string>
-    <string name="perm_a11y_open_settings">Open Accessibility Settings</string>
     <string name="perm_system_authorization">System authorization</string>
     <string name="perm_agent_policy">Agent permission</string>
-    <string name="perm_a11y_system_ready">Service enabled</string>
-    <string name="perm_a11y_system_disabled">Service not enabled</string>
     <string name="perm_allow_minis_config">Allow minis-config</string>
     <string name="perm_minis_config_desc">When disabled, the agent cannot read or modify any settings via minis-config. The change history at Logs → Config Changes remains accessible. The agent will receive a permission_denied error and can guide you via deep links instead.</string>
     <string name="perm_section_privacy">Privacy</string>
@@ -1455,17 +1434,6 @@
     <!-- T323: System Permissions screen + AccessibilityService -->
     <string name="system_permissions_title">System Permissions</string>
     <string name="system_permissions_subtitle">OS-level permissions granted from system Settings</string>
-    <string name="system_permissions_section_a11y">Accessibility</string>
-    <string name="system_permissions_a11y_row">Novex Accessibility Service</string>
-    <string name="system_permissions_a11y_enabled">Enabled — android-a11y-cli is ready</string>
-    <string name="system_permissions_a11y_disabled">Disabled — tap to enable in system Settings</string>
-    <string name="system_permissions_a11y_footer">Required by android-a11y-cli for UI-tree reads, gesture injection, and event monitoring. Without this, AI agents cannot drive other apps. Toggle the switch under Novex on the next screen.</string>
-    <string name="system_permissions_a11y_oem_header">Service keeps getting killed?</string>
-    <string name="system_permissions_a11y_oem_footer">%1$s may show \"this service has failed\" and stop the accessibility service in the background. Whitelist autostart and remove the battery restriction so it stays connected.</string>
-    <string name="system_permissions_a11y_oem_autostart">Add to autostart whitelist</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">Open the autostart manager and enable Novex</string>
-    <string name="system_permissions_a11y_oem_battery">Remove background / battery restriction</string>
-    <string name="system_permissions_a11y_oem_battery_sub">Set battery usage to \"No restrictions\"</string>
     <string name="back">Back</string>
 
     <!-- Welcome / onboarding (T332) -->

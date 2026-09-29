@@ -1673,25 +1673,6 @@ fun ChatScreen(
         }
     }
 
-    // Auto-present the in-app preview when a shell tool's stdout emits an
-    // OSC MinisOpenURL marker (via /usr/local/bin/minis-open). The broker is
-    // populated by ChatViewModel's shell lineCallback; forwarding the URL
-    // into `urlClickHandler` routes it exactly like a chat-link tap —
-    // http(s)/about → UrlPreviewSheet, minis:// deep links → DeepLinkHandler,
-    // minis://<host>/<path> → in-app file preview by extension.
-    val pendingMinisOpenUrl by com.openminis.app.terminal.MinisOpenUrlBroker.pendingUrl
-        .collectAsState()
-    val minisOpenTerminalVisible by com.openminis.app.terminal.MinisOpenUrlBroker.terminalVisible
-        .collectAsState()
-    LaunchedEffect(pendingMinisOpenUrl, minisOpenTerminalVisible) {
-        val url = pendingMinisOpenUrl ?: return@LaunchedEffect
-        // terminalVisible is legacy coordination for the retired fullscreen
-        // terminal; it stays false now but the guard is kept for parity.
-        if (minisOpenTerminalVisible) return@LaunchedEffect
-        urlClickHandler(url.toString())
-        com.openminis.app.terminal.MinisOpenUrlBroker.consume()
-    }
-
     // [T-android-markdown-image-gallery-cross-message] Collect every
     // `![alt](src)` markdown image emitted by any assistant message in the
     // current windowed view, in chronological order, then open the paged

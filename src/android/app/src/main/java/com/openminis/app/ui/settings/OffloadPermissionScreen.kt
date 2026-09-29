@@ -1,8 +1,5 @@
 package com.openminis.app.ui.settings
 
-import android.content.Context
-import android.content.Intent
-import android.provider.Settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -11,7 +8,6 @@ import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,17 +16,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.accessibility.MinisAccessibilityService
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.offload.ShizukuManager
 import com.openminis.app.ui.components.MinisMenu
 import com.openminis.app.ui.components.MinisTextButton
-import kotlinx.coroutines.delay
 
 @Composable
 fun OffloadPermissionScreen(
@@ -52,17 +45,6 @@ fun OffloadPermissionScreen(
 
     val configEnabled by com.openminis.app.config.MinisConfigPermissionStore.enabled.collectAsState()
 
-    val context = LocalContext.current
-
-    var a11yEnabled by remember { mutableStateOf(isA11yServiceEnabled(context)) }
-    LaunchedEffect(Unit) {
-        // Re-poll once a second so coming back from system Accessibility
-        // settings flips the row without a manual refresh.
-        while (true) {
-            a11yEnabled = isA11yServiceEnabled(context) || MinisAccessibilityService.getInstance() != null
-            delay(1000)
-        }
-    }
     val shizukuSnap by ShizukuManager.snapshot.collectAsState()
 
     SettingsScaffold(
@@ -106,21 +88,8 @@ fun OffloadPermissionScreen(
         // Each card shows the CLI description, the tri-state agent gate, the
         // system-layer status, and (when system-layer is not satisfied) a
         // deeplink back to the OS settings page that fixes it.
-        IntegrationSection(
-            iconVector = novex.android.ui.NovexIcons.Accessibility,
-            iconTint = Color(0xFF34C759),
-            sectionHeaderRes = R.string.perm_section_a11y,
-            sectionFooterRes = R.string.perm_a11y_section_footer,
-            toolName = "a11y_cli",
-            descriptionRes = R.string.perm_a11y_cli_description,
-            systemReady = a11yEnabled,
-            systemStatusTitleRes =
-                if (a11yEnabled) R.string.perm_a11y_system_ready
-                else R.string.perm_a11y_system_disabled,
-            systemActionTitleRes = R.string.perm_a11y_open_settings,
-            onSystemAction = { openAccessibilitySettings(context) },
-        )
-
+        // (The former a11y_cli card was retired with the sandbox exit — the
+        // android-a11y-cli tool and its host-side service no longer ship.)
         IntegrationSection(
             iconVector = novex.android.ui.NovexIcons.Shield,
             iconTint = Color(0xFFAF52DE),
@@ -133,9 +102,7 @@ fun OffloadPermissionScreen(
             descriptionRes = R.string.perm_privileged_cli_description,
             systemReady = ShizukuManager.isReady(),
             systemStatusTitleRes = shizukuSubtitleRes(shizukuSnap.state),
-            systemActionTitleRes = shizukuActionTitleRes(shizukuSnap.state),
             // Open the unified Shizuku-protocol screen for setup actions.
-            onSystemAction = onOpenPrivilegedBackend,
             // The status row itself opens the same page so users can revisit
             // the setup walkthrough even after the manager is already ready.
             onStatusRowClick = onOpenPrivilegedBackend,
@@ -176,13 +143,14 @@ fun OffloadPermissionScreen(
  *   ─────────
  *   Agent permission        [tri-state ▾]
  *   ─────────
- *   System authorization   [status text in color]
- *   ─────────
- *   (only when systemReady=false): [Open system settings →]
+ *   System authorization   [status text in color] (chevron → detail screen)
  *
- * The system-status row is read-only — the user goes to the OS settings
- * page to flip it. systemReady drives both the status row's color/icon
- * and the visibility of the action row below.
+ * The system-status row routes to the dedicated detail screen
+ * ([onStatusRowClick]) regardless of state, so the user can revisit the
+ * setup walkthrough even after the backend is authorized. systemReady only
+ * drives the status row's color. (The former read-only variant with a
+ * conditional "Open system settings" action row belonged to the retired
+ * a11y_cli card and was removed with it.)
  */
 @Composable
 private fun IntegrationSection(
@@ -194,14 +162,11 @@ private fun IntegrationSection(
     descriptionRes: Int,
     systemReady: Boolean,
     systemStatusTitleRes: Int,
-    systemActionTitleRes: Int,
-    onSystemAction: () -> Unit,
-    // [T-android-privileged-backend] When set, the system-status row becomes a
+    // [T-android-privileged-backend] The system-status row is always a
     // chevron-clickable entry to a dedicated detail screen (the multi-backend
-    // Shizuku/AXManager page) — shown REGARDLESS of systemReady, so the user can
-    // open it even when the backend is already authorized. Null keeps the
-    // original read-only status row + conditional action behavior (a11y row).
-    onStatusRowClick: (() -> Unit)? = null,
+    // Shizuku/AXManager page) — shown REGARDLESS of systemReady, so the user
+    // can open it even when the backend is already authorized.
+    onStatusRowClick: () -> Unit,
 ) {
     SettingsSection(
         header = stringResource(sectionHeaderRes),
@@ -219,13 +184,12 @@ private fun IntegrationSection(
         // Agent tri-state policy.
         AgentPolicyRow(toolName = toolName, showDivider = true)
 
-        // System-layer status. When [onStatusRowClick] is provided the row is a
-        // navigation entry (chevron, always shown); otherwise it's read-only.
+        // System-layer status: a navigation entry (chevron, always shown).
         SettingsRow(
             title = stringResource(R.string.perm_system_authorization),
             onClick = onStatusRowClick,
-            showChevron = onStatusRowClick != null,
-            showDivider = onStatusRowClick == null && !systemReady,
+            showChevron = true,
+            showDivider = false,
             trailing = {
                 Text(
                     text = stringResource(systemStatusTitleRes),
@@ -235,17 +199,6 @@ private fun IntegrationSection(
                 )
             },
         )
-
-        // Conditional action row: only for the read-only (a11y) variant, and
-        // only when the system layer needs attention. The privileged-backend
-        // variant routes everything through [onStatusRowClick] above instead.
-        if (onStatusRowClick == null && !systemReady) {
-            SettingsRow(
-                title = stringResource(systemActionTitleRes),
-                onClick = onSystemAction,
-                showDivider = false,
-            )
-        }
     }
 }
 
@@ -364,8 +317,8 @@ private fun categoryHeaderRes(category: OffloadPermissionManager.PermissionCateg
     OffloadPermissionManager.PermissionCategory.SYSTEM -> R.string.perm_section_system
     // INTEGRATIONS is rendered by IntegrationSection above; this branch is
     // unreachable through the auto-loop but kept exhaustive for `when`
-    // exhaustiveness. Reuse the a11y header as a harmless fallback.
-    OffloadPermissionManager.PermissionCategory.INTEGRATIONS -> R.string.perm_section_a11y
+    // exhaustiveness. Reuse the privileged-backend header as a harmless fallback.
+    OffloadPermissionManager.PermissionCategory.INTEGRATIONS -> R.string.perm_section_privileged_backend
 }
 
 @Composable
@@ -381,7 +334,6 @@ private fun toolTitleRes(toolName: String): Int = when (toolName) {
     "clipboard" -> R.string.perm_tool_clipboard
     "contacts" -> R.string.perm_tool_contacts
     "photos" -> R.string.perm_tool_photos
-    "a11y_cli" -> R.string.perm_tool_a11y_cli
     "shizuku_cli" -> R.string.perm_tool_shizuku_cli
     else -> 0
 }
@@ -402,54 +354,9 @@ private fun levelColor(level: OffloadPermissionManager.PermissionLevel): Color =
     OffloadPermissionManager.PermissionLevel.NOT_ALLOWED -> MaterialTheme.colorScheme.error
 }
 
-private fun isA11yServiceEnabled(context: Context): Boolean {
-    val expected = "${context.packageName}/${MinisAccessibilityService::class.java.name}"
-    val enabled = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ) ?: return false
-    return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
-}
-
-private fun openAccessibilitySettings(context: Context) {
-    try {
-        context.startActivity(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-        )
-    } catch (_: Throwable) {
-        try {
-            context.startActivity(
-                Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-        } catch (_: Throwable) {}
-    }
-}
-
 private fun shizukuSubtitleRes(state: ShizukuManager.State): Int = when (state) {
     ShizukuManager.State.NOT_INSTALLED -> R.string.shizuku_state_not_installed
     ShizukuManager.State.NOT_RUNNING -> R.string.shizuku_state_not_running
     ShizukuManager.State.NEED_PERMISSION -> R.string.shizuku_state_need_permission
     ShizukuManager.State.READY -> R.string.shizuku_state_ready
-}
-
-// T336: state-dependent action row title — different verbs per phase of
-// the Shizuku setup funnel.
-private fun shizukuActionTitleRes(state: ShizukuManager.State): Int = when (state) {
-    ShizukuManager.State.NOT_INSTALLED -> R.string.shizuku_install_btn
-    ShizukuManager.State.NOT_RUNNING -> R.string.shizuku_open_btn
-    ShizukuManager.State.NEED_PERMISSION -> R.string.shizuku_grant_btn
-    ShizukuManager.State.READY -> 0  // never displayed (systemReady=true)
-}
-
-private fun performShizukuAction(context: Context, state: ShizukuManager.State) {
-    when (state) {
-        ShizukuManager.State.NOT_INSTALLED -> ShizukuManager.openInstallPage(context)
-        ShizukuManager.State.NOT_RUNNING -> ShizukuManager.openShizukuApp(context)
-        ShizukuManager.State.NEED_PERMISSION -> ShizukuManager.requestPermission()
-        ShizukuManager.State.READY -> {} // no-op; row never rendered
-    }
 }
