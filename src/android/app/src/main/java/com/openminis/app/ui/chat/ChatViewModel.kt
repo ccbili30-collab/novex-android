@@ -10319,7 +10319,12 @@ class ChatViewModel(
             // /var/minis/{workspace,attachments,offloads,browser} files.
             ReadImageTool.NAME -> executeReadImageTool(argsJson)
             GenerateImageTool.NAME -> executeGenerateImageTool(argsJson)
-            "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
+            "shell_execute" -> com.openminis.app.tools.ToolExecutionResult(
+                // R0 沙箱退役灰度：工具目录已不含 shell_execute；此处只兜历史回放或
+                // 模型幻觉调用，明确拒绝而不是执行（P2.5 计划表）。
+                output = "shell_execute is no longer available on this device. Tell the user this operation is unsupported and suggest attaching the material as a document instead.",
+                success = false,
+            )
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
