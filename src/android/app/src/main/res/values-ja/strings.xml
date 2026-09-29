@@ -84,20 +84,6 @@
     <string name="bg_section_footer">長時間のエージェントタスクは画面オフ中も CPU を起動状態に保つ権限が必要です。これらの設定がないと、システムは数分後にバックグラウンド推論を停止することがあります。</string>
     <string name="bg_service_channel_name">エージェントの状態</string>
     <string name="bg_service_channel_description">実行中のエージェントセッションの状態を表示します。</string>
-    <string name="a11y_repair_dialog_title">ユーザー補助が無効になりました</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex のユーザー補助権限が失われました。アプリを強制停止すると発生します。Shizuku が利用可能なため、設定を開かずにすぐ復元できます。</string>
-    <string name="a11y_repair_dialog_message_manual">Novex のユーザー補助権限が失われました。アプリを強制停止すると発生します。「設定 → ユーザー補助」で Novex を再度有効にしてください。</string>
-    <string name="a11y_repair_action_repair">今すぐ復元</string>
-    <string name="a11y_repair_action_open_settings">設定を開く</string>
-    <string name="a11y_repair_cancel">後で</string>
-    <string name="a11y_repair_section_header">対応が必要</string>
-    <string name="a11y_repair_row_shizuku">ユーザー補助権限を復元</string>
-    <string name="a11y_repair_row_manual">ユーザー補助を再有効化</string>
-    <string name="a11y_repair_row_sub">強制停止により権限が取り消された可能性があります</string>
-    <string name="a11y_repair_in_progress">復元中…</string>
-    <string name="a11y_repair_failed">復元に失敗しました — 設定から有効にしてください</string>
-    <string name="a11y_repair_footer_shizuku">Android はアプリが強制停止されるたびにユーザー補助の許可を削除し、自動的には復元しません。Shizuku は直接書き戻せます。</string>
-    <string name="a11y_repair_footer_manual">Android はアプリが強制停止されるたびにユーザー補助の許可を削除し、自動的には復元しません。Shizuku を導入すると次回からワンタップで復元できます。</string>
     <string name="bg_service_notification_title">Novex Agent 実行中</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">タスク完了</string>
@@ -307,19 +293,12 @@
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">設定ツール</string>
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (ja) -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">ユーザー補助</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli を使うと、エージェントは画面の UI 構造を読み取り、タップやジェスチャーを実行し、システムイベントを監視できます。下の 2 行をどちらも設定してください: エージェントの権限を選び、システム設定でユーザー補助サービスを有効化します。</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli は、ワイヤレス ADB または root で起動された Shizuku サービスを介して、エージェントに特権 Android API(パッケージインストール、settings put、強制停止など)へのアクセスを許可します。下の 2 行をどちらも設定してください。</string>
-    <string name="perm_a11y_cli_description">エージェントが画面 UI を読み、タップ・入力し、イベントを監視できるようにします</string>
     <string name="perm_shizuku_cli_description">Shizuku サービス経由の特権 Android API</string>
-    <string name="perm_a11y_open_settings">ユーザー補助設定を開く</string>
     <string name="perm_system_authorization">システム認可</string>
     <string name="perm_agent_policy">エージェント権限</string>
-    <string name="perm_a11y_system_ready">サービス有効</string>
-    <string name="perm_a11y_system_disabled">サービス無効</string>
     <string name="perm_allow_minis_config">minis-config を許可</string>
     <string name="perm_minis_config_desc">無効にすると、エージェントは minis-config 経由で設定を読み取ったり変更したりできなくなります。ログ → 設定変更 の履歴は引き続き閲覧できます。エージェントは permission_denied エラーを受け取り、ディープリンクで操作を案内します。</string>
     <string name="perm_section_privacy">プライバシー</string>

@@ -84,20 +84,6 @@
     <string name="bg_section_footer">Les tâches longues de l\'agent ont besoin d\'autorisation pour garder le CPU réveillé pendant que l\'écran est éteint. Sans ces réglages, le système peut suspendre l\'inférence après quelques minutes en arrière-plan.</string>
     <string name="bg_service_channel_name">État de l\'agent</string>
     <string name="bg_service_channel_description">Affiche l\'état des sessions d\'agent en cours.</string>
-    <string name="a11y_repair_dialog_title">Accessibilité désactivée</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Shizuku est disponible et peut la restaurer immédiatement, sans ouvrir les Réglages.</string>
-    <string name="a11y_repair_dialog_message_manual">Novex a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Réactivez Novex dans Réglages → Accessibilité pour continuer.</string>
-    <string name="a11y_repair_action_repair">Réparer maintenant</string>
-    <string name="a11y_repair_action_open_settings">Ouvrir les Réglages</string>
-    <string name="a11y_repair_cancel">Plus tard</string>
-    <string name="a11y_repair_section_header">Action requise</string>
-    <string name="a11y_repair_row_shizuku">Réparer l’autorisation d’accessibilité</string>
-    <string name="a11y_repair_row_manual">Réactiver l’accessibilité</string>
-    <string name="a11y_repair_row_sub">L’autorisation a été révoquée, probablement par un arrêt forcé</string>
-    <string name="a11y_repair_in_progress">Réparation…</string>
-    <string name="a11y_repair_failed">Échec de la réparation — activez-la dans les Réglages</string>
-    <string name="a11y_repair_footer_shizuku">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Shizuku peut la réécrire directement.</string>
-    <string name="a11y_repair_footer_manual">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Installez et autorisez Shizuku pour réparer en un geste à l’avenir.</string>
     <string name="bg_service_notification_title">Novex Agent actif</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">Tâche terminée</string>
@@ -307,19 +293,12 @@
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">Outil de configuration</string>
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (fr) -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">Accessibilité</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli permet à l\'agent de lire la structure de l\'UI à l\'écran, d\'effectuer des appuis et gestes, et d\'observer les événements système. Les deux lignes ci-dessous doivent être configurées : choisissez une permission d\'agent et activez le service d\'accessibilité dans les paramètres système.</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli accorde à l\'agent des API Android privilégiées (installation de packages, settings put, force-stop, …) via le service Shizuku, autorisé via ADB sans fil ou root. Les deux lignes ci-dessous doivent être configurées.</string>
-    <string name="perm_a11y_cli_description">L\'agent lit l\'UI à l\'écran, tape, écrit, observe les événements</string>
     <string name="perm_shizuku_cli_description">API Android privilégiées via le service Shizuku</string>
-    <string name="perm_a11y_open_settings">Ouvrir les paramètres d\'accessibilité</string>
     <string name="perm_system_authorization">Autorisation système</string>
     <string name="perm_agent_policy">Permission de l\'agent</string>
-    <string name="perm_a11y_system_ready">Service activé</string>
-    <string name="perm_a11y_system_disabled">Service non activé</string>
     <string name="perm_allow_minis_config">Autoriser minis-config</string>
     <string name="perm_minis_config_desc">Lorsque désactivé, l\'agent ne peut ni lire ni modifier les paramètres via minis-config. L\'historique des modifications dans Journaux → Modifications de configuration reste accessible. L\'agent recevra une erreur permission_denied et pourra vous guider via des liens profonds.</string>
     <string name="perm_section_privacy">Confidentialité</string>

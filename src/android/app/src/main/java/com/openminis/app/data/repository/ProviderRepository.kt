@@ -925,19 +925,19 @@ class ProviderRepository(private val context: Context) {
 
     /**
      * [T-android-image-endpoint-mode] Persist the endpoint that last worked for
-     * `auto`-mode image generation on [instanceId]. Called by
-     * ModelUseOffloadHandler after a successful /images/generations call (cache
-     * `imagesGenerations`) or after a route-missing fallback (cache
-     * `chatCompletions`). No-op when unchanged so we don't churn the config /
-     * iCloud sync on every image call. Does not invalidate the model cache —
-     * the endpoint choice never moves the model list.
+     * `auto`-mode image generation on [instanceId]. Called after a successful
+     * /images/generations call (cache `imagesGenerations`) or after a
+     * route-missing fallback (cache `chatCompletions`). No-op when unchanged so
+     * we don't churn the config / iCloud sync on every image call. Does not
+     * invalidate the model cache — the endpoint choice never moves the model
+     * list.
      */
     // [T-android-provider-mutator-lock] `ProviderInstance` has mutable `var`
     // fields, so `workingCopy()`'s list copy is not enough on its own — the
     // instance objects inside it are still the published ones. Replace the
     // element with a `.copy()` rather than writing through to the shared
-    // object. Called from ModelUseOffloadHandler on an offload worker thread
-    // during image generation, so the unsynchronized write had no
+    // object. Called from an offload worker thread during image generation,
+    // so the unsynchronized write had no
     // happens-before with main-thread readers.
     fun setImageEndpointResolved(instanceId: String, endpoint: ImageEndpointMode): Unit =
         synchronized(configLock) {

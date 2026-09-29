@@ -1,88 +1,43 @@
 package com.openminis.app.ui.settings
 
 import android.widget.Toast
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.provider.Settings
+import novex.android.ui.TextButton
+import novex.android.ui.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import novex.android.ui.Scaffold
+import androidx.compose.material3.Text
+import novex.android.ui.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import novex.android.ui.TextButton
-import novex.android.ui.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import novex.android.ui.Scaffold
-import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
-import com.openminis.app.accessibility.AccessibilityRecoveryManager
-import com.openminis.app.accessibility.MinisAccessibilityService
-import com.openminis.app.offload.ShizukuManager
-import com.openminis.app.power.PowerOptimizationManager
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
- * T323: surfaces OS-level permission states (Accessibility service,
- * etc.) the user must grant via external Settings flows. Each row
- * reports current status and routes the user to the relevant system
- * settings page; we re-poll while the screen is visible so coming
- * back from system Settings refreshes the row automatically.
+ * T323: surfaces OS-level permission states the user must grant via
+ * external Settings flows. Each row reports current status and routes
+ * the user to the relevant system settings page.
+ *
+ * The former Accessibility-service section was retired with the sandbox
+ * exit: the a11y CLI tool and its host-side service no longer ship, so
+ * there is no accessibility grant left to surface or repair.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SystemPermissionsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var a11yEnabled by remember { mutableStateOf(isAccessibilityEnabled(context)) }
-    // [T-android-a11y-miui-service-failure] "Service failed" degraded state:
-    // the OEM ROM (MIUI etc.) reports the service as enabled in Settings but
-    // has killed the process / revoked the binding, so getInstance() is null.
-    // On such a device the canonical remediation is autostart-whitelist +
-    // battery "no restrictions"; surface those (reusing PowerOptimizationManager)
-    // only when the service is degraded AND the vendor is known to enforce it.
-    var a11yDegraded by remember { mutableStateOf(false) }
-    // [T-android-a11y-force-stop-recovery] Distinct from `a11yDegraded`: the
-    // grant itself is gone from Settings.Secure (force-stop stripped it), which
-    // is repairable by writing the setting back. `a11yDegraded` is the opposite
-    // case — grant present, process killed — where writing would be pointless.
-    var a11yRevoked by remember { mutableStateOf(false) }
-    var shizukuReady by remember { mutableStateOf(false) }
-    var repairing by remember { mutableStateOf(false) }
-    var repairFailed by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            val inSettings = isAccessibilityEnabled(context)
-            val connected = MinisAccessibilityService.getInstance() != null
-            a11yEnabled = inSettings || connected
-            a11yDegraded = inSettings && !connected
-            // Only claim "revoked" once the user has actually granted it at
-            // least once — otherwise a first-run user who has never enabled the
-            // service would be shown a "repair" prompt for something that was
-            // never broken.
-            a11yRevoked = !inSettings && !connected &&
-                AccessibilityRecoveryManager.hasEverBeenGranted(context)
-            shizukuReady = ShizukuManager.isReady()
-            delay(1000)
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -102,111 +57,6 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SettingsSection(
-                header = stringResource(R.string.system_permissions_section_a11y),
-                footer = stringResource(R.string.system_permissions_a11y_footer),
-            ) {
-                SettingsRow(
-                    icon = novex.android.ui.NovexIcons.Accessibility,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.system_permissions_a11y_row),
-                    subtitle = if (a11yEnabled)
-                        stringResource(R.string.system_permissions_a11y_enabled)
-                    else
-                        stringResource(R.string.system_permissions_a11y_disabled),
-                    onClick = { openAccessibilitySettings(context) },
-                    showDivider = false,
-                )
-            }
-
-            // [T-android-a11y-force-stop-recovery] Repair affordance, shown ONLY
-            // when the grant was previously held and is now missing from
-            // Settings.Secure — the force-stop signature. Hidden in the healthy
-            // case and on a fresh install (see hasEverBeenGranted) so the screen
-            // stays clean.
-            if (a11yRevoked) {
-                SettingsSection(
-                    header = stringResource(R.string.a11y_repair_section_header),
-                    footer = stringResource(
-                        if (shizukuReady) R.string.a11y_repair_footer_shizuku
-                        else R.string.a11y_repair_footer_manual
-                    ),
-                ) {
-                    SettingsRow(
-                        icon = novex.android.ui.NovexIcons.Build,
-                        iconColor = Color(0xFFFF3B30),
-                        title = stringResource(
-                            if (shizukuReady) R.string.a11y_repair_row_shizuku
-                            else R.string.a11y_repair_row_manual
-                        ),
-                        subtitle = when {
-                            repairing -> stringResource(R.string.a11y_repair_in_progress)
-                            repairFailed -> stringResource(R.string.a11y_repair_failed)
-                            else -> stringResource(R.string.a11y_repair_row_sub)
-                        },
-                        onClick = {
-                            if (!shizukuReady) {
-                                openAccessibilitySettings(context)
-                                return@SettingsRow
-                            }
-                            if (repairing) return@SettingsRow
-                            repairing = true
-                            repairFailed = false
-                            scope.launch {
-                                val ok = AccessibilityRecoveryManager
-                                    .repairWithShizuku(context)
-                                repairing = false
-                                repairFailed = !ok
-                                // On success the polling loop above clears
-                                // a11yRevoked within a second and this whole
-                                // section disappears on its own.
-                            }
-                        },
-                        showDivider = false,
-                    )
-                }
-            }
-
-            // [T-android-a11y-miui-service-failure] OEM keep-alive guidance. Only
-            // shown when the service is degraded ("此服务出现故障" — enabled in
-            // Settings but the process was killed by the ROM) AND the vendor is
-            // one known to enforce autostart on top of stock Android. Routes the
-            // two canonical remediations through the existing
-            // PowerOptimizationManager (which already catches a missing Activity
-            // and falls back). Stays hidden on Pixel / stock Android (Vendor.OTHER).
-            val activity = context as? Activity
-            if (a11yDegraded && activity != null && PowerOptimizationManager.needsOemAutostartGuidance()) {
-                val vendor = PowerOptimizationManager.Vendor.current().displayName
-                SettingsSection(
-                    header = stringResource(R.string.system_permissions_a11y_oem_header),
-                    footer = stringResource(R.string.system_permissions_a11y_oem_footer, vendor),
-                ) {
-                    SettingsRow(
-                        icon = novex.android.ui.NovexIcons.RestartAlt,
-                        iconColor = Color(0xFFFF9500),
-                        title = stringResource(R.string.system_permissions_a11y_oem_autostart),
-                        subtitle = stringResource(R.string.system_permissions_a11y_oem_autostart_sub),
-                        onClick = {
-                            if (!PowerOptimizationManager.openOemAutostartSettings(activity)) {
-                                PowerOptimizationManager.openAppDetailsSettings(activity)
-                            }
-                        },
-                    )
-                    SettingsRow(
-                        icon = novex.android.ui.NovexIcons.BatteryAlert,
-                        iconColor = Color(0xFFFF9500),
-                        title = stringResource(R.string.system_permissions_a11y_oem_battery),
-                        subtitle = stringResource(R.string.system_permissions_a11y_oem_battery_sub),
-                        onClick = {
-                            if (!PowerOptimizationManager.requestBatteryOptimizationExemption(activity)) {
-                                PowerOptimizationManager.openAppDetailsSettings(activity)
-                            }
-                        },
-                        showDivider = false,
-                    )
-                }
-            }
-
             // [T-android-voice-correction] Phase 4: opt-in consent for storing
             // correction learning data, plus the wipe action. Placed here
             // because it is a privacy control, matching iOS's Permissions page.
@@ -274,32 +124,5 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-private fun isAccessibilityEnabled(context: Context): Boolean {
-    val expected = "${context.packageName}/${MinisAccessibilityService::class.java.name}"
-    val enabled = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ) ?: return false
-    return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
-}
-
-private fun openAccessibilitySettings(context: Context) {
-    try {
-        context.startActivity(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-        )
-    } catch (_: Throwable) {
-        try {
-            context.startActivity(
-                Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-        } catch (_: Throwable) {}
     }
 }

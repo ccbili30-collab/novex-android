@@ -128,7 +128,7 @@ Shizuku 系统操控全系上游「AI 助理」遗产。**退役后分发物 GPL
       novex.android.ContentPaths（挂载表所有权移交；PRootKernel 留薄委托
       供将亡文件过渡；22 个消费文件直连新解析器；沙箱根回退改为显式登记
       rootfsFallbackDir，随 R2 消失）；JVM 单测钉最长前缀/精确/回退/移除行为
-- [x] **R2 拆执行层**：删 sandbox/（12f）+ sandbox/offload（23f）+
+- [x] **R2 拆执行层**：删 sandbox/（主 11f）+ sandbox/offload（26f）+
       OnDemandBash + ChatViewModel shell_execute/browser_use 路径；删
       jniLibs 全部五枚（libproot/-loader/-loader32/libtalloc/
       libandroid-shmem）+ cpp/pty_bridge.c + 资产（rootfs、proot-aarch64、
@@ -146,9 +146,12 @@ Shizuku 系统操控全系上游「AI 助理」遗产。**退役后分发物 GPL
       直连，不依赖沙箱）；ui/sandbox 的 FileBrowser/FileBrowserViewModel/
       FilePreview 三件保留（聊天附件预览/创作库/会话存储/共享文件夹四个
       幸存界面共管，已改走 ContentPaths）
-- [ ] **R4 收尾**：THIRD_PARTY_LICENSES 出清 proot/talloc/alpine 条目
-      （**GPL=0**）；本计划表重写（P3 沙箱重写项删除、P4 瘦身、P5 解锁）；
-      审计复跑 + 八流程冒烟（重点证明制卡/技能/生图/附件零沙箱依赖）
+- [x] **R4 收尾**：THIRD_PARTY_LICENSES 出清 proot/talloc/alpine 条目
+      （**GPL=0** 宣告，2026-09-29）；净眼 PR#60 六条建议清剿（terminal
+      死码两件、a11y 死路 UI 与 accessibility/ 整包、过时 KDoc 归因、
+      toolPattern 去 browser_use、钉死契约的 ImageEditRoutingMatrixTest）；
+      审计复跑（死代码归零）。计划表 P5 proot 挂账随 GPL=0 了结；
+      D1 无需再决。八流程冒烟随 R4 后的 beta 发版执行
 - 卫星裁决（保留）：AgentForegroundService（对话后台）、定时任务
   （纯闹钟+对话）、用户手动内置浏览器（与 AI 自动浏览分离评估）
 
@@ -186,7 +189,9 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 - [ ] 分发物内上游代码清零的审计复核（重跑本工具 + 抽查）
 - [ ] LICENSE 更换（Apache-2.0 或专有，按公司法务拍板）、THIRD_PARTY 更新
 - [ ] 软著登记、Novex 商标注册（GPL 不带走商标权，商标才是自己的）
-- [ ] proot GPL 组件的源码随附/指引页（若 D1 决定保留）
+- [ ] ~~proot GPL 组件的源码随附/指引页（若 D1 决定保留）~~ 已无对象：
+      proot/talloc/rootfs 随沙箱退役整体移除，Android 分发物 GPL=0
+      （见 THIRD_PARTY_LICENSES.md 宣告）
 
 ## 3. 每刀执行协议
 
@@ -203,9 +208,11 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 
 ## 4. 决策挂账
 
-- **D1（公司法务）**：proot（GPL-2.0，独立进程 + 源码公开）可否作为最终
-  分发物内的隔离组件保留？可 → P3 第 3 项照做、P5 挂源码指引；
-  否 → 仅剩自研 ptrace 加载器（人年级）或砍沙箱功能两条路。
+- **D1（公司法务）**：~~proot（GPL-2.0，独立进程 + 源码公开）可否作为最终
+  分发物内的隔离组件保留？~~ **已随沙箱退役了结**——proot 全家（含
+  talloc）与 Alpine rootfs 已于 P2.5/R2 移除，Android 分发物 GPL=0，
+  无需再决。历史选项存档：可 → 源码指引；否 → 自研 ptrace 加载器
+  （人年级）或砍沙箱功能。
 - **D2（发版节奏）**：P0/P1 何时开刀（绿档，可与任意待发功能同车）。
 - 上游（OpenMinis）后续同步策略：P0 合并后冻结非安全类同步，避免血统
   复活。
@@ -219,4 +226,6 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | 见进度 | P0 修正：CrashFileReporter 经 SPI 注册存活被误删，恢复并升级审计工具（SPI 根）；beta.94 构建被 R8 拦截后修复 | 血统分类 261/160/379（+1 上游改动=恢复件） |
 | 2026-09-29 | #53 合并 + beta.95 发布 | P1 完成：三个自有包迁入 novex.*（含遮蔽修复）；公告含请勿更新警告 | 上游命名空间自有代码清零（自包含部分） |
 | 2026-09-29 | 见进度 | P2 完成：BusyBox 出包、dash 承担 /bin/sh、apk 保留（D1）；净眼两轮退回修复（包装去 busybox 硬编码、coreutils-env、apk DB 剔除 busybox 条目、预装脚本、命令真空期兜底） | 分发物 GPL 仅剩 proot 全家 + apk 两个隔离组件；DB 无 busybox 登记，upgrade 不回装 |
-| 2026-09-29 | 见进度 | R2+R3 完成：执行层（sandbox/ 35f、agent/shell 3f、offload 死件 8f）与界面（ui/terminal 全家、Mirror/Rootfs/挂载/环境变量屏）拆除；五枚 so + default_mount + prepare 脚本 + CI prepare 步骤清零；Manifest 摘 4 组件 6 权限 | 源码 -约 3.1 万行（git diff --stat）；BrowserUseManager/BrowserTabPool 因手动浏览器共管保留 |
+| 2026-09-29 | 见进度 | R2+R3 完成：执行层（sandbox/ 主 11f + offload 26f、agent/shell 3f、offload 死件 8f）与界面（ui/terminal 全家、Mirror/Rootfs/挂载/环境变量屏）拆除；五枚 so + default_mount + prepare 脚本 + CI prepare 步骤清零；Manifest 摘 4 组件 6 权限 | 源码 -约 3.1 万行（git diff --stat）；BrowserUseManager/BrowserTabPool 因手动浏览器共管保留 |
+| 2026-09-29 | #60（merge `fc50cf1`） | R2+R3 合并入 next | 155 文件 −29,968 行（+87） |
+| 2026-09-29 | 本 PR（R4） | R4 收尾清剿：terminal 死码两件（MinisOpenUrlBroker/MinisUrlMarker + ChatScreen 死流）、a11y 死路 UI（SystemPermissions/OffloadPermission 卡与恢复对话框）+ accessibility/ 整包删除、ImageEditRoutingMatrixTest、OpenAIProvider 过时归因、toolPattern 去 browser_use、THIRD_PARTY GPL=0 出清、审计复跑 | 血统 191f/39,865 行（上游未动）、161f/100,520 行（上游改动）、379f/50,349 行（Novex 新增）；死代码 0f |

@@ -608,19 +608,12 @@
     <string name="perm_level_ask_once">本次啟動詢問</string>
 
     <!-- T336: dedicated SectionCard per integration CLI. -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">無障礙</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli 讓 Agent 讀取螢幕 UI、模擬點擊與輸入、監聽系統事件。下方兩項都需配置:選擇 Agent 權限,並在系統設定啟用無障礙服務。</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli 透過 Shizuku 服務呼叫 Android 高權限 API(安裝應用、settings put、強制停止等)。Shizuku 由無線 ADB 或 root 啟動。下方兩項都需配置。</string>
-    <string name="perm_a11y_cli_description">讓 Agent 讀取螢幕、點擊、輸入、監聽事件</string>
     <string name="perm_shizuku_cli_description">透過 Shizuku 呼叫 Android 高權限 API</string>
-    <string name="perm_a11y_open_settings">前往無障礙設定</string>
     <string name="perm_system_authorization">系統授權</string>
     <string name="perm_agent_policy">Agent 權限</string>
-    <string name="perm_a11y_system_ready">已啟用</string>
-    <string name="perm_a11y_system_disabled">未啟用</string>
     <!-- T-selection-add-to-input — 長按選擇選單「加到輸入框」動作 -->
     <string name="selection_add_to_chat_input">加入到輸入框</string>
     <string name="selection_read_aloud">朗讀</string>
@@ -741,12 +734,6 @@
     <string name="session_mcps_footer">僅為此工作階段開關 MCP 伺服器。預設值來自 設定 → MCP 整合。</string>
     <string name="session_mcps_empty_title">尚無 MCP 伺服器</string>
     <string name="session_mcps_empty_subtitle">請在 設定 → MCP 整合 中新增伺服器。</string>
-    <string name="system_permissions_a11y_oem_header">服務總是被終止？</string>
-    <string name="system_permissions_a11y_oem_footer">%1$s 可能會提示「此服務出現故障」並在背景停止無障礙服務。請將本應用加入自啟動白名單，並取消省電限制，使其保持連線。</string>
-    <string name="system_permissions_a11y_oem_autostart">加入自啟動白名單</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">開啟自啟動管理並啟用 Novex</string>
-    <string name="system_permissions_a11y_oem_battery">取消背景 / 省電限制</string>
-    <string name="system_permissions_a11y_oem_battery_sub">將耗電管理設為「無限制」</string>
     <string name="error_empty_response_generic">模型回傳了空回應。請重試或切換模型。</string>
     <string name="error_empty_response_context_large">模型回傳了空回應。對話上下文可能過大 —— 請嘗試壓縮上下文或開啟新工作階段。</string>
     <string name="error_empty_response_after_tool">在工具結果之後，即使經過提醒，模型仍未回傳任何回應。它可能已過載 —— 請重試或切換模型。</string>

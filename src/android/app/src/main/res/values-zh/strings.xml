@@ -105,20 +105,6 @@
     <string name="overlay_completion_failed">执行失败</string>
     <string name="overlay_completion_cancelled">已取消</string>
     <string name="overlay_completion_timeout">已超时</string>
-    <string name="a11y_repair_dialog_title">无障碍服务已关闭</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex 的无障碍权限已丢失——强行停止应用后会出现这种情况。检测到 Shizuku 可用，可以立即恢复，无需前往系统设置。</string>
-    <string name="a11y_repair_dialog_message_manual">Novex 的无障碍权限已丢失——强行停止应用后会出现这种情况。请在「设置 → 无障碍」中重新开启 Novex。</string>
-    <string name="a11y_repair_action_repair">立即恢复</string>
-    <string name="a11y_repair_action_open_settings">打开设置</string>
-    <string name="a11y_repair_cancel">暂不</string>
-    <string name="a11y_repair_section_header">需要处理</string>
-    <string name="a11y_repair_row_shizuku">恢复无障碍权限</string>
-    <string name="a11y_repair_row_manual">重新开启无障碍</string>
-    <string name="a11y_repair_row_sub">权限已被撤销，可能是强行停止导致的</string>
-    <string name="a11y_repair_in_progress">正在恢复…</string>
-    <string name="a11y_repair_failed">恢复失败——请到系统设置中开启</string>
-    <string name="a11y_repair_footer_shizuku">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。Shizuku 可以直接写回该授权。</string>
-    <string name="a11y_repair_footer_manual">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。安装并授权 Shizuku 后，今后可一键恢复。</string>
     <string name="bg_service_notification_title">Novex Agent 运行中</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">任务已完成</string>
@@ -431,19 +417,12 @@
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">配置工具</string>
     <!-- T336: 每个集成 CLI 一个独立 SectionCard,展示 CLI 描述 / Agent 权限 / 系统授权状态 / 跳转入口 -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">无障碍</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli 让 Agent 读取屏幕 UI、模拟点击与输入、监听系统事件。下方两项都需配置:选择 Agent 权限,并在系统设置启用无障碍服务。</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli 通过 Shizuku 服务调用 Android 高权限 API(安装应用、settings put、强制停止等)。Shizuku 由无线 ADB 或 root 启动。下方两项都需配置。</string>
-    <string name="perm_a11y_cli_description">让 Agent 读取屏幕、点击、输入、监听事件</string>
     <string name="perm_shizuku_cli_description">通过 Shizuku 调用 Android 高权限 API</string>
-    <string name="perm_a11y_open_settings">前往无障碍设置</string>
     <string name="perm_system_authorization">系统授权</string>
     <string name="perm_agent_policy">Agent 权限</string>
-    <string name="perm_a11y_system_ready">已启用</string>
-    <string name="perm_a11y_system_disabled">未启用</string>
     <string name="perm_allow_minis_config">允许 minis-config</string>
     <string name="perm_minis_config_desc">禁用后，智能体将无法通过 minis-config 读取或修改任何设置。日志 → 配置变更 中的变更历史仍可查看。智能体会收到 permission_denied 错误，并通过深度链接引导你操作。</string>
     <string name="perm_section_privacy">隐私</string>
@@ -1417,12 +1396,6 @@
     <string name="session_mcps_footer">仅为此会话开关 MCP 服务器。默认值来自 设置 → MCP 集成。</string>
     <string name="session_mcps_empty_title">暂无 MCP 服务器</string>
     <string name="session_mcps_empty_subtitle">请在 设置 → MCP 集成 中添加服务器。</string>
-    <string name="system_permissions_a11y_oem_header">服务总是被杀死？</string>
-    <string name="system_permissions_a11y_oem_footer">%1$s 可能会提示「此服务出现故障」并在后台停止无障碍服务。请将本应用加入自启动白名单，并取消省电限制，使其保持连接。</string>
-    <string name="system_permissions_a11y_oem_autostart">加入自启动白名单</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">打开自启动管理并启用 Novex</string>
-    <string name="system_permissions_a11y_oem_battery">取消后台 / 省电限制</string>
-    <string name="system_permissions_a11y_oem_battery_sub">将耗电管理设为「无限制」</string>
 
     <!-- [T-android-overlay-landscape-width-rotation-drift] Scheduled Tasks localization -->
     <string name="scheduled_tasks_title">定时任务</string>

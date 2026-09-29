@@ -84,20 +84,6 @@
     <string name="bg_section_footer">오래 실행되는 에이전트 작업은 화면이 꺼진 동안 CPU를 깨운 상태로 유지하기 위한 권한이 필요합니다. 이 설정이 없으면 시스템은 몇 분 후 백그라운드 추론을 중지할 수 있습니다.</string>
     <string name="bg_service_channel_name">에이전트 상태</string>
     <string name="bg_service_channel_description">실행 중인 에이전트 세션의 상태를 표시합니다.</string>
-    <string name="a11y_repair_dialog_title">접근성이 해제되었습니다</string>
-    <string name="a11y_repair_dialog_message_shizuku">Novex의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. Shizuku를 사용할 수 있으므로 설정을 열지 않고 바로 복구할 수 있습니다.</string>
-    <string name="a11y_repair_dialog_message_manual">Novex의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. 계속하려면 설정 → 접근성에서 Novex를 다시 켜세요.</string>
-    <string name="a11y_repair_action_repair">지금 복구</string>
-    <string name="a11y_repair_action_open_settings">설정 열기</string>
-    <string name="a11y_repair_cancel">나중에</string>
-    <string name="a11y_repair_section_header">조치 필요</string>
-    <string name="a11y_repair_row_shizuku">접근성 권한 복구</string>
-    <string name="a11y_repair_row_manual">접근성 다시 켜기</string>
-    <string name="a11y_repair_row_sub">강제 중지로 권한이 취소된 것 같습니다</string>
-    <string name="a11y_repair_in_progress">복구 중…</string>
-    <string name="a11y_repair_failed">복구 실패 — 설정에서 켜 주세요</string>
-    <string name="a11y_repair_footer_shizuku">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku는 이를 직접 다시 기록할 수 있습니다.</string>
-    <string name="a11y_repair_footer_manual">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku를 설치·승인하면 앞으로 한 번에 복구할 수 있습니다.</string>
     <string name="bg_service_notification_title">Novex 에이전트 실행 중</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">작업 완료</string>
@@ -307,19 +293,12 @@
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">설정 도구</string>
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (ko) -->
-    <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">접근성</string>
     <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli는 에이전트가 화면 UI 구조를 읽고, 탭과 제스처를 수행하며 시스템 이벤트를 감시할 수 있게 합니다. 아래 두 행을 모두 설정하세요: 에이전트 권한을 선택하고 시스템 설정에서 접근성 서비스를 활성화하세요.</string>
     <string name="perm_shizuku_section_footer">android-shizuku-cli는 무선 ADB 또는 root로 시작된 Shizuku 서비스를 통해 에이전트에게 권한 있는 Android API(패키지 설치, settings put, 강제 중지 등)를 부여합니다. 아래 두 행을 모두 설정하세요.</string>
-    <string name="perm_a11y_cli_description">에이전트가 화면 UI를 읽고, 탭/입력하며, 이벤트를 감시</string>
     <string name="perm_shizuku_cli_description">Shizuku 서비스를 통한 권한 있는 Android API</string>
-    <string name="perm_a11y_open_settings">접근성 설정 열기</string>
     <string name="perm_system_authorization">시스템 인가</string>
     <string name="perm_agent_policy">에이전트 권한</string>
-    <string name="perm_a11y_system_ready">서비스 활성화됨</string>
-    <string name="perm_a11y_system_disabled">서비스 비활성화됨</string>
     <string name="perm_allow_minis_config">minis-config 허용</string>
     <string name="perm_minis_config_desc">비활성화하면 에이전트는 minis-config로 설정을 읽거나 수정할 수 없습니다. 로그 → 설정 변경에서 변경 이력은 계속 확인할 수 있습니다. 에이전트는 permission_denied 오류를 받고 딥 링크로 안내합니다.</string>
     <string name="perm_section_privacy">개인정보</string>
