@@ -76,6 +76,23 @@ def build_symbol_index(files):
     return index
 
 
+def spi_roots(index):
+    """META-INF/services 服务注册 → 本仓库源文件。SPI 按类名反射实例化，
+    Kotlin 源码零引用，静态扫描盲区（PR#52 误删 ACRA 本地崩溃发送器的根因）。"""
+    roots = []
+    base = "src/android/app/src/main/resources/META-INF/services"
+    if not os.path.isdir(base):
+        return roots
+    for n in os.listdir(base):
+        for line in open(os.path.join(base, n)).read().split():
+            line = line.strip()
+            if not line:
+                continue
+            pkg, _, name = line.rpartition(".")
+            roots.extend(index.get((pkg, name), []))
+    return sorted(set(roots))
+
+
 def manifest_roots(index):
     """Manifest 注册组件 → 本仓库源文件。解析不了的名字给出告警。"""
     roots, missing = [], []
@@ -174,6 +191,8 @@ def main():
         sys.exit(f"错误：找不到 {MANIFEST}，请在仓库根运行。")
     index = build_symbol_index(files)
     roots, missing_roots = manifest_roots(index)
+    spi = spi_roots(index)
+    roots = sorted(set(roots) | set(spi))
     live, unresolved = closure(roots, files, index)
     dead = {p: i for p, i in files.items() if p not in live}
 
@@ -210,7 +229,7 @@ def main():
         live_by_pkg[files[p]["pkg"]][1] += files[p]["loc"]
 
     print(f"基线（上游导入）: {base}")
-    print(f"根组件: {len(roots)} 个已解析, 未解析名 {len(missing_roots)}"
+    print(f"根组件: {len(roots)} 个已解析（Manifest+SPI {len(spi)}）, 未解析名 {len(missing_roots)}"
           f"（别名等非类名）, fail-open import {unresolved}")
     print()
     print("== 活代码血统构成 ==")

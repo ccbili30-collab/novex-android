@@ -17,9 +17,13 @@ python3 scripts/upstream_audit.py --json /tmp/audit.json
   全限定名内联调用三种引用方式
 - **已知盲区（fail-open 方向保守）**：反射、按名字的 DI、纯字符串类名发现
   不出来，一律按「活」处理。删除执行前仍须编译 + 全量测试 + 冒烟兜底。
-- **历史教训**：初版工具漏了 FQN 内联调用，把 102 个活文件（含
+- **历史教训一**：初版工具漏了 FQN 内联调用，把 102 个活文件（含
   FullscreenImageViewer/ImageGalleryViewer 图片查看器两件套）误判为死代码。
-  任何「删了没影响」的结论必须以最新工具 + 编译 + 冒烟三重验证为准。
+- **历史教训二**：初版工具只扫 Kotlin 源码，漏了 META-INF/services（SPI
+  服务注册）——P0 误删 ACRA 本地崩溃发送器（CrashFileSenderFactory，经
+  ServiceLoader 反射实例化），单测 CI 探不到，R8 missing-class 拦截。
+  工具已把 SPI 注册纳入活代码根。任何「删了没影响」的结论必须以最新工具
+  + 编译 + 冒烟三重验证为准。
 
 ## 1. 基线数据（2026-09-28 @ next `dfaf1e4`）
 
@@ -70,7 +74,7 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 - [x] sandbox：ShellTimeoutPolicy
 - [x] speech：ToolSpeech
 - [x] ui.markdown：SyntaxHighlighter
-- [x] crash：CrashFileReporter
+- [x] ~~crash：CrashFileReporter~~（误删后恢复：经 META-INF/services SPI 注册存活，见教训二）
 - [x] service：BackgroundInterruptionTracker
 - [x] ui.chat：ConversationTimelineMutation
 - [x] novex.android：ModuleList
@@ -150,3 +154,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 |---|---|---|---|
 | 2026-09-28 | — | 建立本计划 + 审计工具 scripts/upstream_audit.py | 死代码 28f/4.8k；活代码血统 63.7k/101.8k/50.2k |
 | 2026-09-28 | #52 | P0 完成：删 28 死文件（实测 4,803 行）+ 5 死测试整删 + 6 测试修剪 + 16 处注释中性化 | 上游命名空间血统存量 -4.8k；测试源集死引用清零 |
+| 2026-09-29 | 见进度 | P0 修正：CrashFileReporter 经 SPI 注册存活被误删，恢复并升级审计工具（SPI 根）；beta.94 构建被 R8 拦截后修复 | 血统分类 261/160/379（+1 上游改动=恢复件） |
