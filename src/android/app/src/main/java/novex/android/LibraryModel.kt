@@ -12,7 +12,7 @@ import novex.content.*
 import novex.storage.*
 import java.util.UUID
 
-data class LibraryState(val cards:List<CardSummary> = emptyList(),val imports:List<CardSummary> = emptyList(),val busy:Boolean=false,val error:String?=null,val createdId:String?=null)
+data class LibraryState(val cards:List<CardSummary> = emptyList(),val imports:List<CardSummary> = emptyList(),val edits:List<CardSummary> = emptyList(),val busy:Boolean=false,val error:String?=null,val createdId:String?=null)
 
 /** 列表观察正式摘要的发布；人工、AI 与导入保存都从同一目录进入库。 */
 class LibraryModel(application:Application):AndroidViewModel(application) {
@@ -28,12 +28,19 @@ class LibraryModel(application:Application):AndroidViewModel(application) {
         if(state.busy){refreshPending=true;return}
         work { storage ->
             val listing=withContext(Dispatchers.IO) {
-                storage.list() to CardDrafts(storage).list()
-                    .filter {it.baseRevision==null && it.source==ChangeSource.IMPORT}
-                    .map {CardSummary(it.content.id,it.content.name,it.content.kind,it.version)}
+                val drafts=CardDrafts(storage).list()
+                Triple(
+                    storage.list(),
+                    drafts.filter {it.baseRevision==null && it.source==ChangeSource.IMPORT}
+                        .map {CardSummary(it.content.id,it.content.name,it.content.kind,it.version)},
+                    // 编辑草稿只列人工来源；AI 管理会话中的草稿不当作
+                    // 「有未保存的修改」让用户去点。
+                    drafts.filter {it.baseRevision!=null && it.source==ChangeSource.HUMAN}
+                        .map {CardSummary(it.content.id,it.content.name,it.content.kind,it.version)},
+                )
             }
             // 在主线程合并，避免覆盖读取期间已消费的创建结果。
-            state=state.copy(cards=listing.first,imports=listing.second,error=null)
+            state=state.copy(cards=listing.first,imports=listing.second,edits=listing.third,error=null)
         }
     }
     fun create(name:String,kind:CardKind) {

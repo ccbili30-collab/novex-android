@@ -1,273 +1,186 @@
 package com.openminis.app.ui.sessions
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.activity.compose.BackHandler
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.openminis.app.ui.novex.NovexColors
-import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import com.openminis.app.data.NovexBulletinMonitor
+import com.openminis.app.data.NovexUpdateMonitor
+import com.openminis.app.data.repository.ChatRepository
+import com.openminis.app.ui.noven.NovenBackAction
+import com.openminis.app.ui.noven.NovenBottomBar
+import com.openminis.app.ui.noven.NovenColors
+import com.openminis.app.ui.noven.NovenCreateScreen
+import com.openminis.app.ui.noven.NovenHomeScreen
+import com.openminis.app.ui.noven.NovenMeScreen
+import com.openminis.app.ui.noven.NovenMessagesScreen
+import com.openminis.app.ui.noven.NovenTab
+import com.openminis.app.ui.noven.novenBackAction
+import com.openminis.app.ui.settings.NovexUpdateHost
+import com.openminis.app.ui.settings.NovexUpdateHub
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-private val NovexRootColors = NovexColors
-
+/**
+ * home-v2 根页面：五个 tab（首页/会话/创作/消息/我的）+ 固定底栏。
+ * 无左右滑动切换；每个 tab 的状态由 rememberSaveableStateHolder 保留。
+ * 公告宿主常驻组合中，叠卡弹窗在任何 tab 都能出来。
+ */
 @Composable
-fun NovexRootScreen(
+internal fun NovexRootScreen(
+    initialTab: NovenTab = NovenTab.HOME,
+    initialTabReady: Boolean = true,
     conversationContent: @Composable (
-        onWorldsClick: () -> Unit,
+        onShowHome: () -> Unit,
         onRootNavigationVisibilityChange: (Boolean) -> Unit,
     ) -> Unit,
-    onOpenWorld: (String) -> Unit,
+    // 回调一律必填：默认空实现会让未来调用点静默失效。
+    onOpenCard: (String, String) -> Unit,
+    onChat: (String) -> Unit,
     onCreateWorld: () -> Unit,
-    onOpenCharacter: (String) -> Unit,
     onCreateCharacter: () -> Unit,
-    onOpenInteractiveFiction: (String) -> Unit,
-    onCreateInteractiveFiction: () -> Unit,
+    onImportCard: (android.net.Uri, Boolean) -> Unit,
+    onResumeImportDraft: (String) -> Unit,
     onOpenSettings: () -> Unit,
-    onConfigureConversation: (String) -> Unit,
-    onImportCard: (android.net.Uri,Boolean)->Unit = {_,_->},
-    cardContent: (@Composable (Boolean,(Boolean)->Unit)->Unit)? = null,
+    onOpenCreativeLibrary: () -> Unit,
+    chatRepository: ChatRepository? = null,
 ) {
-    var dockExpanded by rememberSaveable { mutableStateOf(false) }
-    val dockVisibility = remember { androidx.compose.runtime.mutableStateMapOf<NovexRootSpace, Boolean>() }
-    val pageStateHolder = rememberSaveableStateHolder()
-    val spaces=NovexRootSpace.entries.filter {it!=NovexRootSpace.INTERACTIVE_FICTION}
-    val pagerState = rememberPagerState(initialPage = 0) { spaces.size }
-    val scope = rememberCoroutineScope()
-    val headerHost = remember { NovexRootHeaderHost() }
-    val selected = spaces[pagerState.currentPage]
-    val showRootDock = dockVisibility[selected] ?: (selected != NovexRootSpace.CONVERSATIONS)
-
-    fun collapseDock() {
-        dockExpanded = NovexRootNavigationState(
-            selected = selected,
-            expanded = dockExpanded,
-        ).dispatch(NovexRootNavigationEvent.OUTSIDE_TAP).expanded
+    val stateHolder = rememberSaveableStateHolder()
+    var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(initialTabReady, initialTab) {
+        if (selectedName == null && initialTabReady) selectedName = initialTab.name
     }
 
-    fun select(destination: NovexRootSpace, expand: Boolean = true) {
-        if (expand) dockExpanded = true
-        scope.launch { pagerState.animateScrollToPage(spaces.indexOf(destination).coerceAtLeast(0)) }
+    // 旧卡迁移只做一次、放根页面：用户先进「我的」或「创作」也不漏。
+    // 完成后三个 tab 各自 library.refresh()。
+    val app = LocalContext.current.applicationContext as com.openminis.app.MinisApp
+    var libraryReady by remember { mutableStateOf(false) }
+    var migrationError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        try {
+            withContext(Dispatchers.IO) { com.openminis.app.cards.LegacyCards(app).migrate() }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            migrationError = failure.message
+        }
+        libraryReady = true
     }
 
-    val rootBackAction = novexRootBackAction(selected = selected, searchActive = false)
-    BackHandler(enabled = rootBackAction == NovexRootBackAction.SWITCH_TO_CONVERSATIONS) {
-        if (rootBackAction == NovexRootBackAction.SWITCH_TO_CONVERSATIONS) {
-            select(NovexRootSpace.CONVERSATIONS, expand = false)
+    // 平台按 displayCutout/状态栏拟合内容，Compose 够不到的那一条画的是
+    // decor 的 windowBackground（浅色主题是白）。把窗口底色刷成 Canvas：
+    // 状态栏区视觉与页面一致，两条启动路径同样生效。不能直接删 —— app 主题
+    // 可被用户单独覆盖（与系统 uiMode 不一致时 windowBackground 反而错），
+    // 所以保留写入，并在组合移除时按 uiMode 恢复主题色，避免染色留给
+    // 之后复用同一窗口的页面。
+    val canvasColor = NovenColors.Canvas
+    val context = LocalContext.current
+    DisposableEffect(canvasColor) {
+        var c = context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) {
+            c = c.baseContext
+        }
+        val decor = (c as? android.app.Activity)?.window?.decorView
+        decor?.setBackgroundColor(canvasColor.toArgb())
+        onDispose {
+            val night = c.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            decor?.setBackgroundColor(
+                if (night) android.graphics.Color.rgb(15, 17, 18)
+                else android.graphics.Color.rgb(244, 245, 244)
+            )
         }
     }
+    val selected = selectedName
+        ?.let { runCatching { NovenTab.valueOf(it) }.getOrNull() }
+        ?: NovenTab.HOME
+    var homeQuery by rememberSaveable { mutableStateOf("") }
+    var navVisible by remember { mutableStateOf(true) }
+    // 兜底：隐藏底栏的唯一来源是会话 tab（多选）。任何情况下离开会话 tab
+    // 都强制恢复，避免返回键被 GoHome 抢走时底栏永久消失。
+    LaunchedEffect(selected) {
+        if (selected != NovenTab.SESSIONS) navVisible = true
+    }
+    val updateHub = remember { NovexUpdateHub() }
+    val bulletin by NovexBulletinMonitor.state.collectAsState()
+    val detectedUpdate by NovexUpdateMonitor.available.collectAsState()
+    val meBadged = bulletin.hasBadge || detectedUpdate != null
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalNovexRootHeaderHost provides headerHost) {
-        Column(Modifier.fillMaxSize().background(NovexRootColors.Canvas).then(if(cardContent==null || selected==NovexRootSpace.CONVERSATIONS)Modifier.statusBarsPadding() else Modifier)) {
-            if(cardContent==null || selected==NovexRootSpace.CONVERSATIONS)headerHost.current(selected)?.let { header ->
-                NovexRootPageHeader(
-                    space = selected,
-                    searching = header.searching,
-                    searchDescription = header.searchDescription,
-                    onSettings = header.onSettings,
-                    onSearchToggle = header.onSearchToggle,
-                    createItems = header.createItems,
-                )
-            } ?: Box(Modifier.fillMaxWidth().height(64.dp))
-            val outsideTapInteraction = remember { MutableInteractionSource() }
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (dockExpanded) {
-                            Modifier.clickable(
-                                interactionSource = outsideTapInteraction,
-                                indication = null,
-                                onClick = ::collapseDock,
-                            )
-                        } else {
-                            Modifier
-                        },
-                    ),
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    userScrollEnabled = showRootDock,
-                    key = { spaces[it].name },
-                    modifier = Modifier.fillMaxSize(),
-                ) { page ->
-                    val destination = spaces[page]
-                    pageStateHolder.SaveableStateProvider(destination.name) {
-                        when (destination) {
-                            NovexRootSpace.CONVERSATIONS -> conversationContent(
-                                { select(NovexRootSpace.WORLDS) },
-                                { visible -> dockVisibility[NovexRootSpace.CONVERSATIONS] = nextNovexRootDockVisibility(visible) },
-                            )
-                            NovexRootSpace.WORLDS -> NovexWorldLibraryRoot(
-                                onImport = {onImportCard(it,true)},
-                                onOpenWorld = onOpenWorld,
+    val backAction = novenBackAction(selected, homeQuery)
+    BackHandler(enabled = backAction == NovenBackAction.ClearHomeSearch) { homeQuery = "" }
+    BackHandler(enabled = backAction == NovenBackAction.GoHome) { selectedName = NovenTab.HOME.name }
+
+    Column(Modifier.fillMaxSize().background(NovenColors.Canvas)) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (selectedName != null) {
+                stateHolder.SaveableStateProvider(selected.name) {
+                    Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                        when (selected) {
+                            NovenTab.HOME -> NovenHomeScreen(
+                                query = homeQuery,
+                                onQueryChange = { homeQuery = it },
+                                onOpenCard = onOpenCard,
+                                onChat = onChat,
                                 onCreateWorld = onCreateWorld,
-                                onOpenSettings = onOpenSettings,
-                                onConfigureConversation = onConfigureConversation,
+                                onImportCard = onImportCard,
+                                libraryReady = libraryReady,
+                                migrationError = migrationError,
                             )
-                            NovexRootSpace.CHARACTERS -> NovexCharacterLibraryRoot(
-                                onImport = {onImportCard(it,false)},
-                                onOpenCharacter = onOpenCharacter,
+                            NovenTab.SESSIONS -> conversationContent(
+                                { selectedName = NovenTab.HOME.name },
+                                { visible -> navVisible = visible },
+                            )
+                            NovenTab.CREATE -> NovenCreateScreen(
+                                onChat = onChat,
+                                onCreateWorld = onCreateWorld,
                                 onCreateCharacter = onCreateCharacter,
-                                onOpenSettings = onOpenSettings,
-                                onConfigureConversation = onConfigureConversation,
+                                onImportCard = onImportCard,
+                                onOpenCard = onOpenCard,
+                                onResumeImportDraft = onResumeImportDraft,
+                                libraryReady = libraryReady,
                             )
-                            NovexRootSpace.INTERACTIVE_FICTION -> NovexInteractiveFictionLibraryRoot(
-                                onOpenInteractiveFiction = onOpenInteractiveFiction,
-                                onCreateInteractiveFiction = onCreateInteractiveFiction,
+                            NovenTab.MESSAGES -> NovenMessagesScreen()
+                            NovenTab.ME -> NovenMeScreen(
+                                libraryReady = libraryReady,
+                                updateHub = updateHub,
+                                chatRepository = chatRepository,
+                                onOpenCard = onOpenCard,
+                                onCreateWorld = onCreateWorld,
+                                onCreateCharacter = onCreateCharacter,
+                                onImportCard = onImportCard,
                                 onOpenSettings = onOpenSettings,
-                                onConfigureConversation = onConfigureConversation,
+                                onOpenCreativeLibrary = onOpenCreativeLibrary,
                             )
                         }
                     }
                 }
-                if (showRootDock) {
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(116.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    0f to Color.Transparent,
-                                    0.46f to NovexRootColors.Canvas.copy(alpha = 0.78f),
-                                    1f to NovexRootColors.Canvas,
-                                ),
-                            ),
-                    )
-                    NovexRootDock(
-                        spaces=spaces,
-                        selected = selected,
-                        expanded = dockExpanded,
-                        onSelect =(::select),
-                        onDragSelect = { select(it, expand = false) },
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
-                }
             }
+            // 公告宿主：冷启动叠卡弹窗/公告中心/更新对话框，任何 tab 生效。
+            NovexUpdateHost(updateHub)
         }
-    }
-}
-
-@Composable
-private fun NovexRootDock(
-    spaces:List<NovexRootSpace>,
-    selected: NovexRootSpace,
-    expanded: Boolean,
-    onSelect: (NovexRootSpace) -> Unit,
-    onDragSelect: (NovexRootSpace) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val horizontalPadding by animateDpAsState(
-        targetValue = if (expanded) 8.dp else 14.dp,
-        animationSpec = tween(240),
-        label = "根导航水平边距",
-    )
-    var dragX by remember { mutableStateOf(0f) }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(
-            if (expanded) 4.dp else 12.dp,
-            Alignment.CenterHorizontally,
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .navigationBarsPadding()
-            .padding(bottom = 8.dp)
-            .animateContentSize(tween(240))
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { dragX = it.x },
-                    onDrag = { change, amount ->
-                        change.consume()
-                        dragX = (dragX + amount.x).coerceIn(0f, size.width.toFloat())
-                        onDragSelect(spaces[((dragX / size.width.coerceAtLeast(1)) * spaces.size).toInt().coerceIn(0,spaces.lastIndex)])
-                    },
-                )
-            }
-            .padding(horizontal = horizontalPadding, vertical = 6.dp),
-    ) {
-        spaces.forEach { destination ->
-            AnimatedContent(
-                targetState = NovexRootNavigationState(selected, expanded).itemForm(destination),
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                label = "根导航形态",
-            ) { form ->
-                if (form == NovexRootItemForm.LABEL) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                            .clickable { onSelect(destination) }
-                            .padding(horizontal = 14.dp),
-                    ) {
-                        Text(
-                            novexRootSpaceLabel(destination),
-                            color = NovexRootColors.Text,
-                            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
-                            fontWeight = if (selected == destination) FontWeight.SemiBold else FontWeight.Medium,
-                        )
-                    }
-                } else {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .semantics {
-                                contentDescription = "切换到${novexRootSpaceLabel(destination)}"
-                            }
-                            .clickable { onSelect(destination) },
-                    ) {
-                        Box(
-                            Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(NovexRootColors.Text),
-                        )
-                    }
-                }
-            }
+        if (navVisible) {
+            NovenBottomBar(
+                selected = selected,
+                onSelect = { selectedName = it.name },
+                meBadged = meBadged,
+            )
         }
     }
 }

@@ -73,6 +73,9 @@ class NovexLaunchActivity : ComponentActivity() {
 
     private fun createLaunchSurface(): FrameLayout {
         var minimumStarted = false
+        val night =
+            resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
         val surface = object : FrameLayout(this) {
             override fun dispatchDraw(canvas: android.graphics.Canvas) {
                 super.dispatchDraw(canvas)
@@ -84,7 +87,10 @@ class NovexLaunchActivity : ComponentActivity() {
                 }
             }
         }.apply {
-            setBackgroundColor(Color.rgb(250, 250, 252))
+            // home-v2 Canvas：冷启动轻量页与 Compose 根页面同色，跟随夜间
+            // 模式（#F4F5F4 / #0F1112），切换时（含 displayCutout 拟合区）
+            // 不再闪白/闪浅底。
+            setBackgroundColor(if (night) Color.rgb(15, 17, 18) else Color.rgb(244, 245, 244))
         }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -94,7 +100,7 @@ class NovexLaunchActivity : ComponentActivity() {
         column.addView(TextView(this).apply {
             text = "Novex"
             textSize = 28f
-            setTextColor(Color.rgb(22, 22, 26))
+            setTextColor(if (night) Color.rgb(242, 243, 243) else Color.rgb(22, 22, 26))
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -104,7 +110,13 @@ class NovexLaunchActivity : ComponentActivity() {
             column.addView(FrameLayout(this).apply {
                 background = GradientDrawable().apply {
                     cornerRadius = 12.dpPx().toFloat()
-                    setColor(if (index == 0) Color.rgb(237, 240, 246) else Color.rgb(243, 244, 247))
+                    setColor(
+                        if (night) {
+                            if (index == 0) Color.rgb(38, 41, 43) else Color.rgb(26, 29, 31)
+                        } else {
+                            if (index == 0) Color.rgb(237, 240, 246) else Color.rgb(243, 244, 247)
+                        }
+                    )
                 }
             }, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,

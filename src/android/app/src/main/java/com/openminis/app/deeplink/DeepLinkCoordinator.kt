@@ -84,4 +84,31 @@ object DeepLinkCoordinator {
         _pendingChatAction.value = null
         return current
     }
+
+    /**
+     * Pending composer prefill for a specific freshly-opened ChatScreen (e.g.
+     * the creation tab's "和 AI 一起创作" input). Carries the TARGET session
+     * id: if the navigation that should have delivered it gets lost during
+     * the runtime hand-off, a stale entry must not be eaten by whatever
+     * unrelated chat happens to open next. Consumed exactly once, and only
+     * when the opening session matches; a mismatched entry is left in place
+     * (draft ids are unique, so the next [setPendingChatInput] overwrites it
+     * — it can never be mis-delivered).
+     */
+    data class PendingChatInput(val sessionId: String, val text: String)
+
+    private val _pendingChatInput = MutableStateFlow<PendingChatInput?>(null)
+    val pendingChatInput: StateFlow<PendingChatInput?> = _pendingChatInput.asStateFlow()
+
+    fun setPendingChatInput(sessionId: String, text: String) {
+        _pendingChatInput.value = PendingChatInput(sessionId, text)
+    }
+
+    /** Returns the pending text only when it targets [sessionId]; a mismatch is left untouched. */
+    fun consumePendingChatInput(sessionId: String): String? {
+        val current = _pendingChatInput.value ?: return null
+        if (current.sessionId != sessionId) return null
+        _pendingChatInput.value = null
+        return current.text
+    }
 }

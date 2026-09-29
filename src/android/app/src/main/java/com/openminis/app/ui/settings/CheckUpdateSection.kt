@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,7 +61,8 @@ import com.openminis.app.data.UpdateChannel
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.ui.markdown.MarkdownText
-import com.openminis.app.ui.bulletin.BulletinEntryIcon
+import androidx.compose.foundation.shape.CircleShape
+import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.bulletin.BulletinStackFace
 import com.openminis.app.ui.bulletin.BulletinHubPage
 import kotlinx.coroutines.launch
@@ -318,18 +321,63 @@ fun CheckUpdateSection() {
     }
 }
 
+/** 公告中心打开状态：入口图标（我的页）与宿主（根页面）共享同一个持有者。 */
+internal class NovexUpdateHub {
+    var hubOpen by mutableStateOf(false)
+}
+
 /**
  * Compact home-toolbar variant used by Novex.
  * [T-bulletin-v3] 入口=叠卡图形（带红点）；跳脸=卡片交叠（公告在上、更新在下，
  * 单新单卡）；点开=公告中心全屏页。下载/安装流程沿用既有 UpdateDialog。
+ *
+ * 新根导航拆分后由 [NovexUpdateHost] + [NovexUpdateEntry] 承担；此处保留组合
+ * 版本供尚未迁移的旧入口（embedded 根等）继续用。
  */
 @Composable
 fun NovexUpdateAction() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val hub = remember { NovexUpdateHub() }
+    NovexUpdateEntry(hub)
+    NovexUpdateHost(hub)
+}
+
+/**
+ * 入口：公告用 megaphone 图标（与底栏「消息」的铃铛区分），点击打开公告
+ * 中心。角标逻辑不变（bulletin.hasBadge || 检测到更新）。不再复用
+ * BulletinEntryIcon —— 那个是铃铛。
+ */
+@Composable
+internal fun NovexUpdateEntry(hub: NovexUpdateHub) {
     val detectedUpdate by NovexUpdateMonitor.available.collectAsState()
     val bulletin by com.openminis.app.data.NovexBulletinMonitor.state.collectAsState()
-    var hubOpen by remember { mutableStateOf(false) }
+    val hasBadge = bulletin.hasBadge || detectedUpdate != null
+    Box(contentAlignment = Alignment.Center) {
+        NovexIconAction(
+            icon = com.openminis.app.R.drawable.ic_phosphor_megaphone,
+            contentDescription = "打开 Novex（诺文）公告",
+            onClick = { hub.hubOpen = true },
+        )
+        if (hasBadge) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-10).dp, y = 10.dp)
+                    .size(8.dp)
+                    .background(NovexColors.Primary, CircleShape),
+            )
+        }
+    }
+}
+
+/**
+ * 宿主：始终挂在根页面组合中，负责冷启动叠卡弹窗、公告中心、更新对话框与
+ * ON_RESUME 安装续接。不绘制任何常驻可见内容。
+ */
+@Composable
+internal fun NovexUpdateHost(hub: NovexUpdateHub) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val bulletin by com.openminis.app.data.NovexBulletinMonitor.state.collectAsState()
     var dialogUpdate by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
     var downloadProgress by remember { mutableStateOf<Float?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
@@ -358,11 +406,6 @@ fun NovexUpdateAction() {
         lifecycleOwner.lifecycle.addObserver(observer)
     }
 
-    BulletinEntryIcon(
-        hasBadge = bulletin.hasBadge || detectedUpdate != null,
-        onClick = { hubOpen = true },
-    )
-
     if (bulletin.stack.isNotEmpty()) {
         BulletinStackFace(
             state = bulletin,
@@ -371,14 +414,14 @@ fun NovexUpdateAction() {
                 com.openminis.app.data.NovexBulletinMonitor.dismissFront()
                 openUpdateDialog(available)
             },
-            onOpenHub = { hubOpen = true },
+            onOpenHub = { hub.hubOpen = true },
         )
     }
 
-    if (hubOpen) {
+    if (hub.hubOpen) {
         BulletinHubPage(
             state = bulletin,
-            onDismiss = { hubOpen = false },
+            onDismiss = { hub.hubOpen = false },
             onRefresh = { com.openminis.app.data.NovexBulletinMonitor.refresh() },
             onToggle = { com.openminis.app.data.NovexBulletinMonitor.toggleExpand(it) },
             onRetry = { com.openminis.app.data.NovexBulletinMonitor.ensureBody(it) },

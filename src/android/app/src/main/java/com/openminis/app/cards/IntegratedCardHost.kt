@@ -17,7 +17,7 @@ import novex.content.CardKind
 import novex.android.IntegratedCardLibrary
 import com.openminis.app.MinisApp
 
-@Composable fun IntegratedCardHost(kind:CardKind?=null,root:String?=null,target:String?=null,onChat:(String)->Unit,onBack:()->Unit={},onSurface:(Boolean)->Unit={},importUri:String?=null,embedded:Boolean=false,createOnly:Boolean=false,onOpenCard:((String)->Unit)?=null) {
+@Composable fun IntegratedCardHost(kind:CardKind?=null,root:String?=null,target:String?=null,onChat:(String)->Unit,onBack:()->Unit={},onSurface:(Boolean)->Unit={},importUri:String?=null,resumeDraftId:String?=null,embedded:Boolean=false,createOnly:Boolean=false,onOpenCard:((String)->Unit)?=null) {
     val app=LocalContext.current.applicationContext as MinisApp
     val scope=rememberCoroutineScope()
     var error by remember {mutableStateOf<String?>(null)}
@@ -42,15 +42,10 @@ import com.openminis.app.MinisApp
     }
     androidx.compose.foundation.layout.Column {
     if(migrationFailures.isNotEmpty())TextButton(onClick={error=migrationFailures.joinToString("\n")}){Text("${migrationFailures.size} 项旧资料未迁入 · 查看原因")}
-    IntegratedCardLibrary(kind,root?.takeIf {it.isNotBlank()},target?.takeIf {it.isNotBlank()},initialImportUri=importUri,showBack=!embedded,createOnly=createOnly,onOpenCard=onOpenCard,onExisting={id,target,manage->existing=Triple(id,target,manage)},onUse={id,objectId,manage->
+    IntegratedCardLibrary(kind,root?.takeIf {it.isNotBlank()},target?.takeIf {it.isNotBlank()},initialImportUri=importUri,resumeDraftId=resumeDraftId,showBack=!embedded,createOnly=createOnly,onOpenCard=onOpenCard,onExisting={id,target,manage->existing=Triple(id,target,manage)},onUse={id,objectId,manage->
         if(!starting){starting=true;scope.launch {
             try {
-                val chat=withContext(Dispatchers.IO) {
-                    val cards=IntegratedCards(app)
-                    val name=novex.content.ContentTargets.find(requireNotNull(cards.store.open(id)).content,objectId).name
-                    val binding=if(manage)CardBinding(managed=setOf(novex.runtime.ManagementTarget(id,objectId))) else CardBinding(primary=novex.runtime.SourceSelection(id,objectId))
-                    IntegratedCardEntry.draftId(app,name,binding)
-                }
+                val chat=IntegratedCardStart.start(app,id,objectId,manage)
                 onChat(chat)
             }catch(cancelled:CancellationException){throw cancelled}catch(failure:Exception){error=failure.message?:"对话未创建"}finally{starting=false}
         }}

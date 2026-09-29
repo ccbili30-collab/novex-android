@@ -17,8 +17,10 @@ class UpdateAnnouncementRegressionTest {
         assertTrue(source.contains("BulletinStackFace"))
         assertTrue(source.contains("onUpdateAction"))
         assertTrue(source.contains("NovexUpdateAnnouncementStore"))
+        // 入口是 megaphone 公告图标；BulletinEntryIcon 的铃铛入口随底栏「消息」退役。
+        assertTrue(source.contains("ic_phosphor_megaphone"))
         assertFalse(source.contains("LaunchedEffect(detectedUpdate?.versionName"))
         assertFalse(source.contains("openHomeAction"))
-        assertFalse(source.contains("NovexIconAction("))
+        assertFalse(source.contains("BulletinEntryIcon("))
     }
 }

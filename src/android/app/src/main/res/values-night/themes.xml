@@ -11,7 +11,8 @@
      edge-to-edge theming in MainActivity continues to draw behind them. -->
 <resources>
     <style name="Theme.Minis" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
-        <item name="android:colorBackground">@android:color/black</item>
+        <!-- home-v2 暗色 Canvas #0F1112（同浅色侧的理由）。 -->
+        <item name="android:windowBackground">#0F1112</item>
+        <item name="android:colorBackground">#0F1112</item>
     </style>
 </resources>

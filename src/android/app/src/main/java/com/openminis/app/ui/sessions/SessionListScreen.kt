@@ -15,12 +15,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +38,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,7 +51,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import com.openminis.app.ui.novex.DropdownMenu
 import com.openminis.app.ui.novex.DropdownMenuItem
-import com.openminis.app.ui.settings.NovexUpdateAction
+import com.openminis.app.ui.noven.NovenSessionRow
+import com.openminis.app.ui.noven.categoryStyle
+import com.openminis.app.ui.noven.relativeDate
+import com.openminis.app.ui.noven.novenSessionGroupRowShape
 import androidx.compose.material3.Surface
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
@@ -65,17 +66,11 @@ import com.openminis.app.ui.novex.ModalBottomSheet
 import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import com.openminis.app.ui.novex.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
-import com.openminis.app.ui.novex.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import com.openminis.app.ui.novex.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -99,7 +94,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import com.openminis.app.service.SessionActivityTracker
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,7 +115,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,50 +125,22 @@ import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.data.db.ChatSessionEntity
 import com.openminis.app.data.db.FolderEntity
-import com.openminis.app.data.character.CharacterCard
-import com.openminis.app.data.character.StoryWorld
 import com.openminis.app.data.character.WorldEntity
+import com.openminis.app.data.model.ProviderConfig
 import com.openminis.app.data.model.hasUsableNovexModel
-import com.openminis.app.ui.theme.ChatColors
-import com.openminis.app.ui.theme.minisFabColor
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.novex.rememberNovexWorkspace
 import kotlin.math.roundToInt
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.util.Calendar
-import java.util.Date
-import java.util.concurrent.TimeUnit
 import com.openminis.app.ui.components.MinisTextButton
 
 // FAB color — use shared theme values
-
-private data class CategoryStyle(val icon: ImageVector, val color: Color)
-
-// 16 categories matching iOS (ContentView.swift:1897-1916)
-private fun categoryStyle(category: String?): CategoryStyle {
-    return when (category?.lowercase()) {
-        "code"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Code, Color(0xFFF09A37))
-        "writing"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Description, Color(0xFF3478F6))
-        "research"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Language, Color(0xFF30B0C7))
-        "analysis"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.BarChart, Color(0xFF5856D6))
-        "creative"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Brush, Color(0xFFFF2D55))
-        "chat"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF34C759))
-        "math"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Calculate, Color(0xFF9B59B6))
-        "translation"  -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Translate, Color(0xFF00BCD4))
-        "health"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Favorite, Color(0xFFFF3B30))
-        "finance"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Payments, Color(0xFF00C7BE))
-        "travel"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Map, Color(0xFFF09A37))
-        "education"    -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Book, Color(0xFF3478F6))
-        "design"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Palette, Color(0xFFFF2D55))
-        "productivity" -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
-        "support"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Settings, Color(0xFF8B6914))
-        "other"        -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.GridView, Color(0xFF8E8E93))
-        else           -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF8E8E93))
-    }
-}
+// 16-category styles, relativeDate, the session row and its badge/palette
+// helpers moved to ui/noven/NovenSessionRow.kt — shared with the launcher
+// home surface (installNovexHomeSurface 也 host 本屏).
 
 // Date period for section grouping (matching iOS)
 private enum class DatePeriod {
@@ -297,55 +262,34 @@ private fun groupSessionsByDate(sessions: List<ChatSessionEntity>): List<Pair<Da
     return result
 }
 
-private fun relativeDate(context: Context, timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(diff)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
-    val hours = TimeUnit.MILLISECONDS.toHours(diff)
-
-    if (seconds < 60) return context.getString(R.string.time_just_now)
-    if (minutes < 60) return context.getString(R.string.time_minutes_ago, minutes.toInt())
-    if (hours < 24) return context.getString(R.string.time_hours_ago, hours.toInt())
-
-    val dateCal = Calendar.getInstance().apply { time = Date(timestamp) }
-    val yesterdayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-    if (dateCal.get(Calendar.YEAR) == yesterdayCal.get(Calendar.YEAR) &&
-        dateCal.get(Calendar.DAY_OF_YEAR) == yesterdayCal.get(Calendar.DAY_OF_YEAR)
-    ) {
-        return context.getString(R.string.time_yesterday)
-    }
-
-    val days = TimeUnit.MILLISECONDS.toDays(diff)
-    if (days < 7) {
-        // T172: device-locale weekday names via java.text.DateFormatSymbols.
-        val dayNames = java.text.DateFormatSymbols(java.util.Locale.getDefault()).weekdays
-        return dayNames[dateCal.get(Calendar.DAY_OF_WEEK)]
-    }
-
-    val month = dateCal.get(Calendar.MONTH) + 1
-    val day = dateCal.get(Calendar.DAY_OF_MONTH)
-    return "$month/$day"
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SessionListScreen(
     chatRepository: ChatRepository,
-    providerRepository: ProviderRepository,
+    /**
+     * Nullable: the lightweight launcher surface (NovexLaunchActivity →
+     * installNovexHomeSurface) hosts this screen BEFORE
+     * `initializeRuntimeSubsystems()` runs, so `MinisApp.providerRepository`
+     * is still unassigned there. On that path every provider-dependent
+     * affordance is hidden rather than stubbed: the onboarding landing,
+     * 「添加模型」/model-group hints, AI title regeneration and AI group
+     * suggestion. Everything backed by Room + the card library (folders,
+     * multi-select, pin, move, search + snippets, delete, export, card
+     * lookup) works unchanged.
+     */
+    providerRepository: ProviderRepository?,
     onSessionClick: (String) -> Unit,
     onNewChat: (String) -> Unit,
-    onSettingsClick: () -> Unit,
-    onCharactersClick: () -> Unit = {},
-    onWorldClick: (String) -> Unit = {},
     onAddProviderClick: () -> Unit = {},
     onSelectModelsClick: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
     onRootfsClick: () -> Unit = {},
     // [T-android-scheduled-tasks-design] Entry to the scheduled-tasks list.
     onScheduledTasksClick: () -> Unit = {},
-    showBottomActions: Boolean = true,
     onRootNavigationVisibilityChange: (Boolean) -> Unit = {},
+    /** Fires once when the first Room session emission lands. The launcher
+     *  surface uses it for the `home_content_ready` startup metric. */
+    onContentLoaded: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // T46: hoist VM ownership to the NavBackStackEntry's ViewModelStore so
@@ -358,7 +302,6 @@ fun SessionListScreen(
         factory = SessionListViewModel.factory(chatRepository, providerRepository, context),
     )
     val sessions by viewModel.displayedSessions.collectAsState()
-    val hasSessions by viewModel.hasSessions.collectAsState()
     val isInitialLoadComplete by viewModel.isInitialLoadComplete.collectAsState()
     val isSearchActive by viewModel.isSearchActive.collectAsState()
     // Only the debounced query that produced the visible result set reaches
@@ -370,7 +313,12 @@ fun SessionListScreen(
     val isSelecting by viewModel.isSelecting.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
     val regeneratingIds by viewModel.regeneratingIds.collectAsState()
-    val providerConfig by providerRepository.config.collectAsState()
+    // 轻量启动面 providerRepository == null：空配置 + 未加载态。onboarding
+    // 引导由下面的 providerRepository == null 分支接管（显示普通空态），
+    // 这里两个 flow 只是让 hasProviders/hasGroups 保持 false。
+    val providerConfig by remember(providerRepository) {
+        providerRepository?.config ?: MutableStateFlow(ProviderConfig())
+    }.collectAsState()
     val hasProviders = providerConfig.instances.any { it.isEnabled }
     val hasGroups = providerConfig.hasUsableNovexModel()
     // [T-android-startup-config-stall] Provider config now loads off-thread, so
@@ -378,9 +326,13 @@ fun SessionListScreen(
     // Gate the onboarding/list render on this too (alongside the sessions
     // initial-load flag) so an existing user with providers but zero sessions
     // doesn't flash the "add a provider" onboarding before the real config emits.
-    val configLoaded by providerRepository.configLoaded.collectAsState()
+    // repo 为 null 时恒为 false —— 真实分支判断见 listEmpty/providerRepository==null。
+    val configLoaded by remember(providerRepository) {
+        providerRepository?.configLoaded ?: MutableStateFlow(false)
+    }.collectAsState()
+    // provider 运行时可用：null → 隐藏 AI 标题重生成 / AI 分组建议 / onboarding。
+    val providerRuntimeAvailable = providerRepository != null
     val scope = rememberCoroutineScope()
-    val isDark = isSystemInDarkTheme()
     val novex = rememberNovexWorkspace()
     var worlds by remember { mutableStateOf<List<WorldEntity>>(emptyList()) }
     var worldsLoaded by remember { mutableStateOf(false) }
@@ -388,35 +340,50 @@ fun SessionListScreen(
         worlds = novex.worlds().map { it.world }
         worldsLoaded = true
     }
-    LaunchedEffect(
-        configLoaded,
-        hasGroups,
-        isInitialLoadComplete,
-        hasSessions,
-        worlds,
-        worldsLoaded,
-        showBottomActions,
+    // home-v2：底栏常驻，仅多选时隐藏。
+    LaunchedEffect(isSelecting) {
+        onRootNavigationVisibilityChange(!isSelecting)
+    }
+    // 首个 Room 会话快照到达即触发（轻量启动面用它上报
+    // home_content_ready，等价于已删除的 NovexConversationRoot 的
+    // onContentLoaded → availability.contentReady 时机）。
+    LaunchedEffect(isInitialLoadComplete) {
+        if (isInitialLoadComplete) onContentLoaded()
+    }
+
+    // home-v2 会话行卡片标签 + primary 缩略图：IO 线程一次性构建，库变化时
+    // 随 sessions 刷新重建。
+    val cardReader: novex.android.CardSessionModel = androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "noven-session-cards",
+    )
+    // 依赖键只放真正影响卡片面信息的字段 —— 流式刷 lastMessage 时不再
+    // 整份重开卡片文档。
+    val cardFaceKey = sessions.map {
+        listOf(it.id, it.novexConfigurationJson, it.worldId, it.characterId,
+            it.characterVersionId, it.personaId)
+    }
+    val cardFaces by androidx.compose.runtime.produceState<Map<String, com.openminis.app.ui.noven.SessionCardFace>>(
+        initialValue = emptyMap(),
+        cardFaceKey,
     ) {
-        val homeReady = configLoaded && isInitialLoadComplete && worldsLoaded
-        if (!showBottomActions && homeReady) {
-            onRootNavigationVisibilityChange(
-                shouldShowNovexRootDock(
-                    configLoaded = configLoaded,
-                    hasUsableModel = hasGroups,
-                    homeReady = homeReady,
-                    hasRootContent = hasSessions || worlds.isNotEmpty(),
-                ),
-            )
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                com.openminis.app.ui.noven.sessionCardFaces(
+                    sessions,
+                    com.openminis.app.cards.IntegratedCards(context.applicationContext).store,
+                )
+            }.getOrDefault(emptyMap())
         }
     }
-    val worldNames = remember(worlds) { worlds.associate { it.id to it.name } }
-    var homeFilter by rememberSaveable { mutableStateOf(SessionHomeFilter.RECENT) }
-    var showNewConversationMenu by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = novexHomeBackAction(searchActive = isSearchActive) == NovexHomeBackAction.CLOSE_SEARCH) {
         viewModel.searchQuery.value = ""
         viewModel.isSearchActive.value = false
     }
+    // 多选时返回键先退出多选（clearSelection 同时复位 isSelecting →
+    // 上面的 LaunchedEffect 会把底栏重新打开）。没有这一层时返回被根页面
+    // 的 GoHome 抢走，底栏停在隐藏态没有恢复路径。
+    BackHandler(enabled = isSelecting) { viewModel.clearSelection() }
 
     // [T-android-search-focus-sticky] When the user opens search but types
     // nothing (or only whitespace) and then navigates into a chat, the
@@ -457,9 +424,6 @@ fun SessionListScreen(
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var editSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
-    var showBrowserSheet by remember { mutableStateOf(false) }
-    var showBrowserSettings by remember { mutableStateOf(false) }
-    val browserTabPool = remember { com.openminis.app.browser.BrowserTabPool(context) }
 
     // [T-android-session-grouping] Groups are pulled out FIRST; only the
     // leftovers go through date bucketing. Assembly order below is
@@ -471,13 +435,9 @@ fun SessionListScreen(
     // While searching, group cards are suppressed: padding a result set with
     // every non-matching group is noise, not structure.
     val showFolderBlock = !isSearchActive || searchQuery.isBlank()
-    val showCard3Hierarchy = !isSearchActive && !isSelecting
-    val homeSessions = remember(sessions, showCard3Hierarchy, homeFilter) {
-        sessions
-    }
-    val folderPartition = remember(homeSessions, folders, collapsedFolderIds, showFolderBlock) {
-        if (showFolderBlock) partitionByFolder(homeSessions, folders, collapsedFolderIds)
-        else emptyList<FolderGroupBlock>() to homeSessions
+    val folderPartition = remember(sessions, folders, collapsedFolderIds, showFolderBlock) {
+        if (showFolderBlock) partitionByFolder(sessions, folders, collapsedFolderIds)
+        else emptyList<FolderGroupBlock>() to sessions
     }
     val folderBlocks = folderPartition.first
     val groupedSessions = remember(folderPartition) { groupSessionsByDate(folderPartition.second) }
@@ -490,9 +450,10 @@ fun SessionListScreen(
     val pinnedFirst = groupedSessions.firstOrNull()?.first == DatePeriod.PINNED
     val leadingDateGroups = if (pinnedFirst) groupedSessions.take(1) else emptyList()
     val trailingDateGroups = if (pinnedFirst) groupedSessions.drop(1) else groupedSessions
-    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks, showCard3Hierarchy) {
+    val folderHeaderIndices = remember(leadingDateGroups, folderBlocks) {
         buildMap {
-            var idx = if (showCard3Hierarchy) 1 else 0
+            var idx = 0
+            // 每组日期区块 = 组标题 1 项 + 每行 1 个 lazy item（行不再整组打包）。
             leadingDateGroups.forEach { (_, rows) -> idx += 1 + rows.size }
             if (folderBlocks.isNotEmpty()) {
                 idx += 1 // the "分组" section header item
@@ -578,138 +539,126 @@ fun SessionListScreen(
         }
     }
 
-    // [T-android-scheduled-tasks-full] Live count of scheduled tasks for the
-    // toolbar clock-icon badge. Observes the SharedPreferences-backed store so
-    // the badge updates when tasks are added / removed without a manual refresh.
-    // [T-android-scheduled-badge-enabled-only] Count only enabled tasks so the
-    // badge reflects what's actually active — disabled tasks don't contribute,
-    // and with none enabled the count is 0 (badge hidden by the >0 gate below).
-    val scheduledTaskCount by remember {
-        com.openminis.app.scheduled.ScheduledTaskStore(context).observe()
-            .map { list -> list.count { it.enabled } }
-    }.collectAsState(initial = 0)
+    // [T-android-scheduled-tasks-full] 注：定时任务角标（scheduledTaskCount）
+    // 在 home-v2 顶栏改版后已无渲染点，相关 collect 已移除；入口回调
+    // onScheduledTasksClick 保留在签名里供后续菜单项使用。
 
     Scaffold(
+        containerColor = com.openminis.app.ui.noven.NovenColors.Canvas,
         topBar = {
-            TopAppBar(
-                title = {
-                    if (isSelecting) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 6.dp, bottom = 4.dp)
+                    .height(44.dp),
+            ) {
+                if (isSelecting) {
+                    MinisTextButton(onClick = { viewModel.clearSelection() }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Text(
+                        if (selectedIds.isEmpty())
+                            stringResource(R.string.sessionlist_select_title)
+                        else
+                            stringResource(R.string.sessionlist_n_selected, selectedIds.size),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                    MinisTextButton(onClick = { viewModel.selectAll() }) {
                         Text(
-                            if (selectedIds.isEmpty())
-                                stringResource(R.string.sessionlist_select_title)
-                            else
-                                stringResource(R.string.sessionlist_n_selected, selectedIds.size),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                        )
-                    } else {
-                        Text(
-                            if (showBottomActions) stringResource(R.string.app_name) else "Novex",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                            stringResource(
+                                if (selectedIds.size == sessions.size) R.string.sessionlist_deselect_all
+                                else R.string.sessionlist_select_all
+                            )
                         )
                     }
-                },
-                navigationIcon = {
-                    if (isSelecting) {
-                        MinisTextButton(onClick = { viewModel.clearSelection() }) {
-                            Text(stringResource(R.string.cancel))
+                } else {
+                    Text(
+                        "会话",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        color = com.openminis.app.ui.noven.NovenColors.Text,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = {
+                        if (isSearchActive) {
+                            viewModel.searchQuery.value = ""
+                            viewModel.isSearchActive.value = false
+                        } else {
+                            viewModel.isSearchActive.value = true
                         }
-                    } else {
-                        IconButton(onClick = onSettingsClick) {
-                            Icon(
-                                painterResource(R.drawable.ic_phosphor_gear),
-                                contentDescription = stringResource(R.string.sessionlist_settings),
-                                modifier = Modifier.size(23.dp),
-                            )
-                        }
+                    }) {
+                        Icon(
+                            painterResource(R.drawable.ic_phosphor_search),
+                            contentDescription = stringResource(R.string.sessionlist_search_action),
+                            tint = com.openminis.app.ui.noven.NovenColors.Text,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
-                },
-                actions = {
-                    if (isSelecting) {
-                        MinisTextButton(onClick = { viewModel.selectAll() }) {
-                            Text(
-                                stringResource(
-                                    if (selectedIds.size == sessions.size) R.string.sessionlist_deselect_all
-                                    else R.string.sessionlist_select_all
-                                )
-                            )
-                        }
-                    } else {
-                        // [T-bulletin-v3] 叠卡公告入口：跳脸叠卡与公告中心页由此挂载
-                        NovexUpdateAction()
-                        IconButton(onClick = {
-                            if (isSearchActive) {
-                                viewModel.searchQuery.value = ""
-                                viewModel.isSearchActive.value = false
-                            } else {
-                                viewModel.isSearchActive.value = true
+                    // 薄荷绿胶囊：+ 新对话
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .height(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(com.openminis.app.ui.noven.NovenColors.Mint)
+                            .clickable {
+                                scope.launch {
+                                    viewModel.createNewSession()?.let(onNewChatGuarded)
+                                }
                             }
-                        }) {
+                            .padding(horizontal = 10.dp),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_phosphor_plus),
+                            contentDescription = null,
+                            tint = com.openminis.app.ui.noven.NovenColors.OnMint,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            "新对话",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = com.openminis.app.ui.noven.NovenColors.OnMint,
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { showOverflowMenu = true }) {
                             Icon(
-                                painterResource(R.drawable.ic_phosphor_search),
-                                contentDescription = stringResource(R.string.sessionlist_search_action),
+                                painterResource(R.drawable.ic_phosphor_more_vertical),
+                                contentDescription = stringResource(R.string.novex_create_menu),
+                                tint = com.openminis.app.ui.noven.NovenColors.Text,
                                 modifier = Modifier.size(22.dp),
                             )
                         }
-                        Box {
-                            IconButton(onClick = { showOverflowMenu = true }) {
-                                Icon(
-                                    painterResource(R.drawable.ic_phosphor_plus),
-                                    contentDescription = stringResource(R.string.novex_create_menu),
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
-                            MinisMenu(
-                                expanded = showOverflowMenu,
-                                onDismissRequest = { showOverflowMenu = false },
-                                offset = DpOffset(0.dp, 0.dp),
-                            ) {
+                        MinisMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false },
+                            offset = DpOffset(0.dp, 0.dp),
+                        ) {
+                            if (sessions.isNotEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text("世界与角色库") },
+                                    text = { Text(stringResource(R.string.sessionlist_select_action)) },
                                     onClick = {
                                         showOverflowMenu = false
-                                        onCharactersClick()
+                                        viewModel.isSelecting.value = true
                                     },
                                     leadingIcon = {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null)
+                                        Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
                                     },
                                 )
-                                MinisMenuDivider()
-                                if (sessions.isNotEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.sessionlist_select_action)) },
-                                        onClick = {
-                                            showOverflowMenu = false
-                                            viewModel.isSelecting.value = true
-                                        },
-                                        leadingIcon = {
-                                            Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
-                                        },
-                                    )
-                                    MinisMenuDivider()
-                                }
-                                DropdownMenuItem(
-                                    text = { Text("新建对话") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        scope.launch {
-                                            val sessionId = viewModel.createNewSession()
-                                            if (sessionId != null) onNewChatGuarded(sessionId)
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null)
-                                    },
-                                )
-
                             }
                         }
                     }
-                },
-            )
+                }
+            }
         },
-        // No default FAB — we draw dual FABs manually at bottom
+        // No default FAB — 新对话入口在顶栏薄荷绿胶囊。
     ) { padding ->
         Box(
             modifier = Modifier
@@ -723,7 +672,7 @@ fun SessionListScreen(
             // iOS `didInitialLoad` on ContentView. The transition is usually
             // sub-200ms, so no spinner.
             if (isInitialLoadComplete && worldsLoaded) Column(modifier = Modifier.fillMaxSize()) {
-                if (isSearchActive && showBottomActions.not()) {
+                if (isSearchActive) {
                     SessionInlineSearchField(
                         valueFlow = viewModel.searchQuery,
                         searchingFlow = viewModel.isSearching,
@@ -734,7 +683,17 @@ fun SessionListScreen(
                         },
                     )
                 }
-                if (sessions.isEmpty() && worlds.isEmpty()) {
+                // 「按卡片查找对话」从被删的 NovexConversationRoot 搬入统一
+                // 列表：只依赖 Room + 卡片库（novexWorkGroups / novexWorkspace
+                // 均为 minimum 子系统），轻量启动面同样可用。多选时隐藏。
+                if (!isSelecting) {
+                    com.openminis.app.ui.novex.NovexConversationCardLookup(onSessionClickGuarded)
+                }
+                // 轻量启动面读不到 provider 配置：worlds 不再参与空态判定 —
+                // 有卡无会话同样落到普通空态，而不是一张空白列表。
+                val listEmpty = sessions.isEmpty() &&
+                    (!providerRuntimeAvailable || worlds.isEmpty())
+                if (listEmpty) {
                     if (isSearchActive && searchQuery.isNotBlank()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -746,6 +705,18 @@ fun SessionListScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    } else if (!providerRuntimeAvailable) {
+                        // 轻量启动面：provider 运行时未初始化，「添加服务商 /
+                        // 选模型」引导不可用 —— 按用户拍板显示普通空态（等价
+                        // 于被删的 NovexConversationRoot 的空列表），新建对话
+                        // 走 openLegacy → ensureRuntime 再拉起运行时。
+                        SessionListEmptyState(
+                            onNewChat = {
+                                scope.launch {
+                                    viewModel.createNewSession()?.let(onNewChatGuarded)
+                                }
+                            },
+                        )
                     } else if (configLoaded) {
                         // Show the 3-step onboarding whenever there are no sessions —
                         // Step 3 (Start a Conversation) is the call-to-action after the
@@ -781,12 +752,6 @@ fun SessionListScreen(
                         // Leave space for bottom FAB row
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp),
                     ) {
-                        if (showCard3Hierarchy) {
-                            item(key = "home_filters") {
-
-                                com.openminis.app.ui.novex.NovexConversationCardLookup(onSessionClickGuarded)
-                            }
-                        }
                         // T25: search-active path used to flatten the list and skip
                         // section headers entirely. Now reuses the same grouped
                         // rendering — `displayedSessions` is already filtered by
@@ -804,21 +769,59 @@ fun SessionListScreen(
                         // out of the row so it is not rebuilt per item.
                         val existingFolderIds = folders.mapTo(HashSet()) { it.id }
 
-                        fun androidx.compose.foundation.lazy.LazyListScope.renderSessionRows(
+                        @Composable
+                        fun sessionRowContent(session: ChatSessionEntity) {
+                            val activeQuery =
+                                if (isSearchActive && searchQuery.isNotBlank()) searchQuery else ""
+                            SessionItemContent(
+                                session = session,
+                                isSelecting = isSelecting,
+                                selectedIds = selectedIds,
+                                onSessionClick = onSessionClickGuarded,
+                                onToggleSelect = { viewModel.toggleSelect(it) },
+                                onEnterSelect = { viewModel.enterSelection(it) },
+                                onPinToggle = { viewModel.togglePin(it) },
+                                onEditRequest = { editSession = it },
+                                onExportRequest = { s, fmt ->
+                                    exportSession(context, s, chatRepository, scope, fmt)
+                                },
+                                onRegenerateTitle = { viewModel.regenerateTitle(it) },
+                                canRegenerateTitle = providerRuntimeAvailable,
+                                onDuplicate = { viewModel.duplicateSession(it) },
+                                onDeleteRequest = { id ->
+                                    deleteTargetId = id
+                                    showDeleteDialog = true
+                                },
+                                onMoveToGroup = { viewModel.requestGroupPicker(it) },
+                                isFiled = session.folderId != null &&
+                                    session.folderId in existingFolderIds,
+                                isRegenerating = session.id in regeneratingIds,
+                                searchQuery = activeQuery,
+                                searchSnippet = searchSnippets[session.id],
+                                // Transparent so the enclosing group/folder
+                                // container's surface shows through.
+                                rowBackground = Color.Transparent,
+                                cardFace = cardFaces[session.id],
+                                cardReader = cardReader,
+                            )
+                        }
+
+                        // [T-android-folder-card-ios-parity] Folder members
+                        // render as MIDDLE/BOTTOM segments of the group's
+                        // welded container; per-item animateItem gives the
+                        // accordion its motion.
+                        fun androidx.compose.foundation.lazy.LazyListScope.renderFolderRows(
                             rows: List<ChatSessionEntity>,
-                            // [T-android-folder-card-ios-parity] Folder members
-                            // render as MIDDLE/BOTTOM segments of the group's
-                            // welded container (iOS FolderMemberRowBackground);
-                            // ungrouped rows stay full-bleed.
-                            inFolder: Boolean = false,
-                            showWorldContext: Boolean = false,
                         ) {
                             items(rows, key = { it.id }) { session ->
-                                val activeQuery =
-                                    if (isSearchActive && searchQuery.isNotBlank()) searchQuery else ""
-                                val rowModifier = if (inFolder) {
-                                    val isLast = session.id == rows.last().id
-                                    Modifier
+                                val isLast = session.id == rows.last().id
+                                Box(
+                                    modifier = Modifier
+                                        .animateItem(
+                                            fadeInSpec = tween(250),
+                                            fadeOutSpec = tween(250),
+                                            placementSpec = tween(250),
+                                        )
                                         .padding(
                                             start = 6.dp, end = 6.dp,
                                             bottom = if (isLast) 4.dp else 0.dp,
@@ -829,13 +832,6 @@ fun SessionListScreen(
                                             fill = folderFillColor(),
                                             edge = folderEdgeColor(),
                                         )
-                                        // AFTER folderSurface so the drawn
-                                        // fill/border stay outside the clip;
-                                        // inside it, the row's press ripple is
-                                        // shaped to the segment — square for
-                                        // middles, bottom-rounded on the last
-                                        // row so the highlight can't poke out
-                                        // of the container's corners.
                                         .clip(
                                             if (isLast) {
                                                 RoundedCornerShape(
@@ -844,62 +840,46 @@ fun SessionListScreen(
                                             } else {
                                                 RoundedCornerShape(0.dp)
                                             },
-                                        )
-                                } else {
-                                    Modifier
-                                }
-                                // animateItem gives the accordion its motion:
-                                // member rows fade+slide over 250ms instead of
-                                // popping — the iOS easeInOut(0.25) equivalent
-                                // (monotonic tween on purpose; a spring's
-                                // oscillation read as jitter on iOS).
-                                Box(
-                                    modifier = Modifier
-                                        .animateItem(
-                                            fadeInSpec = tween(250),
-                                            fadeOutSpec = tween(250),
-                                            placementSpec = tween(250),
-                                        )
-                                        .then(rowModifier),
+                                        ),
                                 ) {
-                                Column {
-                                if (showWorldContext && session.isWorldConversation()) {
-                                    Text(
-                                        text = session.worldAndCharacterLabel(worldNames),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(start = 20.dp, top = 8.dp),
-                                    )
+                                    sessionRowContent(session)
                                 }
-                                SessionItemContent(
-                                    session = session,
-                                    isSelecting = isSelecting,
-                                    selectedIds = selectedIds,
-                                    onSessionClick = onSessionClickGuarded,
-                                    onToggleSelect = { viewModel.toggleSelect(it) },
-                                    onEnterSelect = { viewModel.enterSelection(it) },
-                                    onPinToggle = { viewModel.togglePin(it) },
-                                    onEditRequest = { editSession = it },
-                                    onExportRequest = { s, fmt ->
-                                        exportSession(context, s, chatRepository, scope, fmt)
-                                    },
-                                    onRegenerateTitle = { viewModel.regenerateTitle(it) },
-                                    onDuplicate = { viewModel.duplicateSession(it) },
-                                    onDeleteRequest = { id ->
-                                        deleteTargetId = id
-                                        showDeleteDialog = true
-                                    },
-                                    onMoveToGroup = { viewModel.requestGroupPicker(it) },
-                                    isFiled = session.folderId != null &&
-                                        session.folderId in existingFolderIds,
-                                    isRegenerating = session.id in regeneratingIds,
-                                    searchQuery = activeQuery,
-                                    searchSnippet = searchSnippets[session.id],
-                                    // Transparent so the folder container's
-                                    // surface shows through member rows.
-                                    rowBackground = if (inFolder) Color.Transparent else null,
-                                )
-                                }
+                            }
+                        }
+
+                        // home-v2：分组容器外观由每行自己的 Surface 背景加
+                        // 位置相关圆角拼出（novenSessionGroupRowShape），每行
+                        // 仍是独立 lazy item；行间 0.5dp 分隔线从 72dp 开始。
+                        fun androidx.compose.foundation.lazy.LazyListScope.renderSessionGroup(
+                            key: String,
+                            rows: List<ChatSessionEntity>,
+                        ) {
+                            itemsIndexed(
+                                rows,
+                                key = { _, session -> "group_${key}_${session.id}" },
+                            ) { index, session ->
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp)
+                                        .animateItem(placementSpec = tween(250)),
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .clip(novenSessionGroupRowShape(index, rows.size))
+                                            .background(com.openminis.app.ui.noven.NovenColors.Surface),
+                                    ) {
+                                        sessionRowContent(session)
+                                    }
+                                    if (index < rows.lastIndex) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 72.dp)
+                                                .height(0.5.dp)
+                                                .background(com.openminis.app.ui.noven.NovenColors.Divider),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -908,7 +888,7 @@ fun SessionListScreen(
                             item(key = "header_${period.name}") {
                                 SectionHeader(title = stringResource(R.string.sessionlist_section_pinned))
                             }
-                            renderSessionRows(periodSessions, showWorldContext = true)
+                            renderSessionGroup("pinned", periodSessions)
                         }
 
                         if (folderBlocks.isNotEmpty()) {
@@ -952,10 +932,8 @@ fun SessionListScreen(
                                 }
                                 // Collapsed groups contribute no rows; the card
                                 // still reports the real member count.
-                                renderSessionRows(
+                                renderFolderRows(
                                     block.ids.mapNotNull { id -> sessions.firstOrNull { it.id == id } },
-                                    inFolder = true,
-                                    showWorldContext = true,
                                 )
                             }
                         }
@@ -968,27 +946,7 @@ fun SessionListScreen(
                                     DatePeriod.EARLIER -> R.string.sessionlist_section_earlier
                                 }))
                             }
-                            renderSessionRows(periodSessions, showWorldContext = true)
-                        }
-
-                        if (!showBottomActions && showCard3Hierarchy) {
-                            item(key = "home_new_conversation") {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { scope.launch { viewModel.createNewSession()?.let(onNewChatGuarded) } }
-                                        .padding(horizontal = 24.dp, vertical = 18.dp),
-                                ) {
-                                    Text("＋", fontSize = 23.sp, fontWeight = FontWeight.Light)
-                                    Text(
-                                        "新建对话",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.padding(start = 12.dp),
-                                    )
-                                }
-                            }
+                            renderSessionGroup(period.name, periodSessions)
                         }
                     }
                 }
@@ -1088,41 +1046,6 @@ fun SessionListScreen(
                     onDelete = { showBulkDeleteDialog = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-            } else if (showBottomActions && hasProviders && (sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive)) {
-                // Dual FAB row (matching iOS: New Chat left + Search right, or vice versa).
-                // Hidden while the onboarding landing is showing — Step 3 provides the CTA.
-                // T46: stay visible while search is active even when the result
-                // set is empty, so the user can edit / clear the query without
-                // having to rediscover the search FAB after a 0-hit query.
-                DualFabRow(
-                    isDark = isDark,
-                    isSearchActive = isSearchActive,
-                    searchQueryFlow = viewModel.searchQuery,
-                    isSearchingFlow = viewModel.isSearching,
-                    hasSessions = sessions.isNotEmpty() || worlds.isNotEmpty() || isSearchActive,
-                    onNewChat = { scope.launch { viewModel.createNewSession()?.let(onNewChatGuarded) } },
-                    onNewChatWithGroup = { groupId ->
-                        scope.launch {
-                            val sessionId = viewModel.createNewSession(groupId = groupId)
-                            if (sessionId != null) onNewChatGuarded(sessionId)
-                        }
-                    },
-                    modelGroups = providerConfig.modelGroups,
-                    onSearchToggle = {
-                        if (isSearchActive) {
-                            viewModel.searchQuery.value = ""
-                            viewModel.isSearchActive.value = false
-                        } else {
-                            viewModel.isSearchActive.value = true
-                        }
-                    },
-                    onSearchQueryChange = { viewModel.searchQuery.value = it },
-                    onSearchDismiss = {
-                        viewModel.searchQuery.value = ""
-                        viewModel.isSearchActive.value = false
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
             }
         }
     }
@@ -1180,7 +1103,9 @@ fun SessionListScreen(
             suggesting = suggesting,
             suggestFailed = suggestFailed,
             suggestion = suggestion,
-            onSuggest = { viewModel.suggestGroup() },
+            // 需要 provider 运行时（sub model 调 LLM）：轻量启动面传 null，
+            // GroupPickerSheet 内部会隐藏 AI Suggest 入口而不是留死按钮。
+            onSuggest = if (providerRuntimeAvailable) ({ viewModel.suggestGroup() }) else null,
         )
     }
 
@@ -1280,6 +1205,8 @@ fun SessionListScreen(
             session = session,
             liveSession = liveSession,
             isRegenerating = session.id in regeneratingIds,
+            // 轻量启动面无 provider 运行时：隐藏 Regenerate 按钮。
+            canRegenerate = providerRuntimeAvailable,
             onRegenerate = { viewModel.regenerateTitle(session.id) },
             onDismiss = { editSession = null },
             onSave = { title, category ->
@@ -1289,258 +1216,6 @@ fun SessionListScreen(
         )
     }
 
-    // Browser sheet
-    if (showBrowserSheet) {
-        com.openminis.app.ui.browser.BrowserSheet(
-            tabPool = browserTabPool,
-            onDismiss = { showBrowserSheet = false },
-        )
-    }
-
-    // Browser Settings sheet
-    if (showBrowserSettings) {
-        com.openminis.app.ui.browser.BrowserSettingsSheet(
-            tabPool = browserTabPool,
-            onDismiss = { showBrowserSettings = false },
-        )
-    }
-}
-
-// ─── Dual FAB Row (matching iOS fabRow) ─────────────────────────────────────
-
-/** Persisted preference key for FAB order swap. */
-private const val PREF_FAB_SWAPPED = "fab_swapped"
-
-@Composable
-private fun DualFabRow(
-    isDark: Boolean,
-    isSearchActive: Boolean,
-    searchQueryFlow: StateFlow<String>,
-    isSearchingFlow: StateFlow<Boolean>,
-    hasSessions: Boolean,
-    onNewChat: () -> Unit,
-    onNewChatWithGroup: (String) -> Unit,
-    modelGroups: List<com.openminis.app.data.model.ModelGroup>,
-    onSearchToggle: () -> Unit,
-    onSearchQueryChange: (String) -> Unit,
-    onSearchDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val searchQuery by searchQueryFlow.collectAsState()
-    val isSearching by isSearchingFlow.collectAsState()
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("ui_prefs", Context.MODE_PRIVATE) }
-    var isSwapped by remember { mutableStateOf(prefs.getBoolean(PREF_FAB_SWAPPED, false)) }
-
-    // T120: focus + IME control for the inline search field. The field appears
-    // inside an AnimatedVisibility, so we drive focus from the parent and
-    // request it when isSearchActive flips true. Showing the keyboard
-    // explicitly via the SoftwareKeyboardController covers devices where
-    // requestFocus() alone doesn't trigger the IME (e.g. some Pixel + Gboard
-    // combinations under edge-to-edge layouts).
-    val searchFocusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    LaunchedEffect(isSearchActive) {
-        if (isSearchActive) {
-            // AnimatedVisibility runs a 200ms enter animation; the TextField
-            // isn't attached to the composition tree until the first frame of
-            // that animation lands. Yield once so requestFocus() targets a
-            // composed node rather than throwing IllegalStateException.
-            kotlinx.coroutines.delay(50)
-            runCatching { searchFocusRequester.requestFocus() }
-            keyboardController?.show()
-        }
-    }
-
-    // Drag offset for the currently-dragged FAB
-    var chatDragX by remember { mutableFloatStateOf(0f) }
-    var searchDragX by remember { mutableFloatStateOf(0f) }
-
-    // Threshold to trigger swap (half screen width roughly)
-    val density = LocalDensity.current
-    val swapThreshold = with(density) { 100.dp.toPx() }
-
-    var showGroupMenu by remember { mutableStateOf(false) }
-    val topGroups = remember(modelGroups) { modelGroups.take(10) }
-
-    val chatFab: @Composable () -> Unit = {
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(chatDragX.roundToInt(), 0) }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (kotlin.math.abs(chatDragX) > swapThreshold) {
-                                isSwapped = !isSwapped
-                                prefs.edit().putBoolean(PREF_FAB_SWAPPED, isSwapped).apply()
-                            }
-                            chatDragX = 0f
-                        },
-                        onDragCancel = { chatDragX = 0f },
-                        onHorizontalDrag = { _, dragAmount -> chatDragX += dragAmount },
-                    )
-                },
-        ) {
-            FloatingActionButton(
-                onClick = onNewChat,
-                shape = CircleShape,
-                containerColor = minisFabColor(),
-                modifier = Modifier
-                    .size(56.dp)
-                    .combinedClickable(
-                        onClick = onNewChat,
-                        onLongClick = {
-                            if (topGroups.isNotEmpty()) showGroupMenu = true
-                        },
-                    )
-                    .shadow(8.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.2f)),
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
-            ) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = "New Chat", tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            DropdownMenu(
-                expanded = showGroupMenu,
-                onDismissRequest = { showGroupMenu = false },
-            ) {
-                topGroups.forEach { group ->
-                    DropdownMenuItem(
-                        text = { Text(group.name) },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Forum, contentDescription = null) },
-                        onClick = {
-                            showGroupMenu = false
-                            onNewChatWithGroup(group.id)
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    val searchFab: @Composable () -> Unit = {
-        if (hasSessions) {
-            AnimatedVisibility(
-                visible = !isSearchActive,
-                enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.85f),
-                exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
-            ) {
-                FloatingActionButton(
-                    onClick = onSearchToggle,
-                    shape = CircleShape,
-                    // iOS: UIColor.secondarySystemBackground = #F2F2F7 (light) / #1C1C1E (dark).
-                    // ChatColors.secondaryBg already matches these values across themes.
-                    containerColor = ChatColors.secondaryBg,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .offset { IntOffset(searchDragX.roundToInt(), 0) }
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    if (kotlin.math.abs(searchDragX) > swapThreshold) {
-                                        isSwapped = !isSwapped
-                                        prefs.edit().putBoolean(PREF_FAB_SWAPPED, isSwapped).apply()
-                                    }
-                                    searchDragX = 0f
-                                },
-                                onDragCancel = { searchDragX = 0f },
-                                onHorizontalDrag = { _, dragAmount -> searchDragX += dragAmount },
-                            )
-                        }
-                        .shadow(6.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.15f)),
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
-                ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Search, contentDescription = stringResource(R.string.sessionlist_search_action), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
-                }
-            }
-        }
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            // T24: lift the FAB+search row above the IME so the text field
-            // remains visible while typing. Compose-managed inset — handles
-            // the IME open/close animation in lockstep.
-            .imePadding()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Render in swapped or normal order
-        if (isSwapped) { searchFab(); } else { chatFab() }
-
-        // Middle: Inline search bar (when active)
-        AnimatedVisibility(
-            visible = isSearchActive,
-            enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.85f),
-            exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                singleLine = true,
-                placeholder = { Text(stringResource(R.string.search_chats_placeholder)) },
-                leadingIcon = {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                },
-                trailingIcon = {
-                    // T46: while debounce is in flight, swap the close icon
-                    // for an indeterminate progress ring so the user sees the
-                    // search is working — avoids the stale-results-then-snap
-                    // transition on slow stores. Snaps back to the close
-                    // button as soon as results land.
-                    if (isSearching) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(end = 12.dp)
-                                .size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        IconButton(onClick = onSearchDismiss) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Close, contentDescription = stringResource(R.string.sessionlist_dismiss), modifier = Modifier.size(18.dp))
-                        }
-                    }
-                },
-                // T46: full-capsule shape mirrors iOS searchable-field style
-                // (see ContentView.fabRow — `.clipShape(Capsule())` over a
-                // 56pt-tall HStack). RoundedCornerShape(50) is Compose's
-                // canonical "pill" radius — guaranteed circular ends at any
-                // height. Pair with a fixed 48dp height so the field aligns
-                // with the flanking 56dp FABs without overpowering them.
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50),
-                // T10: Material3's default OutlinedTextField containerColor is
-                // Color.Transparent, which lets the LazyColumn's session rows
-                // bleed through and overlap the typed query text. Set both
-                // focused and unfocused container colors to surfaceContainerHigh
-                // (matches the grouped-section card background already used
-                // throughout settings) so the field reads as a discrete
-                // surface above the list. Also drop both border colors —
-                // capsule shape with no outline reads more like iOS's filled
-                // search bar than the M3 outlined field default.
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    focusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.8f),
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 10.dp)
-                    // [T-android-search-height] Left at the component's own
-                    // height. Forcing 42dp here clipped the placeholder: a
-                    // plain OutlinedTextField keeps its 16dp vertical
-                    // contentPadding no matter what the outer frame says, so
-                    // shrinking the frame cuts the text. The model picker's
-                    // field was rebuilt on BasicTextField + DecorationBox to
-                    // get around that; this one is a simpler inline field and
-                    // is not worth the same surgery for a few dp.
-                    .heightIn(min = 48.dp)
-                    .focusRequester(searchFocusRequester),
-            )
-        }
-
-        if (isSwapped) { chatFab() } else { searchFab() }
-    }
 }
 
 // ─── Selection Toolbar (matching iOS selectionToolbar) ──────────────────────
@@ -1616,48 +1291,6 @@ private fun SelectionToolbar(
     }
 }
 
-// ─── Section Header (matching iOS .subheadline.weight(.semibold)) ───────────
-
-@Composable
-private fun SessionHomeFilterRow(
-    selected: SessionHomeFilter,
-    onSelect: (SessionHomeFilter) -> Unit,
-) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-        SessionHomeFilter.entries.forEach { filter ->
-            val label = when (filter) {
-                SessionHomeFilter.RECENT -> "最近"
-                SessionHomeFilter.CONTEXT_FREE -> "通用"
-                SessionHomeFilter.WITH_CONTEXT -> "设定"
-            }
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .width(84.dp)
-                    .clickable { onSelect(filter) }
-                    .padding(top = 10.dp),
-            ) {
-                Text(
-                    label,
-                    fontSize = 15.sp,
-                    fontWeight = if (selected == filter) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected == filter) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Box(
-                    Modifier
-                        .padding(top = 9.dp)
-                        .width(22.dp)
-                        .height(2.dp)
-                        .background(
-                            if (selected == filter) MaterialTheme.colorScheme.primary
-                            else Color.Transparent,
-                        ),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun SessionInlineSearchField(
@@ -1720,71 +1353,6 @@ private fun SessionInlineSearchField(
     }
 }
 
-@Composable
-private fun WorldOverviewSection(
-    worlds: List<WorldEntity>,
-    onWorldClick: (String) -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        SectionHeader(title = "世界")
-        androidx.compose.foundation.lazy.LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-        ) {
-            items(worlds, key = { it.id }) { world ->
-                Surface(
-                    onClick = { onWorldClick(world.id) },
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.width(190.dp).heightIn(min = 96.dp),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Map,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = world.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (world.overview.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = world.overview,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-private fun ChatSessionEntity.worldAndCharacterLabel(worldNames: Map<String, String>): String {
-    val worldName = worldId?.let(worldNames::get)?.takeIf { it.isNotBlank() }
-        ?: runCatching {
-            StoryWorld.fromJson(org.json.JSONObject(worldSnapshotJson.orEmpty())).name
-        }.getOrNull()?.takeIf { it.isNotBlank() }
-        ?: "世界"
-    val characterName = assistantDisplayName?.takeIf { it.isNotBlank() }
-        ?: runCatching {
-            CharacterCard.fromJson(org.json.JSONObject(characterSnapshotJson.orEmpty())).name
-        }.getOrNull()?.takeIf { it.isNotBlank() }
-        ?: "Nova"
-    return "$worldName · $characterName"
-}
 
 @Composable
 private fun SectionHeader(title: String) {
@@ -1795,25 +1363,25 @@ private fun SectionHeader(title: String) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .padding(top = 4.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = 10.dp, bottom = 8.dp),
     ) {
         if (isPinned) {
             Icon(
                 imageVector = com.openminis.app.ui.novex.NovexIcons.PushPin,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = com.openminis.app.ui.noven.NovenColors.Secondary,
                 modifier = Modifier
-                    .size(14.dp)
+                    .size(13.dp)
                     .padding(end = 0.dp),
             )
             Spacer(modifier = Modifier.width(4.dp))
         }
         Text(
             text = title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = com.openminis.app.ui.noven.NovenColors.Secondary,
         )
     }
 }
@@ -1836,6 +1404,8 @@ private fun SessionItemContent(
     onEditRequest: (ChatSessionEntity) -> Unit,
     onExportRequest: (ChatSessionEntity, String) -> Unit,
     onRegenerateTitle: (String) -> Unit,
+    /** 轻量启动面（无 provider 运行时）隐藏「重新生成标题」菜单项。 */
+    canRegenerateTitle: Boolean = true,
     onDuplicate: (String) -> Unit,
     onDeleteRequest: (String) -> Unit,
     /** [T-android-session-grouping] Opens the group picker for this session. */
@@ -1859,16 +1429,21 @@ private fun SessionItemContent(
      * welded fill shows through; null keeps the default surface.
      */
     rowBackground: Color? = null,
+    /** home-v2：解析好的卡片标签与 primary 缩略图。 */
+    cardFace: com.openminis.app.ui.noven.SessionCardFace? = null,
+    cardReader: novex.android.CardSessionModel? = null,
 ) {
     if (isSelecting) {
         val isSelected = session.id in selectedIds
-        SessionRow(
+        NovenSessionRow(
             session = session,
             onClick = { onToggleSelect(session.id) },
             onLongClick = null,
             searchQuery = searchQuery,
             searchSnippet = searchSnippet,
             rowBackground = rowBackground,
+            cardFace = cardFace,
+            cardReader = cardReader,
             leadingIcon = {
                 Icon(
                     imageVector = if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Circle,
@@ -1899,12 +1474,14 @@ private fun SessionItemContent(
                 .fillMaxWidth()
                 .onSizeChanged { rowWidthPx = it.width.toFloat() },
         ) {
-            SessionRow(
+            NovenSessionRow(
                 session = session,
                 onClick = { onSessionClick(session.id) },
                 searchQuery = searchQuery,
                 searchSnippet = searchSnippet,
                 rowBackground = rowBackground,
+                cardFace = cardFace,
+                cardReader = cardReader,
                 onLongClick = { offsetPx ->
                     pressOffset = with(density) {
                         DpOffset(offsetPx.x.toDp(), offsetPx.y.toDp())
@@ -2050,17 +1627,20 @@ private fun SessionItemContent(
                         Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null)
                     },
                 )
-                // Regenerate Title
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.sessionlist_regenerate_title)) },
-                    onClick = {
-                        showContextMenu = false
-                        onRegenerateTitle(session.id)
-                    },
-                    leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
-                    },
-                )
+                // Regenerate Title —— 需要 provider 运行时（sub model/主模型
+                // 调 LLM）。轻量启动面隐藏入口而不是放一个点了没反应的死按钮。
+                if (canRegenerateTitle) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.sessionlist_regenerate_title)) },
+                        onClick = {
+                            showContextMenu = false
+                            onRegenerateTitle(session.id)
+                        },
+                        leadingIcon = {
+                            Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
+                        },
+                    )
+                }
                 // Duplicate
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.sessionlist_duplicate)) },
@@ -2562,219 +2142,6 @@ private fun FolderCard(
 
 // ─── Session Row (matching iOS SessionRow) ──────────────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SessionRow(
-    session: ChatSessionEntity,
-    onClick: () -> Unit,
-    onLongClick: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
-    leadingIcon: (@Composable () -> Unit)? = null,
-    searchQuery: String = "",
-    searchSnippet: String? = null,
-    /** See SessionItemContent — Transparent inside a folder container. */
-    rowBackground: Color? = null,
-    /** Visible row action (e.g. the ⋮ menu). Rendered after the timestamp. */
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    val style = remember(session.category) { categoryStyle(session.category) }
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    val timeText = remember(session.updatedAt, ctx) { relativeDate(ctx, session.updatedAt) }
-    val titleText = session.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.new_chat)
-    val rowHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
-
-    // [T-android-sessionrow-press-indication] The long-press path uses raw
-    // detectTapGestures (it needs the press OFFSET to anchor the context
-    // menu), which — unlike clickable — carries no indication, so rows gave
-    // zero visual feedback on tap/long-press. Drive the standard ripple by
-    // hand: emit Press/Release/Cancel into an InteractionSource from
-    // onPress, and mount it with Modifier.indication.
-    //
-    // Highlight SHAPE mirrors the folder card (user request): ungrouped rows
-    // clip the indication to the same 6dp-inset, 16dp-radius rounded rect the
-    // group card uses — 6dp outside the clip + 10dp inside keeps the total
-    // 16dp content lead, so nothing moves. Folder members skip this: their
-    // wrapper Box already clips to the welded container's segment shape
-    // (square middles / bottom-rounded last), and a rounded ripple mid-weld
-    // would break the one-container illusion.
-    val pressInteractions = remember { MutableInteractionSource() }
-    val inFolder = rowBackground != null
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(rowBackground ?: MaterialTheme.colorScheme.surface)
-            .then(
-                if (!inFolder) {
-                    Modifier
-                        .padding(horizontal = 6.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                } else {
-                    Modifier
-                }
-            )
-            .then(
-                if (onLongClick != null) {
-                    Modifier
-                        .indication(pressInteractions, LocalIndication.current)
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onPress = { offset ->
-                                    val press = PressInteraction.Press(offset)
-                                    pressInteractions.emit(press)
-                                    val released = tryAwaitRelease()
-                                    pressInteractions.emit(
-                                        if (released) PressInteraction.Release(press)
-                                        else PressInteraction.Cancel(press),
-                                    )
-                                },
-                                onTap = {
-                                    com.openminis.app.diagnostics.PerfLongCtx.click(session.id)
-                                    onClick()
-                                },
-                                onLongPress = { offset ->
-                                    // Same reason the ripple is driven by hand
-                                    // above: raw detectTapGestures carries no
-                                    // built-in feedback, so the haptic that
-                                    // `combinedClickable` gives for free has to
-                                    // be fired explicitly here.
-                                    rowHaptics.performHapticFeedback(
-                                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                                    )
-                                    onLongClick(offset)
-                                },
-                            )
-                        }
-                } else {
-                    Modifier.clickable {
-                        com.openminis.app.diagnostics.PerfLongCtx.click(session.id)
-                        onClick()
-                    }
-                }
-            )
-            .padding(
-                // 10dp in BOTH branches. Ungrouped: 6dp highlight-clip inset
-                // + 10 = 16dp lead. In-folder: the wrapper Box already adds
-                // the container's 6dp inset, so 16dp here pushed member icons
-                // to 22dp — 6dp right of the folder card's own icon (6 outer
-                // + 10 inner = 16). 10dp restores one shared 16dp icon grid
-                // for the card, its members, and ungrouped rows alike.
-                horizontal = 10.dp,
-                vertical = 12.dp,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (leadingIcon != null) {
-            leadingIcon()
-        }
-
-        // Category icon in colored circle (18% opacity matching iOS)
-        val activeSessions by SessionActivityTracker.activeSessions.collectAsState()
-        val isActive = session.id in activeSessions
-        // [T-android-session-paused-badge] Head of this session's badge queue
-        // — null for the common case. Renders as an overlay in the icon's
-        // bottom-right corner, mirroring where iOS's iCloud badge sits so
-        // future ICLOUD_SYNCING uses the same anchor.
-        val badgeMap by com.openminis.app.service.SessionBadgeStore.byId.collectAsState()
-        val badgeHead = badgeMap[session.id]?.firstOrNull()
-        Box(
-            modifier = Modifier.size(44.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = style.color.copy(alpha = 0.18f),
-                        shape = CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = titleText.trim().take(1),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = style.color,
-                )
-            }
-            if (isActive) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .align(Alignment.Center),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    SpinningRing(
-                        color = style.color,
-                        modifier = Modifier.size(42.dp),
-                    )
-                }
-            }
-            if (badgeHead != null) {
-                SessionBadgeOverlay(
-                    state = badgeHead,
-                    modifier = Modifier.align(Alignment.BottomEnd),
-                )
-            }
-        }
-
-        // Title + last message (or highlighted snippet during search)
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-        ) {
-            if (searchQuery.isNotBlank()) {
-                Text(
-                    text = highlightedAnnotatedString(titleText, searchQuery),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                Text(
-                    text = titleText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // During an active search, prefer the matched message snippet
-            // (content hit) over the generic lastMessage preview. Falls back
-            // to lastMessage when match was title-only (snippet is null).
-            if (searchQuery.isNotBlank() && searchSnippet != null) {
-                Text(
-                    text = highlightedAnnotatedString(searchSnippet, searchQuery),
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                Text(
-                    text = session.lastMessage ?: "No messages yet",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        // Relative timestamp
-        Text(
-            text = timeText,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.outline,
-        )
-
-        if (trailing != null) {
-            trailing()
-        }
-    }
-}
-
 /**
  * Card frame for a [SectionTextField] used inside a dialog.
  *
@@ -2818,8 +2185,8 @@ private fun DialogTextFieldFrame(content: @Composable () -> Unit) {
  * onAppear calls does not stack multiple rotation animations.
  */
 @Composable
-// [T-launch-home-running-glow] internal：启动首页（NovexConversationRoot）
-// 的会话行同样要显示运行光环（2026-09-16 用户反馈旧列表有、首页没有）。
+// [T-launch-home-running-glow] internal：NovenSessionRow 复用（两条路径
+// 同用 SessionListScreen）。运行光环问题见 2026-09-16 反馈。
 internal fun SpinningRing(
     color: Color,
     modifier: Modifier = Modifier,
@@ -2847,56 +2214,46 @@ internal fun SpinningRing(
     }
 }
 
+
+// ─── 轻量启动面空态 ────────────────────────────────────────────────────────
+
 /**
- * [T-android-session-paused-badge] Corner overlay for [SessionBadgeStore]
- * states. Anchored bottom-end inside the 44dp icon Box. Mirrors where the
- * iOS iCloud-sync badge sits so future ICLOUD_SYNCING uses the same anchor.
- *
- * Sizing: 14dp circle, ~2/3 the size of the 20dp category icon — visible
- * but doesn't overwhelm the icon glyph. Translated 2dp down/right so the
- * badge sits *on* the icon edge instead of flush with the row padding
- * (matches the visual weight of iOS's badge offset).
+ * providerRuntimeAvailable == false（NovexHomeSurface 冷启动路径）时的普通
+ * 空态：不渲染 onboarding 三步引导——那三步全都依赖 provider 运行时。
+ * 「新建对话」由宿主接到 openLegacy，点按时才走 ensureRuntime 拉起运行时。
+ * 视觉等价于已删除的 NovexConversationRoot 空态。
  */
 @Composable
-private fun SessionBadgeOverlay(
-    state: com.openminis.app.service.SessionBadgeStore.SessionBadgeState,
-    modifier: Modifier = Modifier,
-) {
-    when (state) {
-        com.openminis.app.service.SessionBadgeStore.SessionBadgeState.PAUSED -> {
-            Box(
-                modifier = modifier
-                    .offset(x = 2.dp, y = 2.dp)
-                    .size(14.dp)
-                    .background(
-                        // Solid system-orange. Picked over yellow so the
-                        // alert reads as "attention" rather than "info".
-                        color = Color(0xFFFF9500),
-                        shape = CircleShape,
-                    )
-                    .border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                // Pause glyph (⏸) — mirrors iOS's "pause.fill" badge so the
-                // cross-platform "this task was paused" affordance matches.
-                Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Pause,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(9.dp),
-                )
-            }
-        }
-        com.openminis.app.service.SessionBadgeStore.SessionBadgeState.ICLOUD_SYNCING -> {
-            // Reserved for the upcoming iCloud-equivalent sync surface;
-            // not produced yet. Render nothing rather than a placeholder
-            // so a stray persisted entry from a future build doesn't
-            // surface a debug-looking icon on the current build.
-        }
+private fun SessionListEmptyState(onNewChat: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp, vertical = 80.dp),
+    ) {
+        Text(
+            "还没有对话",
+            color = com.openminis.app.ui.noven.NovenColors.Text,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(18),
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            "从一个新的想法开始",
+            color = com.openminis.app.ui.noven.NovenColors.Secondary,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(14),
+            modifier = Modifier.padding(top = 7.dp),
+        )
+        Text(
+            "新建对话",
+            color = com.openminis.app.ui.novex.NovexColors.Primary,
+            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .padding(top = 18.dp)
+                .clickable(onClick = onNewChat)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        )
     }
 }
 
@@ -3118,6 +2475,8 @@ internal fun SessionEditSheet(
     liveSession: ChatSessionEntity = session,
     isRegenerating: Boolean = false,
     onRegenerate: () -> Unit = {},
+    /** 轻量启动面（无 provider 运行时）隐藏 Regenerate 区块。 */
+    canRegenerate: Boolean = true,
 ) {
     var title by remember { mutableStateOf(session.title ?: "") }
     var selectedCategory by remember { mutableStateOf(session.category) }
@@ -3228,6 +2587,8 @@ internal fun SessionEditSheet(
             // matches iOS SessionEditSheet's dedicated section below Category.
             // Reuses SessionListViewModel.regenerateTitle; shows a spinner and
             // disables while running (regeneratingIds) to prevent double taps.
+            // canRegenerate=false（轻量启动面无 provider 运行时）时整块隐藏。
+            if (canRegenerate) {
             OutlinedButton(
                 onClick = onRegenerate,
                 enabled = !isRegenerating,
@@ -3249,6 +2610,7 @@ internal fun SessionEditSheet(
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.sessionlist_regenerate_title))
                 }
+            }
             }
         }
     }

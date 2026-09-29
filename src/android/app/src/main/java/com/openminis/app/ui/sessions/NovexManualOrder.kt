@@ -25,7 +25,8 @@ internal fun moveNovexOrderedId(
 }
 
 internal enum class NovexManualOrderKind(val preferenceKey: String) {
-    CONVERSATIONS("conversations"),
+    // CONVERSATIONS 已随手动拖动排序一起移除（会话列表改用文件夹+置顶）；
+    // 其余 kind 仍被 worlds/characters/文游库的手动排序使用。
     WORLDS("worlds"),
     CHARACTERS("characters"),
     INTERACTIVE_FICTION("interactive_fiction"),

@@ -34,7 +34,15 @@ import org.json.JSONObject
 @OptIn(FlowPreview::class)
 class SessionListViewModel(
     private val chatRepository: ChatRepository,
-    private val providerRepository: ProviderRepository,
+    /**
+     * Nullable: the lightweight launch surface (NovexHomeSurface →
+     * installNovexHomeSurface) mounts this list BEFORE
+     * `initializeRuntimeSubsystems()` runs, where
+     * `MinisApp.providerRepositoryOrNull` is still null. Every provider-
+     * dependent feature (regenerate title, AI group suggest) guards on this
+     * field — it must never be used to trigger runtime initialisation.
+     */
+    private val providerRepository: ProviderRepository?,
     private val context: Context,
 ) : ViewModel() {
 
@@ -110,7 +118,7 @@ class SessionListViewModel(
          */
         fun factory(
             chatRepository: ChatRepository,
-            providerRepository: ProviderRepository,
+            providerRepository: ProviderRepository?,
             appContext: Context,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -125,9 +133,6 @@ class SessionListViewModel(
     }
 
     private val _allSessions = MutableStateFlow<List<ChatSessionEntity>>(emptyList())
-    val hasSessions: StateFlow<Boolean> = _allSessions
-        .map { it.isNotEmpty() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * Tracks whether the first DB emission has landed. Before this flips true
@@ -475,6 +480,12 @@ class SessionListViewModel(
     fun suggestGroup() {
         val request = groupPickerRequest.value ?: return
         if (groupSuggesting.value) return
+        // 轻量启动面没有 provider 运行时：UI 已隐藏 AI Suggest 入口，
+        // 这里是防御性早退，绝不能顺手拉起 ProviderRepository。
+        if (providerRepository == null) {
+            AppLogger.warning(TAG, "[GroupSuggest] SKIPPED reason=no-provider-runtime")
+            return
+        }
         val sessionIds = request.sessionIds
         if (sessionIds.isEmpty()) {
             AppLogger.error(TAG, "[GroupSuggest] FAILED reason=no-sessions-selected")
@@ -509,6 +520,11 @@ class SessionListViewModel(
     }
 
     private suspend fun runGroupSuggestion(sessionIds: List<String>): GroupSuggestion {
+        // suggestGroup() already refuses when the repository is absent; the
+        // smart-cast local keeps every use below non-null without touching the
+        // nullable field again.
+        val providerRepository = providerRepository
+            ?: throw IllegalStateException("provider runtime unavailable")
         // [T-ios-folder-suggest-anchor-nondeterminism] Walk the selection in a
         // STABLE (sorted) order and take the first session that actually
         // resolves a usable model, instead of letting one arbitrary session
@@ -799,6 +815,10 @@ class SessionListViewModel(
      */
     private suspend fun generateTitleFromStore(id: String, origin: String): Boolean {
         val startedAt = System.currentTimeMillis()
+        // 轻量启动面（providerRepository == null）跳过全部 LLM 候选，直接走
+        // 本地兜底标题——这里绝不允许触碰/拉起 ProviderRepository。
+        val providerRepository = providerRepository
+            ?: return applyFallbackTitle(id, null, origin)
         var firstUserRaw: String? = null
         try {
                 val session = chatRepository.getSession(id) ?: return false
@@ -1131,7 +1151,7 @@ class SessionListViewModel(
         if (isNewTop) newTopSessionEvent.tryEmit(Unit)
     }
 
-    fun hasProviders(): Boolean = providerRepository.instances.isNotEmpty()
+    fun hasProviders(): Boolean = providerRepository?.instances?.isNotEmpty() == true
 
     /**
      * For every session whose title does NOT contain [query] (case-insensitive),

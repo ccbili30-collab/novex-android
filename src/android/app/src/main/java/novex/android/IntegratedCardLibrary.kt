@@ -28,7 +28,7 @@ import novex.content.CardKind
 /** 原应用提供会话与导航；这里只持有卡片编辑状态。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun IntegratedCardLibrary(kind:CardKind?=null,initialRoot:String?=null,initialTarget:String?=null,
-    onUse:(String,String,Boolean)->Unit,onBack:()->Unit={},onSurface:(Boolean)->Unit={},initialImportUri:String?=null,showBack:Boolean=false,createOnly:Boolean=false,
+    onUse:(String,String,Boolean)->Unit,onBack:()->Unit={},onSurface:(Boolean)->Unit={},initialImportUri:String?=null,resumeDraftId:String?=null,showBack:Boolean=false,createOnly:Boolean=false,
     onOpenCard:((String)->Unit)?=null,onExisting:(String,String,Boolean)->Unit={_,_,_->}) {
     val key="integrated-cards-${kind?.name}-$initialRoot-$initialTarget"
     val library:LibraryModel=viewModel(key="$key-library")
@@ -55,6 +55,7 @@ import novex.content.CardKind
         exportRoot=null;exportTarget=null
     }
     LaunchedEffect(initialImportUri){initialImportUri?.let {files.prepare(android.net.Uri.parse(it),kind?:CardKind.CHARACTER)}}
+    LaunchedEffect(resumeDraftId){resumeDraftId?.takeIf {it.isNotBlank()}?.let {files.resume(it)}}
     val reportSurface by rememberUpdatedState(onSurface)
     LaunchedEffect(selected,files.state.visible){reportSurface(selected==null && !files.state.visible)}
     fun openCard(id:String) {

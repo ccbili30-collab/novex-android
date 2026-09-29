@@ -19,29 +19,6 @@ class SessionHomePolicyTest {
     }
 
     @Test
-    fun recentContainsEveryConversationWhileOtherFiltersDescribeCurrentContext() {
-        val sessions = listOf(
-            session("world-new", worldId = "world-a", updatedAt = 30),
-            session("character", characterVersionId = "version-a", updatedAt = 25),
-            session("general", updatedAt = 20),
-            session("world-old", worldSnapshotJson = "{}", updatedAt = 10),
-        )
-
-        assertEquals(
-            listOf("world-new", "character", "general", "world-old"),
-            sessions.forHomeFilter(SessionHomeFilter.RECENT).map { it.id },
-        )
-        assertEquals(
-            listOf("general"),
-            sessions.forHomeFilter(SessionHomeFilter.CONTEXT_FREE).map { it.id },
-        )
-        assertEquals(
-            listOf("world-new", "character", "world-old"),
-            sessions.forHomeFilter(SessionHomeFilter.WITH_CONTEXT).map { it.id },
-        )
-    }
-
-    @Test
     fun recencyUsesOnlyTodayAndEarlierAtTheLocalDayBoundary() {
         val now = localTime(2026, Calendar.SEPTEMBER, 2, 9, 30)
         val today = localTime(2026, Calendar.SEPTEMBER, 2, 0, 1)
@@ -49,29 +26,6 @@ class SessionHomePolicyTest {
 
         assertEquals(SessionHomeRecency.TODAY, sessionHomeRecency(today, now, timeZone))
         assertEquals(SessionHomeRecency.EARLIER, sessionHomeRecency(yesterday, now, timeZone))
-    }
-
-    @Test
-    fun rootControlsAreInteractiveBeforeConversationContentFinishesLoading() {
-        val cold = sessionHomeAvailability(
-            sessionsLoaded = false,
-            worldNamesLoaded = false,
-        )
-        val partial = sessionHomeAvailability(
-            sessionsLoaded = true,
-            worldNamesLoaded = false,
-        )
-        val loaded = sessionHomeAvailability(
-            sessionsLoaded = true,
-            worldNamesLoaded = true,
-        )
-
-        assertTrue(cold.controlsInteractive)
-        assertFalse(cold.contentReady)
-        assertTrue(partial.controlsInteractive)
-        assertFalse(partial.contentReady)
-        assertTrue(loaded.controlsInteractive)
-        assertTrue(loaded.contentReady)
     }
 
     private fun localTime(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =

@@ -4,29 +4,10 @@ import com.openminis.app.data.db.ChatSessionEntity
 import java.util.Calendar
 import java.util.TimeZone
 
-internal enum class SessionHomeFilter {
-    RECENT,
-    CONTEXT_FREE,
-    WITH_CONTEXT,
-}
-
 internal enum class SessionHomeRecency {
     TODAY,
     EARLIER,
 }
-
-internal data class SessionHomeAvailability(
-    val controlsInteractive: Boolean,
-    val contentReady: Boolean,
-)
-
-internal fun sessionHomeAvailability(
-    sessionsLoaded: Boolean,
-    worldNamesLoaded: Boolean,
-): SessionHomeAvailability = SessionHomeAvailability(
-    controlsInteractive = true,
-    contentReady = sessionsLoaded && worldNamesLoaded,
-)
 
 internal fun ChatSessionEntity.isWorldConversation(): Boolean =
     !worldId.isNullOrBlank() || !worldSnapshotJson.isNullOrBlank()
@@ -41,13 +22,6 @@ internal fun ChatSessionEntity.hasNovexContext(): Boolean =
         !characterSnapshotJson.isNullOrBlank() ||
         !personaId.isNullOrBlank() ||
         !personaSnapshotJson.isNullOrBlank()
-
-internal fun List<ChatSessionEntity>.forHomeFilter(filter: SessionHomeFilter): List<ChatSessionEntity> =
-    when (filter) {
-        SessionHomeFilter.RECENT -> this
-        SessionHomeFilter.CONTEXT_FREE -> filterNot(ChatSessionEntity::hasNovexContext)
-        SessionHomeFilter.WITH_CONTEXT -> filter(ChatSessionEntity::hasNovexContext)
-    }
 
 internal fun sessionHomeRecency(
     timestamp: Long,

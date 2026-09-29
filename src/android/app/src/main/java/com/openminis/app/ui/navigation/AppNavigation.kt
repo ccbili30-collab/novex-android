@@ -517,10 +517,28 @@ fun AppNavigation(
         composable("integrated-card?root={root}&target={target}",arguments=listOf(navArgument("root"){type=NavType.StringType;defaultValue=""},navArgument("target"){type=NavType.StringType;defaultValue=""})) {entry->
             com.openminis.app.cards.IntegratedCardHost(root=entry.arguments?.getString("root"),target=entry.arguments?.getString("target"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
         }
+        // 「未完成」导入草稿续接：复用 IntegratedCardHost 的导入确认页。
+        composable("integrated-import-resume?draft={draft}",arguments=listOf(
+            navArgument("draft"){type=NavType.StringType})) {entry->
+            com.openminis.app.cards.IntegratedCardHost(resumeDraftId=entry.arguments?.getString("draft"),
+                onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
+        }
         composable(Routes.SESSION_LIST) {
+            // home-v2：没有任何可用模型服务商时默认进会话 tab（新手引导在那里），
+            // 否则进首页。判定沿用 SessionListScreen 的 hasProviders 写法。
+            val providerConfig by providerRepository.config.collectAsState()
+            val configLoaded by providerRepository.configLoaded.collectAsState()
+            val initialTab = if (providerConfig.instances.any { it.isEnabled }) {
+                com.openminis.app.ui.noven.NovenTab.HOME
+            } else {
+                com.openminis.app.ui.noven.NovenTab.SESSIONS
+            }
             NovexRootScreen(
+                initialTab = initialTab,
+                initialTabReady = configLoaded,
+                chatRepository = chatRepository,
                 onImportCard={uri,world->navController.safeNavigate("integrated-import?uri=${android.net.Uri.encode(uri.toString())}&world=$world")},
-                conversationContent = { onWorldsClick, onRootNavigationVisibilityChange ->
+                conversationContent = { _, onRootNavigationVisibilityChange ->
                     SessionListScreen(
                         chatRepository = chatRepository,
                         providerRepository = providerRepository,
@@ -529,13 +547,6 @@ fun AppNavigation(
                         },
                         onNewChat = { sessionId ->
                             navController.safeNavigate(Routes.chat(sessionId))
-                        },
-                        onSettingsClick = {
-                            navController.safeNavigate(Routes.SETTINGS)
-                        },
-                        onCharactersClick = onWorldsClick,
-                        onWorldClick = { worldId ->
-                            navController.safeNavigate(Routes.storyWorld(worldId))
                         },
                         onAddProviderClick = {
                             navController.safeNavigate(Routes.ADD_PROVIDER)
@@ -552,29 +563,25 @@ fun AppNavigation(
                         onScheduledTasksClick = {
                             navController.safeNavigate(Routes.SCHEDULED_TASKS)
                         },
-                        showBottomActions = false,
                         onRootNavigationVisibilityChange = onRootNavigationVisibilityChange,
                     )
                 },
-                onOpenWorld = { worldId ->
-                    navController.safeNavigate(Routes.storyWorld(worldId))
+                onOpenCard = { root, target ->
+                    navController.safeNavigate("integrated-card?root=${android.net.Uri.encode(root)}&target=${android.net.Uri.encode(target)}")
                 },
+                onChat = { navController.safeNavigate(Routes.chat(it)) },
                 onCreateWorld = { navController.safeNavigate(Routes.storyWorldEdit()) },
-                onConfigureConversation = { id -> navController.safeNavigate(Routes.conversationSettings(id)) },
-                onOpenCharacter = { characterId ->
-                    navController.safeNavigate(Routes.characterDetail(characterId))
-                },
                 onCreateCharacter = {
                     navController.safeNavigate(Routes.characterCatalogEdit())
                 },
-                onOpenInteractiveFiction = { projectId ->
-                    navController.safeNavigate(Routes.interactiveFiction(projectId))
-                },
-                onCreateInteractiveFiction = {
-                    navController.safeNavigate(Routes.interactiveFictionEdit())
+                onResumeImportDraft = { draftId ->
+                    navController.safeNavigate("integrated-import-resume?draft=${android.net.Uri.encode(draftId)}")
                 },
                 onOpenSettings = {
                     navController.safeNavigate(Routes.SETTINGS)
+                },
+                onOpenCreativeLibrary = {
+                    navController.safeNavigate(Routes.creativeLibrary())
                 },
             )
         }

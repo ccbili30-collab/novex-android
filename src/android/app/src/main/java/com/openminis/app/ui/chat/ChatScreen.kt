@@ -481,6 +481,9 @@ fun ChatScreen(
     // `AIChatView` which binds the composer against `vm.inputText`.
     val inputText by viewModel.inputText.collectAsState()
     LaunchedEffect(sessionId) {
+        com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingChatInput(sessionId)?.let {
+            viewModel.setInputText(it)
+        }
         val pending = com.openminis.app.deeplink.DeepLinkCoordinator.pendingChatAction.value
         if (pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.OPEN_CREATION_TOOL ||
             pending == com.openminis.app.deeplink.DeepLinkCoordinator.ChatAction.ORGANIZE_IMPORTED_CARD) {

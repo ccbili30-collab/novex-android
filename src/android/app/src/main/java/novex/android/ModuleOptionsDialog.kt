@@ -37,7 +37,7 @@ import novex.content.effectiveTemporality
     var all by rememberSaveable(module.id){mutableStateOf(original?.requireAll?:false)}
     var sensitive by rememberSaveable(module.id){mutableStateOf(original?.caseSensitive?:false)}
     fun entries(value:String)=value.lines().map {it.trim()}.filter {it.isNotEmpty()}.distinct()
-    AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("携带与标签")},text={Column(Modifier.verticalScroll(rememberScrollState())) {
+    AlertDialog(contentScrollsItself=true,onDismissRequest={if(!busy)onDismiss()},title={Text("携带与标签")},text={Column(Modifier.verticalScroll(rememberScrollState())) {
         Text("模块去向",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         listOf(ModuleRouting.DEFAULT.name to "默认（进开局资料包）",ModuleRouting.PER_TURN.name to "每轮注入",
             ModuleRouting.STYLE.name to "文风",ModuleRouting.STANDBY.name to "待命（按触发规则）").forEach {(value,label)->

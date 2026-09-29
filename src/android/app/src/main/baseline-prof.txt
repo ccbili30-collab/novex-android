@@ -11,8 +11,6 @@ Lcom/openminis/app/startup/NovexStartupMetrics;
 HSPLcom/openminis/app/startup/NovexStartupMetrics;->**(**)**
 Lcom/openminis/app/ui/sessions/NovexRootScreenKt;
 HSPLcom/openminis/app/ui/sessions/NovexRootScreenKt;->**(**)**
-Lcom/openminis/app/ui/sessions/NovexConversationRootKt;
-HSPLcom/openminis/app/ui/sessions/NovexConversationRootKt;->**(**)**
 Lcom/openminis/app/ui/sessions/SessionHomePolicyKt;
 HSPLcom/openminis/app/ui/sessions/SessionHomePolicyKt;->**(**)**
 Lcom/openminis/app/ui/sessions/NovexRootNavigationPolicyKt;

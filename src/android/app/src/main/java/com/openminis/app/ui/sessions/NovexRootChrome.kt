@@ -18,7 +18,6 @@ import com.openminis.app.ui.novex.NovexIconAction
 import com.openminis.app.ui.novex.NovexActionMenu
 import com.openminis.app.ui.novex.NovexMenuAction
 import com.openminis.app.ui.novex.NovexRootHeader
-import com.openminis.app.ui.settings.NovexUpdateAction
 
 internal data class NovexCreateMenuItem(
     val label: String,
@@ -47,7 +46,8 @@ internal fun NovexRootPageHeader(
             )
         },
         actions = {
-            NovexUpdateAction()
+            // 公告/更新入口与宿主已迁到新根（NovexUpdateEntry + NovexUpdateHost），
+            // 这里不再挂 NovexUpdateAction，避免叠卡弹窗被双宿主重复弹出。
             NovexIconAction(
                 icon = R.drawable.ic_phosphor_search,
                 contentDescription = if (searching) "关闭$searchDescription" else searchDescription,

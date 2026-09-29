@@ -8,8 +8,10 @@
      transitions. -->
 <resources>
     <style name="Theme.Minis" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
-        <item name="android:colorBackground">@android:color/white</item>
+        <!-- home-v2 页面底 Canvas #F4F5F4：displayCutout 拟合够不到的
+             顶部一条画的是窗口底色，不能用纯白。 -->
+        <item name="android:windowBackground">#F4F5F4</item>
+        <item name="android:colorBackground">#F4F5F4</item>
     </style>
 </resources>
 
