@@ -224,6 +224,38 @@ P3.1b）、gemini safety 续读不做（SAFETY 收尾原样透传）、temperatu
 口径）、孤儿 tool_result 语义对齐（新线在适配层 idRegistry 丢弃，被替换实现在
 provider 层 strip）、usage cache 字段、TransportCall 的 protocol 防呆断言、
 OAuth 前缀测试的 assumeTrue 覆盖（未配置定制属性时跳过）。
+P3.1d 绞杀收尾（PR 见进度日志，2026-09-29）——**删除上游 provider/anthropic/
+（3f/1,430 行）与 provider/gemini/（2f/683 行）两包及其测试**（632+403 行），
+残余接口面先立后破，净眼挂账五条全清：
+- **ImagesClient**（novex.model 自有，/images/generations JSON + /images/edits
+  multipart）：请求体键、b64_json 自动探测重试、url 条目无鉴权下载、mime
+  提示/响应头/魔数兜底、代理误路由 404 语义对齐上游生图路径；适配器
+  imageDelegate 改走它，消费方（GenerateImageTool/QuickTestSheet）经新接口
+  ImagesCapableProvider 取生图能力，不再下钻具体 provider 类型。
+- **ModelsCatalog**（novex.model 纯函数面）+ app 侧 **ModelsCatalogApi** 包装器：
+  三方言模型目录自有化（anthropic 基址爬升 + 思考盖章、gemini chatCapable
+  过滤、openai 前缀过滤 + raw 模态透出）；ProviderRepository/设置屏/容量测试
+  改调，OpenAIModelsApi（212 行）随之删除。两处等价改写记录在案：gemini key
+  改 x-goog-api-key 头（服务端等价 ?key=，令牌不进 URL）；anthropic 缓存并入
+  ProviderModelsCache("anthropic") 命名空间（旧无命名空间条目自然过期）。
+- 净眼挂账：a) anthropic 工具结果内嵌图片补发（含 ImageBudget 兜底；exotic
+  mime 强转 jpeg 为新线口径——WireImage 只收四种位图 mime）；b) 孤儿
+  tool_result「过一条 user 即失效」（idRegistry.expireBatch，迟到旧批结果按
+  孤儿丢弃）；c) usage 补 cache_creation/cache_read 计量（anthropic 方言，适配器
+  LLMUsage 映射）；d) ChatCompletionCall 协议×请求体防呆（错配开连接前早失败，
+  execute 限 OpenAI 兼容线）；e) OAuth 前缀可注入（oauthSystemPrefixOverride，
+  公共 CI 跑满断言块，assumeTrue 撤除）。
+- **范围纠偏（重要）**：provider/openai/ 整目录删除**未执行**——侦察发现
+  OpenAIProvider（3,718 行）仍是 Codex-OAuth（Responses API）/官方直连/
+  useResponsesAPI/Azure/前尘 responses 回退/局域网明文/OpenRouter/xAI（OAuth+
+  key）/Kimi（OAuth+key）九类实例的**活聊天实现**（P3.1b 有意暂留上游，见
+  P3.1b 行），并非死码。删除须先在 novex.model 立 Responses API wire + Azure
+  deployments 路径 + 动态 OAuth bearer + OpenRouter 附加头与 anthropic/ 前缀
+  cache_control，并逐线 parity 验收——体量同级于 P3.1c，立为 **P3.1e 独立
+  任务**（下一刀），不塞进本轮。openai 包本轮仍瘦身：OpenAIModelsApi 移植后
+  删除，包内剩 OpenAIProvider + ThinkPrefixStreamParser（3,920 行血统）。
+  适配器对 imageDegradedModels/looksLikeImageRejection 的共用（跨实现学习集）
+  随 P3.1e 一并迁移。
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -278,3 +310,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | 本 PR（R4） | R4 收尾清剿：terminal 死码两件（MinisOpenUrlBroker/MinisUrlMarker + ChatScreen 死流）、a11y 死路 UI（SystemPermissions/OffloadPermission 卡与恢复对话框）+ accessibility/ 整包删除、ImageEditRoutingMatrixTest、OpenAIProvider 过时归因、toolPattern 去 browser_use、THIRD_PARTY GPL=0 出清、审计复跑 | 血统 191f/39,865 行（上游未动）、161f/100,520 行（上游改动）、379f/50,349 行（Novex 新增）；死代码 0f |
 | 2026-09-29 | #63 | P3.1b 适配器换管：OpenAI 兼容中转（自定 base 纯 chat）聊天流量切自有 novex.model 传输；model-transport 小进化（附加头/reasoning 回放/音频块/附加参数，ChatCompletionClient +54/-12）；净眼退回两修（流桥 trySendBlocking 背压、token 上限键按主机选择）+ 流中 error 数字 code 矩阵；44 条新增单测（模块 7 + 适配器 28 + 工厂 9） | 上游 OpenAIProvider 及其测试零改动（P3.1d 处置）；model-transport 零上游依赖不变 |
 | 2026-09-28 | #64 | P3.1c 原生协议换管：anthropic/gemini 聊天流量切自有 novex.model 传输（模块新增 AnthropicWire 322 行 + GeminiWire 208 行；适配器分线路由 +374/−68；ChatCompletionClient +30/−11、Stream +65/−15；工厂两分支改构造适配器；ThinkingRuleResolver.anthropicThinkingShape 委托 novex.model；ChatViewModel 的 isOAuth/enhancedCache 盖章改指适配器）；净眼退回一修三采纳（LAN 明文预检确定性 ProviderError、HTTP 错误体三方言解析、gemini 缺省 end_turn、台账口径）；三线全走自有传输；49 条新增单测（模块 anthropic 17 + gemini 14 + 适配器原生线 18，含 MockWebServer 端到端 2） | 上游 anthropic/ 两包（3f ~1.4k）与 gemini/（2f ~0.7k）聊天流量清零、工厂零引用（文件留存，P3.1d 删）；model-transport 零上游依赖不变 |
+| 2026-09-29 | 本 PR（P3.1d） | 绞杀收尾：删上游 anthropic/（3f 1,430 行）+ gemini/（2f 683 行）+ OpenAIModelsApi（212 行）+ 两测试（1,035 行）；移植 ImagesClient（novex.model 生图）与 ModelsCatalog/ModelsCatalogApi（三方言模型目录）；适配器 imageDelegate 切自有传输、消费方改走 ImagesCapableProvider 接口；净眼挂账五条全清（a 工具结果图片补发/b 孤儿过一条 user 即失效/c usage 缓存计量/d 协议防呆/e OAuth 前缀注入）；Anthropic*/Gemini* 主代码引用清零（仅注释墓碑）| 血统：上游未动 191f/39,865 → 186f/37,943（−1,922 行），上游改动 161f/100,520 → 160f/100,153；Novex 新增 379f/50,349 → 382f/51,691（+ImagesClient/ModelsCatalog/ImagesCapableProvider/ModelsCatalogApi）；provider.openai 留存 2f/3,920 行（活码，P3.1e）；model-transport 零上游依赖不变 |

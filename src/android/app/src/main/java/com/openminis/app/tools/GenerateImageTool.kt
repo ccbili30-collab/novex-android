@@ -12,7 +12,6 @@ import com.openminis.app.data.model.ModelEntry
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
 import com.openminis.app.logging.AppLogger
 import java.io.File
 import java.security.MessageDigest
@@ -188,16 +187,17 @@ object GenerateImageTool {
         )
         try {
             val provider = ProviderFactory.create(instance, credential, entry.model, context)
-            // [P3.1b] OpenAI 兼容聊天线路可能换管到 NovexTransportProvider；生图
-            // 仍走上游实现——适配器暴露 imageDelegate 保持 Images API 原行为。
-            val openAI = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
-                ?: provider as? OpenAIProvider
-            if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
+            // [P3.1d] 生图接口面：适配器（OpenAI 兼容中转线）的 imageDelegate 走自有
+            // novex.model ImagesClient；仍由上游 OpenAIProvider 承担的线路（官方直连/
+            // Azure/Responses/OpenRouter/xAI/Kimi，P3.1e 换管）实现同一接口，行为不变。
+            val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? com.openminis.app.provider.ImagesCapableProvider
+            if (images != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
                 try {
                     val response = if (reference == null) {
-                        openAI.generateImage(prompt, count, size, quality)
+                        images.generateImage(prompt, count, size, quality)
                     } else {
-                        openAI.editImage(prompt, listOf(reference), count, size, quality)
+                        images.editImage(prompt, listOf(reference), count, size, quality)
                     }
                     if (configuredEndpointMode == ImageEndpointMode.auto) {
                         repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.imagesGenerations)

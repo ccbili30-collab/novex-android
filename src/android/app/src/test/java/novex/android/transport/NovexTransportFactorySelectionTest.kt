@@ -90,7 +90,7 @@ class NovexTransportFactorySelectionTest {
     @Test
     fun `anthropic 与 gemini 分支换管到自有传输`() {
         // [P3.1c] 两家原生协议整体切 NovexTransportProvider；上游 AnthropicProvider /
-        // GeminiProvider 不再被工厂构造（文件留存，P3.1d 统一拆除）。
+        // GeminiProvider 已随 P3.1d 删除。
         val anthropic = ProviderFactory.create(instance(type = ProviderType.anthropic), "k", LLMModel.claudeSonnet46)
         assertTrue(anthropic is NovexTransportProvider)
         assertEquals("Anthropic", (anthropic as LLMProvider).name)

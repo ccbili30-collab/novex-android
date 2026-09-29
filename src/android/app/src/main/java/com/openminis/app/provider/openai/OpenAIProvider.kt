@@ -100,7 +100,10 @@ class OpenAIProvider private constructor(
      * 成功过，本进程后续请求直接走 responses，不再先撞一次 chat。
      */
     private val allowResponsesFallback: Boolean = false,
-) : LLMProvider {
+) : LLMProvider, com.openminis.app.provider.ImagesCapableProvider {
+    // [P3.1d] 生图接口面（ImagesCapableProvider）：generateImage/editImage 两个既有
+    // 公有方法即实现体（见下方 override 标记），行为零变化——只是让消费方经接口
+    // 取生图能力，不再下钻具体类型。
     override val name = "OpenAI"
 
     /**
@@ -1674,11 +1677,11 @@ class OpenAIProvider private constructor(
      * LLMError.ProviderError whose message the handler matches with
      * looksLikeEndpointMissing() to drive the auto-mode fallback.
      */
-    suspend fun generateImage(
+    override suspend fun generateImage(
         prompt: String,
-        n: Int = 1,
-        size: String? = null,
-        quality: String? = null,
+        n: Int,
+        size: String?,
+        quality: String?,
     ): LLMResponse = withContext(Dispatchers.IO) {
         val token = getToken()
         // [T-android-model-use-image-passthrough GH#62] Honor an explicit
@@ -1800,12 +1803,12 @@ class OpenAIProvider private constructor(
      * reference image reject the extras themselves; nothing is silently dropped
      * on our side.
      */
-    suspend fun editImage(
+    override suspend fun editImage(
         prompt: String,
         images: List<LLMMessage.ImagePart>,
-        n: Int = 1,
-        size: String? = null,
-        quality: String? = null,
+        n: Int,
+        size: String?,
+        quality: String?,
     ): LLMResponse = withContext(Dispatchers.IO) {
         if (images.isEmpty()) {
             throw LLMError.ProviderError("images/edits requires at least one input image")

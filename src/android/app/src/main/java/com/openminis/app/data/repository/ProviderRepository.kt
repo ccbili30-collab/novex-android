@@ -37,9 +37,7 @@ import com.openminis.app.data.model.isVoiceTemplateSeedShape
 import com.openminis.app.data.model.withInferredVoiceModality
 import com.openminis.app.provider.ModelReleaseIndex
 import com.openminis.app.provider.ModelsDevApi
-import com.openminis.app.provider.anthropic.AnthropicModelsApi
-import com.openminis.app.provider.gemini.GeminiModelsApi
-import com.openminis.app.provider.openai.OpenAIModelsApi
+import com.openminis.app.provider.ModelsCatalogApi
 import com.openminis.app.provider.openrouter.OpenRouterModelsApi
 import com.openminis.app.tools.migrateLegacyImageGenerationConfig
 import com.openminis.app.tools.resolveImageGenerationEntries
@@ -2415,7 +2413,7 @@ class ProviderRepository(private val context: Context) {
         if (instance.providerType == ProviderType.openAI
             && instance.credentialType == ProviderCredential.oauth
         ) {
-            val models = OpenAIModelsApi.fetchModelsOAuth()
+            val models = ModelsCatalogApi.fetchOpenAiModelsOAuth()
             if (models.isNotEmpty()) {
                 replaceEntries(instance.id, models)
                 return
@@ -2433,15 +2431,15 @@ class ProviderRepository(private val context: Context) {
             val baseURL = instance.effectiveBaseURL
             val models = try {
                 when (instance.providerType) {
-                    ProviderType.anthropic -> AnthropicModelsApi.fetchModels(
+                    ProviderType.anthropic -> ModelsCatalogApi.fetchAnthropicModels(
                         apiKey, baseURL,
                         isOAuth = instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth,
                         // [T-provider-custom-user-agent] models-list UA override.
                         customUserAgent = instance.customUserAgent,
                     )
-                    ProviderType.gemini -> GeminiModelsApi.fetchModels(apiKey)
+                    ProviderType.gemini -> ModelsCatalogApi.fetchGeminiModels(apiKey)
                     // [T-provider-custom-user-agent] models-list UA override.
-                    ProviderType.openAI -> OpenAIModelsApi.fetchModels(apiKey, baseURL, customUserAgent = instance.customUserAgent)
+                    ProviderType.openAI -> ModelsCatalogApi.fetchOpenAiModels(apiKey, baseURL, customUserAgent = instance.customUserAgent)
                     ProviderType.openRouter -> OpenRouterModelsApi.fetchModels(apiKey)
                     // xAI: the OAuth model list is fixed (no /v1/models gating
                     // call needed — XAIModelsApi exposes the spec-mandated set).
@@ -2454,7 +2452,7 @@ class ProviderRepository(private val context: Context) {
                     // from GET /coding/v1/models (OpenAI-compatible shape).
                     // The upstream lineup shifts across generations, so the
                     // live list replaces the minimal built-in fallback.
-                    ProviderType.kimiCode -> OpenAIModelsApi.fetchModels(
+                    ProviderType.kimiCode -> ModelsCatalogApi.fetchOpenAiModels(
                         apiKey,
                         baseURL ?: "${com.openminis.app.auth.KimiDeviceFlow.CODING_API_BASE}/v1",
                         customUserAgent = instance.customUserAgent,
@@ -2502,7 +2500,7 @@ class ProviderRepository(private val context: Context) {
             // capacity metadata, without adding models, changing groups, or overriding users.
             if (instance.providerType == ProviderType.openAI) {
                 val key = loadApiKey(instance.id) ?: return
-                val fetched = OpenAIModelsApi.fetchModels(key, instance.effectiveBaseURL, forceRefresh = true,
+                val fetched = ModelsCatalogApi.fetchOpenAiModels(key, instance.effectiveBaseURL, forceRefresh = true,
                     customUserAgent = instance.customUserAgent).associateBy { it.id }
                 synchronized(configLock) {
                     val updated = workingCopy()

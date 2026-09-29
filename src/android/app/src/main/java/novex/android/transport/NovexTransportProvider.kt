@@ -61,10 +61,12 @@ import java.net.URI
  *  - [WireProtocol.GEMINI_GENERATE_CONTENT]：Gemini 原生线（P3.1c）。
  *
  * 本文件是绞杀缝：允许 import 上游类型（接口与数据形状），实现体为自有
- * 写法；图片生成不经此管，OpenAI 兼容线经 [imageDelegate] 回上游实现
- * （anthropic/gemini 无 Images API，返回 null 走「不支持生图」路径）。
+ * 写法；图片生成自 P3.1d 起走自有 novex.model ImagesClient（[imageDelegate]），
+ * 不再回上游实现（anthropic/gemini 线无 Images API，返回 null 走「不支持生图」
+ * 路径）。图片学习式降级集与判别函数仍与上游 OpenAIProvider 共用（跨实现
+ * 互相可见，P3.1e 换管时一并迁移）。
  *
- * 已知不对齐项（judgment calls）见 docs/UPSTREAM_EXIT_PLAN.md P3.1b/P3.1c 行。
+ * 已知不对齐项（judgment calls）见 docs/UPSTREAM_EXIT_PLAN.md P3.1b/P3.1c/P3.1d 行。
  */
 class NovexTransportProvider(
     private val apiKey: String,
@@ -117,20 +119,56 @@ class NovexTransportProvider(
     var enhancedCache: Boolean = false
 
     /**
-     * 生图不走自有传输：消费方（GenerateImageTool / QuickTestSheet）经
-     * 此取上游实现，Images API 行为一字不差。model 在每次取值时同步，
-     * 兜底换模型后生图请求仍用当前模型。anthropic/gemini 线无 Images API，
-     * 返回 null（调用方回落到「不支持生图」文案，与上游 AnthropicProvider /
-     * GeminiProvider 时代一致）。
+     * 生图改走自有 novex.model ImagesClient（P3.1d 移植）：行为面对齐被替换的上游
+     * 路径——请求体键、b64_json 自动探测、url 条目下载、误路由 404 语义与错误分类
+     * 矩阵（复用 [errorOf]）。model 在每次调用时取当前值，兜底换模型后生图请求仍
+     * 用当前模型。anthropic/gemini 线无 Images API，返回 null（调用方回落「不支持
+     * 生图」，与被替换实现时代一致）。官方直连/Azure/Responses/OpenRouter/xAI/
+     * Kimi 等仍由上游 OpenAIProvider 承担（消费方经 ImagesCapableProvider 接口取）。
      */
-    private var imageProviderLazy: OpenAIProvider? = null
-    val imageDelegate: OpenAIProvider? get() {
-        if (protocol != WireProtocol.CHAT_COMPLETIONS) return null
-        val provider = imageProviderLazy
-            ?: OpenAIProvider(apiKey = apiKey, model = model, basePath = basePath, customUserAgent = customUserAgent)
-                .also { imageProviderLazy = it }
-        provider.model = model
-        return provider
+    val imageDelegate: com.openminis.app.provider.ImagesCapableProvider? get() =
+        if (protocol == WireProtocol.CHAT_COMPLETIONS) AdapterImagesDelegate() else null
+
+    /** [ImagesCapableProvider] 的自有实现体：阻塞传输在 Dispatchers.IO 上执行。 */
+    private inner class AdapterImagesDelegate : com.openminis.app.provider.ImagesCapableProvider {
+        private fun client() = novex.model.ImagesClient(
+            base = URI(basePath),
+            bearerToken = apiKey.takeIf { it.isNotEmpty() },
+            userAgent = customUserAgent?.trim()?.takeIf { it.isNotEmpty() } ?: MinisUserAgent.DEFAULT,
+        )
+
+        override suspend fun generateImage(prompt: String, n: Int, size: String?, quality: String?) =
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                mapImagesResult(client().generate(model.id, prompt, n, size, quality))
+            }
+
+        override suspend fun editImage(
+            prompt: String,
+            images: List<LLMMessage.ImagePart>,
+            n: Int,
+            size: String?,
+            quality: String?,
+        ) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            mapImagesResult(client().edit(
+                model.id, prompt,
+                images.map { novex.model.ImageInput(it.mimeType, it.data) }, n, size, quality))
+        }
+
+        /** ImagesResult → LLMResponse / 抛错（HTTP 分类复用聊天线的 [errorOf] 矩阵）。 */
+        private fun mapImagesResult(result: novex.model.ImagesResult): LLMResponse = when (result) {
+            is novex.model.ImagesResult.Success -> LLMResponse(
+                text = result.revisedPromptText,
+                stopReason = "end_turn",
+                usage = null,
+                mediaAttachments = result.images.map { LLMMediaAttachment(LLMMediaAttachment.MediaType.IMAGE, it.mimeType, it.data) },
+            )
+            is novex.model.ImagesResult.HttpError -> throw errorOf(StreamChunk.Failure(result.message, result.status))
+            is novex.model.ImagesResult.InvalidResponse -> throw LLMError.ProviderError(result.reason)
+            novex.model.ImagesResult.TimedOut -> throw LLMError.NetworkError(
+                SocketTimeoutException("images request read timeout from $name"))
+            novex.model.ImagesResult.NetworkFailure -> throw LLMError.NetworkError(
+                java.io.IOException("images request failed (network) from $name"))
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -297,8 +335,8 @@ class NovexTransportProvider(
             if (systemPrompt != null) add(WireMessage("system", systemPrompt))
             val lastUserIndex = messages.indexOfLast { it.role == LLMMessage.Role.USER }
             for ((index, message) in messages.withIndex()) {
-                if (message.contentParts.isNotEmpty()) addAll(structuredParts(message, thinkingLevel, idRegistry))
-                else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel))
+            if (message.contentParts.isNotEmpty()) addAll(structuredParts(message, thinkingLevel, idRegistry))
+            else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel, idRegistry))
             }
         }
     }
@@ -357,10 +395,16 @@ class NovexTransportProvider(
             supportsReasoning = model.supportsReasoning,
             cacheTtlOneHour = enhancedCache,
             isOAuth = isAnthropicOAuth,
-            oauthSystemPrefix = if (isAnthropicOAuth) ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT else null,
+            // P3.1d 净眼挂账 e 前缀可注入（默认取 BuildConfig 定制常量）：公共镜像
+            // 未配置该常量时，测试注入已知前缀也能跑满前缀拆分断言块。
+            oauthSystemPrefix = if (isAnthropicOAuth)
+                (oauthSystemPrefixOverride ?: ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT) else null,
             echoUnsignedThinking = echoUnsignedAnthropicThinking(),
         )
     }
+
+    /** 测试注入的 OAuth 系统前缀（非空时优先于 BuildConfig 常量）；生产恒 null。 */
+    internal var oauthSystemPrefixOverride: String? = null
 
     /**
      * Anthropic 兼容中继（DeepSeek V4 / GLM / Kimi 等说 Anthropic 协议但交错无签名
@@ -440,7 +484,14 @@ class NovexTransportProvider(
                 // 无法配对到本批工具调用的孤儿结果直接丢弃：发出去整单必被
                 // 网关 400，丢弃只是少一条历史污染。
                 idRegistry.resolve(result.id)?.let { paired ->
-                    add(WireMessage(role = "tool", text = result.content, toolCallId = paired, isError = result.isError))
+                    // P3.1d 净眼挂账 a 工具结果内嵌图片补发（对齐被替换 AnthropicProvider
+                    // 语义）：截图类工具产出随 tool_result 以 image 块补发；字节先过
+                    // ImageBudget 压缩兜底（历史里可能存着未经预算的原始大图）。仅
+                    // anthropic 方言消费 tool 图片（OpenAI 兼容/gemini 线编码不读）。
+                    val images = if (protocol == WireProtocol.ANTHROPIC_MESSAGES && result.imageData != null) {
+                        listOfNotNull(encodeImage(result.imageData!!, result.imageMimeType ?: "image/png"))
+                    } else emptyList()
+                    add(WireMessage(role = "tool", text = result.content, toolCallId = paired, isError = result.isError, images = images))
                 }
             }
             val text = StringBuilder()
@@ -456,6 +507,10 @@ class NovexTransportProvider(
             if (images.isNotEmpty() || text.isNotEmpty()) {
                 add(WireMessage(role = "user", text = text.toString(), images = images))
             }
+            // P3.1d 净眼挂账 b 孤儿 tool_result 语义对齐被替换实现：一批工具调用的
+            // 配对窗口只活到下一条 user 消息——过一条 user 即失效，之后到达的迟到
+            // 结果按孤儿丢弃，不再允许匹配旧批次（发出去会被网关 400）。
+            idRegistry.expireBatch()
         }
     }
 
@@ -465,12 +520,15 @@ class NovexTransportProvider(
         isLastUser: Boolean,
         imageParts: List<LLMMessage.ImagePart>,
         thinkingLevel: ThinkingLevel,
+        idRegistry: ToolCallIdRegistry,
     ): List<WireMessage> {
         if (message.role == LLMMessage.Role.ASSISTANT) {
             return listOf(
                 WireMessage("assistant", message.content, reasoningContent = historyReasoningContent(message, thinkingLevel)),
             )
         }
+        // 旧式 user 轮同样让配对窗口过期（净眼挂账 b：过一条 user 即失效）。
+        idRegistry.expireBatch()
         val attachImages = isLastUser && imageParts.isNotEmpty()
         if (!attachImages && (message.audioParts.isEmpty() || protocol != WireProtocol.CHAT_COMPLETIONS))
             return listOf(WireMessage("user", message.content))
@@ -872,6 +930,11 @@ class NovexTransportProvider(
                         LLMUsage(
                             inputTokens = chunk.inputTokens?.toInt() ?: 0,
                             outputTokens = chunk.outputTokens?.toInt() ?: 0,
+                            // P3.1d 净眼挂账 c anthropic 方言的 prompt caching 计量
+                            // （cache_creation/cache_read），对齐被替换实现的映射；其余
+                            // 方言两键恒 null。
+                            cacheCreationInputTokens = chunk.cacheCreationTokens?.toInt()?.takeIf { it > 0 },
+                            cacheReadInputTokens = chunk.cacheReadTokens?.toInt()?.takeIf { it > 0 },
                             latestContextTokens = (chunk.inputTokens ?: 0).toInt(),
                         ),
                     ),
@@ -931,7 +994,9 @@ class NovexTransportProvider(
  * 工具调用 id 规范化（按批次配对）：
  *  - assistant 声明批次（beginBatch + declare）：超长 id 折成确定性短 id，
  *    跨消息重复 id 改名——部分兼容网关以 tool_call_id 重复为由整单 400；
- *  - tool 结果（resolve）取本批配对 id；配不上的孤儿结果由调用方丢弃。
+ *  - tool 结果（resolve）取本批配对 id；配不上的孤儿结果由调用方丢弃；
+ *  - 批次配对窗口只活到下一条 user 消息（expireBatch，对齐被替换实现的
+ *    「过一条 user 即失效」）：迟到的旧批结果按孤儿丢弃，绝不跨 user 轮匹配。
  * 同一批内配对一致性由 WireMessage 的装配校验兜底。
  */
 private class ToolCallIdRegistry {
@@ -939,6 +1004,9 @@ private class ToolCallIdRegistry {
     private var openBatch: Map<String, String> = emptyMap()
 
     fun beginBatch() { openBatch = emptyMap() }
+
+    /** user 消息处理完毕后关闭配对窗口：旧批次的原始 id 不再可解析。 */
+    fun expireBatch() { openBatch = emptyMap() }
 
     fun declare(raw: String): String {
         val base = if (raw.length <= MAX_TOOL_CALL_ID_LENGTH) raw else shorten(raw)

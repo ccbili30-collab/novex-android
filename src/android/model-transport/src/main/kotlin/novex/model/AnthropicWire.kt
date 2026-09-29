@@ -48,6 +48,16 @@ object AnthropicWire {
     }
 
     /**
+     * 该 Claude 机型是否支持扩展思考（3.7 起的全部 4.x/5.x）。模型目录拉取用它给
+     * `/v1/models`（不带能力元数据）的条目预置思考开关，让 UI 的 Deep Thinking
+     * 档位在 models.dev 尚未收录新机型时就可见。
+     */
+    fun supportsThinking(modelId:String):Boolean {
+        val (major,minor)=parseClaudeVersion(modelId) ?: return false
+        return major>4||major==4||(major==3&&minor>=7)
+    }
+
+    /**
      * 旧式（≤4.5）思考预算：必须严格小于 max_tokens——相等即 400。HIGH 与顶档
      * 会顶到 maxTokens 上限，届时回退 maxTokens-1。
      */
@@ -192,13 +202,16 @@ data class AnthropicMessagesRequest(
             val role=if(message.role=="assistant") "assistant" else "user"  // tool 结果并入 user 轮
             val blocks=JSONArray()
             when(message.role) {
-                "tool"-> {
-                    val content=JSONArray().put(textBlock(message.text))
-                    blocks.put(JSONObject().put("type","tool_result")
-                        .put("tool_use_id",AnthropicWire.sanitizeToolId(message.toolCallId!!))
-                        .put("content",content)
-                        .let { if(message.isError) it.put("is_error",true) else it })
-                }
+            "tool"-> {
+                // 工具结果内容块：文本在前，内嵌图片（工具产出截图等）随后——被替换
+                // 实现同款语义；图片仅 anthropic 方言消费（适配器按协议装填）。
+                val content=JSONArray().put(textBlock(message.text))
+                message.images.forEach { content.put(imageBlock(it)) }
+                blocks.put(JSONObject().put("type","tool_result")
+                    .put("tool_use_id",AnthropicWire.sanitizeToolId(message.toolCallId!!))
+                    .put("content",content)
+                    .let { if(message.isError) it.put("is_error",true) else it })
+            }
                 "assistant"-> {
                     if(echoUnsignedThinking) blocks.put(JSONObject().put("type","thinking")
                         .put("thinking",message.reasoningContent ?: ""))
@@ -310,7 +323,11 @@ internal class AnthropicSseDecoder : SseLineDecoder() {
     }
     private fun usage(container:JSONObject,out:MutableList<StreamChunk>) {
         val input=container.streamCount("input_tokens");val output=container.streamCount("output_tokens")
-        if(input!=null||output!=null) out+=StreamChunk.Usage(input,output)
+        // prompt caching 计量（message_start 常带；兼容中继可省）——随用量块透传，映射归调用方。
+        val cacheCreation=container.streamCount("cache_creation_input_tokens")
+        val cacheRead=container.streamCount("cache_read_input_tokens")
+        if(input!=null||output!=null||cacheCreation!=null||cacheRead!=null)
+            out+=StreamChunk.Usage(input,output,cacheCreation,cacheRead)
     }
     private companion object {
         /** 事件携带的内容块序号：正式字段名是 index（个别中继写 content_block_index，兜底兼容）。 */

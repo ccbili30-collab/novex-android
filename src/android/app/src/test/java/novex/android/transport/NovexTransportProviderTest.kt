@@ -635,4 +635,57 @@ class NovexTransportProviderTest {
         ).outboundHeaders()
         assertEquals("Claude-Code/1.0", custom.getValue("User-Agent"))
     }
+
+    // ---------------------------------------------------------------------
+    // [P3.1d] 生图接口面：imageDelegate 走自有 novex.model ImagesClient
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `imageDelegate 对 OpenAI 兼容线可用且走自有 Images 端点`() = runBlocking {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            val pngB64 = java.util.Base64.getEncoder().encodeToString(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47))
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse().setBody(
+                    """{"data":[{"b64_json":"$pngB64","revised_prompt":"rev"}]}"""))
+            server.start()
+            val provider = NovexTransportProvider(
+                apiKey = "relay-key", model = LLMModel("image-model", "Image", "OpenAI"),
+                basePath = server.url("/v1").toString().trimEnd('/'),
+            )
+            val delegate = provider.imageDelegate
+            assertTrue("OpenAI 兼容线应有生图能力", delegate != null)
+            val response = delegate!!.generateImage("一只猫", 1, "1024x1024", null)
+            val recorded = server.takeRequest()
+            assertEquals("/v1/images/generations", recorded.path)
+            assertEquals("Bearer relay-key", recorded.getHeader("Authorization"))
+            assertEquals("POST", recorded.method)
+            val body = JSONObject(recorded.body.readUtf8())
+            assertEquals("image-model", body.getString("model"))
+            assertEquals("b64_json", body.getString("response_format"))
+            assertEquals("rev", response.text)
+            assertEquals(1, response.mediaAttachments.size)
+            assertEquals("image/png", response.mediaAttachments.single().mimeType)
+            // 换模型后生图请求跟随当前模型（delegate 每次取值时同步）。
+            provider.model = LLMModel("image-model-2", "Image 2", "OpenAI")
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("""{"data":[]}"""))
+            provider.imageDelegate!!.generateImage("再画", 1, null, null)
+            assertEquals("image-model-2", JSONObject(server.takeRequest().body.readUtf8()).getString("model"))
+        }
+    }
+
+    @Test
+    fun `imageDelegate 的 HTTP 失败按聊天线同款矩阵分类`() = runBlocking {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse().setResponseCode(429).setBody(
+                    """{"error":{"message":"quota exceeded"}}"""))
+            server.start()
+            val provider = NovexTransportProvider(
+                apiKey = "relay-key", model = LLMModel("image-model", "Image", "OpenAI"),
+                basePath = server.url("/v1").toString().trimEnd('/'),
+            )
+            val failure = runCatching { provider.imageDelegate!!.generateImage("一只猫", 1, null, null) }.exceptionOrNull()
+            assertTrue("应为限流错误，实际 $failure", failure is LLMError.RateLimited)
+        }
+    }
 }

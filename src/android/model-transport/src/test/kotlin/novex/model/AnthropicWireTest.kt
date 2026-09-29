@@ -391,4 +391,59 @@ class AnthropicWireTest {
         assertTrue(decoder.feed("data: [DONE]\n").isEmpty())
         assertTrue(decoder.feed("data: 不是JSON\n").isEmpty())
     }
+
+    // -----------------------------------------------------------------
+    // P3.1d 净眼挂账：工具结果内嵌图片 / usage 缓存计量 / 协议防呆
+    // -----------------------------------------------------------------
+
+    @Test fun `工具结果内嵌图片编码进 tool_result 内容块且文本在前`() {
+        val image=java.util.Base64.getEncoder().encodeToString(byteArrayOf(1,2,3))
+        val request=AnthropicMessagesRequest("claude-sonnet-4-6",listOf(
+            WireMessage("assistant","",toolCalls=listOf(PendingTool("toolu_1","screenshot","{}",null))),
+            WireMessage("tool","截图结果",toolCallId="toolu_1",images=listOf(WireImage("image/png",image)))),256)
+        val content=JSONObject(request.encode()).getJSONArray("messages")
+            .getJSONObject(1).getJSONArray("content")   // [0]=assistant 轮 tool_use，[1]=user 轮 tool_result
+        val result=content.getJSONObject(0)
+        assertEquals("tool_result",result.getString("type"))
+        assertEquals("toolu_1",result.getString("tool_use_id"))
+        val inner=result.getJSONArray("content")
+        assertEquals("text",inner.getJSONObject(0).getString("type"))
+        assertEquals("截图结果",inner.getJSONObject(0).getString("text"))
+        assertEquals("image",inner.getJSONObject(1).getString("type"))
+        assertEquals("base64",inner.getJSONObject(1).getJSONObject("source").getString("type"))
+        assertEquals("image/png",inner.getJSONObject(1).getJSONObject("source").getString("media_type"))
+        assertEquals(image,inner.getJSONObject(1).getJSONObject("source").getString("data"))
+    }
+
+    @Test fun `usage 块携带缓存计量字段`() {
+        val decoder=AnthropicSseDecoder()
+        assertEquals(listOf(StreamChunk.Usage(25,1,1024,2048)),decoder.feed(
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":25,\"output_tokens\":1," +
+                "\"cache_creation_input_tokens\":1024,\"cache_read_input_tokens\":2048}}}\n\n"))
+        // message_delta 的 usage 只带 output：缓存字段缺省为 null（后到覆盖先到）。
+        assertEquals(listOf(StreamChunk.Usage(null,9,null,null)),decoder.feed(
+            "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n"))
+    }
+
+    @Test fun `协议与请求体方言错配在开连接前早失败`()=server("/v1/messages") { server,endpoint ->
+        var touched=0
+        server.createContext("/"){touched++;it.sendResponseHeaders(200,-1);it.close()}
+        // anthropic 请求体进了 OpenAI 兼容线的调用：SSE 会用错方言静默解码成空流，这里必须早失败。
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatCompletionCall(endpoint).stream(AnthropicMessagesRequest("claude-x",listOf(WireMessage("user","问")),64),
+                ModelCapacity(128_000),128_000,::measure){}
+        }
+        // 反向：OpenAI 兼容请求体进了 anthropic 线的调用。
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatCompletionCall(endpoint,protocol=WireProtocol.ANTHROPIC_MESSAGES)
+                .stream(StreamRequest(TextRequest("m",listOf(WireMessage("user","问")),64)),
+                    ModelCapacity(128_000),128_000,::measure){}
+        }
+        // 非流式 execute 只实现 OpenAI 兼容线：anthropic 协议直接拒绝。
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatCompletionCall(endpoint,protocol=WireProtocol.ANTHROPIC_MESSAGES)
+                .execute(TextRequest("m",listOf(WireMessage("user","问")),64),ModelCapacity(128_000),128_000,::measure)
+        }
+        assertEquals(0,touched)
+    }
 }

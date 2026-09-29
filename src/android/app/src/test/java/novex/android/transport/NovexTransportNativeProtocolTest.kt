@@ -200,11 +200,10 @@ class NovexTransportNativeProtocolTest {
         assertEquals(listOf("interleaved-thinking-2025-05-14", "extended-cache-ttl-2025-04-11"),
             withCache.anthropicBetaFlags(request as AnthropicMessagesRequest))
 
-        // OAuth：Bearer + CLI 指纹头 + 系统前缀块（不缓存）。前缀常量来自
-        // provider-customization.properties（公共镜像为空——与上游测试同款守门，
-        // 未配置时跳过）。
-        org.junit.Assume.assumeTrue(com.openminis.app.BuildConfig.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT.isNotEmpty())
+        // [P3.1d 净眼挂账 e] OAuth 前缀可注入：公共镜像未配置定制属性时不再
+        // assumeTrue 跳过，注入已知前缀跑满断言块（生产前缀仍取 BuildConfig 常量）。
         val oauth = anthropicProvider(call = ScriptedCall(done, StreamResult.Completed), isOAuth = true)
+        oauth.oauthSystemPrefixOverride = "Claude Code is Anthropic's official CLI for coding assistance（测试注入前缀）"
         val oauthRequest = oauth.buildWireRequest(
             listOf(LLMMessage(LLMMessage.Role.USER, "问")), "尾部提示", 256, emptyList(), emptyList(), ThinkingLevel.OFF)
         val oauthBody = JSONObject(oauthRequest.encode())
@@ -379,6 +378,82 @@ class NovexTransportNativeProtocolTest {
         assertTrue(provider.errorOf(StreamChunk.Failure("Overloaded", code = "overloaded_error")) is LLMError.TransientError)
         assertTrue(provider.errorOf(StreamChunk.Failure("限流", code = "rate_limit_error")) is LLMError.RateLimited)
         assertTrue(provider.errorOf(StreamChunk.Failure("无效密钥", code = "authentication_error")) is LLMError.InvalidApiKey)
+    }
+
+    @Test
+    fun `anthropic 工具结果内嵌图片补发进 tool_result 内容块`() {
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(AgentContentPart.Text("截图"))),
+            LLMMessage(LLMMessage.Role.ASSISTANT, "", contentParts = listOf(
+                AgentContentPart.ToolUse("call-1", "take_screenshot", JSONObject()))),
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(
+                AgentContentPart.ToolResult(
+                    "call-1", "take_screenshot", "已截图",
+                    imageData = byteArrayOf(1, 2, 3), imageMimeType = "image/png"))),
+        )
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        val body = JSONObject(anthropicProvider(call = call).buildWireRequest(
+            history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF).encode())
+        // messages: [0]=user 文本、[1]=assistant tool_use、[2]=user tool_result。
+        val toolResult = body.getJSONArray("messages").getJSONObject(2).getJSONArray("content").getJSONObject(0)
+        assertEquals("tool_result", toolResult.getString("type"))
+        val content = toolResult.getJSONArray("content")
+        assertEquals("text", content.getJSONObject(0).getString("type"))
+        assertEquals("已截图", content.getJSONObject(0).getString("text"))
+        // 图片块在文本之后（对齐被替换 AnthropicProvider 的语义），字节走 ImageBudget 兜底后 base64。
+        val image = content.getJSONObject(1)
+        assertEquals("image", image.getString("type"))
+        assertEquals("base64", image.getJSONObject("source").getString("type"))
+        assertEquals("image/png", image.getJSONObject("source").getString("media_type"))
+        assertTrue(image.getJSONObject("source").getString("data").isNotEmpty())
+    }
+
+    @Test
+    fun `孤儿 tool_result 过一条 user 即失效不再跨轮配对`() {
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(AgentContentPart.Text("跑工具"))),
+            LLMMessage(LLMMessage.Role.ASSISTANT, "", contentParts = listOf(
+                AgentContentPart.ToolUse("call-1", "long_task", JSONObject()))),
+            // 第一条 user：正常配对。
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(
+                AgentContentPart.ToolResult("call-1", "long_task", "中间结果"))),
+            // 中间又过了一条 user（纯文本）：配对窗口过期。
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(AgentContentPart.Text("插一句话"))),
+            // 迟到的旧批结果：必须按孤儿丢弃（被替换实现同款「过一条 user 即失效」）。
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(
+                AgentContentPart.ToolResult("call-1", "long_task", "迟到结果"))),
+        )
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        val body = JSONObject(anthropicProvider(call = call).buildWireRequest(
+            history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF).encode())
+        val messages = body.getJSONArray("messages")
+        var toolResults = 0
+        for (index in 0 until messages.length()) {
+            for (part in messages.getJSONObject(index).getJSONArray("content")) {
+                val block = part as org.json.JSONObject
+                if (block.optString("type") == "tool_result") toolResults++
+            }
+        }
+        assertEquals("只有第一条 user 的结果配对成功，迟到结果被丢弃", 1, toolResults)
+    }
+
+    @Test
+    fun `anthropic 用量块携带缓存计量映射进 LLMUsage`() {
+        val call = ScriptedCall(
+            listOf(
+                StreamChunk.Usage(25, 1, 1024, 2048),
+                StreamChunk.TextDelta("答"),
+                StreamChunk.Done("end_turn"),
+            ),
+            StreamResult.Completed,
+        )
+        val chunks = stream(anthropicProvider(call = call))
+        val usage = chunks.filterIsInstance<LLMStreamChunk.Usage>().single().usage
+        assertEquals(25, usage.inputTokens)
+        assertEquals(1, usage.outputTokens)
+        assertEquals(1024, usage.cacheCreationInputTokens)
+        assertEquals(2048, usage.cacheReadInputTokens)
+        assertEquals(25, usage.latestContextTokens)
     }
 
     @Test
