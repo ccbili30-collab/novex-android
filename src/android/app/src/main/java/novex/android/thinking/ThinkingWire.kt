@@ -1,141 +1,219 @@
 package novex.android.thinking
 
 import com.openminis.app.data.model.ThinkingLevel
+import org.json.JSONObject
+
+
+/** 持久化编码骨架：tag 必写，可选参数 null 跳过（与旧 blob 的可缺省键兼容）。 */
+private fun taggedJson(tag: String, vararg extra: Pair<String, Any?>): JSONObject =
+    JSONObject().put("type", tag).also { o -> extra.forEach { (k, v) -> if (v != null) o.put(k, v) } }
 
 /**
- * 思考控制在线协议上的形态词汇表（P3.2 自有实现，替换上游 provider/thinking 包）。
+ * 思考控制的「线形态」词表（P3.2 真重写版）。
  *
- * 每一形态都锚定一次已出货的厂商行为或文档（详见各条注释）。分层与被替换实现
- * 一致：OpenAI 兼容线真正解析落体的只有 OmitEverything / ReasoningEffort /
- * ReasoningEffortNested / DeepSeekSibling / QwenDual 五种；anthropic / gemini
- * 两家不共享 OpenAI 请求体，形态仅在此登记词表（解析器对它们各给纯函数形状，
- * 见 [ThinkingContractResolver.geminiThinkingConfig] 与 novex.model.AnthropicWire），
- * 自定义规则可通过 CustomPath 逃生舱引用全词表。
+ * 设计立场：一个厂商的思考合同由三件事构成——开关写在哪、档位写在哪、关闭时写
+ * 什么。本词表按这三件事给形态分组，并把每个形态的持久化编解码内聚到形态自身
+ * （[tag] + [toStorage] + [fromStorage]），让「新增一种形态」只改一处，而不是
+ * 在外部编码器里再添一排 when 分支。
+ *
+ * 分组与用途：
+ *  - 静默组：端点校验闭 schema，任何思考键都不许出现（Mistral/Venice 类）；
+ *  - 档位组：以 tier 字符串表达强度，根键或嵌套键两型，offValue 为空表示「关闭
+ *    即整个键省略」——严格枚举端点（MiMo/Agnes）对多余档位值的容忍度是零；
+ *  - 开关组：布尔或类型标记直接驱动（Qwen 双写、DeepSeek V4 兄弟键、布尔/嵌套
+ *    布尔开关）；
+ *  - 预算组：Anthropic/Gemini 各自的 token 预算与档位字符串（词表登记，OpenAI
+ *    线不解析，由各自的形状函数消费）；
+ *  - 逃生舱：用户自建的点线路径 + 逐档取值，救「没预料到的端点形态」。
  */
 sealed interface ThinkingWireFormat {
 
-    /**
-     * 什么都不发。不是「发关闭」——是整个思考键都不出现。
-     *
-     * Mistral（GH OpenMinis#87）：AssistantMessage 是闭 schema，请求会以
-     * 422 extra_forbidden 拒掉 reasoning。Venice（GH OpenMinis#86）同类：请求级
-     * additionalProperties:false，未知根键在模型分发前的 schema 校验即被拒——这
-     * 就是当时 Venice 全模型失败、且关思考也没用的原因（关闭分支照样发键）。
-     */
-    data object OmitEverything : ThinkingWireFormat
+    /** 持久化 tag（DB blob 与 minis-config 的 JSON 词汇，稳定不改）。 */
+    val tag: String
 
-    /**
-     * 根级 `reasoning_effort: "<tier>"`（OpenAI Chat Completions 形态）。
-     *
-     * [offValue] 为 null 表示关闭时整个键省略——这是个承重区分：MiMo/Agnes 按
-     * low/medium/high 严格枚举校验，收到 "minimal" 会拒绝整个请求，一条回复都
-     * 不会有，比发关闭想防的厂商默认值更糟（iOS c5efeb1e）。
-     */
-    data class ReasoningEffort(val offValue: String?) : ThinkingWireFormat
+    /** 本形态的持久化编码（含 tag 与专属参数）。 */
+    fun toStorage(): JSONObject
 
-    /**
-     * 嵌套 `reasoning: {effort: "<tier>"}`（OpenAI Responses / OpenRouter 形态）。
-     * OpenRouter 关闭时整体省略，强制思考后端才不会以
-     * "Reasoning is mandatory for this endpoint" 拒掉 effort:"none"。
-     */
-    data class ReasoningEffortNested(val offValue: String?) : ThinkingWireFormat
+    // ---- 静默组 ----------------------------------------------------------
 
-    /**
-     * DeepSeek V4 的 OpenAI 形态：开关与档位是根级兄弟键——
-     * `{"thinking":{"type":"enabled"}, "reasoning_effort":"high"}`。
-     *
-     * 档位绝不能嵌进 thinking。嵌进去就成了无人认识的键且根上没有档位，V4 的
-     * 每个请求都静默跑厂商默认——iOS 上约 3 个月（847822eb），Android 移植前
-     * 更久（df776253）。V4 默认开思考，所以 OFF 必须显式 {"type":"disabled"}
-     * 且不带档位（该端点校验的枚举里没有关闭词表）。
-     */
-    data object DeepSeekSibling : ThinkingWireFormat
+    /** 端点闭 schema：思考键一个都不发。发「关闭值」同样是错。 */
+    data object OmitEverything : StorageFormat {
+        override val tag = "omit_everything"
+    }
 
-    /**
-     * Qwen/DashScope：`enable_thinking` + `thinking_budget` 同时落在根级与
-     * `extra_body` 内（DashScope 读 extra_body；vLLM/SGLang 收顶层）。
-     *
-     * budget 必须严格小于 `max_completion_tokens`——相等同样被拒
-     * （"[16384] must be greater than [16384]"，issues #35/#641），且上限逐机型
-     * 不同，故按 maxTokens 相对计算（iOS a5a0de20）。
-     */
-    data object QwenDual : ThinkingWireFormat
+    // ---- 档位组 ----------------------------------------------------------
 
-    // ---- 仅登记词表、不参与 OpenAI 线解析的形态 ----
+    /** tier 的载体键位置。 */
+    enum class TierSite { ROOT, NESTED }
 
-    /**
-     * Anthropic `thinking:{type:…, budget_tokens:N}`。Claude 4.6+ 走 adaptive
-     * thinking 并忽略旧的 enabled+budget 形态，所以世代判定有影响。
-     */
-    data class AnthropicThinking(val style: AnthropicThinkingStyle) : ThinkingWireFormat
+    /** 以 tier 字符串驱动：根键 reasoning_effort 或嵌套 reasoning:{effort}。 */
+    sealed interface TierFormat : ThinkingWireFormat {
+        val site: TierSite
+        val offValue: String?
+    }
 
-    /**
-     * Gemini `generationConfig.thinkingConfig.thinkingBudget`。[floor] 存在是因为
-     * 必思考机型上 thinkingBudget:0 非法（2.5 Pro 回 400 INVALID_ARGUMENT）；
-     * df8a823d 为未识别 id 加了 128 地板。models.dev 按机型发布 min 值。
-     */
-    data class GeminiBudget(val floor: Int, val canDisable: Boolean) : ThinkingWireFormat
+    /** 根级 reasoning_effort（OpenAI Chat Completions）。 */
+    data class ReasoningEffort(override val offValue: String?) : TierFormat {
+        override val tag = "reasoning_effort"
+        override val site = TierSite.ROOT
+        override fun toStorage() = taggedJson(tag, "offValue" to offValue)
+    }
 
-    /** Gemini 3.x 的 `thinkingLevel` 字符串档位而非数字预算。 */
-    data object GeminiThinkingLevel : ThinkingWireFormat
+    /** 嵌套 reasoning:{effort}（OpenAI Responses / OpenRouter）。 */
+    data class ReasoningEffortNested(override val offValue: String?) : TierFormat {
+        override val tag = "reasoning_effort_nested"
+        override val site = TierSite.NESTED
+        override fun toStorage() = taggedJson(tag, "offValue" to offValue)
+    }
 
-    /** 无档位的根级布尔开关。models.dev reasoning_options 的 "toggle"。 */
-    data class BooleanToggle(val path: String) : ThinkingWireFormat
+    // ---- 开关组 ----------------------------------------------------------
 
-    /**
-     * `extra_body` 下的嵌套布尔，如 extra_body.thinking.enabled。DeepSeek 官方端
-     * 默认思考且真开关在这里；此前从未发送，官方端点一直跑默认配置
-     * （GH OpenMinis#171）。
-     */
-    data class ExtraBodyToggle(val path: String) : ThinkingWireFormat
+    /** Qwen/DashScope：enable_thinking + thinking_budget 同时写根级与 extra_body。 */
+    data object QwenDual : StorageFormat {
+        override val tag = "qwen_dual"
+    }
 
-    /**
-     * 逃生舱——自定义规则的兜底形态。
-     *
-     * 设计意图：Venice 类故障是「一个没预料到的端点形态」，用户可编辑的规则把
-     * 「等发版」变成「30 秒自己修好」。刻意限制为点线路径 + 逐档取值——不是
-     * JSONPath 也不是模板引擎——每条规则保持静态可检查、可在 trace 里解释。
-     */
+    /** DeepSeek V4：thinking:{type} 与 reasoning_effort 是根级兄弟键。 */
+    data object DeepSeekSibling : StorageFormat {
+        override val tag = "deepseek_sibling"
+    }
+
+    /** 无档位的根级布尔开关（点线路径自定）。 */
+    data class BooleanToggle(val path: String) : StorageFormat {
+        override val tag = "boolean_toggle"
+        override fun toStorage() = taggedJson(tag, "path" to path)
+    }
+
+    /** extra_body 下的嵌套布尔（DeepSeek 官方端真开关所在地）。 */
+    data class ExtraBodyToggle(val path: String) : StorageFormat {
+        override val tag = "extra_body_toggle"
+        override fun toStorage() = taggedJson(tag, "path" to path)
+    }
+
+    // ---- 预算组（词表登记；OpenAI 线不解析） ------------------------------
+
+    /** Anthropic thinking:{type/budget_tokens}，形态随模型世代切换。 */
+    data class AnthropicThinking(val style: AnthropicThinkingStyle) : StorageFormat {
+        override val tag = "anthropic_thinking"
+        override fun toStorage() = taggedJson(tag, "style" to style.name)
+    }
+
+    /** Gemini thinkingBudget；必思考机型 0 非法，故带地板值。 */
+    data class GeminiBudget(val floor: Int, val canDisable: Boolean) : StorageFormat {
+        override val tag = "gemini_budget"
+        override fun toStorage() = taggedJson(tag, "floor" to floor, "canDisable" to canDisable)
+    }
+
+    /** Gemini 3.x 的 thinkingLevel 字符串档位。 */
+    data object GeminiThinkingLevel : StorageFormat {
+        override val tag = "gemini_thinking_level"
+    }
+
+    // ---- 逃生舱 ------------------------------------------------------------
+
+    /** 用户自建规则的自定义点线路径；逐档取值表 + 可选关闭值。 */
     data class CustomPath(
         val path: String,
         val values: Map<ThinkingLevel, String>,
         val offValue: String?,
-    ) : ThinkingWireFormat
+    ) : ThinkingWireFormat {
+        override val tag = "custom_path"
+        override fun toStorage(): JSONObject = taggedJson(tag, "path" to path, "offValue" to offValue)
+            .put("values", JSONObject().apply { values.forEach { (lvl, v) -> put(lvl.name, v) } })
+    }
+
+    /** 静默/无参形态的公共编码。 */
+    private interface StorageFormat : ThinkingWireFormat {
+        override fun toStorage(): JSONObject = taggedJson(tag)
+    }
+
+    companion object {
+
+        /**
+         * 从持久化 JSON 还原形态；未知 tag、损坏结构、新版本写入的形态一律给
+         * null——解析层把它当「无意见」安全落空，绝不因存量数据抛异常。
+         */
+        fun fromStorage(json: String?): ThinkingWireFormat? {
+            if (json.isNullOrBlank()) return null
+            val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
+            return when (o.optString("type")) {
+                OmitEverything.tag -> OmitEverything
+                "reasoning_effort" -> ReasoningEffort(o.optional("offValue"))
+                "reasoning_effort_nested" -> ReasoningEffortNested(o.optional("offValue"))
+                QwenDual.tag -> QwenDual
+                DeepSeekSibling.tag -> DeepSeekSibling
+                "boolean_toggle" -> BooleanToggle(o.optString("path", "thinking"))
+                "extra_body_toggle" -> ExtraBodyToggle(o.optString("path", "thinking.enabled"))
+                "anthropic_thinking" -> AnthropicThinking(
+                    runCatching { AnthropicThinkingStyle.valueOf(o.optString("style")) }
+                        .getOrDefault(AnthropicThinkingStyle.ADAPTIVE),
+                )
+                "gemini_budget" -> GeminiBudget(o.optInt("floor", 128), o.optBoolean("canDisable", true))
+                GeminiThinkingLevel.tag -> GeminiThinkingLevel
+                "custom_path" -> CustomPath(
+                    path = o.optString("path", ""),
+                    values = o.levelMap("values"),
+                    offValue = o.optional("offValue"),
+                )
+                else -> null
+            }
+        }
+
+        private fun JSONObject.optional(key: String): String? =
+            optString(key, "").ifEmpty { null }
+
+        private fun JSONObject.levelMap(key: String): Map<ThinkingLevel, String> {
+            val table = optJSONObject(key) ?: return emptyMap()
+            return table.keys().asSequence()
+                .mapNotNull { name -> runCatching { ThinkingLevel.valueOf(name) }.getOrNull()?.let { it to table.optString(name) } }
+                .toMap()
+        }
+    }
 }
 
-/** Anthropic 思考控制的形态随模型世代变化。 */
+/** Anthropic 思考控制的形态随模型世代切换。 */
 enum class AnthropicThinkingStyle {
-    /** Claude 4.6+——`thinking:{type:"adaptive"}`；旧的预算形态被忽略。 */
+    /** Claude 4.6+：thinking:{type:"adaptive"}，旧预算形态被忽略。 */
     ADAPTIVE,
 
-    /** 4.6 之前——`thinking:{type:"enabled", budget_tokens:N}`。 */
+    /** 4.6 之前：thinking:{type:"enabled", budget_tokens:N}。 */
     BUDGET_TOKENS,
 }
 
 /**
- * 捕获的思考如何在 assistant 历史轮回放。
+ * 已捕获思考在 assistant 历史轮的回放合同：回放键拼写 × 回放时机。
  *
- * 发送侧与回放侧是同一厂商合同的两半——拆开它们正是 GH OpenMinis#22 在
- * OpenAI 路径修好而 #70 在 Anthropic 路径仍坏的原因。回放判定目前落在适配器
- * （novex.android.transport）的 historyReasoningContent；此类型承载合同的
- * 回放半边词表（字段名拼写 × 时机），供自定义规则表达。
+ * 发送侧与回放侧是同一厂商合同的两半，拆开各自维护正是历史上 OpenAI 路径修好
+ * 而 Anthropic 路径仍坏（GH OpenMinis#22/#70）的原因。回放执行点在适配器的消息
+ * 装配；本类型只承载合同声明。
  */
 data class ReasoningEchoPolicy(
-    /**
-     * `reasoning_content` / `reasoning` / `reasoning_text`——三种野生拼写，
-     * 有时一个网关上同时出现三种（GH OpenMinis#171）。
-     */
+    /** reasoning_content / reasoning / reasoning_text——野生拼写不止一种。 */
     val fieldName: String,
     val timing: Timing,
 ) {
     enum class Timing {
-        /** 有些网关在思考激活后无条件校验（nous）。 */
+        /** 思考激活后每轮都校验的网关（nous）。 */
         EVERY_TURN,
 
-        /** DeepSeek 的文档要求：只有工具调用轮必须回放。 */
+        /** DeepSeek 文档要求：仅工具调用轮回放。 */
         AFTER_TOOL_USE_ONLY,
 
-        /** Mistral：任何情况下都不。 */
+        /** Mistral：任何情况都不回放。 */
         NEVER,
+    }
+
+    fun toStorage(): JSONObject = JSONObject()
+        .put("fieldName", fieldName)
+        .put("timing", timing.name)
+
+    companion object {
+        fun fromStorage(json: String?): ReasoningEchoPolicy? {
+            if (json.isNullOrBlank()) return null
+            val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
+            val timing = runCatching { Timing.valueOf(o.optString("timing")) }
+                .getOrDefault(Timing.EVERY_TURN)
+            return ReasoningEchoPolicy(o.optString("fieldName", "reasoning_content"), timing)
+        }
     }
 }

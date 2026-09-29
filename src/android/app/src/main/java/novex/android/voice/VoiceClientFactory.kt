@@ -5,114 +5,88 @@ import com.openminis.app.data.model.ProviderType
 import com.openminis.app.logging.AppLogger
 
 /**
- * 配置的供应商实例 → 具体语音客户端的映射（P3.2 自有实现，替换上游
- * provider/voice 包的工厂件；判定矩阵逐分支对齐被替换实现）。
+ * 供应商实例 → 语音方言客户端的映射（P3.2 真重写版）。
  *
- * 本产品没有独立的「语音供应商类型」：搭载在 OpenAI/Anthropic 兼容实例上的
- * 厂商（Groq、MiniMax、豆包、讯飞、阿里、MiMo…）按实例的自定 base URL 识别。
- * 实例无法服务语音时返回 null。
+ * 判定模型：openAI 族实例按自定 base URL 的「中继标记」查表命中厂商方言
+ * （标记表即路由表，顺序无关、互斥优先级由标记 specificity 天然给出）；其余
+ * providerType 各自固定一条线。实例无法服务语音时给 null——「能不能语音」是
+ * 方言问题，不是配置错误。
  *
- * 豆包 / 讯飞需要多份凭据。为不扩展凭据存储，用户在唯一 API-key 字段里以
- * ";" 连接的复合串输入（讯飞是 "appId;apiKey;apiSecret"）；[splitCompound]
- * 解包。调用方传入从仓库加密存储取出的 API key，工厂保持无存储依赖。
+ * 凭据口径：讯飞要三段凭据，用户以 ";" 连接的复合串存进唯一 API-key 字段，
+ * [splitCompound] 解包；段数不足即视为不可用（不给半配置的方言）。
  */
 object VoiceClientFactory {
 
-    private const val TAG = "VoiceFactory"
+    private const val LOG = "VoiceFactory"
+
+    /** 中继标记 → 方言构造。标记互斥，查表即路由。 */
+    private val relayDialects: List<RelayDialect> = listOf(
+        RelayDialect("groq.com") { id, base, key -> GroqVoiceClient(id, base ?: "https://api.groq.com/openai", key) },
+        RelayDialect("dashscope") { id, base, key -> AlibabaVoiceClient(id, base ?: "https://dashscope.aliyuncs.com/compatible-mode", key) },
+        RelayDialect("minimax") { id, base, key -> MiniMaxVoiceClient(id, base ?: "https://api.minimax.io", key) },
+        RelayDialect("openspeech.bytedance", "volcano") { id, _, key ->
+            AppLogger.info(LOG, "doubao voice dialect: keyLen=${key?.length ?: -1}")
+            DoubaoVoiceClient(id, key)
+        },
+        RelayDialect("xfyun") { id, _, key ->
+            splitCompound(key).takeIf { it.size >= 3 }
+                ?.let { (app, k, secret) -> XunfeiVoiceClient(id, app, k, secret) }
+        },
+        RelayDialect("xiaomimimo") { id, base, key -> MimoVoiceClient(id, base ?: "https://api.xiaomimimo.com", key) },
+        RelayDialect("elevenlabs") { id, base, key -> ElevenLabsVoiceClient(id, base ?: "https://api.elevenlabs.io", key) },
+        RelayDialect("tts.speech.microsoft.com") { id, base, key ->
+            // 端点路径自带 /cognitiveservices，用户基址里重复带就剥掉。
+            AzureTtsVoiceClient(id, base.orEmpty().removeSuffix("/cognitiveservices")
+                .ifEmpty { "https://eastasia.tts.speech.microsoft.com" }, key)
+        },
+        RelayDialect("deepgram") { id, base, key -> DeepgramVoiceClient(id, base ?: "https://api.deepgram.com", key) },
+    )
+
+    private class RelayDialect(vararg val markers: String, val build: (String, String?, String?) -> VoiceClient?)
 
     fun make(instance: ProviderInstance, apiKey: String?): VoiceClient? {
-        val custom = instance.customBaseURL
-        val normalizedBase = (custom ?: "").lowercase()
-
+        val customBase = instance.customBaseURL
+        val markers = (customBase ?: "").lowercase()
         return when (instance.providerType) {
-            // OpenAI 兼容家族 -----------------------------------------------
-            ProviderType.openAI, ProviderType.openRouter -> {
-                if (instance.providerType == ProviderType.openRouter) {
-                    // OpenRouter。TTS 经 chat.completions + audio 模态，不是
-                    // /v1/audio/speech——该端点在那里不存在、对一切机型 id 400。
-                    // ASR 按机型拆在 chat.completions 与 /v1/audio/transcriptions
-                    // 两端。
-                    return OpenRouterVoiceClient(
-                        instance.id,
-                        custom ?: "https://openrouter.ai/api",
-                        apiKey,
-                    )
-                }
-                when {
-                    normalizedBase.contains("groq.com") ->
-                        GroqVoiceClient(instance.id, custom ?: "https://api.groq.com/openai", apiKey)
-                    normalizedBase.contains("dashscope") ->
-                        AlibabaVoiceClient(instance.id, custom ?: "https://dashscope.aliyuncs.com/compatible-mode", apiKey)
-                    normalizedBase.contains("minimax") ->
-                        MiniMaxVoiceClient(instance.id, custom ?: "https://api.minimax.io", apiKey)
-                    // 豆包 / 火山 v3：单一 API Key（新控制台）。
-                    normalizedBase.contains("openspeech.bytedance") || normalizedBase.contains("volcano") -> {
-                        AppLogger.info(TAG, "Doubao voice client: base=$normalizedBase keyLen=${apiKey?.length ?: -1}")
-                        DoubaoVoiceClient(instance.id, apiKey)
-                    }
-                    // 讯飞：API-key 字段承载 "appId;apiKey;apiSecret"。
-                    normalizedBase.contains("xfyun") -> {
-                        val p = splitCompound(apiKey)
-                        if (p.size >= 3) XunfeiVoiceClient(instance.id, p[0], p[1], p[2]) else null
-                    }
-                    normalizedBase.contains("xiaomimimo") ->
-                        MimoVoiceClient(instance.id, custom ?: "https://api.xiaomimimo.com", apiKey)
-                    normalizedBase.contains("elevenlabs") ->
-                        ElevenLabsVoiceClient(instance.id, custom ?: "https://api.elevenlabs.io", apiKey)
-                    normalizedBase.contains("tts.speech.microsoft.com") -> {
-                        // 用户若带上了 /cognitiveservices 就剥掉——端点路径里会
-                        // 重新拼上。
-                        var azureBase = custom ?: "https://eastasia.tts.speech.microsoft.com"
-                        if (azureBase.endsWith("/cognitiveservices")) {
-                            azureBase = azureBase.removeSuffix("/cognitiveservices")
-                        }
-                        AzureTtsVoiceClient(instance.id, azureBase, apiKey)
-                    }
-                    normalizedBase.contains("deepgram") ->
-                        DeepgramVoiceClient(instance.id, custom ?: "https://api.deepgram.com", apiKey)
-                    else ->
-                        VoiceClient(instance.id, custom ?: "https://api.openai.com", apiKey)
-                }
+            ProviderType.openRouter -> OpenRouterVoiceClient(
+                instance.id,
+                customBase ?: "https://openrouter.ai/api",
+                apiKey,
+            )
+
+            // 命中标记即定方言：方言构造返回 null（如讯飞凭据不足）就是不可用，
+            // 不回落通用 OpenAI——半配置的方言比没有更糟。
+            ProviderType.openAI -> {
+                val relay = relayDialects.firstOrNull { markers.isNotEmpty() && it.markers.any(markers::contains) }
+                if (relay != null) relay.build(instance.id, customBase, apiKey)
+                else plainOpenAi(instance.id, customBase, apiKey)
             }
 
-            // xAI Grok --------------------------------------------------------
-            ProviderType.xAI ->
-                XaiVoiceClient(instance.id, custom ?: "https://api.x.ai", apiKey)
+            ProviderType.xAI -> XaiVoiceClient(instance.id, customBase ?: "https://api.x.ai", apiKey)
 
-            // Anthropic——只有 Anthropic 基址背后的 MiniMax 服务语音 ----------------
+            // Anthropic 线上只有 MiniMax 中继服务语音。
             ProviderType.anthropic ->
-                if (normalizedBase.contains("minimax")) {
-                    MiniMaxVoiceClient(instance.id, custom ?: "https://api.minimax.io", apiKey)
-                } else {
-                    null
-                }
+                if ("minimax" in markers) MiniMaxVoiceClient(instance.id, customBase ?: "https://api.minimax.io", apiKey)
+                else null
 
-            // 原生 Gemini TTS（generateContent + AUDIO 模态，?key= 鉴权）。
-            ProviderType.gemini ->
-                GeminiVoiceClient(
-                    instance.id,
-                    custom ?: "https://generativelanguage.googleapis.com/v1beta",
-                    apiKey,
-                )
+            ProviderType.gemini -> GeminiVoiceClient(
+                instance.id,
+                customBase ?: "https://generativelanguage.googleapis.com/v1beta",
+                apiKey,
+            )
 
-            // Kimi Coding Plan 不服务语音机型。
+            // Kimi Coding Plan 无语音机型。
             ProviderType.kimiCode -> null
         }
     }
 
-    /**
-     * [make] 是否会为带 [apiKey] 的 [instance] 返回客户端——影子语音候选门。
-     * 传真实存储 key：讯飞的复合凭据检查（"appId;apiKey;apiSecret"）依赖它。
-     */
-    fun supports(instance: ProviderInstance, apiKey: String?): Boolean =
-        make(instance, apiKey) != null
+    private fun plainOpenAi(id: String, base: String?, key: String?) =
+        VoiceClient(id, base ?: "https://api.openai.com", key)
 
-    /**
-     * 拆开以单串存储的复合凭据（"appId;key" / "appId;key;secret"）。容忍空白；
-     * 丢弃空段。
-     */
-    fun splitCompound(value: String?): List<String> {
-        if (value.isNullOrEmpty()) return emptyList()
-        return value.split(';').map { it.trim() }.filter { it.isNotEmpty() }
-    }
+    /** [make] 是否会产出客户端——影子语音候选门。传真实存储 key（讯飞凭据检查依赖它）。 */
+    fun supports(instance: ProviderInstance, apiKey: String?): Boolean = make(instance, apiKey) != null
+
+    /** 复合凭据拆包：容忍空白、丢弃空段。 */
+    fun splitCompound(value: String?): List<String> =
+        value?.split(';')?.map(String::trim)?.filter(String::isNotEmpty) ?: emptyList()
 }

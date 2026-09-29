@@ -15,66 +15,55 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * OpenAI 兼容形态的语音客户端基座（P3.2 自有实现，替换上游 provider/voice 包的
- * 基类件）。实现 /v1/audio/transcriptions（ASR）与 /v1/audio/speech（TTS）两
- * 端点；各厂商子类覆盖钩子以适配非 OpenAI 的请求/响应外壳。
- * `transcribe`/`synthesize` 保持 open：响应外壳不同的厂商（MiniMax/Doubao 把
- * 音频裹在 base64 JSON 里）整体覆盖。
+ * 语音客户端引擎 + OpenAI 兼容方言的默认实现（P3.2 真重写版）。
  *
- * 与被替换实现的等价要点（parity 面钉在 novex.android.voice 的假服务器测试）：
- *  - 超时：连接 30s、读/写 120s（TTS 响应大且慢）；
- *  - 401/403 → Auth 分类（不进网络重试语义）；其余非 2xx → Http(code, body)，
- *    消息按错误体抽取（error.message / error / message / 短文本直通），404 附
- *    「检查 Base URL 与模型名」人话提示；
- *  - Base64 走 java.util（编码无换行等价 NO_WRAP；解码用 MIME 解码器接受换行，
- *    对齐 android.util.Base64.DEFAULT 的宽容面）。
+ * 架构：方言只负责「描述一次调用」——产出声明式的 [HttpCall]（URL、头表、媒体
+ * 类型、载荷字节）与解析函数；唯一入口 [dispatch] 把 spec 变成 OkHttp 请求并
+ * 统一做错误分类。与被删上游的模板方法骨架（builder 回调钩子 + 各自散落的
+ * Request 组装）不同，此处请求组装收拢为一处，方言无可绕过的旁路。
+ *
+ * 转写路由按 [AsrLane] 三岔：chat 多模态机型走对话端点、专用 ASR 机型走厂商
+ * REST 端点、无该能力的厂商直接拒绝。
  */
 open class VoiceClient(
     val providerId: String,
     val baseURL: String,
     val apiKey: String? = null,
 ) {
-    companion object {
-        const val TAG = "VoiceClient"
+    companion object Engine {
+        private const val LOG = "VoiceClient"
 
+        /** TTS 响应大且慢：连接 30s、读/写各 120s。 */
         val httpClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
             .build()
 
-        /**
-         * 语言标签（如 "zh-CN"、"zh-Hans-CN"、"en"）归约为 ISO-639-1 两字母主码
-         * （"zh"、"en"）——Whisper 期望的形态。
-         */
-        fun iso6391(tag: String?): String? {
-            val trimmed = tag?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-            return trimmed.split('-', '_').firstOrNull()?.lowercase(Locale.ROOT)
-        }
+        /** 语言标签归约为 ISO-639-1 主码（zh-Hans-CN → zh）；空/空白给 null。 */
+        fun iso6391(tag: String?): String? =
+            tag?.trim()?.takeIf(String::isNotEmpty)
+                ?.split('-', '_')?.firstOrNull()?.lowercase(Locale.ROOT)
 
-        /** 把 16 位小端单声道 PCM 包进最小 WAV 容器。 */
-        fun wrapPcm16InWav(pcm: ByteArray, sampleRate: Int): ByteArray {
-            val channels = 1
-            val bitsPerSample = 16
-            val byteRate = sampleRate * channels * bitsPerSample / 8
-            val blockAlign = channels * bitsPerSample / 8
-            val dataSize = pcm.size
-            val header = java.nio.ByteBuffer.allocate(44)
-                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-            header.put("RIFF".toByteArray(Charsets.US_ASCII))
-            header.putInt(36 + dataSize)
-            header.put("WAVE".toByteArray(Charsets.US_ASCII))
-            header.put("fmt ".toByteArray(Charsets.US_ASCII))
-            header.putInt(16)
-            header.putShort(1)                       // PCM
-            header.putShort(channels.toShort())
-            header.putInt(sampleRate)
-            header.putInt(byteRate)
-            header.putShort(blockAlign.toShort())
-            header.putShort(bitsPerSample.toShort())
-            header.put("data".toByteArray(Charsets.US_ASCII))
-            header.putInt(dataSize)
-            return header.array() + pcm
+        /** 16 位小端单声道 PCM 的 WAV 封装（44 字节头 + 数据）。 */
+        fun wrapPcm16InWav(pcm: ByteArray, sampleRate: Int): ByteArray =
+            wavHeader(sampleRate, pcm.size) + pcm
+
+        private fun wavHeader(rate: Int, dataLen: Int): ByteArray {
+            val bytesPerFrame = 2            // 单声道 16 位
+            fun le16(v: Int) = byteArrayOf(
+                (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte(),
+            )
+            fun le32(v: Int) = byteArrayOf(
+                (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte(),
+                ((v shr 16) and 0xFF).toByte(), ((v shr 24) and 0xFF).toByte(),
+            )
+            return "RIFF".toByteArray(Charsets.US_ASCII) + le32(36 + dataLen) +
+                "WAVE".toByteArray(Charsets.US_ASCII) +
+                "fmt ".toByteArray(Charsets.US_ASCII) + le32(16) +
+                le16(1) + le16(1) + le32(rate) + le32(rate * bytesPerFrame) +
+                le16(bytesPerFrame) + le16(16) +
+                "data".toByteArray(Charsets.US_ASCII) + le32(dataLen)
         }
 
         internal fun encodeBase64(bytes: ByteArray): String =
@@ -84,217 +73,220 @@ open class VoiceClient(
             java.util.Base64.getMimeDecoder().decode(text)
     }
 
-    // -- 入口 ---------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // 能力与路由
+    // ------------------------------------------------------------------
 
-    open suspend fun transcribe(request: VoiceAsrRequest): VoiceAsrResponse {
-        val model = request.resolvedModel
-        if (model != null && usesChatBasedAsr(model)) {
-            AppLogger.info(TAG, "Using chat-based ASR for ${model.displayName}")
-            return transcribeChatBased(request)
+    /** 本方言服务的能力面；默认两者皆备。 */
+    open val offers: Set<Modality> = setOf(Modality.ASR, Modality.TTS)
+
+    val supportsAsr: Boolean get() = Modality.ASR in offers
+    val supportsTts: Boolean get() = Modality.TTS in offers
+
+    enum class Modality { ASR, TTS }
+
+    protected val ASR_ONLY: Set<Modality> = setOf(Modality.ASR)
+    protected val TTS_ONLY: Set<Modality> = setOf(Modality.TTS)
+
+    /** 转写路由。 */
+    protected sealed interface AsrLane {
+        /** 音频多模态 chat 机型：对话端点配 input_audio。 */
+        data object ChatModel : AsrLane
+
+        /** 专用 ASR 机型：厂商 REST 端点。 */
+        data object Dedicated : AsrLane
+
+        /** 本方言不做转写。 */
+        data object None : AsrLane
+    }
+
+    private fun asrLaneOf(request: VoiceAsrRequest): AsrLane {
+        val known = request.resolvedModel
+        if (known != null && usesChatBasedAsr(known)) return AsrLane.ChatModel
+        return if (supportsAsr) AsrLane.Dedicated else AsrLane.None
+    }
+
+    // ------------------------------------------------------------------
+    // 两个入口
+    // ------------------------------------------------------------------
+
+    open suspend fun transcribe(request: VoiceAsrRequest): VoiceAsrResponse = when (asrLaneOf(request)) {
+        AsrLane.ChatModel -> {
+            AppLogger.info(LOG, "chat-based ASR for ${request.resolvedModel?.displayName}")
+            chatTranscribe(request)
         }
-        if (!supportsAsr) {
-            throw VoiceClientException.Unsupported("${javaClass.simpleName} does not support voice input")
-        }
-        val req = buildAsrRequest(request)
-        val data = executeRequest(req)
-        return parseAsrResponse(data, request)
+        AsrLane.Dedicated -> parseAsr(dispatch(asrCall(request)), request)
+        AsrLane.None -> throw VoiceClientException.Unsupported("${javaClass.simpleName} does not support voice input")
     }
 
     open suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        if (!supportsTts) {
-            throw VoiceClientException.Unsupported("${javaClass.simpleName} does not support voice output")
-        }
-        val req = buildTtsRequest(request)
-        return executeRequest(req)
+        if (!supportsTts) throw VoiceClientException.Unsupported("${javaClass.simpleName} does not support voice output")
+        return dispatch(ttsCall(request))
     }
 
-    // -- 能力位（覆盖点） -----------------------------------------------------
+    // ------------------------------------------------------------------
+    // 方言描述面：默认 OpenAI 形状
+    // ------------------------------------------------------------------
 
-    open val supportsAsr: Boolean get() = true
-    open val supportsTts: Boolean get() = true
+    /** 默认基址（去掉尾斜杠）；需要剥段的方言覆盖。 */
+    open fun base(): String = baseURL.trimEnd('/')
 
-    // -- 端点路径（覆盖点） ---------------------------------------------------
+    /** 基址 + 端点路径，版本段不重复（Groq 基址已带 /v1 时不再叠一层）。 */
+    protected fun join(path: String): String {
+        var tail = path
+        for (v in listOf("/v1", "/v2", "/v3")) {
+            if (base().endsWith(v) && tail.startsWith("$v/")) {
+                tail = tail.removePrefix(v)
+                break
+            }
+        }
+        return base() + tail
+    }
 
-    open fun asrEndpointPath(): String = "/v1/audio/transcriptions"
-    open fun ttsEndpointPath(): String = "/v1/audio/speech"
-
-    // -- 默认模型 / 音色（覆盖点） --------------------------------------------
+    open fun ttsPath(): String = "/v1/audio/speech"
+    open fun asrPath(): String = "/v1/audio/transcriptions"
 
     open fun defaultAsrModel(): String = "whisper-1"
     open fun defaultTtsModel(): String = "tts-1"
     open fun defaultTtsVoice(): String = "alloy"
 
-    // -- 请求构造（覆盖点） ---------------------------------------------------
+    /** 鉴权头；默认 Bearer。 */
+    open fun authHeaders(): Map<String, String> =
+        apiKey?.takeIf(String::isNotEmpty)?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty()
 
-    /** 构造 ASR 请求。默认：OpenAI multipart/form-data。 */
-    open fun buildAsrRequest(request: VoiceAsrRequest): Request {
-        val url = composedUrlString(asrEndpointPath())
-        val multipart = MultipartBody.Builder()
+    /** TTS 调用描述：默认 OpenAI JSON 体。 */
+    open fun ttsCall(request: VoiceTtsRequest): HttpCall = HttpCall(
+        url = join(ttsPath()),
+        headers = authHeaders(),
+        mediaType = "application/json",
+        payload = jsonOf(
+            "model" to (request.model ?: defaultTtsModel()),
+            "input" to request.input,
+            "voice" to (request.voice ?: defaultTtsVoice()),
+            "response_format" to request.responseFormat.wireValue,
+            "speed" to request.speed?.toDouble(),
+        ).toString().toByteArray(Charsets.UTF_8),
+    )
+
+    /** ASR 调用描述：默认 OpenAI multipart。 */
+    open fun asrCall(request: VoiceAsrRequest): HttpCall {
+        val form = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "file", "voice.wav",
-                request.audioData.toRequestBody("audio/wav".toMediaType()),
-            )
+            .addFormDataPart("file", "voice.wav", request.audioData.toRequestBody("audio/wav".toMediaType()))
             .addFormDataPart("model", request.model ?: defaultAsrModel())
-        // Whisper/OpenAI 兼容端点期望 ISO-639-1 两字母码，带区域限定的
-        // "zh-CN" 之类会 400。
-        iso6391(request.language)?.let { multipart.addFormDataPart("language", it) }
-        multipart.addFormDataPart("response_format", request.responseFormat.wireValue)
-        request.prompt?.let { multipart.addFormDataPart("prompt", it) }
-
-        val builder = Request.Builder().url(url).post(multipart.build())
-        applyAuth(builder)
-        return builder.build()
-    }
-
-    /** 构造 TTS 请求。默认：OpenAI JSON 体。 */
-    open fun buildTtsRequest(request: VoiceTtsRequest): Request {
-        val url = composedUrlString(ttsEndpointPath())
-        val body = JSONObject().apply {
-            put("model", request.model ?: defaultTtsModel())
-            put("input", request.input)
-            put("voice", request.voice ?: defaultTtsVoice())
-            put("response_format", request.responseFormat.wireValue)
-            request.speed?.let { put("speed", it.toDouble()) }
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
-        return builder.build()
-    }
-
-    /** 解析 ASR 响应。默认：OpenAI JSON，回落纯文本。 */
-    open fun parseAsrResponse(data: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
-        val text = String(data, Charsets.UTF_8)
-        runCatching {
-            val obj = JSONObject(text)
-            if (obj.has("text")) {
-                return VoiceAsrResponse(
-                    text = obj.getString("text"),
-                    language = obj.optString("language").takeIf { it.isNotBlank() },
-                    durationSeconds = if (obj.has("duration")) obj.optDouble("duration") else null,
-                )
+            .apply {
+                // 区域限定标签（zh-CN）会被 Whisper 系端点 400；归约为两字母主码。
+                iso6391(request.language)?.let { addFormDataPart("language", it) }
+                addFormDataPart("response_format", request.responseFormat.wireValue)
+                request.prompt?.let { addFormDataPart("prompt", it) }
             }
+            .build()
+        return HttpCall(join(asrPath()), authHeaders(), body = form)
+    }
+
+    /** ASR 响应解析：默认 OpenAI JSON，回落纯文本。 */
+    open fun parseAsr(payload: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
+        val text = String(payload, Charsets.UTF_8)
+        runCatching { JSONObject(text) }.getOrNull()?.takeIf { it.has("text") }?.let { o ->
+            return VoiceAsrResponse(
+                text = o.getString("text"),
+                language = o.optString("language").takeIf(String::isNotBlank),
+                durationSeconds = if (o.has("duration")) o.optDouble("duration") else null,
+            )
         }
-        // 部分兼容端点返回纯文本。
-        if (text.isNotEmpty()) return VoiceAsrResponse(text = text)
+        if (text.isNotEmpty()) return VoiceAsrResponse(text = text)   // 部分兼容端点回纯文本
         throw VoiceClientException.Parse("Empty or undecodable ASR response")
     }
 
-    /** 注入鉴权头。默认：Bearer。 */
-    open fun applyAuth(builder: Request.Builder) {
-        val key = apiKey?.takeIf { it.isNotEmpty() } ?: return
-        builder.header("Authorization", "Bearer $key")
-    }
-
-    // -- 辅助 -----------------------------------------------------------------
-
-    open fun effectiveBaseURL(): String = baseURL.trimEnd('/')
-
     /**
-     * 基址与端点路径拼接，避免版本段重复（如 Groq 的基址已以 /v1 结尾而默认
-     * 路径以 /v1/ 起头——朴素拼接会得到 /v1/v1/… → 404）。
-     */
-    fun composedUrlString(path: String): String {
-        val base = effectiveBaseURL()
-        var p = path
-        for (version in listOf("/v1", "/v2", "/v3")) {
-            if (base.endsWith(version) && p.startsWith("$version/")) {
-                p = p.removePrefix(version)
-                break
-            }
-        }
-        return base + p
-    }
-
-    suspend fun executeRequest(request: Request): ByteArray = withContext(Dispatchers.IO) {
-        httpClient.newCall(request).execute().use { response ->
-            val body = response.body?.bytes()
-            if (!response.isSuccessful) {
-                if (response.code == 401 || response.code == 403) {
-                    AppLogger.error(TAG, "Voice auth failed: HTTP ${response.code}")
-                    throw VoiceClientException.Auth()
-                }
-                AppLogger.error(TAG, "Voice request failed: HTTP ${response.code}")
-                throw VoiceClientException.Http(response.code, body)
-            }
-            body ?: ByteArray(0)
-        }
-    }
-
-    // -- chat 型 ASR（音频+文本多模态聊天机型） -------------------------------
-
-    /**
-     * 该机型是否经由 chat completions 转写而非 Whisper 式 transcriptions 端点。
-     * 默认走 transcriptions 端点——音频聊天机型是可枚举的小家族（gpt*audio*、
-     * qwen*audio*、*omni*）；专用 ASR 机型是开放集，必须做兜底。机型名是信号
-     * ——模态位区分不了手工标注的 Whisper 与真音频聊天机型。
+     * 该机型是否走对话端点转写。默认判定专用端点：音频 chat 机型是小家族
+     * （omni / gpt·audio / qwen·audio），专用 ASR 机型是开放集，必须做兜底。
      */
     open fun usesChatBasedAsr(model: LLMModel): Boolean {
         val id = model.id.lowercase()
-        if (id.contains("omni")) return true
-        if (!id.contains("audio")) return false
-        return id.contains("gpt") || id.contains("qwen")
+        return when {
+            "omni" in id -> true
+            "audio" !in id -> false
+            else -> "gpt" in id || "qwen" in id
+        }
     }
 
-    /**
-     * 经由 chat completions 转写。系统提示迫使机型只输出逐字转写，使其表现得
-     * 像专用 ASR 引擎。
-     */
-    open suspend fun transcribeChatBased(request: VoiceAsrRequest): VoiceAsrResponse {
-        val url = composedUrlString("/v1/chat/completions")
-        val audioBase64 = encodeBase64(request.audioData)
-        val langHint = iso6391(request.language) ?: "auto"
+    /** chat 转写的系统提示——线上常量，措辞即协议（迫使只输出逐字转写）。 */
+    private val CHAT_ASR_PROMPT =
+        "You are a speech-to-text transcription engine. Output ONLY the exact verbatim transcription of the audio. " +
+            "No commentary, no punctuation corrections, no translations, no markdown, no extra text. " +
+            "If the audio is empty or unintelligible, output an empty string. Language hint: %s."
 
-        val body = JSONObject().apply {
-            put("model", request.model ?: "gpt-4o-mini-audio-preview")
-            put(
-                "messages",
-                JSONArray()
-                    .put(
-                        JSONObject()
-                            .put("role", "system")
-                            .put(
-                                "content",
-                                "You are a speech-to-text transcription engine. Output ONLY the exact verbatim transcription of the audio. No commentary, no punctuation corrections, no translations, no markdown, no extra text. If the audio is empty or unintelligible, output an empty string. Language hint: $langHint.",
-                            ),
-                    )
-                    .put(
-                        JSONObject()
-                            .put("role", "user")
-                            .put(
-                                "content",
-                                JSONArray().put(
-                                    JSONObject()
-                                        .put("type", "input_audio")
-                                        .put(
-                                            "input_audio",
-                                            JSONObject()
-                                                .put("data", audioBase64)
-                                                .put("format", "wav"),
-                                        ),
+    /** 经对话端点转写：input_audio 部件 + 逐字转写系统提示。 */
+    open suspend fun chatTranscribe(request: VoiceAsrRequest): VoiceAsrResponse {
+        val hint = iso6391(request.language) ?: "auto"
+        val body = jsonOf(
+            "model" to (request.model ?: "gpt-4o-mini-audio-preview"),
+            "messages" to JSONArray()
+                .put(JSONObject().put("role", "system").put("content", CHAT_ASR_PROMPT.format(hint)))
+                .put(
+                    JSONObject().put("role", "user").put(
+                        "content",
+                        JSONArray().put(
+                            jsonOf(
+                                "type" to "input_audio",
+                                "input_audio" to jsonOf(
+                                    "data" to encodeBase64(request.audioData),
+                                    "format" to "wav",
                                 ),
                             ),
+                        ),
                     ),
-            )
-            put("max_tokens", 4096)
-            put("temperature", 0)
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
-
-        val data = executeRequest(builder.build())
-        val obj = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
+                ),
+            "max_tokens" to 4096,
+            "temperature" to 0,
+        )
+        val payload = dispatch(HttpCall(join("/v1/chat/completions"), authHeaders(), mediaType = "application/json", payload = body.toString().toByteArray(Charsets.UTF_8)))
+        val reply = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
             ?: throw VoiceClientException.Parse("Undecodable chat ASR response")
-        val text = obj.optJSONArray("choices")
-            ?.optJSONObject(0)
-            ?.optJSONObject("message")
-            ?.optString("content")
-            ?.trim()
-            ?: ""
-        return VoiceAsrResponse(text = text)
+        val content = reply.optJSONArray("choices")
+            ?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.trim().orEmpty()
+        return VoiceAsrResponse(text = content)
+    }
+
+    // ------------------------------------------------------------------
+    // 引擎：唯一出口
+    // ------------------------------------------------------------------
+
+    /**
+     * 一次调用描述 → 字节响应。401/403 映射 Auth（凭据态，非网络态）；其余非
+     * 2xx 映射 Http 并携带原始错误体（厂商原文可呈现）。
+     */
+    suspend fun dispatch(call: HttpCall): ByteArray = withContext(Dispatchers.IO) {
+        val outgoing = Request.Builder().url(call.url)
+        call.headers.forEach(outgoing::header)
+        val body = call.body ?: call.payload!!.toRequestBody(call.mediaType!!.toMediaType())
+        httpClient.newCall(outgoing.post(body).build()).execute().use { response ->
+            val bytes = response.body?.bytes()
+            when {
+                response.isSuccessful -> bytes ?: ByteArray(0)
+                response.code == 401 || response.code == 403 -> {
+                    AppLogger.error(LOG, "voice auth rejected: HTTP ${response.code}")
+                    throw VoiceClientException.Auth()
+                }
+                else -> {
+                    AppLogger.error(LOG, "voice call rejected: HTTP ${response.code}")
+                    throw VoiceClientException.Http(response.code, bytes)
+                }
+            }
+        }
     }
 }
+
+/** 一次 HTTP 调用的声明式描述；组装收拢在 [VoiceClient.dispatch]。 */
+class HttpCall(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+    val mediaType: String? = null,
+    val payload: ByteArray? = null,
+    val body: okhttp3.RequestBody? = null,
+)
+
+/** 键值对 JSON 构造器；null 值跳过（不发该键）。 */
+internal fun jsonOf(vararg entries: Pair<String, Any?>): JSONObject =
+    JSONObject().also { o -> entries.forEach { (k, v) -> if (v != null) o.put(k, v) } }

@@ -184,8 +184,23 @@ class NovexTransportFactorySelectionTest {
         assertEquals("responses=experimental", headers["Openai-Beta"])
         assertTrue(headers.containsKey("Version"))
         assertTrue((headers["User-Agent"] ?: "").contains("codex_cli_rs"))
-        // 手工 bearer 令牌不走 Codex 线（chatgpt.com 后端只收真会话令牌）——
-        // 手工 bearer 存进 OAuth 存储后走 API-key（chat）线。
+
+        // 手工 bearer 令牌不走 Codex 线（chatgpt.com 后端只收真会话令牌）——存进
+        // OAuth 存储后按 API-key 形态走 chat 线。
+        val oauth = com.openminis.app.auth.OAuthManager.forInstance(
+            RuntimeEnvironment.getApplication(),
+            instance(customBaseURL = null, credentialType = ProviderCredential.oauth),
+        )!!
+        oauth.saveManualBearerToken("manual-bearer-token")
+        val manual = ProviderFactory.create(
+            instance(customBaseURL = null, credentialType = ProviderCredential.oauth),
+            "unused",
+            LLMModel.gpt4oMini,
+            RuntimeEnvironment.getApplication(),
+        ) as NovexTransportProvider
+        assertEquals(WireProtocol.CHAT_COMPLETIONS, manual.lineProtocol())
+        assertFalse(manual.isCodexOAuth)
+        oauth.deleteManualBearerToken()
     }
 
     @Test

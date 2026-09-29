@@ -2,6 +2,7 @@ package novex.android.voice
 
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -11,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.Base64
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * 语音客户端的假服务器 parity 测试（P3.2 随 provider/voice 绞杀新增）。
@@ -335,6 +338,149 @@ class VoiceClientParityTest {
         assertEquals(24000, le32(24))          // 采样率
         assertEquals(24000 * 2, le32(28))      // 字节率 = 率 × 1ch × 16bit/8
         assertEquals(pcm.size, le32(40))       // data 块大小
+    }
+
+    // ---- 讯飞：签名 URL 确定性构造 ---------------------------------------------
+
+    @Test
+    fun `讯飞签名 URL-固定时间戳下签基串与鉴权串确定性拼装`() {
+        val client = XunfeiVoiceClient("xf", "app-1", "key-1", "secret-1")
+        // 固定 GMT 时间戳：整个 URL 可复算。
+        val at = java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("GMT") }
+            .parse("Mon, 28 Sep 2026 08:00:00 GMT")!!
+        val url = client.signedUrl("iat-api.xfyun.cn", "/v2/iat", at)
+
+        val query = url.toHttpUrl()
+        assertEquals("https", query.scheme)
+        assertEquals("iat-api.xfyun.cn", query.host)
+        assertEquals("/v2/iat", query.encodedPath)
+        assertEquals("iat-api.xfyun.cn", query.queryParameter("host"))
+        assertEquals("Mon, 28 Sep 2026 08:00:00 GMT", query.queryParameter("date"))
+
+        // 鉴权串 = base64("api_key=…, algorithm=…, headers=…, signature=…")；
+        // signature = base64(HMAC-SHA256("host: …\ndate: …\nGET … HTTP/1.1", secret))。
+        val expectedSignature = java.util.Base64.getEncoder().encodeToString(
+            javax.crypto.Mac.getInstance("HmacSHA256").run {
+                init(javax.crypto.spec.SecretKeySpec("secret-1".toByteArray(), "HmacSHA256"))
+                doFinal("host: iat-api.xfyun.cn\ndate: Mon, 28 Sep 2026 08:00:00 GMT\nGET /v2/iat HTTP/1.1".toByteArray())
+            },
+        )
+        val expectedAuth = java.util.Base64.getEncoder().encodeToString(
+            (
+                "api_key=\"key-1\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", " +
+                    "signature=\"$expectedSignature\""
+                ).toByteArray(),
+        )
+        assertEquals(expectedAuth, query.queryParameter("authorization"))
+        // 同输入两次构造完全一致（时间戳外部给定，无隐式时钟）。
+        assertEquals(url, client.signedUrl("iat-api.xfyun.cn", "/v2/iat", at))
+    }
+
+    // ---- 讯飞：WebSocket 收流（注入假 socket，零网络） ---------------------------
+
+    /** 记录 send 的假 WebSocket；frames 依次经 onMessage 回放。 */
+    private class FakeWsSession(val frames: List<String>, val sent: MutableList<String> = mutableListOf()) {
+        val socket = object : okhttp3.WebSocket {
+            override fun request() = okhttp3.Request.Builder().url("https://unit.test").build()
+            override fun queueSize() = 0L
+            override fun send(text: String): Boolean { sent += text; return true }
+            override fun send(bytes: okio.ByteString): Boolean = true
+            override fun close(code: Int, reason: String?): Boolean = true
+            override fun cancel() {}
+        }
+
+        /** onOpen 需要的占位响应（收流协议不读它）。 */
+        fun openResponse() = okhttp3.Response.Builder()
+            .request(okhttp3.Request.Builder().url("https://unit.test").build())
+            .protocol(okhttp3.Protocol.HTTP_1_1).code(101).message("Switching Protocols").build()
+    }
+
+    @Test
+    fun `讯飞 WS 收流-PCM 帧拼装包 16k WAV-末帧收尾`() = kotlinx.coroutines.runBlocking {
+        val client = XunfeiVoiceClient("xf", "app-1", "key-1", "secret-1")
+        val pcm1 = byteArrayOf(1, 2)
+        val pcm2 = byteArrayOf(3, 4)
+        val session = FakeWsSession(
+            listOf(
+                """{"code":0,"data":{"audio":"${java.util.Base64.getEncoder().encodeToString(pcm1)}","status":1}}""",
+                """{"code":0,"data":{"audio":"${java.util.Base64.getEncoder().encodeToString(pcm2)}","status":2}}""",
+            ),
+        )
+        val wav = client.wsSpeechExchange(
+            url = "wss://unit.test/v2/tts",
+            openingFrame = client.ttsOpeningFrame(VoiceTtsRequest(input = "你好", voice = "xiaoyan")),
+            connect = { _, listener ->
+                listener.onOpen(session.socket, session.openResponse())
+                session.frames.forEach { listener.onMessage(session.socket, it) }
+                session.socket
+            },
+        )
+        // 44 字节 WAV 头 + 4 字节 PCM，采样率 16000。
+        assertEquals(48, wav.size)
+        assertEquals("RIFF", String(wav.copyOfRange(0, 4)))
+        fun le32(at: Int) = (wav[at].toInt() and 0xFF) or ((wav[at + 1].toInt() and 0xFF) shl 8) or
+            ((wav[at + 2].toInt() and 0xFF) shl 16) or ((wav[at + 3].toInt() and 0xFF) shl 24)
+        assertEquals(16000, le32(24))
+        // 开场帧按协议携带 business 参数与整段文本。
+        val opening = org.json.JSONObject(session.sent.single())
+        assertEquals("app-1", opening.getJSONObject("common").getString("app_id"))
+        assertEquals("raw", opening.getJSONObject("business").getString("aue"))
+        assertEquals("xiaoyan", opening.getJSONObject("business").getString("vcn"))
+        assertEquals("UTF8", opening.getJSONObject("business").getString("tte"))
+        assertEquals(
+            java.util.Base64.getEncoder().encodeToString("你好".toByteArray()),
+            opening.getJSONObject("data").getString("text"),
+        )
+    }
+
+    @Test
+    fun `讯飞 WS 收流-非零码帧以厂商错误收流`() {
+        val client = XunfeiVoiceClient("xf", "app-1", "key-1", "secret-1")
+        val session = FakeWsSession(listOf("""{"code":10043,"message":"appId fail"}"""))
+        val error = runCatching {
+            kotlinx.coroutines.runBlocking {
+                client.wsSpeechExchange("wss://unit.test", """{}""") { _, listener ->
+                    listener.onOpen(session.socket, session.openResponse())
+                    session.frames.forEach { listener.onMessage(session.socket, it) }
+                    session.socket
+                }
+            }
+        }.exceptionOrNull()!!
+        assertTrue(error is VoiceClientException.Parse)
+        assertTrue(error.message.orEmpty().contains("10043"))
+        assertTrue(error.message.orEmpty().contains("appId fail"))
+    }
+
+    // ---- MiniMax：legacy base64 外壳兜底 ----------------------------------------
+
+    @Test
+    fun `minimax 旧部署的 audio-audio base64 外壳也能解`() = kotlinx.coroutines.runBlocking {
+        val audio = byteArrayOf(5, 6, 7)
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody(
+                    """{"base_resp":{"status_code":0},"audio":{"audio":"${java.util.Base64.getEncoder().encodeToString(audio)}"}}""",
+                ),
+        )
+        val url = server.url("/").toString().trimEnd('/')
+        val out = MiniMaxVoiceClient("mm", url, "mk").synthesize(VoiceTtsRequest(input = "hi"))
+        assertTrue(out.contentEquals(audio))
+    }
+
+    @Test
+    fun `minimax data-audio 给 base64 而非 hex 时走 b64 兜底`() = kotlinx.coroutines.runBlocking {
+        val audio = byteArrayOf(9, 10)
+        // "Cg==" 是 0x0A 的 base64——也是合法 hex 前置位（C0）？Cg== 长度 4 为偶，
+        // 字符 'C','g','=','=' 含 '=' 不在 hex 表 → hex 解码失败 → base64 兜底生效。
+        val encoded = java.util.Base64.getEncoder().encodeToString(audio)
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("""{"base_resp":{"status_code":0},"data":{"audio":"$encoded"}}"""),
+        )
+        val url = server.url("/").toString().trimEnd('/')
+        val out = MiniMaxVoiceClient("mm", url, "mk").synthesize(VoiceTtsRequest(input = "hi"))
+        assertTrue(out.contentEquals(audio))
     }
 
     // ---- 工厂判定 ------------------------------------------------------------

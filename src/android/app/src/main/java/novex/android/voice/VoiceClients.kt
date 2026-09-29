@@ -2,8 +2,8 @@ package novex.android.voice
 
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.logging.AppLogger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
@@ -22,940 +22,751 @@ import java.util.TimeZone
 import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
- * 各厂商语音客户端（P3.2 自有实现，替换上游 provider/voice 包的厂商件）。每个
- * 厂商只覆盖与 OpenAI 兼容基座不同的部分：默认模型名、端点路径、请求体、响应
- * 外壳或鉴权。请求形状 / 鉴权 / 音频格式 / 错误分类逐厂商对齐被替换实现，
- * 假服务器测试钉关键厂商（Doubao TTS/ASR、OpenAI TTS 等）。
+ * 各厂商方言（P3.2 真重写版）。每个方言只声明与 OpenAI 兼容默认不同的部分：
+ * 能力面、端点路径、调用体、响应外壳或鉴权。全部经由 [VoiceClient] 的
+ * HttpCall/dispatch 骨架出网——方言不直接碰 OkHttp（讯飞 WebSocket 除外，
+ * 其协议本身是 WS）。
+ *
+ * 响应解析统一「先剥厂商错误外壳、再取音频」：各家把错误放在不同位置
+ * （HTTP 状态、base_resp、帧内 code、WS code），分类口径在各方言内闭环。
  */
 
-// -- Groq（仅 ASR，OpenAI 兼容，只有默认机型不同） ------------------------------
+// ---- Groq：转写专用，OpenAI 兼容，仅默认机型不同 -------------------------------
 
-class GroqVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
-    override val supportsTts: Boolean get() = false
+class GroqVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
+    override val offers get() = ASR_ONLY
     override fun defaultAsrModel() = "whisper-large-v3-turbo"
 }
 
-// -- 阿里百炼（OpenAI 兼容，只有默认机型不同） -----------------------------------
+// ---- 阿里百炼：OpenAI 兼容，仅默认机型/音色不同 ---------------------------------
 
-class AlibabaVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class AlibabaVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
     override fun defaultAsrModel() = "paraformer-realtime-v2"
     override fun defaultTtsModel() = "cosyvoice-v2"
     override fun defaultTtsVoice() = "longxiaochun"
 }
 
-// -- xAI（ASR 端点路径不同：/v1/stt） --------------------------------------------
+// ---- xAI：转写端点在 /v1/stt ---------------------------------------------------
 
-class XaiVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
-    override fun asrEndpointPath() = "/v1/stt"
+class XaiVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
+    override fun asrPath() = "/v1/stt"
     override fun defaultAsrModel() = "grok-stt"
     override fun defaultTtsModel() = "grok-tts-1"
     override fun defaultTtsVoice() = "eve"
 }
 
-// -- MiniMax（仅 TTS，独立请求体，base64 嵌套响应） ------------------------------
+// ---- MiniMax：合成专用，t2a_v2 独立体 + 双响应外壳 ------------------------------
 
-class MiniMaxVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class MiniMaxVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    override val supportsAsr: Boolean get() = false
+    override val offers get() = TTS_ONLY
 
     /**
-     * MiniMax 原生 TTS 端点（/v1/t2a_v2）在 API 主机根部——不在用户为聊天配的
-     * /anthropic 代理路径下。剥掉尾部 /v1 与 /anthropic 段。
+     * t2a_v2 挂在 API 主机根部：用户为聊天配的 /anthropic 代理路径要剥掉，
+     * 连尾部 /v1 一并剥（拼接时会按版本段规则重新处理）。
      */
-    override fun effectiveBaseURL(): String {
-        var base = super.effectiveBaseURL().trimEnd('/')
-        for (suffix in listOf("/v1", "/anthropic")) {
-            if (base.endsWith(suffix)) base = base.dropLast(suffix.length)
+    override fun base(): String =
+        listOf("/anthropic", "/v1").fold(super.base()) { acc, suffix ->
+            if (acc.endsWith(suffix)) acc.dropLast(suffix.length).trimEnd('/') else acc
         }
-        return base.trimEnd('/')
-    }
 
-    override fun ttsEndpointPath() = "/v1/t2a_v2"
+    override fun ttsPath() = "/v1/t2a_v2"
     override fun defaultTtsModel() = "speech-2.8-hd"
     override fun defaultTtsVoice() = "female-shaonv"
 
-    override fun buildTtsRequest(request: VoiceTtsRequest): Request {
-        val url = composedUrlString(ttsEndpointPath())
-        // MiniMax 专属形状：speed 是 0~200 的整数。
-        val speedInt = ((request.speed ?: 1.0f) * 100).toInt()
-        // 选择器（机型条目兼任音色）会把机型 id 放进 voice。MiniMax 的音色 id 是
-        // 独立命名空间，把机型 id 当 voice_id 发会 2054 "voice id not exist"——
-        // Quick Test 在 speech-2.8-hd / -turbo 上撞的正是这个。voice == model 视为
-        // 「未选音色」回落默认。
-        val requestedVoice = if (request.voice == request.model) null else request.voice
-        val body = JSONObject().apply {
-            put("model", request.model ?: defaultTtsModel())
-            put("text", request.input)
-            put("stream", false)
-            put(
-                "voice_setting",
-                JSONObject()
-                    .put("voice_id", requestedVoice ?: defaultTtsVoice())
-                    .put("speed", speedInt)
-                    .put("vol", 100)
-                    .put("pitch", 0),
-            )
-            put(
-                "audio_setting",
-                JSONObject()
-                    .put("sample_rate", 32000)
-                    .put("bitrate", 128000)
-                    .put("format", request.responseFormat.wireValue),
-            )
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
-        return builder.build()
-    }
+    /** 语速是百分数整数（1.0× → 100），波动 0~200。 */
+    override fun ttsCall(request: VoiceTtsRequest): HttpCall = HttpCall(
+        url = join(ttsPath()),
+        headers = authHeaders(),
+        mediaType = "application/json",
+        payload = jsonOf(
+            "model" to (request.model ?: defaultTtsModel()),
+            "text" to request.input,
+            "stream" to false,
+            "voice_setting" to jsonOf(
+                "voice_id" to (voiceIdOrNull(request) ?: defaultTtsVoice()),
+                "speed" to ((request.speed ?: 1.0f) * 100).toInt(),
+                "vol" to 100,
+                "pitch" to 0,
+            ),
+            "audio_setting" to jsonOf(
+                "sample_rate" to 32000,
+                "bitrate" to 128000,
+                "format" to request.responseFormat.wireValue,
+            ),
+        ).toString().toByteArray(Charsets.UTF_8),
+    )
 
-    // 响应：{ "audio": { "audio": "base64..." }, "base_resp": { status_code, status_msg } }
+    /**
+     * 选择器把机型条目当音色传（voice == model）；MiniMax 两者是独立命名空间，
+     * 机型 id 当 voice_id 发必回 2054 voice id not exist——视作未选，回落默认。
+     */
+    private fun voiceIdOrNull(request: VoiceTtsRequest): String? =
+        request.voice?.takeIf { it.isNotEmpty() && it != request.model }
+
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val raw = executeRequest(buildTtsRequest(request))
-        val json = runCatching { JSONObject(String(raw, Charsets.UTF_8)) }.getOrNull()
-        // 呈现 MiniMax 自家错误（base_resp）而非笼统解析失败——t2a_v2 失败时不给
-        // audio、只有 base_resp。
-        json?.optJSONObject("base_resp")?.let { base ->
-            val code = base.optInt("status_code", 0)
-            if (code != 0) {
-                val msg = base.optString("status_msg").ifBlank { "unknown error" }
-                throw VoiceClientException.Parse("MiniMax TTS error [$code]: $msg")
-            }
-        }
-        // 现行 t2a_v2（api.minimaxi.com，iOS 2026-07-24 验证）在 data.audio 嵌
-        // HEX 编码音频；旧部署在 audio.audio 回 base64。先试 hex 再试 base64。
-        json?.optJSONObject("data")?.optString("audio")?.takeIf { it.isNotEmpty() }?.let { enc ->
-            decodeHex(enc)?.let { return it }
-            runCatching { decodeBase64OrThrow(enc) }.getOrNull()?.let { return it }
-            throw VoiceClientException.Parse("MiniMax TTS: data.audio is neither hex nor base64")
-        }
-        val b64 = json?.optJSONObject("audio")?.optString("audio")
-            ?.takeIf { it.isNotEmpty() }
-            ?: throw VoiceClientException.Parse("Unexpected MiniMax TTS response format")
-        return runCatching { decodeBase64OrThrow(b64) }.getOrNull()
-            ?: throw VoiceClientException.Parse("Unexpected MiniMax TTS response format")
+        val payload = dispatch(ttsCall(request))
+        val envelope = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
+        rejectIfReported(envelope?.optJSONObject("base_resp"))
+        return audioFrom(envelope) ?: throw VoiceClientException.Parse("MiniMax TTS response carried no audio")
     }
 
-    /** hex 串 → 字节；串不是合法 hex 时 null。 */
-    private fun decodeHex(s: String): ByteArray? {
-        if (s.length % 2 != 0 || s.isEmpty()) return null
-        val out = ByteArray(s.length / 2)
-        for (i in out.indices) {
+    /** base_resp 非零码 = 厂商级失败（此时无音频）；透传码与原文。 */
+    private fun rejectIfReported(baseResp: JSONObject?) {
+        val code = baseResp?.optInt("status_code", 0) ?: 0
+        if (code != 0) {
+            val note = baseResp?.optString("status_msg")?.takeIf(String::isNotBlank) ?: "unknown error"
+            throw VoiceClientException.Parse("MiniMax TTS error [$code]: $note")
+        }
+    }
+
+    /**
+     * 双响应外壳：现行端点在 data.audio 放 hex 编码音频；旧部署在 audio.audio
+     * 放 base64。data.audio 先试 hex 再试 base64，取到即返回。
+     */
+    private fun audioFrom(envelope: JSONObject?): ByteArray? {
+        val nested = envelope?.optJSONObject("data")?.optString("audio")?.takeIf(String::isNotEmpty)
+        if (nested != null) {
+            hexToBytes(nested)?.let { return it }
+            runCatching { decodeBase64OrThrow(nested) }.getOrNull()?.let { return it }
+            throw VoiceClientException.Parse("MiniMax data.audio is neither hex nor base64")
+        }
+        return envelope?.optJSONObject("audio")?.optString("audio")?.takeIf(String::isNotEmpty)
+            ?.let { runCatching { decodeBase64OrThrow(it) }.getOrNull() }
+    }
+
+    private fun hexToBytes(s: String): ByteArray? {
+        if (s.isEmpty() || s.length % 2 != 0) return null
+        return ByteArray(s.length / 2) { i ->
             val hi = Character.digit(s[i * 2], 16)
             val lo = Character.digit(s[i * 2 + 1], 16)
             if (hi < 0 || lo < 0) return null
-            out[i] = ((hi shl 4) or lo).toByte()
+            ((hi shl 4) or lo).toByte()
         }
-        return out
     }
 }
 
-// -- 豆包 / 火山（TTS + ASR，X-Api-Key 鉴权，独立格式） --------------------------
+// ---- 豆包 / 火山：v3 双端点（TTS 单向流式 / ASR flash 识别）---------------------
 
-class DoubaoVoiceClient(providerId: String, apiKey: String?, baseOverride: String? = null) :
-    VoiceClient(providerId, baseOverride ?: "https://openspeech.bytedance.com", apiKey) {
+class DoubaoVoiceClient(id: String, key: String?, baseOverride: String? = null) :
+    VoiceClient(id, baseOverride ?: "https://openspeech.bytedance.com", key) {
 
-    override fun applyAuth(builder: Request.Builder) {
-        val key = apiKey?.takeIf { it.isNotEmpty() } ?: return
-        builder.header("X-Api-Key", key)
-    }
+    override fun authHeaders(): Map<String, String> =
+        apiKey?.takeIf(String::isNotEmpty)?.let { mapOf("X-Api-Key" to it) }.orEmpty()
 
-    // TTS（v3 单向流式）------------------------------------------------------
+    // -- 合成 --
 
-    override fun ttsEndpointPath() = "/api/v3/tts/unidirectional"
+    override fun ttsPath() = "/api/v3/tts/unidirectional"
     override fun defaultAsrModel() = "bigmodel"
     override fun defaultTtsModel() = "zh_female_cancan_uranus_bigtts"
     override fun defaultTtsVoice() = "zh_female_cancan_uranus_bigtts"
 
-    override fun buildTtsRequest(request: VoiceTtsRequest): Request {
-        val url = composedUrlString(ttsEndpointPath())
-        val raw = request.model ?: request.voice ?: defaultTtsVoice()
-        val speaker = if (raw.startsWith("seed-tts-")) defaultTtsVoice() else raw
-        val resourceId = if (speaker.contains("_uranus_") || speaker.startsWith("saturn_")) {
-            "seed-tts-2.0"
-        } else {
-            "seed-tts-1.0"
-        }
-        val body = JSONObject().put(
-            "req_params",
-            JSONObject()
-                .put("text", request.input)
-                .put("speaker", speaker)
-                .put(
-                    "audio_params",
-                    JSONObject()
-                        .put("format", if (request.responseFormat == VoiceTtsFormat.WAV) "wav" else "mp3")
-                        .put("sample_rate", 24000),
+    override fun ttsCall(request: VoiceTtsRequest): HttpCall {
+        val speaker = speakerId(request)
+        return HttpCall(
+            url = join(ttsPath()),
+            headers = authHeaders() + mapOf(
+                "X-Api-Resource-Id" to resourceIdOf(speaker),
+                "Connection" to "keep-alive",
+            ),
+            mediaType = "application/json",
+            payload = jsonOf(
+                "req_params" to jsonOf(
+                    "text" to request.input,
+                    "speaker" to speaker,
+                    "audio_params" to jsonOf(
+                        "format" to if (request.responseFormat == VoiceTtsFormat.WAV) "wav" else "mp3",
+                        "sample_rate" to 24000,
+                    ),
                 ),
+            ).toString().toByteArray(Charsets.UTF_8),
         )
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .header("X-Api-Resource-Id", resourceId)
-            .header("Connection", "keep-alive")
-        applyAuth(builder)
-        return builder.build()
     }
 
-    // v3 TTS 回 HTTP chunked：每行一帧 JSON、内嵌 base64 音频。
+    /** seed-tts- 前缀的裸值不是有效音色，回落默认；其余透传（机型或音色 id 皆可）。 */
+    private fun speakerId(request: VoiceTtsRequest): String {
+        val raw = request.model ?: request.voice ?: defaultTtsVoice()
+        return raw.takeUnless { it.startsWith("seed-tts-") } ?: defaultTtsVoice()
+    }
+
+    /** 资源 id 按音色代际：uranus 族与 saturn_ 前缀走 2.0，其余 1.0。 */
+    private fun resourceIdOf(speaker: String): String =
+        if ("_uranus_" in speaker || speaker.startsWith("saturn_")) "seed-tts-2.0" else "seed-tts-1.0"
+
+    /**
+     * 响应是 HTTP chunked 的 JSON 帧序列（每帧 base64 音频）；码非 0 的帧跳过。
+     * 全程无音频按解析失败收（附响应头预览，可判读原始报错）。
+     */
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val raw = executeRequest(buildTtsRequest(request))
-        val out = ByteArrayOutputStream()
-        for (line in String(raw, Charsets.UTF_8).split('\n')) {
-            val frame = runCatching { JSONObject(line) }.getOrNull() ?: continue
-            if (frame.optInt("code", -1) != 0) continue
-            val b64 = frame.optString("data").takeIf { it.isNotEmpty() } ?: continue
-            val chunk = runCatching { decodeBase64OrThrow(b64) }.getOrNull() ?: continue
-            out.write(chunk)
-        }
-        val audio = out.toByteArray()
+        val raw = dispatch(ttsCall(request))
+        val audio = String(raw, Charsets.UTF_8).lineSequence()
+            .mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
+            .filter { it.optInt("code", -1) == 0 }
+            .mapNotNull { it.optString("data").takeIf(String::isNotEmpty) }
+            .mapNotNull { runCatching { decodeBase64OrThrow(it) }.getOrNull() }
+            .fold(ByteArrayOutputStream()) { acc, chunk -> acc.apply { write(chunk) } }
+            .toByteArray()
         if (audio.isEmpty()) {
-            val preview = String(raw.copyOfRange(0, minOf(raw.size, 500)), Charsets.UTF_8)
-            throw VoiceClientException.Parse("Doubao v3 TTS: no audio frames in response. Raw: $preview")
+            val head = String(raw.copyOfRange(0, minOf(raw.size, 500)), Charsets.UTF_8)
+            throw VoiceClientException.Parse("Doubao v3 TTS: no audio frames in response. Raw: $head")
         }
         return audio
     }
 
-    // ASR（v3 bigmodel flash 识别）--------------------------------------------
+    // -- 转写 --
 
-    override fun asrEndpointPath() = "/api/v3/auc/bigmodel/recognize/flash"
+    override fun asrPath() = "/api/v3/auc/bigmodel/recognize/flash"
 
-    override fun buildAsrRequest(request: VoiceAsrRequest): Request {
-        val url = composedUrlString(asrEndpointPath())
-        val body = JSONObject()
-            .put("user", JSONObject().put("uid", "minis_user"))
-            .put("audio", JSONObject().put("data", encodeBase64(request.audioData)))
-            .put("request", JSONObject().put("model_name", "bigmodel"))
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .header("X-Api-Resource-Id", "volc.bigasr.auc_turbo")
-            .header("X-Api-Request-Id", UUID.randomUUID().toString())
-            .header("X-Api-Sequence", "-1")
-        applyAuth(builder)
-        return builder.build()
-    }
+    override fun asrCall(request: VoiceAsrRequest): HttpCall = HttpCall(
+        url = join(asrPath()),
+        headers = authHeaders() + mapOf(
+            "X-Api-Resource-Id" to "volc.bigasr.auc_turbo",
+            "X-Api-Request-Id" to UUID.randomUUID().toString(),
+            "X-Api-Sequence" to "-1",
+        ),
+        mediaType = "application/json",
+        payload = jsonOf(
+            "user" to jsonOf("uid" to "minis_user"),
+            "audio" to jsonOf("data" to encodeBase64(request.audioData)),
+            "request" to jsonOf("model_name" to "bigmodel"),
+        ).toString().toByteArray(Charsets.UTF_8),
+    )
 
-    // v3 ASR 响应：{ "result": { "text": "..." }, "audio_info": { duration } }
-    override fun parseAsrResponse(data: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
-        val json = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-        val text = json?.optJSONObject("result")?.optString("text")
+    override fun parseAsr(payload: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
+        val envelope = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
+        val heard = envelope?.optJSONObject("result")?.optString("text")
             ?: throw VoiceClientException.Parse("Unexpected Doubao v3 ASR response format")
-        val durationMs = json.optJSONObject("audio_info")?.optDouble("duration")
-            ?.takeIf { !it.isNaN() }
-        return VoiceAsrResponse(
-            text = text,
-            language = request.language,
-            durationSeconds = durationMs?.div(1000),
-        )
+        val seconds = envelope.optJSONObject("audio_info")?.optDouble("duration")?.takeIf { !it.isNaN() }?.div(1000)
+        return VoiceAsrResponse(text = heard, language = request.language, durationSeconds = seconds)
     }
 }
 
-// -- 讯飞 / iFlytek（ASR 走 HMAC-SHA256 签名 URL；TTS 走 WebSocket） --------------
+// ---- 讯飞：签名 URL 鉴权；转写走 REST、合成走 WebSocket -------------------------
 
 class XunfeiVoiceClient(
-    providerId: String,
+    id: String,
     private val appId: String,
-    apiKey: String,
+    key: String,
     private val apiSecret: String,
-) : VoiceClient(providerId, "https://iat-api.xfyun.cn", apiKey) {
+) : VoiceClient(id, "https://iat-api.xfyun.cn", key) {
 
-    companion object {
-        private const val DEFAULT_TTS_VOICE = "xiaoyan"
+    override fun authHeaders(): Map<String, String> = emptyMap()   // 鉴权在 URL 签名里
+
+    override fun asrCall(request: VoiceAsrRequest): HttpCall = HttpCall(
+        url = signedUrl("iat-api.xfyun.cn", "/v2/iat", Date()),
+        mediaType = "application/json",
+        payload = iatBody(request).toByteArray(Charsets.UTF_8),
+    )
+
+    private fun iatBody(request: VoiceAsrRequest) = jsonOf(
+        "header" to jsonOf("app_id" to appId, "status" to 3),
+        "parameter" to jsonOf(
+            "iat" to jsonOf(
+                "domain" to "iat",
+                "language" to (request.language ?: "zh_cn"),
+                "accent" to "mandarin",
+                "result" to jsonOf("encoding" to "utf8", "compress" to "raw", "format" to "json"),
+            ),
+        ),
+        "payload" to jsonOf(
+            "audio" to jsonOf(
+                "encoding" to "raw",
+                "sample_rate" to 16000,
+                "channels" to 1,
+                "bit_depth" to 16,
+                "status" to 3,
+                "audio" to encodeBase64(request.audioData),
+            ),
+        ),
+    ).toString()
+
+    override fun parseAsr(payload: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
+        val envelope = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
+            ?: throw malformed()
+        if (envelope.optJSONObject("header")?.optInt("code", -1) != 0) throw malformed()
+        val encoded = envelope.optJSONObject("payload")?.optJSONObject("result")?.optString("text")
+            ?.takeIf(String::isNotEmpty) ?: throw malformed()
+        val sheet = runCatching { JSONObject(String(decodeBase64OrThrow(encoded), Charsets.UTF_8)) }.getOrNull()
+            ?: throw malformed()
+        return VoiceAsrResponse(text = wordsOf(sheet), language = request.language)
     }
 
-    // 讯飞以签名 URL 鉴权，不是头。
-    override fun applyAuth(builder: Request.Builder) {}
-
-    override fun buildAsrRequest(request: VoiceAsrRequest): Request {
-        val url = buildSignedURL(host = "iat-api.xfyun.cn", path = "/v2/iat", date = Date())
-        val body = JSONObject()
-            .put("header", JSONObject().put("app_id", appId).put("status", 3))
-            .put(
-                "parameter",
-                JSONObject().put(
-                    "iat",
-                    JSONObject()
-                        .put("domain", "iat")
-                        .put("language", request.language ?: "zh_cn")
-                        .put("accent", "mandarin")
-                        .put(
-                            "result",
-                            JSONObject()
-                                .put("encoding", "utf8")
-                                .put("compress", "raw")
-                                .put("format", "json"),
-                        ),
-                ),
-            )
-            .put(
-                "payload",
-                JSONObject().put(
-                    "audio",
-                    JSONObject()
-                        .put("encoding", "raw")
-                        .put("sample_rate", 16000)
-                        .put("channels", 1)
-                        .put("bit_depth", 16)
-                        .put("status", 3)
-                        .put("audio", encodeBase64(request.audioData)),
-                ),
-            )
-        return Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-    }
-
-    override fun parseAsrResponse(data: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
-        val json = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-            ?: throw VoiceClientException.Parse("Unexpected Xunfei ASR response format")
-        if (json.optJSONObject("header")?.optInt("code", -1) != 0) {
-            throw VoiceClientException.Parse("Unexpected Xunfei ASR response format")
-        }
-        val b64Text = json.optJSONObject("payload")?.optJSONObject("result")?.optString("text")
-            ?.takeIf { it.isNotEmpty() }
-            ?: throw VoiceClientException.Parse("Unexpected Xunfei ASR response format")
-        val textJson = runCatching {
-            JSONObject(String(decodeBase64OrThrow(b64Text), Charsets.UTF_8))
-        }.getOrNull() ?: throw VoiceClientException.Parse("Unexpected Xunfei ASR response format")
-
-        val sb = StringBuilder()
-        val ws = textJson.optJSONArray("ws") ?: JSONArray()
-        for (i in 0 until ws.length()) {
-            val cw = ws.optJSONObject(i)?.optJSONArray("cw") ?: continue
-            for (j in 0 until cw.length()) {
-                cw.optJSONObject(j)?.optString("w")?.let { sb.append(it) }
+    /** 讯飞的转写结果是 ws→cw→w 三层嵌套，逐层展平成文本。 */
+    private fun wordsOf(sheet: JSONObject): String = buildString {
+        val words = sheet.optJSONArray("ws") ?: JSONArray()
+        for (i in 0 until words.length()) {
+            val slots = words.optJSONObject(i)?.optJSONArray("cw") ?: continue
+            for (j in 0 until slots.length()) {
+                slots.optJSONObject(j)?.optString("w")?.let(::append)
             }
         }
-        return VoiceAsrResponse(text = sb.toString(), language = request.language)
     }
+
+    private fun malformed() = VoiceClientException.Parse("Unexpected Xunfei ASR response format")
+
+    // -- 合成（WebSocket 流式 PCM）--
 
     /**
-     * 讯飞 TTS 是 WebSocket 端点（tts-api.xfyun.cn/v2/tts）流式回 base64 PCM 帧，
-     * 签名方案与 ASR 相同。收齐全部帧后把 16k PCM 包进 WAV 头。
+     * 帧收发协议：首帧 business 参数 + 整段文本，末帧 status=2；回帧 data.audio
+     * 是 base64 PCM16、末帧 data.status=2。收齐后包 16k WAV。
      */
-    override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val signedUrl = buildSignedURL(host = "tts-api.xfyun.cn", path = "/v2/tts", date = Date())
-            .replaceFirst("https://", "wss://")
-        val voice = request.voice?.takeIf { it.isNotEmpty() } ?: DEFAULT_TTS_VOICE
-        val textB64 = encodeBase64(request.input.toByteArray(Charsets.UTF_8))
-        val payload = JSONObject()
-            .put("common", JSONObject().put("app_id", appId))
-            .put(
-                "business",
-                JSONObject()
-                    .put("aue", "raw")
-                    .put("auf", "audio/L16;rate=16000")
-                    .put("vcn", voice)
-                    .put("tte", "UTF8"),
-            )
-            .put("data", JSONObject().put("status", 2).put("text", textB64))
-            .toString()
+    override suspend fun synthesize(request: VoiceTtsRequest): ByteArray =
+        wsSpeechExchange(
+            url = signedUrl("tts-api.xfyun.cn", "/v2/tts", Date()).replaceFirst("https://", "wss://"),
+            openingFrame = ttsOpeningFrame(request),
+            connect = httpClient::newWebSocket,
+        )
 
-        return suspendCancellableCoroutine { cont ->
-            val pcm = ByteArrayOutputStream()
-            val wsRequest = Request.Builder().url(signedUrl).build()
-            val socket = httpClient.newWebSocket(
-                wsRequest,
-                object : WebSocketListener() {
-                    override fun onOpen(webSocket: WebSocket, response: Response) {
-                        webSocket.send(payload)
-                    }
+    internal fun ttsOpeningFrame(request: VoiceTtsRequest): String = jsonOf(
+        "common" to jsonOf("app_id" to appId),
+        "business" to jsonOf(
+            "aue" to "raw",
+            "auf" to "audio/L16;rate=16000",
+            "vcn" to (request.voice?.takeIf(String::isNotEmpty) ?: "xiaoyan"),
+            "tte" to "UTF8",
+        ),
+        "data" to jsonOf("status" to 2, "text" to encodeBase64(request.input.toByteArray(Charsets.UTF_8))),
+    ).toString()
 
-                    override fun onMessage(webSocket: WebSocket, text: String) {
-                        val json = runCatching { JSONObject(text) }.getOrNull() ?: return
-                        val code = json.optInt("code", 0)
-                        if (code != 0) {
-                            webSocket.cancel()
-                            if (cont.isActive) {
-                                cont.resumeWithException(
-                                    VoiceClientException.Parse(
-                                        "Xunfei TTS error code $code: ${json.optString("message")}",
-                                    ),
-                                )
-                            }
-                            return
-                        }
-                        val dataObj = json.optJSONObject("data") ?: return
-                        dataObj.optString("audio").takeIf { it.isNotEmpty() }?.let { b64 ->
-                            runCatching { decodeBase64OrThrow(b64) }.getOrNull()
-                                ?.let(pcm::write)
-                        }
-                        if (dataObj.optInt("status", 0) == 2) {   // 末帧
-                            webSocket.close(1000, null)
-                            if (cont.isActive) {
-                                val bytes = pcm.toByteArray()
-                                if (bytes.isEmpty()) {
-                                    cont.resumeWithException(VoiceClientException.Parse("Xunfei TTS empty audio"))
-                                } else {
-                                    cont.resume(wrapPcm16InWav(bytes, sampleRate = 16000))
-                                }
-                            }
-                        }
-                    }
+    /**
+     * WS 交换的可注入核心：connect 打开 socket（测试注假 socket 假帧，确定性），
+     * 收流协议在此闭环——非零 code 抛厂商错误、末帧收尾、空流拒绝。
+     */
+    internal suspend fun wsSpeechExchange(
+        url: String,
+        openingFrame: String,
+        connect: (Request, WebSocketListener) -> WebSocket,
+    ): ByteArray {
+        val finished = CompletableDeferred<ByteArray>()
+        val pcm = ByteArrayOutputStream()
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send(openingFrame)
+            }
 
-                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        if (cont.isActive) cont.resumeWithException(t)
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val frame = runCatching { JSONObject(text) }.getOrNull() ?: return
+                frame.optInt("code", 0).takeIf { it != 0 }?.let { code ->
+                    webSocket.cancel()
+                    finished.completeExceptionally(
+                        VoiceClientException.Parse("Xunfei TTS error code $code: ${frame.optString("message")}"),
+                    )
+                    return
+                }
+                val data = frame.optJSONObject("data") ?: return
+                data.optString("audio").takeIf(String::isNotEmpty)
+                    ?.let { runCatching { decodeBase64OrThrow(it) }.getOrNull() }
+                    ?.let(pcm::write)
+                if (data.optInt("status", 0) == 2) {
+                    webSocket.close(1000, null)
+                    val collected = pcm.toByteArray()
+                    if (collected.isEmpty()) {
+                        finished.completeExceptionally(VoiceClientException.Parse("Xunfei TTS empty audio"))
+                    } else {
+                        finished.complete(wrapPcm16InWav(collected, sampleRate = 16000))
                     }
-                },
-            )
-            cont.invokeOnCancellation { socket.cancel() }
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                finished.completeExceptionally(t)
+            }
+        }
+        val socket = connect(Request.Builder().url(url).build(), listener)
+        try {
+            return finished.await()
+        } finally {
+            socket.cancel()
         }
     }
 
-    // HMAC-SHA256 URL 签名 ----------------------------------------------------
+    // -- 签名 URL --
 
-    private fun buildSignedURL(host: String, path: String, date: Date): String {
-        val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("GMT")
+    /**
+     * 鉴权走 URL 签名（RFC1123 GMT 时间戳 + HMAC-SHA256）：
+     * 签名基串是「host/date/GET 请求行」三行拼接；authorization 是
+     * api_key+algorithm+headers+signature 的说明串再整体 base64。
+     */
+    internal fun signedUrl(host: String, path: String, at: Date): String {
+        val stamp = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("GMT") }.format(at)
+        val signature = hmacSha256("host: $host\ndate: $stamp\nGET $path HTTP/1.1", apiSecret)
+        val authorization = encodeBase64(
+            buildString {
+                append("api_key=\"").append(apiKey.orEmpty()).append("\", ")
+                append("algorithm=\"hmac-sha256\", ")
+                append("headers=\"host date request-line\", ")
+                append("signature=\"").append(signature).append('\"')
+            }.toByteArray(Charsets.UTF_8),
+        )
+        return "https://$host$path?authorization=$authorization&date=${URLEncoder.encode(stamp, "UTF-8")}&host=$host"
+    }
+
+    private fun hmacSha256(data: String, secret: String): String =
+        Mac.getInstance("HmacSHA256").run {
+            init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+            encodeBase64(doFinal(data.toByteArray(Charsets.UTF_8)))
         }
-        val dateStr = formatter.format(date)
-        val signatureOrigin = "host: $host\ndate: $dateStr\nGET $path HTTP/1.1"
-        val signatureB64 = hmacSha256Base64(signatureOrigin, apiSecret)
-        val authOrigin = "api_key=\"${apiKey ?: ""}\", " +
-            "algorithm=\"hmac-sha256\", " +
-            "headers=\"host date request-line\", " +
-            "signature=\"$signatureB64\""
-        val authB64 = encodeBase64(authOrigin.toByteArray(Charsets.UTF_8))
-        val encodedDate = URLEncoder.encode(dateStr, "UTF-8")
-        return "https://$host$path?authorization=$authB64&date=$encodedDate&host=$host"
-    }
-
-    private fun hmacSha256Base64(data: String, key: String): String {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(key.toByteArray(Charsets.UTF_8), "HmacSHA256"))
-        return encodeBase64(mac.doFinal(data.toByteArray(Charsets.UTF_8)))
-    }
 }
 
-// -- Google Gemini（原生 TTS：generateContent + AUDIO 模态） ---------------------
+// ---- Gemini：generateContent + AUDIO 模态（原生）--------------------------------
 
-/**
- * Gemini TTS 非 OpenAI 兼容：POST {base}/v1beta/models/{model}:generateContent，
- * key 放 ?key=，candidates[0].content.parts[].inlineData.data 里是 base64 裸 PCM
- * （24 kHz 单声道）。PCM 包进 WAV。
- */
-class GeminiVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class GeminiVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    companion object {
-        private val KNOWN_VOICES = setOf("Kore", "Puck", "Charon", "Fenrir", "Aoede", "Zephyr", "Leda", "Orus")
-        private fun geminiVoice(requested: String?): String {
-            val v = requested?.takeIf { it.isNotEmpty() } ?: return "Kore"
-            return if (v in KNOWN_VOICES) v else "Kore"
-        }
-
-        private fun sampleRate(fromMime: String): Int {
-            val idx = fromMime.indexOf("rate=")
-            if (idx < 0) return 24000
-            return fromMime.substring(idx + 5).takeWhile { it.isDigit() }.toIntOrNull() ?: 24000
-        }
-    }
-
-    override val supportsAsr: Boolean get() = false
+    override val offers get() = TTS_ONLY
     override fun defaultTtsModel() = "gemini-2.5-flash-preview-tts"
 
-    override fun buildTtsRequest(request: VoiceTtsRequest): Request {
-        val model = request.model ?: defaultTtsModel()
-        var base = effectiveBaseURL()
-        if (!base.contains("/v1beta")) base = base.trimEnd('/') + "/v1beta"
-        val url = "$base/models/$model:generateContent?key=${apiKey ?: ""}"
-        val body = JSONObject()
-            .put(
-                "contents",
-                JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", request.input))),
-                ),
-            )
-            .put(
-                "generationConfig",
-                JSONObject()
-                    .put("responseModalities", JSONArray().put("AUDIO"))
-                    .put(
-                        "speechConfig",
-                        JSONObject().put(
-                            "voiceConfig",
-                            JSONObject().put(
-                                "prebuiltVoiceConfig",
-                                JSONObject().put("voiceName", geminiVoice(request.voice)),
-                            ),
-                        ),
+    override fun ttsCall(request: VoiceTtsRequest): HttpCall = HttpCall(
+        url = v1betaRoot() + "/models/" + (request.model ?: defaultTtsModel()) +
+            ":generateContent?key=${apiKey.orEmpty()}",
+        mediaType = "application/json",
+        payload = jsonOf(
+            "contents" to JSONArray().put(
+                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", request.input))),
+            ),
+            "generationConfig" to jsonOf(
+                "responseModalities" to JSONArray().put("AUDIO"),
+                "speechConfig" to jsonOf(
+                    "voiceConfig" to jsonOf(
+                        "prebuiltVoiceConfig" to jsonOf("voiceName" to voiceName(request.voice)),
                     ),
-            )
-        return Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-    }
+                ),
+            ),
+        ).toString().toByteArray(Charsets.UTF_8),
+    )
+
+    /** 基址没写 v1beta 就补上（目录习惯给的是根）。 */
+    private fun v1betaRoot(): String = base().takeIf { it.contains("/v1beta") } ?: base() + "/v1beta"
+
+    /** 只认官方音色名；其余回落 Kore（未知名是配置噪声而非可转发值）。 */
+    private fun voiceName(requested: String?): String =
+        requested?.takeIf { it in KNOWN_VOICES } ?: "Kore"
 
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val raw = executeRequest(buildTtsRequest(request))
-        val json = runCatching { JSONObject(String(raw, Charsets.UTF_8)) }.getOrNull()
+        val payload = dispatch(ttsCall(request))
+        val reply = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
             ?: throw VoiceClientException.Parse("Unexpected Gemini TTS response")
-        val parts = json.optJSONArray("candidates")
-            ?.optJSONObject(0)
-            ?.optJSONObject("content")
-            ?.optJSONArray("parts")
+        val parts = reply.optJSONArray("candidates")?.optJSONObject(0)
+            ?.optJSONObject("content")?.optJSONArray("parts")
             ?: throw VoiceClientException.Parse("Unexpected Gemini TTS response")
         for (i in 0 until parts.length()) {
             val inline = parts.optJSONObject(i)?.optJSONObject("inlineData") ?: continue
-            val b64 = inline.optString("data").takeIf { it.isNotEmpty() } ?: continue
-            val pcm = runCatching { decodeBase64OrThrow(b64) }.getOrNull() ?: continue
+            val encoded = inline.optString("data").takeIf(String::isNotEmpty) ?: continue
+            val pcm = runCatching { decodeBase64OrThrow(encoded) }.getOrNull() ?: continue
             val mime = inline.optString("mimeType").ifBlank { "audio/L16;rate=24000" }
-            if (mime.lowercase().contains("wav")) return pcm
-            return wrapPcm16InWav(pcm, sampleRate(mime))
+            return if (mime.lowercase().contains("wav")) pcm else wrapPcm16InWav(pcm, rateIn(mime))
         }
         throw VoiceClientException.Parse("No audio in Gemini TTS response")
     }
-}
 
-// -- ElevenLabs（TTS）REST、xi-api-key 头、回 MP3 -------------------------------
+    private fun rateIn(mime: String): Int =
+        mime.substringAfter("rate=", "").takeWhile(Char::isDigit).toIntOrNull() ?: 24000
 
-/**
- * ElevenLabs TTS。机型条目的 id 携带 ElevenLabs voice_id；固定 model_id
- * （eleven_multilingual_v2）驱动合成。POST {base}/v1/text-to-speech/{voice_id}
- * → audio/mpeg。
- */
-class ElevenLabsVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
-
-    companion object {
-        private const val DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM" // Rachel
-        private const val MODEL_ID = "eleven_multilingual_v2"
-    }
-
-    override val supportsAsr: Boolean get() = false
-
-    override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        // 选中的机型条目 id 就是 ElevenLabs voice_id。
-        val voiceId = request.model?.takeIf { it.isNotEmpty() }
-            ?: request.voice?.takeIf { it.isNotEmpty() }
-            ?: DEFAULT_VOICE_ID
-        var base = effectiveBaseURL()
-        if (!base.contains("/v1")) base += "/v1"
-        val body = JSONObject()
-            .put("text", request.input)
-            .put("model_id", MODEL_ID)
-            .put(
-                "voice_settings",
-                JSONObject().put("stability", 0.5).put("similarity_boost", 0.75),
-            )
-        val req = Request.Builder()
-            .url("$base/text-to-speech/$voiceId")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .header("xi-api-key", apiKey ?: "")
-            .header("Accept", "audio/mpeg")
-            .build()
-        return executeRequest(req)   // MP3 字节
+    private companion object {
+        val KNOWN_VOICES = setOf("Kore", "Puck", "Charon", "Fenrir", "Aoede", "Zephyr", "Leda", "Orus")
     }
 }
 
-// -- Deepgram（ASR /v1/listen + TTS /v1/speak）、Token 头 ------------------------
+// ---- ElevenLabs：REST，条目 id 即 voice_id --------------------------------------
 
-class DeepgramVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class ElevenLabsVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    companion object {
-        private const val DEFAULT_ASR_MODEL = "nova-2"
-        private const val DEFAULT_TTS_MODEL = "aura-asteria-en"
-    }
-
-    private fun dgBase(): String {
-        var base = effectiveBaseURL()
-        if (!base.contains("/v1")) base += "/v1"
-        return base
-    }
+    override val offers get() = TTS_ONLY
 
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val model = request.model?.takeIf { it.isNotEmpty() } ?: DEFAULT_TTS_MODEL
-        val req = Request.Builder()
-            .url("${dgBase()}/speak?model=$model")
-            .post(
-                JSONObject().put("text", request.input).toString()
-                    .toRequestBody("application/json".toMediaType()),
-            )
-            .header("Authorization", "Token ${apiKey ?: ""}")
-            .build()
-        return executeRequest(req)
+        val voiceId = request.model?.takeIf(String::isNotEmpty)
+            ?: request.voice?.takeIf(String::isNotEmpty)
+            ?: "21m00Tcm4TlvDq8ikWAM"   // Rachel
+        return dispatch(
+            HttpCall(
+                url = v1Root() + "/text-to-speech/$voiceId",
+                headers = mapOf("xi-api-key" to apiKey.orEmpty(), "Accept" to "audio/mpeg"),
+                mediaType = "application/json",
+                payload = jsonOf(
+                    "text" to request.input,
+                    "model_id" to "eleven_multilingual_v2",
+                    "voice_settings" to jsonOf("stability" to 0.5, "similarity_boost" to 0.75),
+                ).toString().toByteArray(Charsets.UTF_8),
+            ),
+        )   // MP3 字节直通
     }
 
-    override fun buildAsrRequest(request: VoiceAsrRequest): Request {
-        val model = request.model?.takeIf { it.isNotEmpty() } ?: DEFAULT_ASR_MODEL
-        var qs = "model=$model&smart_format=true"
-        request.language?.takeIf { it.isNotEmpty() }?.let { qs += "&language=$it" }
-        return Request.Builder()
-            .url("${dgBase()}/listen?$qs")
-            .post(request.audioData.toRequestBody("audio/wav".toMediaType()))
-            .header("Authorization", "Token ${apiKey ?: ""}")
-            .build()
+    private fun v1Root(): String = base().takeIf { it.contains("/v1") } ?: base() + "/v1"
+}
+
+// ---- Deepgram：/v1/listen 与 /v1/speak，Token 头 --------------------------------
+
+class DeepgramVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
+
+    private fun tokenHeaders() = mapOf("Authorization" to "Token ${apiKey.orEmpty()}")
+    private fun v1Root(): String = base().takeIf { it.contains("/v1") } ?: base() + "/v1"
+
+    override suspend fun synthesize(request: VoiceTtsRequest): ByteArray = dispatch(
+        HttpCall(
+            url = v1Root() + "/speak?model=" + (request.model?.takeIf(String::isNotEmpty) ?: "aura-asteria-en"),
+            headers = tokenHeaders(),
+            mediaType = "application/json",
+            payload = jsonOf("text" to request.input).toString().toByteArray(Charsets.UTF_8),
+        ),
+    )
+
+    override fun asrCall(request: VoiceAsrRequest): HttpCall {
+        val query = buildString {
+            append("model=").append(request.model?.takeIf(String::isNotEmpty) ?: "nova-2")
+            append("&smart_format=true")
+            request.language?.takeIf(String::isNotEmpty)?.let { append("&language=").append(it) }
+        }
+        return HttpCall(
+            url = v1Root() + "/listen?$query",
+            headers = tokenHeaders(),
+            body = request.audioData.toRequestBody("audio/wav".toMediaType()),
+        )
     }
 
-    override fun parseAsrResponse(data: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
-        val transcript = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-            ?.optJSONObject("results")
-            ?.optJSONArray("channels")
-            ?.optJSONObject(0)
-            ?.optJSONArray("alternatives")
-            ?.optJSONObject(0)
+    override fun parseAsr(payload: ByteArray, request: VoiceAsrRequest): VoiceAsrResponse {
+        fun chain(o: JSONObject?) = o?.optJSONObject("results")?.optJSONArray("channels")
+            ?.optJSONObject(0)?.optJSONArray("alternatives")?.optJSONObject(0)
+        val transcript = chain(runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull())
             ?.optString("transcript")
             ?: throw VoiceClientException.Parse("Unexpected Deepgram ASR response")
         return VoiceAsrResponse(text = transcript, language = request.language)
     }
 }
 
-// -- Azure TTS（REST、Ocp-Apim-Subscription-Key 鉴权） ---------------------------
+// ---- Azure：SSML 体 + 订阅回头 --------------------------------------------------
 
-class AzureTtsVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class AzureTtsVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    override val supportsAsr: Boolean get() = false
+    override val offers get() = TTS_ONLY
     override fun defaultTtsModel() = "azure-tts"
     override fun defaultTtsVoice() = "zh-CN-XiaoxiaoNeural"
 
-    override fun buildTtsRequest(request: VoiceTtsRequest): Request {
-        val url = composedUrlString("/cognitiveservices/v1")
+    override fun ttsCall(request: VoiceTtsRequest): HttpCall {
         val voice = request.voice ?: defaultTtsVoice()
-        val parts = voice.split("-")
-        val lang = if (parts.size >= 2) "${parts[0]}-${parts[1]}" else "en-US"
-        val escaped = request.input
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        val ssml = "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"$lang\">" +
+        return HttpCall(
+            url = join("/cognitiveservices/v1"),
+            headers = buildMap {
+                put("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-mono-mp3")
+                apiKey?.takeIf(String::isNotEmpty)?.let { put("Ocp-Apim-Subscription-Key", it) }
+            },
+            mediaType = "application/ssml+xml",
+            payload = ssml(voice, request.input).toByteArray(Charsets.UTF_8),
+        )
+    }
+
+    /** 语言位取音色名前两段（zh-CN-Xiaoxiao → zh-CN，缺段回 en-US）；正文做 XML 转义。 */
+    private fun ssml(voice: String, text: String): String {
+        val locale = voice.split('-').run { if (size >= 2) "${this[0]}-${this[1]}" else "en-US" }
+        val escaped = listOf("&" to "&amp;", "<" to "&lt;", ">" to "&gt;")
+            .fold(text) { acc, (raw, safe) -> acc.replace(raw, safe) }
+        return "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"$locale\">" +
             "<voice name=\"$voice\">$escaped</voice></speak>"
-        val builder = Request.Builder()
-            .url(url)
-            .post(ssml.toRequestBody("application/ssml+xml".toMediaType()))
-            .header("X-Microsoft-OutputFormat", "audio-24khz-48kbitrate-mono-mp3")
-        apiKey?.takeIf { it.isNotEmpty() }?.let { builder.header("Ocp-Apim-Subscription-Key", it) }
-        return builder.build()
     }
 }
 
-// -- 小米 MiMo（ASR + TTS 都走 /v1/chat/completions） ----------------------------
+// ---- MiMo：两端点都骑在 chat/completions 上 ------------------------------------
 
-class MimoVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class MimoVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    companion object {
-        private val API_MODELS = setOf("mimo-v2.5-tts", "mimo-v2.5-tts-voicedesign", "mimo-v2.5-tts-voiceclone")
-    }
+    private val apiTtsModels = setOf("mimo-v2.5-tts", "mimo-v2.5-tts-voicedesign", "mimo-v2.5-tts-voiceclone")
 
     override fun defaultAsrModel() = "mimo-v2.5-asr"
     override fun defaultTtsModel() = "mimo-v2.5-tts"
     override fun defaultTtsVoice() = "mimo_default"
 
-    // ASR ---------------------------------------------------------------------
-
+    /** 转写：input_audio 单部件 + asr_options.language；音频直接当对话输入。 */
     override suspend fun transcribe(request: VoiceAsrRequest): VoiceAsrResponse {
-        val url = composedUrlString("/v1/chat/completions")
-        val audioBase64 = encodeBase64(request.audioData)
-        val lang = iso6391(request.language) ?: "auto"
-        val body = JSONObject().apply {
-            put("model", request.model ?: defaultAsrModel())
-            put(
-                "messages",
-                JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put(
+        val payload = dispatch(
+            HttpCall(
+                url = join("/v1/chat/completions"),
+                headers = authHeaders(),
+                mediaType = "application/json",
+                payload = jsonOf(
+                    "model" to (request.model ?: defaultAsrModel()),
+                    "messages" to JSONArray().put(
+                        JSONObject().put("role", "user").put(
                             "content",
                             JSONArray().put(
-                                JSONObject()
-                                    .put("type", "input_audio")
-                                    .put(
-                                        "input_audio",
-                                        JSONObject().put("data", audioBase64).put("format", "wav"),
+                                jsonOf(
+                                    "type" to "input_audio",
+                                    "input_audio" to jsonOf(
+                                        "data" to encodeBase64(request.audioData),
+                                        "format" to "wav",
                                     ),
+                                ),
                             ),
                         ),
-                ),
-            )
-            put("asr_options", JSONObject().put("language", lang))
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
-
-        val data = executeRequest(builder.build())
-        val json = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-        val text = json?.optJSONArray("choices")
-            ?.optJSONObject(0)
-            ?.optJSONObject("message")
-            ?.optString("content")
+                    ),
+                    "asr_options" to jsonOf("language" to (iso6391(request.language) ?: "auto")),
+                ).toString().toByteArray(Charsets.UTF_8),
+            ),
+        )
+        val reply = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
+        val heard = reply?.optJSONArray("choices")?.optJSONObject(0)
+            ?.optJSONObject("message")?.optString("content")
             ?: throw VoiceClientException.Parse("Unexpected MiMo ASR response format")
-        val seconds = json.optJSONObject("usage")?.optDouble("seconds")?.takeIf { !it.isNaN() }
-        return VoiceAsrResponse(text = text, durationSeconds = seconds)
+        val seconds = reply.optJSONObject("usage")?.optDouble("seconds")?.takeIf { !it.isNaN() }
+        return VoiceAsrResponse(text = heard, durationSeconds = seconds)
     }
 
-    // TTS ---------------------------------------------------------------------
-
+    /** 合成：待说文本放 assistant 轮、空 user 轮开路；音频配置带格式与音色。 */
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
-        val url = composedUrlString("/v1/chat/completions")
-        val rawModel = request.model ?: defaultTtsModel()
-        val apiModel: String
-        val voiceId: String?
-        if (rawModel in API_MODELS) {
-            apiModel = rawModel
-            voiceId = request.voice
-        } else {
-            apiModel = "mimo-v2.5-tts"
-            voiceId = rawModel
-        }
-        val audioParams = JSONObject().put("format", "wav")
-        if (apiModel != "mimo-v2.5-tts-voicedesign" && voiceId != null) {
-            audioParams.put("voice", voiceId)
-        }
-        val body = JSONObject().apply {
-            put("model", apiModel)
-            put(
-                "messages",
-                JSONArray()
-                    .put(JSONObject().put("role", "user").put("content", ""))
-                    .put(JSONObject().put("role", "assistant").put("content", request.input)),
-            )
-            put("audio", audioParams)
-        }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
+        val (apiModel, voice) = resolveTtsTarget(request)
+        val payload = dispatch(
+            HttpCall(
+                url = join("/v1/chat/completions"),
+                headers = authHeaders(),
+                mediaType = "application/json",
+                payload = jsonOf(
+                    "model" to apiModel,
+                    "messages" to JSONArray()
+                        .put(JSONObject().put("role", "user").put("content", ""))
+                        .put(JSONObject().put("role", "assistant").put("content", request.input)),
+                    "audio" to jsonOf(
+                        "format" to "wav",
+                        "voice" to voice?.takeIf { apiModel != "mimo-v2.5-tts-voicedesign" },
+                    ),
+                ).toString().toByteArray(Charsets.UTF_8),
+            ),
+        )
+        val encoded = runCatching { JSONObject(String(payload, Charsets.UTF_8)) }.getOrNull()
+            ?.optJSONArray("choices")?.optJSONObject(0)
+            ?.optJSONObject("message")?.optJSONObject("audio")
+            ?.optString("data")?.takeIf(String::isNotEmpty)
+            ?: throw VoiceClientException.Parse("Unexpected MiMo TTS response format")
+        return runCatching { decodeBase64OrThrow(encoded) }.getOrNull()
+            ?: throw VoiceClientException.Parse("Unexpected MiMo TTS response format")
+    }
 
-        val data = executeRequest(builder.build())
-        val b64 = runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-            ?.optJSONArray("choices")
-            ?.optJSONObject(0)
-            ?.optJSONObject("message")
-            ?.optJSONObject("audio")
-            ?.optString("data")
-            ?.takeIf { it.isNotEmpty() }
-            ?: throw VoiceClientException.Parse("Unexpected MiMo TTS response format")
-        return runCatching { decodeBase64OrThrow(b64) }.getOrNull()
-            ?: throw VoiceClientException.Parse("Unexpected MiMo TTS response format")
+    /** 目录条目既可能是 API 机型也可能是音色名：在 API 机型集内是机型，否则当音色。 */
+    private fun resolveTtsTarget(request: VoiceTtsRequest): Pair<String, String?> {
+        val entry = request.model ?: defaultTtsModel()
+        return if (entry in apiTtsModels) entry to request.voice else "mimo-v2.5-tts" to entry
     }
 }
 
-// -- OpenRouter（TTS + ASR 都走 /v1/chat/completions） ---------------------------
+// ---- OpenRouter：两端点都骑在 chat/completions 上（音频模态）--------------------
 
 /**
- * OpenRouter 语音（对齐 iOS 同名厂商件：TTS 1946b0b2 / ASR 1f23fd02）。
- *
- * OpenRouter 根本没有 OpenAI 的专用 TTS 端点：POST /api/v1/audio/speech 对一切
- * 机型 id（含 openai/tts-1）都回 {"error":{"message":"Model <id> does not
- * exist","code":400}}。那个 400——端点不存在而非机型缺失——就是用户在每个
- * OpenRouter 语音条目上看到的。
- *
- * ASR 拆在两个服务「不相交机型集」的端点上：
- *   - /v1/audio/transcriptions 只收专用 ASR 机型（openai/whisper-1 可用；聊天
- *     机型发过去同样 400）；
- *   - /v1/chat/completions 配 input_audio 部件收音频聊天机型（gemini-3.6-
- *     flash、gpt-audio-mini），且明确拒绝 whisper（"is a transcription model
- *     and cannot be used with the chat/completions endpoint"）。
- *
- * 两半都无法只按 provider 类型路由——拆分按机型，OpenRouter 自家的错误文本
- * 就是规范。
+ * OpenRouter 没有独立的语音端点：
+ *  - 合成只有 chat-audio 机型能出声（modalities+audio+stream 三硬约束，流式下
+ *    format 只收 pcm16）；其余机型沿用 OpenAI 语音端点形状（在 OpenRouter 上
+ *    必 400，但那是这些条目的既有状态，不在此改判）；
+ *  - 转写拆在两个不相交机型集的端点：专用转写机型（whisper/transcribe/
+ *    deepgram 厂商限定）走 REST，其余默认当音频 chat 机型——新机型无需加清单。
  */
-class OpenRouterVoiceClient(providerId: String, baseURL: String, apiKey: String?) :
-    VoiceClient(providerId, baseURL, apiKey) {
+class OpenRouterVoiceClient(id: String, base: String, key: String?) : VoiceClient(id, base, key) {
 
-    companion object {
-        /**
-         * OpenAI 音频预览机型发 24 kHz 单声道 PCM16，OpenRouter 原样代理该流。
-         * 没有任何响应字段宣告采样率，在此固定——错了就是错音高，一耳朵可辨。
-         */
-        private const val PCM_SAMPLE_RATE = 24000
+    /** OpenAI 音频预览机型恒发 24 kHz PCM16，无字段宣告——错采样率=错音高。 */
+    private val pcmRate = 24000
 
-        /**
-         * OpenAI 音频预览机型接受的音色集（其 400 原文返回 "Supported values
-         * are: …"）。仅用于「认出」合法名，从不用于挑选——回落是默认音色。
-         */
-        private val KNOWN_VOICES = setOf(
-            "alloy", "echo", "fable", "onyx", "nova", "shimmer", "coral",
-            "verse", "ballad", "ash", "sage", "marin", "cedar",
-        )
+    /** 官方 400 原文给出的音色集；仅用于认名，回落默认音色。 */
+    private val knownVoices = setOf(
+        "alloy", "echo", "fable", "onyx", "nova", "shimmer", "coral",
+        "verse", "ballad", "ash", "sage", "marin", "cedar",
+    )
 
-        /**
-         * 属于 /audio/transcriptions 端点的 id。刻意窄且基于名字：误报会把一个
-         * 能用的聊天机型送进必 400 的端点。
-         *
-         * 每个模式都经活端点探测而非猜测——OpenRouter 不为它们发布目录：GET
-         * /api/v1/models 只列聊天机型、不含任何 ASR id，而 openai/whisper-1 转写
-         * 正常。已确认可用：openai/whisper-1、openai/gpt-4o-transcribe、
-         * openai/gpt-4o-mini-transcribe、deepgram/nova-3。
-         *
-         * Deepgram 按厂商限定匹配、绝不按裸引擎名：裸 "nova-2"/"nova-3" 还会命
-         * 中目录里的聊天机型 amazon/nova-2-lite-v1，把它误路由进正是本类要消除
-         * 的那个 400。
-         */
-        fun isDedicatedTranscriptionModel(modelId: String): Boolean {
-            val id = modelId.lowercase(Locale.ROOT)
-            return id.contains("whisper") ||
-                id.contains("transcribe") || // gpt-4o[-mini]-transcribe
-                id.contains("deepgram/")
-        }
-    }
-
-    // -- ASR -------------------------------------------------------------------
-
-    /**
-     * 把基类的规则反过来，反转让它泛化。基类对一小撮 chat-audio 词干做允许
-     * 清单——那在兜底端点收任意第三方 ASR id 时是对的。这里兜底端点只收「专用
-     * 转写机型」——可识别的小家族——默认翻转：不像转写机型的都按聊天机型处理。
-     * gemini、gpt-audio、qwen-omni 及未来的音频聊天机型由此覆盖，无需第二张
-     * 允许清单。
-     */
-    override fun usesChatBasedAsr(model: LLMModel): Boolean =
-        !isDedicatedTranscriptionModel(model.id)
-
-    // -- TTS -------------------------------------------------------------------
-
-    /**
-     * 只有 chat-audio 机型能在此产音频。
-     *
-     * 刻意不扩到 fish-audio 之流：它们是否经此协议在 OpenRouter 出音频未验证，
-     * 给它们发 chat-audio 请求只是换一个 400。在有人确认前它们保留继承路径。
-     */
-    private fun usesChatAudioOutput(modelId: String): Boolean {
+    /** 转写机型的判定（方向与基座相反：默认 chat，认得出转写词干的才走 REST）。 */
+    internal fun isDedicatedTranscriptionModel(modelId: String): Boolean {
         val id = modelId.lowercase(Locale.ROOT)
-        if (!id.contains("audio")) return false
-        return id.contains("gpt") || id.contains("openai")
+        return "whisper" in id || "transcribe" in id || id.contains("deepgram/")
     }
 
-    /**
-     * 选 audio.voice 的值。
-     *
-     * 调用方对 [VoiceTtsRequest.voice] 的含义不统一：对「目录条目即音色」的厂商
-     * （ElevenLabs voice_id、Doubao speaker）条目 id 直通，Quick Test 沿用该约定。
-     * chat-audio 的机型与音色是两个轴，该约定到达时就成了
-     * voice: "openai/gpt-audio"，上游回 "Invalid value: 'openai/gpt-audio'.
-     * Supported values are: 'alloy', …"——藏在第一个 400 后面的第二个 400。
-     *
-     * 所以：认得出的音色才透传，否则回落默认而非转发必败值。OpenAI 未来加的
-     * 真音色会降级到默认而不是报错——对 TTS 是更安全的方向。
-     */
-    private fun resolvedVoice(requested: String?, modelId: String): String {
-        val want = requested?.takeIf { it.isNotEmpty() } ?: return defaultTtsVoice()
-        val lowered = want.lowercase(Locale.ROOT)
-        if (KNOWN_VOICES.contains(lowered)) return lowered
-        AppLogger.info(
-            TAG,
-            "OpenRouter chat-audio: ignoring non-voice '$want' for $modelId, using ${defaultTtsVoice()}",
-        )
-        return defaultTtsVoice()
-    }
+    override fun usesChatBasedAsr(model: LLMModel): Boolean = !isDedicatedTranscriptionModel(model.id)
 
-    /**
-     * 唯一出音频的路由是 POST /v1/chat/completions 的音频预览形状，三条硬约束
-     * （每条都经活 API 验证）：
-     *   - modalities: ["text","audio"] + audio: {voice, format}；
-     *   - stream: true 是强制的——否则 "Audio output requires stream: true"；
-     *   - 流式下 audio.format 只收 pcm16——wav 回 "does not support 'wav' when
-     *     stream=true"。
-     *
-     * SSE 体是普通 chat-completions 流，每 delta 多两个字段：audio.data（base64
-     * PCM16 块）与 audio.transcript。PCM 收齐后包进 WAV 容器——调用方把它喂给
-     * MediaPlayer/ExoPlayer，无头 PCM 打不开。
-     */
     override suspend fun synthesize(request: VoiceTtsRequest): ByteArray {
         val modelId = request.model ?: defaultTtsModel()
-        if (!usesChatAudioOutput(modelId)) {
-            // 非已知 chat-audio 机型——保持原行为而非瞎猜。（该路径在 OpenRouter
-            // 上仍 400，但那是这些 id 的既有状态而非回归；若存在可用中继托管的
-            // TTS 机型，也保住它能用。）
-            return super.synthesize(request)
-        }
+        if (!isChatAudioModel(modelId)) return super.synthesize(request)
 
-        val url = composedUrlString("/v1/chat/completions")
-        val body = JSONObject().apply {
-            put("model", modelId)
-            put("modalities", JSONArray().put("text").put("audio"))
-            put(
-                "audio",
-                JSONObject()
-                    .put("voice", resolvedVoice(request.voice, modelId))
-                    // 流式是强制的，而流式下只收 pcm16——所以这是固定值不是选择。
-                    .put("format", "pcm16"),
-            )
-            put("stream", true)
-            put(
-                "messages",
-                JSONArray().put(
-                    JSONObject().put("role", "user").put("content", request.input),
-                ),
+        val pcm = collectStreamedPcm(
+            HttpCall(
+                url = join("/v1/chat/completions"),
+                headers = authHeaders(),
+                mediaType = "application/json",
+                payload = jsonOf(
+                    "model" to modelId,
+                    "modalities" to JSONArray().put("text").put("audio"),
+                    "audio" to jsonOf(
+                        "voice" to chatVoice(request.voice, modelId),
+                        "format" to "pcm16",   // 流式强制，且流式下只收 pcm16
+                    ),
+                    "stream" to true,
+                    "messages" to JSONArray().put(
+                        JSONObject().put("role", "user").put("content", request.input),
+                    ),
+                ).toString().toByteArray(Charsets.UTF_8),
+            ),
+        )
+        if (pcm.isEmpty()) {
+            throw VoiceClientException.Parse(
+                "OpenRouter returned no audio data for $modelId" +
+                    lastTranscript.takeIf(String::isNotBlank)?.let { " (transcript: ${it.take(80)})" }.orEmpty(),
             )
         }
-        val builder = Request.Builder()
-            .url(url)
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-        applyAuth(builder)
+        AppLogger.info("VoiceClient", "openrouter chat-audio ok model=$modelId pcm=${pcm.size}B")
+        return wrapPcm16InWav(pcm, pcmRate)
+    }
 
+    /** 机型与音色是两个轴；不认得的「音色」值是机型名混进来的，回落默认。 */
+    private fun chatVoice(requested: String?, modelId: String): String {
+        val wanted = requested?.takeIf(String::isNotEmpty)?.lowercase(Locale.ROOT) ?: return defaultTtsVoice()
+        return knownVoices.firstOrNull { it == wanted } ?: defaultTtsVoice().also {
+            AppLogger.info("VoiceClient", "openrouter: dropping non-voice '$requested' for $modelId, using $it")
+        }
+    }
+
+    private fun isChatAudioModel(modelId: String): Boolean {
+        val id = modelId.lowercase(Locale.ROOT)
+        return "audio" in id && ("gpt" in id || "openai" in id)
+    }
+
+    private var lastTranscript: String = ""
+
+    /** SSE 流收集：逐 data: 行取 delta.audio.data 拼_pcm；401/403 先行分类。 */
+    private suspend fun collectStreamedPcm(call: HttpCall): ByteArray {
+        lastTranscript = ""
         val pcm = ByteArrayOutputStream()
         val transcript = StringBuilder()
         withContext(Dispatchers.IO) {
-            httpClient.newCall(builder.build()).execute().use { response ->
+            httpClient.newCall(
+                Request.Builder().url(call.url)
+                    .also { builder -> call.headers.forEach(builder::header) }
+                    .post(call.payload!!.toRequestBody(call.mediaType!!.toMediaType()))
+                    .build(),
+            ).execute().use { response ->
                 if (!response.isSuccessful) {
-                    // 把体读干让服务端消息进错误——一个不透明的 "HTTP 400" 正是
-                    // 当初难定位的原因。
-                    val errBody = response.body?.bytes()
+                    val raw = response.body?.bytes()
                     if (response.code == 401 || response.code == 403) {
-                        AppLogger.error(TAG, "OpenRouter voice auth failed: HTTP ${response.code}")
+                        AppLogger.error("VoiceClient", "openrouter voice auth rejected: HTTP ${response.code}")
                         throw VoiceClientException.Auth()
                     }
-                    AppLogger.error(
-                        TAG,
-                        "OpenRouter chat-audio failed: HTTP ${response.code} " +
-                            "body=${errBody?.toString(Charsets.UTF_8).orEmpty()}",
-                    )
-                    throw VoiceClientException.Http(response.code, errBody)
+                    AppLogger.error("VoiceClient", "openrouter chat-audio rejected: HTTP ${response.code} body=${raw?.toString(Charsets.UTF_8).orEmpty()}")
+                    throw VoiceClientException.Http(response.code, raw)
                 }
                 val source = response.body?.source()
                     ?: throw VoiceClientException.Parse("OpenRouter returned an empty body")
-                while (true) {
-                    val line = source.readUtf8Line() ?: break
-                    if (!line.startsWith("data:")) continue
-                    val payload = line.removePrefix("data:").trim()
-                    if (payload == "[DONE]") break
-                    val obj = runCatching { JSONObject(payload) }.getOrNull() ?: continue
-                    val choices = obj.optJSONArray("choices") ?: continue
-                    for (i in 0 until choices.length()) {
-                        val audio = choices.optJSONObject(i)
-                            ?.optJSONObject("delta")
-                            ?.optJSONObject("audio")
-                            ?: continue
-                        audio.optString("data").takeIf { it.isNotEmpty() }?.let { b64 ->
-                            runCatching { decodeBase64OrThrow(b64) }
-                                .getOrNull()?.let { pcm.write(it) }
-                        }
-                        audio.optString("transcript").takeIf { it.isNotEmpty() }
-                            ?.let { transcript.append(it) }
+                generateSequence(source::readUtf8Line).forEach { line ->
+                    if (!line.startsWith("data:")) return@forEach
+                    when (val frame = line.removePrefix("data:").trim()) {
+                        "[DONE]" -> return@use
+                        else -> runCatching { JSONObject(frame) }.getOrNull()
+                            ?.optJSONArray("choices")?.let { choices ->
+                                for (i in 0 until choices.length()) {
+                                    val audio = choices.optJSONObject(i)?.optJSONObject("delta")
+                                        ?.optJSONObject("audio") ?: continue
+                                    audio.optString("data").takeIf(String::isNotEmpty)?.let { encoded ->
+                                        runCatching { decodeBase64OrThrow(encoded) }.getOrNull()?.let(pcm::write)
+                                    }
+                                    audio.optString("transcript").takeIf(String::isNotEmpty)?.let(transcript::append)
+                                }
+                            }
                     }
                 }
             }
         }
-
-        val pcmBytes = pcm.toByteArray()
-        if (pcmBytes.isEmpty()) {
-            throw VoiceClientException.Parse(
-                "OpenRouter returned no audio data for $modelId" +
-                    if (transcript.isEmpty()) "" else " (transcript: ${transcript.take(80)})",
-            )
-        }
-        AppLogger.info(
-            TAG,
-            "OpenRouter chat-audio ok model=$modelId pcmBytes=${pcmBytes.size} " +
-                "transcriptChars=${transcript.length}",
-        )
-        return wrapPcm16InWav(pcmBytes, PCM_SAMPLE_RATE)
+        lastTranscript = transcript.toString()
+        return pcm.toByteArray()
     }
 }
