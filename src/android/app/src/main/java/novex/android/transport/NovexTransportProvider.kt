@@ -15,10 +15,12 @@ import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.MinisUserAgent
 import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.provider.openai.openCodeSunsetFriendlyError
 import com.openminis.app.provider.thinking.ThinkingResolveContext
 import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
@@ -142,8 +144,13 @@ class NovexTransportProvider(
             val parameters = definition.toOpenAIJson().getJSONObject("function").getJSONObject("parameters")
             ToolDefinition(definition.name, definition.description, parameters.toString())
         }
+        val extras = thinkingParameters(maxTokens, thinkingLevel) ?: JSONObject()
+        // token 上限键按主机选择（贴上游 OpenAIProvider 口径）：OpenRouter 主机收
+        // max_tokens（wire() 默认键），其余一切端点收 max_completion_tokens——OpenAI
+        // 对 o 系/gpt-5 拒收 max_tokens（整线 400），中转前端同受此约束。
+        if (!isOpenRouterHost) extras.put("max_completion_tokens", maxTokens)
         return StreamRequest(
-            TextRequest(model.id, wire, maxTokens.toLong(), toolDefs, thinkingParameters(maxTokens, thinkingLevel)),
+            TextRequest(model.id, wire, maxTokens.toLong(), toolDefs, extras.takeIf { it.length() > 0 }),
             includeUsage = !isOpenRouterHost,
         )
     }
@@ -368,7 +375,12 @@ class NovexTransportProvider(
                 .put("toolCount", tools.size)
                 .put("maxOutputTokens", maxTokens),
         )
-        val bridge = StreamBridge { chunk -> trySend(chunk) }
+        // 背压：ChatCompletionCall.stream 的契约是 onChunk 在读线程上就地回调、
+        // 慢消费者自然放慢读取。桥到 Flow 时必须以阻塞送进来维持该契约——
+        // trySend 在 callbackFlow 默认 64 缓冲满时静默丢块（丢 Text=缺字、
+        // 丢 ToolCallComplete=工具挂起、丢 Finished=误报中断），trySendBlocking
+        // 让生产者（IO 线程）阻塞等消费者腾位，语义与直连回调一致。
+        val bridge = StreamBridge { chunk -> trySendBlocking(chunk) }
         launch(Dispatchers.IO) {
             val outcome = try {
                 call.stream(request, bridge::accept)
@@ -448,16 +460,35 @@ class NovexTransportProvider(
         return LLMResponse(text.toString(), stopReason, usage)
     }
 
-    /** 失败块 → 上游错误分类（401/403 鉴权、429 限流、5xx 瞬态、其余供应商错误）。 */
+    /**
+     * 失败块 → 上游错误分类，两条来源各自对齐：
+     *  - HTTP 非 200（category 非空）：401/403 鉴权、429 限流、5xx 瞬态、其余供应商错误；
+     *  - 流中 error 对象（category 为空、code 为字符串）：按上游 mapHttpError 的数字
+     *    状态矩阵分类——401/403 鉴权、429 限流、500/502/503/504/529 瞬态（503 带
+     *    no_available_providers / model_not_found 归供应商错误以触发组回退）、其余及
+     *    非数字 code（同上游 optInt 默认 0）归供应商错误。
+     *  - 401/403 两路都过 openCode 免费档日落友好文案（与上游同判别函数）。
+     */
     internal fun errorOf(failure: StreamChunk.Failure): LLMError {
         val detail = buildString {
             append(failure.message)
             failure.code?.takeIf { it.isNotBlank() }?.let { append(" [code=").append(it).append(']') }
             failure.retryAfter?.takeIf { it.isNotBlank() }?.let { append(" [retry-after=").append(it).append(']') }
         }
-        val status = failure.status
+        val status = failure.status ?: failure.code?.toIntOrNull()
+        if (failure.category == null) {
+            return when {
+                status == 401 || status == 403 -> openCodeSunsetFriendlyError(failure.message) ?: LLMError.InvalidApiKey(detail)
+                status == 429 -> LLMError.RateLimited(detail)
+                status in TRANSIENT_HTTP_STATUSES ->
+                    if (status == 503 && PERMANENT_503_MARKERS.any { failure.message.contains(it) })
+                        LLMError.ProviderError(detail)
+                    else LLMError.TransientError(detail)
+                else -> LLMError.ProviderError(detail)
+            }
+        }
         return when (failure.category) {
-            "authentication" -> LLMError.InvalidApiKey(detail)
+            "authentication" -> openCodeSunsetFriendlyError(failure.message) ?: LLMError.InvalidApiKey(detail)
             "rate_limit" -> LLMError.RateLimited(detail)
             "service" -> if (status != null && status in TRANSIENT_HTTP_STATUSES) LLMError.TransientError(detail)
             else LLMError.ProviderError(detail)
@@ -476,6 +507,9 @@ class NovexTransportProvider(
         val ACCEPTED_IMAGE_TYPES = setOf("image/png", "image/jpeg", "image/webp", "image/gif")
 
         private val TRANSIENT_HTTP_STATUSES = setOf(500, 502, 503, 504, 529)
+
+        /** 503 携带这些标记时是永久性失败（触发组回退而非原地重试），与上游同款。 */
+        private val PERMANENT_503_MARKERS = listOf("no_available_providers", "model_not_found")
 
         /** 容量闸门在此层直通：窗口/输入计量决策归调用方（ChatViewModel 动态预算），传输层不重复设卡。 */
         private val BYPASS_CAPACITY = ModelCapacity(1L shl 40)

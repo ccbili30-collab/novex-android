@@ -92,10 +92,20 @@ class ChatCompletionAdapterSurfaceTest {
         assertTrue(encoded.getBoolean("stream"))
     }
 
-    @Test fun `附加参数触碰契约键即拒绝`() {
+    @Test fun `附加参数顶替 token 上限键且两键互斥`() {
+        // max_completion_tokens 顶替默认 max_tokens（不同兼容网关收键不同）。
+        val relay=TextRequest("m",listOf(WireMessage("user","问")),16,extraParameters=JSONObject().put("max_completion_tokens",32)).wire()
+        assertEquals(32,relay.getInt("max_completion_tokens"))
+        assertFalse(relay.has("max_tokens"))
+        // 显式 max_tokens 同样顶替默认值。
+        val explicit=TextRequest("m",listOf(WireMessage("user","问")),16,extraParameters=JSONObject().put("max_tokens",48)).wire()
+        assertEquals(48,explicit.getInt("max_tokens"))
+        assertFalse(explicit.has("max_completion_tokens"))
+        // 两键同给即拒绝（同体双键语义不明）。
         assertThrows(IllegalArgumentException::class.java) {
-            TextRequest("m",listOf(WireMessage("user","问")),16,extraParameters=JSONObject().put("max_tokens",999))
+            TextRequest("m",listOf(WireMessage("user","问")),16,extraParameters=JSONObject().put("max_tokens",1).put("max_completion_tokens",2))
         }
+        // 其余契约键仍然全量把守。
         assertThrows(IllegalArgumentException::class.java) {
             TextRequest("m",listOf(WireMessage("user","问")),16,extraParameters=JSONObject().put("stream",false))
         }

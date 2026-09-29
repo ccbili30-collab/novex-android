@@ -65,13 +65,16 @@ data class ToolDefinition(val name:String,val description:String,val parameters:
     internal fun encode()=JSONObject().put("type","function").put("function",JSONObject().put("name",name).put("description",description).put("parameters",JSONObject(parameters)))
 }
 data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList(),
-                       /** 附加顶层参数（如 reasoning_effort / thinking / enable_thinking），合并进请求体。不得触碰本层契约键。 */
+                       /** 附加顶层参数（如 reasoning_effort / thinking / max_completion_tokens），合并进请求体。
+                        * 不得触碰本层契约键；token 上限键是唯一例外——调用方可用 max_tokens 或
+                        * max_completion_tokens 之一顶替默认键（不同兼容网关收键不同），两键同给即拒绝。 */
                        val extraParameters: JSONObject? = null) {
     init {
         require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0)
         require(tools.map { it.name }.distinct().size==tools.size)
         extraParameters?.let { extra ->
             require(RESERVED_TOP_LEVEL_KEYS.none(extra::has)) { "附加参数不得覆盖请求体契约键" }
+            require(!(extra.has("max_tokens") && extra.has("max_completion_tokens"))) { "max_tokens 与 max_completion_tokens 互斥，只能顶替其一" }
         }
     }
     fun encode(): String = wire().put("stream",false).toString()
@@ -88,15 +91,19 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
             }
         }
         require(pending.isEmpty()){"工具调用结果尚未齐全，不能继续请求"}
-        return JSONObject().put("model",model).put("max_tokens",outputReserve)
+        // 调用方经附加参数自带 token 上限键（max_tokens / max_completion_tokens）时，
+        // 默认 max_tokens 退位——由附加键顶替，避免同体双键。
+        val carriesLimitKey = extraParameters?.let { it.has("max_tokens") || it.has("max_completion_tokens") } == true
+        return JSONObject().put("model",model).apply { if(!carriesLimitKey) put("max_tokens",outputReserve) }
             .put("messages",JSONArray(messages.map { it.encode() })).also {
                 if(tools.isNotEmpty())it.put("tools",JSONArray(tools.map { tool -> tool.encode() }))
                 extraParameters?.let { extra -> extra.keys().forEach { key -> it.put(key,extra.get(key)) } }
             }
     }
     companion object {
-        /** 本层自己负责装配的键；附加参数与之重叠即拒绝，防止调用方改写传输契约。 */
-        internal val RESERVED_TOP_LEVEL_KEYS = setOf("model","messages","tools","max_tokens","stream","stream_options")
+        /** 本层自己负责装配的键；附加参数与之重叠即拒绝，防止调用方改写传输契约。
+         *  token 上限两键不在其中（允许顶替默认 max_tokens），由 init 的互斥校验把守。 */
+        internal val RESERVED_TOP_LEVEL_KEYS = setOf("model","messages","tools","stream","stream_options")
     }
 }
 data class PendingTool(val id: String,val name: String,val arguments: String)

@@ -10,6 +10,7 @@ import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -105,7 +106,10 @@ class NovexTransportProviderTest {
         )
         val body = JSONObject(request.encode())
         assertEquals("test-model", body.getString("model"))
-        assertEquals(777, body.getInt("max_tokens"))
+        // 非 OpenRouter 主机走上游口径：max_completion_tokens，且不带默认 max_tokens
+        // （OpenAI 对 o 系/gpt-5 拒收 max_tokens）。
+        assertEquals(777, body.getInt("max_completion_tokens"))
+        assertFalse(body.has("max_tokens"))
         assertTrue(body.getBoolean("stream"))
         assertTrue(body.getJSONObject("stream_options").getBoolean("include_usage"))
         val messages = body.getJSONArray("messages")
@@ -302,6 +306,30 @@ class NovexTransportProviderTest {
     }
 
     @Test
+    fun `OpenRouter 主机收 max_tokens 其余主机收 max_completion_tokens`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val messages = listOf(LLMMessage(LLMMessage.Role.USER, "问"))
+
+        // OpenRouter：默认键 max_tokens（网关收 max_completion_tokens 会拒）。
+        val router = JSONObject(
+            provider(call = call, basePath = "https://openrouter.ai/api/v1").buildStreamRequest(
+                messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals(64, router.getInt("max_tokens"))
+        assertFalse(router.has("max_completion_tokens"))
+
+        // 其余主机（含中转）：上游口径的 max_completion_tokens，不带 max_tokens。
+        val relay = JSONObject(
+            provider(call = call, basePath = "https://relay.example.com/v1").buildStreamRequest(
+                messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals(64, relay.getInt("max_completion_tokens"))
+        assertFalse(relay.has("max_tokens"))
+    }
+
+    @Test
     fun `音频部件映射为 input_audio 块`() {
         val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
         val body = JSONObject(
@@ -315,6 +343,53 @@ class NovexTransportProviderTest {
         assertEquals("input_audio", audio.getString("type"))
         assertEquals("wav", audio.getJSONObject("input_audio").getString("format"))
         assertEquals("YXVkaW8=", audio.getJSONObject("input_audio").getString("data"))
+    }
+
+    @Test
+    fun `超长工具调用 id 确定性折叠且结果按折叠后 id 配对`() {
+        val longId = "call_" + "x".repeat(80) // 85 字符，超过 64 上限
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.ASSISTANT, content = "", contentParts = listOf(AgentContentPart.ToolUse(longId, "probe", JSONObject()))),
+            LLMMessage(LLMMessage.Role.USER, content = "", contentParts = listOf(AgentContentPart.ToolResult(longId, "probe", "结果"))),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(history, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        val messages = body.getJSONArray("messages")
+        val folded = messages.getJSONObject(0).getJSONArray("tool_calls").getJSONObject(0).getString("id")
+        assertTrue("折叠后 id 应不超过 64 字符，实际 ${folded.length}", folded.length <= 64)
+        assertTrue(folded.startsWith("call_"))
+        // 工具结果按折叠后的 id 配对，而非原始超长 id。
+        assertEquals(folded, messages.getJSONObject(1).getString("tool_call_id"))
+        assertEquals("结果", messages.getJSONObject(1).getString("content"))
+        // 确定性：同一历史两次装配得到同一折叠 id（SHA-256 摘要，无随机成分）。
+        val again = JSONObject(
+            provider(call = call).buildStreamRequest(history, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        assertEquals(folded, again.getJSONArray("messages").getJSONObject(0).getJSONArray("tool_calls").getJSONObject(0).getString("id"))
+    }
+
+    @Test
+    fun `配不上调用批次的孤儿工具结果被丢弃`() {
+        val history = listOf(
+            LLMMessage(
+                LLMMessage.Role.USER, content = "",
+                contentParts = listOf(
+                    AgentContentPart.ToolResult("ghost-id", "probe", "孤儿结果"),
+                    AgentContentPart.Text("正文"),
+                ),
+            ),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(history, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        // 孤儿 tool 块不发（发出去整单被网关 400），user 正文保留。
+        val messages = body.getJSONArray("messages")
+        assertEquals(1, messages.length())
+        assertEquals("user", messages.getJSONObject(0).getString("role"))
+        assertEquals("正文", messages.getJSONObject(0).getString("content"))
     }
 
     // ---------------------------------------------------------------------
@@ -432,6 +507,58 @@ class NovexTransportProviderTest {
         val call = ScriptedCall(emptyList(), StreamResult.TimedOut)
         val error = runCatching { stream(provider(call = call)) }.exceptionOrNull() as LLMError
         assertTrue(error is LLMError.NetworkError)
+    }
+
+    @Test
+    fun `慢消费者大量块零丢失且顺序保持（背压契约）`() = runBlocking {
+        // 生产快、消费慢：300 块远超 callbackFlow 默认 64 缓冲，生产者必然撞满。
+        // trySendBlocking 维持 ChatCompletionCall.stream 的背压契约（慢消费者
+        // 放慢读取而非丢块）；丢任何 Text/Finished 都会被此测试抓出。
+        val count = 300
+        val scripted = buildList {
+            for (i in 0 until count) add(StreamChunk.TextDelta("$i,"))
+            add(StreamChunk.Done("stop"))
+        }
+        val call = ScriptedCall(scripted, StreamResult.Completed)
+        val received = mutableListOf<LLMStreamChunk>()
+        (provider(call = call) as LLMProvider).streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "长文")), null, 64,
+        ).collect { chunk ->
+            received += chunk
+            delay(2)
+        }
+        assertEquals(count + 2, received.size) // Started + 300 Text + Finished，一块不丢
+        assertEquals(LLMStreamChunk.Started, received.first())
+        val text = received.filterIsInstance<LLMStreamChunk.Text>().joinToString(separator = "") { it.text }
+        assertEquals((0 until count).joinToString(separator = "") { "$it," }, text)
+        assertEquals(LLMStreamChunk.Finished("stop"), received.last())
+    }
+
+    @Test
+    fun `流中 error 对象按数字 code 走上游分类矩阵`() {
+        val p = provider(call = ScriptedCall(emptyList(), StreamResult.Completed))
+        fun classified(code: String?) = p.errorOf(StreamChunk.Failure("boom", code = code))
+        assertTrue(classified("401") is LLMError.InvalidApiKey)
+        assertTrue(classified("403") is LLMError.InvalidApiKey)
+        assertTrue(classified("429") is LLMError.RateLimited)
+        assertTrue(classified("500") is LLMError.TransientError)
+        assertTrue(classified("502") is LLMError.TransientError)
+        assertTrue(classified("529") is LLMError.TransientError)
+        assertTrue(classified("404") is LLMError.ProviderError)
+        // 非数字 code：同上游 optInt 默认 0，落供应商错误。
+        assertTrue(classified("server_error") is LLMError.ProviderError)
+        assertTrue(classified(null) is LLMError.ProviderError)
+        // 503 带永久失败标记 → 供应商错误（触发组回退，不原地重试）。
+        assertTrue(
+            p.errorOf(StreamChunk.Failure("no_available_providers for this model", code = "503")) is LLMError.ProviderError,
+        )
+        assertTrue(p.errorOf(StreamChunk.Failure("overloaded", code = "503")) is LLMError.TransientError)
+        // OpenCode 免费档日落：401/403 带 free tier 的文案转友好供应商错误。
+        val sunset = p.errorOf(
+            StreamChunk.Failure("OpenCode free tier can only be used from within OpenCode", code = "403"),
+        )
+        assertTrue(sunset is LLMError.ProviderError)
+        assertTrue(sunset.message!!.contains("OpenCode"))
     }
 
     @Test
