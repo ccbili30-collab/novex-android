@@ -93,11 +93,19 @@ kotlinx.serialization 零（无多态判别式落盘风险）、非 Kotlin 文�
 单独搬迁非纯机械，强行移动违反本阶段绿档约束。审计工具包前缀已升级为
 `novex.*` 通配。
 
-### P2 · rootfs 去 GPL — 黄档 — [ ]
+### P2 · rootfs 去 GPL — 黄档 — [x]
 
-自建最小 rootfs：musl(MIT) + toybox(BSD)，逐包过许可清单；替换
-alpine-minirootfs.tar.gz。纯数据层改动，App 代码零变化；容器内命令行为
-差异单独回归（重点：PS1、applet 覆盖、挂载脚本）。
+执行口径（2026-09-29，见进度日志）：toybox 预编译通道不可用（landley.net
+不可达、Alpine 无包），改用更务实变体——rootfs 内 **BusyBox 整体出包**
+（GPL 维权最高发组件），`/bin/sh` 由 **dash（BSD-2-Clause，Alpine 官方
+aarch64 包，SHA256 钉死）** 承担（相对符号链接双兜底 /bin + /usr/bin）；
+**apk 保留**（运行时 `apk add` 是活依赖，GPL-2.0+ 独立组件，符合 D1）。
+`prepare_android_sandbox.sh` 构建期转换（alpine 基线→剥离 busybox→注入
+dash→重打包），tar 为 gitignored 生成物。代码变化仅一处：
+OnDemandBash 安装清单 `apk add bash` → `apk add bash coreutils sed grep
+findutils`（运行时经 apk 拉取，非本 App 分发）。既有容器安装不回溯变更，
+「重置容器」后生效。风险注记：dash 与 busybox ash 的 shell 语义差异
+（PS1、applet 覆盖）待真机回归——本阶段预览版的验证重点。
 
 ### P3 · 子系统绞杀 — 黄档 — 顺序即依赖序 — [ ]
 
@@ -155,3 +163,5 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-28 | — | 建立本计划 + 审计工具 scripts/upstream_audit.py | 死代码 28f/4.8k；活代码血统 63.7k/101.8k/50.2k |
 | 2026-09-28 | #52 | P0 完成：删 28 死文件（实测 4,803 行）+ 5 死测试整删 + 6 测试修剪 + 16 处注释中性化 | 上游命名空间血统存量 -4.8k；测试源集死引用清零 |
 | 2026-09-29 | 见进度 | P0 修正：CrashFileReporter 经 SPI 注册存活被误删，恢复并升级审计工具（SPI 根）；beta.94 构建被 R8 拦截后修复 | 血统分类 261/160/379（+1 上游改动=恢复件） |
+| 2026-09-29 | #53 合并 + beta.95 发布 | P1 完成：三个自有包迁入 novex.*（含遮蔽修复）；公告含请勿更新警告 | 上游命名空间自有代码清零（自包含部分） |
+| 2026-09-29 | 见进度 | P2 完成：BusyBox 出包、dash 承担 /bin/sh、apk 保留（D1） | 分发物 GPL 仅剩 proot 全家 + apk 两个隔离组件 |

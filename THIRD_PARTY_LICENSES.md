@@ -18,7 +18,7 @@ OpenMinis bundles, links, or depends on the following third-party components. Ve
 | [LAME](https://lame.sourceforge.io) | 3.100, vendored at `deps/lame-3.100` | **LGPL-2.0-or-later** | MP3 encoder, linked into FFmpeg via `--enable-libmp3lame` |
 | [talloc](https://talloc.samba.org) (Samba) | vendored at `deps/talloc` | **LGPL-3.0-or-later** | Memory allocator required by proot |
 | [cppjieba](https://github.com/yanyiwu/cppjieba) | vendored (iOS `Vendor/cppjieba`, Android `jieba_jni`) | **MIT** | Chinese word segmentation (header-only + dictionaries) |
-| Alpine Linux minirootfs | downloaded at build time by `deps/prepare_alpine_rootfs.sh` | Aggregate of package licenses (musl **MIT**, BusyBox **GPL-2.0**, etc.) | Not stored in this repo; bundled into app builds as the default rootfs |
+| Alpine Linux minirootfs (de-GPL variant) | downloaded at build time by `scripts/prepare_android_sandbox.sh` | musl **MIT**, dash **BSD-2-Clause**, apk-tools **GPL-2.0-or-later** (kept: isolated runtime component per upstream-exit D1, source on dl-cdn) | BusyBox **removed** from the bundled rootfs (upstream-exit P2); bash/coreutils/grep/sed/findutils are apk-installed on device at runtime and are not distributed by this app. Marker: `/etc/novex-rootfs.marker` |
 
 ## iOS — Swift Package Manager dependencies
 
