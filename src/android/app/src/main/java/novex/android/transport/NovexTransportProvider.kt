@@ -59,7 +59,8 @@ class NovexTransportProvider(
     private val customUserAgent: String? = null,
     /** 供应商实例 id：思考规则解析器的自定义规则键。 */
     private val instanceId: String? = null,
-    private val callOpener: () -> TransportCall = { openRealCall() },
+    /** 可注入传输面（单测钉时序用）；null → 真实 novex.model 调用。 */
+    callOpener: (() -> TransportCall)? = null,
 ) : LLMProvider {
 
     /** 与 [ChatCompletionCall.stream] 同形的可注入传输面：单测用它钉流式时序。 */
@@ -67,6 +68,8 @@ class NovexTransportProvider(
         fun cancel()
         fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult
     }
+
+    private val openCall: () -> TransportCall = callOpener ?: ::openRealCall
 
     override val name: String = "OpenAI"
 
@@ -341,7 +344,7 @@ class NovexTransportProvider(
             close(if (failure is LLMError) failure else LLMError.ProviderError(failure.message ?: "请求装配失败"))
             return@callbackFlow
         }
-        val call = callOpener()
+        val call = openCall()
         val bridge = StreamBridge { chunk -> trySend(chunk) }
         launch(Dispatchers.IO) {
             val outcome = try {
