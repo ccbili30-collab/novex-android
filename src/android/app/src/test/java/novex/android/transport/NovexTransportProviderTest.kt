@@ -1052,8 +1052,10 @@ class NovexTransportProviderTest {
         val body = JSONObject(
             provider.buildWireRequest(history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
         )
+        // anthropic 形状：工具结果在 user 轮的 tool_result 块内，图片是其 content 的第二块。
         val mediaType = body.getJSONArray("messages")
-            .getJSONObject(1).getJSONArray("content").getJSONObject(1)
+            .getJSONObject(1).getJSONArray("content").getJSONObject(0)
+            .getJSONArray("content").getJSONObject(1)
             .getJSONObject("source").getString("media_type")
         assertEquals("魔数探测应为 image/jpeg 而非假定 png", "image/jpeg", mediaType)
     }

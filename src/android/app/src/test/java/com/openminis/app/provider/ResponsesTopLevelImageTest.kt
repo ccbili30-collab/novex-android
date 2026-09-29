@@ -95,17 +95,34 @@ class ResponsesTopLevelImageTest {
         return JSONObject(server.takeRequest().body.readUtf8())
     }
 
-    /** All content blocks of the last `input` item, flattened. */
+    /**
+     * All content blocks of the last `input` item, flattened.带图轮的 content 是
+     * 结构化数组；占位顶替轮（P3.1e 适配器把占位折进文本）为裸字符串——两态都归
+     * 一成块列表或空表，断言只关心 input_image 的有无与占位文案。
+     */
     private fun lastInputContent(body: JSONObject): JSONArray {
         val input = body.optJSONArray("input")
         assertNotNull("request has no `input` array: $body", input)
         val last = input!!.getJSONObject(input.length() - 1)
         val content = last.opt("content")
-        assertTrue(
-            "expected the user turn's content to be a structured array, was: $content",
-            content is JSONArray,
-        )
-        return content as JSONArray
+        return when (content) {
+            is JSONArray -> content
+            else -> JSONArray()
+        }
+    }
+
+    /** 末条 user 轮的完整文本（裸字符串或各 input_text 块拼接）。 */
+    private fun lastInputText(body: JSONObject): String {
+        val input = body.optJSONArray("input")!!
+        val last = input.getJSONObject(input.length() - 1)
+        val content = last.opt("content")
+        return when (content) {
+            is String -> content
+            is JSONArray -> (0 until content.length())
+                .mapNotNull { content.getJSONObject(it).optString("text").takeIf { it.isNotEmpty() } }
+                .joinToString("\n")
+            else -> ""
+        }
     }
 
     private fun blocksOfType(content: JSONArray, type: String): List<JSONObject> =
@@ -197,10 +214,12 @@ class ResponsesTopLevelImageTest {
                 0,
                 blocksOfType(content, "input_image").size,
             )
-            val texts = blocksOfType(content, "input_text").map { it.optString("text") }
+            // P3.1e 适配器语义：占位折进 user 轮文本（与 chat 线同口径，记录在案），
+            // 不再是独立的 input_text 块。
+            val text = lastInputText(body)
             assertTrue(
-                "the Vision-Group placeholder should be forwarded verbatim, got: $texts",
-                texts.any { it.contains("call read_image") },
+                "the Vision-Group placeholder should be forwarded verbatim, got: $text",
+                text.contains("call read_image"),
             )
         } finally {
             ImageDegradationLearning.imageDegradedModels.remove("text-only-model")
