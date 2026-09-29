@@ -19,11 +19,11 @@ package com.openminis.app.sandbox
  * upstream's "Add PR_epoll_wait SIGSYS handler" for a kernel that mis-fires the
  * same way).
  *
- * The symptom distribution is the tell: `apk` is the **only dynamically linked
- * program** in the minirootfs — `/bin/true` and `uname` are busybox symlinks.
- * That points at the dynamic-loading/mmap path under ptrace, not at file
- * content, and it means any dynamically linked guest binary can be hit, not
- * just apk. Hence this is applied at the sandbox launch layer rather than
+ * The symptom distribution is the tell: only the dynamically linked programs
+ * in the rootfs are hit (`apk`; since the de-GPL rootfs, `dash` too), never
+ * file content. That points at the dynamic-loading/mmap path under ptrace,
+ * and it means any dynamically linked guest binary can be hit, not just apk.
+ * Hence this is applied at the sandbox launch layer rather than
  * special-cased for apk.
  *
  * ## Why gate on "early" rather than retrying every signal death

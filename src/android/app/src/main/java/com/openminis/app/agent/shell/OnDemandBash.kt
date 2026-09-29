@@ -86,7 +86,7 @@ object OnDemandBash {
         }
 
         Log.i(TAG, "installing bash toolset (budget ${INSTALL_BUDGET_MS / 1000}s)…")
-        val rc = executor.run("apk add bash coreutils sed grep findutils", INSTALL_BUDGET_MS)
+        val rc = executor.run("apk add bash coreutils coreutils-env sed grep findutils", INSTALL_BUDGET_MS)
         val verified = rc == 0 && executor.run("command -v bash >/dev/null 2>&1", 15_000) == 0
         if (verified) {
             clearFailure(context)
@@ -113,7 +113,7 @@ object OnDemandBash {
     private fun backoffReason(context: Context): String? {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val count = p.getInt(KEY_FAIL_COUNT, 0)
-        if (count >= MAX_STRIKES) return "bash install disabled after $MAX_STRIKES failures (retry manually: apk add bash coreutils)"
+        if (count >= MAX_STRIKES) return "bash install disabled after $MAX_STRIKES failures (retry manually: apk add bash coreutils coreutils-env sed grep findutils)"
         val last = p.getLong(KEY_LAST_FAIL, 0)
         if (last > 0 && System.currentTimeMillis() - last < BACKOFF_WINDOW_MS) return "bash install backing off (recent failure)"
         return null

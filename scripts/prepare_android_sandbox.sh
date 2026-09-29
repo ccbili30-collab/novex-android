@@ -108,6 +108,21 @@ install -m 0755 "$DASH_SRC/usr/bin/dash" "$ROOTFS_SRC/usr/bin/dash"
 # Strip BusyBox (GPL-2.0): binaries, applet symlinks and config dirs — this
 # minirootfs uses split /bin + /usr/bin, so sweep both.
 find "$ROOTFS_SRC" -name '*busybox*' -exec rm -rf {} +
+find "$ROOTFS_SRC" -type l -lname '*busybox*' -delete
+# apk world 仍登记 busybox：不清除的话 apk upgrade 会静默重装它
+if [ -f "$ROOTFS_SRC/etc/apk/world" ]; then
+    grep -v '^busybox$' "$ROOTFS_SRC/etc/apk/world" > "$ROOTFS_SRC/etc/apk/world.tmp" || true
+    mv "$ROOTFS_SRC/etc/apk/world.tmp" "$ROOTFS_SRC/etc/apk/world"
+fi
+# 交互 shell 首启一次性预装工具集（后台、幂等）：填补 busybox 出包后的命令真空期
+cat > "$ROOTFS_SRC/etc/profile.d/novex-tools.sh" <<'PROF'
+# novex-degpl-1: one-time best-effort toolset provision (BusyBox-free rootfs)
+if [ ! -x /usr/bin/ls ] && [ -x /sbin/apk ] && [ ! -f /var/novex/.tools-installing ]; then
+    mkdir -p /var/novex
+    : > /var/novex/.tools-installing
+    (apk add -q bash coreutils coreutils-env sed grep findutils >/dev/null 2>&1; rm -f /var/novex/.tools-installing) &
+fi
+PROF
 # /bin/sh must use a RELATIVE target: the app's tar extractor resolves link
 # targets against the device root, so absolute targets silently break.
 ln -sf dash "$ROOTFS_SRC/usr/bin/sh"

@@ -799,8 +799,20 @@ object PRootKernel {
             |    visible=${'$'}(echo "${'$'}pids" | tr ',' '\n' | wc -l)
             |    printf 'top — up %dd %02d:%02d  visible processes: %d (own session only)\n' "${'$'}days" "${'$'}hours" "${'$'}mins" "${'$'}visible"
             |    printf '%s\n' '  PID USER     STAT  RSS  PPID COMMAND'
-            |    /bin/busybox ps -o pid,user,stat,rss,ppid,comm 2>/dev/null \
-            |        | awk -v pids=",${'$'}pids," 'NR==1 {next} {if (index(pids,","${'$'}1",")) print "  " ${'$'}0}'
+            |    ps_bin=""
+            |    for cand in /usr/bin/ps /bin/ps; do
+            |        [ -x "${'$'}cand" ] && ps_bin="${'$'}cand" && break
+            |    done
+            |    if [ -z "${'$'}ps_bin" ]; then
+            |        printf '%s\n' 'ps not installed yet — run: apk add procps'
+            |        return
+            |    fi
+            |    if command -v awk >/dev/null 2>&1; then
+            |        "${'$'}ps_bin" -o pid,user,stat,rss,ppid,comm 2>/dev/null \
+            |            | awk -v pids=",${'$'}pids," 'NR==1 {next} {if (index(pids,","${'$'}1",")) print "  " ${'$'}0}'
+            |    else
+            |        "${'$'}ps_bin" -o pid,user,stat,rss,ppid,comm 2>/dev/null
+            |    fi
             |}
             |
             |if [ ${'$'}batch -eq 1 ]; then
@@ -909,7 +921,11 @@ object PRootKernel {
                 |        done < "${'$'}cfg"
                 |    done
                 |fi
-                |exec /bin/busybox $name "${'$'}@"
+                |for real in /usr/bin/${'$'}name /bin/${'$'}name; do
+                |    [ -x "${'$'}real" ] && exec "${'$'}real" "${'$'}@"
+                |done
+                |echo "${'$'}name: not installed yet (run: apk add coreutils)" >&2
+                |exit 127
                 |""".trimMargin(),
             )
             wrapper.setExecutable(true, false)

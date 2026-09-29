@@ -100,12 +100,17 @@ kotlinx.serialization 零（无多态判别式落盘风险）、非 Kotlin 文�
 （GPL 维权最高发组件），`/bin/sh` 由 **dash（BSD-2-Clause，Alpine 官方
 aarch64 包，SHA256 钉死）** 承担（相对符号链接双兜底 /bin + /usr/bin）；
 **apk 保留**（运行时 `apk add` 是活依赖，GPL-2.0+ 独立组件，符合 D1）。
-`prepare_android_sandbox.sh` 构建期转换（alpine 基线→剥离 busybox→注入
-dash→重打包），tar 为 gitignored 生成物。代码变化仅一处：
-OnDemandBash 安装清单 `apk add bash` → `apk add bash coreutils sed grep
-findutils`（运行时经 apk 拉取，非本 App 分发）。既有容器安装不回溯变更，
-「重置容器」后生效。风险注记：dash 与 busybox ash 的 shell 语义差异
-（PS1、applet 覆盖）待真机回归——本阶段预览版的验证重点。
+`prepare_android_sandbox.sh` 构建期转换（alpine 基线→剥离 busybox 实体/
+applet 符号链接/配置目录→apk world 去 busybox 登记→注入 dash→novex-tools
+一次性预装脚本→重打包），tar 为 gitignored 生成物。App 代码变化：
+① OnDemandBash 安装清单扩为 `bash coreutils coreutils-env sed grep
+findutils`（运行时经 apk 拉取，非本 App 分发；env 在 Alpine 拆在
+coreutils-env 子包）；② PRootKernel 两处包装脚本去 busybox 硬编码
+（写保护九命令改显式路径解析、top 的 ps 解析+awk 降级）。既有容器安装
+不回溯变更，「重置容器」后生效。风险注记（真机回归清单）：dash vs
+busybox ash 的 shell 语义差异（PS1 反斜杠转义、applet 覆盖）、**只读
+挂载写保护包装**（touch/cp/mv/mkdir/rm/rmdir/ln/dd/tee）、top 渲染、
+minis-mcp-cli（#!/usr/bin/env 依赖 coreutils-env）、命令真空期预装。
 
 ### P3 · 子系统绞杀 — 黄档 — 顺序即依赖序 — [ ]
 
