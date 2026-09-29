@@ -35,7 +35,7 @@ object ProviderFactory {
                 // 传输（NovexTransportProvider 实现同一 LLMProvider 接口，调用面零
                 // 改动）。OAuth（Claude Code）与自定中继一并换管：Bearer 鉴权、系统
                 // 前缀块、CLI 指纹头在适配器内按 isAnthropicOAuth 分线。上游
-                // AnthropicProvider 不再被工厂引用（文件留存，P3.1d 统一拆除）。
+                // AnthropicProvider 已随 P3.1d 删除（目录整体拆除）。
                 val isOAuth = instance.credentialType == ProviderCredential.oauth
                 novex.android.transport.NovexTransportProvider(
                     apiKey = apiKey,
@@ -50,8 +50,8 @@ object ProviderFactory {
             ProviderType.gemini -> {
                 // [P3.1c 绞杀换管] Gemini 原生协议改走自有 novex.model 传输；鉴权
                 // 用 x-goog-api-key 头（等价 ?key=，且密钥不进 URL）。上游
-                // GeminiProvider 不再被工厂引用（文件留存，P3.1d 统一拆除）；
-                // 其不收自定 UA 的口径一并保留。
+                // GeminiProvider 已随 P3.1d 删除（目录整体拆除）；
+                // 其不收自定 UA 的口径一并保留（上游原件已随 P3.1d 删除）。
                 novex.android.transport.NovexTransportProvider(
                     apiKey = apiKey,
                     model = model,

@@ -25,7 +25,6 @@ import com.openminis.app.data.model.*
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.tools.AgentTools
 import novex.android.ui.AlertDialog
 import novex.android.ui.Button
@@ -631,13 +630,13 @@ private suspend fun fetchModels(
 ): List<LLMModel> = runCatching {
     val canonical = novexCanonicalBase(base, appendV1Suffix)
     val models = if (direction == NovexProviderDirection.ANTHROPIC) {
-        com.openminis.app.provider.anthropic.AnthropicModelsApi.fetchModels(
+        com.openminis.app.provider.ModelsCatalogApi.fetchAnthropicModels(
             key,
             canonical,
             forceRefresh = true,
         )
     } else {
-        OpenAIModelsApi.fetchModels(
+        com.openminis.app.provider.ModelsCatalogApi.fetchOpenAiModels(
             key,
             canonical,
             forceRefresh = true,
@@ -659,7 +658,7 @@ private suspend fun verifyConnection(
         return ConnectionVerification(NovexModelVerification(emptyList(), emptyList()), message)
     }
     // [T-provider-direction] Anthropic 方向的探活/鉴权探测带上版本头；
-    // 兼容中转普遍同时收 Bearer，与 AnthropicModelsApi 的自定义端点行为一致。
+    // 兼容中转普遍同时收 Bearer，与模型目录 anthropic 方言的自定义端点行为一致。
     fun probeRequest(url: String, withKey: Boolean): Request = Request.Builder()
         .url(url)
         .apply { if (direction == NovexProviderDirection.ANTHROPIC) header("anthropic-version", "2023-06-01") }

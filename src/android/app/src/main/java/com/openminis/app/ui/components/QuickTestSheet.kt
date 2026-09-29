@@ -50,7 +50,6 @@ import com.openminis.app.data.model.normalizeModalityName
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -521,13 +520,13 @@ internal suspend fun performTest(
         }
 
         QuickTestKind.IMAGE_GEN -> {
-            // [P3.1b] 聊天线路换管到 NovexTransportProvider 的实例，生图仍走
-            // 上游实现（imageDelegate），Images API 行为不变。
-            val openAI = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
-                ?: provider as? OpenAIProvider
+            // [P3.1d] 生图接口面：适配器走自有 novex.model ImagesClient；上游
+            // OpenAIProvider 线路实现同一接口，行为不变。
+            val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? com.openminis.app.provider.ImagesCapableProvider
                 ?: return@withContext failure(context.getString(R.string.quicktest_image_unsupported))
             runCatching {
-                val resp = openAI.generateImage(
+                val resp = images.generateImage(
                     prompt = "A friendly cute mascot logo for an app called Minis, minimalist, centered, soft colors",
                     n = 1,
                     size = "1024x1024",

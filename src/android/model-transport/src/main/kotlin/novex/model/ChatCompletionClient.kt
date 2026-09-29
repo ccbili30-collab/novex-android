@@ -42,7 +42,9 @@ data class WireMessage(val role: String, val text: String, val toolCalls: List<P
                       val audios:List<WireAudio> = emptyList(), val reasoningContent: String? = null, val isError: Boolean = false) {
     init {
         require(role in setOf("system","user","assistant","tool"))
-        require(images.isEmpty() || role=="user")
+        // 图片可挂 user（用户输入）与 tool（工具结果内嵌图片，anthropic 方言消费——
+        // OpenAI 兼容线与 gemini 的编码不读 tool 图片，适配器按协议装填）。
+        require(images.isEmpty() || role=="user" || role=="tool")
         require(audios.isEmpty() || role=="user")
         require(toolCalls.isEmpty() || role=="assistant")
         require(reasoningContent==null || role=="assistant")
@@ -117,6 +119,20 @@ data class PendingTool(val id: String,val name: String,val arguments: String,val
 
 /** 线协议方言：决定 [ChatCompletionCall] 流式读取用的 SSE 解码器。非流式 [ChatCompletionCall.execute] 只实现 OpenAI 兼容线（anthropic/gemini 由调用方经流式聚合）。 */
 enum class WireProtocol { CHAT_COMPLETIONS, ANTHROPIC_MESSAGES, GEMINI_GENERATE_CONTENT }
+
+/** 线协议 ↔ 请求体方言配套判定（[ChatCompletionCall] 开连接前的防呆，错配早失败）。 */
+internal fun CompletionStreamRequest.matchesProtocol(protocol: WireProtocol): Boolean = when (protocol) {
+    WireProtocol.CHAT_COMPLETIONS -> this is StreamRequest
+    WireProtocol.ANTHROPIC_MESSAGES -> this is AnthropicMessagesRequest
+    WireProtocol.GEMINI_GENERATE_CONTENT -> this is GeminiGenerateContentRequest
+}
+
+internal val WireProtocol.requestTypeName: String
+    get() = when (this) {
+        WireProtocol.CHAT_COMPLETIONS -> "StreamRequest"
+        WireProtocol.ANTHROPIC_MESSAGES -> "AnthropicMessagesRequest"
+        WireProtocol.GEMINI_GENERATE_CONTENT -> "GeminiGenerateContentRequest"
+    }
 sealed interface ModelResult {
     data class Reply(val text: String,val inputTokens: Long?,val outputTokens: Long?) : ModelResult
     data class Partial(val text: String,val reason: String) : ModelResult
@@ -147,6 +163,8 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
     fun execute(request: TextRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
                 measureCompletePayload: (String) -> TokenMeasurement): ModelResult {
         check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
+        // 防呆（绞杀缝错配早失败）：非流式 execute 只实现 OpenAI 兼容线。
+        require(protocol == WireProtocol.CHAT_COMPLETIONS) { "非流式 execute 仅支持 OpenAI 兼容线，当前协议为 $protocol" }
         if (cancelled.get()) return ModelResult.Cancelled
         val body=request.encode()
         val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.outputReserve,measureCompletePayload(body))
@@ -190,6 +208,11 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
     fun stream(request: CompletionStreamRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
                measureCompletePayload: (String) -> TokenMeasurement, onChunk: (StreamChunk) -> Unit): StreamResult {
         check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
+        // 防呆（绞杀缝错配早失败）：线协议与请求体方言必须配套——错配意味着 SSE 用
+        // 错误方言解码（静默产出空流），这里在开连接前以确定性异常暴露。
+        require(request.matchesProtocol(protocol)) {
+            "请求体类型 ${request::class.simpleName} 与线协议 $protocol 不匹配（期望 ${protocol.requestTypeName}）"
+        }
         if (cancelled.get()) return StreamResult.Cancelled
         val body=request.encode()
         val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.outputReserve,measureCompletePayload(body))

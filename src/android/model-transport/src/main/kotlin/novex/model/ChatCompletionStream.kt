@@ -38,7 +38,13 @@ sealed interface StreamChunk {
      */
     data class ToolCallDelta(val index: Int, val id: String?, val name: String?, val argumentsDelta: String,
                              val signature: String? = null) : StreamChunk
-    data class Usage(val inputTokens: Long?, val outputTokens: Long?) : StreamChunk
+    /**
+     * 用量块。cache 两键是 anthropic 方言的 prompt caching 计量（OpenAI 兼容线与
+     * gemini 方言恒 null）；message_start 与 message_delta 的 usage 各自可能携带，
+     * 后到覆盖先到（聚合器只留最后一块）。
+     */
+    data class Usage(val inputTokens: Long?, val outputTokens: Long?,
+                     val cacheCreationTokens: Long? = null, val cacheReadTokens: Long? = null) : StreamChunk
     /**
      * 模型产出的内联媒体（Gemini 图像/音频输出机型的 inlineData 部分）。
      * base64 原样携带，解码归调用方；本层不落盘不解码。
