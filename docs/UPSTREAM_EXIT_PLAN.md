@@ -168,9 +168,12 @@ API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.
 → ③parity 验收（单测钉行为；网络层用 mock/response 钉格式）→ ④删上游
 原件 → ⑤CI + 净眼 + 冒烟。顺序即依赖序：
 
-1. provider 接入（openai/anthropic/gemini/thinking/voice/image ≈10k，
-   29 个消费文件）→ 以自有 model-transport（novex.model，现有
-   ChatCompletionClient）为底座重写后删除上游原件
+1. ~~provider 接入（openai/anthropic/gemini/thinking/voice/image ≈10k，
+   29 个消费文件）~~ —— P3.1a–P3.1e + P3.2 完成：聊天/生图/模型目录/
+   语音/思考全部走自有实现（novex.model 传输与目录 + novex.android.
+   transport 适配器 + novex.android.voice/thinking/models），provider/ 下
+   openai、anthropic、gemini、voice、image、thinking 六包上游原件清零
+   （provider/ 根与 openrouter/xai 的 ModelsApi 随后续刀处置）
 2. data.db（Room minis.db）+ data.repository → 自有存储模块
 3. ~~sandbox 应用侧 Kotlin 重写~~ → 已被 P2.5 沙箱退役整体取代（用户裁决）
 4. browser + ui.browser、speech（活 12f）、debug 面板、config、tools、
@@ -265,8 +268,9 @@ provider/openai/ 整包（OpenAIProvider + ThinkPrefixStreamParser，审计口�
   双 id（id=fc_… + call_id）逐字回放与 fc_syn 合成）+ SSE 事件族解码
   （output_text/reasoning_text/reasoning_summary_text 增量、output_item
   added|done、function_call_arguments 增量、completed|failed|incomplete 终态、
-  无 [DONE] 哨兵时按 finishReason 补收尾、completed 的 output 里整块
-  function_call/image_generation_call 防御补块）+ **gpt-image-2 codex 生图流**
+  无 [DONE] 哨兵时按 finishReason 补收尾、从未 added 过的 function_call 整块
+  防御补块在 output_item.done、completed 的 output 重扫仅 codexImageRun 生图
+  流提图块）+ **gpt-image-2 codex 生图流**
   （固定指纹体 gpt-5.5+image_generation 工具；文本增量转拒答文案、图块转
   媒体附件、无图以 Failure 收流——Done 只随图产出，不被 finishReason 盖掉）。
 - **Azure 形态**：ModelEndpoint 增 tokenHeader（api-key 头替代 Bearer）+
@@ -290,7 +294,14 @@ provider/openai/ 整包（OpenAIProvider + ThinkPrefixStreamParser，审计口�
   http 中继以确定性中文 ProviderError 收流（请求前置预检，含动态 OAuth 令牌
   装配后的端点形校验），工厂不再有任何回退实现可躲。
 - Responses 方言发裸 `application/json`（无 charset 后缀——部分第三方 Responses
-  中转严格拒收）；response.failed 的 server_error/rate_limit_exceeded 按瞬态
+  中转严格拒收）；chat 线（与 anthropic/gemini 线）沿用
+  `application/json; charset=utf-8` 不变——两线 Content-Type 差异由此记档。
+  诊断面差异（净眼 PR#66 ⑤，2026-09-28 记档）：被删上游 provider 层写入的
+  LLMRequestLog 环形缓冲（debug.llmRequests 面）与 [T321] 无哨兵断流尾日志随
+  包删除后**无写入方**——LLMRequestLog 暂成只读死面（DebugRPCHandler 读取端
+  保留，返回恒空）；存活的逐请求诊断面是 ProviderWireCapture（ChatViewModel
+  层：每出站请求无条件一行摘要 + 带 tools/图片标记的请求附原文）与适配器
+  Thinking/NovexTransport 日志线。response.failed 的 server_error/rate_limit_exceeded 按瞬态
   分类（仅 responses 线；chat 线同名字符串 code 仍走上游 optInt 默认 0 的供应
   商错误口径）。
 - P3.1d 净眼三建议采纳：① gemini 目录拉取网络异常 IOException 上抛（对齐被删
@@ -320,6 +331,49 @@ CHAT 起步失败自动切 RESPONSES（进程粘性）⑥LAN 明文→适配器�
 @api.x.ai/v1（OAuth 动态 bearer）⑨Kimi→CHAT@api.kimi.com/coding/v1（OAuth
 动态 bearer）。`grep OpenAIProvider src/android/app/src` 归零（注释墓碑中性化）；
 `grep 'import com.openminis' src/android/model-transport/` 保持归零。
+P3.2 provider 剩余小件绞杀（PR 见进度日志，2026-09-28）——**voice/image/thinking
+三包删除，provider.* 下再无上游血统子系统**：
+- **voice**（provider/voice 4f + data/model 模板件）：自有 novex.android.voice
+  五件（VoiceWire 值类型与错误分类 / VoiceClient OpenAI 兼容基座 / VoiceClients
+  十二厂商客户端 / VoiceClientFactory 判定矩阵 / VoiceVendorTemplates 厂商
+  种子模板）。逐厂商 parity：请求形状（Doubao v3 单向流式 TTS 帧解析 + bigmodel
+  flash ASR、MiniMax t2a_v2 双响应外壳（data.audio hex→audio.audio base64）+
+  base 剥 /v1|/anthropic、讯飞 HMAC-SHA256 签名 URL + WebSocket TTS PCM 收流
+  包 WAV、Gemini generateContent+AUDIO 模态、ElevenLabs/Deepgram/Azure/MiMo/
+  Groq/阿里/xAI、OpenRouter chat-audio 形态与 ASR 双端点路由谓词）、鉴权
+  （Bearer/X-Api-Key/xi-api-key/Token/Ocp-Apim/签名 URL/api-key）、音频格式
+  （WAV 包头、mime 魔数、24k/16k 采样率）、错误分类（401/403→Auth、
+  MiniMax base_resp 码、Doubao 无帧附原文预览、OpenRouter 无音频带 transcript）。
+  假服务器测试钉 Doubao TTS/ASR 与 OpenAI TTS 各一组（请求断言+响应解析+错误）
+  外加 MiniMax/基座 multipart/OpenRouter 路由迁移；工厂判定矩阵（含讯飞复合
+  凭据）钉用例。消费方四处换管（语音输入引擎/朗读播放器/快速测试/影子语音门）。
+- **image 目录**（provider/image 1f，审计分类本为零血统 Novex 新增）：P1 式
+  机械搬家至 novex.android.models.ImageGenerationModels（端点/鉴权/过滤语义
+  原样），测试随迁。
+- **thinking**（provider/thinking 4f）：自有 novex.android.thinking 四件
+  （ThinkingWire 形态词表 / ThinkingContract 规则值类型 / ThinkingContract
+  Resolver 解析器 / ThinkingContractCoding 持久化编码）。金表快照（119 行）与
+  回归/合并/xAI 空档位四件测试原样通过（ThinkingWireGeminiAnthropicSnapshot
+  仅换 import；两件 provider/thinking 测试等价迁入自有包）。DB 实体与 DAO 方法
+  随消费者更名（ProviderThinkingContractEntity，Room 表名 provider_thinking_
+  rules 与列名不变、存量数据无损）；自定义规则 blob 的 JSON tag 词汇逐字兼容。
+- 净眼 PR#66 七条全清：①「已发块后失败不触发回退」测试补断言请求数=1；
+  ②负向粘性测试（responses 重试也失败→粘性不落，新回合仍从 chat 起步）；
+  ③codexImageRun 不认 [DONE] 哨兵——图块前到哨兵不再发 Done(null)，与被删
+  一致按流尾 Failure 收（No image data）；④codex 生图流 reasoning 增量不折
+  进 refusalText（被删上游只认文本/消息条目为拒答源），output_text.done 整段
+  替换增量拒答（免重复）；⑤docs 补记 chat 线 Content-Type 带 charset 与诊断
+  面差异（LLMRequestLog 随上游 provider 删除后无写入方、T321 尾日志同亡，
+  ProviderWireCapture 为存活面——见 P3.1e 行内记档）；⑥docs 措辞修正
+  （function_call 整块补块在 output_item.done、completed 重扫仅 codexImageRun）；
+  ⑦三测试盲区补钉（Mistral×responses 双头抑制、ImagesClient 大写
+  Response_Format 拼写触发去键重试、①Codex 工厂构造用例——Robolectric
+  Context 走真实 OAuth 存储回落路径）。
+- 死码扫尾：diagnostics/LargeAllocProbe（105 行）+ provider/JsonExt（18 行）
+  删除（三通道核查：SPI 仅 ACRA 注册件、Manifest 零引用、FQN 零引用）。
+- 验收：`grep 'VoiceProvider\|ImageModelCatalog\|ThinkingRule' src/android/
+  app/src --include='*.kt'` 归零；model-transport 零 com.openminis 不变；
+  审计死代码归零（血统数字见进度日志行）。
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -376,3 +430,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-28 | #64 | P3.1c 原生协议换管：anthropic/gemini 聊天流量切自有 novex.model 传输（模块新增 AnthropicWire 322 行 + GeminiWire 208 行；适配器分线路由 +374/−68；ChatCompletionClient +30/−11、Stream +65/−15；工厂两分支改构造适配器；ThinkingRuleResolver.anthropicThinkingShape 委托 novex.model；ChatViewModel 的 isOAuth/enhancedCache 盖章改指适配器）；净眼退回一修三采纳（LAN 明文预检确定性 ProviderError、HTTP 错误体三方言解析、gemini 缺省 end_turn、台账口径）；三线全走自有传输；49 条新增单测（模块 anthropic 17 + gemini 14 + 适配器原生线 18，含 MockWebServer 端到端 2） | 上游 anthropic/ 两包（3f ~1.4k）与 gemini/（2f ~0.7k）聊天流量清零、工厂零引用（文件留存，P3.1d 删）；model-transport 零上游依赖不变 |
 | 2026-09-29 | 本 PR（P3.1d） | 绞杀收尾：删上游 anthropic/（3f 1,430 行）+ gemini/（2f 683 行）+ OpenAIModelsApi（212 行）+ 两测试（1,035 行）；移植 ImagesClient（novex.model 生图）与 ModelsCatalog/ModelsCatalogApi（三方言模型目录）；适配器 imageDelegate 切自有传输、消费方改走 ImagesCapableProvider 接口；净眼挂账五条全清（a 工具结果图片补发/b 孤儿过一条 user 即失效/c usage 缓存计量/d 协议防呆/e OAuth 前缀注入）；Anthropic*/Gemini* 主代码引用清零（仅注释墓碑）| 血统：上游未动 191f/39,865 → 186f/37,943（−1,922 行），上游改动 161f/100,520 → 160f/100,153；Novex 新增 379f/50,349 → 382f/51,691（+ImagesClient/ModelsCatalog/ImagesCapableProvider/ModelsCatalogApi）；provider.openai 留存 2f/3,920 行（活码，P3.1e）；model-transport 零上游依赖不变 |
 | 2026-09-28 | 本 PR（P3.1e） | OpenAIProvider 终局退役：删上游 provider/openai/ 整包（2f 3,920 行）+ 旧测试 3 件；novex.model 新增 ResponsesWire（请求编码+SSE 事件族+codex 生图流）与 ModelEndpoint tokenHeader/permitQueryParams、ImagesClient 端点覆盖；适配器九类路由（Codex-OAuth/官方直连/useResponsesAPI/Azure/前尘回退/LAN 明文/OpenRouter/xAI/Kimi）+ 动态 OAuth bearer + 前尘回退进程粘性 + OpenRouter 附加头与 anthropic cache_control；imageDegradedModels 迁 app 侧 ImageDegradationLearning；P3.1d 净眼三建议采纳；存量行为测试 10 件换管续跑、模块+适配器+工厂新增 40+ 用例 | 血统：上游未动 186f/37,943 → 179f/36,228（openai 整包归零 + 墓碑注释改动使 4 个文件移入「上游改动」桶），上游改动 160f/100,153 → 163f/97,807；Novex 新增 382f/51,691 → 383f/52,065；model-transport 新增 ResponsesWire（+~470 行）零上游依赖不变 |
+| 2026-09-28 | 本 PR（P3.2） | provider 剩余小件绞杀：删上游 provider/voice（4f）+ provider/thinking（4f）+ provider/image/ImageModelCatalog（零血统件机械搬家为 novex.android.models.ImageGenerationModels）+ data/model/VoiceProviderTemplate（自有 VoiceVendorTemplates 重写，模板数据逐字节一致）+ LargeAllocProbe/JsonExt 死码（123 行）；自有 novex.android.voice 五件（VoiceWire 值类型/VoiceClient 引擎+OpenAI 方言/VoiceClients 十二厂商/VoiceClientFactory 标记路由表/VoiceVendorTemplates）与 novex.android.thinking 四件（ThinkingWire 词表+内聚编解码/ThinkingContract/ThinkingContractResolver 座次表+决策落笔分离/ThinkingContractCoding）；DB 实体/DAO/仓库/配置集合件随消费者更名（Room 表列名不变）；净眼 PR#66 七条全清（③④代码修复 + ①②⑦测试补钉 + ⑤⑥docs 记档）；净眼退回后九件真重写（结构/分解/控制流/注释/文案全部重做，协议事实逐字节保留；剥注释+归一化标识符的语句相似度从 96-99% 降至 10.8-35.8%、均值 23.3%，对照 P3.1c GeminiWire 同口径 ~7.5%），退回附带补钉：讯飞签名 URL/WS 收流确定性测试（注入假 socket 零网络）、MiniMax legacy b64 外壳兜底用例、①Codex 工厂手工 bearer 断言；假服务器 parity 测试钉 Doubao TTS/ASR 与 OpenAI TTS 等厂商；思考金表/回归/合并/xAI 四件测试原样通过| 血统：上游未动 179f/36,228 → 163f/30,167，上游改动 163f/97,807 → 168f/100,749（含 改名换路径的血统件落 Novex 新增桶（其中 ThinkingContractsCollection 经净眼三轮揪出为改名直译，已真重写）），Novex 新增 383f/52,065 → 394f/54,690；死代码 2f/123 行 → 0f；grep 'VoiceProvider|ImageModelCatalog|ThinkingRule' src/android/app/src 归零；model-transport 零 com.openminis 不变 |

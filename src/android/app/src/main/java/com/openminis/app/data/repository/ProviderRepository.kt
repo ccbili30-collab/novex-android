@@ -7,10 +7,10 @@ import android.util.Base64
 import com.openminis.app.data.db.ProviderConfigDao
 import com.openminis.app.data.db.ProviderConfigMetaKeys
 import com.openminis.app.data.db.ProviderConfigSnapshot
-import com.openminis.app.data.db.ProviderThinkingRuleEntity
-import com.openminis.app.provider.thinking.ThinkingRule
-import com.openminis.app.provider.thinking.ThinkingRuleCoding
-import com.openminis.app.provider.thinking.ThinkingRuleResolver
+import com.openminis.app.data.db.ProviderThinkingContractEntity
+import novex.android.thinking.ThinkingContract
+import novex.android.thinking.ThinkingContractCoding
+import novex.android.thinking.ThinkingContractResolver
 import com.openminis.app.data.db.ProviderDatabase
 import com.openminis.app.data.db.compositeEntryKey
 import com.openminis.app.data.db.toProviderConfig
@@ -28,7 +28,7 @@ import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.model.RoutingStrategy
 import com.openminis.app.data.model.SystemVoiceIds
-import com.openminis.app.data.model.VoiceProviderTemplate
+import novex.android.voice.VoiceVendorTemplate
 import com.openminis.app.data.model.hasAudioInput
 import com.openminis.app.data.model.hasAudioOutput
 import com.openminis.app.data.model.hasImageInput
@@ -564,7 +564,7 @@ class ProviderRepository(private val context: Context) {
         }
         // [T-android-thinking-rules-phase2] Warm the resolver's custom-rule cache once
         // config is available, so the (sync) request builder can read user rules.
-        loadAllThinkingRulesIntoCache()
+        loadAllThinkingContractsIntoCache()
         if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
     }
 
@@ -712,8 +712,8 @@ class ProviderRepository(private val context: Context) {
         // [T-android-provider-voice] Seed voice-template mock models when the
         // base URL matches a voice vendor (MiMo / MiniMax / Doubao …). These
         // vendors have no /v1/models for their voices, so the template list is
-        // the only source. Mirrors iOS addInstance + VoiceProviderTemplate.
-        val voiceSeeds = VoiceProviderTemplate.mockEntries(instance)
+        // the only source. Mirrors iOS addInstance + 语音厂商模板.
+        val voiceSeeds = VoiceVendorTemplate.mockEntries(instance)
             .filter { seed ->
                 config.modelEntries.none {
                     it.providerInstanceId == instance.id && it.baseModel.id == seed.baseModel.id
@@ -775,12 +775,12 @@ class ProviderRepository(private val context: Context) {
                 autoResponsesFallback = true,
             ),
         )
-        saveThinkingRule(
+        saveThinkingContract(
             QIANCHEN_INSTANCE_ID,
-            ThinkingRule(
-                kind = ThinkingRule.Kind.CUSTOM,
-                scope = ThinkingRule.Scope.ModelPattern("gemini-*"),
-                wireFormat = com.openminis.app.provider.thinking.ThinkingWireFormat.OmitEverything,
+            ThinkingContract(
+                kind = ThinkingContract.Kind.CUSTOM,
+                scope = ThinkingContract.Scope.ModelPattern("gemini-*"),
+                wireFormat = novex.android.thinking.ThinkingWireFormat.OmitEverything,
                 label = "中转兼容：gemini 模型不发思考参数",
             ),
         )
@@ -792,7 +792,7 @@ class ProviderRepository(private val context: Context) {
         val config = workingCopy()
         var changed = false
         for (instance in config.instances) {
-            val tpl = VoiceProviderTemplate.template(instance.customBaseURL) ?: continue
+            val tpl = VoiceVendorTemplate.template(instance.customBaseURL) ?: continue
             val templateById = tpl.mockModels.associateBy { it.id }
             val instanceEntries = config.modelEntries.filter { it.providerInstanceId == instance.id }
             val existingIds = instanceEntries.map { it.baseModel.id }.toSet()
@@ -916,8 +916,8 @@ class ProviderRepository(private val context: Context) {
         // [T-android-thinking-rules-phase2] The instance is gone — drop its custom
         // rules from Room and the resolver cache (they can never fire again).
         runCatching {
-            runBlocking { providerDao.deleteThinkingRulesForInstance(instanceId) }
-            ThinkingRuleResolver.setCustomRules(instanceId, emptyList())
+            runBlocking { providerDao.deleteThinkingContractsForInstance(instanceId) }
+            ThinkingContractResolver.setCustomRules(instanceId, emptyList())
         }
     }
 
@@ -1127,7 +1127,7 @@ class ProviderRepository(private val context: Context) {
         // bits) must never overwrite. Mirrors iOS replaceEntries
         // templateModalityById guard (d55cd821).
         val instanceBaseURL = config.instances.firstOrNull { it.id == instanceId }?.customBaseURL
-        val voiceTemplate = VoiceProviderTemplate.template(instanceBaseURL)
+        val voiceTemplate = VoiceVendorTemplate.template(instanceBaseURL)
         val templateVoiceModelById = voiceTemplate?.mockModels
             ?.filter { it.hasVoiceModality }
             ?.associateBy { it.id }
@@ -1432,7 +1432,7 @@ class ProviderRepository(private val context: Context) {
         // configLock KDoc above was written to close (it cites the
         // "ConcurrentModificationException → ArrayList.next" crash seen on
         // Pixel 6 / 4a). Concurrent readers iterate that same list with no
-        // lock: hasFoldedShadowDuplicates() and shadowVoiceProviders() are
+        // lock: hasFoldedShadowDuplicates() and shadowVoiceSources() are
         // called from ProviderListScreen during composition — on the main
         // thread, and recomposition fires precisely BECAUSE this reorder just
         // emitted — while the background model-refresh fan-out reads it too.
@@ -1856,17 +1856,17 @@ class ProviderRepository(private val context: Context) {
     // User-authored rules live in provider.db (provider_thinking_rules), keyed by
     // provider-instance id, in sort_order priority order. Built-in vendor rules are
     // never stored. On every mutation we publish the instance's rules into the
-    // ThinkingRuleResolver cache so the (sync) request-builder can read them.
+    // ThinkingContractResolver cache so the (sync) request-builder can read them.
 
     /** Load one instance's custom rules from Room, in stored order. */
-    fun thinkingRules(instanceId: String): List<ThinkingRule> = runBlocking {
-        runCatching { providerDao.loadThinkingRules(instanceId).map { ThinkingRuleCoding.toRule(it) } }
+    fun thinkingContracts(instanceId: String): List<ThinkingContract> = runBlocking {
+        runCatching { providerDao.loadThinkingContracts(instanceId).map { ThinkingContractCoding.toRule(it) } }
             .getOrDefault(emptyList())
     }
 
     /** The persisted ids for one instance's custom rules, parallel to [thinkingRules]. */
-    fun thinkingRuleIds(instanceId: String): List<String> = runBlocking {
-        runCatching { providerDao.loadThinkingRules(instanceId).map { it.id } }.getOrDefault(emptyList())
+    fun thinkingContractIds(instanceId: String): List<String> = runBlocking {
+        runCatching { providerDao.loadThinkingContracts(instanceId).map { it.id } }.getOrDefault(emptyList())
     }
 
     /** First model id served by [instanceId], for the resolution-trace sample. Null if none. */
@@ -1876,17 +1876,17 @@ class ProviderRepository(private val context: Context) {
     }
 
     /** Warm the resolver cache with every instance's custom rules (called on config load). */
-    fun loadAllThinkingRulesIntoCache() {
+    fun loadAllThinkingContractsIntoCache() {
         runCatching {
-            val rows = runBlocking { providerDao.loadAllThinkingRules() }
+            val rows = runBlocking { providerDao.loadAllThinkingContracts() }
             val byInstance = rows.groupBy { it.providerInstanceId }
-                .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingRuleCoding.toRule(it) } }
-            ThinkingRuleResolver.setAllCustomRules(byInstance)
+                .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingContractCoding.toRule(it) } }
+            ThinkingContractResolver.setAllCustomRules(byInstance)
         }
     }
 
     private fun republishThinkingCache(instanceId: String) {
-        ThinkingRuleResolver.setCustomRules(instanceId, thinkingRules(instanceId))
+        ThinkingContractResolver.setCustomRules(instanceId, thinkingContracts(instanceId))
     }
 
     /**
@@ -1895,43 +1895,43 @@ class ProviderRepository(private val context: Context) {
      * rules shift down. A non-null [id] updates in place, preserving position.
      * Returns the rule id.
      */
-    fun saveThinkingRule(instanceId: String, rule: ThinkingRule, id: String? = null): String = runBlocking {
-        val existing = providerDao.loadThinkingRules(instanceId).toMutableList()
+    fun saveThinkingContract(instanceId: String, rule: ThinkingContract, id: String? = null): String = runBlocking {
+        val existing = providerDao.loadThinkingContracts(instanceId).toMutableList()
         val ruleId = id ?: java.util.UUID.randomUUID().toString()
         val idx = existing.indexOfFirst { it.id == ruleId }
         if (idx >= 0) {
             // Update in place at its current sort_order.
-            existing[idx] = ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, existing[idx].sortOrder)
+            existing[idx] = ThinkingContractCoding.toEntity(rule, ruleId, instanceId, existing[idx].sortOrder)
         } else {
             // New rule at the top; everything else shifts down.
-            existing.add(0, ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, 0))
+            existing.add(0, ThinkingContractCoding.toEntity(rule, ruleId, instanceId, 0))
         }
         val renumbered = existing.mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingRules(instanceId, renumbered)
+        providerDao.replaceThinkingContracts(instanceId, renumbered)
         republishThinkingCache(instanceId)
         ruleId
     }
 
     /** Delete a custom rule by id. Hard delete — Android provider config is local-only,
      *  so there is no sync channel that could resurrect it (no tombstone needed). */
-    fun deleteThinkingRule(instanceId: String, id: String) = runBlocking {
-        providerDao.deleteThinkingRule(id)
+    fun deleteThinkingContract(instanceId: String, id: String) = runBlocking {
+        providerDao.deleteThinkingContract(id)
         // Renumber survivors so sort_order stays dense.
-        val survivors = providerDao.loadThinkingRules(instanceId)
+        val survivors = providerDao.loadThinkingContracts(instanceId)
             .sortedBy { it.sortOrder }
             .mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingRules(instanceId, survivors)
+        providerDao.replaceThinkingContracts(instanceId, survivors)
         republishThinkingCache(instanceId)
     }
 
     /** Reorder an instance's custom rules to match [orderedIds] (a permutation). */
-    fun reorderThinkingRules(instanceId: String, orderedIds: List<String>) = runBlocking {
-        val byId = providerDao.loadThinkingRules(instanceId).associateBy { it.id }
+    fun reorderThinkingContracts(instanceId: String, orderedIds: List<String>) = runBlocking {
+        val byId = providerDao.loadThinkingContracts(instanceId).associateBy { it.id }
         val reordered = orderedIds.mapNotNull { byId[it] }
             .mapIndexed { i, e -> e.copy(sortOrder = i) }
         // Keep any id the caller omitted (defensive against a partial list) appended.
         val omitted = byId.values.filter { it.id !in orderedIds }.map { it }
-        providerDao.replaceThinkingRules(instanceId, reordered + omitted)
+        providerDao.replaceThinkingContracts(instanceId, reordered + omitted)
         republishThinkingCache(instanceId)
     }
 
@@ -1942,12 +1942,12 @@ class ProviderRepository(private val context: Context) {
      * ModelPattern rule the provider actually serves a matching model for. An empty
      * catalog keeps everything (list must not be mysteriously empty before first fetch).
      */
-    fun builtInThinkingRulesForDisplay(instanceId: String): List<ThinkingRule> {
+    fun builtInThinkingContractsForDisplay(instanceId: String): List<ThinkingContract> {
         ensureConfigLoaded()
         val config = _config.value
         val inst = config.instances.find { it.id == instanceId } ?: return emptyList()
         val base = (inst.effectiveBaseURL ?: "").lowercase()
-        val ctx = com.openminis.app.provider.thinking.ThinkingResolveContext(
+        val ctx = novex.android.thinking.ThinkingResolveContext(
             modelId = "",
             supportsReasoning = null,
             declaredEffortValues = null,
@@ -1960,10 +1960,10 @@ class ProviderRepository(private val context: Context) {
             offEffort = null,
         )
         val modelIds = config.modelEntries.filter { it.providerInstanceId == instanceId }.map { it.model.id }
-        return ThinkingRuleResolver.builtInRules(ctx).filter { rule ->
+        return ThinkingContractResolver.builtInRules(ctx).filter { rule ->
             when (rule.scope) {
-                is ThinkingRule.Scope.AllModels -> true
-                is ThinkingRule.Scope.ModelPattern ->
+                is ThinkingContract.Scope.AllModels -> true
+                is ThinkingContract.Scope.ModelPattern ->
                     modelIds.isEmpty() || modelIds.any { rule.scope.matches(it) }
             }
         }
@@ -2041,7 +2041,7 @@ class ProviderRepository(private val context: Context) {
     /**
      * The resolved ACTIVE voice-input choice for the panel: either the on-device
      * System engine (with an online/offline preference) or a provider entry.
-     * Resolution order mirrors iOS VoiceProviderResolver: explicit override
+     * Resolution order mirrors the iOS voice resolver: explicit override
      * first, then the Voice Input group's members in fallback order (a System
      * sentinel member selects the System engine), then the System default.
      */
@@ -2108,7 +2108,7 @@ class ProviderRepository(private val context: Context) {
      * strategy — `fallback` keeps group order, `loadBalance` rotates the start
      * position by [loadBalanceSeed] so separate capture sessions spread across
      * members (mirrors ModelGroupRouter's per-session rotation for text chat,
-     * and iOS VoiceProviderResolver.resolvedInputCandidates). An explicit
+     * and the iOS voice resolver's resolvedInputCandidates). An explicit
      * System override returns [] — the caller uses the System engine directly.
      * System sentinel group members are skipped: they never serve cloud ASR.
      */
@@ -2313,7 +2313,7 @@ class ProviderRepository(private val context: Context) {
      * A read-only mirror of an instance's voice capability, surfaced in Voice
      * Services. Shares the underlying instance's credential + endpoint.
      */
-    data class ShadowVoiceProvider(
+    data class ShadowVoiceSource(
         val instanceId: String,
         val displayName: String,
         val inputModels: List<ModelEntry>,   // audio-in entries (ASR)
@@ -2325,14 +2325,14 @@ class ProviderRepository(private val context: Context) {
      * models and isn't shadow-disabled, FOLDED by normalized base URL so two
      * instances on one host show a single deterministic representative row.
      */
-    fun shadowVoiceProviders(): List<ShadowVoiceProvider> {
+    fun shadowVoiceSources(): List<ShadowVoiceSource> {
         ensureConfigLoaded()
         val config = _config.value
         // [T-android-reorder-unlocked-mutation] Snapshot first — same
         // main-thread composition reader as hasFoldedShadowDuplicates.
         val candidates = config.instances.toList().filter { inst ->
             inst.isEnabled && hasVoiceModels(inst.id) && !isVoiceShadowDisabled(inst.id) &&
-                com.openminis.app.provider.voice.VoiceProviderFactory.supports(inst, loadApiKey(inst.id))
+                novex.android.voice.VoiceClientFactory.supports(inst, loadApiKey(inst.id))
         }
         val byKey = candidates.groupBy { inst ->
             normalizedShadowKey(inst.customBaseURL).ifEmpty { "id:${inst.id}" }
@@ -2355,7 +2355,7 @@ class ProviderRepository(private val context: Context) {
                     .thenBy { it.id },
             ).first()
             val entries = config.modelEntries.filter { it.providerInstanceId == rep.id }
-            ShadowVoiceProvider(
+            ShadowVoiceSource(
                 instanceId = rep.id,
                 displayName = rep.label,
                 inputModels = entries.filter { it.model.hasAudioInput },

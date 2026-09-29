@@ -10,7 +10,7 @@ import java.util.Locale
  *    smooths over OEM fragmentation (Pixel/Samsung/Xiaomi … AOSP / HarmonyOS).
  *  - [ProviderSpeechRecognitionEngine]: captures PCM via AudioRecord and
  *    dispatches it to the resolved cloud provider's transcription endpoint
- *    through the VoiceProvider stack. One-shot on stop — it reports
+ *    through the voice-client stack. One-shot on stop — it reports
  *    `supportsPartialResults = false`, so the System engine remains the
  *    streaming/live-transcript option.
  *

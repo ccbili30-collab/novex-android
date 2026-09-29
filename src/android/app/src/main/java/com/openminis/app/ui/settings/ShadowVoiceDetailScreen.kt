@@ -31,7 +31,7 @@ import com.openminis.app.data.repository.ProviderRepository
 
 /**
  * [T-android-provider-voice] Read-only detail of a shadow Voice Service —
- * Android port of iOS ShadowVoiceProviderDetailView. Shows where the
+ * Android port of iOS 影子语音详情视图（Shadow Voice Detail）. Shows where the
  * credential/endpoint come from (the underlying text provider instance), the
  * ASR + TTS model lists, and the per-instance "Show in Voice Services" toggle.
  */

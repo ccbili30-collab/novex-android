@@ -48,7 +48,7 @@ import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.provider.image.ImageModelCatalog
+import novex.android.models.ImageGenerationModels
 import com.openminis.app.R
 import novex.android.ui.NovexTopAction
 import novex.android.ui.NovexTopTextAction
@@ -258,7 +258,7 @@ fun ImageGenerationSourceScreen(
             status = "正在拉取模型…"
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    ImageModelCatalog.fetch(
+                    ImageGenerationModels.fetch(
                         providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI,
                         baseURL = apiBase.trim().trimEnd('/'),
                         apiKey = apiKey.trim(),

@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * [T-android-tts-capsule] GLOBAL read-replies (TTS output) state — the single
  * source of truth shared by the composer's "Read replies" pill and the floating
  * speech-player capsule. Port of iOS `VoiceOutputState`
- * (VoiceProviderResolver.swift:66).
+ * (iOS 语音解析器 .swift:66——上游语音件已随 P3.2 绞杀，仅此处记档).
  *
  * Three-level model, in lockstep with iOS:
  *  • disabled (!isEnabled)          → no capsule, no TTS.

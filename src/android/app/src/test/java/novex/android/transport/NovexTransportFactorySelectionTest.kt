@@ -11,6 +11,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 /**
  * P3.1e 工厂选择点：原上游 openai 包的九类实例（①Codex-OAuth ②官方直连
@@ -19,6 +23,8 @@ import org.junit.Test
  * LAN 明文政策与 P3.1c 一致：适配器请求前置预检给确定性报错（见
  * NovexTransportProviderTest 的预检用例），工厂仍照常构造适配器。
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class NovexTransportFactorySelectionTest {
 
     private fun instance(
@@ -153,6 +159,48 @@ class NovexTransportFactorySelectionTest {
             "${com.openminis.app.auth.KimiDeviceFlow.CODING_API_BASE}/v1/chat/completions",
             kimi.completionUrl().toString(),
         )
+    }
+
+    @Test
+    fun `①Codex OAuth 工厂构造-responses 线与指纹头`() {
+        // 九类实例唯一无工厂构造用例的一类：OAuth 凭据 + 无自定基址 + 有 Context
+        // → Codex 模式（chatgpt.com Responses 后端 + codex 指纹头）。需要
+        // Robolectric Context 读（加密回落明文的）OAuth 存储。
+        val provider = ProviderFactory.create(
+            instance(customBaseURL = null, credentialType = ProviderCredential.oauth),
+            "unused",
+            LLMModel.gpt4oMini,
+            RuntimeEnvironment.getApplication(),
+        ) as NovexTransportProvider
+        assertEquals(WireProtocol.RESPONSES, provider.lineProtocol())
+        assertTrue(provider.isCodexOAuth)
+        // 聊天端点固定到 chatgpt.com 后端（basePath 只是生图线兜底）。
+        assertEquals(
+            "https://chatgpt.com/backend-api/codex/responses",
+            provider.completionUrl().toString(),
+        )
+        val headers = provider.outboundHeaders()
+        assertEquals("codex_cli_rs", headers["Originator"])
+        assertEquals("responses=experimental", headers["Openai-Beta"])
+        assertTrue(headers.containsKey("Version"))
+        assertTrue((headers["User-Agent"] ?: "").contains("codex_cli_rs"))
+
+        // 手工 bearer 令牌不走 Codex 线（chatgpt.com 后端只收真会话令牌）——存进
+        // OAuth 存储后按 API-key 形态走 chat 线。
+        val oauth = com.openminis.app.auth.OAuthManager.forInstance(
+            RuntimeEnvironment.getApplication(),
+            instance(customBaseURL = null, credentialType = ProviderCredential.oauth),
+        )!!
+        oauth.saveManualBearerToken("manual-bearer-token")
+        val manual = ProviderFactory.create(
+            instance(customBaseURL = null, credentialType = ProviderCredential.oauth),
+            "unused",
+            LLMModel.gpt4oMini,
+            RuntimeEnvironment.getApplication(),
+        ) as NovexTransportProvider
+        assertEquals(WireProtocol.CHAT_COMPLETIONS, manual.lineProtocol())
+        assertFalse(manual.isCodexOAuth)
+        oauth.deleteManualBearerToken()
     }
 
     @Test

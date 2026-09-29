@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProviderModelGroupEntity::class,
         ProviderAgentLoopIdEntity::class,
         ProviderConfigMetaEntity::class,
-        ProviderThinkingRuleEntity::class,
+        ProviderThinkingContractEntity::class,
     ],
     version = 5,
     exportSchema = false,

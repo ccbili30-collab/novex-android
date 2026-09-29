@@ -1,4 +1,4 @@
-package com.openminis.app.provider.image
+package novex.android.models
 
 import com.openminis.app.data.model.ProviderType
 import kotlinx.coroutines.runBlocking
@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-class ImageModelCatalogTest {
+class ImageGenerationModelsTest {
     private lateinit var server: MockWebServer
 
     @Before
@@ -28,7 +28,7 @@ class ImageModelCatalogTest {
     fun `openai compatible source appends v1 when switch is enabled`() = runBlocking {
         server.enqueue(jsonModels())
 
-        val models = ImageModelCatalog.fetch(
+        val models = ImageGenerationModels.fetch(
             providerType = ProviderType.openAI,
             baseURL = server.url("/").toString(),
             apiKey = "test-key",
@@ -43,7 +43,7 @@ class ImageModelCatalogTest {
     fun `openai compatible source leaves address untouched when switch is disabled`() = runBlocking {
         server.enqueue(jsonModels())
 
-        ImageModelCatalog.fetch(
+        ImageGenerationModels.fetch(
             providerType = ProviderType.openAI,
             baseURL = server.url("/").toString(),
             apiKey = "test-key",
@@ -63,7 +63,7 @@ class ImageModelCatalogTest {
         )
 
         val error = runCatching {
-            ImageModelCatalog.fetch(
+            ImageGenerationModels.fetch(
                 providerType = ProviderType.openAI,
                 baseURL = server.url("/").toString(),
                 apiKey = "test-key",

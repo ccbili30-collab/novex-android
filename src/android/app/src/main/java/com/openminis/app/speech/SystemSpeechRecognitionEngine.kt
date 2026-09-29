@@ -710,7 +710,7 @@ class SystemSpeechRecognitionEngine(private val appContext: Context) : SpeechRec
             // see onPartialResults. iOS does exactly this: its
             // SFSpeechURLRecognitionRequest sets shouldReportPartialResults =
             // true purely as a salvage path when the recognizer never emits a
-            // final (VoiceProvider+System.swift:139-143), and buffers the text
+            // final (iOS 语音系统件 139-143), and buffers the text
             // in a local rather than showing it.
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, appContext.packageName)
@@ -794,7 +794,7 @@ class SystemSpeechRecognitionEngine(private val appContext: Context) : SpeechRec
          * longer appears word-by-word as you speak. It is held here and only
          * committed once the utterance is complete, matching iOS, where the
          * recognizer's partials likewise never reach the UI
-         * (VoiceProvider+System.swift:173-187 keeps them in a local `latestText`).
+         * (iOS 同实现在 173-187 把它们留在局部 `latestText`)。
          *
          * Kept rather than disabled because it is the salvage path: some
          * recognizers fail to emit a final result on the first request or two

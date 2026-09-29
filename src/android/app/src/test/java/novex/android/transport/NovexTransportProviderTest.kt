@@ -929,6 +929,7 @@ class NovexTransportProviderTest {
         assertTrue("粘性实例应直接走 responses", call2.sawRequest is novex.model.ResponsesStreamRequest)
 
         // 已发块后的失败不触发回退（中途中断照常抛错）。
+        val midDropRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
         val midDrop = NovexTransportProvider(
             apiKey = "k", model = LLMModel("m2", "M", "OpenAI"),
             basePath = "https://qianchen2.example.com/v1",
@@ -939,6 +940,7 @@ class NovexTransportProviderTest {
                     override fun cancel() {}
                     override fun begin(token: String?) {}
                     override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                        midDropRequests += request
                         onChunk(novex.model.StreamChunk.TextDelta("partial"))
                         onChunk(StreamChunk.Failure("HTTP 500", 500, "service", null, null))
                         return StreamResult.Failed
@@ -950,6 +952,100 @@ class NovexTransportProviderTest {
             (midDrop as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64).toList()
         }.exceptionOrNull()
         assertTrue(error is LLMError.TransientError)
+        // 已发块后的失败不触发回退：只发过那一次 chat 请求，没有 responses 重试。
+        assertEquals("中途中断不得追加 responses 重试请求", 1, midDropRequests.size)
+        assertTrue(midDropRequests.single() is novex.model.StreamRequest)
+    }
+
+    @Test
+    fun `前尘回退-responses 重试也失败则粘性不落-新回合仍从 chat 起步`() = runBlocking {
+        // 负向粘性：粘性等重试真的产出首块再落。重试也失败（连首块都没有）时
+        // 本实例不得锁死在 responses 上——下一回合仍从 chat 试起。
+        val seenRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
+        val call = object : NovexTransportProvider.TransportCall {
+            override fun cancel() {}
+            override fun begin(token: String?) {}
+            override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                seenRequests += request
+                onChunk(StreamChunk.Failure("HTTP 500", 500, "service", null, null))
+                return StreamResult.Failed
+            }
+        }
+        val provider = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
+            basePath = "https://qianchen3.example.com/v1",
+            instanceId = "sticky-negative-instance",
+            allowResponsesFallback = true,
+            callOpener = { call },
+        )
+        val error = runCatching {
+            (provider as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64).toList()
+        }.exceptionOrNull()
+        assertTrue(error is LLMError.TransientError)
+        // 首回合：chat 失败 → responses 重试也失败（两次请求，都无首块）。
+        assertEquals(2, seenRequests.size)
+        assertTrue(seenRequests.first() is novex.model.StreamRequest)
+        assertTrue(seenRequests.last() is novex.model.ResponsesStreamRequest)
+
+        // 同实例 id 的新 provider 对象：仍从 chat 起步（粘性未落）。
+        val secondRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
+        val call2 = object : NovexTransportProvider.TransportCall {
+            override fun cancel() {}
+            override fun begin(token: String?) {}
+            override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                secondRequests += request
+                onChunk(novex.model.StreamChunk.Done("stop"))
+                return StreamResult.Completed
+            }
+        }
+        val provider2 = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
+            basePath = "https://qianchen3.example.com/v1",
+            instanceId = "sticky-negative-instance",
+            allowResponsesFallback = true,
+            callOpener = { call2 },
+        )
+        (provider2 as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64).toList()
+        assertEquals("失败重试不落粘性，新回合应从 chat 起步", 1, secondRequests.size)
+        assertTrue(secondRequests.single() is novex.model.StreamRequest)
+    }
+
+    @Test
+    fun `mistral 端点在 responses 与 chat 两线都抑制思考参数`() {
+        // Mistral 闭 schema：请求拒 reasoning（422 extra_forbidden），历史回放也
+        // 不收 reasoning_content——思考参数两头都不发。responses 线此前无测试
+        // 钉（chat 线由金表覆盖）。
+        val mistral = NovexTransportProvider(
+            apiKey = "k",
+            model = LLMModel("mistral-large-2411", "M", "Mistral", supportsReasoning = true),
+            basePath = "https://api.mistral.ai/v1",
+            protocol = novex.model.WireProtocol.RESPONSES,
+        )
+        val responsesReq = mistral.buildResponsesRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+        )
+        assertNull("responses 线 Mistral 不发思考档", responsesReq.thinkingLevel)
+        assertNull("responses 线 Mistral 不发关闭档", responsesReq.offEffort)
+
+        val chatReq = mistral.buildStreamRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+        )
+        val extras = chatReq.request.extraParameters
+        assertTrue("chat 线 Mistral 思考参数为空", extras == null || extras.length() == 0 || !extras.has("reasoning_effort"))
+
+        // 对照：非 Mistral 的 responses 端点同条件照发 effort。
+        val other = NovexTransportProvider(
+            apiKey = "k",
+            model = LLMModel("gpt-5.5", "G", "OpenAI", supportsReasoning = true),
+            basePath = "https://relay.example.com/v1",
+            protocol = novex.model.WireProtocol.RESPONSES,
+        )
+        assertEquals(
+            novex.model.WireThinkingLevel.HIGH,
+            other.buildResponsesRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+            ).thinkingLevel,
+        )
     }
 
     @Test

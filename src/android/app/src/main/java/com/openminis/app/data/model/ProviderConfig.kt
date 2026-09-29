@@ -238,7 +238,7 @@ data class ProviderInstance(
     /**
      * [T-android-thinking-rules-phase2 / parity with iOS 93eb4090] Whether custom
      * thinking rules are meaningful for this instance, i.e. its requests actually run
-     * through the Chat Completions path that consults [ThinkingRuleResolver].
+     * through the Chat Completions path that consults [novex.android.thinking.ThinkingContractResolver].
      *
      * Anthropic and Gemini use their own thinking emitters and never read the rule
      * registry. An OpenAI instance in Responses mode (useResponsesAPI) builds its
@@ -247,7 +247,7 @@ data class ProviderInstance(
      * those the UI must show an explanatory notice, NOT an interactive list that
      * promises behaviour the request path ignores.
      */
-    val supportsCustomThinkingRules: Boolean
+    val supportsCustomThinkingContracts: Boolean
         get() = when (providerType) {
             ProviderType.anthropic, ProviderType.gemini -> false
             else -> {

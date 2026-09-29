@@ -7,10 +7,10 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import com.openminis.app.MinisApp
-import com.openminis.app.provider.voice.VoiceInputRequest
-import com.openminis.app.provider.voice.VoiceProvider
-import com.openminis.app.provider.voice.VoiceProviderException
-import com.openminis.app.provider.voice.VoiceProviderFactory
+import novex.android.voice.VoiceAsrRequest
+import novex.android.voice.VoiceClient
+import novex.android.voice.VoiceClientException
+import novex.android.voice.VoiceClientFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,9 +26,9 @@ import kotlin.math.sqrt
 /**
  * [T-android-provider-voice] Provider-backed transcription engine — the
  * formerly-stubbed Phase 2. Captures PCM16 mono 16 kHz via [AudioRecord],
- * wraps the take in a WAV container on stop, and ships it to the VoiceProvider
- * resolved from the Voice Input group (VoiceProviderFactory + the instance's
- * stored API key). Mirrors the iOS provider ASR path (VoiceProvider.transcribe:
+ * wraps the take in a WAV container on stop, and ships it to the voice client
+ * resolved from the Voice Input group (VoiceClientFactory + the instance's
+ * stored API key). Mirrors the iOS provider ASR path (VoiceClient.transcribe:
  * dedicated Whisper-style endpoint, vendor adapters, or chat-based ASR for
  * audio chat models).
  *
@@ -239,7 +239,7 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
             // STICKY member for later takes; only when EVERY candidate fails
             // does the error surface (last error wins).
             transcribeJob = scope.launch {
-                val wav = VoiceProvider.wrapPcm16InWav(audio, SAMPLE_RATE)
+                val wav = VoiceClient.wrapPcm16InWav(audio, SAMPLE_RATE)
                 // Sticky-first try order: rotate the chain so the last
                 // successful member goes first, the rest wrap around.
                 val ordered = stickyEntryId
@@ -250,14 +250,14 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
                 var lastError: Exception? = null
                 for ((instance, entry) in ordered) {
                     if (cancelled.get()) return@launch
-                    val provider = VoiceProviderFactory.make(instance, repo.loadApiKey(instance.id))
+                    val provider = VoiceClientFactory.make(instance, repo.loadApiKey(instance.id))
                     if (provider == null) {
                         Log.w(TAG, "candidate ${instance.label} cannot serve voice input — skipping")
                         continue
                     }
                     try {
                         val response = provider.transcribe(
-                            VoiceInputRequest(
+                            VoiceAsrRequest(
                                 audioData = wav,
                                 model = entry.baseModel.id,
                                 language = locale.toLanguageTag(),
@@ -286,7 +286,7 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
                 if (!cancelled.get()) {
                     val e = lastError
                     val kind = when {
-                        e is VoiceProviderException.Auth -> RecognitionError.PERMISSION_DENIED
+                        e is VoiceClientException.Auth -> RecognitionError.PERMISSION_DENIED
                         e is java.io.IOException -> RecognitionError.NETWORK
                         else -> RecognitionError.UNKNOWN
                     }
@@ -440,14 +440,14 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
         var lastError: Exception? = null
         for ((instance, entry) in ordered) {
             if (cancelled.get()) return
-            val provider = VoiceProviderFactory.make(instance, repo.loadApiKey(instance.id))
+            val provider = VoiceClientFactory.make(instance, repo.loadApiKey(instance.id))
             if (provider == null) {
                 Log.w(TAG, "candidate ${instance.label} cannot serve voice input — skipping")
                 continue
             }
             try {
                 val response = provider.transcribe(
-                    VoiceInputRequest(
+                    VoiceAsrRequest(
                         audioData = wav,
                         model = entry.baseModel.id,
                         language = locale.toLanguageTag(),
@@ -473,7 +473,7 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
         if (!cancelled.get()) {
             val e = lastError
             val kind = when {
-                e is VoiceProviderException.Auth -> RecognitionError.PERMISSION_DENIED
+                e is VoiceClientException.Auth -> RecognitionError.PERMISSION_DENIED
                 e is java.io.IOException -> RecognitionError.NETWORK
                 else -> RecognitionError.UNKNOWN
             }

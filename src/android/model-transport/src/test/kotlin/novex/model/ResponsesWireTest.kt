@@ -319,6 +319,44 @@ class ResponsesWireTest {
         assertTrue(tail.filterIsInstance<StreamChunk.Failure>().single().message.contains("No image data"))
     }
 
+    @Test fun `codex 生图-图块前到 DONE 哨兵不发 Done-null 而按无图收流`() {
+        // 对齐被删上游：读循环遇 [DONE] 只是 break，收尾判定在流尾——图块前到
+        // 哨兵绝不能被翻译成 Done(null)（那会把「无图」伪装成正常完成）。
+        val d = decoder(codexImageRun = true)
+        val events = d.feed("data: [DONE]\n\n")
+        assertTrue("哨兵不该直接产生任何块", events.isEmpty())
+        val tail = d.finish()
+        val all = events + tail
+        assertTrue(all.none { it is StreamChunk.Done })
+        assertTrue(all.filterIsInstance<StreamChunk.Failure>().single().message.contains("No image data"))
+    }
+
+    @Test fun `codex 生图-思考增量不折进拒答文案`() {
+        // 被删上游只认文本/消息条目为拒答源；思考流折进 refusalText 会把「无图无
+        // 拒答」误判成安全拒答。
+        val d = decoder(codexImageRun = true)
+        val events = d.feed(
+            "data: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"思考片段\"}\n" +
+                "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"摘要片段\"}\n\n")
+        assertTrue(events.none { it is StreamChunk.ThinkingDelta })
+        val tail = d.finish()
+        val all = events + tail
+        val failure = all.filterIsInstance<StreamChunk.Failure>().single()
+        assertTrue("思考文本不得进入拒答文案: ${failure.message}", failure.message.contains("No image data"))
+        assertTrue(!failure.message.contains("思考片段"))
+    }
+
+    @Test fun `codex 生图-整段 done 文本替换增量拒答不重复`() {
+        val d = decoder(codexImageRun = true)
+        d.feed("data: {\"type\":\"response.output_text.delta\",\"delta\":\"我不能\"}\n\n")
+        d.feed("data: {\"type\":\"response.output_text.done\",\"text\":\"我不能生成该图片\"}\n\n")
+        val tail = d.finish()
+        val failure = tail.filterIsInstance<StreamChunk.Failure>().single()
+        assertTrue(failure.message.contains("我不能生成该图片"))
+        // 替换而非追加：增量前缀不得在终稿里出现两次。
+        assertEquals(failure.message.indexOf("我不能"), failure.message.lastIndexOf("我不能"))
+    }
+
     // ------------------------------------------------------------------
     // 端到端（HttpServer）：Content-Type 裸 json + api-key 头 + 哨兵缺失收尾
     // ------------------------------------------------------------------

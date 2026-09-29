@@ -22,7 +22,7 @@ package com.openminis.app.data.model
 /**
  * Sentinel ids for the on-device System speech engines (SpeechRecognizer /
  * TextToSpeech), used as virtual provider/model ids in voice groups. MUST stay
- * byte-identical to iOS (SystemVoiceProvider.builtinProviderId +
+ * byte-identical to iOS (system voice builtinProviderId +
  * UnifiedModelPicker system entries) so voice-group member ids survive a
  * cross-platform config move.
  */
