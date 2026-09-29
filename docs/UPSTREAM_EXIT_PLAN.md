@@ -112,6 +112,37 @@ busybox ash 的 shell 语义差异（PS1 反斜杠转义、applet 覆盖）、**
 挂载写保护包装**（touch/cp/mv/mkdir/rm/rmdir/ln/dd/tee）、top 渲染、
 minis-mcp-cli（#!/usr/bin/env 依赖 coreutils-env）、命令真空期预装。
 
+### P2.5 · 沙箱退役（R0-R4）— 用户裁决 2026-09-29：「拆，必须拆」 — [ ]
+
+前置事实（代码核实）：制卡全链路（NovexContentToolExecutor 纯 Kotlin）、
+生图（OkHttp 直连）、文档解析（Kotlin）、技能/记忆读取（/var/minis 宿主侧
+解析，不走 PRoot）均零沙箱依赖。沙箱服务的 shell_execute/终端/MCP/
+Shizuku 系统操控全系上游「AI 助理」遗产。**退役后分发物 GPL 归零。**
+
+- [ ] **R0 下架灰度**（1 个 beta 周期）：shell_execute 移出 AI 工具清单
+      （AI 不再被告知此能力）；设置隐藏终端/容器管理/挂载文件夹入口；
+      功能代码不动，纯开关
+- [ ] **R1 保命件搬家**：/var/minis 宿主侧路径解析器（MinisImageFetcher、
+      StreamingMarkdownText、技能读取共用）迁入 novex.android 自有模块，
+      与 PRootKernel 解绑——解析器必须先于墙体存活
+- [ ] **R2 拆执行层**：删 sandbox/（12f）+ sandbox/offload（23f）+
+      OnDemandBash + ChatViewModel shell_execute 路径 + BrowserUseManager
+      （AI 自动浏览）；删 jniLibs 全部五枚（libproot/-loader/-loader32/
+      libtalloc/libandroid-shmem）+ cpp/pty_bridge.c + 资产（rootfs、
+      proot-aarch64、default_mount）+ prepare_android_sandbox.sh + 三个
+      CI workflow 的 prepare 步骤；Manifest 摘孤儿组件与权限（无障碍、
+      通知监听、日历、通讯录、定位、SYSTEM_ALERT_WINDOW 逐个核可达性）
+- [ ] **R3 拆界面**：ui/sandbox 六屏、ui/terminal 全家（终端+模拟器+
+      canvas）、挂载三屏（MountDetail/MountedFolders/SharedFolders）、
+      设置行、存储管理「沙箱容器」桶、导航路由
+- [ ] **R4 收尾**：THIRD_PARTY_LICENSES 出清 proot/talloc/alpine 条目
+      （**GPL=0**）；本计划表重写（P3 沙箱重写项删除、P4 瘦身、P5 解锁）；
+      审计复跑 + 八流程冒烟（重点证明制卡/技能/生图/附件零沙箱依赖）
+- 卫星裁决（保留）：AgentForegroundService（对话后台）、定时任务
+  （纯闹钟+对话）、用户手动内置浏览器（与 AI 自动浏览分离评估）
+
+预计拆除：源码约 21,640 行 + 二进制/资产约 4MB + 权限清单大瘦身。
+
 ### P3 · 子系统绞杀 — 黄档 — 顺序即依赖序 — [ ]
 
 **P3.0 执行纲领（摸底结论，2026-09-29）**：provider.* 与全部待绞杀子系统
@@ -127,8 +158,7 @@ API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.
    29 个消费文件）→ 以自有 model-transport（novex.model，现有
    ChatCompletionClient）为底座重写后删除上游原件
 2. data.db（Room minis.db）+ data.repository → 自有存储模块
-3. sandbox 应用侧 Kotlin（PRootKernel/RootfsManager/ExecutionCoordinator 等，
-   ≈19k）→ 同接口重写（对 proot 的接口面：spawn 命令行 + pty fd + rootfs 布局）
+3. ~~sandbox 应用侧 Kotlin 重写~~ → 已被 P2.5 沙箱退役整体取代（用户裁决）
 4. browser + ui.browser、speech（活 12f）、debug 面板、config、tools、
    offload、share、ui.settings 剩余屏、ui.chat 逐块 → conversation-runtime
    + ui.novex 持续绞杀
