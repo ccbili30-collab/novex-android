@@ -14,20 +14,22 @@ import novex.android.thinking.ThinkingContractCoding
 import org.json.JSONObject
 
 /**
- * [T-android-thinking-rules-phase2 / 与 iOS 的思考规则 minis-config 集合件对等
- * （自有 ThinkingContractsCollection）]
- * Exposes user-authored custom thinking rules to minis-config under
- * `thinkingrules.<instanceId>:<ruleId>.<field>`.
+ * minis-config 暴露面：把用户自定义的思考契约（[ThinkingContract]）映射成
+ * `thinkingrules.<instanceId>:<ruleId>.<field>` 路径族。
  *
- * Only CUSTOM rules are enumerable; built-in rules are never children, so they have no
- * writable path — "you cannot modify a built-in" is a structural guarantee, not a runtime
- * check. Child id is the composite `<instanceId>:<ruleId>` because the config path splits
- * give a collection exactly ONE id segment; instance ids are UUIDs (no colon), so a split
- * on the FIRST ':' cleanly separates instance from rule.
+ * 设计约束（与既有数据格式兼容，不因本文件演进而破坏）：
+ *  - 子节点 id 用 `<instanceId>:<ruleId>` 复合形式；instance id 是 UUID 不含
+ *    冒号，因此**首个冒号**即分隔符，两段都必须非空；
+ *  - 只枚举 CUSTOM 规则——内置规则不成为子节点，就没有可写路径，「内置不可
+ *    改」由结构保证而非运行时判断；remove 对 `builtin:` 前缀显式拒绝，报错
+ *    引导用户用「在其上方新增规则」来覆盖；
+ *  - 新增规则落在列表顶端（优先级最高）——排在被覆盖目标之下的覆盖规则没
+ *    有意义。
  */
 class ThinkingContractsCollection(
     private val repo: ProviderRepository,
 ) : ConfigCollection {
+
     override val basePath: String get() = "thinkingrules"
     override val displayName: String get() = "Thinking rules"
     override val description: String get() =
@@ -37,92 +39,92 @@ class ThinkingContractsCollection(
     override val risk: ConfigRisk get() = ConfigRisk.SENSITIVE
     override val addPayloadSchema: ConfigSchema get() = ConfigSchema.Json
 
-    // ---- child enumeration ----
+    /** 一条已被定位的自定义规则：属于哪个实例、用什么 id 存回。 */
+    private data class Located(val instanceId: String, val ruleId: String, val rule: ThinkingContract)
 
-    override fun childIds(): List<String> = buildList {
-        for (inst in repo.config.value.instances) {
-            for (id in repo.thinkingContractIds(inst.id)) add("${inst.id}:$id")
+    /** 全部自定义规则的复合 id，按「实例 × 规则」展开。 */
+    override fun childIds(): List<String> =
+        repo.config.value.instances.flatMap { inst ->
+            repo.thinkingContractIds(inst.id).map { ruleId -> "${inst.id}:$ruleId" }
         }
+
+    /**
+     * 复合 id → 定位信息。找不到（id 残缺、实例/规则已被删）返回 null，
+     * 由调用方决定是隐藏字段还是报「不存在」。
+     */
+    private fun locate(childId: String): Located? {
+        val sep = childId.indexOf(':')
+        if (sep <= 0 || sep == childId.length - 1) return null
+        val instanceId = childId.substring(0, sep)
+        val ruleId = childId.substring(sep + 1)
+        val index = repo.thinkingContractIds(instanceId).indexOf(ruleId)
+        val rule = index.takeIf { it >= 0 }?.let { repo.thinkingContracts(instanceId).getOrNull(it) }
+            ?: return null
+        return Located(instanceId, ruleId, rule)
     }
 
-    private fun split(childId: String): Pair<String, String>? {
-        val i = childId.indexOf(':')
-        if (i <= 0 || i >= childId.length - 1) return null
-        return childId.substring(0, i) to childId.substring(i + 1)
-    }
+    /** 读当前值；规则已消失时给 [fallback]（字段整体隐藏的场景用不到）。 */
+    private fun current(childId: String): ThinkingContract? = locate(childId)?.rule
 
-    private fun ruleOf(childId: String): Triple<String, String, ThinkingContract>? {
-        val (instanceId, ruleId) = split(childId) ?: return null
-        val ids = repo.thinkingContractIds(instanceId)
-        val idx = ids.indexOf(ruleId)
-        if (idx < 0) return null
-        val rule = repo.thinkingContracts(instanceId).getOrNull(idx) ?: return null
-        return Triple(instanceId, ruleId, rule)
+    /** 集中「定位失败即拒绝」的写路径：所有 writer 都经此落盘。 */
+    private inline fun mutate(childId: String, message: String, edit: (ThinkingContract) -> ThinkingContract) {
+        val located = locate(childId) ?: throw ConfigError.InvalidValue(message)
+        repo.saveThinkingContract(located.instanceId, edit(located.rule), id = located.ruleId)
     }
-
-    // ---- fields ----
 
     override fun fields(forId: String): List<ConfigField> {
-        val (instanceId, ruleId, _) = ruleOf(forId) ?: return emptyList()
+        if (locate(forId) == null) return emptyList()
+        val instanceId = forId.substringBefore(':')
         return listOf(
-            labelField(forId, instanceId, ruleId),
-            scopeField(forId, instanceId, ruleId),
-            wireFormatField(forId, instanceId, ruleId),
+            labelField(forId),
+            scopeField(forId),
+            wireFormatField(forId),
             providerField(forId, instanceId),
         )
     }
 
-    private fun labelField(childId: String, instanceId: String, ruleId: String) = ClosureField(
+    private fun labelField(childId: String) = ClosureField(
         path = "$basePath.$childId.label",
         displayName = "Label",
         description = "Human-readable name shown in the rule list and the resolution trace.",
         valueSchema = ConfigSchema.Str(),
-        reader = { ConfigValue.Str(ruleOf(childId)?.third?.label ?: "") },
+        reader = { ConfigValue.Str(current(childId)?.label ?: "") },
         writer = { v ->
-            val label = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("expected string")
-            val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
-            repo.saveThinkingContract(instanceId, rule.copy(label = label), id = ruleId)
+            val text = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("a string is required")
+            mutate(childId, "rule no longer exists") { it.copy(label = text) }
         },
     )
 
-    private fun scopeField(childId: String, instanceId: String, ruleId: String) = ClosureField(
+    private fun scopeField(childId: String) = ClosureField(
         path = "$basePath.$childId.scope",
         displayName = "Scope",
         description = "\"all\" for every model, or a glob pattern like \"deepseek-v4*\".",
         valueSchema = ConfigSchema.Str(),
         risk = ConfigRisk.SENSITIVE,
         reader = {
-            val s = ruleOf(childId)?.third?.scope
-            ConfigValue.Str(if (s is ThinkingContract.Scope.ModelPattern) s.pattern else "all")
+            val scope = current(childId)?.scope
+            ConfigValue.Str((scope as? ThinkingContract.Scope.ModelPattern)?.pattern ?: "all")
         },
         writer = { v ->
-            val str = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("expected string")
-            val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
-            val scope = if (str.equals("all", true) || str.isBlank()) {
-                ThinkingContract.Scope.AllModels
-            } else {
-                ThinkingContract.Scope.ModelPattern(str)
-            }
-            repo.saveThinkingContract(instanceId, rule.copy(scope = scope), id = ruleId)
+            val text = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("a string is required")
+            val scope = text.toScope()
+            mutate(childId, "rule no longer exists") { it.copy(scope = scope) }
         },
     )
 
-    private fun wireFormatField(childId: String, instanceId: String, ruleId: String) = ClosureField(
+    private fun wireFormatField(childId: String) = ClosureField(
         path = "$basePath.$childId.wireFormat",
         displayName = "Wire format",
         description = "JSON {\"type\":\"reasoning_effort\",\"offValue\":\"none\"} etc. — how the thinking control appears on the wire.",
         valueSchema = ConfigSchema.Json,
         risk = ConfigRisk.SENSITIVE,
         reader = {
-            val json = ThinkingContractCoding.encodeWireFormat(ruleOf(childId)?.third?.wireFormat)
-            configValueFromJson(json)
+            looseObject(ThinkingContractCoding.encodeWireFormat(current(childId)?.wireFormat))
         },
         writer = { v ->
-            val json = jsonStringFromConfigValue(v)
-            val fmt = ThinkingContractCoding.decodeWireFormat(json)
+            val fmt = ThinkingContractCoding.decodeWireFormat(v.toJsonText())
                 ?: throw ConfigError.InvalidValue("unrecognized wire format JSON")
-            val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
-            repo.saveThinkingContract(instanceId, rule.copy(wireFormat = fmt), id = ruleId)
+            mutate(childId, "rule no longer exists") { it.copy(wireFormat = fmt) }
         },
     )
 
@@ -137,80 +139,86 @@ class ThinkingContractsCollection(
         },
     )
 
-    // ---- add / remove ----
-
     override fun add(payload: ConfigValue): String {
         val obj = (payload as? ConfigValue.Obj)?.value
             ?: throw ConfigError.InvalidValue("Expected JSON object")
-        val instanceId = (obj["provider"] as? ConfigValue.Str)?.value
+        val instanceId = obj.stringOf("provider")
             ?: throw ConfigError.InvalidValue("`provider` (instance id) required")
         if (repo.config.value.instances.none { it.id == instanceId }) {
             throw ConfigError.InvalidValue("provider instance not found: $instanceId")
         }
-        val label = (obj["label"] as? ConfigValue.Str)?.value
+        val label = obj.stringOf("label")
             ?: throw ConfigError.InvalidValue("`label` required")
+        val fmt = ThinkingContractCoding.decodeWireFormat(
+            (obj["wire_format"] as? ConfigValue)?.toJsonText()
+                ?: throw ConfigError.InvalidValue("`wire_format` required (JSON object)"),
+        ) ?: throw ConfigError.InvalidValue("unrecognized wire_format")
 
-        val scopeStr = (obj["scope"] as? ConfigValue.Str)?.value ?: "all"
-        val scope = if (scopeStr.equals("all", true) || scopeStr.isBlank()) {
-            ThinkingContract.Scope.AllModels
-        } else {
-            ThinkingContract.Scope.ModelPattern(scopeStr)
-        }
-
-        val wfJson = when (val wf = obj["wire_format"]) {
-            is ConfigValue.Obj, is ConfigValue.Str -> jsonStringFromConfigValue(wf)
-            else -> throw ConfigError.InvalidValue("`wire_format` required (JSON object)")
-        }
-        val fmt = ThinkingContractCoding.decodeWireFormat(wfJson)
-            ?: throw ConfigError.InvalidValue("unrecognized wire_format")
-
-        val rule = ThinkingContract(
-            kind = ThinkingContract.Kind.CUSTOM,
-            scope = scope,
-            wireFormat = fmt,
-            label = label,
+        val ruleId = repo.saveThinkingContract(
+            instanceId,
+            ThinkingContract(
+                kind = ThinkingContract.Kind.CUSTOM,
+                scope = (obj.stringOf("scope") ?: "all").toScope(),
+                wireFormat = fmt,
+                label = label,
+            ),
+            id = null, // null = 新增，落列表顶端（最高优先级）
         )
-        // New rules insert at the top (priority 0) — a rule overriding a built-in is
-        // useless below it.
-        val ruleId = repo.saveThinkingContract(instanceId, rule, id = null)
         return "$instanceId:$ruleId"
     }
 
     override fun remove(id: String) {
-        if (id.startsWith("builtin:")) {
-            throw ConfigError.PermissionDenied(
+        when {
+            id.startsWith("builtin:") -> throw ConfigError.PermissionDenied(
                 "Built-in rules are part of the app and cannot be removed. Add a rule above one to override it.",
             )
-        }
-        val (instanceId, ruleId) = split(id)
-            ?: throw ConfigError.InvalidValue("bad rule id: $id")
-        repo.deleteThinkingContract(instanceId, ruleId)
-    }
-
-    // ---- JSON <-> ConfigValue bridge ----
-
-    private fun configValueFromJson(json: String?): ConfigValue {
-        if (json.isNullOrBlank()) return ConfigValue.Str("")
-        return try {
-            val o = JSONObject(json)
-            ConfigValue.Obj(o.keys().asSequence().associateWith { k -> ConfigValue.Str(o.get(k).toString()) })
-        } catch (_: Exception) {
-            ConfigValue.Str(json)
+            else -> {
+                val sep = id.indexOf(':')
+                if (sep <= 0 || sep == id.length - 1) {
+                    throw ConfigError.InvalidValue("bad rule id: $id")
+                }
+                repo.deleteThinkingContract(id.substring(0, sep), id.substring(sep + 1))
+            }
         }
     }
 
-    private fun jsonStringFromConfigValue(v: ConfigValue): String = when (v) {
-        is ConfigValue.Str -> v.value
-        is ConfigValue.Obj -> JSONObject().apply {
-            for ((k, vv) in v.value) {
-                when (vv) {
-                    is ConfigValue.Str -> put(k, vv.value)
-                    is ConfigValue.Int -> put(k, vv.value)
-                    is ConfigValue.Obj -> put(k, JSONObject(jsonStringFromConfigValue(vv)))
-                    else -> put(k, vv.toString())
+    // ---- 值域与 JSON 的松散互转 ----
+
+    /** "all"（忽略大小写）或空白 → 全模型；其余文本视为 glob。 */
+    private fun String.toScope(): ThinkingContract.Scope =
+        if (equals("all", ignoreCase = true) || isBlank()) ThinkingContract.Scope.AllModels
+        else ThinkingContract.Scope.ModelPattern(this)
+
+    private fun Map<String, ConfigValue>.stringOf(key: String): String? =
+        (this[key] as? ConfigValue.Str)?.value
+
+    /** ConfigValue → JSON 文本：Str 原样；Obj 递归组装；其余退化成字符串。 */
+    private fun ConfigValue?.toJsonText(): String = when (this) {
+        null -> throw ConfigError.InvalidValue("`wire_format` required (JSON object)")
+        is ConfigValue.Str -> value
+        is ConfigValue.Obj -> JSONObject().also { out ->
+            value.forEach { (k, v) ->
+                when (v) {
+                    is ConfigValue.Str -> out.put(k, v.value)
+                    is ConfigValue.Int -> out.put(k, v.value)
+                    is ConfigValue.Obj -> out.put(k, JSONObject(v.toJsonText()))
+                    else -> out.put(k, v.toString())
                 }
             }
         }.toString()
-        else -> v.toString()
+        else -> toString()
+    }
+
+    /** JSON 文本 → ConfigValue：能解析就展平成 Obj（值转字符串），否则原样 Str。 */
+    private fun looseObject(json: String?): ConfigValue {
+        if (json.isNullOrBlank()) return ConfigValue.Str("")
+        return try {
+            val parsed = JSONObject(json)
+            ConfigValue.Obj(buildMap {
+                for (key in parsed.keys()) put(key, ConfigValue.Str(parsed.get(key).toString()))
+            })
+        } catch (_: Exception) {
+            ConfigValue.Str(json)
+        }
     }
 }
