@@ -1,8 +1,10 @@
 package novex.android.transport
 
+import com.openminis.app.auth.ClaudeOAuthManager
 import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.LLMError
+import com.openminis.app.data.model.LLMMediaAttachment
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMResponse
@@ -14,6 +16,7 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.MinisUserAgent
+import com.openminis.app.provider.failOnSilentEmptyCompletion
 import com.openminis.app.provider.openai.OpenAIProvider
 import com.openminis.app.provider.openai.openCodeSunsetFriendlyError
 import com.openminis.app.provider.thinking.ThinkingResolveContext
@@ -29,7 +32,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import novex.conversation.ModelCapacity
 import novex.conversation.TokenMeasurement
+import novex.model.AnthropicMessagesRequest
+import novex.model.AnthropicWire
 import novex.model.ChatCompletionCall
+import novex.model.CompletionStreamRequest
+import novex.model.GeminiGenerateContentRequest
 import novex.model.ModelEndpoint
 import novex.model.PendingTool
 import novex.model.StreamChunk
@@ -37,6 +44,8 @@ import novex.model.StreamRequest
 import novex.model.StreamResult
 import novex.model.TextRequest
 import novex.model.ToolDefinition
+import novex.model.WireProtocol
+import novex.model.WireThinkingLevel
 import novex.model.WireAudio
 import novex.model.WireImage
 import novex.model.WireMessage
@@ -45,22 +54,30 @@ import java.net.SocketTimeoutException
 import java.net.URI
 
 /**
- * P3.1b 绞杀式适配器：对外实现上游 [LLMProvider] 接口（调用面零改动），
- * 对内把 OpenAI 兼容线路的聊天流量全部委托给自有 novex.model 传输。
+ * P3.1b/P3.1c 绞杀式适配器：对外实现上游 [LLMProvider] 接口（调用面零改动），
+ * 对内按 [protocol] 分线把聊天流量全部委托给自有 novex.model 传输——
+ *  - [WireProtocol.CHAT_COMPLETIONS]：OpenAI 兼容线（P3.1b 已切真实流量）；
+ *  - [WireProtocol.ANTHROPIC_MESSAGES]：Anthropic Messages 原生线（P3.1c）；
+ *  - [WireProtocol.GEMINI_GENERATE_CONTENT]：Gemini 原生线（P3.1c）。
  *
  * 本文件是绞杀缝：允许 import 上游类型（接口与数据形状），实现体为自有
- * 写法；图片生成不经此管，经 [imageDelegate] 原样回到上游实现。
+ * 写法；图片生成不经此管，OpenAI 兼容线经 [imageDelegate] 回上游实现
+ * （anthropic/gemini 无 Images API，返回 null 走「不支持生图」路径）。
  *
- * 已知不对齐项（judgment calls）见 docs/UPSTREAM_EXIT_PLAN.md P3.1b 行。
+ * 已知不对齐项（judgment calls）见 docs/UPSTREAM_EXIT_PLAN.md P3.1b/P3.1c 行。
  */
 class NovexTransportProvider(
     private val apiKey: String,
     override var model: LLMModel,
-    /** 已规范化的基址（ProviderInstance.effectiveBaseURL，形如 https://host/v1）。 */
+    /** 已规范化的基址（OpenAI 兼容线形如 https://host/v1；anthropic/gemini 为各自端点根）。 */
     private val basePath: String,
     private val customUserAgent: String? = null,
     /** 供应商实例 id：思考规则解析器的自定义规则键。 */
     private val instanceId: String? = null,
+    /** 线协议：决定请求编码、SSE 解码方言与端点/鉴权头。 */
+    private val protocol: WireProtocol = WireProtocol.CHAT_COMPLETIONS,
+    /** Anthropic OAuth（Claude Code）线路：Bearer 鉴权、系统前缀块、CLI 指纹头。 */
+    val isAnthropicOAuth: Boolean = false,
     /** 可注入传输面（单测钉时序用）；null → 真实 novex.model 调用。 */
     callOpener: (() -> TransportCall)? = null,
 ) : LLMProvider {
@@ -68,58 +85,221 @@ class NovexTransportProvider(
     /** 与 [ChatCompletionCall.stream] 同形的可注入传输面：单测用它钉流式时序。 */
     interface TransportCall {
         fun cancel()
-        fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult
+        fun stream(request: CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult
     }
 
     private val openCall: () -> TransportCall = callOpener ?: ::openRealCall
 
-    override val name: String = "OpenAI"
+    override val name: String = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> "OpenAI"
+        WireProtocol.ANTHROPIC_MESSAGES -> "Anthropic"
+        WireProtocol.GEMINI_GENERATE_CONTENT -> "Google"
+    }
+
+    /** 上游各家默认输出上限：Anthropic 64k，其余 16k（对齐被替换实现）。 */
+    override val defaultMaxOutputTokens: Int get() = when (protocol) {
+        WireProtocol.ANTHROPIC_MESSAGES -> 64_000
+        else -> 16_384
+    }
 
     /**
-     * Chat Completions 的 text 是单一整块（见上游接口注释）；下游按此
-     * 决定文本块与工具块的重组策略，适配器必须如实报告。
+     * 文本块语义：Chat Completions 的 text 是单一整块（见上游接口注释）；
+     * anthropic/gemini 是真正有序的输出块（content blocks / parts），到达序即
+     * 语义块序——与被替换实现一致返回 false。
      */
-    override val streamTextIsMonolithic: Boolean get() = true
+    override val streamTextIsMonolithic: Boolean get() = protocol == WireProtocol.CHAT_COMPLETIONS
+
+    /**
+     * [T-android-enhanced-cache] Enhanced Cache（1 小时缓存 TTL）：每次请求前由
+     * ChatViewModel 盖章（上游在 AnthropicProvider 上同名字段，绞杀后落在此处）。
+     * 仅 anthropic 线消费；OpenAI 兼容/gemini 线设置无副作用。
+     */
+    var enhancedCache: Boolean = false
 
     /**
      * 生图不走自有传输：消费方（GenerateImageTool / QuickTestSheet）经
      * 此取上游实现，Images API 行为一字不差。model 在每次取值时同步，
-     * 兜底换模型后生图请求仍用当前模型。
+     * 兜底换模型后生图请求仍用当前模型。anthropic/gemini 线无 Images API，
+     * 返回 null（调用方回落到「不支持生图」文案，与上游 AnthropicProvider /
+     * GeminiProvider 时代一致）。
      */
-    private val upstreamImageProvider by lazy {
-        OpenAIProvider(apiKey = apiKey, model = model, basePath = basePath, customUserAgent = customUserAgent)
+    private var imageProviderLazy: OpenAIProvider? = null
+    val imageDelegate: OpenAIProvider? get() {
+        if (protocol != WireProtocol.CHAT_COMPLETIONS) return null
+        val provider = imageProviderLazy
+            ?: OpenAIProvider(apiKey = apiKey, model = model, basePath = basePath, customUserAgent = customUserAgent)
+                .also { imageProviderLazy = it }
+        provider.model = model
+        return provider
     }
-    val imageDelegate: OpenAIProvider get() {
-        upstreamImageProvider.model = model
-        return upstreamImageProvider
+
+    // ---------------------------------------------------------------------
+    // 端点与鉴权（按线协议分线）
+    // ---------------------------------------------------------------------
+
+    private val loweredBase: String get() = basePath.lowercase()
+
+    internal fun completionUrl(): URI = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> URI(basePath.trimEnd('/') + "/chat/completions")
+        // 自定基址可能已带 /v1（effectiveBaseURL 的 appendV1Suffix），先剥再拼，
+        // 否则出现 /v1/v1/messages。
+        WireProtocol.ANTHROPIC_MESSAGES -> URI(
+            basePath.trimEnd('/').let { if (it.endsWith("/v1")) it.dropLast(3).trimEnd('/') else it } + "/v1/messages")
+        WireProtocol.GEMINI_GENERATE_CONTENT ->
+            URI(basePath.trimEnd('/') + "/models/${model.id}:streamGenerateContent?alt=sse")
+    }
+
+    private fun tokenOrNull(): String? = apiKey.takeIf { it.isNotEmpty() }
+
+    private val isOfficialAnthropic: Boolean get() = loweredBase.trimEnd('/') == "https://api.anthropic.com"
+
+    private fun userAgent(): String {
+        if (customUserAgent != null) {
+            val trimmed = customUserAgent.trim()
+            if (trimmed.isNotEmpty()) return trimmed
+        }
+        // OAuth 的 Claude-Code 指纹 UA：Anthropic 后端以 UA + X-Stainless-* 组合
+        // 识别官方 CLI，非 CLI 请求被降级（额外计费、思考被静默关闭）。
+        if (protocol == WireProtocol.ANTHROPIC_MESSAGES && isAnthropicOAuth)
+            return "claude-cli/2.1.195 (external, cli)"
+        return MinisUserAgent.DEFAULT
+    }
+
+    /** 基础出站头（不含随请求内容变化的 anthropic-beta）；真实调用见 [wireEndpoint]。 */
+    internal fun outboundHeaders(): Map<String, String> = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> mapOf("User-Agent" to userAgent())
+        WireProtocol.ANTHROPIC_MESSAGES -> buildMap {
+            put("anthropic-version", "2023-06-01")
+            put("User-Agent", userAgent())
+            if (isAnthropicOAuth) putAll(oauthFingerprintHeaders())
+            // 官方端点的 API key 走 x-api-key 头；OAuth 与自定中继走 Bearer（token 参数）。
+            if (!isAnthropicOAuth && isOfficialAnthropic && apiKey.isNotEmpty()) put("x-api-key", apiKey)
+        }
+        WireProtocol.GEMINI_GENERATE_CONTENT -> buildMap {
+            put("User-Agent", userAgent())
+            if (apiKey.isNotEmpty()) put("x-goog-api-key", apiKey)
+        }
+    }
+
+    private fun oauthFingerprintHeaders(): Map<String, String> = mapOf(
+        "X-Stainless-Lang" to "js",
+        "X-Stainless-Package-Version" to "0.106.0",
+        "X-Stainless-OS" to "Linux",
+        "X-Stainless-Arch" to "arm64",
+        "X-Stainless-Runtime" to "node",
+        "X-Stainless-Runtime-Version" to "v24.18.0",
+        "X-Stainless-Retry-Count" to "0",
+        "X-Stainless-Timeout" to "600",
+        "X-App" to "cli",
+        "Anthropic-Dangerous-Direct-Browser-Access" to "true",
+    )
+
+    /** 端点安全契约（https 或本机 http，含请求头与令牌合法性）：工厂在选择点先行判定。 */
+    internal fun endpointAcceptable(): Boolean =
+        runCatching {
+            ModelEndpoint(completionUrl(), bearerTokenOrNull(), outboundHeaders(),
+                permitQueryParams = protocol == WireProtocol.GEMINI_GENERATE_CONTENT)
+            true
+        }.getOrDefault(false)
+
+    /** OpenAI 兼容线与 anthropic OAuth/自定中转线的 Bearer 令牌；官方 anthropic 与 gemini 走请求头。 */
+    internal fun bearerTokenOrNull(): String? = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> tokenOrNull()
+        // OAuth 或自定 Anthropic 中继 → Bearer；官方 API key → x-api-key 头；空 key 中继 → 不带鉴权头。
+        WireProtocol.ANTHROPIC_MESSAGES -> when {
+            isAnthropicOAuth -> tokenOrNull()
+            isOfficialAnthropic -> null
+            else -> tokenOrNull()
+        }
+        WireProtocol.GEMINI_GENERATE_CONTENT -> null
+    }
+
+    /**
+     * 请求级端点：anthropic-beta 旗标随本请求的思考形态与增强缓存开关变化，
+     * 因此在打开调用时（已知请求体）才装配端点。
+     */
+    internal fun wireEndpoint(request: CompletionStreamRequest): ModelEndpoint {
+        val headers=outboundHeaders().toMutableMap()
+        if (protocol == WireProtocol.ANTHROPIC_MESSAGES && request is AnthropicMessagesRequest) {
+            val beta=anthropicBetaFlags(request)
+            if (beta.isNotEmpty()) headers["anthropic-beta"]=beta.joinToString(",")
+        }
+        return ModelEndpoint(completionUrl(), bearerTokenOrNull(), headers,
+            permitQueryParams = protocol == WireProtocol.GEMINI_GENERATE_CONTENT)
+    }
+
+    /** anthropic-beta 旗标（对齐被替换实现）：OAuth 全家桶 / API key 只带请求体需要的。 */
+    internal fun anthropicBetaFlags(request: AnthropicMessagesRequest): List<String> {
+        if (isAnthropicOAuth) return listOf(
+            "claude-code-20250219",
+            "oauth-2025-04-20",
+            "interleaved-thinking-2025-05-14",
+            "prompt-caching-scope-2026-01-05",
+            "effort-2025-11-24",
+            "context-management-2025-06-27",
+            "extended-cache-ttl-2025-04-11",
+        )
+        val flags=mutableListOf<String>()
+        val shape=AnthropicWire.thinkingShape(model.id, model.supportsReasoning, request.thinkingLevel, request.maxTokens.toInt())
+        when {
+            shape.containsKey("effort") -> flags.add("effort-2025-11-24")
+            // 与被替换实现同口径：请求体带 thinking 字段（enabled 与 disabled 皆是）
+            // 即挂 interleaved 旗标。
+            shape.isNotEmpty() -> flags.add("interleaved-thinking-2025-05-14")
+        }
+        if (request.cacheTtlOneHour) flags.add("extended-cache-ttl-2025-04-11")
+        return flags
+    }
+
+    private fun openRealCall(): TransportCall {
+        // 端点延迟到 stream() 装配（beta 旗标依赖请求内容）；取消先落标志位再硬断活跃调用。
+        return object : TransportCall {
+            @Volatile private var active: ChatCompletionCall? = null
+            @Volatile private var cancelled = false
+            override fun cancel() { cancelled = true; active?.cancel() }
+            override fun stream(request: CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                if (cancelled) return StreamResult.Cancelled
+                val call = ChatCompletionCall(wireEndpoint(request), CALL_TIMEOUT_MILLIS, protocol)
+                active = call
+                return try {
+                    call.stream(request, BYPASS_CAPACITY, BYPASS_WINDOW, { BYPASS_MEASUREMENT }, onChunk)
+                } finally { active = null }
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
     // 请求装配
     // ---------------------------------------------------------------------
 
-    internal fun completionUrl(): URI = URI(basePath.trimEnd('/') + "/chat/completions")
-
-    private fun tokenOrNull(): String? = apiKey.takeIf { it.isNotEmpty() }
-
-    internal fun outboundHeaders(): Map<String, String> {
-        val userAgent = customUserAgent?.trim()?.takeIf { it.isNotEmpty() } ?: MinisUserAgent.DEFAULT
-        return mapOf("User-Agent" to userAgent)
+    /** 按线协议分发请求装配；三个方言共享同一条 WireMessage 组装线。 */
+    internal fun buildWireRequest(
+        messages: List<LLMMessage>,
+        systemPrompt: String?,
+        maxTokens: Int,
+        imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>,
+        thinkingLevel: ThinkingLevel,
+    ): CompletionStreamRequest = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> buildStreamRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
+        WireProtocol.ANTHROPIC_MESSAGES -> buildAnthropicRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
+        WireProtocol.GEMINI_GENERATE_CONTENT -> buildGeminiRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
     }
 
-    /** 端点安全契约（https 或本机 http，含请求头与令牌合法性）：工厂在选择点先行判定。 */
-    internal fun endpointAcceptable(): Boolean =
-        runCatching { ModelEndpoint(completionUrl(), tokenOrNull(), outboundHeaders()); true }.getOrDefault(false)
-
-    private fun openRealCall(): TransportCall {
-        val call = ChatCompletionCall(
-            ModelEndpoint(completionUrl(), tokenOrNull(), outboundHeaders()),
-            CALL_TIMEOUT_MILLIS,
-        )
-        return object : TransportCall {
-            override fun cancel() = call.cancel()
-            override fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult =
-                call.stream(request, BYPASS_CAPACITY, BYPASS_WINDOW, { BYPASS_MEASUREMENT }, onChunk)
+    private fun assembleWireMessages(
+        messages: List<LLMMessage>,
+        systemPrompt: String?,
+        imageParts: List<LLMMessage.ImagePart>,
+        thinkingLevel: ThinkingLevel,
+    ): List<WireMessage> {
+        val idRegistry = ToolCallIdRegistry()
+        return buildList {
+            if (systemPrompt != null) add(WireMessage("system", systemPrompt))
+            val lastUserIndex = messages.indexOfLast { it.role == LLMMessage.Role.USER }
+            for ((index, message) in messages.withIndex()) {
+                if (message.contentParts.isNotEmpty()) addAll(structuredParts(message, thinkingLevel, idRegistry))
+                else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel))
+            }
         }
     }
 
@@ -131,15 +311,7 @@ class NovexTransportProvider(
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
     ): StreamRequest {
-        val idRegistry = ToolCallIdRegistry()
-        val wire = buildList {
-            if (systemPrompt != null) add(WireMessage("system", systemPrompt))
-            val lastUserIndex = messages.indexOfLast { it.role == LLMMessage.Role.USER }
-            for ((index, message) in messages.withIndex()) {
-                if (message.contentParts.isNotEmpty()) addAll(structuredParts(message, thinkingLevel, idRegistry))
-                else addAll(legacyMessage(message, index == lastUserIndex, imageParts, thinkingLevel))
-            }
-        }
+        val wire = assembleWireMessages(messages, systemPrompt, imageParts, thinkingLevel)
         val toolDefs = tools.map { definition ->
             val parameters = definition.toOpenAIJson().getJSONObject("function").getJSONObject("parameters")
             ToolDefinition(definition.name, definition.description, parameters.toString())
@@ -155,6 +327,95 @@ class NovexTransportProvider(
         )
     }
 
+    /** Anthropic Messages 请求：思考形态/缓存 TTL/OAuth 前缀块/交错思考回放均在此落参。 */
+    internal fun buildAnthropicRequest(
+        messages: List<LLMMessage>,
+        systemPrompt: String?,
+        maxTokens: Int,
+        imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>,
+        thinkingLevel: ThinkingLevel,
+    ): AnthropicMessagesRequest {
+        val wire = assembleWireMessages(messages, systemPrompt, imageParts, thinkingLevel)
+        val toolDefs = tools.map { definition ->
+            ToolDefinition(definition.name, definition.description,
+                definition.toAnthropicJson().getJSONObject("input_schema").toString())
+        }
+        val level = thinkingLevel.toWireLevel()
+        AppLogger.info(
+            "Thinking",
+            "[resolve] provider=anthropic model=${model.id} level=${thinkingLevel.name} " +
+                "shape=[${AnthropicWire.thinkingShape(model.id, model.supportsReasoning, level, maxTokens)
+                    .entries.joinToString(",") { "${it.key}=${it.value}" }}]",
+        )
+        return AnthropicMessagesRequest(
+            model = model.id,
+            messages = wire,
+            maxTokens = maxTokens.toLong(),
+            tools = toolDefs,
+            thinkingLevel = level,
+            supportsReasoning = model.supportsReasoning,
+            cacheTtlOneHour = enhancedCache,
+            isOAuth = isAnthropicOAuth,
+            oauthSystemPrefix = if (isAnthropicOAuth) ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT else null,
+            echoUnsignedThinking = echoUnsignedAnthropicThinking(),
+        )
+    }
+
+    /**
+     * Anthropic 兼容中继（DeepSeek V4 / GLM / Kimi 等说 Anthropic 协议但交错无签名
+     * 思考的机型）要求历史 assistant 轮回放 thinking 块，否则 400。官方端点校验
+     * signature 字段，不能回放——与被替换实现的门槛一致。
+     */
+    private fun echoUnsignedAnthropicThinking(): Boolean =
+        protocol == WireProtocol.ANTHROPIC_MESSAGES &&
+            model.supportsReasoning != false &&
+            model.interleavedReasoningField != null &&
+            !isOfficialAnthropic
+
+    /** Gemini 请求：思考配置经规则解析器（golden 快照钉行为），模态声明按模型产出能力。 */
+    internal fun buildGeminiRequest(
+        messages: List<LLMMessage>,
+        systemPrompt: String?,
+        maxTokens: Int,
+        imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>,
+        thinkingLevel: ThinkingLevel,
+    ): GeminiGenerateContentRequest {
+        val wire = assembleWireMessages(messages, systemPrompt, imageParts, thinkingLevel)
+        val toolDefs = tools.map { definition ->
+            val gemini = definition.toGeminiJson()
+            ToolDefinition(definition.name, definition.description,
+                definition.toOpenAIJson().getJSONObject("function").getJSONObject("parameters").toString(),
+                propertyOrdering = gemini.optJSONObject("parameters")?.optJSONArray("propertyOrdering")
+                    ?.let { ordering -> (0 until ordering.length()).map { ordering.optString(it) } })
+        }
+        AppLogger.info(
+            "Thinking",
+            "[resolve] provider=gemini model=${model.id} level=${thinkingLevel.name} " +
+                "keys=[${ThinkingRuleResolver.geminiThinkingConfig(model.id, thinkingLevel)
+                    ?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: ""}]",
+        )
+        val outputs = model.outputModalities.orEmpty()
+        return GeminiGenerateContentRequest(
+            model = model.id,
+            messages = wire,
+            maxOutputTokens = maxTokens.toLong(),
+            tools = toolDefs,
+            thinkingConfig = ThinkingRuleResolver.geminiThinkingConfig(model.id, thinkingLevel),
+            responseModalities = when {
+                "audio" in outputs -> listOf("AUDIO")
+                "image" in outputs -> listOf("TEXT", "IMAGE")
+                else -> emptyList()
+            },
+            rejectsSystemInstruction = "audio" in outputs,
+            requiresThoughtSignature = model.id.lowercase().contains("gemini-3"),
+        )
+    }
+
+    private fun ThinkingLevel.toWireLevel(): WireThinkingLevel? =
+        if (isEnabled) WireThinkingLevel.valueOf(name) else null
+
     /** 结构化部件（代理循环的真实路径）：assistant 文本+工具调用历史，user 工具结果+文本+图片。 */
     private fun structuredParts(
         message: LLMMessage,
@@ -168,9 +429,9 @@ class NovexTransportProvider(
                     role = "assistant",
                     text = message.contentParts.filterIsInstance<AgentContentPart.Text>().joinToString("") { it.text },
                     toolCalls = message.contentParts.filterIsInstance<AgentContentPart.ToolUse>().map { use ->
-                        PendingTool(idRegistry.declare(use.id), use.name, use.input.toString())
+                        PendingTool(idRegistry.declare(use.id), use.name, use.input.toString(), use.thoughtSignature)
                     },
-                    reasoningContent = echoReasoningContent(message, thinkingLevel),
+                    reasoningContent = historyReasoningContent(message, thinkingLevel),
                 ),
             )
         }
@@ -179,7 +440,7 @@ class NovexTransportProvider(
                 // 无法配对到本批工具调用的孤儿结果直接丢弃：发出去整单必被
                 // 网关 400，丢弃只是少一条历史污染。
                 idRegistry.resolve(result.id)?.let { paired ->
-                    add(WireMessage(role = "tool", text = result.content, toolCallId = paired))
+                    add(WireMessage(role = "tool", text = result.content, toolCallId = paired, isError = result.isError))
                 }
             }
             val text = StringBuilder()
@@ -198,7 +459,7 @@ class NovexTransportProvider(
         }
     }
 
-    /** 旧式消息：纯文本；最后一条 user 消息挂顶层图片部件；音频部件照发。 */
+    /** 旧式消息：纯文本；最后一条 user 消息挂顶层图片部件；音频部件仅 OpenAI 兼容线发。 */
     private fun legacyMessage(
         message: LLMMessage,
         isLastUser: Boolean,
@@ -207,11 +468,12 @@ class NovexTransportProvider(
     ): List<WireMessage> {
         if (message.role == LLMMessage.Role.ASSISTANT) {
             return listOf(
-                WireMessage("assistant", message.content, reasoningContent = echoReasoningContent(message, thinkingLevel)),
+                WireMessage("assistant", message.content, reasoningContent = historyReasoningContent(message, thinkingLevel)),
             )
         }
         val attachImages = isLastUser && imageParts.isNotEmpty()
-        if (!attachImages && message.audioParts.isEmpty()) return listOf(WireMessage("user", message.content))
+        if (!attachImages && (message.audioParts.isEmpty() || protocol != WireProtocol.CHAT_COMPLETIONS))
+            return listOf(WireMessage("user", message.content))
         val text = StringBuilder(message.content)
         val images = mutableListOf<WireImage>()
         if (attachImages) {
@@ -221,22 +483,35 @@ class NovexTransportProvider(
                 else text.append('\n').append(part.noVisionPlaceholder ?: NO_VISION_PLACEHOLDER)
             }
         }
-        val audios = message.audioParts.map { WireAudio(it.format, it.base64Data) }
+        val audios = if (protocol == WireProtocol.CHAT_COMPLETIONS)
+            message.audioParts.map { WireAudio(it.format, it.base64Data) } else emptyList()
         return listOf(WireMessage("user", text.toString(), images = images, audios = audios))
     }
 
-    private fun echoReasoningContent(message: LLMMessage, thinkingLevel: ThinkingLevel): String? {
-        if (isMistralHost) return null
-        val modelAlwaysReasons = model.supportsReasoning == true
-        val modelMayReason = model.supportsReasoning ?: true
-        if (!modelMayReason) return null
-        if (!thinkingLevel.isEnabled && !modelAlwaysReasons) return null
-        return message.reasoningContent ?: ""
+    /**
+     * assistant 历史 reasoning_content 回放门槛，按线协议分置：
+     *  - OpenAI 兼容线：思考开启或必思考机型才回放（DeepSeek 系闭 schema）；
+     *  - anthropic：兼容中继的交错思考回放（与思考开关无关，官方端点不回放）；
+     *  - gemini：思考不回放（只回放 thoughtSignature），恒 null。
+     */
+    private fun historyReasoningContent(message: LLMMessage, thinkingLevel: ThinkingLevel): String? = when (protocol) {
+        WireProtocol.CHAT_COMPLETIONS -> {
+            if (isMistralHost) null
+            else {
+                val modelAlwaysReasons = model.supportsReasoning == true
+                val modelMayReason = model.supportsReasoning ?: true
+                if (!modelMayReason) null
+                else if (!thinkingLevel.isEnabled && !modelAlwaysReasons) null
+                else message.reasoningContent ?: ""
+            }
+        }
+        WireProtocol.ANTHROPIC_MESSAGES -> if (echoUnsignedAnthropicThinking()) message.reasoningContent ?: "" else null
+        WireProtocol.GEMINI_GENERATE_CONTENT -> null
     }
 
     /**
-     * 思考等级 → 请求体参数。沿用思考规则解析器（纯函数、golden 快照钉行为），
-     * 在空对象上解析出本请求的思考键，作为附加顶层参数并入请求。
+     * 思考等级 → 请求体参数（OpenAI 兼容线）。沿用思考规则解析器（纯函数、
+     * golden 快照钉行为），在空对象上解析出本请求的思考键，作为附加顶层参数并入请求。
      * Mistral 端点两头都不发（请求参数与 reasoning_content 均被其闭 schema 拒绝）。
      */
     private fun thinkingParameters(maxTokens: Int, level: ThinkingLevel): JSONObject? {
@@ -265,12 +540,13 @@ class NovexTransportProvider(
 
     /**
      * 图片 → WireImage。先过图片预算再内联。图片学习式降级（乐观发送）：
-     * 未学习降级的模型一律真实发送像素；仅当「无原生视觉输入且已被端点
-     * 拒绝学习降级」时返回 null（调用方以占位文本顶替像素）。
+     * 仅 OpenAI 兼容线参与降级学习（anthropic/gemini 与被替换实现一致恒真实发送）。
      */
     private fun encodeImage(data: ByteArray, mimeType: String): WireImage? {
-        val supportsImages = model.hasImageInput || model.id !in OpenAIProvider.imageDegradedModels
-        if (!supportsImages) return null
+        if (protocol == WireProtocol.CHAT_COMPLETIONS) {
+            val supportsImages = model.hasImageInput || model.id !in OpenAIProvider.imageDegradedModels
+            if (!supportsImages) return null
+        }
         val encoder = java.util.Base64.getEncoder()
         return if (mimeType in ACCEPTED_IMAGE_TYPES) {
             val budgeted = ImageBudget.compressUnderBudget(data)
@@ -283,10 +559,9 @@ class NovexTransportProvider(
     }
 
     // ---------------------------------------------------------------------
-    // 端点嗅探（供思考规则与 include_usage 决策）
+    // 端点嗅探（供思考规则与 include_usage 决策；仅 OpenAI 兼容线使用）
     // ---------------------------------------------------------------------
 
-    private val loweredBase: String get() = basePath.lowercase()
     private val isOpenRouterHost: Boolean get() = loweredBase.contains("openrouter.ai")
     private val isMistralHost: Boolean get() = loweredBase.contains("mistral.ai")
     private val isDashScopeHost: Boolean get() = loweredBase.contains("dashscope")
@@ -317,6 +592,15 @@ class NovexTransportProvider(
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
     ): Flow<LLMStreamChunk> {
+        // 注意：temperature 被丢弃——当前全部调用点都传 null（gpt-5 系兼容），
+        // novex.model 请求体也不含该键；anthropic 线的协议性 temperature=1（legacy
+        // 思考）在请求编码内自决。这是记录在案的刻意不对齐。
+        if (protocol != WireProtocol.CHAT_COMPLETIONS) {
+            // anthropic/gemini 与被替换实现一致：静默空完成（无内容也无收尾原因）
+            // 按瞬态上游失败抛错，进既有自动重试链。
+            return rawStream(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
+                .failOnSilentEmptyCompletion(name)
+        }
         // 图片学习式降级（乐观发送）：带图请求先按真实像素发送；首块前失败且
         // 报错指向图片输入时，记入降级集并用中性占位重试一次。与上游同策略、
         // 共用同一降级集与判别函数，跨实现互相可见。
@@ -349,10 +633,20 @@ class NovexTransportProvider(
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
     ): Flow<LLMStreamChunk> = callbackFlow {
-        // 注意：temperature 被丢弃——当前全部调用点都传 null（gpt-5 系兼容），
-        // novex.model 请求体也不含该键；这是记录在案的刻意不对齐。
+        // 净眼 P3.1c 退回 must-fix：明文 LAN 中继既不换管也不回上游，请求前置预检
+        // 端点安全契约，不通过时以确定性 ProviderError（中文可读）收流——绝不映射
+        // 成 NetworkError 进瞬态重试链，用户看到的是配置错误而非无谓重试。
+        if (!endpointAcceptable()) {
+            close(
+                LLMError.ProviderError(
+                    "端点不满足自有传输的安全契约：仅支持 https 或本机回环地址" +
+                        "（http 仅限 127.0.0.1 / localhost / ::1）。请为该供应商实例改配 https 基址。",
+                ),
+            )
+            return@callbackFlow
+        }
         val request = try {
-            buildStreamRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
+            buildWireRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
         } catch (failure: Throwable) {
             close(if (failure is LLMError) failure else LLMError.ProviderError(failure.message ?: "请求装配失败"))
             return@callbackFlow
@@ -369,7 +663,11 @@ class NovexTransportProvider(
                     com.openminis.app.diagnostics.ModelRequestAudit.safeUrl(completionUrl().toString()), secrets))
                 .put("providerInstanceId", instanceId)
                 .put("method", "POST")
-                .put("protocol", "chat_completions")
+                .put("protocol", when (protocol) {
+                    WireProtocol.CHAT_COMPLETIONS -> "chat_completions"
+                    WireProtocol.ANTHROPIC_MESSAGES -> "anthropic"
+                    WireProtocol.GEMINI_GENERATE_CONTENT -> "gemini"
+                })
                 .put("modelId", model.id)
                 .put("stream", true)
                 .put("toolCount", tools.size)
@@ -390,8 +688,8 @@ class NovexTransportProvider(
             }
             when (outcome) {
                 StreamResult.Completed -> {
-                    // chat completions 的 SSE 成功响应恒为 200；自有传输只报
-                    // 「2xx 已到」，此处以 200 记账。
+                    // 三家线的 SSE 成功响应恒为 200；自有传输只报「2xx 已到」，
+                    // 此处以 200 记账。
                     audit?.event("response_headers", JSONObject().put("status", 200))
                     close()
                 }
@@ -418,7 +716,8 @@ class NovexTransportProvider(
                 )
                 StreamResult.NetworkFailure -> {
                     // 无终止信号的断流：冲出已拼装的工具调用（截断恢复路径），
-                    // 不发 Finished —— 与上游“静默截断”表现一致，交由调用方裁决。
+                    // 不发 Finished —— 与上游「静默截断」表现一致，交由调用方裁决
+                    // （anthropic/gemini 线再被 failOnSilentEmptyCompletion 拦成瞬态重试）。
                     bridge.drainToolCalls()
                     close()
                 }
@@ -441,6 +740,7 @@ class NovexTransportProvider(
         val text = StringBuilder()
         var stopReason: String? = null
         var usage: LLMUsage? = null
+        val media = mutableListOf<LLMMediaAttachment>()
         streamMessage(
             messages = messages,
             systemPrompt = systemPrompt,
@@ -454,19 +754,21 @@ class NovexTransportProvider(
                 is LLMStreamChunk.Text -> text.append(chunk.text)
                 is LLMStreamChunk.Usage -> usage = chunk.usage
                 is LLMStreamChunk.Finished -> stopReason = chunk.stopReason
+                is LLMStreamChunk.MediaAttachment -> media += chunk.attachment
                 else -> Unit
             }
         }
-        return LLMResponse(text.toString(), stopReason, usage)
+        return LLMResponse(text.toString(), stopReason, usage, media)
     }
 
     /**
-     * 失败块 → 上游错误分类，两条来源各自对齐：
+     * 失败块 → 上游错误分类，三条来源各自对齐：
      *  - HTTP 非 200（category 非空）：401/403 鉴权、429 限流、5xx 瞬态、其余供应商错误；
      *  - 流中 error 对象（category 为空、code 为字符串）：按上游 mapHttpError 的数字
      *    状态矩阵分类——401/403 鉴权、429 限流、500/502/503/504/529 瞬态（503 带
      *    no_available_providers / model_not_found 归供应商错误以触发组回退）、其余及
-     *    非数字 code（同上游 optInt 默认 0）归供应商错误。
+     *    非数字 code（同上游 optInt 默认 0）归供应商错误；anthropic 的 overloaded_error
+     *    等字符串类型按被替换实现的语义归类（overloaded → 瞬态）；
      *  - 401/403 两路都过 openCode 免费档日落友好文案（与上游同判别函数）。
      */
     internal fun errorOf(failure: StreamChunk.Failure): LLMError {
@@ -479,7 +781,10 @@ class NovexTransportProvider(
         if (failure.category == null) {
             return when {
                 status == 401 || status == 403 -> openCodeSunsetFriendlyError(failure.message) ?: LLMError.InvalidApiKey(detail)
-                status == 429 -> LLMError.RateLimited(detail)
+                status == 429 || failure.code == "rate_limit_error" -> LLMError.RateLimited(detail)
+                failure.code == "overloaded_error" -> LLMError.TransientError(detail)
+                failure.code == "authentication_error" || failure.code == "permission_error" ->
+                    openCodeSunsetFriendlyError(failure.message) ?: LLMError.InvalidApiKey(detail)
                 status in TRANSIENT_HTTP_STATUSES ->
                     if (status == 503 && PERMANENT_503_MARKERS.any { failure.message.contains(it) })
                         LLMError.ProviderError(detail)
@@ -530,7 +835,8 @@ class NovexTransportProvider(
      *    ToolInputDelta（参数累积值）；
      *  - Done：先 ReasoningContent（若有过思考增量），再 Finished，最后补
      *    ToolCallComplete —— Finished 先于 ToolCallComplete 是上游 [DONE]
-     *    路径的实际顺序，下游已按此消化；
+     *    路径的实际顺序，下游已按此消化（anthropic 的 message_stop / gemini 的
+     *    干净断流收尾走同一顺序）；
      *  - 断流（无 Done）时只补 ToolCallComplete，不发 Finished。
      */
     internal class StreamBridge(private val send: (LLMStreamChunk) -> Unit) {
@@ -543,6 +849,7 @@ class NovexTransportProvider(
         private class ToolAccumulator {
             var id = ""
             var name = ""
+            var signature: String? = null
             val arguments = StringBuilder()
             var announced = false
         }
@@ -569,6 +876,16 @@ class NovexTransportProvider(
                         ),
                     ),
                 )
+                is StreamChunk.MediaAttachment -> {
+                    // gemini 图像/音频输出机型的 inlineData：按 mime 归类后透传。
+                    val type = when {
+                        chunk.mimeType.startsWith("audio/") -> LLMMediaAttachment.MediaType.AUDIO
+                        chunk.mimeType.startsWith("video/") -> LLMMediaAttachment.MediaType.VIDEO
+                        else -> LLMMediaAttachment.MediaType.IMAGE
+                    }
+                    val bytes = try { java.util.Base64.getDecoder().decode(chunk.base64) } catch (_: Exception) { return }
+                    send(LLMStreamChunk.MediaAttachment(LLMMediaAttachment(type, chunk.mimeType, bytes)))
+                }
                 is StreamChunk.Done -> {
                     if (thinking.isNotEmpty()) send(LLMStreamChunk.ReasoningContent(thinking.toString()))
                     send(LLMStreamChunk.Finished(chunk.finishReason))
@@ -582,6 +899,7 @@ class NovexTransportProvider(
             val acc = toolAccumulators.getOrPut(chunk.index) { ToolAccumulator() }
             chunk.id?.let { acc.id = it }
             chunk.name?.let { acc.name = it }
+            chunk.signature?.let { acc.signature = it }
             acc.arguments.append(chunk.argumentsDelta)
             if (!acc.announced && acc.id.isNotEmpty() && acc.name.isNotEmpty()) {
                 acc.announced = true
@@ -596,7 +914,7 @@ class NovexTransportProvider(
             for (acc in toolAccumulators.values) {
                 if (acc.id.isEmpty() || acc.name.isEmpty()) continue
                 val args = try { JSONObject(acc.arguments.toString()) } catch (_: Exception) { JSONObject() }
-                send(LLMStreamChunk.ToolCallComplete(acc.id, acc.name, args))
+                send(LLMStreamChunk.ToolCallComplete(acc.id, acc.name, args, acc.signature))
             }
         }
 

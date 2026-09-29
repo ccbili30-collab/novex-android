@@ -609,6 +609,11 @@ object ThinkingRuleResolver {
      *   `{disabled:true}`     → adaptive model at OFF; must be explicit because those
      *                           models think by DEFAULT when no thinking field is sent
      *   `{}`                  → send nothing
+     *
+     * P3.1c：判定逻辑（版本解析 / adaptive 分线 / 预算钳制 / 档位折叠）已随
+     * Anthropic 原生线迁入自有 novex.model（AnthropicWire.thinkingShape）——本方法
+     * 只做等级映射与委托，上游 AnthropicProvider 的伴随函数不再被引用。行为由
+     * ThinkingWireGeminiAnthropicSnapshotTest 钉死。
      */
     fun anthropicThinkingShape(
         modelId: String,
@@ -616,20 +621,8 @@ object ThinkingRuleResolver {
         level: ThinkingLevel,
         maxTokens: Int,
     ): Map<String, Any> {
-        val adaptive = com.openminis.app.provider.anthropic.AnthropicProvider
-            .modelUsesAdaptiveThinking(modelId)
-        if (level.isEnabled && supportsReasoning != false) {
-            if (adaptive) {
-                return mapOf(
-                    "effort" to com.openminis.app.provider.anthropic.AnthropicProvider
-                        .thinkingEffort(level),
-                )
-            }
-            val budget = com.openminis.app.provider.anthropic.AnthropicProvider
-                .thinkingBudget(maxTokens, level)
-            return if (budget > 0) mapOf("budget_tokens" to budget) else emptyMap()
-        }
-        return if (adaptive) mapOf("disabled" to true) else emptyMap()
+        val wireLevel = if (level.isEnabled) novex.model.WireThinkingLevel.valueOf(level.name) else null
+        return novex.model.AnthropicWire.thinkingShape(modelId, supportsReasoning, wireLevel, maxTokens)
     }
 
     /** UI level → wire tier, before any per-model clamp. */

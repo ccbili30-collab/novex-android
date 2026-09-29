@@ -6,8 +6,6 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
-import com.openminis.app.provider.anthropic.AnthropicProvider
-import com.openminis.app.provider.gemini.GeminiProvider
 import com.openminis.app.provider.openai.OpenAIProvider
 
 object ProviderFactory {
@@ -33,15 +31,34 @@ object ProviderFactory {
         val basePath = instance.effectiveBaseURL
         val provider: LLMProvider = when (instance.providerType) {
             ProviderType.anthropic -> {
+                // [P3.1c 绞杀换管] Anthropic Messages 原生协议改走自有 novex.model
+                // 传输（NovexTransportProvider 实现同一 LLMProvider 接口，调用面零
+                // 改动）。OAuth（Claude Code）与自定中继一并换管：Bearer 鉴权、系统
+                // 前缀块、CLI 指纹头在适配器内按 isAnthropicOAuth 分线。上游
+                // AnthropicProvider 不再被工厂引用（文件留存，P3.1d 统一拆除）。
                 val isOAuth = instance.credentialType == ProviderCredential.oauth
-                // [T-provider-custom-user-agent] Only meaningful for custom-base
-                // (relay) instances; on the official direct path it's null.
-                if (basePath != null) AnthropicProvider(apiKey, model, basePath, isOAuth = isOAuth, customUserAgent = instance.customUserAgent)
-                else AnthropicProvider(apiKey, model, isOAuth = isOAuth)
+                novex.android.transport.NovexTransportProvider(
+                    apiKey = apiKey,
+                    model = model,
+                    basePath = basePath ?: "https://api.anthropic.com",
+                    customUserAgent = instance.customUserAgent,
+                    instanceId = instance.id,
+                    protocol = novex.model.WireProtocol.ANTHROPIC_MESSAGES,
+                    isAnthropicOAuth = isOAuth,
+                )
             }
             ProviderType.gemini -> {
-                if (basePath != null) GeminiProvider(apiKey, model, basePath)
-                else GeminiProvider(apiKey, model)
+                // [P3.1c 绞杀换管] Gemini 原生协议改走自有 novex.model 传输；鉴权
+                // 用 x-goog-api-key 头（等价 ?key=，且密钥不进 URL）。上游
+                // GeminiProvider 不再被工厂引用（文件留存，P3.1d 统一拆除）；
+                // 其不收自定 UA 的口径一并保留。
+                novex.android.transport.NovexTransportProvider(
+                    apiKey = apiKey,
+                    model = model,
+                    basePath = basePath ?: "https://generativelanguage.googleapis.com/v1beta",
+                    instanceId = instance.id,
+                    protocol = novex.model.WireProtocol.GEMINI_GENERATE_CONTENT,
+                )
             }
             ProviderType.openAI -> {
                 // Manual bearer token (set via Manual Bearer Token UI / imported
@@ -83,8 +100,8 @@ object ProviderFactory {
                     //      预设的 responses 自动回退；
                     //   ③ 端点满足自有传输的安全契约（https 或本机 http）——
                     //      局域网明文中继（ollama/LM Studio 等）暂留上游。
-                    // 其余分支（anthropic/gemini/openRouter/xAI/kimi、语音、
-                    // 生图）一行不动。
+                    // anthropic/gemini 分支自 P3.1c 起整体换管自有传输（见上）；
+                    // openRouter/xAI/kimi、语音、生图仍走上游实现。
                     val novexCandidate =
                         if (basePath != null && !instance.useResponsesAPI &&
                             !instance.azureMode && !instance.autoResponsesFallback

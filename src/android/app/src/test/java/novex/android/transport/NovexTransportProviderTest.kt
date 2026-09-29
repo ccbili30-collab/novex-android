@@ -14,8 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import novex.model.CompletionStreamRequest
 import novex.model.StreamChunk
-import novex.model.StreamRequest
 import novex.model.StreamResult
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -43,7 +43,7 @@ class NovexTransportProviderTest {
     ) : NovexTransportProvider.TransportCall {
         val cancelled = AtomicBoolean(false)
         override fun cancel() = cancelled.set(true)
-        override fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+        override fun stream(request: CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
             chunks.forEach(onChunk)
             return outcome
         }
@@ -52,7 +52,7 @@ class NovexTransportProviderTest {
     private class BlockingCall(private val entered: CountDownLatch) : NovexTransportProvider.TransportCall {
         val cancelled = AtomicBoolean(false)
         override fun cancel() = cancelled.set(true)
-        override fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+        override fun stream(request: CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
             entered.countDown()
             // 模拟阻塞中的阻塞读：cancel 到来前不返回。
             var waited = 0
