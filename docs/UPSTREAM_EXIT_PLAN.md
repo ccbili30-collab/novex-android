@@ -119,9 +119,11 @@ minis-mcp-cli（#!/usr/bin/env 依赖 coreutils-env）、命令真空期预装�
 解析，不走 PRoot）均零沙箱依赖。沙箱服务的 shell_execute/终端/MCP/
 Shizuku 系统操控全系上游「AI 助理」遗产。**退役后分发物 GPL 归零。**
 
-- [ ] **R0 下架灰度**（1 个 beta 周期）：shell_execute 移出 AI 工具清单
-      （AI 不再被告知此能力）；设置隐藏终端/容器管理/挂载文件夹入口；
-      功能代码不动，纯开关
+- [ ] **R0 下架灰度**（1 个 beta 周期）：查证后两项已天然成立——
+      shell_execute 早已不在工具目录（有测试钉），Novex 设置页从未渲染
+      终端/容器/挂载入口（死参数家族，仅深链+存储页 Shell 行可达，后者
+      用户主动、R3 拆）。实际落地：撤 LLMModel/MCP 两处幽灵命令广告、
+      分发器拒绝幻觉调用（3 次同形失败自动停，无风暴）
 - [ ] **R1 保命件搬家**：/var/minis 宿主侧路径解析器（MinisImageFetcher、
       StreamingMarkdownText、技能读取共用）迁入 novex.android 自有模块，
       与 PRootKernel 解绑——解析器必须先于墙体存活

@@ -287,7 +287,8 @@ data class LLMModel(
 
     /**
      * Capability hint appended to the system prompt so the model knows exactly
-     * what it can natively consume vs what it must route through shell tools.
+     * what it can natively consume and what it must ask the user to supply
+     * in a supported form instead.
      * Returns `null` for fully-multimodal models (no hint needed). Matches the
      * iOS `capabilityPromptFragment` wording so Android/iOS chats are identical
      * when routed through the same model.

@@ -11851,7 +11851,9 @@ class ChatViewModel(
         // browser may have changed it out-of-band) then build the Top-20
         // enabled-MCP disclosure, injected right after the skills fragment.
         if (toolsEnabled) mcpRepository?.reloadFromDisk()
-        val mcpFragment = if (toolsEnabled) mcpRepository?.mcpPromptFragment(activeSessionId) else null
+        // R0 沙箱退役灰度（P2.5）：minis-mcp-cli 经沙箱 shell 执行，AI 侧已不可
+        // 达——灰度期不注入这条幽灵命令广告（服务器配置保留，R2 随沙箱裁决）。
+        val mcpFragment: String? = null
         // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
         // GLOBAL.md + recent daily logs entirely when the user has turned
         // memory off for this session. Cheaper (no disk read) and — more
