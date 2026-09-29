@@ -119,7 +119,7 @@ internal abstract class SseLineDecoder {
         if(done||failed) return emptyList()
         val tail=pending.toString().removeSuffix("\r");pending.clear()
         val events=decodeLine(tail).toMutableList()
-        if(!done && !failed && shouldFinishAtEndOfStream()) { done=true;events+=StreamChunk.Done(finishReason) }
+        if(!done && !failed && shouldFinishAtEndOfStream()) { done=true;events+=StreamChunk.Done(endOfStreamDoneReason()) }
         return events
     }
     private fun decodeLine(raw: String): List<StreamChunk> {
@@ -135,6 +135,8 @@ internal abstract class SseLineDecoder {
     protected open val acceptsDoneSentinel: Boolean get()=true
     /** 干净断流时是否补发 Done；默认仅当已见过终止语义。 */
     protected open fun shouldFinishAtEndOfStream():Boolean=finishReason!=null
+    /** 干净断流补发 Done 的收尾原因；默认取已见过的终止语义，gemini 方言缺省 end_turn。 */
+    protected open fun endOfStreamDoneReason():String?=finishReason
     protected fun markDone(){done=true}
     protected fun markFailed(){failed=true}
 }

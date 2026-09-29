@@ -244,6 +244,34 @@ class GeminiWireTest {
         assertEquals("image/png",assembled.media.single().mimeType)
     }
 
+    @Test fun `干净断流未见 finishReason 时缺省 end_turn`() {
+        val decoder=GeminiSseDecoder()
+        assertEquals(listOf(StreamChunk.TextDelta("答")),decoder.feed(
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"答\"}]}}]}\n\n"))
+        // 对齐被替换实现：Finished(lastFinishReason ?: "end_turn")——无 finishReason 的
+        // 干净关流是正常收尾而非网络失败。
+        assertEquals(listOf(StreamChunk.Done("end_turn")),decoder.finish())
+    }
+
+    @Test fun `HTTP 400 错误体解析出消息与 api 状态`() {
+        val server=com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1",0),0)
+        val executor=Executors.newCachedThreadPool();server.executor=executor;server.start()
+        try {
+            val endpoint=ModelEndpoint(URI("http://127.0.0.1:${server.address.port}/models/gemini-2.5-flash:streamGenerateContent?alt=sse"),"public",permitQueryParams=true)
+            server.createContext("/") { exchange ->
+                val body="{\"error\":{\"code\":400,\"message\":\"API key not valid\",\"status\":\"INVALID_ARGUMENT\"}}"
+                val bytes=body.toByteArray(Charsets.UTF_8)
+                exchange.sendResponseHeaders(400,bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+            val chunks=ConcurrentLinkedQueue<StreamChunk>()
+            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint,protocol=WireProtocol.GEMINI_GENERATE_CONTENT)
+                .stream(GeminiGenerateContentRequest("gemini-2.5-flash",listOf(WireMessage("user","问")),64),
+                    ModelCapacity(128_000),128_000,::measure){chunks.add(it)})
+            assertEquals(listOf(StreamChunk.Failure("HTTP 400: API key not valid",400,"request","INVALID_ARGUMENT",null)),chunks.toList())
+        } finally { server.stop(0);executor.shutdownNow() }
+    }
+
     @Test fun `流中 error 对象与半行容错`() {
         val decoder=GeminiSseDecoder()
         assertEquals(listOf(StreamChunk.Failure("配额耗尽",status=429,code="RESOURCE_EXHAUSTED")),

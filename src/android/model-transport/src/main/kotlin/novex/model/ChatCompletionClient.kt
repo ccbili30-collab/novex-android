@@ -210,9 +210,7 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
             val status=connection.responseCode
             if(cancelled.get()) return StreamResult.Cancelled
             if(status !in 200..299) {
-                onChunk(StreamChunk.Failure("HTTP $status",status,when(status) {
-                    401,403 -> "authentication";429 -> "rate_limit";in 300..399 -> "redirect";in 500..599 -> "service";else -> "request"
-                },null,connection.getHeaderField("Retry-After")))
+                onChunk(httpFailure(status,connection.getHeaderField("Retry-After"),connection.errorStream))
                 return StreamResult.Failed
             }
             val decoder=when(protocol) {
@@ -245,8 +243,58 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
         } finally { active=null;connection?.disconnect() }
     }
 
-    private fun decode(body:String):ModelResult = try {
-        val root=JSONObject(body);val choices=root.getJSONArray("choices")
+    /**
+     * HTTP 非 200 → 失败块。错误体照读并按协议方言解析出可诊断的 message 与
+     * code（恢复换管后 400 的可诊断性；无体或非 JSON 时退回「HTTP 状态码」字样）：
+     *  - OpenAI 兼容线：error.message（附 error.request_id，贴上游口径）；
+     *  - anthropic：error.type 进 code，message 拼「[type] message」；
+     *  - gemini：error.status 进 code，message 取 error.message。
+     * 分类矩阵与 Retry-After 透传不变。
+     */
+    private fun httpFailure(status: Int, retryAfter: String?, errorStream: java.io.InputStream?): StreamChunk.Failure {
+        val category=when(status) {
+            401,403 -> "authentication";429 -> "rate_limit";in 300..399 -> "redirect";in 500..599 -> "service";else -> "request"
+        }
+        val body=try { errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }?.take(4_000) } catch(_:Exception) { null }.orEmpty()
+        val root=try { JSONObject(body) } catch(_:Exception) { null }
+        val error=root?.optJSONObject("error")
+        var code:String?=null
+        val message=when(protocol) {
+            WireProtocol.CHAT_COMPLETIONS -> {
+                val detail=error?.streamText("message").orEmpty()
+                val requestId=(error?.streamText("request_id") ?: root?.streamText("request_id") ?: "")
+                    .takeIf { it.isNotEmpty() && it !in detail }
+                buildString {
+                    if(detail.isNotEmpty()) { append("HTTP $status: ").append(detail.take(1_200)) }
+                    else append("HTTP $status")
+                    if(requestId!=null) append("; request_id=").append(requestId.take(200))
+                }
+            }
+            WireProtocol.ANTHROPIC_MESSAGES -> {
+                val type=error?.streamText("type").orEmpty()
+                val detail=error?.streamText("message").orEmpty()
+                code=type.takeIf { it.isNotEmpty() }
+                when {
+                    type.isNotEmpty() && detail.isNotEmpty() -> "HTTP $status: [$type] $detail"
+                    detail.isNotEmpty() -> "HTTP $status: $detail"
+                    body.isNotEmpty() -> "HTTP $status: ${body.take(500)}"
+                    else -> "HTTP $status"
+                }
+            }
+            WireProtocol.GEMINI_GENERATE_CONTENT -> {
+                val detail=error?.streamText("message").orEmpty()
+                code=error?.streamText("status")?.takeIf { it.isNotEmpty() }
+                when {
+                    detail.isNotEmpty() -> "HTTP $status: $detail"
+                    body.isNotEmpty() -> "HTTP $status: ${body.take(500)}"
+                    else -> "HTTP $status"
+                }
+            }
+        }
+        return StreamChunk.Failure(message,status,category,code,retryAfter)
+    }
+
+    private fun decode(body:String):ModelResult = try {        val root=JSONObject(body);val choices=root.getJSONArray("choices")
         require(choices.length()==1) { "回复数量不符合当前单回复请求" }
         val choice=choices.getJSONObject(0);val message=choice.getJSONObject("message")
         val text=if(message.isNull("content")) "" else message.getString("content")

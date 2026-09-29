@@ -350,6 +350,30 @@ class NovexTransportNativeProtocolTest {
     }
 
     @Test
+    fun `LAN 明文中继预检失败为确定性供应商错误且不进瞬态重试`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("end_turn")), StreamResult.Completed)
+        val lanAnthropic = NovexTransportProvider(
+            apiKey = "k", model = LLMModel.claudeSonnet46,
+            basePath = "http://192.168.1.10:8080",
+            protocol = WireProtocol.ANTHROPIC_MESSAGES, callOpener = { call })
+        val error = runCatching { stream(lanAnthropic) }.exceptionOrNull()
+        // 确定性 ProviderError（中文可读、指明仅支持 https/本机回环），不是瞬态网络错误。
+        assertTrue("应为供应商错误，实际 $error", error is LLMError.ProviderError)
+        assertTrue(error!!.message!!.contains("仅支持 https"))
+        assertTrue(error.message!!.contains("127.0.0.1"))
+        // 预检在建请求/开调用之前拦截：传输面从未被触及。
+        assertTrue(call.received.isEmpty())
+
+        val lanGemini = NovexTransportProvider(
+            apiKey = "k", model = LLMModel.gemini25Flash,
+            basePath = "http://192.168.1.10:8080/v1beta",
+            protocol = WireProtocol.GEMINI_GENERATE_CONTENT, callOpener = { call })
+        val geminiError = runCatching { stream(lanGemini) }.exceptionOrNull()
+        assertTrue(geminiError is LLMError.ProviderError)
+        assertTrue(geminiError!!.message!!.contains("仅支持 https"))
+    }
+
+    @Test
     fun `anthropic 流中 overloaded 错误归瞬态进重试链`() {
         val provider = anthropicProvider(call = ScriptedCall(emptyList(), StreamResult.Completed))
         assertTrue(provider.errorOf(StreamChunk.Failure("Overloaded", code = "overloaded_error")) is LLMError.TransientError)

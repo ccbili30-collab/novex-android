@@ -633,6 +633,18 @@ class NovexTransportProvider(
         tools: List<AgentToolDefinition>,
         thinkingLevel: ThinkingLevel,
     ): Flow<LLMStreamChunk> = callbackFlow {
+        // 净眼 P3.1c 退回 must-fix：明文 LAN 中继既不换管也不回上游，请求前置预检
+        // 端点安全契约，不通过时以确定性 ProviderError（中文可读）收流——绝不映射
+        // 成 NetworkError 进瞬态重试链，用户看到的是配置错误而非无谓重试。
+        if (!endpointAcceptable()) {
+            close(
+                LLMError.ProviderError(
+                    "端点不满足自有传输的安全契约：仅支持 https 或本机回环地址" +
+                        "（http 仅限 127.0.0.1 / localhost / ::1）。请为该供应商实例改配 https 基址。",
+                ),
+            )
+            return@callbackFlow
+        }
         val request = try {
             buildWireRequest(messages, systemPrompt, maxTokens, imageParts, tools, thinkingLevel)
         } catch (failure: Throwable) {

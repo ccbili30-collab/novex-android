@@ -160,6 +160,8 @@ internal class GeminiSseDecoder : SseLineDecoder() {
     private var toolCounter=0
     override val acceptsDoneSentinel:Boolean get()=false
     override fun shouldFinishAtEndOfStream():Boolean=true
+    /** 干净断流没等到 finishReason 时缺省 end_turn（对齐被替换实现的 Finished(last ?: "end_turn")）。 */
+    override fun endOfStreamDoneReason():String=finishReason ?: "end_turn"
     override fun decodePayload(event:JSONObject):List<StreamChunk> {
         val out=mutableListOf<StreamChunk>()
         event.optJSONObject("error")?.let { error ->

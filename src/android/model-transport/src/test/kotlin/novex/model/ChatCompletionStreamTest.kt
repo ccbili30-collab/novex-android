@@ -137,6 +137,17 @@ class ChatCompletionStreamTest {
             assertEquals(listOf(StreamChunk.Failure("HTTP 500",500,"service",null,null)),chunks.toList())
         }
     }
+    @Test fun `HTTP 错误体解析出 OpenAI 形态的 message 与 request id`()=server { server,endpoint ->
+        server.createContext("/chat/completions") { exchange ->
+            val body="{\"error\":{\"message\":\"Invalid value for max_tokens\",\"request_id\":\"req-123\"}}"
+            val bytes=body.toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(400,bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        val chunks=ConcurrentLinkedQueue<StreamChunk>()
+        assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(listOf(StreamChunk.Failure("HTTP 400: Invalid value for max_tokens; request_id=req-123",400,"request",null,null)),chunks.toList())
+    }
     @Test fun `流中途 error 对象立即失败且其后数据被忽略`()=server { server,endpoint ->
         server.createContext("/chat/completions") { exchange ->
             streamBody(exchange,listOf(

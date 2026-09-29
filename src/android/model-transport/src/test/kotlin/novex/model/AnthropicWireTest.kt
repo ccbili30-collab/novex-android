@@ -357,6 +357,22 @@ class AnthropicWireTest {
         }
     }
 
+    @Test fun `HTTP 400 错误体解析出类型与消息`()=server("/v1/messages") { server,endpoint ->
+        server.createContext("/v1/messages") { exchange ->
+            val body="{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"max_tokens: field required\"}}"
+            val bytes=body.toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(400,bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        val chunks=ConcurrentLinkedQueue<StreamChunk>()
+        assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint,protocol=WireProtocol.ANTHROPIC_MESSAGES)
+            .stream(AnthropicMessagesRequest("claude-x",listOf(WireMessage("user","问")),64),
+                ModelCapacity(128_000),128_000,::measure){chunks.add(it)})
+        // 错误体进 message（[type] 前缀贴被替换实现的 mapHttpError 口径），type 进 code。
+        assertEquals(listOf(StreamChunk.Failure("HTTP 400: [invalid_request_error] max_tokens: field required",
+            400,"request","invalid_request_error",null)),chunks.toList())
+    }
+
     @Test fun `HTTP 非 200 与半行容错`() {
         server("/v1/messages") { server,endpoint ->
             server.createContext("/"){it.sendResponseHeaders(529,-1);it.close()}
