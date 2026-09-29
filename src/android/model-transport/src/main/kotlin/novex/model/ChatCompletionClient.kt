@@ -44,7 +44,11 @@ data class ToolDefinition(val name:String,val description:String,val parameters:
 }
 data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList()) {
     init { require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0);require(tools.map { it.name }.distinct().size==tools.size) }
-    fun encode(): String {
+    fun encode(): String = wire().put("stream",false).toString()
+    /** 共享装配：工具配对校验后给出除 stream 开关外的完整请求体，供非流式与流式编码各自补开关。 */
+    /** 共享装配。注意：org.json 的 JSONObject 键序不保证（HashMap 支撑），
+     * 序列化字节序不是契约——只保证 JSON 语义等价。 */
+    internal fun wire():JSONObject {
         val pending=mutableSetOf<String>()
         messages.forEach { message ->
             if(message.role=="tool")require(pending.remove(message.toolCallId)){"工具结果没有对应的待处理调用"}
@@ -54,10 +58,10 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
             }
         }
         require(pending.isEmpty()){"工具调用结果尚未齐全，不能继续请求"}
-        return JSONObject().put("model",model).put("stream",false).put("max_tokens",outputReserve)
+        return JSONObject().put("model",model).put("max_tokens",outputReserve)
             .put("messages",JSONArray(messages.map { it.encode() })).also {
                 if(tools.isNotEmpty())it.put("tools",JSONArray(tools.map { tool -> tool.encode() }))
-            }.toString()
+            }
     }
 }
 data class PendingTool(val id: String,val name: String,val arguments: String)
@@ -73,7 +77,7 @@ sealed interface ModelResult {
     data object Cancelled : ModelResult
 }
 
-/** 一次调用，无隐式重试。当前为非流式文字协议，工具请求只能返回待处理事实。 */
+/** 一次调用，无隐式重试。非流式走 [execute] 返回整体结果；流式走 [stream] 逐块回调。工具请求只能返回待处理事实。 */
 class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeoutMillis: Int = 30_000) {
     @Volatile var networkAttempted:Boolean=false
         private set
@@ -113,6 +117,70 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
             return decode(response)
         } catch(failure:SocketTimeoutException) { return if(cancelled.get()) ModelResult.Cancelled else ModelResult.TimedOut
         } catch(failure:java.io.IOException) { return if(cancelled.get()) ModelResult.Cancelled else ModelResult.NetworkFailure
+        } finally { active=null;connection?.disconnect() }
+    }
+
+    /**
+     * 流式调用，与 [execute] 同一风格：同步阻塞在调用线程上，无内部重试。
+     *
+     * 线程与背压：[onChunk] 在调用线程上就地回调——读一段原文、解出若干块、逐块回调，再读下一段。
+     * 模块不在回调之外缓冲事件，慢消费者会自然放慢读取（即背压）。超时语义沿用 [timeoutMillis]：
+     * 连接阶段与相邻数据块之间的间隔各自受上限约束，持续有数据的流不受总时长限制。
+     *
+     * 取消：[cancel] 可从任意线程随时调用，未完的读取立刻断开并返回 [StreamResult.Cancelled]；
+     * 已送达的块不撤回。块顺序即服务端事件顺序；收尾结论见 [StreamResult]。
+     */
+    fun stream(request: StreamRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
+               measureCompletePayload: (String) -> TokenMeasurement, onChunk: (StreamChunk) -> Unit): StreamResult {
+        check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
+        if (cancelled.get()) return StreamResult.Cancelled
+        val body=request.encode()
+        val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.request.outputReserve,measureCompletePayload(body))
+        if (decision !is CapacityDecision.Fits) return StreamResult.NotSent(decision)
+        var connection:HttpURLConnection?=null
+        try {
+            connection=endpoint.completionUrl.toURL().openConnection() as HttpURLConnection
+            active=connection
+            if(cancelled.get()) return StreamResult.Cancelled
+            connection.instanceFollowRedirects=false
+            connection.requestMethod="POST";connection.doOutput=true
+            connection.connectTimeout=timeoutMillis;connection.readTimeout=timeoutMillis
+            connection.setRequestProperty("Content-Type","application/json; charset=utf-8")
+            endpoint.authorize(connection)
+            val bytes=body.toByteArray(Charsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.size)
+            networkAttempted=true
+            connection.outputStream.use { it.write(bytes) }
+            val status=connection.responseCode
+            if(cancelled.get()) return StreamResult.Cancelled
+            if(status !in 200..299) {
+                onChunk(StreamChunk.Failure("HTTP $status",status,when(status) {
+                    401,403 -> "authentication";429 -> "rate_limit";in 300..399 -> "redirect";in 500..599 -> "service";else -> "request"
+                },null,connection.getHeaderField("Retry-After")))
+                return StreamResult.Failed
+            }
+            val decoder=SseDecoder()
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val buffer=CharArray(8192)
+                while(true) {
+                    val count=reader.read(buffer)
+                    if(count<0) break
+                    decoder.feed(String(buffer,0,count)).forEach(onChunk)
+                    if(decoder.sawDone()) return StreamResult.Completed
+                    if(decoder.sawFailure()) return StreamResult.Failed
+                    if(cancelled.get()) return StreamResult.Cancelled
+                }
+            }
+            if(cancelled.get()) return StreamResult.Cancelled
+            // 流断在半途：补冲缓冲里的半行；见过 finish_reason 却没等到哨兵的流在这里收尾。
+            decoder.finish().forEach(onChunk)
+            return when {
+                decoder.sawFailure() -> StreamResult.Failed
+                decoder.sawDone() -> StreamResult.Completed
+                // 干净断开却没有任何终止信号（无哨兵、无 finish_reason）：按连接异常处理，内容可能不完整。
+                else -> StreamResult.NetworkFailure
+            }
+        } catch(failure:SocketTimeoutException) { return if(cancelled.get()) StreamResult.Cancelled else StreamResult.TimedOut
+        } catch(failure:java.io.IOException) { return if(cancelled.get()) StreamResult.Cancelled else StreamResult.NetworkFailure
         } finally { active=null;connection?.disconnect() }
     }
 
