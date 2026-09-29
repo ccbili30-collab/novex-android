@@ -304,16 +304,21 @@ internal class ResponsesSseDecoder(private val codexImageRun: Boolean = false) :
             "response.output_text.done" -> if (codexImageRun) {
                 event.streamText("text").takeIf { it.isNotEmpty() }?.let(::appendRefusal)
             }
-            "error" -> {
-                markFailed()
-                val error = event.optJSONObject("error")
-                out += StreamChunk.Failure(
-                    error?.streamText("message").orEmpty().ifBlank { "服务在流中报告错误" },
-                    code = error?.streamText("code").orEmpty().ifBlank { null },
-                )
-            }
+            "error" -> out += topLevelError(event)
+            // 无 type 字段但携带 error 对象的载荷（部分中转的裸错误事件）同样按
+            // 终态失败处理——静默忽略会把错误流伪装成空回复。
+            else -> if (event.optJSONObject("error") != null) out += topLevelError(event)
         }
         return out
+    }
+
+    private fun topLevelError(event: JSONObject): List<StreamChunk> {
+        markFailed()
+        val error = event.optJSONObject("error")
+        return listOf(StreamChunk.Failure(
+            error?.streamText("message").orEmpty().ifBlank { "服务在流中报告错误" },
+            code = error?.streamText("code").orEmpty().ifBlank { null },
+        ))
     }
 
     /**

@@ -122,7 +122,7 @@ class ResponsesWireTest {
     @Test fun `超长双 id 截断到 64 字符`() {
         val longCall = "call_" + "a".repeat(40)
         val longFc = "fc_" + "b".repeat(70)
-        val combined = "${longCall}_$longFc"
+        val combined = "$longCall|$longFc"
         assertEquals(64, ResponsesWire.capId(longFc).length)
         val split = ResponsesWire.splitIds(combined)
         assertEquals(longCall, split.first)
@@ -177,7 +177,8 @@ class ResponsesWireTest {
         chunks += d.feed("data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_1\",\"delta\":\"1}\"}\n\n")
         assertEquals(StreamChunk.ToolCallDelta(0, "call_1|fc_1", "shell", ""), chunks[0])
         assertEquals(StreamChunk.ToolCallDelta(0, null, null, "{\"a\":"), chunks[1])
-        assertEquals(StreamChunk.ToolCallDelta(0, null, null, "{\"a\":1}"), chunks[2])
+        // 增量契约：分片只吐增量本身，累积在聚合器。
+        assertEquals(StreamChunk.ToolCallDelta(0, null, null, "1}"), chunks[2])
         // 聚合器拼装出完整调用。
         val assembled = StreamAssembler().also { chunks.forEach(it::accept) }
         val call = assembled.toolCalls.single()
