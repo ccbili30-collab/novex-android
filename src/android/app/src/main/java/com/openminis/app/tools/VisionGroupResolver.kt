@@ -233,7 +233,7 @@ object VisionGroupResolver {
 
         return withTimeout(PER_ATTEMPT_TIMEOUT_MS) {
             // Images go through the provider's dedicated `imageParts` argument
-            // (that's what OpenAIProvider/Anthropic/Gemini read — msg.imageParts
+            // (that's what the provider wire layer reads — msg.imageParts
             // is not consumed by the request builders); `content` carries only
             // the text instruction.
             val message = LLMMessage(

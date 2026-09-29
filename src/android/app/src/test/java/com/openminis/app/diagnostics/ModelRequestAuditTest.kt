@@ -10,7 +10,6 @@ import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ChatModelSelection
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.mockwebserver.MockResponse

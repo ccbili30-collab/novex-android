@@ -3534,7 +3534,7 @@ class ChatViewModel(
             // Mirror iOS AIChatViewModel.swift:12926 — null lets the
             // provider/model use its default. gpt-5.x family rejects any
             // temperature != 1 with HTTP 400, and Android
-            // OpenAIProvider.buildRequestBody omits the field entirely when
+            // 上游 openai 包（已删）的 buildRequestBody omits the field entirely when
             // temperature is null.
             temperature = null,
             imageParts = emptyList(),
@@ -10918,7 +10918,7 @@ class ChatViewModel(
      * A main model WITHOUT native image input only reaches here because a Vision
      * Group is configured (that's the tool-exposure gate in [agentTools]). For
      * that case we do NOT return pixels — a text-only model can't decode them and
-     * the provider (OpenAIProvider T264) silently drops them to a placeholder.
+     * the provider wire builder (T264, 已删上游 openai 包) silently drops them to a placeholder.
      * Instead we hand the bytes to the Vision Group, get a text DESCRIPTION back,
      * and return that as the tool output. `imageData` is left null so no pixels
      * are attached, but `imageFilePath` is preserved so the on-screen tool block

@@ -60,7 +60,7 @@ class XAIOAuthManager(context: Context, instanceId: String) : OAuthManager(conte
         /**
          * Static helper: perform the full login flow, persist the bearer
          * token via [ProviderRepository.saveApiKey] so the existing
-         * `Authorization: Bearer …` request path in OpenAIProvider can
+         * `Authorization: Bearer …` request path in the adapter wire (上游 openai 包已删) can
          * pick it up. Mirrors `OpenAIOAuthManager.login`.
          */
         suspend fun login(

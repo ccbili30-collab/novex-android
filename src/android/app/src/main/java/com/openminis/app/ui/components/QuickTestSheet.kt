@@ -521,7 +521,7 @@ internal suspend fun performTest(
 
         QuickTestKind.IMAGE_GEN -> {
             // [P3.1d] 生图接口面：适配器走自有 novex.model ImagesClient；上游
-            // OpenAIProvider 线路实现同一接口，行为不变。
+            // 九类线路均已换管适配器（上游 openai 包已随 P3.1e 删除），行为不变。
             val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
                 ?: provider as? com.openminis.app.provider.ImagesCapableProvider
                 ?: return@withContext failure(context.getString(R.string.quicktest_image_unsupported))

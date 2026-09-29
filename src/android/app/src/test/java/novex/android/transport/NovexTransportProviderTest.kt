@@ -8,7 +8,7 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
-import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.provider.ImageDegradationLearning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
@@ -283,7 +283,7 @@ class NovexTransportProviderTest {
         assertTrue(optimistic.getJSONArray("messages").getJSONObject(0).get("content") is org.json.JSONArray)
 
         // 已学习降级（端点明确拒绝过图片）：占位文本顶替像素。
-        OpenAIProvider.imageDegradedModels.add("test-model")
+        ImageDegradationLearning.imageDegradedModels.add("test-model")
         try {
             val degraded = JSONObject(
                 provider(call = call).buildStreamRequest(request, null, 128, parts, emptyList(), ThinkingLevel.OFF).encode(),
@@ -292,7 +292,7 @@ class NovexTransportProviderTest {
             assertTrue(message.get("content") is String)
             assertTrue(message.getString("content").contains("不支持图片输入"))
         } finally {
-            OpenAIProvider.imageDegradedModels.remove("test-model")
+            ImageDegradationLearning.imageDegradedModels.remove("test-model")
         }
     }
 
@@ -687,5 +687,376 @@ class NovexTransportProviderTest {
             val failure = runCatching { provider.imageDelegate!!.generateImage("一只猫", 1, null, null) }.exceptionOrNull()
             assertTrue("应为限流错误，实际 $failure", failure is LLMError.RateLimited)
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // P3.1e：Responses 线 / Azure / 动态 OAuth / 前尘回退 / codex 生图
+    // ---------------------------------------------------------------------
+
+    private fun responsesProvider(
+        call: NovexTransportProvider.TransportCall,
+        model: LLMModel = LLMModel("gpt-5.5", "GPT-5.5", "OpenAI", supportsReasoning = true),
+        basePath: String = "https://relay.example.com/v1",
+        isCodexOAuth: Boolean = false,
+        codexAccountId: String? = null,
+        oauthTokenProvider: (suspend () -> String)? = null,
+        azureBase: String? = null,
+        allowResponsesFallback: Boolean = false,
+    ) = NovexTransportProvider(
+        apiKey = "relay-key",
+        model = model,
+        basePath = basePath,
+        instanceId = "instance-resp",
+        protocol = novex.model.WireProtocol.RESPONSES,
+        isCodexOAuth = isCodexOAuth,
+        codexAccountId = codexAccountId,
+        oauthTokenProvider = oauthTokenProvider,
+        azureBase = azureBase,
+        allowResponsesFallback = allowResponsesFallback,
+        callOpener = { call },
+    )
+
+    @Test
+    fun `responses 自定端点走 v1 responses 路径且 Bearer 鉴权`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val provider = responsesProvider(call)
+        assertEquals("https://relay.example.com/v1/responses", provider.completionUrl().toString())
+        val request = provider.buildResponsesRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 256, emptyList(), emptyList(), ThinkingLevel.OFF,
+        )
+        assertEquals("api-key-null", null, provider.wireEndpoint(request).tokenHeader)
+    }
+
+    @Test
+    fun `codex oauth 端点与客户端指纹头`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val provider = responsesProvider(call, isCodexOAuth = true, codexAccountId = "acct-9")
+        assertEquals(
+            novex.model.ResponsesWire.CODEX_BACKEND_URL,
+            provider.completionUrl().toString(),
+        )
+        val headers = provider.outboundHeaders()
+        assertEquals("0.144.1", headers["Version"])
+        assertEquals("responses=experimental", headers["Openai-Beta"])
+        assertEquals("codex_cli_rs", headers["Originator"])
+        assertEquals("acct-9", headers["Chatgpt-Account-Id"])
+        assertTrue(headers["User-Agent"]!!.startsWith("codex_cli_rs/0.144.1"))
+        // 账号 id 缺失时不发头（可空语义）。
+        val noAccount = responsesProvider(ScriptedCall(emptyList(), StreamResult.Completed), isCodexOAuth = true)
+        assertFalse(noAccount.outboundHeaders().containsKey("Chatgpt-Account-Id"))
+    }
+
+    @Test
+    fun `responses 请求体形状-instructions-工具扁平-store-缓存键`() {
+        val tool = AgentToolDefinition(
+            name = "save_card", description = "保存",
+            parameters = mapOf("title" to com.openminis.app.data.model.AgentToolParam(type = "string", description = "t")),
+            required = listOf("title"),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val body = JSONObject(
+            responsesProvider(call).buildResponsesRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "你好")), "系统提示", 512,
+                emptyList(), listOf(tool), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals("gpt-5.5", body.getString("model"))
+        assertEquals("系统提示", body.getString("instructions"))
+        assertFalse(body.has("messages"))
+        assertTrue(body.getBoolean("stream"))
+        assertFalse(body.getBoolean("store"))
+        assertTrue(body.getBoolean("parallel_tool_calls"))
+        assertEquals(512, body.getInt("max_output_tokens"))
+        assertTrue(body.getString("prompt_cache_key").startsWith("minis-"))
+        val toolJson = body.getJSONArray("tools").getJSONObject(0)
+        assertEquals("function", toolJson.getString("type"))
+        assertEquals("save_card", toolJson.getString("name"))
+        assertFalse(toolJson.has("function"))
+        assertEquals("auto", body.getString("tool_choice"))
+        val input = body.getJSONArray("input")
+        assertEquals(1, input.length())
+        assertEquals("user", input.getJSONObject(0).getString("role"))
+    }
+
+    @Test
+    fun `codex oauth 请求体带加密思考回放且不写 max_output_tokens`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val body = JSONObject(
+            responsesProvider(call, isCodexOAuth = true).buildResponsesRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 512,
+                emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        // codex 指纹体：include 加密思考；思考关也回落 reasoning low；不写 token 上限。
+        assertEquals("reasoning.encrypted_content", body.getJSONArray("include").getString(0))
+        assertEquals("low", body.getJSONObject("reasoning").getString("effort"))
+        assertFalse(body.has("max_output_tokens"))
+    }
+
+    @Test
+    fun `responses 工具历史映射为 function_call 与 function_call_output 双 id 回放`() {
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(AgentContentPart.Text("查"))),
+            LLMMessage(
+                LLMMessage.Role.ASSISTANT, "",
+                contentParts = listOf(AgentContentPart.ToolUse("call_a|fc_b", "get_weather", JSONObject().put("city", "沪"))),
+            ),
+            LLMMessage(
+                LLMMessage.Role.USER, "",
+                contentParts = listOf(AgentContentPart.ToolResult("call_a|fc_b", "get_weather", "晴")),
+            ),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done("tool_use")), StreamResult.Completed)
+        val body = JSONObject(
+            responsesProvider(call).buildResponsesRequest(
+                history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val input = body.getJSONArray("input")
+        val functionCall = input.getJSONObject(1)
+        assertEquals("function_call", functionCall.getString("type"))
+        assertEquals("fc_b", functionCall.getString("id"))
+        assertEquals("call_a", functionCall.getString("call_id"))
+        assertEquals("get_weather", functionCall.getString("name"))
+        val output = input.getJSONObject(2)
+        assertEquals("function_call_output", output.getString("type"))
+        assertEquals("call_a", output.getString("call_id"))
+        assertEquals("晴", output.getString("output"))
+    }
+
+    @Test
+    fun `azure deployments 路径剥离游离 v1 与 openai 段并保留 api-version 查询`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val provider = responsesProvider(
+            call,
+            basePath = "https://x.openai.azure.com/ignored",
+            azureBase = "https://x.openai.azure.com/openai/v1/?api-version=2025-04-01-preview",
+        )
+        assertEquals(
+            "https://x.openai.azure.com/openai/deployments/gpt-5.5/responses?api-version=2025-04-01-preview",
+            provider.completionUrl().toString(),
+        )
+        val request = provider.buildResponsesRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 128, emptyList(), emptyList(), ThinkingLevel.OFF,
+        )
+        val endpoint = provider.wireEndpoint(request)
+        assertEquals("api-key", endpoint.tokenHeader)
+        assertTrue(provider.endpointAcceptable())
+    }
+
+    @Test
+    fun `动态 oauth 令牌每请求解析并送达传输调用`() = runBlocking {
+        var resolveCount = 0
+        val call = object : NovexTransportProvider.TransportCall {
+            var token: String? = null
+            override fun cancel() {}
+            override fun begin(token: String?) { this.token = token }
+            override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit) =
+                StreamResult.Completed
+        }
+        val provider = responsesProvider(call, oauthTokenProvider = { resolveCount++; "tok-$resolveCount" })
+        (provider as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "a")), null, 32).toList()
+        (provider as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "b")), null, 32).toList()
+        assertEquals("每次请求都解析令牌（刷新感知）", 2, resolveCount)
+        assertEquals("tok-2", call.token)
+    }
+
+    @Test
+    fun `oauth 令牌解析失败以 InvalidApiKey 收流不进重试链`() {
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        val provider = responsesProvider(call, oauthTokenProvider = { throw LLMError.InvalidApiKey() })
+        val error = runCatching {
+            runBlocking { (provider as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "x")), null, 32).toList() }
+        }.exceptionOrNull() as LLMError
+        assertTrue(error is LLMError.InvalidApiKey)
+    }
+
+    @Test
+    fun `前尘回退-chat 首块前失败自动改走 responses 且进程粘性`() = runBlocking {
+        // 第一个调用对 chat 请求失败；第二个对 responses 请求成功——断言重试换线。
+        val seenRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
+        var chatFailedOnce = false
+        val call = object : NovexTransportProvider.TransportCall {
+            override fun cancel() {}
+            override fun begin(token: String?) {}
+            override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                seenRequests += request
+                return if (request is novex.model.StreamRequest && !chatFailedOnce) {
+                    chatFailedOnce = true
+                    onChunk(StreamChunk.Failure("HTTP 500", 500, "service", null, null))
+                    StreamResult.Failed
+                } else {
+                    onChunk(novex.model.StreamChunk.TextDelta("ok"))
+                    onChunk(novex.model.StreamChunk.Done("stop"))
+                    StreamResult.Completed
+                }
+            }
+        }
+        val provider = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
+            basePath = "https://qianchen.example.com/v1",
+            instanceId = "sticky-test-instance",
+            allowResponsesFallback = true,
+            callOpener = { call },
+        )
+        val first = (provider as LLMProvider).streamMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64,
+        ).toList()
+        assertTrue(first.any { it is LLMStreamChunk.Text && it.text == "ok" })
+        // 首次往返：chat 失败 → responses 重试成功。
+        assertTrue(seenRequests.first() is novex.model.StreamRequest)
+        assertTrue(seenRequests.last() is novex.model.ResponsesStreamRequest)
+
+        // 粘性：同实例 id 的新 provider 对象直接以 responses 起步（省一次必败 chat）。
+        val call2 = object : NovexTransportProvider.TransportCall {
+            var sawRequest: novex.model.CompletionStreamRequest? = null
+            override fun cancel() {}
+            override fun begin(token: String?) {}
+            override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                sawRequest = request
+                onChunk(novex.model.StreamChunk.Done("stop"))
+                return StreamResult.Completed
+            }
+        }
+        val provider2 = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
+            basePath = "https://qianchen.example.com/v1",
+            instanceId = "sticky-test-instance",
+            allowResponsesFallback = true,
+            callOpener = { call2 },
+        )
+        (provider2 as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64).toList()
+        assertTrue("粘性实例应直接走 responses", call2.sawRequest is novex.model.ResponsesStreamRequest)
+
+        // 已发块后的失败不触发回退（中途中断照常抛错）。
+        val midDrop = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m2", "M", "OpenAI"),
+            basePath = "https://qianchen2.example.com/v1",
+            instanceId = "sticky-test-instance-2",
+            allowResponsesFallback = true,
+            callOpener = {
+                object : NovexTransportProvider.TransportCall {
+                    override fun cancel() {}
+                    override fun begin(token: String?) {}
+                    override fun stream(request: novex.model.CompletionStreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+                        onChunk(novex.model.StreamChunk.TextDelta("partial"))
+                        onChunk(StreamChunk.Failure("HTTP 500", 500, "service", null, null))
+                        return StreamResult.Failed
+                    }
+                }
+            },
+        )
+        val error = runCatching {
+            (midDrop as LLMProvider).streamMessage(listOf(LLMMessage(LLMMessage.Role.USER, "q")), null, 64).toList()
+        }.exceptionOrNull()
+        assertTrue(error is LLMError.TransientError)
+    }
+
+    @Test
+    fun `codex 生图请求体-gpt-image-2 固定指纹`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("end_turn")), StreamResult.Completed)
+        val provider = responsesProvider(
+            call,
+            model = LLMModel("gpt-image-2", "GPT Image 2", "OpenAI"),
+            isCodexOAuth = true,
+        )
+        val request = provider.buildWireRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "画一只猫")), null, 512,
+            emptyList(), emptyList(), ThinkingLevel.OFF,
+        )
+        assertTrue(request is novex.model.ResponsesStreamRequest && request.codexImageRun)
+        val body = JSONObject(request.encode())
+        assertEquals("gpt-5.5", body.getString("model"))
+        assertEquals("image_generation", body.getJSONArray("tools").getJSONObject(0).getString("type"))
+        assertEquals("low", body.getJSONObject("reasoning").getString("effort"))
+        assertTrue(body.getJSONArray("input").getJSONObject(0).getString("content").contains("画一只猫"))
+        // 请求选择走 responses 生图解码器（流式事件族由模块测试钉）。
+        assertTrue(provider.isCodexImageRun)
+        // 非 codex 或非 gpt-image-2 不受此门影响。
+        val plain = responsesProvider(ScriptedCall(emptyList(), StreamResult.Completed),
+            model = LLMModel("gpt-5.5", "GPT-5.5", "OpenAI"), isCodexOAuth = true)
+        assertFalse(plain.isCodexImageRun)
+    }
+
+    @Test
+    fun `responses 线 streamTextIsMonolithic 为假`() {
+        val provider = responsesProvider(ScriptedCall(emptyList(), StreamResult.Completed))
+        assertFalse((provider as LLMProvider).streamTextIsMonolithic)
+        // chat 线仍为真（上游时序语义）。
+        assertTrue((provider(call = ScriptedCall(emptyList(), StreamResult.Completed)) as LLMProvider).streamTextIsMonolithic)
+    }
+
+    @Test
+    fun `OpenRouter 上 anthropic 前缀模型携带顶层 cache_control`() {
+        val claude = LLMModel("anthropic/claude-sonnet-4.5", "Claude", "OpenRouter")
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val onRouter = JSONObject(
+            provider(model = claude, call = call, basePath = "https://openrouter.ai/api/v1").buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals("ephemeral", onRouter.getJSONObject("cache_control").getString("type"))
+        // 非 anthropic/ 前缀：请求体逐字节不带该键。
+        val gpt = LLMModel("openai/gpt-4o", "GPT", "OpenRouter")
+        val offPrefix = JSONObject(
+            provider(model = gpt, call = call, basePath = "https://openrouter.ai/api/v1").buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertFalse(offPrefix.has("cache_control"))
+        // anthropic 前缀但不在 openrouter 主机：同样不带。
+        val notRouter = JSONObject(
+            provider(model = claude, call = call, basePath = "https://relay.example.com/v1").buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertFalse(notRouter.has("cache_control"))
+    }
+
+    @Test
+    fun `responses 线失败码 server_error 与 rate_limit_exceeded 归瞬态`() {
+        val provider = responsesProvider(ScriptedCall(emptyList(), StreamResult.Completed))
+        assertTrue(provider.errorOf(StreamChunk.Failure("[server_error] boom", code = "server_error")) is LLMError.TransientError)
+        assertTrue(provider.errorOf(StreamChunk.Failure("[rate_limit_exceeded] boom", code = "rate_limit_exceeded")) is LLMError.TransientError)
+        // chat 线同码仍按上游 optInt 口径归供应商错误。
+        val chatProvider = provider(call = ScriptedCall(emptyList(), StreamResult.Completed))
+        assertTrue(chatProvider.errorOf(StreamChunk.Failure("[server_error] boom", code = "server_error")) is LLMError.ProviderError)
+    }
+
+    @Test
+    fun `anthropic 线工具结果图 mime 缺失时按魔数探测`() {
+        val jpegMagic = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val history = listOf(
+            LLMMessage(
+                LLMMessage.Role.ASSISTANT, "",
+                contentParts = listOf(AgentContentPart.ToolUse("call-1", "screenshot", JSONObject())),
+            ),
+            LLMMessage(
+                LLMMessage.Role.USER, "",
+                contentParts = listOf(
+                    AgentContentPart.ToolResult(
+                        "call-1", "screenshot", "截图完成",
+                        imageData = jpegMagic, imageMimeType = null,
+                    ),
+                ),
+            ),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val provider = NovexTransportProvider(
+            apiKey = "k", model = LLMModel.claudeSonnet46,
+            basePath = "https://relay.example.com",
+            instanceId = "i",
+            protocol = novex.model.WireProtocol.ANTHROPIC_MESSAGES,
+            callOpener = { call },
+        )
+        val body = JSONObject(
+            provider.buildWireRequest(history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        // anthropic 形状：工具结果在 user 轮的 tool_result 块内，图片是其 content 的第二块。
+        val mediaType = body.getJSONArray("messages")
+            .getJSONObject(1).getJSONArray("content").getJSONObject(0)
+            .getJSONArray("content").getJSONObject(1)
+            .getJSONObject("source").getString("media_type")
+        assertEquals("魔数探测应为 image/jpeg 而非假定 png", "image/jpeg", mediaType)
     }
 }

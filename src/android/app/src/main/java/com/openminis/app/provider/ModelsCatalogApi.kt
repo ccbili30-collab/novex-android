@@ -105,6 +105,10 @@ object ModelsCatalogApi {
      * Gemini 模型目录。三种鉴权形态：API key（x-goog-api-key 头）、OAuth（Bearer）、
      * Cloud Code Assist（无公开目录，cloudCodeFallback 直取内置列表）。OAuth 403
      * （令牌缺 generative-language scope）回落内置列表而非报错。
+     *
+     * 网络异常（IOException）原样上抛而非回落内置表（P3.1d 净眼建议 ①，对齐被删
+     * 的上游 GeminiModelsApi：execute() 无吞网——「拉不到目录」要报给用户看，静默
+     * 回落内置表会把网络问题伪装成模型清单）。HTTP 错误仍回落内置列表（上游语义）。
      */
     suspend fun fetchGeminiModels(
         apiKey: String,
@@ -119,7 +123,8 @@ object ModelsCatalogApi {
             geminiCache.load(context, cacheKey)?.let { return@withContext it }
         }
         val headers = if (isOAuth) {
-            mapOf("Authorization" to "Bearer $apiKey")
+            // P3.1d 净眼建议 ①：OAuth 路径补品牌 UA（被删上游对两种形态统一盖 UA）。
+            mapOf("Authorization" to "Bearer $apiKey", "User-Agent" to MinisUserAgent.DEFAULT)
         } else {
             // x-goog-api-key 头等价 ?key=（密钥不进 URL）。
             mapOf("x-goog-api-key" to apiKey, "User-Agent" to MinisUserAgent.DEFAULT)
@@ -134,7 +139,8 @@ object ModelsCatalogApi {
                 }
                 null
             }
-            is ModelsCatalog.FetchResult.NetworkFailure -> null
+            is ModelsCatalog.FetchResult.NetworkFailure ->
+                throw java.io.IOException("gemini models fetch failed (network)")
             is ModelsCatalog.FetchResult.Success ->
                 ModelsCatalog.parseGemini(outcome.body)?.filter { it.chatCapable }?.map { LLMModel(it.id, it.displayName, "Google") }
         }

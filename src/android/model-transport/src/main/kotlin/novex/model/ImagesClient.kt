@@ -24,6 +24,13 @@ class ImagesClient(
     /** 出站 User-Agent（调用方决定默认品牌 UA 或实例自定 UA）。 */
     private val userAgent: String,
     private val timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
+    /** 显式端点覆盖（Azure deployments 路径等）；null=base + 默认路径。 */
+    private val generationsUrl: URI? = null,
+    private val editsUrl: URI? = null,
+    /** 非 Bearer 鉴权头名（Azure 的 api-key）；null=Authorization: Bearer。 */
+    private val tokenHeader: String? = null,
+    /** 端点携带非凭据查询串（Azure 的 ?api-version=…）时放行。 */
+    private val permitQueryParams: Boolean = false,
 ) {
     init { require(timeoutMillis > 0) }
 
@@ -40,7 +47,7 @@ class ImagesClient(
             if (!withoutResponseFormat) body.put("response_format", "b64_json")
             val outcome = post(body.toString().toByteArray(Charsets.UTF_8), "application/json; charset=utf-8", "/images/generations")
             if (outcome is ImagesResult.HttpError && outcome.status == 400 && !withoutResponseFormat &&
-                (outcome.message.contains("response_format") || outcome.message.contains("b64_json"))
+                rejectsResponseFormat(outcome.message)
             ) { withoutResponseFormat = true; continue }
             return outcome
         }
@@ -60,13 +67,22 @@ class ImagesClient(
             val body = multipartBody(boundary, model, prompt, n, size, quality, withoutResponseFormat, images)
             val outcome = post(body, "multipart/form-data; boundary=$boundary", "/images/edits")
             if (outcome is ImagesResult.HttpError && outcome.status == 400 && !withoutResponseFormat &&
-                (outcome.message.contains("response_format") || outcome.message.contains("b64_json"))
+                rejectsResponseFormat(outcome.message)
             ) { withoutResponseFormat = true; continue }
             return outcome
         }
         @Suppress("UNREACHABLE_CODE")
         return ImagesResult.InvalidResponse("images/edits: unreachable")
     }
+
+    /**
+     * b64_json 自动探测的匹配口径（P3.1d 净眼建议 ②）：response_format 一词按
+     * 小写匹配（对齐被替换实现的 `body.lowercase().contains(...)`——xAI 等端点的
+     * 错误体用 `Response_Format` 大写拼写时同样触发去掉该键重试）；b64_json 字面
+     * 量保持原样匹配。
+     */
+    private fun rejectsResponseFormat(message: String): Boolean =
+        message.lowercase().contains("response_format") || message.contains("b64_json")
 
     private fun multipartBody(boundary: String, model: String, prompt: String, n: Int, size: String?,
                               quality: String?, withoutResponseFormat: Boolean, images: List<ImageInput>): ByteArray {
@@ -93,13 +109,14 @@ class ImagesClient(
     }
 
     private fun post(body: ByteArray, contentType: String, path: String): ImagesResult {
-        val url = base.toString().trimEnd('/') + path
+        val override = if (path == "/images/edits") editsUrl else generationsUrl
+        val url = override?.toString() ?: (base.toString().trimEnd('/') + path)
         var connection: HttpURLConnection? = null
         return try {
             val candidate = URI(url)
             // 端点契约与聊天线同源（https 或本机回环、头整洁）；令牌不进 URL。
             val endpoint = ModelEndpoint(candidate, bearerToken?.takeIf { it.isNotBlank() },
-                mapOf("User-Agent" to userAgent))
+                mapOf("User-Agent" to userAgent), permitQueryParams = permitQueryParams, tokenHeader = tokenHeader)
             connection = candidate.toURL().openConnection() as HttpURLConnection
             connection.instanceFollowRedirects = false
             connection.requestMethod = "POST"; connection.doOutput = true

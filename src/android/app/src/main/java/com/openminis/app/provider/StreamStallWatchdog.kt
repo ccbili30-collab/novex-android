@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLong
  * Any chunk type counts as activity — reasoning/thinking deltas keep arriving
  * during long model thinking, resetting the idle timer. The 300s defaults sit
  * ABOVE T171's measured legit silent gap (GPT-5.x Codex reasoning sat silent
- * 2:50–3:10 with no keep-alive bytes; OpenAIProvider.kt readTimeout notes) and
+ * 2:50–3:10 with no keep-alive bytes; 已删上游 openai 包的 readTimeout 注记) and
  * far BELOW the 3069s black hole that triggered this fix.
  *
  * Fires as [LLMError.NetworkError] so `isRetryable` is true and the existing

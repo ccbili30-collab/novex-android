@@ -6,16 +6,18 @@ import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.model.WireProtocol
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * P3.1b 工厂选择点：OpenAI 兼容中转（自定 base URL + 纯 chat completions）
- * 换管到自有传输；官方直连 / Responses / Azure / 前尘回退 / 明文局域网 /
- * 其他供应商类型仍走上游实现。
+ * P3.1e 工厂选择点：原上游 openai 包的九类实例（①Codex-OAuth ②官方直连
+ * ③useResponsesAPI ④Azure ⑤前尘回退 ⑥局域网明文 ⑦OpenRouter ⑧xAI ⑨Kimi）
+ * 全部构造 NovexTransportProvider——上游包已整体删除，工厂不再有任何回退实现。
+ * LAN 明文政策与 P3.1c 一致：适配器请求前置预检给确定性报错（见
+ * NovexTransportProviderTest 的预检用例），工厂仍照常构造适配器。
  */
 class NovexTransportFactorySelectionTest {
 
@@ -37,60 +39,79 @@ class NovexTransportFactorySelectionTest {
         autoResponsesFallback = autoResponsesFallback,
     )
 
+    private fun novex(instance: ProviderInstance, key: String = "relay-key") =
+        ProviderFactory.create(instance, key, LLMModel.gpt4oMini) as NovexTransportProvider
+
     @Test
     fun `自定 base 的纯 chat 中转换管到 NovexTransportProvider`() {
-        val provider = ProviderFactory.create(instance(), "relay-key", LLMModel.gpt4oMini)
-        assertTrue(provider is NovexTransportProvider)
+        assertTrue(novex(instance()) is NovexTransportProvider)
     }
 
     @Test
     fun `空密钥的自定中转同样换管`() {
-        val provider = ProviderFactory.create(instance(), "", LLMModel.gpt4oMini)
+        assertTrue(novex(instance(), "") is NovexTransportProvider)
+    }
+
+    @Test
+    fun `官方直连换管且走 chat 线官方基址`() {
+        val provider = novex(instance(customBaseURL = null), "sk-key")
+        assertEquals(WireProtocol.CHAT_COMPLETIONS, provider.lineProtocol())
+        assertEquals(
+            "https://api.openai.com/v1/chat/completions",
+            provider.completionUrl().toString(),
+        )
+    }
+
+    @Test
+    fun `②Responses 开关走 responses 线`() {
+        val provider = novex(instance(useResponsesAPI = true))
+        assertEquals(WireProtocol.RESPONSES, provider.lineProtocol())
+        assertEquals("https://relay.example.com/v1/responses", provider.completionUrl().toString())
+    }
+
+    @Test
+    fun `④Azure 模式走 deployments 路径`() {
+        val provider = novex(
+            instance(
+                customBaseURL = "https://x.openai.azure.com?api-version=2025-04-01-preview",
+                azureMode = true,
+            ),
+        )
+        assertEquals(
+            "https://x.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-04-01-preview",
+            provider.completionUrl().toString(),
+        )
+        // Azure 用 api-key 头，非 Bearer。
+        val request = provider.buildStreamRequest(
+            listOf(com.openminis.app.data.model.LLMMessage(com.openminis.app.data.model.LLMMessage.Role.USER, "hi")),
+            null, 128, emptyList(), emptyList(), com.openminis.app.data.model.ThinkingLevel.OFF,
+        )
+        assertEquals("api-key", provider.wireEndpoint(request).tokenHeader)
+    }
+
+    @Test
+    fun `⑤前尘回退实例换管且构造时仍走 chat 线`() {
+        val provider = novex(instance(autoResponsesFallback = true))
+        assertEquals(WireProtocol.CHAT_COMPLETIONS, provider.lineProtocol())
+    }
+
+    @Test
+    fun `⑥局域网明文中继仍构造适配器-预检报错政策见适配器测试`() {
+        val provider = novex(instance(customBaseURL = "http://192.168.1.10:11434"), "")
         assertTrue(provider is NovexTransportProvider)
+        assertFalse(provider.endpointAcceptable())
     }
 
     @Test
-    fun `官方直连仍走上游 OpenAIProvider`() {
-        val provider = ProviderFactory.create(instance(customBaseURL = null), "sk-key", LLMModel.gpt4oMini)
-        assertTrue(provider is OpenAIProvider)
-    }
-
-    @Test
-    fun `Responses 开关 Azure 模式 前尘回退均留在上游`() {
-        assertTrue(
-            ProviderFactory.create(instance(useResponsesAPI = true), "k", LLMModel.gpt4oMini) is OpenAIProvider,
-        )
-        assertTrue(
-            ProviderFactory.create(instance(azureMode = true), "k", LLMModel.gpt4oMini) is OpenAIProvider,
-        )
-        assertTrue(
-            ProviderFactory.create(instance(autoResponsesFallback = true), "k", LLMModel.gpt4oMini) is OpenAIProvider,
-        )
-    }
-
-    @Test
-    fun `明文局域网中继留在上游`() {
-        val provider = ProviderFactory.create(
-            instance(customBaseURL = "http://192.168.1.10:11434"),
-            "", LLMModel.gpt4oMini,
-        )
-        assertTrue(provider is OpenAIProvider)
-        assertFalse(provider is NovexTransportProvider)
-    }
-
-    @Test
-    fun `本机明文中继换管到自有传输`() {
-        val provider = ProviderFactory.create(
-            instance(customBaseURL = "http://127.0.0.1:11434"),
-            "", LLMModel.gpt4oMini,
-        )
+    fun `⑥本机明文中继换管到自有传输`() {
+        val provider = novex(instance(customBaseURL = "http://127.0.0.1:11434"), "")
         assertTrue(provider is NovexTransportProvider)
+        assertTrue(provider.endpointAcceptable())
     }
 
     @Test
     fun `anthropic 与 gemini 分支换管到自有传输`() {
-        // [P3.1c] 两家原生协议整体切 NovexTransportProvider；上游 AnthropicProvider /
-        // GeminiProvider 已随 P3.1d 删除。
+        // [P3.1c] 两家原生协议整体切 NovexTransportProvider；上游实现已随 P3.1d 删除。
         val anthropic = ProviderFactory.create(instance(type = ProviderType.anthropic), "k", LLMModel.claudeSonnet46)
         assertTrue(anthropic is NovexTransportProvider)
         assertEquals("Anthropic", (anthropic as LLMProvider).name)
@@ -115,11 +136,22 @@ class NovexTransportFactorySelectionTest {
     }
 
     @Test
-    fun `openRouter 分支不受影响`() {
-        assertTrue(
-            ProviderFactory.create(
-                instance(type = ProviderType.openRouter, customBaseURL = null), "k", LLMModel.orGpt4o,
-            ) is OpenAIProvider,
+    fun `⑦openRouter 分支换管并携带附加头`() {
+        val provider = novex(instance(type = ProviderType.openRouter, customBaseURL = null))
+        assertEquals("https://openrouter.ai/api/v1/chat/completions", provider.completionUrl().toString())
+        val headers = provider.outboundHeaders()
+        assertEquals("https://github.com/ccbili30-collab/novex-android", headers["HTTP-Referer"])
+        assertEquals("Minis App", headers["X-Title"])
+    }
+
+    @Test
+    fun `⑧⑨xAI 与 Kimi 的 API-key 形态换管`() {
+        val xai = novex(instance(type = ProviderType.xAI, customBaseURL = null))
+        assertEquals("https://api.x.ai/v1/chat/completions", xai.completionUrl().toString())
+        val kimi = novex(instance(type = ProviderType.kimiCode, customBaseURL = null))
+        assertEquals(
+            "${com.openminis.app.auth.KimiDeviceFlow.CODING_API_BASE}/v1/chat/completions",
+            kimi.completionUrl().toString(),
         )
     }
 

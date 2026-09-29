@@ -1,4 +1,4 @@
-package com.openminis.app.provider.openai
+package novex.android.transport
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -6,8 +6,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * [T-opencode-sunset] 403 free-tier 文案识别：命中（含大小写不敏感）给人话
- * 停服提示（存量绑定旧会话的防御）；不命中（普通密钥错误）不越权改写。
+ * [T-opencode-sunset] 403 free-tier 文案识别（自上游 openai 包测试迁入，随 P3.1e
+ * 整包删除落地）：命中（含大小写不敏感）给人话停服提示（存量绑定旧会话的防御）；
+ * 不命中（普通密钥错误）不越权改写。
  */
 class OpenCodeSunsetFriendlyErrorTest {
 

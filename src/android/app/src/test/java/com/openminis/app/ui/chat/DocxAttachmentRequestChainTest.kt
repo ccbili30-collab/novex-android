@@ -4,7 +4,7 @@ import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import novex.core.InMemoryNovexDocumentSnapshotCache
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.transport.NovexTransportProvider
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -51,7 +51,7 @@ class DocxAttachmentRequestChainTest {
                         """.trimIndent(),
                     ),
             )
-            val provider = OpenAIProvider(
+            val provider = NovexTransportProvider(
                 apiKey = "test-key",
                 model = LLMModel.gpt4oMini,
                 basePath = server.url("/v1").toString().trimEnd('/'),

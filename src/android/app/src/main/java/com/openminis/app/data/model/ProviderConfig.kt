@@ -165,7 +165,7 @@ data class ProviderInstance(
     /**
      * [T-qianchen-preset] chat 失败自动改走 /v1/responses（用户 2026-09-16 决策：
      * 「chat 不行就换 responses」）。仅对内置前尘预设开启——该中转两种接口同
-     * host 可用，chat 路径受上游/参数转换影响更脆。进程内粘性，见 OpenAIProvider。
+     * host 可用，chat 路径受上游/参数转换影响更脆。进程内粘性，见适配器 NovexTransportProvider（原上游 openai 包实现，已删）。
      */
     var autoResponsesFallback: Boolean = false,
     // [T-android-image-endpoint-mode] User-selected image-generation routing
@@ -177,7 +177,7 @@ data class ProviderInstance(
     // subsequent calls skip the /images/generations probe. Cleared whenever
     // the user forces a mode. null = not yet probed.
     var imageEndpointResolved: ImageEndpointMode? = null,
-    // [T-android-azure-openai] Azure OpenAI mode. When true, OpenAIProvider
+    // [T-android-azure-openai] Azure OpenAI mode. When true, the transport adapter
     // auths with the `api-key:` header (not `Authorization: Bearer`) and treats
     // the custom base URL as an Azure endpoint (the user pastes the full Azure
     // URL including `?api-version=…`; the request routes as
