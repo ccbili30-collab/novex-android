@@ -46,6 +46,8 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
     init { require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0);require(tools.map { it.name }.distinct().size==tools.size) }
     fun encode(): String = wire().put("stream",false).toString()
     /** 共享装配：工具配对校验后给出除 stream 开关外的完整请求体，供非流式与流式编码各自补开关。 */
+    /** 共享装配。注意：org.json 的 JSONObject 键序不保证（HashMap 支撑），
+     * 序列化字节序不是契约——只保证 JSON 语义等价。 */
     internal fun wire():JSONObject {
         val pending=mutableSetOf<String>()
         messages.forEach { message ->

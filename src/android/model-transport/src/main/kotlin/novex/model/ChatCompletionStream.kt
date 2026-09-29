@@ -98,7 +98,7 @@ internal class SseDecoder {
         if(raw.isBlank()||raw.startsWith(":")) return emptyList()
         if(!raw.startsWith("data:")) return emptyList() // event:/id:/retry: 等其余 SSE 字段与本协议无关
         val payload=raw.removePrefix("data:").let { if(it.startsWith(" ")) it.removePrefix(" ") else it } // 只剥一个前导空格（HTML5 SSE 规则，兼容无空格服务端）
-        if(payload=="[DONE]") { done=true;return listOf(StreamChunk.Done(finishReason)) }
+        if(payload.trim()=="[DONE]") { done=true;return listOf(StreamChunk.Done(finishReason)) }
         val event=try { JSONObject(payload) } catch(_:Exception) { return emptyList() }
         val out=mutableListOf<StreamChunk>()
         event.optJSONObject("error")?.let { error ->

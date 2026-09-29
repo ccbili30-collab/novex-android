@@ -42,7 +42,7 @@ class ChatCompletionStreamTest {
                 "data: {\"choices\":[{\"delta\":{\"content\":\"好\"}}]}\n\n",
                 "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
                 "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":4}}\n\n",
-                "data: [DONE]\n\n",
+                "data: [DONE] \n\n",
                 "data: {\"choices\":[{\"delta\":{\"content\":\"哨兵后不应出现\"}}]}\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
