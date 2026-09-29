@@ -39,7 +39,7 @@ import org.junit.Test
  * driving it end-to-end is the only way to regression-test it — with no network and
  * no credentials. Mirrors the established pattern in [MistralReasoningFieldTest].
  */
-class ThinkingRulesRegressionTest {
+class ThinkingContractsRegressionTest {
 
     private lateinit var server: MockWebServer
 

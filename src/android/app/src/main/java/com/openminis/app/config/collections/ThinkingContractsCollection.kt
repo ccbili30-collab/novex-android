@@ -9,12 +9,13 @@ import com.openminis.app.config.ConfigValue
 import com.openminis.app.config.fields.ClosureField
 import com.openminis.app.config.fields.ReadOnlyField
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.provider.thinking.ThinkingRule
-import com.openminis.app.provider.thinking.ThinkingRuleCoding
+import novex.android.thinking.ThinkingContract
+import novex.android.thinking.ThinkingContractCoding
 import org.json.JSONObject
 
 /**
- * [T-android-thinking-rules-phase2 / parity with iOS ThinkingRulesCollection.swift]
+ * [T-android-thinking-rules-phase2 / 与 iOS 的思考规则 minis-config 集合件对等
+ * （自有 ThinkingContractsCollection）]
  * Exposes user-authored custom thinking rules to minis-config under
  * `thinkingrules.<instanceId>:<ruleId>.<field>`.
  *
@@ -24,7 +25,7 @@ import org.json.JSONObject
  * give a collection exactly ONE id segment; instance ids are UUIDs (no colon), so a split
  * on the FIRST ':' cleanly separates instance from rule.
  */
-class ThinkingRulesCollection(
+class ThinkingContractsCollection(
     private val repo: ProviderRepository,
 ) : ConfigCollection {
     override val basePath: String get() = "thinkingrules"
@@ -40,7 +41,7 @@ class ThinkingRulesCollection(
 
     override fun childIds(): List<String> = buildList {
         for (inst in repo.config.value.instances) {
-            for (id in repo.thinkingRuleIds(inst.id)) add("${inst.id}:$id")
+            for (id in repo.thinkingContractIds(inst.id)) add("${inst.id}:$id")
         }
     }
 
@@ -50,12 +51,12 @@ class ThinkingRulesCollection(
         return childId.substring(0, i) to childId.substring(i + 1)
     }
 
-    private fun ruleOf(childId: String): Triple<String, String, ThinkingRule>? {
+    private fun ruleOf(childId: String): Triple<String, String, ThinkingContract>? {
         val (instanceId, ruleId) = split(childId) ?: return null
-        val ids = repo.thinkingRuleIds(instanceId)
+        val ids = repo.thinkingContractIds(instanceId)
         val idx = ids.indexOf(ruleId)
         if (idx < 0) return null
-        val rule = repo.thinkingRules(instanceId).getOrNull(idx) ?: return null
+        val rule = repo.thinkingContracts(instanceId).getOrNull(idx) ?: return null
         return Triple(instanceId, ruleId, rule)
     }
 
@@ -80,7 +81,7 @@ class ThinkingRulesCollection(
         writer = { v ->
             val label = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("expected string")
             val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
-            repo.saveThinkingRule(instanceId, rule.copy(label = label), id = ruleId)
+            repo.saveThinkingContract(instanceId, rule.copy(label = label), id = ruleId)
         },
     )
 
@@ -92,17 +93,17 @@ class ThinkingRulesCollection(
         risk = ConfigRisk.SENSITIVE,
         reader = {
             val s = ruleOf(childId)?.third?.scope
-            ConfigValue.Str(if (s is ThinkingRule.Scope.ModelPattern) s.pattern else "all")
+            ConfigValue.Str(if (s is ThinkingContract.Scope.ModelPattern) s.pattern else "all")
         },
         writer = { v ->
             val str = (v as? ConfigValue.Str)?.value ?: throw ConfigError.InvalidValue("expected string")
             val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
             val scope = if (str.equals("all", true) || str.isBlank()) {
-                ThinkingRule.Scope.AllModels
+                ThinkingContract.Scope.AllModels
             } else {
-                ThinkingRule.Scope.ModelPattern(str)
+                ThinkingContract.Scope.ModelPattern(str)
             }
-            repo.saveThinkingRule(instanceId, rule.copy(scope = scope), id = ruleId)
+            repo.saveThinkingContract(instanceId, rule.copy(scope = scope), id = ruleId)
         },
     )
 
@@ -113,15 +114,15 @@ class ThinkingRulesCollection(
         valueSchema = ConfigSchema.Json,
         risk = ConfigRisk.SENSITIVE,
         reader = {
-            val json = ThinkingRuleCoding.encodeWireFormat(ruleOf(childId)?.third?.wireFormat)
+            val json = ThinkingContractCoding.encodeWireFormat(ruleOf(childId)?.third?.wireFormat)
             configValueFromJson(json)
         },
         writer = { v ->
             val json = jsonStringFromConfigValue(v)
-            val fmt = ThinkingRuleCoding.decodeWireFormat(json)
+            val fmt = ThinkingContractCoding.decodeWireFormat(json)
                 ?: throw ConfigError.InvalidValue("unrecognized wire format JSON")
             val rule = ruleOf(childId)?.third ?: throw ConfigError.InvalidValue("rule no longer exists")
-            repo.saveThinkingRule(instanceId, rule.copy(wireFormat = fmt), id = ruleId)
+            repo.saveThinkingContract(instanceId, rule.copy(wireFormat = fmt), id = ruleId)
         },
     )
 
@@ -151,27 +152,27 @@ class ThinkingRulesCollection(
 
         val scopeStr = (obj["scope"] as? ConfigValue.Str)?.value ?: "all"
         val scope = if (scopeStr.equals("all", true) || scopeStr.isBlank()) {
-            ThinkingRule.Scope.AllModels
+            ThinkingContract.Scope.AllModels
         } else {
-            ThinkingRule.Scope.ModelPattern(scopeStr)
+            ThinkingContract.Scope.ModelPattern(scopeStr)
         }
 
         val wfJson = when (val wf = obj["wire_format"]) {
             is ConfigValue.Obj, is ConfigValue.Str -> jsonStringFromConfigValue(wf)
             else -> throw ConfigError.InvalidValue("`wire_format` required (JSON object)")
         }
-        val fmt = ThinkingRuleCoding.decodeWireFormat(wfJson)
+        val fmt = ThinkingContractCoding.decodeWireFormat(wfJson)
             ?: throw ConfigError.InvalidValue("unrecognized wire_format")
 
-        val rule = ThinkingRule(
-            kind = ThinkingRule.Kind.CUSTOM,
+        val rule = ThinkingContract(
+            kind = ThinkingContract.Kind.CUSTOM,
             scope = scope,
             wireFormat = fmt,
             label = label,
         )
         // New rules insert at the top (priority 0) — a rule overriding a built-in is
         // useless below it.
-        val ruleId = repo.saveThinkingRule(instanceId, rule, id = null)
+        val ruleId = repo.saveThinkingContract(instanceId, rule, id = null)
         return "$instanceId:$ruleId"
     }
 
@@ -183,7 +184,7 @@ class ThinkingRulesCollection(
         }
         val (instanceId, ruleId) = split(id)
             ?: throw ConfigError.InvalidValue("bad rule id: $id")
-        repo.deleteThinkingRule(instanceId, ruleId)
+        repo.deleteThinkingContract(instanceId, ruleId)
     }
 
     // ---- JSON <-> ConfigValue bridge ----

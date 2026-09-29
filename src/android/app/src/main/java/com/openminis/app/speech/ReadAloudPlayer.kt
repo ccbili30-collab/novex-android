@@ -9,8 +9,8 @@ import android.widget.Toast
 import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.logging.AppLogger
-import com.openminis.app.provider.voice.VoiceOutputRequest
-import com.openminis.app.provider.voice.VoiceProviderFactory
+import novex.android.voice.VoiceTtsRequest
+import novex.android.voice.VoiceClientFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,7 +34,7 @@ import kotlin.coroutines.resume
  * ## Why this exists
  * Read-aloud previously constructed a bare [TextToSpeechManager], so it always
  * used the on-device Android engine. The whole provider TTS stack —
- * `VoiceProvider.synthesize()` plus ~723 lines of vendor adapters (MiniMax,
+ * `VoiceClient.synthesize()` plus the vendor clients (MiniMax,
  * Doubao, ElevenLabs, Azure, Gemini, Xunfei, …) — was reachable only from the
  * settings Quick Test sheet, so no provider voice was usable in chat.
  *
@@ -398,9 +398,9 @@ class ReadAloudPlayer(context: Context) {
             ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: repository unavailable") }
         val apiKey = repo.loadApiKey(instance.id)
             ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: no API key for ${instance.id}") }
-        val voice = VoiceProviderFactory.make(instance, apiKey)
+        val voice = VoiceClientFactory.make(instance, apiKey)
             ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: no voice adapter for ${instance.providerType}/${instance.customBaseURL}") }
-        if (!voice.supportsVoiceOutput) {
+        if (!voice.supportsTts) {
             AppLogger.error(TAG, "provider TTS skipped: ${voice.javaClass.simpleName} does not support output")
             return false
         }
@@ -415,7 +415,7 @@ class ReadAloudPlayer(context: Context) {
                     // The entry id doubles as the voice id — template voices carry
                     // the voice id as the model id (same convention QuickTestSheet
                     // relies on, iOS 0a52bdbf).
-                    VoiceOutputRequest(
+                    VoiceTtsRequest(
                         input = text,
                         model = modelEntry.model.id,
                         voice = modelEntry.model.id,

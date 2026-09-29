@@ -1,4 +1,4 @@
-package com.openminis.app.provider.thinking
+package novex.android.thinking
 
 import com.openminis.app.data.model.ThinkingLevel
 import org.json.JSONObject
@@ -8,7 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [OpenMinis#163] Android port of iOS 3ba3eb5c.
+ * [OpenMinis#163] Android port of iOS 3ba3eb5c（P3.2 随 provider/thinking
+ * 绞杀迁移至自有包；断言集原样保留）。
  *
  * Enabling thinking on xAI `grok-build-0.1` fails with "HTTP 400: Model
  * grok-build-0.1 does not support parameter reasoningEffort". models.dev
@@ -31,7 +32,7 @@ class XAIEmptyEffortTiersTest {
         level: ThinkingLevel = ThinkingLevel.HIGH,
     ): JSONObject {
         val body = JSONObject()
-        ThinkingRuleResolver.apply(
+        ThinkingContractResolver.apply(
             body,
             ThinkingResolveContext(
                 modelId = modelId,

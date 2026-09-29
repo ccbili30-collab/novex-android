@@ -18,8 +18,6 @@ import com.openminis.app.provider.ImageDegradationLearning
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.MinisUserAgent
 import com.openminis.app.provider.failOnSilentEmptyCompletion
-import com.openminis.app.provider.thinking.ThinkingResolveContext
-import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.trySendBlocking
@@ -29,6 +27,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import novex.android.thinking.ThinkingContractResolver
+import novex.android.thinking.ThinkingResolveContext
 import novex.conversation.ModelCapacity
 import novex.conversation.TokenMeasurement
 import novex.model.AnthropicMessagesRequest
@@ -95,7 +95,7 @@ class NovexTransportProvider(
     /** 动态 OAuth bearer（Codex / xAI / Kimi）：每请求挂起取新鲜令牌；null=静态 [apiKey]。 */
     private val oauthTokenProvider: (suspend () -> String)? = null,
     /** Codex OAuth（chatgpt.com Responses 后端）：客户端指纹头 + 请求体约束。 */
-    private val isCodexOAuth: Boolean = false,
+    internal val isCodexOAuth: Boolean = false,
     /** Codex 账号 id（JWT 提取）；Chatgpt-Account-Id 头，可空（缺失不 401）。 */
     private val codexAccountId: String? = null,
     /** Azure OpenAI：原始用户端点（含 ?api-version=…）；deployments 路径 + api-key 头。 */
@@ -649,7 +649,7 @@ class NovexTransportProvider(
         AppLogger.info(
             "Thinking",
             "[resolve] provider=gemini model=${model.id} level=${thinkingLevel.name} " +
-                "keys=[${ThinkingRuleResolver.geminiThinkingConfig(model.id, thinkingLevel)
+                "keys=[${ThinkingContractResolver.geminiThinkingConfig(model.id, thinkingLevel)
                     ?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: ""}]",
         )
         val outputs = model.outputModalities.orEmpty()
@@ -658,7 +658,7 @@ class NovexTransportProvider(
             messages = wire,
             maxOutputTokens = maxTokens.toLong(),
             tools = toolDefs,
-            thinkingConfig = ThinkingRuleResolver.geminiThinkingConfig(model.id, thinkingLevel),
+            thinkingConfig = ThinkingContractResolver.geminiThinkingConfig(model.id, thinkingLevel),
             responseModalities = when {
                 "audio" in outputs -> listOf("AUDIO")
                 "image" in outputs -> listOf("TEXT", "IMAGE")
@@ -795,7 +795,7 @@ class NovexTransportProvider(
     private fun thinkingParameters(maxTokens: Int, level: ThinkingLevel): JSONObject? {
         if (isMistralHost) return null
         val holder = JSONObject()
-        ThinkingRuleResolver.apply(
+        ThinkingContractResolver.apply(
             holder,
             ThinkingResolveContext(
                 modelId = model.id,

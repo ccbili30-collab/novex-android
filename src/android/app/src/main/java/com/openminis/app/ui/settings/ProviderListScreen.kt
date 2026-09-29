@@ -252,7 +252,7 @@ fun ProviderListScreen(
         // every enabled instance that owns audio-modality models (mirrors iOS
         // ProviderInstancesView's Voice Services section). Rows are read-only
         // views onto the underlying instance — no stored entity.
-        val shadows = remember(config) { providerRepository.shadowVoiceProviders() }
+        val shadows = remember(config) { providerRepository.shadowVoiceSources() }
         if (shadows.isNotEmpty()) {
             SettingsSection(
                 header = stringResource(R.string.voice_services_section),
@@ -434,7 +434,7 @@ private fun maskKey(key: String): String {
 /** One shadow Voice Service row: name + ASR/TTS model counts. */
 @Composable
 private fun ShadowVoiceRow(
-    shadow: ProviderRepository.ShadowVoiceProvider,
+    shadow: ProviderRepository.ShadowVoiceSource,
     onClick: () -> Unit,
 ) {
     Row(

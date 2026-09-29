@@ -1,24 +1,24 @@
-package com.openminis.app.provider.thinking
+package novex.android.thinking
 
-import com.openminis.app.data.db.ProviderThinkingRuleEntity
+import com.openminis.app.data.db.ProviderThinkingContractEntity
 import com.openminis.app.data.model.ThinkingLevel
 import org.json.JSONObject
 
 /**
- * [T-android-thinking-rules-phase2 / parity with iOS ThinkingRuleCoding.swift]
- * (De)serialize a user-authored [ThinkingRule] to/from its Room row.
+ * 用户自定义 [ThinkingContract] 与 Room 行之间的（反）序列化（P3.2 自有实现，
+ * 替换上游 provider/thinking 包的编码件；与 iOS 同名编码件对等）。
  *
- * Only CUSTOM rules round-trip through here. The [ThinkingWireFormat] sealed hierarchy is
- * encoded as a small tagged JSON object (`{"type":"reasoning_effort","offValue":"low"}`),
- * chosen over typed columns so adding a new wire format needs no schema migration.
+ * 只有 CUSTOM 规则经此往返。[ThinkingWireFormat] 密封层级编码为小型带 tag 的
+ * JSON 对象（`{"type":"reasoning_effort","offValue":"low"}`），选它而非类型化
+ * 列列：新增线形态无需 schema 迁移。DB 内既有 blob 的 tag 词汇与本表逐字兼容
+ * （存量自定义规则无损）。
  *
- * Kept deliberately total and defensive: a row that fails to decode (corrupt blob, a
- * format written by a newer build) yields a rule with a null wireFormat — "no opinion" —
- * which the resolver safely falls through, rather than throwing mid-request.
+ * 刻意保持完全与防御：解码失败的行（损坏 blob、新版本写的形态）产出 wireFormat
+ * 为 null 的规则——「无意见」——解析器安全落空，而不是请求中途抛异常。
  */
-object ThinkingRuleCoding {
+object ThinkingContractCoding {
 
-    // ---- Wire format <-> JSON ----
+    // ---- 线形态 <-> JSON ----
 
     fun encodeWireFormat(fmt: ThinkingWireFormat?): String? {
         if (fmt == null) return null
@@ -134,14 +134,14 @@ object ThinkingRuleCoding {
         }
     }
 
-    // ---- Rule <-> Entity ----
+    // ---- 规则 <-> Entity ----
 
-    fun toEntity(rule: ThinkingRule, id: String, instanceId: String, sortOrder: Int): ProviderThinkingRuleEntity {
+    fun toEntity(rule: ThinkingContract, id: String, instanceId: String, sortOrder: Int): ProviderThinkingContractEntity {
         val (kind, pattern) = when (val s = rule.scope) {
-            is ThinkingRule.Scope.AllModels -> "allModels" to null
-            is ThinkingRule.Scope.ModelPattern -> "modelPattern" to s.pattern
+            is ThinkingContract.Scope.AllModels -> "allModels" to null
+            is ThinkingContract.Scope.ModelPattern -> "modelPattern" to s.pattern
         }
-        return ProviderThinkingRuleEntity(
+        return ProviderThinkingContractEntity(
             id = id,
             providerInstanceId = instanceId,
             label = rule.label,
@@ -153,13 +153,13 @@ object ThinkingRuleCoding {
         )
     }
 
-    fun toRule(e: ProviderThinkingRuleEntity): ThinkingRule {
+    fun toRule(e: ProviderThinkingContractEntity): ThinkingContract {
         val scope = when (e.scopeKind) {
-            "modelPattern" -> ThinkingRule.Scope.ModelPattern(e.scopePattern ?: "*")
-            else -> ThinkingRule.Scope.AllModels
+            "modelPattern" -> ThinkingContract.Scope.ModelPattern(e.scopePattern ?: "*")
+            else -> ThinkingContract.Scope.AllModels
         }
-        return ThinkingRule(
-            kind = ThinkingRule.Kind.CUSTOM,
+        return ThinkingContract(
+            kind = ThinkingContract.Kind.CUSTOM,
             scope = scope,
             wireFormat = decodeWireFormat(e.wireFormatJson),
             reasoningEcho = decodeEcho(e.reasoningEchoJson),

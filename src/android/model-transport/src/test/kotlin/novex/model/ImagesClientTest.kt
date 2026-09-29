@@ -79,6 +79,20 @@ class ImagesClientTest {
         }
     }
 
+    @Test fun `400 错误体以大写 Response_Format 拼写提及时同样触发去键重试`() {
+        // P3.1d 净眼建议 ② 的行为在 P3.1e 已实现（匹配口径按小写化后比对），
+        // 此处补钉拼写面：中转把键名大写拼进错误文案时重试同样发生。
+        Server().use { server ->
+            server.responses += Pair(400, """{"error":{"message":"Response_Format is not supported by this endpoint"}}""")
+            server.responses += Pair(200, """{"data":[{"b64_json":"$pngB64"}]}""")
+            val result = client(server).generate("grok-2-image", "一只猫", 1, null, null)
+            assertTrue(result is ImagesResult.Success)
+            assertEquals(2, server.requests.size)
+            assertTrue(JSONObject(String(server.requests[0].body)).has("response_format"))
+            assertFalse(JSONObject(String(server.requests[1].body)).has("response_format"))
+        }
+    }
+
     @Test fun `400 提及 response_format 时去掉该键重试一次`() {
         Server().use { server ->
             server.responses += Pair(400, """{"error":{"message":"response_format is not supported"}}""")

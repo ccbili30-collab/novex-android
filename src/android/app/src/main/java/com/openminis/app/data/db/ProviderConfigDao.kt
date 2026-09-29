@@ -78,28 +78,28 @@ interface ProviderConfigDao {
     //
     // Deliberately NOT touched by replaceAll(): thinking rules are per-instance user
     // data that is orthogonal to the config snapshot round-trip. They are cleaned up
-    // only when their owning instance is deleted (see deleteThinkingRulesForInstance,
+    // only when their owning instance is deleted (see deleteThinkingContractsForInstance,
     // called from ProviderRepository.deleteInstance).
 
     @Query("SELECT * FROM provider_thinking_rules WHERE provider_instance_id = :instanceId ORDER BY sort_order ASC")
-    suspend fun loadThinkingRules(instanceId: String): List<ProviderThinkingRuleEntity>
+    suspend fun loadThinkingContracts(instanceId: String): List<ProviderThinkingContractEntity>
 
     @Query("SELECT * FROM provider_thinking_rules ORDER BY provider_instance_id, sort_order ASC")
-    suspend fun loadAllThinkingRules(): List<ProviderThinkingRuleEntity>
+    suspend fun loadAllThinkingContracts(): List<ProviderThinkingContractEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertThinkingRule(row: ProviderThinkingRuleEntity)
+    suspend fun upsertThinkingContract(row: ProviderThinkingContractEntity)
 
     @Query("DELETE FROM provider_thinking_rules WHERE id = :id")
-    suspend fun deleteThinkingRule(id: String)
+    suspend fun deleteThinkingContract(id: String)
 
     @Query("DELETE FROM provider_thinking_rules WHERE provider_instance_id = :instanceId")
-    suspend fun deleteThinkingRulesForInstance(instanceId: String)
+    suspend fun deleteThinkingContractsForInstance(instanceId: String)
 
     /** Atomic reorder/replace of an instance's whole rule set (drag-reorder + add/edit). */
     @Transaction
-    suspend fun replaceThinkingRules(instanceId: String, rows: List<ProviderThinkingRuleEntity>) {
-        deleteThinkingRulesForInstance(instanceId)
-        for (r in rows) upsertThinkingRule(r)
+    suspend fun replaceThinkingContracts(instanceId: String, rows: List<ProviderThinkingContractEntity>) {
+        deleteThinkingContractsForInstance(instanceId)
+        for (r in rows) upsertThinkingContract(r)
     }
 }

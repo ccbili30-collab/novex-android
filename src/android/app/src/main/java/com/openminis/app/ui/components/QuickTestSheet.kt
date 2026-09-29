@@ -437,15 +437,15 @@ internal suspend fun performTest(
     val apiKey = providerRepository.loadApiKey(instance.id)
         ?: return@withContext failure("No API key configured for this provider.")
 
-    // [T-android-provider-voice] Speech tests route through the VoiceProvider
+    // [T-android-provider-voice] Speech tests route through the voice client
     // stack (vendor adapters + endpoints), NOT the chat provider — mirrors iOS
     // ModelQuickTestSheet .speechOut / .transcription.
     if (kind == QuickTestKind.SPEECH_OUT || kind == QuickTestKind.TRANSCRIPTION) {
-        val voice = com.openminis.app.provider.voice.VoiceProviderFactory.make(instance, apiKey)
+        val voice = novex.android.voice.VoiceClientFactory.make(instance, apiKey)
             ?: return@withContext failure(context.getString(R.string.quicktest_voice_unsupported))
         return@withContext when (kind) {
             QuickTestKind.SPEECH_OUT -> {
-                if (!voice.supportsVoiceOutput) {
+                if (!voice.supportsTts) {
                     failure(context.getString(R.string.quicktest_voice_unsupported))
                 } else {
                     runCatching {
@@ -454,7 +454,7 @@ internal suspend fun performTest(
                         // iOS 0a52bdbf: pass entry.model.id for both so the test
                         // speaks in THAT voice, not the vendor default.
                         val data = voice.synthesize(
-                            com.openminis.app.provider.voice.VoiceOutputRequest(
+                            novex.android.voice.VoiceTtsRequest(
                                 input = "Hi! This is Minis testing text to speech.",
                                 model = entry.model.id,
                                 voice = entry.model.id,
@@ -469,7 +469,7 @@ internal suspend fun performTest(
                 }
             }
             else -> { // TRANSCRIPTION
-                if (!voice.supportsVoiceInput) {
+                if (!voice.supportsAsr) {
                     failure(context.getString(R.string.quicktest_voice_unsupported))
                 } else {
                     val spoken = "Hello from Minis, testing speech to text."
@@ -477,7 +477,7 @@ internal suspend fun performTest(
                         ?: return@withContext failure(context.getString(R.string.quicktest_clip_failed))
                     runCatching {
                         val resp = voice.transcribe(
-                            com.openminis.app.provider.voice.VoiceInputRequest(
+                            novex.android.voice.VoiceAsrRequest(
                                 audioData = clip,
                                 model = entry.baseModel.id,
                                 language = "en",

@@ -1,4 +1,4 @@
-package com.openminis.app.provider.thinking
+package novex.android.thinking
 
 import com.openminis.app.data.model.ThinkingLevel
 import org.json.JSONObject
@@ -9,19 +9,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [T-android-thinking-rules-phase2] Custom-rule merge behaviour.
+ * 自定义规则合并行为（P3.2 随 provider/thinking 绞杀迁移；原上游同名
+ * 测试的等价迁移——断言集原样保留）。
  *
- * The load-bearing safety invariant: an EMPTY custom-rule list must resolve
- * byte-identically to the built-in-only Phase 1 path. The golden-snapshot tests already
- * pin the built-in output; this file pins (a) empty = unchanged and (b) a custom rule
- * actually overrides.
+ * 承重安全不变量：空自定义规则表必须与仅内置路径逐字节一致地解析。金表测试
+ * 已钉内置输出；本文件钉 (a) 空 = 不变、(b) 自定义规则真的能覆盖。
  */
-class ThinkingRuleCustomMergeTest {
+class ThinkingContractCustomMergeTest {
 
     @After
     fun tearDown() {
-        // Never leak cache state into other tests in the same JVM.
-        ThinkingRuleResolver.setAllCustomRules(emptyMap())
+        // 绝不把缓存状态泄漏进同 JVM 的其他测试。
+        ThinkingContractResolver.setAllCustomRules(emptyMap())
     }
 
     private fun ctx(modelId: String, instanceId: String?) = ThinkingResolveContext(
@@ -40,76 +39,76 @@ class ThinkingRuleCustomMergeTest {
 
     @Test
     fun `empty custom rules leave the openai-compatible default untouched`() {
-        ThinkingRuleResolver.setAllCustomRules(emptyMap())
+        ThinkingContractResolver.setAllCustomRules(emptyMap())
         val body = JSONObject()
-        val trace = ThinkingRuleResolver.apply(body, ctx("some-model", "inst-A"))
-        // Default openai-compatible path: root reasoning_effort at HIGH.
+        val trace = ThinkingContractResolver.apply(body, ctx("some-model", "inst-A"))
+        // 默认 openai 兼容路径：根级 reasoning_effort @ HIGH。
         assertEquals("high", body.optString("reasoning_effort"))
         assertEquals("openai-compatible-default", trace.matchedRuleLabel)
-        assertEquals(ThinkingRule.Kind.PROVIDER_TYPE_DEFAULT, trace.matchedRuleKind)
+        assertEquals(ThinkingContract.Kind.PROVIDER_TYPE_DEFAULT, trace.matchedRuleKind)
     }
 
     @Test
     fun `a custom OmitEverything rule wins over the built-in default`() {
-        ThinkingRuleResolver.setCustomRules(
+        ThinkingContractResolver.setCustomRules(
             "inst-A",
             listOf(
-                ThinkingRule(
-                    kind = ThinkingRule.Kind.CUSTOM,
-                    scope = ThinkingRule.Scope.AllModels,
+                ThinkingContract(
+                    kind = ThinkingContract.Kind.CUSTOM,
+                    scope = ThinkingContract.Scope.AllModels,
                     wireFormat = ThinkingWireFormat.OmitEverything,
                     label = "my-omit",
                 ),
             ),
         )
         val body = JSONObject()
-        val trace = ThinkingRuleResolver.apply(body, ctx("some-model", "inst-A"))
-        // OmitEverything ⇒ NO thinking key at all.
+        val trace = ThinkingContractResolver.apply(body, ctx("some-model", "inst-A"))
+        // OmitEverything ⇒ 完全没有思考键。
         assertFalse(body.has("reasoning_effort"))
         assertFalse(body.has("thinking"))
         assertEquals("my-omit", trace.matchedRuleLabel)
-        assertEquals(ThinkingRule.Kind.CUSTOM, trace.matchedRuleKind)
+        assertEquals(ThinkingContract.Kind.CUSTOM, trace.matchedRuleKind)
     }
 
     @Test
     fun `a custom rule scoped to a pattern only fires for matching models`() {
-        ThinkingRuleResolver.setCustomRules(
+        ThinkingContractResolver.setCustomRules(
             "inst-A",
             listOf(
-                ThinkingRule(
-                    kind = ThinkingRule.Kind.CUSTOM,
-                    scope = ThinkingRule.Scope.ModelPattern("deepseek-v4*"),
+                ThinkingContract(
+                    kind = ThinkingContract.Kind.CUSTOM,
+                    scope = ThinkingContract.Scope.ModelPattern("deepseek-v4*"),
                     wireFormat = ThinkingWireFormat.OmitEverything,
                     label = "ds-omit",
                 ),
             ),
         )
-        // Matching model → custom rule wins.
+        // 命中机型 → 自定义规则胜出。
         val hit = JSONObject()
-        assertEquals("ds-omit", ThinkingRuleResolver.apply(hit, ctx("deepseek-v4-chat", "inst-A")).matchedRuleLabel)
+        assertEquals("ds-omit", ThinkingContractResolver.apply(hit, ctx("deepseek-v4-chat", "inst-A")).matchedRuleLabel)
         assertFalse(hit.has("reasoning_effort"))
-        // Non-matching model → falls through to the built-in default.
+        // 未命中机型 → 落入内置默认。
         val miss = JSONObject()
-        val missTrace = ThinkingRuleResolver.apply(miss, ctx("gpt-4o", "inst-A"))
+        val missTrace = ThinkingContractResolver.apply(miss, ctx("gpt-4o", "inst-A"))
         assertEquals("high", miss.optString("reasoning_effort"))
         assertTrue(missTrace.matchedRuleLabel != "ds-omit")
     }
 
     @Test
     fun `custom rules on one instance do not leak to another`() {
-        ThinkingRuleResolver.setCustomRules(
+        ThinkingContractResolver.setCustomRules(
             "inst-A",
             listOf(
-                ThinkingRule(
-                    kind = ThinkingRule.Kind.CUSTOM,
-                    scope = ThinkingRule.Scope.AllModels,
+                ThinkingContract(
+                    kind = ThinkingContract.Kind.CUSTOM,
+                    scope = ThinkingContract.Scope.AllModels,
                     wireFormat = ThinkingWireFormat.OmitEverything,
                     label = "a-only",
                 ),
             ),
         )
         val bodyB = JSONObject()
-        val traceB = ThinkingRuleResolver.apply(bodyB, ctx("some-model", "inst-B"))
+        val traceB = ThinkingContractResolver.apply(bodyB, ctx("some-model", "inst-B"))
         assertEquals("high", bodyB.optString("reasoning_effort"))
         assertTrue(traceB.matchedRuleLabel != "a-only")
     }

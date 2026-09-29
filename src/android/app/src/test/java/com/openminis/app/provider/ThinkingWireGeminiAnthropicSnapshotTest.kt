@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
 import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.thinking.ThinkingRuleResolver
+import novex.android.thinking.ThinkingContractResolver
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -10,7 +10,7 @@ import org.junit.Test
  * GOLDEN SNAPSHOT for the Gemini and Anthropic thinking shapes — the Phase 2 §1
  * counterpart to [ThinkingWireGoldenSnapshotTest] (which covers the OpenAI family).
  *
- * WHY: Phase 1 deliberately left these two providers out of [ThinkingRuleResolver]
+ * WHY: Phase 1 deliberately left these two providers out of [ThinkingContractResolver]
  * (their logic lived in `GeminiProvider.buildThinkingConfig` and `AnthropicProvider`'s
  * budget/effort helpers). Phase 2 §1 migrates them in. The acceptance criterion is the
  * same as Phase 1's: byte-for-byte identical behaviour. This file is generated against
@@ -63,14 +63,14 @@ class ThinkingWireGeminiAnthropicSnapshotTest {
     private fun render(): String = buildString {
         for (m in geminiModels) {
             for (lv in levels) {
-                append("gemini/$m/$lv -> ${canonical(ThinkingRuleResolver.geminiThinkingConfig(m, lv))}")
+                append("gemini/$m/$lv -> ${canonical(ThinkingContractResolver.geminiThinkingConfig(m, lv))}")
                 append('\n')
             }
         }
         for (m in anthropicModels) {
             for (lv in levels) {
                 for (mt in listOf(8192, 65536)) {
-                    val shape = ThinkingRuleResolver.anthropicThinkingShape(m, true, lv, mt)
+                    val shape = ThinkingContractResolver.anthropicThinkingShape(m, true, lv, mt)
                     append("anthropic/$m/$lv/mt$mt -> ${canonical(shape)}")
                     append('\n')
                 }

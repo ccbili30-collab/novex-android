@@ -1,50 +1,51 @@
-package com.openminis.app.data.model
+package novex.android.voice
+
+import com.openminis.app.data.model.LLMModel
+import com.openminis.app.data.model.ModelEntry
+import com.openminis.app.data.model.ProviderInstance
+import com.openminis.app.data.model.ProviderType
 
 /**
- * [T-android-provider-voice] Voice provider templates — Android port of iOS
- * VoiceProviderTemplate.swift (single source of truth for voice vendors).
+ * 语音厂商模板目录（P3.2 自有实现，替换 data/model 的上游模板件；模板数据
+ * 逐条对齐被替换实现——机型 id / 显示名 / base URL 与 iOS 保持逐字节一致，
+ * 一平台导出的配置在另一平台无损导入）。
  *
- * Voice-specialised vendors (MiniMax / Alibaba / Doubao / iFlytek / MiMo …)
- * are NOT distinct ProviderType cases — they ride on an OpenAI/Anthropic-
- * compatible instance identified by its base URL. A template:
- *   1. Preseeds the Add-Provider flow (underlying type + base URL).
- *   2. Carries mock voice models tagged with the exact single-flag SEED
- *      modality shape (see VoiceModality): ASR seed = inputs ["audio"] only,
- *      TTS seed = outputs ["audio"] only. These vendors have no OpenAI-style
- *      /models endpoint, so addInstance seeds these entries directly. Once
- *      seeded they are ordinary ModelEntry values.
+ * 语音特化厂商（MiniMax / 阿里 / 豆包 / 讯飞 / MiMo…）不是独立的
+ * ProviderType——它们搭载在按 base URL 识别的 OpenAI/Anthropic 兼容实例上。
+ * 模板做两件事：
+ *   1. 预填新增供应商流程（底层类型 + base URL）；
+ *   2. 携带按单旗 SEED 模态形状（见 data/model VoiceModality）打标的 mock 语音
+ *      机型：ASR 种子只有 inputs ["audio"]，TTS 种子只有 outputs ["audio"]。
+ *      这些厂商没有 OpenAI 式 /models 端点，addInstance 直接种下这些条目；种下
+ *      后就是普通 ModelEntry。
  *
- * `baseURLMarkers` serve TWO narrow roles only: (1) seed the mock voice models
- * at add-time, (2) route voice REQUESTS to the right vendor adapter in
- * VoiceProviderFactory. They never classify an instance as "voice-only" —
- * voice visibility is per-model-modality (shadow view over audio entries).
- *
- * Model ids / display names / base URLs are kept byte-identical to iOS so a
- * config exported on one platform imports losslessly on the other.
+ * baseURLMarkers 只服务两个窄用途：(1) 新增时机种 mock 机型；(2) 把语音请求
+ * 路由到正确厂商客户端（[VoiceClientFactory]）。绝不据此把实例归类为「仅语音」
+ * ——语音可见性按机型模态（音频条目上的影子视图）。
  */
-data class VoiceProviderTemplate(
+data class VoiceVendorTemplate(
     val id: String,
     val name: String,
     val providerType: ProviderType,
     val baseURL: String,
     val appendV1: Boolean,
-    /** What the vendor can do — UI localizes the label from this. */
+    /** 厂商能做什么——UI 按此本地化标签。 */
     val capability: Capability,
     val baseURLMarkers: List<String>,
     val mockModels: List<LLMModel>,
-    /** Optional caveat surfaced in the UI (extra credentials etc.). */
+    /** UI 呈现的可选提示（额外凭据等）。 */
     val note: String? = null,
 ) {
     enum class Capability { TTS, ASR, BOTH }
 
     companion object {
-        /** The template whose base-URL markers match [baseURL], if any. */
-        fun template(forBaseURL: String?): VoiceProviderTemplate? {
+        /** base URL 标记命中的模板，无则 null。 */
+        fun template(forBaseURL: String?): VoiceVendorTemplate? {
             val base = forBaseURL?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
             return all.firstOrNull { tpl -> tpl.baseURLMarkers.any { base.contains(it) } }
         }
 
-        /** Build the seed ModelEntry list for an instance matching a template. */
+        /** 为命中模板的实例构造种子 ModelEntry 表。 */
         fun mockEntries(instance: ProviderInstance): List<ModelEntry> {
             val tpl = template(instance.customBaseURL) ?: return emptyList()
             return tpl.mockModels.map { ModelEntry(providerInstanceId = instance.id, baseModel = it) }
@@ -60,8 +61,8 @@ data class VoiceProviderTemplate(
             inputModalities = listOf("audio"),
         )
 
-        val all: List<VoiceProviderTemplate> = listOf(
-            VoiceProviderTemplate(
+        val all: List<VoiceVendorTemplate> = listOf(
+            VoiceVendorTemplate(
                 id = "elevenlabs",
                 name = "ElevenLabs",
                 providerType = ProviderType.openAI,
@@ -70,14 +71,14 @@ data class VoiceProviderTemplate(
                 capability = Capability.TTS,
                 baseURLMarkers = listOf("elevenlabs"),
                 mockModels = listOf(
-                    // The model `id` is the ElevenLabs voice_id.
+                    // 机型 `id` 即 ElevenLabs voice_id。
                     tts("21m00Tcm4TlvDq8ikWAM", "Rachel (EN, F)", "elevenlabs"),
                     tts("pNInz6obpgDQGcFmaJgB", "Adam (EN, M)", "elevenlabs"),
                     tts("EXAVITQu4vr4xnSDxMaL", "Bella (EN, F)", "elevenlabs"),
                     tts("ErXwobaYiN019PkySvjV", "Antoni (EN, M)", "elevenlabs"),
                 ),
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "deepgram",
                 name = "Deepgram",
                 providerType = ProviderType.openAI,
@@ -93,7 +94,7 @@ data class VoiceProviderTemplate(
                     tts("aura-orion-en", "Aura Orion (TTS, EN M)", "deepgram"),
                 ),
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "azure-tts",
                 name = "Azure TTS",
                 providerType = ProviderType.openAI,
@@ -102,7 +103,7 @@ data class VoiceProviderTemplate(
                 capability = Capability.TTS,
                 baseURLMarkers = listOf("tts.speech.microsoft.com"),
                 mockModels = listOf(
-                    // Chinese (Mandarin)
+                    // 中文（普通话）
                     tts("zh-CN-XiaoxiaoNeural", "Xiaoxiao (ZH, F)", "azure-tts"),
                     tts("zh-CN-YunxiNeural", "Yunxi (ZH, M)", "azure-tts"),
                     tts("zh-CN-YunyangNeural", "Yunyang (ZH, M)", "azure-tts"),
@@ -121,15 +122,15 @@ data class VoiceProviderTemplate(
                     tts("zh-CN-YunxiaNeural", "Yunxia (ZH, M)", "azure-tts"),
                     tts("zh-CN-YunyeNeural", "Yunye (ZH, M)", "azure-tts"),
                     tts("zh-CN-YunzeNeural", "Yunze (ZH, M)", "azure-tts"),
-                    // Chinese (Cantonese)
+                    // 中文（粤语）
                     tts("zh-HK-HiuMaanNeural", "HiuMaan (HK, F)", "azure-tts"),
                     tts("zh-HK-WanLungNeural", "WanLung (HK, M)", "azure-tts"),
                     tts("zh-HK-HiuGaaiNeural", "HiuGaai (HK, F)", "azure-tts"),
-                    // Chinese (Taiwanese)
+                    // 中文（台湾）
                     tts("zh-TW-HsiaoChenNeural", "HsiaoChen (TW, F)", "azure-tts"),
                     tts("zh-TW-YunJheNeural", "YunJhe (TW, M)", "azure-tts"),
                     tts("zh-TW-HsiaoYuNeural", "HsiaoYu (TW, F)", "azure-tts"),
-                    // English (US) — popular picks
+                    // 英语（美音）——常选
                     tts("en-US-JennyNeural", "Jenny (EN, F)", "azure-tts"),
                     tts("en-US-GuyNeural", "Guy (EN, M)", "azure-tts"),
                     tts("en-US-AriaNeural", "Aria (EN, F)", "azure-tts"),
@@ -138,19 +139,19 @@ data class VoiceProviderTemplate(
                     tts("en-US-AndrewNeural", "Andrew (EN, M)", "azure-tts"),
                     tts("en-US-EmmaNeural", "Emma (EN, F)", "azure-tts"),
                     tts("en-US-BrianNeural", "Brian (EN, M)", "azure-tts"),
-                    // Japanese
+                    // 日语
                     tts("ja-JP-NanamiNeural", "Nanami (JA, F)", "azure-tts"),
                     tts("ja-JP-KeitaNeural", "Keita (JA, M)", "azure-tts"),
                     tts("ja-JP-AoiNeural", "Aoi (JA, F)", "azure-tts"),
                     tts("ja-JP-DaichiNeural", "Daichi (JA, M)", "azure-tts"),
                     tts("ja-JP-ShioriNeural", "Shiori (JA, F)", "azure-tts"),
-                    // Korean
+                    // 韩语
                     tts("ko-KR-SunHiNeural", "SunHi (KO, F)", "azure-tts"),
                     tts("ko-KR-InJoonNeural", "InJoon (KO, M)", "azure-tts"),
                 ),
                 note = "Enter the Azure Speech Services subscription key. Set the base URL to your region, e.g. https://eastasia.tts.speech.microsoft.com",
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "minimax",
                 name = "MiniMax",
                 providerType = ProviderType.anthropic,
@@ -163,7 +164,7 @@ data class VoiceProviderTemplate(
                     tts("speech-2.8-turbo", "MiniMax Speech 2.8 Turbo", "minimax"),
                 ),
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "alibaba",
                 name = "Alibaba Bailian",
                 providerType = ProviderType.openAI,
@@ -176,7 +177,7 @@ data class VoiceProviderTemplate(
                     tts("cosyvoice-v2", "CosyVoice v2", "alibaba"),
                 ),
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "doubao",
                 name = "Doubao (Volcano)",
                 providerType = ProviderType.openAI,
@@ -186,12 +187,12 @@ data class VoiceProviderTemplate(
                 baseURLMarkers = listOf("openspeech.bytedance", "volcano"),
                 mockModels = listOf(
                     asr("bigmodel", "Doubao ASR (bigmodel)", "doubao"),
-                    // Seed TTS 2.0 (big model, uranus)
+                    // Seed TTS 2.0（大模型，uranus）
                     tts("zh_female_cancan_uranus_bigtts", "灿灿 (通用, 女)", "doubao"),
                     tts("zh_female_vv_uranus_bigtts", "Vivi (表现力, 女)", "doubao"),
                     tts("zh_male_liufei_uranus_bigtts", "刘飞 (通用, 男)", "doubao"),
                     tts("zh_male_m191_uranus_bigtts", "云舟 (清爽, 男)", "doubao"),
-                    // Seed TTS 1.0 (big model, moon)
+                    // Seed TTS 1.0（大模型，moon）
                     tts("zh_female_shuangkuaisisi_moon_bigtts", "爽快思思 (爽朗, 女)", "doubao"),
                     tts("zh_female_sajiaonvyou_moon_bigtts", "撒娇女友 (撒娇, 女)", "doubao"),
                     tts("zh_female_gaolengyujie_moon_bigtts", "高冷御姐 (御姐, 女)", "doubao"),
@@ -199,7 +200,7 @@ data class VoiceProviderTemplate(
                 ),
                 note = "Enter the API Key from the Volcano Engine new console.",
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "xunfei",
                 name = "iFlytek (Xunfei)",
                 providerType = ProviderType.openAI,
@@ -214,7 +215,7 @@ data class VoiceProviderTemplate(
                 ),
                 note = "iFlytek needs App ID and API Secret — enter them as \"appId;apiKey;apiSecret\" in the API Key field.",
             ),
-            VoiceProviderTemplate(
+            VoiceVendorTemplate(
                 id = "mimo",
                 name = "Xiaomi MiMo",
                 providerType = ProviderType.openAI,

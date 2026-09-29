@@ -1,4 +1,4 @@
-package com.openminis.app.provider.image
+package novex.android.models
 
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ProviderType
@@ -12,8 +12,11 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Strict model discovery for an image-generation source. */
-object ImageModelCatalog {
+/**
+ * 生图来源的严格模型发现（P3.2 自 provider/image 迁入自有包并更名；该件本为
+ * 零上游血统的 Novex 新增代码，机械搬家不改行为——端点/鉴权/过滤语义原样）。
+ */
+object ImageGenerationModels {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -121,7 +124,7 @@ object ImageModelCatalog {
             val compactBody = body.replace(Regex("\\s+"), " ").take(2_000)
             if (!response.isSuccessful) {
                 AppLogger.error(
-                    "ImageModelCatalog",
+                    "ImageGenerationModels",
                     "model list failed url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
                 )
                 val detail = compactBody.take(500)
@@ -133,7 +136,7 @@ object ImageModelCatalog {
                 trimmed.startsWith("<html", ignoreCase = true)
             if (isHtml) {
                 AppLogger.error(
-                    "ImageModelCatalog",
+                    "ImageGenerationModels",
                     "model list returned HTML url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
                 )
                 error("模型列表地址返回了网页而不是 JSON，请检查“自动补 /v1”开关（请求地址：$safeUrl）")
@@ -142,7 +145,7 @@ object ImageModelCatalog {
                 parse(body)
             } catch (error: Exception) {
                 AppLogger.error(
-                    "ImageModelCatalog",
+                    "ImageGenerationModels",
                     "model list parse failed url=$safeUrl status=${response.code} contentType=$contentType " +
                         "error=${error::class.java.simpleName}: ${error.message} body=$compactBody",
                 )

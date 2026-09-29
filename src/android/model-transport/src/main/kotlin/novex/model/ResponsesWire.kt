@@ -264,8 +264,11 @@ internal class ResponsesSseDecoder(private val codexImageRun: Boolean = false) :
         val out = mutableListOf<StreamChunk>()
         when (event.streamText("type")) {
             "response.reasoning_text.delta", "response.reasoning_summary_text.delta" ->
-                event.streamText("delta").takeIf { it.isNotEmpty() }?.let {
-                    if (codexImageRun) appendRefusal(it) else out += StreamChunk.ThinkingDelta(it)
+                // 生图流：思考增量既不外发也不折进拒答文案（对齐被删上游——它只认
+                // 文本/消息条目为拒答源，思考流从未进 refusalText；折进去会把
+                // 「无图无拒答」误判成安全拒答，错误文案与 400 语义都跟着错）。
+                if (!codexImageRun) {
+                    event.streamText("delta").takeIf { it.isNotEmpty() }?.let { out += StreamChunk.ThinkingDelta(it) }
                 }
             "response.output_text.delta" ->
                 event.streamText("delta").takeIf { it.isNotEmpty() }?.let {
@@ -302,7 +305,9 @@ internal class ResponsesSseDecoder(private val codexImageRun: Boolean = false) :
             }
             "response.completed" -> completed(event, out)
             "response.output_text.done" -> if (codexImageRun) {
-                event.streamText("text").takeIf { it.isNotEmpty() }?.let(::appendRefusal)
+                // 整段 done 文本「替换」累积的增量拒答（对齐被删上游：delta 累积、
+                // done 覆盖——两者最终给出的都是完整文案，替换可免增量+整段的重复）。
+                event.streamText("text").takeIf { it.isNotEmpty() }?.let { refusalText = it }
             }
             "error" -> out += topLevelError(event)
             // 无 type 字段但携带 error 对象的载荷（部分中转的裸错误事件）同样按
@@ -320,6 +325,14 @@ internal class ResponsesSseDecoder(private val codexImageRun: Boolean = false) :
             code = error?.streamText("code").orEmpty().ifBlank { null },
         ))
     }
+
+    /**
+     * 生图流不认 [DONE] 哨兵（对齐被删上游：读循环遇 [DONE] 只是 break，收尾
+     * 判定全在流尾）——图块前到达的哨兵若在此发 Done(null)，会把「无图」伪装成
+     * 正常完成。哨兵行落进非 JSON 丢弃路径，终局一律交给 [finish] 的 Failure
+     * 判定（拒答/无图）；图已产出时解码器已在终态，哨兵行本就被忽略。
+     */
+    override val acceptsDoneSentinel: Boolean get() = !codexImageRun
 
     /**
      * 生图流不在干净断流时补发默认收尾：Done 只随图片产出（end_turn）发出；
