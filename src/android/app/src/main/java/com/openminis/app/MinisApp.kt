@@ -539,7 +539,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // Register global /var/minis/{memory,skills,shared} bind mounts up-front
         // so direct file I/O tools (file_read) resolve these paths even before
         // PRoot has booted or any shell has started.
-        PRootKernel.registerGlobalBindMounts(this)
+        novex.android.ContentPaths.registerGlobalMounts(this)
 
         // T219-1: load user-mounted external folders and seed PRoot's
         // bindMounts before the first proot invocation, so the very first

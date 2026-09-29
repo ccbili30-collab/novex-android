@@ -26,6 +26,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import novex.android.ContentPaths
 
 /**
  * android-speech — speech recognition (audio → text).
@@ -43,7 +44,7 @@ import java.util.concurrent.TimeUnit
  *     for back-compat with prompts that learned the old form.
  *   - `--source <mic|path>` mirrors apple-speech: defaults to system mic,
  *     also accepts a Linux file path under /var/minis/... resolved via
- *     [PRootKernel.resolveHostPath]. **Audio-file transcription is not
+ *     [ContentPaths.resolveHostPath]. **Audio-file transcription is not
  *     yet wired through the recognizer** — Android's [SpeechRecognizer]
  *     only exposes microphone input on most vendor implementations
  *     (the API 31 `EXTRA_AUDIO_SOURCE` extension is not honoured by
@@ -234,7 +235,7 @@ class SpeechOffloadHandler(private val context: Context) : NativeOffloadHandler 
         if (trimmed.isEmpty()) return null
         return try {
             if (trimmed.startsWith("/")) {
-                PRootKernel.resolveHostPath(trimmed) ?: File(trimmed)
+                ContentPaths.resolveHostPath(trimmed) ?: File(trimmed)
             } else {
                 File(trimmed)
             }

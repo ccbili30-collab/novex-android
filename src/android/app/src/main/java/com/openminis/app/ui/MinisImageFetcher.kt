@@ -12,6 +12,7 @@ import com.openminis.app.sandbox.PRootKernel
 import okio.buffer
 import okio.source
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * Coil Fetcher that resolves `minis://` URIs to local files.
@@ -33,7 +34,7 @@ class MinisImageFetcher(
         val stripped = uri.removePrefix("minis://").substringBefore('?')
         val decoded = java.net.URLDecoder.decode(stripped, "UTF-8")
         val linuxPath = "/var/minis/$decoded"
-        val hostFile = PRootKernel.resolveHostPath(linuxPath)
+        val hostFile = ContentPaths.resolveHostPath(linuxPath)
             ?: throw IllegalArgumentException("Cannot resolve path: $linuxPath")
 
         if (!hostFile.exists()) {
@@ -127,7 +128,7 @@ class MinisImageFetcher(
             }
             val linuxPath = "/var/minis/$decoded"
             val mtime = try {
-                PRootKernel.resolveHostPath(linuxPath)?.lastModified() ?: 0L
+                ContentPaths.resolveHostPath(linuxPath)?.lastModified() ?: 0L
             } catch (_: Throwable) {
                 0L
             }

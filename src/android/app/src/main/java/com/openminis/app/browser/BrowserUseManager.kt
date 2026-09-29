@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * Manages a single Android WebView for browser automation.
@@ -402,7 +403,7 @@ class BrowserUseManager(
             val host = uri.host ?: return null
             val path = uri.path ?: ""
             val linuxPath = "/var/minis/$host$path"
-            val localFile = com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+            val localFile = com.openminis.app.sandbox.ContentPaths.resolveHostPath(linuxPath)
             if (localFile == null || !localFile.exists() || !localFile.isFile) {
                 return android.webkit.WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
                     emptyMap(), "File not found: $host$path".byteInputStream())

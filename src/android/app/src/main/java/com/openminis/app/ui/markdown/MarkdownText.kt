@@ -68,6 +68,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import novex.android.ContentPaths
 
 /**
  * Renders markdown text with full formatting support.
@@ -677,7 +678,7 @@ private fun resolveMediaFile(url: String): File? {
     val hostFile: File? = when {
         stripped.startsWith("minis://") -> {
             val decoded = java.net.URLDecoder.decode(stripped.removePrefix("minis://"), "UTF-8")
-            PRootKernel.resolveHostPath("/var/minis/$decoded")
+            ContentPaths.resolveHostPath("/var/minis/$decoded")
         }
         stripped.startsWith("file://") -> File(Uri.parse(stripped).path ?: return null)
         stripped.startsWith("/") -> File(stripped)

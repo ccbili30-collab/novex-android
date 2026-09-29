@@ -5,6 +5,7 @@ import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.AgentToolParam
 import com.openminis.app.sandbox.PRootKernel
 import org.json.JSONObject
+import novex.android.ContentPaths
 
 object FileWriteTool {
     const val NAME = "file_write"
@@ -54,7 +55,7 @@ object FileWriteTool {
             // /var/minis/browser/... land in this session's host dir
             // rather than the global bind-mount map (which is overwritten
             // every time another session boots its shell, last-writer-wins).
-            val file = PRootKernel.resolveSessionHostPath(sessionId, path, context)
+            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
                 ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
 
             // Validate UTF-8

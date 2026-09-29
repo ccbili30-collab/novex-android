@@ -2,6 +2,7 @@ package com.openminis.app.agent
 
 import android.content.Context
 import com.openminis.app.sandbox.PRootKernel
+import novex.android.ContentPaths
 
 /**
  * The single Novex system prompt shared by every conversation. Creation is an
@@ -23,7 +24,7 @@ object NovexSystemPrompt {
         availableToolNames: Set<String>,
     ): Prepared {
         fun read(relative: String): String? = runCatching {
-            PRootKernel.resolveSessionHostPath(
+            ContentPaths.resolveSessionHostPath(
                 sessionId,
                 "/var/minis/workspace/novex/$sessionId/$relative",
                 context,
