@@ -195,6 +195,25 @@ max_completion_tokens，两键在模块层互斥）、流中 error 对象按数�
 分类矩阵（含 503 永久失败标记与 OpenCode 日落文案）。已知不对齐（记录在案）：
 <think> 前缀拆分不做、HTTP 错误不带 error body 文本、usage 无 cache 字段、
 temperature 丢弃（调用点皆 null）、模块容量闸门在适配层直通。
+P3.1c 原生协议换管（PR #64，2026-09-28）——anthropic（Messages）与 gemini
+（generateContent）两家原生线协议在 novex.model 自有实现（AnthropicWire /
+GeminiWire：请求编码 + SSE 方言解码 + 思考形态判定），适配器按 provider 类型
+分线（WireProtocol 三方言共享 ChatCompletionCall 的连接/取消/超时/容量骨架，
+SseDecoder 抽出行状态机骨架）；ProviderFactory 的 anthropic/gemini 分支改为
+构造适配器——官方直连、自定中继、OAuth（Claude Code）一并换管，上游
+AnthropicProvider/GeminiProvider 不再被工厂引用、主代码零活引用（文件留存，
+P3.1d 统一拆除）。三线（OpenAI 兼容/anthropic/gemini）聊天流量全走自有传输。
+随线能力：cache_control 断点（system/末工具/最近两条 user，enhancedCache 的
+1h TTL + beta 旗标）、思考形态（adaptive effort / legacy budget+temperature=1 /
+disabled）、OAuth 系统前缀块拆分与 CLI 指纹头、交错无签名思考回放（Anthropic
+兼容中继）、gemini thoughtSignature 回放与缺签名降级、inlineData 媒体输出、
+静默空完成按瞬态失败（failOnSilentEmptyCompletion，贴被替换实现）。已知
+judgment calls（记录在案）：usage 无 cache 计量字段（沿 P3.1b）、gemini safety
+续读不做（SAFETY 收尾原样透传）、工具结果内嵌图片不发（沿 P3.1b 口径）、
+LAN 明文 anthropic/gemini 中继不换管也不回上游（自有传输安全契约只收 https
+与本机回环，明文中继请求会以清晰错误失败——与 P3.1b 的 OpenAI 兼容线「暂留
+上游」不同，因工厂不得再引用上游实现）、temperature 调用方值丢弃（协议性的
+legacy temperature=1 仍生效）。
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -248,3 +267,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | #60（merge `fc50cf1`） | R2+R3 合并入 next | 155 文件 −29,968 行（+87） |
 | 2026-09-29 | 本 PR（R4） | R4 收尾清剿：terminal 死码两件（MinisOpenUrlBroker/MinisUrlMarker + ChatScreen 死流）、a11y 死路 UI（SystemPermissions/OffloadPermission 卡与恢复对话框）+ accessibility/ 整包删除、ImageEditRoutingMatrixTest、OpenAIProvider 过时归因、toolPattern 去 browser_use、THIRD_PARTY GPL=0 出清、审计复跑 | 血统 191f/39,865 行（上游未动）、161f/100,520 行（上游改动）、379f/50,349 行（Novex 新增）；死代码 0f |
 | 2026-09-29 | #63 | P3.1b 适配器换管：OpenAI 兼容中转（自定 base 纯 chat）聊天流量切自有 novex.model 传输；model-transport 小进化（附加头/reasoning 回放/音频块/附加参数，ChatCompletionClient +54/-12）；净眼退回两修（流桥 trySendBlocking 背压、token 上限键按主机选择）+ 流中 error 数字 code 矩阵；44 条新增单测（模块 7 + 适配器 28 + 工厂 9） | 上游 OpenAIProvider 及其测试零改动（P3.1d 处置）；model-transport 零上游依赖不变 |
+| 2026-09-28 | #64 | P3.1c 原生协议换管：anthropic/gemini 聊天流量切自有 novex.model 传输（AnthropicWire+GeminiWire 新增；适配器分线路由；工厂两分支改构造适配器；ThinkingRuleResolver.anthropicThinkingShape 委托 novex.model；ChatViewModel 的 isOAuth/enhancedCache 盖章改指适配器）；三线全走自有传输；45 条新增单测（模块 anthropic 16 + gemini 12 + 适配器原生线 17，含 MockWebServer 端到端 2） | 上游 anthropic/ 两包（3f ~1.4k）与 gemini/（2f ~0.7k）聊天流量清零、工厂零引用（文件留存，P3.1d 删）；model-transport 零上游依赖不变 |

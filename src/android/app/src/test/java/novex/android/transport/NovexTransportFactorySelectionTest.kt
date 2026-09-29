@@ -4,12 +4,12 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.model.ProviderType
+import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.anthropic.AnthropicProvider
-import com.openminis.app.provider.gemini.GeminiProvider
 import com.openminis.app.provider.openai.OpenAIProvider
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
@@ -88,17 +88,30 @@ class NovexTransportFactorySelectionTest {
     }
 
     @Test
-    fun `anthropic 与 gemini 分支不受影响`() {
-        assertTrue(
-            ProviderFactory.create(
-                instance(type = ProviderType.anthropic), "k", LLMModel.claudeSonnet46,
-            ) is AnthropicProvider,
+    fun `anthropic 与 gemini 分支换管到自有传输`() {
+        // [P3.1c] 两家原生协议整体切 NovexTransportProvider；上游 AnthropicProvider /
+        // GeminiProvider 不再被工厂构造（文件留存，P3.1d 统一拆除）。
+        val anthropic = ProviderFactory.create(instance(type = ProviderType.anthropic), "k", LLMModel.claudeSonnet46)
+        assertTrue(anthropic is NovexTransportProvider)
+        assertEquals("Anthropic", (anthropic as LLMProvider).name)
+
+        val anthropicCustom = ProviderFactory.create(
+            instance(type = ProviderType.anthropic, customBaseURL = "https://relay.example.com"), "k", LLMModel.claudeSonnet46,
         )
-        assertTrue(
-            ProviderFactory.create(
-                instance(type = ProviderType.gemini), "k", LLMModel.gemini25Flash,
-            ) is GeminiProvider,
+        assertTrue(anthropicCustom is NovexTransportProvider)
+
+        val anthropicOAuth = ProviderFactory.create(
+            instance(type = ProviderType.anthropic, credentialType = ProviderCredential.oauth), "k", LLMModel.claudeSonnet46,
         )
+        assertTrue(anthropicOAuth is NovexTransportProvider)
+        assertTrue((anthropicOAuth as NovexTransportProvider).isAnthropicOAuth)
+
+        val gemini = ProviderFactory.create(instance(type = ProviderType.gemini), "k", LLMModel.gemini25Flash)
+        assertTrue(gemini is NovexTransportProvider)
+        assertEquals("Google", (gemini as LLMProvider).name)
+
+        // OAuth 判定只在 OAuth 凭据时为真（API key 实例为假）。
+        assertFalse((anthropic as NovexTransportProvider).isAnthropicOAuth)
     }
 
     @Test

@@ -1750,8 +1750,9 @@ class ChatViewModel(
      * [T-android-enhanced-cache] Enhanced Cache (1-hour Anthropic cache TTL)
      * toggle. Per-VM memory state, NOT persisted — mirrors iOS
      * `AIChatViewModel.enhancedCacheEnabled`. When true, the active turn's
-     * AnthropicProvider is stamped with `enhancedCache = true` just before the
-     * request (see the streamMessage choke point).
+     * transport provider (P3.1c 起为 NovexTransportProvider 的 anthropic 线) is
+     * stamped with `enhancedCache = true` just before the request (see the
+     * streamMessage choke point).
      */
     internal val _enhancedCacheEnabled = MutableStateFlow(false)
     val enhancedCacheEnabled: StateFlow<Boolean> = _enhancedCacheEnabled.asStateFlow()
@@ -6659,7 +6660,7 @@ class ChatViewModel(
     ): Boolean {
         var provider = initialProvider
         // Refresh OAuth token if needed
-        if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+        if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
             try {
                 val activeEntryId = _activeEntryId.value
                 val entry = activeEntryId?.let { id -> providerRepository.config.value.modelEntries.find { it.id == id } }
@@ -6684,7 +6685,7 @@ class ChatViewModel(
         }
 
         val baseSystemPrompt = buildSystemPrompt()
-        val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+        val systemPrompt = if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
             val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
             if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
             else "$prefix\n\n${baseSystemPrompt ?: ""}"
@@ -7459,7 +7460,7 @@ class ChatViewModel(
             }
 
             // Refresh OAuth token if needed before sending (mirrors iOS validAccessToken)
-            if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 try {
                     val activeEntryId = _activeEntryId.value
                     val entry = activeEntryId?.let { id -> providerRepository.config.value.modelEntries.find { it.id == id } }
@@ -7488,7 +7489,7 @@ class ChatViewModel(
             // Build system prompt
             // Anthropic OAuth requires the Claude Code prefix in the system prompt
             val baseSystemPrompt = buildSystemPrompt()
-            val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            val systemPrompt = if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
@@ -7857,7 +7858,7 @@ class ChatViewModel(
             }
 
             // Refresh OAuth token if needed
-            if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 try {
                     val activeEntryId = _activeEntryId.value
                     val entry = activeEntryId?.let { id -> providerRepository.config.value.modelEntries.find { it.id == id } }
@@ -7880,7 +7881,7 @@ class ChatViewModel(
             }
 
             val baseSystemPrompt = buildSystemPrompt()
-            val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            val systemPrompt = if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
@@ -8805,7 +8806,7 @@ class ChatViewModel(
                     // choke point every turn passes through, regardless of how
                     // currentProvider was (re)assigned by the fallback loop.
                     // Non-Anthropic providers ignore it (cast fails silently).
-                    (currentProvider as? com.openminis.app.provider.anthropic.AnthropicProvider)
+                    (currentProvider as? novex.android.transport.NovexTransportProvider)
                         ?.enhancedCache = _enhancedCacheEnabled.value
                     // [T-request-assembler] Route through the assembler's input
                     // collector (assemblyInputs → effectiveAgentHistory wrapper
@@ -12675,7 +12676,7 @@ class ChatViewModel(
             var provider: LLMProvider = initialProvider
 
             // Refresh OAuth token if needed (mirrors sendMessage L2477-2501).
-            if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 try {
                     val activeEntryId = _activeEntryId.value
                     val entry = activeEntryId?.let { id -> providerRepository.config.value.modelEntries.find { it.id == id } }
@@ -12700,7 +12701,7 @@ class ChatViewModel(
             }
 
             val baseSystemPrompt = buildSystemPrompt()
-            val systemPrompt = if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+            val systemPrompt = if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                 val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
                 if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                 else "$prefix\n\n${baseSystemPrompt ?: ""}"
@@ -13048,7 +13049,7 @@ class ChatViewModel(
                 return@launch
             }
             val systemPrompt =
-                if ((provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true) {
+                if ((provider as? novex.android.transport.NovexTransportProvider)?.isAnthropicOAuth == true) {
                     val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
                     if (baseSystemPrompt?.startsWith(prefix) == true) baseSystemPrompt
                     else "$prefix\n\n${baseSystemPrompt ?: ""}"

@@ -8,10 +8,14 @@ import java.net.URI
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** 凭据不进入数据类的自动文本输出。 */
-class ModelEndpoint(val completionUrl: URI, private val token: String?, private val extraHeaders: Map<String,String> = emptyMap()) {
+/**
+ * 凭据不进入数据类的自动文本输出。permitQueryParams 仅为带非凭据查询串的端点开
+ * （gemini 的 alt=sse）；默认禁止查询串——历史原因是防令牌进 URL。
+ */
+class ModelEndpoint(val completionUrl: URI, private val token: String?, private val extraHeaders: Map<String,String> = emptyMap(),
+                    permitQueryParams: Boolean = false) {
     init {
-        require(completionUrl.userInfo == null && completionUrl.fragment == null && completionUrl.query == null)
+        require(completionUrl.userInfo == null && completionUrl.fragment == null && (permitQueryParams || completionUrl.query == null))
         require(completionUrl.scheme == "https" || (completionUrl.scheme == "http" && completionUrl.host in setOf("127.0.0.1","localhost","::1")))
         require(token == null || ('\r' !in token && '\n' !in token))
         extraHeaders.forEach { (name,value) ->
@@ -35,7 +39,7 @@ data class WireAudio(val format:String,val base64:String) {
     override fun toString()="WireAudio（音频内容隐藏）"
 }
 data class WireMessage(val role: String, val text: String, val toolCalls: List<PendingTool> = emptyList(), val toolCallId: String? = null,val images:List<WireImage> = emptyList(),
-                      val audios:List<WireAudio> = emptyList(), val reasoningContent: String? = null) {
+                      val audios:List<WireAudio> = emptyList(), val reasoningContent: String? = null, val isError: Boolean = false) {
     init {
         require(role in setOf("system","user","assistant","tool"))
         require(images.isEmpty() || role=="user")
@@ -43,6 +47,7 @@ data class WireMessage(val role: String, val text: String, val toolCalls: List<P
         require(toolCalls.isEmpty() || role=="assistant")
         require(reasoningContent==null || role=="assistant")
         require(if(role=="tool")!toolCallId.isNullOrBlank() else toolCallId==null)
+        require(!isError || role=="tool")
         require(toolCalls.map { it.id }.distinct().size==toolCalls.size)
     }
     internal fun encode():JSONObject {
@@ -60,7 +65,9 @@ data class WireMessage(val role: String, val text: String, val toolCalls: List<P
         }
     }
 }
-data class ToolDefinition(val name:String,val description:String,val parameters:String) {
+data class ToolDefinition(val name:String,val description:String,val parameters:String,
+                          /** Gemini 专属：function_declarations 的 propertyOrdering；其余协议忽略。 */
+                          val propertyOrdering:List<String>? = null) {
     init { require(name.isNotBlank() && description.isNotBlank());require(JSONObject(parameters).getString("type")=="object") }
     internal fun encode()=JSONObject().put("type","function").put("function",JSONObject().put("name",name).put("description",description).put("parameters",JSONObject(parameters)))
 }
@@ -106,7 +113,10 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
         internal val RESERVED_TOP_LEVEL_KEYS = setOf("model","messages","tools","stream","stream_options")
     }
 }
-data class PendingTool(val id: String,val name: String,val arguments: String)
+data class PendingTool(val id: String,val name: String,val arguments: String,val thoughtSignature: String? = null)
+
+/** 线协议方言：决定 [ChatCompletionCall] 流式读取用的 SSE 解码器。非流式 [ChatCompletionCall.execute] 只实现 OpenAI 兼容线（anthropic/gemini 由调用方经流式聚合）。 */
+enum class WireProtocol { CHAT_COMPLETIONS, ANTHROPIC_MESSAGES, GEMINI_GENERATE_CONTENT }
 sealed interface ModelResult {
     data class Reply(val text: String,val inputTokens: Long?,val outputTokens: Long?) : ModelResult
     data class Partial(val text: String,val reason: String) : ModelResult
@@ -119,8 +129,13 @@ sealed interface ModelResult {
     data object Cancelled : ModelResult
 }
 
-/** 一次调用，无隐式重试。非流式走 [execute] 返回整体结果；流式走 [stream] 逐块回调。工具请求只能返回待处理事实。 */
-class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeoutMillis: Int = 30_000) {
+/**
+ * 一次调用，无隐式重试。非流式走 [execute] 返回整体结果；流式走 [stream] 逐块回调。工具请求只能返回待处理事实。
+ * 连接/取消/超时/容量骨架为三家线协议共用（OpenAI 兼容 / anthropic / gemini），经
+ * [protocol] 选 SSE 解码方言；请求体由 [CompletionStreamRequest] 的协议方言自编码。
+ */
+class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeoutMillis: Int = 30_000,
+                         private val protocol: WireProtocol = WireProtocol.CHAT_COMPLETIONS) {
     @Volatile var networkAttempted:Boolean=false
         private set
     private val started=AtomicBoolean(false)
@@ -172,12 +187,12 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
      * 取消：[cancel] 可从任意线程随时调用，未完的读取立刻断开并返回 [StreamResult.Cancelled]；
      * 已送达的块不撤回。块顺序即服务端事件顺序；收尾结论见 [StreamResult]。
      */
-    fun stream(request: StreamRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
+    fun stream(request: CompletionStreamRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
                measureCompletePayload: (String) -> TokenMeasurement, onChunk: (StreamChunk) -> Unit): StreamResult {
         check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
         if (cancelled.get()) return StreamResult.Cancelled
         val body=request.encode()
-        val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.request.outputReserve,measureCompletePayload(body))
+        val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.outputReserve,measureCompletePayload(body))
         if (decision !is CapacityDecision.Fits) return StreamResult.NotSent(decision)
         var connection:HttpURLConnection?=null
         try {
@@ -200,7 +215,11 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
                 },null,connection.getHeaderField("Retry-After")))
                 return StreamResult.Failed
             }
-            val decoder=SseDecoder()
+            val decoder=when(protocol) {
+                WireProtocol.CHAT_COMPLETIONS->SseDecoder()
+                WireProtocol.ANTHROPIC_MESSAGES->AnthropicSseDecoder()
+                WireProtocol.GEMINI_GENERATE_CONTENT->GeminiSseDecoder()
+            }
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 val buffer=CharArray(8192)
                 while(true) {
