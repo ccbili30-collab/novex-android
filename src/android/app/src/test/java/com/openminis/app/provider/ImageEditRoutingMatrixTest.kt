@@ -8,7 +8,7 @@ import org.junit.Test
  * minis-model-use calls reach /images/edits after image editing was wired up.
  *
  * `ModelUseOffloadHandler.tryImageGenerationRoute` is private and needs a live
- * handler (ProviderRepository, PRootKernel, real HTTP) to invoke, so this
+ * handler (ProviderRepository, real HTTP) to invoke, so this
  * mirrors its gate conditions in [route] — transcribed line-for-line from the
  * function — and pins the full forward/reverse matrix. It guards the routing
  * CONTRACT: if someone reorders or relaxes a guard in the handler without

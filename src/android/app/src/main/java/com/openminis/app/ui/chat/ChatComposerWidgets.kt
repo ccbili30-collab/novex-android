@@ -714,7 +714,6 @@ internal fun FloatingToolStatusBar(
     onStop: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
     // T261: detail open routes through ChatViewModel state so this bar
     // shares one always-mounted sheet with the in-list pills (no more
     // dueling local-remember sheets, no LaunchedEffect(lastIndex) page

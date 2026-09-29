@@ -5,7 +5,6 @@ import android.content.Intent
 import androidx.core.net.toUri
 import com.openminis.app.deeplink.DeepLinkAction
 import com.openminis.app.deeplink.DeepLinkHandler
-import com.openminis.app.sandbox.PRootKernel
 import com.openminis.app.ui.sandbox.FileItem
 import java.io.File
 import novex.android.ContentPaths
@@ -46,7 +45,7 @@ object ChatLinkResolver {
 
         // 2. Sandbox file resolution — prefer a session-scoped resolver when
         //    the caller knows which chat this link belongs to. The global
-        //    `PRootKernel.bindMounts` is last-writer-wins, so on a device
+        //    `ContentPaths.bindMounts` is last-writer-wins, so on a device
         //    with multiple sessions the resolver otherwise points at
         //    whichever session booted its shell most recently.
         val hostFile = resolveSandboxFile(trimmed, scheme, sessionId, context)

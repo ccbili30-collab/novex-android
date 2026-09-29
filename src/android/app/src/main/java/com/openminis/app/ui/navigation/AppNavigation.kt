@@ -54,8 +54,6 @@ import com.openminis.app.ui.sandbox.FileBrowserScreen
 import com.openminis.app.ui.sandbox.FileBrowserViewModel
 import com.openminis.app.ui.sandbox.FileItem
 import com.openminis.app.ui.sandbox.FilePreviewScreen
-import com.openminis.app.ui.sandbox.RootfsManagementScreen
-import com.openminis.app.ui.settings.EnvironmentVariablesScreen
 import com.openminis.app.ui.settings.AppearanceScreen
 import com.openminis.app.ui.settings.ThemeColorScreen
 import com.openminis.app.ui.settings.SettingsScreen
@@ -65,8 +63,6 @@ import com.openminis.app.ui.settings.SkillDetailScreen
 import com.openminis.app.ui.settings.StorageManagementScreen
 import com.openminis.app.ui.settings.SkillFileViewerScreen
 import com.openminis.app.ui.settings.UsageStatsScreen
-import com.openminis.app.ui.settings.MountDetailScreen
-import com.openminis.app.ui.settings.MountedFoldersScreen
 import com.openminis.app.ui.settings.SharedFolderDetailScreen
 import com.openminis.app.ui.settings.SharedFoldersScreen
 import com.openminis.app.ui.settings.SkillsManagementScreen
@@ -80,9 +76,6 @@ import com.openminis.app.ui.settings.MemoryManagementScreen
 import com.openminis.app.ui.settings.NovexFeedbackScreen
 import com.openminis.app.ui.settings.OffloadPermissionScreen
 import com.openminis.app.ui.settings.ShizukuPermissionScreen
-import com.openminis.app.sandbox.RootfsManager
-import com.openminis.app.sandbox.TerminalSession
-import com.openminis.app.ui.terminal.TerminalScreen
 import com.openminis.app.ui.onboarding.OnboardingModelSelectionScreen
 
 // T342: Material 3 motion easing curves. Compose-Material3 (1.3.x) ships
@@ -122,12 +115,8 @@ object Routes {
     const val ADD_CUSTOM_MODEL = "add_custom_model/{instanceId}"
     const val STORAGE = "storage"
     const val SESSION_STORAGE_DETAIL = "session_storage/{sessionId}"
-    const val ROOTFS_MANAGEMENT = "rootfs_management"
-    const val MIRROR_CATEGORY_DETAIL = "mirror_category/{categoryKey}"
-    fun mirrorCategoryDetail(categoryKey: String) = "mirror_category/$categoryKey"
     const val FILE_BROWSER = "file_browser"
     const val FILE_PREVIEW = "file_preview"
-    const val ENV_VARS = "env_vars"
     const val SKILLS = "skills"
     const val SKILL_DETAIL = "skill/{skillId}"
     const val SKILL_FILE = "skill_file/{skillId}/{relativePath}"
@@ -139,21 +128,6 @@ object Routes {
         val encoded = java.net.URLEncoder.encode(relativePath, "UTF-8").replace("+", "%20")
         return "skill_file/$skillId/$encoded"
     }
-    const val TERMINAL = "terminal?initCommand={initCommand}&sessionId={sessionId}"
-    fun terminal(initCommand: String? = null, sessionId: String? = null): String {
-        // URLEncoder follows application/x-www-form-urlencoded — spaces become `+`.
-        // Nav library only %-decodes the route, so `+` would reach the screen literally.
-        // Replace `+` with `%20` so Nav decodes it back to a space.
-        fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
-        val params = buildList {
-            if (initCommand != null) add("initCommand=${enc(initCommand)}")
-            if (sessionId != null) add("sessionId=${enc(sessionId)}")
-        }
-        return if (params.isEmpty()) "terminal" else "terminal?${params.joinToString("&")}"
-    }
-    /** Chat-files browser: opens FileBrowser rooted at /var/minis for the session. */
-    const val CHAT_FILES = "chat_files/{sessionId}"
-    fun chatFiles(sessionId: String) = "chat_files/$sessionId"
     const val CREATIVE_LIBRARY = "creative_library?sessionId={sessionId}"
     fun creativeLibrary(sessionId: String? = null): String =
         if (sessionId == null) "creative_library" else "creative_library?sessionId=${android.net.Uri.encode(sessionId)}"
@@ -191,10 +165,6 @@ object Routes {
     const val BACKGROUND = "background"
     const val ABOUT = "about"
     const val ONBOARDING_MODELS = "onboarding_models"
-    /** T219-2: Mount external folders settings + detail. */
-    const val MOUNTED_FOLDERS = "mounted_folders"
-    const val MOUNTED_FOLDERS_DETAIL = "mounted_folders_detail/{mountId}"
-    fun mountedFoldersDetail(mountId: String) = "mounted_folders_detail/$mountId"
     /** T235: Shared folders (Shared / Skills / Memory) — fixed list. */
     const val SHARED_FOLDERS = "shared_folders"
     const val SHARED_FOLDERS_DETAIL = "shared_folders_detail/{folderId}"
@@ -304,22 +274,9 @@ fun AppNavigation(
         }
     }
 
-    // T219-5: use the application-scoped singleton from MinisApp so UI
-    // add/remove shares state with PRootKernel and the lifecycle re-probe
-    // path. Pre-T219-5 this `remember { MountedFoldersStore(...) }` created
-    // a SECOND independent instance — UI list updated but PRoot never
-    // saw the change because PRootKernel.mountedFoldersStore pointed at
-    // the application-scoped singleton in MinisApp.
-    val mountedFoldersStore = remember {
-        (context.applicationContext as com.openminis.app.MinisApp).mountedFoldersStore
-    }
-
     // Handle initial deep link after composition
     LaunchedEffect(initialDeepLink) {
         when (initialDeepLink) {
-            is DeepLinkAction.OpenTerminal -> {
-                navController.safeNavigate(Routes.terminal(initialDeepLink.initCommand))
-            }
             is DeepLinkAction.OpenSession -> {
                 // T-double-chat-fix: on process-death recreation NavController
                 // auto-restores [SESSION_LIST, chat/<id>] AND MainActivity
@@ -338,14 +295,6 @@ fun AppNavigation(
                     launchSingleTop = true
                     restoreState = true
                 }
-            }
-            is DeepLinkAction.CreateEnvironmentVariable -> {
-                DeepLinkCoordinator.setPendingEnvVarCreate(
-                    initialDeepLink.key,
-                    initialDeepLink.value,
-                    initialDeepLink.note,
-                )
-                navController.safeNavigate(Routes.ENV_VARS)
             }
             // T183: any settings screen reachable by route string. The
             // parser already resolved the path → route mapping so we
@@ -548,12 +497,6 @@ fun AppNavigation(
                         onSelectModelsClick = {
                             navController.safeNavigate(Routes.ONBOARDING_MODELS)
                         },
-                        onTerminalClick = {
-                            navController.safeNavigate(Routes.terminal())
-                        },
-                        onRootfsClick = {
-                            navController.safeNavigate(Routes.ROOTFS_MANAGEMENT)
-                        },
                         onScheduledTasksClick = {
                             navController.safeNavigate(Routes.SCHEDULED_TASKS)
                         },
@@ -635,14 +578,6 @@ fun AppNavigation(
                 onOpenSideSession = { sideId ->
                     navController.safeNavigate(Routes.chat(sideId))
                 },
-                onOpenTerminal = {
-                    navController.safeNavigate(Routes.terminal(sessionId = sessionId))
-                },
-                onOpenTerminalWithCommand = { command ->
-                    navController.safeNavigate(
-                        Routes.terminal(initCommand = command, sessionId = sessionId),
-                    )
-                },
                 onMoveToSession = { targetId ->
                     navController.safeNavigate(Routes.chat(targetId)) {
                         popUpTo(Routes.SESSION_LIST) { inclusive = false }
@@ -703,9 +638,7 @@ fun AppNavigation(
                 onModelGroupsClick = { navController.safeNavigate(Routes.MODEL_GROUPS) },
                 onImageGenerationClick = { navController.safeNavigate(Routes.IMAGE_GENERATION_SETTINGS) },
                 onStorageClick = { navController.safeNavigate(Routes.STORAGE) },
-                onEnvVarsClick = { navController.safeNavigate(Routes.ENV_VARS) },
                 onSkillsClick = { navController.safeNavigate(Routes.SKILLS) },
-                onTerminalClick = { navController.safeNavigate(Routes.terminal()) },
                 onMemoryClick = { navController.safeNavigate(Routes.MEMORY) },
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
@@ -715,7 +648,6 @@ fun AppNavigation(
                 onBackgroundClick = { navController.safeNavigate(Routes.BACKGROUND) },
                 onLogsClick = { navController.safeNavigate(Routes.LOGS) },
                 onAboutClick = { navController.safeNavigate(Routes.ABOUT) },
-                onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
                 onFeedbackClick = { navController.safeNavigate(Routes.NOVEX_FEEDBACK) },
                 onCreativeLibraryClick = { navController.safeNavigate(Routes.creativeLibrary()) },
@@ -952,8 +884,8 @@ fun AppNavigation(
                 folderId = folderId,
                 onBack = { navController.safePopBackStack() },
                 onBrowseFiles = {
-                    val rootfs = RootfsManager.getInstance(ctx.applicationContext)
-                    val hostPath = java.io.File(rootfs.rootfsDir, "var/minis/$folderId")
+                    val hostPath = novex.android.ContentPaths.resolveHostPath("/var/minis/$folderId")
+                        ?: java.io.File(ctx.applicationContext.filesDir, "minis-global/$folderId")
                     val label = when (folderId) {
                         "shared" -> ctx.getString(com.openminis.app.R.string.shared_folder_name_shared)
                         "skills" -> ctx.getString(com.openminis.app.R.string.shared_folder_name_skills)
@@ -963,56 +895,13 @@ fun AppNavigation(
                     FilePreviewHolder.fileBrowserViewModel = FileBrowserViewModel(
                         rootPath = hostPath,
                         rootLabel = label,
-                        // Route reads through PRoot bind mounts so the host
-                        // dirs that back /var/minis/{shared,skills,memory}
+                        // Route reads through the content bind mounts so the
+                        // host dirs that back /var/minis/{shared,skills,memory}
                         // resolve, matching how chat-files browse works.
                         linuxRootPath = "/var/minis/$folderId",
                         appContext = ctx.applicationContext,
                     )
                     navController.safeNavigate(Routes.FILE_BROWSER)
-                },
-            )
-        }
-
-        composable(Routes.MOUNTED_FOLDERS) {
-            MountedFoldersScreen(
-                store = mountedFoldersStore,
-                onBack = { navController.safePopBackStack() },
-                onMountClick = { mountId ->
-                    navController.safeNavigate(Routes.mountedFoldersDetail(mountId))
-                },
-            )
-        }
-
-        composable(
-            route = Routes.MOUNTED_FOLDERS_DETAIL,
-            arguments = listOf(navArgument("mountId") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val mountId = backStackEntry.arguments?.getString("mountId") ?: return@composable
-            val context = androidx.compose.ui.platform.LocalContext.current
-            MountDetailScreen(
-                store = mountedFoldersStore,
-                mountId = mountId,
-                onBack = { navController.safePopBackStack() },
-                onBrowseFiles = {
-                    val entry = mountedFoldersStore.entries.value.firstOrNull { it.id == mountId }
-                    val hostPath = entry?.resolvedHostPath
-                    if (hostPath != null) {
-                        FilePreviewHolder.fileBrowserViewModel = FileBrowserViewModel(
-                            rootPath = java.io.File(hostPath),
-                            rootLabel = entry.name,
-                        )
-                        navController.safeNavigate(Routes.FILE_BROWSER)
-                    } else {
-                        // resolvedHostPath null = SAF tree from a non-externalstorage
-                        // provider (cloud / Drive). Picker normally rejects these at
-                        // add time, so this is a defensive fallback.
-                        android.widget.Toast.makeText(
-                            context,
-                            "Mount path unavailable",
-                            android.widget.Toast.LENGTH_SHORT,
-                        ).show()
-                    }
                 },
             )
         }
@@ -1213,7 +1102,6 @@ fun AppNavigation(
             StorageManagementScreen(
                 chatDao = chatRepository.dao,
                 onBack = { navController.safePopBackStack() },
-                onRootfsClick = { navController.safeNavigate(Routes.ROOTFS_MANAGEMENT) },
                 onSessionClick = { sessionId ->
                     navController.safeNavigate(Routes.sessionStorageDetail(sessionId))
                 },
@@ -1250,89 +1138,8 @@ fun AppNavigation(
             )
         }
 
-        composable(Routes.ROOTFS_MANAGEMENT) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            RootfsManagementScreen(
-                onBack = { navController.safePopBackStack() },
-                onBrowseFiles = {
-                    val rootfs = RootfsManager.getInstance(context.applicationContext)
-                    FilePreviewHolder.fileBrowserViewModel = FileBrowserViewModel(
-                        rootPath = rootfs.rootfsDir,
-                        rootLabel = "/",
-                    )
-                    navController.safeNavigate(Routes.FILE_BROWSER)
-                },
-                // [T-android-mirror-manual-select] Without this callback the
-                // mirror rows fall back to the declaration-site no-op default
-                // and MirrorCategoryDetailScreen (manual mirror selection,
-                // iOS MirrorCategoryDetailView parity) was unreachable.
-                onMirrorCategoryClick = { category ->
-                    navController.safeNavigate(Routes.mirrorCategoryDetail(category.key))
-                },
-            )
-        }
-
-        composable(
-            route = Routes.MIRROR_CATEGORY_DETAIL,
-            arguments = listOf(navArgument("categoryKey") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val categoryKey = backStackEntry.arguments?.getString("categoryKey") ?: return@composable
-            val category = com.openminis.app.ui.sandbox.MirrorCatalog.categoryFromKey(categoryKey)
-                ?: return@composable
-            com.openminis.app.ui.sandbox.MirrorCategoryDetailScreen(
-                category = category,
-                onBack = { navController.safePopBackStack() },
-            )
-        }
-
         composable(Routes.FILE_BROWSER) {
             val vm = FilePreviewHolder.fileBrowserViewModel ?: return@composable
-            FileBrowserScreen(
-                viewModel = vm,
-                onBack = { navController.safePopBackStack() },
-                onPreviewFile = { item ->
-                    FilePreviewHolder.currentItem = item
-                    navController.safeNavigate(Routes.FILE_PREVIEW)
-                },
-            )
-        }
-
-        // Browse Chat Files (iOS parity: open FileBrowser rooted at the full
-        // Linux root, focused on /var/minis. Matches AIChatView.swift L490:
-        //   FileBrowserView(rootPath: dataPath, initialPath: dataPath/var/minis,
-        //                   rootLabel: "/")
-        // so the user can navigate up out of /var/minis into the broader rootfs.
-        composable(
-            route = Routes.CHAT_FILES,
-            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val rootfs = RootfsManager.getInstance(context.applicationContext)
-            val varMinis = java.io.File(rootfs.rootfsDir, "var/minis")
-            val sessionId = backStackEntry.arguments?.getString("sessionId") ?: return@composable
-            val vm = remember(rootfs.rootfsDir.absolutePath, varMinis.absolutePath, sessionId) {
-                FileBrowserViewModel(
-                    rootPath = rootfs.rootfsDir,
-                    initialPath = varMinis.takeIf { it.exists() },
-                    rootLabel = "/",
-                    // T121: route directory listings through PRootKernel bind
-                    // mounts so /var/minis/{skills,memory,shared} resolve to
-                    // their backing host dirs (filesDir/minis-global/<subdir>).
-                    // Without this the browser walks the rootfs tarball
-                    // directly and shows the empty placeholder dirs that ship
-                    // inside Alpine's var/minis/ — every subdir reads as
-                    // "Empty folder" even though the agent has files there.
-                    linuxRootPath = "/",
-                    // T147: scope per-session subdirs (attachments / workspace
-                    // / offloads / browser) to THIS chat's host dir even when
-                    // another session was the last to boot a PRoot — that
-                    // global bindMounts state is last-writer-wins and would
-                    // otherwise hide the agent's generated files for the
-                    // session the user is looking at.
-                    sessionId = sessionId,
-                    appContext = context.applicationContext,
-                )
-            }
             FileBrowserScreen(
                 viewModel = vm,
                 onBack = { navController.safePopBackStack() },
@@ -1369,15 +1176,6 @@ fun AppNavigation(
                 item = item,
                 onBack = { navController.safePopBackStack() },
             )
-        }
-
-        composable(Routes.ENV_VARS) {
-            if (envVarRepository != null) {
-                EnvironmentVariablesScreen(
-                    envVarRepository = envVarRepository,
-                    onBack = { navController.safePopBackStack() },
-                )
-            }
         }
 
         composable(Routes.SKILLS) {
@@ -1425,33 +1223,6 @@ fun AppNavigation(
                     onBack = { navController.safePopBackStack() },
                 )
             }
-        }
-
-        composable(
-            Routes.TERMINAL,
-            arguments = listOf(
-                androidx.navigation.navArgument("initCommand") {
-                    type = androidx.navigation.NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-                androidx.navigation.navArgument("sessionId") {
-                    type = androidx.navigation.NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-        ) { backStackEntry ->
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val initCommand = backStackEntry.arguments?.getString("initCommand")
-            val sessionId = backStackEntry.arguments?.getString("sessionId")
-            val session = remember { TerminalSession(context.applicationContext) }
-            TerminalScreen(
-                terminalSession = session,
-                onBack = { navController.safePopBackStack() },
-                initCommand = initCommand,
-                sessionId = sessionId,
-            )
         }
 
         composable(Routes.MEMORY) {

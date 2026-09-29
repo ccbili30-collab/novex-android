@@ -24,7 +24,6 @@ Gradle 实际启用的模块（`src/android/settings.gradle.kts`）：
 - `data/repository/`：ChatRepository、ProviderRepository 等数据仓库；
 - `provider/openai/`：OpenAI 兼容协议实现；
 - `cards/`：卡片宿主/入口/目录（Integrated* 与 Legacy* 双轨，见债务）；
-- `sandbox/`：应用内置终端沙箱（PRoot；`prepare_android_sandbox.sh` 在 CI 中为其准备二进制，`jniLibs` 里的 loader 因 Termux 下架不可重建而显式入库）；
 - `novex/`：新旧层之间的适配层。
 
 ## 已知债务（改动时不要加重）

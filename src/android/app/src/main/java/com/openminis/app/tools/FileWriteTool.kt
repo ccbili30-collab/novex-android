@@ -3,7 +3,6 @@ package com.openminis.app.tools
 import android.content.Context
 import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.sandbox.PRootKernel
 import org.json.JSONObject
 import novex.android.ContentPaths
 
@@ -37,18 +36,6 @@ object FileWriteTool {
                 return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
             }
 
-            // T219: read-only mount guard. Reject before opening so we don't
-            // half-create files inside a Locked external mount and surface a
-            // friendly hint pointing the user at Settings. Mirrors iOS
-            // MountedFolderCoordinator.isLinuxPathUnderReadOnlyMount used by
-            // AIChatViewModel.fileWrite (AIChatViewModel.swift:8333-8341).
-            if (PRootKernel.isLinuxPathUnderReadOnlyMount(path)) {
-                return ToolExecutionResult(
-                    "Error: $path is inside a read-only mounted folder and cannot be modified. " +
-                        "Toggle writability in Settings → Mount External Folders if this is a mistake.",
-                    false, toolTitle = toolTitle,
-                )
-            }
 
             // T123: per-session resolver so /var/minis/workspace/...,
             // /var/minis/attachments/..., /var/minis/offloads/...,

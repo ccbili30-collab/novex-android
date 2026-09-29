@@ -332,11 +332,6 @@ fun ChatScreen(
         personaId: String?,
     ) -> Unit = { _, _, _, _ -> },
     onSettings: () -> Unit = {},
-    onOpenTerminal: () -> Unit = {},
-    /** Open the in-app terminal with [command] pre-filled at the prompt
-     *  (no trailing newline — the user reviews and presses Enter manually).
-     *  Wired to the top-right Terminal button on a shell_execute ToolDetailSheet. */
-    onOpenTerminalWithCommand: (command: String) -> Unit = {},
     /** "Move to…" capsule (T51): called when the user picks a target session
      *  from MoveToSessionSheet after a share-injected turn. The caller is
      *  responsible for navigating; this screen has already stashed the
@@ -1690,9 +1685,8 @@ fun ChatScreen(
         .collectAsState()
     LaunchedEffect(pendingMinisOpenUrl, minisOpenTerminalVisible) {
         val url = pendingMinisOpenUrl ?: return@LaunchedEffect
-        // The fullscreen TerminalScreen owns the broker while it's up —
-        // let it present its own web preview (mirrors iOS ISHTerminalView)
-        // so we don't try to open a sheet on a covered ChatScreen.
+        // terminalVisible is legacy coordination for the retired fullscreen
+        // terminal; it stays false now but the guard is kept for parity.
         if (minisOpenTerminalVisible) return@LaunchedEffect
         urlClickHandler(url.toString())
         com.openminis.app.terminal.MinisOpenUrlBroker.consume()
@@ -1746,7 +1740,7 @@ fun ChatScreen(
                 ?: 0
             val items = refs.map { ref ->
                 // Resolve minis://... / file:// / /abs → host File so Coil
-                // doesn't have to re-walk PRootKernel for every page swipe.
+                // doesn't have to re-walk ContentPaths for every page swipe.
                 // Falls back to the raw URL string when resolution misses —
                 // AsyncImage will route it through MinisImageFetcher anyway.
                 val resolved = resolveMdMediaFile(context, ref.source, sessionId)
@@ -2895,7 +2889,6 @@ fun ChatScreen(
                                     if (action.navigateToLatest) coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
                                 }
                                 ChatTranscriptAction.Stop -> viewModel.cancelStream()
-                                is ChatTranscriptAction.OpenTerminal -> onOpenTerminalWithCommand(action.command)
                                 is ChatTranscriptAction.OpenToolDetail -> viewModel.openToolDetail(action.id)
                                 is ChatTranscriptAction.RerunFrom -> {
                                     safeMutate { viewModel.rerunFromToolBlock(action.messageId, action.blockId) }
@@ -3116,7 +3109,6 @@ fun ChatScreen(
                         toolBlocks = lastToolBlocks,
                         initialIndex = initialIdx,
                         onDismiss = { viewModel.closeToolDetail() },
-                        onOpenTerminalWithCommand = onOpenTerminalWithCommand,
                         onOpenBrowserForUrl = { url ->
                             viewModel.closeToolDetail()
                             viewModel.openBrowserSheetForUrl(url)

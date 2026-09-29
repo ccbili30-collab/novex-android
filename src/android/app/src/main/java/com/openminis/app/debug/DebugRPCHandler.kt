@@ -11,8 +11,6 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import com.openminis.app.BuildConfig
 import com.openminis.app.logging.AppLogger
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.sandbox.PRootKernel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -215,7 +213,6 @@ class DebugRPCHandler(private val context: Context) {
             put("sdkVersion", Build.VERSION.SDK_INT)
             put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
             put("androidVersion", Build.VERSION.RELEASE)
-            put("prootBooted", PRootKernel.isBooted)
             put("filesDir", filesDir.absolutePath)
             put("logFiles", AppLogger.listLogFiles().size)
             put("totalLogSize", AppLogger.totalSize())
@@ -824,54 +821,15 @@ class DebugRPCHandler(private val context: Context) {
         return result
     }
 
-    // ── Shell Execute (PRoot sandbox) ────────────────────────────────────────
+    // ── Shell Execute (retired with the sandbox, upstream-exit R2) ──────────
 
     /**
-     * Run a command inside the PRoot sandbox for the given session and return
-     * `{ output, exit_code }`. Mirrors iOS `debug.shellExecute`. Debug-only;
-     * meant for integration-test harnesses that need to drive shell tools
-     * (`minis-browser-use`, `minis-open`, …) without going through the agent.
-     *
-     * Params:
-     *   command  (string, required) — command line to run under /bin/sh -c.
-     *   session  (string)           — session id. Defaults to "debug-rpc" so
-     *                                 callers don't accidentally mutate a
-     *                                 real chat's shell state.
-     *   timeout  (int)              — timeout in seconds. Default 60.
+     * The PRoot sandbox this drove was removed (upstream-exit R2). Kept as a
+     * DEBUG-only stub so old harnesses get a typed error instead of a
+     * method-not-found surprise.
      */
     private suspend fun handleShellExecute(params: JSONObject): JSONObject {
-        val command = params.optString("command").ifEmpty {
-            throw RPCException(-32602, "Missing 'command' param")
-        }
-        val session = params.optString("session", "debug-rpc").ifEmpty { "debug-rpc" }
-        val timeoutSec = params.optInt("timeout", 60).coerceIn(1, 900)
-
-        // Mirror ChatViewModel's terminal lineCallback: scan raw lines for
-        // OSC MinisOpenURL markers before TerminalSanitizer strips them and
-        // hand captured URLs to the broker so test harnesses driving
-        // `minis-open` via this RPC trigger the same in-app preview flow as
-        // real chat shell output.
-        val capturedUrls = mutableListOf<String>()
-        val result = try {
-            ExecutionCoordinator.execute(
-                sessionId = session,
-                command = command,
-                timeout = timeoutSec * 1000L,
-                lineCallback = { rawLine ->
-                    val (_, urls) = com.openminis.app.terminal.MinisUrlMarker.extract(rawLine)
-                    capturedUrls.addAll(urls)
-                },
-            )
-        } catch (e: Exception) {
-            throw RPCException(-32000, "Shell execute failed: ${e.message}")
-        }
-        for (raw in capturedUrls) {
-            com.openminis.app.terminal.MinisOpenUrlBroker.offer(raw)
-        }
-        return JSONObject()
-            .put("output", result.output)
-            .put("exit_code", result.exitCode)
-            .put("session", session)
+        throw RPCException(-32000, "debug.shellExecute unavailable: the Linux sandbox was retired (upstream-exit R2)")
     }
 
     // ── Update checker (T33) — exposed only via DebugRPC so the e2e flow can
@@ -1010,14 +968,8 @@ class DebugRPCHandler(private val context: Context) {
         val overwrite = params.optBoolean("overwrite", true)
         val modeStr = params.optString("mode", "0644")
 
-        // Pre-boot fallback: resolveHostPath returns null until proot boots
-        // (it lazy-initializes its RootfsManager). Test harnesses commonly
-        // want to stage files BEFORE booting, so route through the rootfs
-        // dir directly when the kernel isn't ready yet.
-        val hostFile = ContentPaths.resolveHostPath(path) ?: run {
-            val rootfsDir = com.openminis.app.sandbox.RootfsManager.getInstance(context).rootfsDir
-            File(rootfsDir, path.removePrefix("/"))
-        }
+        val hostFile = ContentPaths.resolveHostPath(path)
+            ?: throw RPCException(-32003, "Cannot resolve path outside the content mounts: $path")
 
         if (hostFile.exists() && !overwrite) {
             throw RPCException(-32000, "File exists and overwrite=false: $path")
@@ -1098,135 +1050,15 @@ class DebugRPCHandler(private val context: Context) {
         return JSONObject().put("tools", arr).put("count", arr.length())
     }
 
-    /**
-     * T344: Direct invocation of [com.openminis.app.sandbox.offload.ShizukuOffloadHandler]
-     * for e2e harnesses. Bypasses the agent loop so debug clients can verify Shizuku
-     * CLI behavior without driving a chat. DEBUG-build only — gated in [dispatch].
-     *
-     * Params (one of):
-     *   - {"args": ["exec", "id"]}            — argv past `android-shizuku-cli`
-     *   - {"command": "exec id"}              — single string, whitespace-split
-     */
     private fun handleShizukuExec(params: JSONObject): JSONObject {
-        val argvTail: List<String> = when {
-            params.has("args") -> {
-                val arr = params.optJSONArray("args")
-                    ?: throw RPCException(-32602, "args must be an array of strings")
-                List(arr.length()) { arr.optString(it) }
-            }
-            params.has("command") -> {
-                params.optString("command").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            }
-            else -> throw RPCException(-32602, "Missing 'args' (array) or 'command' (string)")
-        }
-        AppLogger.info("DebugRPC", "debug.shizuku.exec argv=${argvTail.joinToString(" ")}")
-        val handler = com.openminis.app.sandbox.offload.ShizukuOffloadHandler(context)
-        // ShizukuOffloadHandler.handle() drops argv[0]; prepend the CLI name so the
-        // tail aligns with what `android-shizuku-cli` would receive in-shell.
-        val request = com.openminis.app.sandbox.NativeOffloadRequest(
-            pid = -1,
-            argv = listOf("android-shizuku-cli") + argvTail,
-            env = emptyMap(),
-            cwd = "/",
-            sessionId = null,
-        )
-        val result = handler.handle(request)
-        return JSONObject().apply {
-            put("exitCode", result.exitCode)
-            put("output", result.output)
-            put("argv", JSONArray(argvTail))
-        }
+        throw RPCException(-32000, "debug.shizuku.exec unavailable: the sandbox offload handlers were retired (upstream-exit R2)")
     }
-
-    /**
-     * Direct invocation of [com.openminis.app.sandbox.offload.ModelUseOffloadHandler]
-     * for e2e harnesses. Mirrors [handleShizukuExec]; lets callers exercise the
-     * `minis-model-use` CLI without going through a real Alpine shell prompt.
-     * DEBUG-only.
-     */
     private fun handleModelUseExec(params: JSONObject): JSONObject {
-        val argvTail: List<String> = when {
-            params.has("args") -> {
-                val arr = params.optJSONArray("args")
-                    ?: throw RPCException(-32602, "args must be an array of strings")
-                List(arr.length()) { arr.optString(it) }
-            }
-            params.has("command") -> {
-                params.optString("command").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            }
-            else -> throw RPCException(-32602, "Missing 'args' (array) or 'command' (string)")
-        }
-
-        // Optional `input` blob: write to host /tmp and inject `--input <linuxPath>`
-        // so the handler reads it via readLinuxPath() exactly like a real shell
-        // invocation would. We resolve the host path via PRootKernel to honour
-        // the same rootfs layout the offload server uses.
-        val finalArgv: List<String> = if (params.has("input")) {
-            val inputBlob = params.optString("input", "")
-            val linuxPath = "/tmp/.debug-modeluse-input-${System.currentTimeMillis()}.json"
-            val hostFile = ContentPaths.resolveHostPath(linuxPath)
-                ?: throw RPCException(-32603, "cannot resolve $linuxPath under rootfs")
-            hostFile.parentFile?.mkdirs()
-            hostFile.writeText(inputBlob)
-            argvTail + listOf("--input", linuxPath)
-        } else argvTail
-
-        AppLogger.info("DebugRPC", "debug.modelUse.exec argv=${finalArgv.joinToString(" ")}")
-        val app = context.applicationContext as com.openminis.app.MinisApp
-        val handler = com.openminis.app.sandbox.offload.ModelUseOffloadHandler(context, app.providerRepository)
-        val request = com.openminis.app.sandbox.NativeOffloadRequest(
-            pid = -1,
-            argv = listOf("minis-model-use") + finalArgv,
-            env = emptyMap(),
-            cwd = "/",
-            sessionId = null,
-        )
-        val result = handler.handle(request)
-        return JSONObject().apply {
-            put("exitCode", result.exitCode)
-            put("output", result.output)
-            put("argv", JSONArray(finalArgv))
-        }
+        throw RPCException(-32000, "debug.modelUse.exec unavailable: the sandbox offload handlers were retired (upstream-exit R2)")
     }
-
-    /**
-     * [T-android-sessions-cli-full] Direct invocation of
-     * [com.openminis.app.sandbox.offload.SessionsOffloadHandler] for e2e
-     * harnesses. Mirrors [handleModelUseExec]; lets callers exercise the
-     * `minis-sessions-cli` CLI (list / search / messages, incl. --full)
-     * without going through a real Alpine shell prompt. DEBUG-only.
-     */
     private fun handleSessionsExec(params: JSONObject): JSONObject {
-        val argvTail: List<String> = when {
-            params.has("args") -> {
-                val arr = params.optJSONArray("args")
-                    ?: throw RPCException(-32602, "args must be an array of strings")
-                List(arr.length()) { arr.optString(it) }
-            }
-            params.has("command") -> {
-                params.optString("command").trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            }
-            else -> throw RPCException(-32602, "Missing 'args' (array) or 'command' (string)")
-        }
-
-        AppLogger.info("DebugRPC", "debug.sessions.exec argv=${argvTail.joinToString(" ")}")
-        val app = context.applicationContext as com.openminis.app.MinisApp
-        val handler = com.openminis.app.sandbox.offload.SessionsOffloadHandler(app.chatRepository)
-        val request = com.openminis.app.sandbox.NativeOffloadRequest(
-            pid = -1,
-            argv = listOf("minis-sessions-cli") + argvTail,
-            env = emptyMap(),
-            cwd = "/",
-            sessionId = null,
-        )
-        val result = handler.handle(request)
-        return JSONObject().apply {
-            put("exitCode", result.exitCode)
-            put("output", result.output)
-            put("argv", JSONArray(argvTail))
-        }
+        throw RPCException(-32000, "debug.sessions.exec unavailable: the sandbox offload handlers were retired (upstream-exit R2)")
     }
-
     /**
      * [T-minis-config-provider-add] DEBUG-only minis-config invocation
      * that BYPASSES the user-confirmation gate. Targets the same code

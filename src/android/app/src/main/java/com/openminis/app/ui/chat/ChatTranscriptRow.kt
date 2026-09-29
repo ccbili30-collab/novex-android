@@ -44,7 +44,6 @@ internal sealed interface ChatTranscriptAction {
     data class OpenProcess(val process: FlatChatItem.AssistantProcess) : ChatTranscriptAction
     data class RetryLast(val navigateToLatest: Boolean) : ChatTranscriptAction
     data object Stop : ChatTranscriptAction
-    data class OpenTerminal(val command: String) : ChatTranscriptAction
     data class OpenToolDetail(val id: String) : ChatTranscriptAction
     data class RerunFrom(val messageId: String, val blockId: String) : ChatTranscriptAction
     data class OpenCard(val kind: String, val id: String) : ChatTranscriptAction
@@ -243,7 +242,6 @@ internal fun ChatTranscriptRow(
             // ToolCallPill `isRunning && onStop != null`
             // — so passing it unconditionally is safe.
             onStop = { onAction(ChatTranscriptAction.Stop) },
-            onOpenTerminalWithCommand = { onAction(ChatTranscriptAction.OpenTerminal(it)) },
             // T261: route detail open through ViewModel so
             // the sheet is hoisted out of LazyColumn item
             // scope (otherwise the sheet snaps shut when

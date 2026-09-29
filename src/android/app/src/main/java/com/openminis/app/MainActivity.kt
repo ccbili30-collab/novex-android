@@ -720,9 +720,6 @@ class MainActivity : ComponentActivity() {
         val action = DeepLinkHandler.parse(uri)
         val nav = navController ?: return
         when (action) {
-            is DeepLinkAction.OpenTerminal -> {
-                nav.navigate(Routes.terminal(action.initCommand))
-            }
             is DeepLinkAction.OpenSession -> {
                 // T-double-chat-fix (secondary): mirror AppNavigation's
                 // OpenSession options so a runtime deep-link (notification /
@@ -736,10 +733,6 @@ class MainActivity : ComponentActivity() {
                     launchSingleTop = true
                     restoreState = true
                 }
-            }
-            is DeepLinkAction.CreateEnvironmentVariable -> {
-                DeepLinkCoordinator.setPendingEnvVarCreate(action.key, action.value, action.note)
-                nav.navigate(Routes.ENV_VARS)
             }
             // T183: any settings screen reachable by route string.
             is DeepLinkAction.OpenSettingsScreen -> {

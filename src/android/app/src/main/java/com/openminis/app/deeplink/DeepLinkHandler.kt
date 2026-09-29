@@ -9,7 +9,6 @@ import com.openminis.app.ui.navigation.Routes
  * Supported routes (matching iOS):
  *   minis://share                              → open share flow
  *   minis://views/alarm                        → open alarm list
- *   minis://open_terminal?init_command=...      → open terminal with command
  *   minis://session/<id>                        → open specific session
  *   minis://settings                            → Settings home
  *   minis://settings/providers                  → Provider list
@@ -20,8 +19,6 @@ import com.openminis.app.ui.navigation.Routes
  *   minis://settings/skills                     → Skills management
  *   minis://settings/memory                     → Memory management
  *   minis://settings/storage                    → Storage management
- *   minis://settings/mount-external             → Mount External Folders list
- *   minis://settings/mounts                     → alias for mount-external
  *   minis://settings/shared-folders             → Shared Folders list (T235)
  *   minis://settings/shared_folders             → alias for shared-folders
  *   minis://settings/logs                       → Log management
@@ -29,14 +26,14 @@ import com.openminis.app.ui.navigation.Routes
  *   minis://settings/background                 → Background settings
  *   minis://settings/about                      → About
  *   minis://settings/permissions                → Permissions
- *   minis://settings/environments[?create_key=...&create_value=...&create_note=...]
- *                                               → Environment variables
- *   minis://settings/rootfs                     → Rootfs management (mirror config lives here)
- *   minis://settings/mirrors                    → alias for rootfs (mirrors live inside Rootfs UI)
  *
  * Unknown settings paths fall back to Settings home rather than
  * Unknown — matches iOS's "best-effort land somewhere reasonable"
  * behavior so an LLM-generated link can never strand the user.
+ *
+ * Retired routes (open_terminal, settings/{mounts,mirrors,rootfs,
+ * environments}) also land on Settings home — the sandbox they fronted
+ * was removed in upstream-exit R2/R3.
  *
  * Resource-class URIs (`minis://workspace/...`, `minis://skills/...`,
  * etc.) are intentionally NOT handled here — they resolve to on-disk
@@ -47,8 +44,6 @@ import com.openminis.app.ui.navigation.Routes
 sealed class DeepLinkAction {
     data object OpenShare : DeepLinkAction()
     data object OpenAlarmList : DeepLinkAction()
-    data class OpenTerminal(val initCommand: String?) : DeepLinkAction()
-    data class CreateEnvironmentVariable(val key: String, val value: String, val note: String) : DeepLinkAction()
     data object OpenPermissionSettings : DeepLinkAction()
     data class OpenSession(val sessionId: String) : DeepLinkAction()
 
@@ -108,9 +103,6 @@ object DeepLinkHandler {
                 "/alarm" -> DeepLinkAction.OpenAlarmList
                 else -> DeepLinkAction.Unknown
             }
-            "open_terminal" -> DeepLinkAction.OpenTerminal(
-                initCommand = uri.getQueryParameter("init_command")
-            )
             // Quick-actions surface (app-icon long-press). Path drives which
             // pending action ChatScreen consumes on first compose. Mirrors iOS
             // QuickActionRouter.swift action ids 1:1.
@@ -144,14 +136,8 @@ object DeepLinkHandler {
 
     /**
      * T183: walk a `minis://settings/<path>` URI to the right NavHost
-     * route. Two cases stay distinct:
-     *
-     *  - `environments?create_key=…` — keeps the dedicated
-     *    [DeepLinkAction.CreateEnvironmentVariable] case because the
-     *    target screen needs the parameters wired through
-     *    `DeepLinkCoordinator.setPendingEnvVarCreate`.
-     *  - `permissions` — keeps [DeepLinkAction.OpenPermissionSettings]
-     *    so existing dispatch logic stays unchanged.
+     * route. `permissions` keeps [DeepLinkAction.OpenPermissionSettings]
+     * so existing dispatch logic stays unchanged.
      *
      * Everything else funnels through [DeepLinkAction.OpenSettingsScreen]
      * carrying a route string from [Routes]. Unknown paths land on
@@ -177,8 +163,6 @@ object DeepLinkHandler {
             "skills" -> DeepLinkAction.OpenSettingsScreen(Routes.SKILLS)
             "memory" -> DeepLinkAction.OpenSettingsScreen(Routes.MEMORY)
             "storage" -> DeepLinkAction.OpenSettingsScreen(Routes.STORAGE)
-            "mount-external", "mount_external", "mounts", "mounted-folders", "mounted_folders" ->
-                DeepLinkAction.OpenSettingsScreen(Routes.MOUNTED_FOLDERS)
             "shared-folders", "shared_folders" ->
                 DeepLinkAction.OpenSettingsScreen(Routes.SHARED_FOLDERS)
             "logs" -> {
@@ -194,31 +178,6 @@ object DeepLinkHandler {
             "background" -> DeepLinkAction.OpenSettingsScreen(Routes.BACKGROUND)
             "about" -> DeepLinkAction.OpenSettingsScreen(Routes.ABOUT)
             "permissions" -> DeepLinkAction.OpenPermissionSettings
-            // mirrors live as a section inside Rootfs management — no
-            // standalone destination, so route both /mirrors and /rootfs
-            // there. The user lands on the same screen; mirror config is
-            // visible as the "Mirrors" section inside.
-            "mirrors", "rootfs", "rootfs-management", "rootfs_management" ->
-                DeepLinkAction.OpenSettingsScreen(Routes.ROOTFS_MANAGEMENT)
-            "environments" -> {
-                // iOS parity (AIChatView.swift L1407-1411): only `create_key`
-                // is required. Missing `create_value`/`create_note` default
-                // to empty string so a link like
-                //   minis://settings/environments?create_key=GH_TOKEN&create_value=
-                // (where `create_value=` is present-but-blank) still opens
-                // the prefilled form. Without create_key, plain navigation
-                // to the Env Vars list.
-                val key = uri.getQueryParameter("create_key")
-                if (!key.isNullOrEmpty()) {
-                    DeepLinkAction.CreateEnvironmentVariable(
-                        key = key,
-                        value = uri.getQueryParameter("create_value") ?: "",
-                        note = uri.getQueryParameter("create_note") ?: "",
-                    )
-                } else {
-                    DeepLinkAction.OpenSettingsScreen(Routes.ENV_VARS)
-                }
-            }
             // Unknown path — land on Settings home rather than failing,
             // so the user can find what they wanted by browsing.
             else -> DeepLinkAction.OpenSettingsScreen(Routes.SETTINGS)

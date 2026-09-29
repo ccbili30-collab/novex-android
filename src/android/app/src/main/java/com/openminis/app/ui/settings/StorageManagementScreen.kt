@@ -62,14 +62,12 @@ private data class SessionStorageInfo(
 fun StorageManagementScreen(
     chatDao: ChatDao,
     onBack: () -> Unit,
-    onRootfsClick: () -> Unit,
     onSessionClick: (sessionId: String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
-    var shellSize by remember { mutableLongStateOf(0L) }
     var dbSize by remember { mutableLongStateOf(0L) }
     // [T-memory-cap-and-storage] 卡片数据拆两桶：修订历史（revisions/）每次
     // 保存累积一个文件、无上限——1.98G 数据目录的主嫌，必须单独可见。
@@ -81,7 +79,6 @@ fun StorageManagementScreen(
         scope.launch {
             isLoading = true
             withContext(Dispatchers.IO) {
-                shellSize = directorySize(File(context.filesDir, "alpine-rootfs"))
                 dbSize = databaseSize(context)
 
                 val cardDir = File(context.filesDir, "rewrite-content")
@@ -115,13 +112,6 @@ fun StorageManagementScreen(
 
     SettingsScaffold(title = stringResource(R.string.storage_title), onBack = onBack) {
         SettingsSection(header = stringResource(R.string.storage_section_overview)) {
-            StorageOverviewRow(
-                color = Color(0xFF8E8E93),
-                label = stringResource(R.string.storage_overview_shell),
-                value = Formatter.formatFileSize(context, shellSize),
-                onClick = onRootfsClick,
-                showDivider = true,
-            )
             StorageOverviewRow(
                 color = Color(0xFF007AFF),
                 label = stringResource(R.string.storage_overview_database),

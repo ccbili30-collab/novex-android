@@ -214,7 +214,6 @@ internal fun ToolDetailSheet(
     toolBlocks: List<AssistantBlock>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
     onOpenBrowserForUrl: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -293,7 +292,6 @@ internal fun ToolDetailSheet(
                 val clipboardManager = LocalClipboardManager.current
                 val actionContext = LocalContext.current
                 var copyDone by remember { mutableStateOf(false) }
-                val isShellTool = block.toolName == "shell_execute"
                 val isBrowserTool = block.toolName == "browser_use"
                 val toolArgsForAction = remember(block.toolArgs) {
                     try { org.json.JSONObject(block.toolArgs) } catch (_: Exception) { org.json.JSONObject() }
@@ -332,17 +330,7 @@ internal fun ToolDetailSheet(
                         .border(0.5.dp, ChatColors.inputIconBorder, CircleShape)
                         .clip(CircleShape)
                         .clickable {
-                            if (isShellTool) {
-                                val command = extractShellCommand(toolArgsForAction, block)
-                                if (command.isNotBlank() && command != "Shell command") {
-                                    AppLogger.info(
-                                        "ChatScreen",
-                                        "opening terminal with prefill: ${command.take(120)}",
-                                    )
-                                    onDismiss()
-                                    onOpenTerminalWithCommand(command)
-                                }
-                            } else if (hasBrowserUrl) {
+                            if (hasBrowserUrl) {
                                 // Mirror iOS ToolLiveSheet: nav-bar globe
                                 // routes back into the Session WebView pool
                                 // (BrowserTabPool.selectOrCreateTabForURL)
@@ -366,12 +354,10 @@ internal fun ToolDetailSheet(
                     Icon(
                         when {
                             copyDone -> novex.android.ui.NovexIcons.Check
-                            isShellTool -> novex.android.ui.NovexIcons.Terminal
                             isBrowserTool -> novex.android.ui.NovexIcons.Public
                             else -> novex.android.ui.NovexIcons.ContentCopy
                         },
                         contentDescription = when {
-                            isShellTool -> "Open in terminal"
                             isBrowserTool -> "Open in session browser"
                             else -> "Copy"
                         },

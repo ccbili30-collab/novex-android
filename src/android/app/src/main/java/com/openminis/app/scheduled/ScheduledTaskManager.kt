@@ -60,7 +60,7 @@ class ScheduledTaskManager(private val context: Context) {
 
     /**
      * Re-register every enabled task with AlarmManager. Called from
-     * [com.openminis.app.offload.AlarmReceiver]'s BOOT_COMPLETED branch
+     * the (retired) offload AlarmReceiver's BOOT_COMPLETED branch
      * so persisted tasks survive a device reboot.
      */
     fun rescheduleAll() {
