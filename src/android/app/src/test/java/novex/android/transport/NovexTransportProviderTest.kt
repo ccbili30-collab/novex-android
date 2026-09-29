@@ -1,0 +1,498 @@
+package novex.android.transport
+
+import com.openminis.app.data.model.AgentContentPart
+import com.openminis.app.data.model.AgentToolDefinition
+import com.openminis.app.data.model.LLMError
+import com.openminis.app.data.model.LLMMessage
+import com.openminis.app.data.model.LLMModel
+import com.openminis.app.data.model.LLMStreamChunk
+import com.openminis.app.data.model.ThinkingLevel
+import com.openminis.app.provider.LLMProvider
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
+import novex.model.StreamChunk
+import novex.model.StreamRequest
+import novex.model.StreamResult
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * P3.1b 适配器三件套：请求映射、流式时序桥、错误分类。
+ * 传输层用可注入桩（TransportCall）钉时序，不打真实网络。
+ */
+class NovexTransportProviderTest {
+
+    // ---------------------------------------------------------------------
+    // 测试桩
+    // ---------------------------------------------------------------------
+
+    private class ScriptedCall(
+        private val chunks: List<StreamChunk>,
+        private val outcome: StreamResult,
+    ) : NovexTransportProvider.TransportCall {
+        val cancelled = AtomicBoolean(false)
+        override fun cancel() = cancelled.set(true)
+        override fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+            chunks.forEach(onChunk)
+            return outcome
+        }
+    }
+
+    private class BlockingCall(private val entered: CountDownLatch) : NovexTransportProvider.TransportCall {
+        val cancelled = AtomicBoolean(false)
+        override fun cancel() = cancelled.set(true)
+        override fun stream(request: StreamRequest, onChunk: (StreamChunk) -> Unit): StreamResult {
+            entered.countDown()
+            // 模拟阻塞中的阻塞读：cancel 到来前不返回。
+            var waited = 0
+            while (!cancelled.get() && waited < 10_000) {
+                Thread.sleep(20); waited += 20
+            }
+            return StreamResult.Cancelled
+        }
+    }
+
+    private fun provider(
+        model: LLMModel = LLMModel("test-model", "Test Model", "OpenAI"),
+        call: NovexTransportProvider.TransportCall,
+        basePath: String = "https://relay.example.com/v1",
+    ) = NovexTransportProvider(
+        apiKey = "relay-key",
+        model = model,
+        basePath = basePath,
+        instanceId = "instance-1",
+        callOpener = { call },
+    )
+
+    private fun stream(
+        provider: NovexTransportProvider,
+        messages: List<LLMMessage> = listOf(LLMMessage(LLMMessage.Role.USER, "你好")),
+        thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
+    ): List<LLMStreamChunk> = runBlocking {
+        (provider as LLMProvider).streamMessage(
+            messages = messages,
+            systemPrompt = null,
+            maxTokens = 512,
+            thinkingLevel = thinkingLevel,
+        ).toList()
+    }
+
+    // ---------------------------------------------------------------------
+    // 请求映射
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `纯文本消息映射出 system-user 序列与基本请求形状`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)
+        val provider = provider(call = call)
+        val request = provider.buildStreamRequest(
+            messages = listOf(LLMMessage(LLMMessage.Role.USER, "保留\n\"原文\"")),
+            systemPrompt = "系统提示",
+            maxTokens = 777,
+            imageParts = emptyList(),
+            tools = emptyList(),
+            thinkingLevel = ThinkingLevel.OFF,
+        )
+        val body = JSONObject(request.encode())
+        assertEquals("test-model", body.getString("model"))
+        assertEquals(777, body.getInt("max_tokens"))
+        assertTrue(body.getBoolean("stream"))
+        assertTrue(body.getJSONObject("stream_options").getBoolean("include_usage"))
+        val messages = body.getJSONArray("messages")
+        assertEquals(2, messages.length())
+        assertEquals("system", messages.getJSONObject(0).get("role"))
+        assertEquals("系统提示", messages.getJSONObject(0).get("content"))
+        assertEquals("user", messages.getJSONObject(1).get("role"))
+        assertEquals("保留\n\"原文\"", messages.getJSONObject(1).get("content"))
+        assertFalse(body.has("tools"))
+        assertFalse(body.has("reasoning_effort"))
+    }
+
+    @Test
+    fun `工具定义映射为 OpenAI function 形状`() {
+        val tool = AgentToolDefinition(
+            name = "save_card",
+            description = "保存卡片",
+            parameters = mapOf(
+                "title" to com.openminis.app.data.model.AgentToolParam(
+                    type = "string", description = "标题",
+                ),
+            ),
+            required = listOf("title"),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "建卡")), null, 128, emptyList(), listOf(tool), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val tools = body.getJSONArray("tools")
+        assertEquals(1, tools.length())
+        val function = tools.getJSONObject(0).getJSONObject("function")
+        assertEquals("save_card", function.getString("name"))
+        assertEquals("保存卡片", function.getString("description"))
+        assertEquals("object", function.getJSONObject("parameters").getString("type"))
+        assertTrue(function.getJSONObject("parameters").getJSONObject("properties").has("title"))
+    }
+
+    @Test
+    fun `代理循环工具历史映射为 tool_calls 与 tool 结果配对`() {
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "", contentParts = listOf(AgentContentPart.Text("查天气"))),
+            LLMMessage(
+                LLMMessage.Role.ASSISTANT,
+                "",
+                contentParts = listOf(
+                    AgentContentPart.ToolUse("call-1", "get_weather", JSONObject().put("city", "上海")),
+                ),
+            ),
+            LLMMessage(
+                LLMMessage.Role.USER,
+                "",
+                contentParts = listOf(AgentContentPart.ToolResult("call-1", "get_weather", "晴 28°C")),
+            ),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(history, null, 256, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        val messages = body.getJSONArray("messages")
+        assertEquals(3, messages.length())
+        val assistant = messages.getJSONObject(1)
+        assertEquals("assistant", assistant.getString("role"))
+        val toolCall = assistant.getJSONArray("tool_calls").getJSONObject(0)
+        assertEquals("call-1", toolCall.getString("id"))
+        assertEquals("get_weather", toolCall.getJSONObject("function").getString("name"))
+        assertEquals(JSONObject().put("city", "上海").toString(), toolCall.getJSONObject("function").getString("arguments"))
+        val toolResult = messages.getJSONObject(2)
+        assertEquals("tool", toolResult.getString("role"))
+        assertEquals("call-1", toolResult.getString("tool_call_id"))
+        assertEquals("晴 28°C", toolResult.getString("content"))
+    }
+
+    @Test
+    fun `跨消息重复工具调用 id 被改名以通过网关查重`() {
+        val repeatedUse = AgentContentPart.ToolUse("call-dup", "probe", JSONObject())
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.ASSISTANT, content = "", contentParts = listOf(repeatedUse)),
+            LLMMessage(LLMMessage.Role.USER, content = "", contentParts = listOf(AgentContentPart.ToolResult("call-dup", "probe", "a"))),
+            LLMMessage(LLMMessage.Role.ASSISTANT, content = "", contentParts = listOf(repeatedUse)),
+            LLMMessage(LLMMessage.Role.USER, content = "", contentParts = listOf(AgentContentPart.ToolResult("call-dup", "probe", "b"))),
+        )
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(history, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF).encode(),
+        )
+        val ids = mutableListOf<String>()
+        val messages = body.getJSONArray("messages")
+        for (i in 0 until messages.length()) {
+            messages.getJSONObject(i).optJSONArray("tool_calls")?.let { calls ->
+                ids += calls.getJSONObject(0).getString("id")
+            }
+        }
+        assertEquals(2, ids.size)
+        assertEquals(2, ids.distinct().size)
+    }
+
+    @Test
+    fun `思考等级经规则解析器落入请求体`() {
+        val reasoningModel = LLMModel("gpt-5.5", "GPT-5.5", "OpenAI", supportsReasoning = true)
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val request = provider(model = reasoningModel, call = call).buildStreamRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "想清楚再答")), null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+        )
+        assertEquals("high", JSONObject(request.encode()).getString("reasoning_effort"))
+    }
+
+    @Test
+    fun `必带思考模型回放 assistant reasoning_content 且空档补空串`() {
+        val alwaysReasons = LLMModel("deepseek-v4", "DeepSeek V4", "OpenAI", supportsReasoning = true)
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(model = alwaysReasons, call = call).buildStreamRequest(
+                listOf(
+                    LLMMessage(LLMMessage.Role.ASSISTANT, "上一轮", reasoningContent = "上一轮的思考"),
+                    LLMMessage(LLMMessage.Role.ASSISTANT, "无思考记录的一轮"),
+                    LLMMessage(LLMMessage.Role.USER, "继续"),
+                ),
+                null, 128, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val first = body.getJSONArray("messages").getJSONObject(0)
+        assertEquals("上一轮的思考", first.getString("reasoning_content"))
+        val second = body.getJSONArray("messages").getJSONObject(1)
+        assertEquals("", second.getString("reasoning_content"))
+    }
+
+    @Test
+    fun `普通模型关思考时不回放 reasoning_content`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.ASSISTANT, "上一轮", reasoningContent = "不应回放")),
+                null, 128, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertNull(body.getJSONArray("messages").getJSONObject(0).opt("reasoning_content"))
+    }
+
+    @Test
+    fun `视觉模型把最后一条 user 的图片部件编码为 data URL`() {
+        val visionModel = LLMModel("vision-model", "Vision", "OpenAI", inputModalities = listOf("text", "image"))
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(model = visionModel, call = call).buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "看图")),
+                null, 128,
+                imageParts = listOf(LLMMessage.ImagePart(png, "image/png")),
+                tools = emptyList(), thinkingLevel = ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val content = body.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+        assertEquals(2, content.length())
+        assertEquals("text", content.getJSONObject(0).getString("type"))
+        val imageUrl = content.getJSONObject(1).getJSONObject("image_url").getString("url")
+        assertTrue(imageUrl.startsWith("data:image/png;base64,"))
+    }
+
+    @Test
+    fun `无视觉输入的模型以占位文本顶替图片`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "看图")),
+                null, 128,
+                imageParts = listOf(LLMMessage.ImagePart(byteArrayOf(1, 2, 3), "image/png")),
+                tools = emptyList(), thinkingLevel = ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val message = body.getJSONArray("messages").getJSONObject(0)
+        assertTrue(message.get("content") is String)
+        assertTrue(message.getString("content").contains("不支持图片输入"))
+    }
+
+    @Test
+    fun `OpenRouter 端点不带 stream_options`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val request = provider(call = call, basePath = "https://openrouter.ai/api/v1").buildStreamRequest(
+            listOf(LLMMessage(LLMMessage.Role.USER, "hi")), null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+        )
+        assertFalse(JSONObject(request.encode()).has("stream_options"))
+    }
+
+    @Test
+    fun `音频部件映射为 input_audio 块`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val body = JSONObject(
+            provider(call = call).buildStreamRequest(
+                listOf(LLMMessage(LLMMessage.Role.USER, "听", audioParts = listOf(LLMMessage.AudioPart("wav", "YXVkaW8=")))),
+                null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        val content = body.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+        val audio = content.getJSONObject(1)
+        assertEquals("input_audio", audio.getString("type"))
+        assertEquals("wav", audio.getJSONObject("input_audio").getString("format"))
+        assertEquals("YXVkaW8=", audio.getJSONObject("input_audio").getString("data"))
+    }
+
+    // ---------------------------------------------------------------------
+    // 流式时序桥
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `文本思考工具用量按上游时序转发且 Finished 先于 ToolCallComplete`() {
+        val call = ScriptedCall(
+            listOf(
+                StreamChunk.TextDelta("答"),
+                StreamChunk.ThinkingDelta("想"),
+                StreamChunk.ToolCallDelta(0, "call-1", "get_weather", "{\"city\":"),
+                StreamChunk.ToolCallDelta(0, null, null, "\"上海\"}"),
+                StreamChunk.Usage(30, 7),
+                StreamChunk.Done("tool_calls"),
+            ),
+            StreamResult.Completed,
+        )
+        val chunks = stream(provider(call = call))
+        // org.json 的 JSONObject 不重写 equals，ToolCallComplete 逐字段断言。
+        assertEquals(10, chunks.size)
+        assertEquals(LLMStreamChunk.Started, chunks[0])
+        assertEquals(LLMStreamChunk.Text("答"), chunks[1])
+        assertEquals(LLMStreamChunk.ThinkingDelta("想"), chunks[2])
+        assertEquals(LLMStreamChunk.ToolUseStart("call-1", "get_weather"), chunks[3])
+        assertEquals(LLMStreamChunk.ToolInputDelta("call-1", "{\"city\":"), chunks[4])
+        assertEquals(LLMStreamChunk.ToolInputDelta("call-1", "{\"city\":\"上海\"}"), chunks[5])
+        assertEquals(LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(30, 7, latestContextTokens = 30)), chunks[6])
+        assertEquals(LLMStreamChunk.ReasoningContent("想"), chunks[7])
+        assertEquals(LLMStreamChunk.Finished("tool_calls"), chunks[8])
+        val complete = chunks[9] as LLMStreamChunk.ToolCallComplete
+        assertEquals("call-1", complete.id)
+        assertEquals("get_weather", complete.name)
+        assertEquals(1, complete.args.length())
+        assertEquals("上海", complete.args.getString("city"))
+    }
+
+    @Test
+    fun `HTTP 失败在 Started 之前以 InvalidApiKey 收流`() {
+        val call = ScriptedCall(
+            listOf(StreamChunk.Failure("HTTP 401", 401, "authentication", null, null)),
+            StreamResult.Failed,
+        )
+        val outcome = runCatching { stream(provider(call = call)) }
+        val error = outcome.exceptionOrNull() as LLMError
+        assertTrue(error is LLMError.InvalidApiKey)
+        assertTrue(outcome.exceptionOrNull() !is kotlin.coroutines.cancellation.CancellationException)
+    }
+
+    @Test
+    fun `流中 error 对象在已发块之后以 ProviderError 收流`() {
+        val call = ScriptedCall(
+            listOf(
+                StreamChunk.TextDelta("开头"),
+                StreamChunk.Failure("额度耗尽", code = "insufficient_quota"),
+            ),
+            StreamResult.Failed,
+        )
+        val outcome = runCatching { stream(provider(call = call)) }
+        val error = outcome.exceptionOrNull() as LLMError
+        assertTrue(error is LLMError.ProviderError)
+        assertTrue(error.message!!.contains("额度耗尽"))
+    }
+
+    @Test
+    fun `5xx 服务端错误归为瞬态可重试`() {
+        for (status in listOf(500, 502, 503, 504, 529)) {
+            val call = ScriptedCall(
+                listOf(StreamChunk.Failure("HTTP $status", status, "service", null, null)),
+                StreamResult.Failed,
+            )
+            val error = runCatching { stream(provider(call = call)) }.exceptionOrNull() as LLMError
+            assertTrue("status=$status 应为瞬态错误", error is LLMError.TransientError)
+        }
+    }
+
+    @Test
+    fun `429 归为限流 404 归为供应商错误`() {
+        val limited = runCatching {
+            stream(provider(call = ScriptedCall(listOf(StreamChunk.Failure("HTTP 429", 429, "rate_limit", null, "30")), StreamResult.Failed)))
+        }.exceptionOrNull() as LLMError
+        assertTrue(limited is LLMError.RateLimited)
+
+        val notFound = runCatching {
+            stream(provider(call = ScriptedCall(listOf(StreamChunk.Failure("HTTP 404", 404, "request", null, null)), StreamResult.Failed)))
+        }.exceptionOrNull() as LLMError
+        assertTrue(notFound is LLMError.ProviderError)
+    }
+
+    @Test
+    fun `无终止信号断流冲出工具调用但不发 Finished`() {
+        val call = ScriptedCall(
+            listOf(
+                StreamChunk.TextDelta("半截"),
+                StreamChunk.ToolCallDelta(0, "call-9", "long_task", "{\"step\":"),
+            ),
+            StreamResult.NetworkFailure,
+        )
+        val chunks = stream(provider(call = call))
+        assertEquals(5, chunks.size)
+        assertEquals(LLMStreamChunk.Started, chunks[0])
+        assertEquals(LLMStreamChunk.Text("半截"), chunks[1])
+        assertEquals(LLMStreamChunk.ToolUseStart("call-9", "long_task"), chunks[2])
+        assertEquals(LLMStreamChunk.ToolInputDelta("call-9", "{\"step\":"), chunks[3])
+        val complete = chunks[4] as LLMStreamChunk.ToolCallComplete
+        assertEquals("call-9", complete.id)
+        assertEquals("long_task", complete.name)
+        // 参数 JSON 不完整时按上游惯例回落为空对象。
+        assertEquals(0, complete.args.length())
+    }
+
+    @Test
+    fun `读超时归为网络错误`() {
+        val call = ScriptedCall(emptyList(), StreamResult.TimedOut)
+        val error = runCatching { stream(provider(call = call)) }.exceptionOrNull() as LLMError
+        assertTrue(error is LLMError.NetworkError)
+    }
+
+    @Test
+    fun `非流式入口拼回整体响应`() = runBlocking {
+        val call = ScriptedCall(
+            listOf(
+                StreamChunk.TextDelta("你"),
+                StreamChunk.TextDelta("好"),
+                StreamChunk.Usage(12, 2),
+                StreamChunk.Done("stop"),
+            ),
+            StreamResult.Completed,
+        )
+        val response = (provider(call = call) as LLMProvider).sendMessage(
+            listOf(LLMMessage(LLMMessage.Role.USER, "打招呼")), null, 64,
+        )
+        assertEquals("你好", response.text)
+        assertEquals("stop", response.stopReason)
+        assertEquals(12, response.usage!!.inputTokens)
+        assertEquals(2, response.usage!!.outputTokens)
+        assertEquals(12, response.usage!!.latestContextTokens)
+    }
+
+    @Test
+    fun `取消收集即断开底层调用`() {
+        val entered = CountDownLatch(1)
+        val call = BlockingCall(entered)
+        val provider = provider(call = call)
+        val collected = java.util.concurrent.ConcurrentLinkedQueue<LLMStreamChunk>()
+        runBlocking {
+            val job = kotlinx.coroutines.launch(kotlinx.coroutines.Dispatchers.Default) {
+                (provider as LLMProvider).streamMessage(
+                    listOf(LLMMessage(LLMMessage.Role.USER, "慢速")), null, 64,
+                ).collect { collected.add(it) }
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            job.cancel()
+            kotlinx.coroutines.withTimeout(10_000) { job.join() }
+        }
+        assertTrue("取消应触发 call.cancel()", call.cancelled.get())
+    }
+
+    // ---------------------------------------------------------------------
+    // 适配器自身契约
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `名字与文本整块语义与上游 OpenAI 线路一致`() {
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        val provider = provider(call = call)
+        assertEquals("OpenAI", (provider as LLMProvider).name)
+        assertTrue(provider.streamTextIsMonolithic)
+    }
+
+    @Test
+    fun `端点安全契约只收 https 与本机 http`() {
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        assertTrue(provider(call = call, basePath = "https://relay.example.com/v1").endpointAcceptable())
+        assertTrue(provider(call = call, basePath = "http://127.0.0.1:11434/v1").endpointAcceptable())
+        assertFalse(provider(call = call, basePath = "http://192.168.1.10:11434/v1").endpointAcceptable())
+        assertFalse(provider(call = call, basePath = "ftp://relay.example.com/v1").endpointAcceptable())
+    }
+
+    @Test
+    fun `出站头携带默认或自定义 User-Agent`() {
+        val call = ScriptedCall(emptyList(), StreamResult.Completed)
+        val default = provider(call = call).outboundHeaders()
+        assertTrue(default.getValue("User-Agent").startsWith("Minis/"))
+        val custom = NovexTransportProvider(
+            apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
+            basePath = "https://relay.example.com/v1",
+            customUserAgent = "  Claude-Code/1.0  ",
+            callOpener = { call },
+        ).outboundHeaders()
+        assertEquals("Claude-Code/1.0", custom.getValue("User-Agent"))
+    }
+}

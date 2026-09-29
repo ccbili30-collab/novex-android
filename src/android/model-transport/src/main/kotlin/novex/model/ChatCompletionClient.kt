@@ -9,41 +9,71 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** 凭据不进入数据类的自动文本输出。 */
-class ModelEndpoint(val completionUrl: URI, private val token: String?) {
+class ModelEndpoint(val completionUrl: URI, private val token: String?, private val extraHeaders: Map<String,String> = emptyMap()) {
     init {
         require(completionUrl.userInfo == null && completionUrl.fragment == null && completionUrl.query == null)
         require(completionUrl.scheme == "https" || (completionUrl.scheme == "http" && completionUrl.host in setOf("127.0.0.1","localhost","::1")))
         require(token == null || ('\r' !in token && '\n' !in token))
+        extraHeaders.forEach { (name,value) ->
+            require(name.isNotBlank() && '\r' !in name && '\n' !in name && ':' !in name)
+            require('\r' !in value && '\n' !in value)
+        }
     }
-    internal fun authorize(connection: HttpURLConnection) { if (!token.isNullOrBlank()) connection.setRequestProperty("Authorization","Bearer $token") }
+    internal fun authorize(connection: HttpURLConnection) {
+        if (!token.isNullOrBlank()) connection.setRequestProperty("Authorization","Bearer $token")
+        extraHeaders.forEach { (name,value) -> connection.setRequestProperty(name,value) }
+    }
 }
 data class WireImage(val mediaType:String,val base64:String) {
     init {require(mediaType in setOf("image/png","image/jpeg","image/webp","image/gif"));require(base64.isNotBlank())}
     internal fun encode()=JSONObject().put("type","image_url").put("image_url",JSONObject().put("url","data:$mediaType;base64,$base64"))
     override fun toString()="WireImage（图片内容隐藏）"
 }
-data class WireMessage(val role: String, val text: String, val toolCalls: List<PendingTool> = emptyList(), val toolCallId: String? = null,val images:List<WireImage> = emptyList()) {
+data class WireAudio(val format:String,val base64:String) {
+    init { require(format.isNotBlank() && base64.isNotBlank()) }
+    internal fun encode()=JSONObject().put("type","input_audio").put("input_audio",JSONObject().put("data",base64).put("format",format))
+    override fun toString()="WireAudio（音频内容隐藏）"
+}
+data class WireMessage(val role: String, val text: String, val toolCalls: List<PendingTool> = emptyList(), val toolCallId: String? = null,val images:List<WireImage> = emptyList(),
+                      val audios:List<WireAudio> = emptyList(), val reasoningContent: String? = null) {
     init {
         require(role in setOf("system","user","assistant","tool"))
         require(images.isEmpty() || role=="user")
+        require(audios.isEmpty() || role=="user")
         require(toolCalls.isEmpty() || role=="assistant")
+        require(reasoningContent==null || role=="assistant")
         require(if(role=="tool")!toolCallId.isNullOrBlank() else toolCallId==null)
         require(toolCalls.map { it.id }.distinct().size==toolCalls.size)
     }
-    internal fun encode():JSONObject = JSONObject().put("role",role).put("content",if(images.isEmpty())text else JSONArray().put(JSONObject().put("type","text").put("text",text)).also {parts->images.forEach {parts.put(it.encode())}}).also { message ->
-        if(toolCallId!=null)message.put("tool_call_id",toolCallId)
-        if(toolCalls.isNotEmpty())message.put("tool_calls",JSONArray(toolCalls.map { call ->
-            require(call.id.isNotBlank() && call.name.isNotBlank());JSONObject(call.arguments)
-            JSONObject().put("id",call.id).put("type","function").put("function",JSONObject().put("name",call.name).put("arguments",call.arguments))
-        }))
+    internal fun encode():JSONObject {
+        val content:Any = if(images.isEmpty() && audios.isEmpty()) text
+            else JSONArray().put(JSONObject().put("type","text").put("text",text)).also {parts->
+                images.forEach {parts.put(it.encode())};audios.forEach {parts.put(it.encode())}
+            }
+        return JSONObject().put("role",role).put("content",content).also { message ->
+            if(reasoningContent!=null)message.put("reasoning_content",reasoningContent)
+            if(toolCallId!=null)message.put("tool_call_id",toolCallId)
+            if(toolCalls.isNotEmpty())message.put("tool_calls",JSONArray(toolCalls.map { call ->
+                require(call.id.isNotBlank() && call.name.isNotBlank());JSONObject(call.arguments)
+                JSONObject().put("id",call.id).put("type","function").put("function",JSONObject().put("name",call.name).put("arguments",call.arguments))
+            }))
+        }
     }
 }
 data class ToolDefinition(val name:String,val description:String,val parameters:String) {
     init { require(name.isNotBlank() && description.isNotBlank());require(JSONObject(parameters).getString("type")=="object") }
     internal fun encode()=JSONObject().put("type","function").put("function",JSONObject().put("name",name).put("description",description).put("parameters",JSONObject(parameters)))
 }
-data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList()) {
-    init { require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0);require(tools.map { it.name }.distinct().size==tools.size) }
+data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList(),
+                       /** 附加顶层参数（如 reasoning_effort / thinking / enable_thinking），合并进请求体。不得触碰本层契约键。 */
+                       val extraParameters: JSONObject? = null) {
+    init {
+        require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0)
+        require(tools.map { it.name }.distinct().size==tools.size)
+        extraParameters?.let { extra ->
+            require(RESERVED_TOP_LEVEL_KEYS.none(extra::has)) { "附加参数不得覆盖请求体契约键" }
+        }
+    }
     fun encode(): String = wire().put("stream",false).toString()
     /** 共享装配：工具配对校验后给出除 stream 开关外的完整请求体，供非流式与流式编码各自补开关。 */
     /** 共享装配。注意：org.json 的 JSONObject 键序不保证（HashMap 支撑），
@@ -61,7 +91,12 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
         return JSONObject().put("model",model).put("max_tokens",outputReserve)
             .put("messages",JSONArray(messages.map { it.encode() })).also {
                 if(tools.isNotEmpty())it.put("tools",JSONArray(tools.map { tool -> tool.encode() }))
+                extraParameters?.let { extra -> extra.keys().forEach { key -> it.put(key,extra.get(key)) } }
             }
+    }
+    companion object {
+        /** 本层自己负责装配的键；附加参数与之重叠即拒绝，防止调用方改写传输契约。 */
+        internal val RESERVED_TOP_LEVEL_KEYS = setOf("model","messages","tools","max_tokens","stream","stream_options")
     }
 }
 data class PendingTool(val id: String,val name: String,val arguments: String)
