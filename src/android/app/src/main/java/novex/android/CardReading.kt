@@ -315,7 +315,7 @@ private const val READING_PAGE_SIZE=4096
         val content:@Composable ()->Unit={com.openminis.app.ui.chat.MarkdownBlock(rawText=result.data?.text.orEmpty(),isStreaming=false)}
         if(muted)CompositionLocalProvider(LocalChatPalette provides palette.copy(primaryText=palette.secondaryText)){content()}
         else content()
-        if(!autoLoad && result.data?.next!=null)TextButton(onClick=onMore){Text("继续展开")}
+        if(!autoLoad && result.data?.next!=null)TextButton(onClick=onMore){Text("继续展开",color=NovenColors.Mint)}
     }
 }
 @Composable internal fun ReadingImage(ref:ContentRef,model:CardSessionModel,modifier:Modifier=Modifier.fillMaxWidth(),scale:ContentScale=ContentScale.Fit) {

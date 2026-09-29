@@ -122,7 +122,7 @@ import androidx.compose.ui.semantics.semantics
                 CardPage.MODULES->{
                     // [A3a] 预览提为顶栏一级文字动作（editor-v1/01），⋯ 只剩
                     // 卡片级操作。
-                    TextButton(enabled=!state.busy,onClick=model::preview){Text("预览")}
+                    TextButton(enabled=!state.busy,onClick=model::preview){Text("预览",color=NovenColors.Mint)}
                     Box {
                         CardAction(NovexIcons.MoreVert,"编辑操作",!state.busy){editMore=true}
                         DropdownMenu(expanded=editMore,onDismissRequest={editMore=false}) {
@@ -159,8 +159,8 @@ import androidx.compose.ui.semantics.semantics
                         }
                     }
                 }
-                CardPage.PICTURES->TextButton(onClick=model::returnFromPictures,enabled=!state.busy){Text("完成")}
-                CardPage.BLOCKS->TextButton(onClick=model::returnFromBlockOrder,enabled=!state.busy){Text("完成")}
+                CardPage.PICTURES->TextButton(onClick=model::returnFromPictures,enabled=!state.busy){Text("完成",color=NovenColors.Mint)}
+                CardPage.BLOCKS->TextButton(onClick=model::returnFromBlockOrder,enabled=!state.busy){Text("完成",color=NovenColors.Mint)}
                 CardPage.PREVIEW->CardAction(NovexIcons.Edit,"继续编辑",!state.busy){model.returnFromPreview()}
             }})}
     ){padding->Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
@@ -241,22 +241,22 @@ import androidx.compose.ui.semantics.semantics
                         }},modifier=Modifier.clickable(enabled=!state.busy){model.editTarget(role.id)})
                     }
                     Row {
-                        TextButton(enabled=!state.busy,onClick={newCharacter=true}){Text("新建角色")}
-                        TextButton(enabled=!state.busy,onClick={copyCharacter=true}){Text("从角色库复制")}
+                        TextButton(enabled=!state.busy,onClick={newCharacter=true}){Text("新建角色",color=NovenColors.Mint)}
+                        TextButton(enabled=!state.busy,onClick={copyCharacter=true}){Text("从角色库复制",color=NovenColors.Mint)}
                     }
                 }
             })}
             CardPage.PICTURES->CardPicturesPage(model)
             CardPage.BLOCKS->BlockOrderPage(model)
             CardPage.EDIT->Column(Modifier.fillMaxSize().padding(horizontal=20.dp)) {
-                BasicTextField(value=state.title,onValueChange=model::changeTitle,singleLine=true,enabled=!state.busy,cursorBrush=androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                BasicTextField(value=state.title,onValueChange=model::changeTitle,singleLine=true,enabled=!state.busy,cursorBrush=androidx.compose.ui.graphics.SolidColor(NovenColors.Mint),
                     textStyle=NovexType.PageTitle.copy(color=NovexColors.Text),
                     modifier=Modifier.fillMaxWidth().padding(vertical=14.dp).semantics {contentDescription="模块名称"},
                     decorationBox={inner->if(state.title.isEmpty())Text("名称",color=MaterialTheme.colorScheme.outline);inner()})
-                HorizontalDivider(color=NovexColors.Primary,thickness=1.dp)
+                HorizontalDivider(color=NovenColors.Mint,thickness=1.dp)
                 if(state.textStart>0 || state.textMore)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                    TextButton(onClick=model::previousTextRange,enabled=!state.busy && state.textStart>0){Text("前一段")}
-                    TextButton(onClick=model::nextTextRange,enabled=!state.busy && state.textMore){Text("后一段")}
+                    TextButton(onClick=model::previousTextRange,enabled=!state.busy && state.textStart>0){Text("前一段",color=NovenColors.Mint)}
+                    TextButton(onClick=model::nextTextRange,enabled=!state.busy && state.textMore){Text("后一段",color=NovenColors.Mint)}
                 }
                 key(state.saved?.id,state.moduleId,state.textStart) {
                     val scrollKey="${state.saved?.id}/${state.moduleId}/${state.textStart}"
@@ -267,7 +267,7 @@ import androidx.compose.ui.semantics.semantics
                     val liveTransform=remember(state.text.text,state.text.selection) {
                         LiveMarkdown.transformation(state.text.text,state.text.selection.min)
                     }
-                    BasicTextField(value=state.text,onValueChange=model::changeText,enabled=!state.busy,cursorBrush=androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    BasicTextField(value=state.text,onValueChange=model::changeText,enabled=!state.busy,cursorBrush=androidx.compose.ui.graphics.SolidColor(NovenColors.Mint),
                         textStyle=MaterialTheme.typography.bodyLarge.copy(color=NovexColors.Text),
                         visualTransformation=liveTransform,
                         modifier=Modifier.fillMaxWidth().weight(1f).padding(vertical=16.dp).verticalScroll(textScroll).semantics {contentDescription="模块正文"},
