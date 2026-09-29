@@ -91,6 +91,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import novex.android.ui.NovexCardCopySection
+import novex.android.ui.NovexCardDetailSections
+import novex.android.ui.NovexCardExportDialog
+import novex.android.ui.NovexCardReferenceSection
+import novex.android.ui.NovexCardRevisionSection
+import novex.android.ui.NovexDestructiveConfirmationDialog
+import novex.android.ui.NovexSubjectConversationLinks
+import novex.android.ui.NovexWorldParallelSection
+import novex.android.ui.rememberNovexReferenceDeletionImpact
+import novex.core.NovexCardCopyKey
+import novex.core.NovexExternalCardImport
 
 private typealias WorldPageData = NovexWorldSnapshot
 
@@ -162,7 +173,7 @@ fun CatalogWorldDetailScreen(
     }
     val current = data
     val isImportedSource = current?.modules?.any {
-        novex.core.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+        NovexExternalCardImport.isVerbatimModule(it.contentJson)
     } == true
     fun beginWorldConversation() {
         if (current != null) onStartWorldNovax(null)
@@ -203,11 +214,11 @@ fun CatalogWorldDetailScreen(
                 CircularProgressIndicator()
             }
             else -> {
-                novex.android.ui.NovexCardDetailSections(
+                NovexCardDetailSections(
                     cardId = worldId,
                     content = { WorldPrimaryContent(current, onOpenModule) },
                     relations = {
-                novex.android.ui.NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
+                NovexCardReferenceSection(NovexContentAddress.world(worldId), onOpenModule = onOpenModule)
                 WorldCharacterStrip(
                     data = current,
                     onOpenCharacter = onOpenCharacter,
@@ -239,13 +250,13 @@ fun CatalogWorldDetailScreen(
                     selectedVersionId = current.versions.first().id
                     startCharacterChat = true
                 })
-                novex.android.ui.NovexSubjectConversationLinks(
-                    novex.core.NovexContentAddress.world(worldId), onOpenSession)
+                NovexSubjectConversationLinks(
+                    NovexContentAddress.world(worldId), onOpenSession)
                     },
                     management = {
-                novex.android.ui.NovexWorldParallelSection(worldId, onBack)
-                novex.android.ui.NovexCardCopySection(novex.core.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
-                novex.android.ui.NovexCardRevisionSection(novex.core.NovexContentAddress.world(worldId))
+                NovexWorldParallelSection(worldId, onBack)
+                NovexCardCopySection(NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId))
+                NovexCardRevisionSection(NovexContentAddress.world(worldId))
                 NovexContentSection(title = "世界管理") {
                     NovexTextActionRow(
                         label = "导出诺文世界卡",
@@ -259,8 +270,8 @@ fun CatalogWorldDetailScreen(
             }
         }
     }
-    if(exportCard) novex.android.ui.NovexCardExportDialog(
-        novex.core.NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId)) { exportCard = false }
+    if(exportCard) NovexCardExportDialog(
+        NovexCardCopyKey(com.openminis.app.data.character.NovexCardKind.WORLD, worldId)) { exportCard = false }
     if (addCharacter && current != null) NovexContentDialog(
         title = "从角色库添加",
         onDismiss = { addCharacter = false },
@@ -595,8 +606,8 @@ fun CatalogWorldEditorScreen(
         NovexNoticeDialog("保存失败", message ?: "未知错误") { error = null }
     }
     if (confirmDelete && worldId != null) {
-        val referenceImpact = novex.android.ui.rememberNovexReferenceDeletionImpact(listOf(NovexContentAddress.world(worldId)))
-        novex.android.ui.NovexDestructiveConfirmationDialog(
+        val referenceImpact = rememberNovexReferenceDeletionImpact(listOf(NovexContentAddress.world(worldId)))
+        NovexDestructiveConfirmationDialog(
             title = "删除世界？",
             message = "将删除这个世界及其专属内容；共享角色版本和仍被引用的图片不会被删除。此操作无法撤销。\n\n${referenceImpact ?: "正在读取引用影响；读取失败时请关闭后重试。"}",
             confirming = deleting,
@@ -748,7 +759,7 @@ private fun WorldPrimaryContent(
 ) {
     WorldHero(data, mediaModels)
     val verbatim = data.modules.any {
-        novex.core.NovexExternalCardImport.isVerbatimModule(it.contentJson)
+        NovexExternalCardImport.isVerbatimModule(it.contentJson)
     }
     if (!verbatim || data.world.overview.isNotBlank()) WorldOverviewBlock(data.world)
     if (data.modules.isNotEmpty()) androidx.compose.material3.HorizontalDivider(

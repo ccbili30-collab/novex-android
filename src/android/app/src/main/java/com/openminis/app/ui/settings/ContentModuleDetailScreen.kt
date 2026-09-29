@@ -59,6 +59,13 @@ import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import novex.android.ui.NovexCardReferenceSection
+import novex.android.ui.NovexIllustrationConditionField
+import novex.android.ui.NovexModuleImagePicker
+import novex.android.ui.NovexWorldbookConditionField
+import novex.core.NovexContentKind
+import novex.core.NovexModuleDetail
+import novex.core.NovexModuleImageOrigins
 
 /** A module owns a full page; the parent world/character page only shows its compact summary. */
 @Composable
@@ -88,14 +95,14 @@ fun CatalogContentModuleDetailScreen(
     val attachedArtifactImages = rememberNovexAttachedModuleImages(module?.managementOwnerAddress())
 
     var imagePickerOwner by remember { mutableStateOf<ModuleOwner?>(null) }
-    fun refreshImages(detail: novex.core.NovexModuleDetail?) {
+    fun refreshImages(detail: NovexModuleDetail?) {
         if (detail == null) return
         image = detail.image; itemImages = detail.itemImages
-        contentJson = novex.core.NovexModuleImageOrigins.copyFrom(detail.module.contentJson, contentJson)
-        baselineContent = baselineContent?.let { novex.core.NovexModuleImageOrigins.copyFrom(detail.module.contentJson, it) }
+        contentJson = NovexModuleImageOrigins.copyFrom(detail.module.contentJson, contentJson)
+        baselineContent = baselineContent?.let { NovexModuleImageOrigins.copyFrom(detail.module.contentJson, it) }
     }
     imagePickerOwner?.let { target ->
-        novex.android.ui.NovexModuleImagePicker(onDismiss = { imagePickerOwner = null }) { candidate ->
+        NovexModuleImagePicker(onDismiss = { imagePickerOwner = null }) { candidate ->
             novex.apply(NovexCommand.AttachImage(target, MediaAssetSlot.MODULE_IMAGE, candidate.bytes,
                 candidate.mimeType, source = candidate.source)).requireMedia()
             refreshImages(novex.module(moduleId))
@@ -199,15 +206,15 @@ fun CatalogContentModuleDetailScreen(
                                     }.onSuccess {
                                         image = null
                                         val latest = novex.module(moduleId)?.module?.contentJson ?: contentJson
-                                        contentJson = novex.core.NovexModuleImageOrigins.copyFrom(latest, contentJson)
-                                        baselineContent = baselineContent?.let { novex.core.NovexModuleImageOrigins.copyFrom(latest, it) }
+                                        contentJson = NovexModuleImageOrigins.copyFrom(latest, contentJson)
+                                        baselineContent = baselineContent?.let { NovexModuleImageOrigins.copyFrom(latest, it) }
                                     }.onFailure { error = it.message }
                                 }
                             },
                         )
                     }
                 }
-                if (image != null) novex.android.ui.NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "main") { contentJson = it }
+                if (image != null) NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "main") { contentJson = it }
                 if (image == null && artifactImage != null) {
                     Text(
                         "当前代表图来自创作成果库。",
@@ -221,12 +228,12 @@ fun CatalogContentModuleDetailScreen(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
-                if (module?.managementOwnerAddress()?.kind == novex.core.NovexContentKind.WORLD) {
-                    novex.android.ui.NovexWorldbookConditionField(contentJson, requireNotNull(module).type) { contentJson = it }
+                if (module?.managementOwnerAddress()?.kind == NovexContentKind.WORLD) {
+                    NovexWorldbookConditionField(contentJson, requireNotNull(module).type) { contentJson = it }
                 }
                 SharedModuleDocumentFields(
                     document = ContentModuleDocumentCodec.decode(requireNotNull(module).type, contentJson),
-                    allowWorldbookConditions = module?.managementOwnerAddress()?.kind == novex.core.NovexContentKind.WORLD,
+                    allowWorldbookConditions = module?.managementOwnerAddress()?.kind == NovexContentKind.WORLD,
                     itemImageContent = { item ->
                         val persisted = (ContentModuleDocumentCodec.decode(requireNotNull(module).type, requireNotNull(module).contentJson)
                             as? com.openminis.app.data.character.ContentModuleDocument.Collection)?.items.orEmpty().any { it.id == item.id }
@@ -235,7 +242,7 @@ fun CatalogContentModuleDetailScreen(
                             AsyncImage(model = file, contentDescription = "${item.name}图片", contentScale = ContentScale.Fit,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp, max = 180.dp))
                         }
-                        if (itemImages[item.id] != null) novex.android.ui.NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "entry:${item.id}") { contentJson = it }
+                        if (itemImages[item.id] != null) NovexIllustrationConditionField(contentJson, requireNotNull(module).type, "entry:${item.id}") { contentJson = it }
                         Row {
                             NovexOutlineButton(label = if (!persisted) "保存条目后添加图片" else if (itemImages[item.id] == null) "添加图片" else "更换图片",
                                 enabled = persisted, onClick = { imagePickerOwner = target })
@@ -249,7 +256,7 @@ fun CatalogContentModuleDetailScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
                 module?.managementOwnerAddress()?.let { address ->
-                    novex.android.ui.NovexCardReferenceSection(address, sourceModuleId = moduleId)
+                    NovexCardReferenceSection(address, sourceModuleId = moduleId)
                 }
                 NovexPrimaryButton(
                     label = if (saving) "保存中" else "保存",
