@@ -287,7 +287,8 @@ data class LLMModel(
 
     /**
      * Capability hint appended to the system prompt so the model knows exactly
-     * what it can natively consume vs what it must route through shell tools.
+     * what it can natively consume and what it must ask the user to supply
+     * in a supported form instead.
      * Returns `null` for fully-multimodal models (no hint needed). Matches the
      * iOS `capabilityPromptFragment` wording so Android/iOS chats are identical
      * when routed through the same model.
@@ -319,7 +320,7 @@ data class LLMModel(
         }
         if (missing.isNotEmpty()) {
             sb.append("You cannot natively process ").append(missing.joinToString(", "))
-            sb.append(" — for those formats, call shell_execute with ffmpeg or similar tools to extract text/metadata first.")
+            sb.append(". Ask the user to attach those formats in a supported form instead.")
         }
         return sb.toString().trim().ifEmpty { null }
     }

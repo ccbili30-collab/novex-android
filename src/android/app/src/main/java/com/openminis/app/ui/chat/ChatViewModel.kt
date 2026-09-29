@@ -10319,7 +10319,12 @@ class ChatViewModel(
             // /var/minis/{workspace,attachments,offloads,browser} files.
             ReadImageTool.NAME -> executeReadImageTool(argsJson)
             GenerateImageTool.NAME -> executeGenerateImageTool(argsJson)
-            "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText)
+            "shell_execute" -> com.openminis.app.tools.ToolExecutionResult(
+                // R0 沙箱退役灰度：工具目录已不含 shell_execute；此处只兜历史回放或
+                // 模型幻觉调用，明确拒绝而不是执行（P2.5 计划表）。
+                output = "shell_execute is no longer available on this device. Tell the user this operation is unsupported and suggest attaching the material as a document instead.",
+                success = false,
+            )
             "browser_use" -> executeBrowserUseTool(argsJson)
             "memory_write" -> executeMemoryWriteTool(argsJson)
             "memory_get" -> executeMemoryGetTool(argsJson)
@@ -11846,7 +11851,9 @@ class ChatViewModel(
         // browser may have changed it out-of-band) then build the Top-20
         // enabled-MCP disclosure, injected right after the skills fragment.
         if (toolsEnabled) mcpRepository?.reloadFromDisk()
-        val mcpFragment = if (toolsEnabled) mcpRepository?.mcpPromptFragment(activeSessionId) else null
+        // R0 沙箱退役灰度（P2.5）：minis-mcp-cli 经沙箱 shell 执行，AI 侧已不可
+        // 达——灰度期不注入这条幽灵命令广告（服务器配置保留，R2 随沙箱裁决）。
+        val mcpFragment: String? = null
         // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
         // GLOBAL.md + recent daily logs entirely when the user has turned
         // memory off for this session. Cheaper (no disk read) and — more
