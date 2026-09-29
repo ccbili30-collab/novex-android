@@ -7345,7 +7345,7 @@ class ChatViewModel(
                         // sees it so long sessions do not gradually dilute the
                         // world's original rules.
                         val path = "/var/minis/workspace/novex/$activeSessionId/original.md"
-                        val file = com.openminis.app.sandbox.ContentPaths.resolveSessionHostPath(activeSessionId, path, context)
+                        val file = ContentPaths.resolveSessionHostPath(activeSessionId, path, context)
                         if (file != null && !file.exists()) {
                             file.parentFile?.mkdirs()
                             file.writeText("# 世界原始模板\n\n$trimmed\n")
@@ -10099,7 +10099,7 @@ class ChatViewModel(
         return runCatching {
             withContext(Dispatchers.IO) {
                 val bytes = capture.imageBytes ?: capture.sourcePath?.let { path ->
-                    com.openminis.app.sandbox.ContentPaths.resolveSessionHostPath(
+                    ContentPaths.resolveSessionHostPath(
                         conversationId,
                         path,
                         context,

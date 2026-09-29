@@ -1164,7 +1164,7 @@ class DebugRPCHandler(private val context: Context) {
         val finalArgv: List<String> = if (params.has("input")) {
             val inputBlob = params.optString("input", "")
             val linuxPath = "/tmp/.debug-modeluse-input-${System.currentTimeMillis()}.json"
-            val hostFile = com.openminis.app.sandbox.ContentPaths.resolveHostPath(linuxPath)
+            val hostFile = ContentPaths.resolveHostPath(linuxPath)
                 ?: throw RPCException(-32603, "cannot resolve $linuxPath under rootfs")
             hostFile.parentFile?.mkdirs()
             hostFile.writeText(inputBlob)
