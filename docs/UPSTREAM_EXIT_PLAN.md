@@ -77,7 +77,7 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 - [x] 捎带：ui/chat 注释里的「RikkaHub/ZCode-style」措辞改为
       「主流聊天客户端惯例」（尽观感友好，非法律义务）
 
-### P1 · Novex 自有代码机械搬家 — 绿档 — 自包含包 151 主源文件（含测试 340 改名/571 文件改写）— [x]
+### P1 · Novex 自有代码机械搬家 — 绿档 — 自包含包 main 新路径共 192 文件（app 151 + novex-core 41；含测试共 340 改名/571 文件改写）— [x]
 
 执行口径（2026-09-29，PR 见进度日志）：整包迁移自包含的 Novex 包——
 `com.openminis.app.novex.domain` → `novex.core`（app 84 + novex-core 41，split
