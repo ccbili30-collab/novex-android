@@ -353,7 +353,9 @@ class NovexTransportProvider(
      */
     internal fun endpointAcceptable(): Boolean =
         runCatching {
-            ModelEndpoint(completionUrl(), bearerTokenOrNull(), outboundHeaders(), endpointFlags())
+            ModelEndpoint(completionUrl(), bearerTokenOrNull(), outboundHeaders(),
+                permitQueryParams = endpointFlags().permitQueryParams,
+                tokenHeader = endpointFlags().tokenHeader)
             true
         }.getOrDefault(false)
 
