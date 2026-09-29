@@ -178,6 +178,11 @@ API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.
    + ui.novex 持续绞杀
 5. 159 个混合文件随所在子系统一并甄别：Novex 部分保留搬家，上游部分重写
 
+**进度**：P3.1a 流式能力落地（PR #62）——model-transport（novex.model）补齐
+SSE 流式：stream=true 编码（stream_options 兼容开关）、逐行容错解析（CRLF/
+注释/半行/非 JSON）、TextDelta/ThinkingDelta/ToolCallDelta/Usage/Done/Failure
+块、聚合器、取消即断；模块零上游依赖不变，app 侧接线是下一步 P3.1b。
+
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
 MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
