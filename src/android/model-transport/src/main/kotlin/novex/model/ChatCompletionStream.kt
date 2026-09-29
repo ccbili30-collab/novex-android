@@ -121,7 +121,7 @@ internal abstract class SseLineDecoder {
         return events
     }
     /** 流结束：冲掉缓冲里残留的半行（截断 JSON 自然解析失败被丢弃），并按方言决定是否补发收尾。 */
-    fun finish(): List<StreamChunk> {
+    open fun finish(): List<StreamChunk> {
         if(done||failed) return emptyList()
         val tail=pending.toString().removeSuffix("\r");pending.clear()
         val events=decodeLine(tail).toMutableList()
