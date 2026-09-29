@@ -192,6 +192,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.text.style.TextAlign
@@ -1870,156 +1871,64 @@ fun ChatScreen(
                                     }
                                     .padding(horizontal = 4.dp, vertical = 2.dp),
                             )
-                            // Model picker subtitle: green dot + group +
-                            // provider/model. Tap opens the model picker —
-                            // separated from the title above so tapping the
-                            // title rows opens the rename sheet instead.
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable { showModelPicker = true }
-                                    .padding(horizontal = 4.dp, vertical = 1.dp),
-                            ) {
-                                // Line 1: green dot + group name + dropdown arrow (iOS: "● Default ⌄")
+                            // [A2a] Bound-card chips + status badges under the
+                            // title — the card/model context of this
+                            // conversation at a glance. Chips navigate to the
+                            // card detail page via onOpenCreatedCard; the model
+                            // group pill lives in the actions row.
+                            val cardChips = rememberConversationCardChips(viewModel, sessionId)
+                            val thinkingLevelBadgeState by viewModel.thinkingLevel.collectAsState()
+                            val fastBadgeEligible by viewModel.showFastModeToggle.collectAsState()
+                            val fastBadgeOn by viewModel.fastModeEnabled.collectAsState()
+                            val hasFastBadge = fastBadgeEligible && fastBadgeOn
+                            // Same visibility rule as the old subtitle badge:
+                            // shown while a level is enabled, or Off-but-
+                            // discoverable when the model supports reasoning.
+                            val hasThinkingBadge = viewModel.availableThinkingLevels.isNotEmpty() &&
+                                (
+                                    thinkingLevelBadgeState.isEnabled ||
+                                        viewModel.currentModelSupportsReasoning
+                                )
+                            if (cardChips.isNotEmpty() || hasFastBadge || hasThinkingBadge) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    modifier = Modifier
+                                        .padding(top = 3.dp)
+                                        .horizontalScroll(rememberScrollState()),
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(
-                                                if (modelName.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF9500),
-                                                CircleShape,
-                                            ),
-                                    )
-                                    // T-android-topbar-group-name-fallback:
-                                    // _selectedGroupName is empty during the
-                                    // brief window before loadSession's group
-                                    // resolve runs, or whenever a binding
-                                    // resolve fails. Falling straight to the
-                                    // "Default" badge string masks the
-                                    // active group's real name (e.g. the
-                                    // onboarding-created "Default Models" or
-                                    // any user-renamed group). Insert a real
-                                    // fallback chain: collected VM value →
-                                    // active/default group name from the live
-                                    // config → terminal badge string. Mirrors
-                                    // the #476 TopBar title fallback pattern
-                                    // (commit b4c88775).
-                                    val groupNameDisplay = selectedGroupName.ifEmpty {
-                                        val defaultGroupId = providerRepository.defaultPrimaryGroupId
-                                        availableGroups.firstOrNull { it.id == defaultGroupId }?.name
-                                            ?: stringResource(R.string.model_picker_default_badge)
-                                    }
-                                    Text(
-                                        text = groupNameDisplay,
-                                        fontSize = 12.sp,
-                                        lineHeight = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = ChatColors.secondaryText,
-                                        maxLines = 1,
-                                        style = noFontPad,
-                                    )
-                                    Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        tint = ChatColors.tertiaryText,
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                }
-                                // Line 2: "provider · model" (iOS: "MiniMax ·
-                                // MiniMax-M2.7") + the thinking-level badge laid
-                                // out as a Row of two SEPARATE tappable siblings
-                                // (mirrors iOS AIChatView row-2 HStack).
-                                //
-                                // [T-android-thinking-badge-navbar] Gesture
-                                // separation: the whole subtitle Column above owns
-                                // `clickable { showModelPicker = true }`, so a tap
-                                // on the model text still opens the model picker.
-                                // The badge declares its OWN `clickable` (see
-                                // ThinkingLevelBadge), and in Compose the innermost
-                                // clickable consumes the down/up events — so a tap
-                                // that lands on the badge opens the thinking sheet
-                                // and never bubbles up to the Column's model-picker
-                                // handler. Two hit targets, zero gesture conflict,
-                                // no pointerInput plumbing needed.
-                                //
-                                // Sizing: the model text takes `weight(1f, fill =
-                                // false)` so it truncates first (Ellipsis) when the
-                                // navbar is narrow; the badge has no weight, so it
-                                // keeps its intrinsic width and always renders in
-                                // full — the level label never gets clipped.
-                                if (providerName.isNotEmpty() || modelName.isNotEmpty()) {
-                                    val thinkingLevelBadgeState by viewModel.thinkingLevel.collectAsState()
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        // [T-codex-fast-mode] ⚡ badge ahead of the
-                                        // resolved model name — small orange circle
-                                        // + white bolt, shown only while Fast Mode
-                                        // is enabled AND the active model is
-                                        // eligible (iOS 9e3c76ef row-3 placement,
-                                        // 09944220 9pt sizing).
-                                        val fastBadgeEligible by viewModel.showFastModeToggle.collectAsState()
-                                        val fastBadgeOn by viewModel.fastModeEnabled.collectAsState()
-                                        if (fastBadgeEligible && fastBadgeOn) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .size(11.dp)
-                                                    .background(Color(0xFFFF9500), CircleShape),
-                                            ) {
-                                                Icon(
-                                                    com.openminis.app.ui.novex.NovexIcons.Bolt,
-                                                    contentDescription = null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(9.dp),
-                                                )
-                                            }
-                                        }
-                                        Text(
-                                            // Model name only — the provider prefix
-                                            // ate the headroom and the ellipsis cut
-                                            // into the model name itself, which is
-                                            // the part users identify. The provider
-                                            // stays visible in the model picker.
-                                            text = modelName.ifEmpty { providerName },
-                                            fontSize = 11.sp,
-                                            lineHeight = 13.sp,
-                                            color = ChatColors.tertiaryText,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = noFontPad,
-                                            // Yield first when space is tight; the
-                                            // badge to the right stays intrinsic.
-                                            modifier = Modifier.weight(1f, fill = false),
+                                    cardChips.forEach { chip ->
+                                        ConversationBoundCardChip(
+                                            chip = chip,
+                                            onOpen = {
+                                                val kind = chip.kind
+                                                val id = chip.id
+                                                if (kind != null && id != null) {
+                                                    onOpenCreatedCard(kind, id)
+                                                }
+                                            },
                                         )
-                                        // Show the badge whenever thinking is on,
-                                        // and ALSO when it's Off but the active
-                                        // model supports deep thinking (iOS
-                                        // parity, e6bd75efc): the icon + "Off"
-                                        // pill is then a discoverable tap target
-                                        // for enabling thinking via the level
-                                        // sheet. The Off pill is gated on
-                                        // currentModelSupportsReasoning so
-                                        // non-reasoning models don't grow a dead
-                                        // toggle; an enabled level still shows
-                                        // unconditionally (user may have opted in
-                                        // on an unknown-capability model).
-                                        if (viewModel.availableThinkingLevels.isNotEmpty() &&
-                                            (
-                                                thinkingLevelBadgeState.isEnabled ||
-                                                    viewModel.currentModelSupportsReasoning
-                                            )
+                                    }
+                                    if (hasFastBadge) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(13.dp)
+                                                .background(Color(0xFFFF9500), CircleShape),
                                         ) {
-                                            ThinkingLevelBadge(
-                                                level = thinkingLevelBadgeState,
-                                                onClick = { showThinkingLevelSheet = true },
+                                            Icon(
+                                                com.openminis.app.ui.novex.NovexIcons.Bolt,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(10.dp),
                                             )
                                         }
+                                    }
+                                    if (hasThinkingBadge) {
+                                        ThinkingLevelBadge(
+                                            level = thinkingLevelBadgeState,
+                                            onClick = { showThinkingLevelSheet = true },
+                                        )
                                     }
                                 }
                             }
@@ -2050,6 +1959,46 @@ fun ChatScreen(
                             )
                         }
                     } else {
+                    // [A2a] Model group pill — the old subtitle row's tap target
+                    // moved here. Dot keeps its green/orange health signal.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(ChatColors.secondaryBg)
+                            .clickable { showModelPicker = true }
+                            .padding(horizontal = 9.dp, vertical = 5.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .background(
+                                    if (modelName.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF9500),
+                                    CircleShape,
+                                ),
+                        )
+                        val groupNameDisplay = selectedGroupName.ifEmpty {
+                            val defaultGroupId = providerRepository.defaultPrimaryGroupId
+                            availableGroups.firstOrNull { it.id == defaultGroupId }?.name
+                                ?: stringResource(R.string.model_picker_default_badge)
+                        }
+                        Text(
+                            text = groupNameDisplay,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ChatColors.secondaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 88.dp),
+                        )
+                        Icon(
+                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = ChatColors.tertiaryText,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
                     NovexDeepSeekClock()
                     // iOS: "..." circle button → dropdown menu
                     Box {
@@ -5373,6 +5322,201 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
     is PlaythroughValue.Text -> value
     is PlaythroughValue.Number -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
     is PlaythroughValue.Flag -> if (value) "是" else "否"
+}
+
+// ─── [A2a] Bound-card chips in the chat top bar ──────────────────────────────
+
+/** One chip under the chat title: "卡片名 · 用途"（背景/扮演/管理/文游）.
+ * [kind]/[id] follow the `onOpenCreatedCard` vocabulary; a null kind renders
+ * the chip non-clickable (e.g. a persona preset that owns no card page). */
+private data class ConversationCardChip(
+    val label: String,
+    val tag: String,
+    val kind: String? = null,
+    val id: String? = null,
+)
+
+/** Resolves every card bound to this conversation — the integrated
+ * `cardBindingJson` (primary / backgrounds / managed) plus the legacy novex
+ * configuration (answer identity, background settings, managed subjects,
+ * active interactive fiction) — into title-bar chips. Names resolve off the
+ * main thread; deleted or unreadable subjects are dropped silently (their rows
+ * remain editable in 对话设置). */
+@Composable
+private fun rememberConversationCardChips(
+    viewModel: ChatViewModel,
+    sessionId: String,
+): List<ConversationCardChip> {
+    val configurationJson by viewModel.novexConfigurationJson.collectAsState()
+    val context = LocalContext.current
+    val workspace = remember(context) {
+        (context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace
+    }
+    val chips by produceState<List<ConversationCardChip>>(
+        emptyList(), configurationJson, workspace,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val snapshot = runCatching {
+                com.openminis.app.novex.domain.NovexConversationConfigurationCodec.decode(
+                    configurationJson, sessionId,
+                )
+            }.getOrNull() ?: return@withContext emptyList()
+
+            suspend fun legacyName(
+                address: com.openminis.app.novex.domain.NovexContentAddress,
+            ): String? = when (address.kind) {
+                com.openminis.app.novex.domain.NovexContentKind.WORLD ->
+                    runCatching { workspace?.world(address.id)?.world?.name }.getOrNull()
+                com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION ->
+                    runCatching { workspace?.characterForVersion(address.id)?.character?.character?.name }.getOrNull()
+                com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION ->
+                    runCatching { workspace?.interactiveFiction(address.id)?.project?.name }.getOrNull()
+                com.openminis.app.novex.domain.NovexContentKind.CREATIVE_ARTIFACT -> null
+            }
+            fun legacyKind(
+                address: com.openminis.app.novex.domain.NovexContentAddress,
+            ): String? = when (address.kind) {
+                com.openminis.app.novex.domain.NovexContentKind.WORLD -> "world"
+                com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION -> "character_version"
+                com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION -> "game"
+                com.openminis.app.novex.domain.NovexContentKind.CREATIVE_ARTIFACT -> null
+            }
+
+            val out = mutableListOf<ConversationCardChip>()
+            val binding = com.openminis.app.cards.CardBinding.decode(snapshot.cardBindingJson)
+            if (binding != null) {
+                val store = novex.storage.CardStore(
+                    context.filesDir.toPath().resolve("rewrite-content"),
+                )
+                fun resolve(
+                    rootId: String,
+                    targetId: String,
+                ): Pair<novex.content.ContentDocument, String>? {
+                    val doc = runCatching {
+                        novex.content.ContentTargets.find(
+                            requireNotNull(store.open(rootId)).content, targetId,
+                        )
+                    }.getOrNull() ?: return null
+                    val navId = org.json.JSONObject()
+                        .put("root", rootId)
+                        .put("target", targetId)
+                        .toString()
+                    return doc to navId
+                }
+                binding.primary?.let { sel ->
+                    resolve(sel.rootId, sel.targetId)?.let { (doc, navId) ->
+                        out += ConversationCardChip(
+                            label = doc.name.ifBlank { "卡片" },
+                            tag = if (doc.kind == novex.content.CardKind.CHARACTER) "扮演" else "背景",
+                            kind = "integrated",
+                            id = navId,
+                        )
+                    }
+                }
+                binding.backgrounds.forEach { sel ->
+                    resolve(sel.rootId, sel.targetId)?.let { (doc, navId) ->
+                        out += ConversationCardChip(
+                            label = doc.name.ifBlank { "卡片" },
+                            tag = "背景",
+                            kind = "integrated",
+                            id = navId,
+                        )
+                    }
+                }
+                binding.managed.forEach { target ->
+                    resolve(target.rootId, target.targetId)?.let { (doc, navId) ->
+                        out += ConversationCardChip(
+                            label = doc.name.ifBlank { "卡片" },
+                            tag = "管理",
+                            kind = "integrated",
+                            id = navId,
+                        )
+                    }
+                }
+            }
+            snapshot.activeInteractiveFiction?.let { game ->
+                out += ConversationCardChip(game.title, "文游", "game", game.projectId)
+            }
+            when (val identity = snapshot.answerIdentity) {
+                is com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion -> {
+                    val name = runCatching {
+                        workspace?.characterForVersion(identity.versionId)
+                            ?.character?.character?.name
+                    }.getOrNull()
+                    if (!name.isNullOrBlank()) {
+                        out += ConversationCardChip(
+                            name, "扮演", "character_version", identity.versionId,
+                        )
+                    }
+                }
+                is com.openminis.app.novex.domain.AnswerIdentity.PersonaPreset ->
+                    out += ConversationCardChip(identity.label, "身份")
+                else -> {}
+            }
+            snapshot.backgroundSettings.forEach { setting ->
+                legacyName(setting.subject)?.let { name ->
+                    out += ConversationCardChip(
+                        name, "背景", legacyKind(setting.subject), setting.subject.id,
+                    )
+                }
+            }
+            snapshot.managedSubjects.forEach { subject ->
+                legacyName(subject.subject)?.let { name ->
+                    out += ConversationCardChip(
+                        name, "管理", legacyKind(subject.subject), subject.subject.id,
+                    )
+                }
+            }
+            val distinct = out.distinctBy { listOf(it.kind, it.id, it.tag, it.label) }
+            if (distinct.size > 4) {
+                distinct.take(4) + ConversationCardChip("共 ${distinct.size} 项", "")
+            } else {
+                distinct
+            }
+        }
+    }
+    return chips
+}
+
+@Composable
+private fun ConversationBoundCardChip(
+    chip: ConversationCardChip,
+    onOpen: () -> Unit,
+) {
+    val mint = com.openminis.app.ui.noven.NovenColors.Mint
+    val icon = when (chip.tag) {
+        "背景" -> com.openminis.app.ui.novex.NovexIcons.Book
+        "扮演", "身份" -> com.openminis.app.ui.novex.NovexIcons.Person
+        "管理" -> com.openminis.app.ui.novex.NovexIcons.EditNote
+        "文游" -> com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled
+        else -> com.openminis.app.ui.novex.NovexIcons.Book
+    }
+    val text = if (chip.tag.isEmpty()) chip.label else "${chip.label} · ${chip.tag}"
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .border(1.dp, mint.copy(alpha = 0.65f), RoundedCornerShape(50))
+            .clickable(enabled = chip.kind != null && chip.id != null, onClick = onOpen)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = mint,
+            modifier = Modifier.size(10.dp),
+        )
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = com.openminis.app.ui.noven.NovenColors.OnMint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 // [T-android-split-chat] UserMessageBubble / UserAttachmentList /

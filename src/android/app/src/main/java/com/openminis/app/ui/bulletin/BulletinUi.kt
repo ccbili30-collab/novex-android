@@ -72,12 +72,13 @@ internal fun BulletinEntryIcon(hasBadge: Boolean, onClick: () -> Unit) {
             onClick = onClick,
         )
         if (hasBadge) {
+            // [B/C] 未读红点用语义红而不是主题色——字节系惯例。
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = (-10).dp, y = 10.dp)
                     .size(8.dp)
-                    .background(NovexColors.Primary, CircleShape),
+                    .background(NovexColors.Danger, CircleShape),
             )
         }
     }
@@ -206,7 +207,7 @@ private fun AnnouncementFaceCard(
         ) {
             entries.forEach { entry ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(entry.title, style = NovexType.ItemTitle, color = NovexColors.Primary)
+                    Text(entry.title, style = NovexType.ItemTitle, color = NovexColors.Text)
                     MetaRow(entry.date)
                     bodies[entry.id]?.let { MarkdownText(markdown = it, style = NovexType.Body) }
                 }
@@ -510,7 +511,7 @@ private fun ExpandableBulletinRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (unread) {
-                Box(Modifier.size(8.dp).background(NovexColors.Primary, CircleShape))
+                Box(Modifier.size(8.dp).background(NovexColors.Danger, CircleShape))
                 Spacer(Modifier.size(10.dp))
             }
             Column(Modifier.weight(1f)) {

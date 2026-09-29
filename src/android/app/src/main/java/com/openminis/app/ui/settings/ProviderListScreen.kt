@@ -448,7 +448,7 @@ private fun ShadowVoiceRow(
             imageVector = com.openminis.app.ui.novex.NovexIcons.GraphicEq,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.width(12.dp))
         Column(

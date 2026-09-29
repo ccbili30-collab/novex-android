@@ -180,7 +180,7 @@ internal fun NovexSettingsVectorToggleRow(
     title: String,
     subtitle: String? = null,
     icon: ImageVector? = null,
-    iconColor: Color = NovexColors.Primary,
+    iconColor: Color = NovexColors.Text,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
@@ -219,10 +219,12 @@ internal fun NovexSettingsRow(
 ) {
     NovexSettingsRowFrame(
         icon = {
+            // [B/C] 中性图标规则：导航行图标用正文色而不是品牌色——
+            // 颜色只留给动作/选中态，纯导航页可以一行绿都没有。
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                tint = NovexColors.Primary,
+                tint = NovexColors.Text,
                 modifier = Modifier.size(21.dp),
             )
         },
@@ -238,7 +240,7 @@ internal fun NovexSettingsVectorRow(
     title: String,
     subtitle: String? = null,
     icon: ImageVector? = null,
-    iconColor: Color = NovexColors.Primary,
+    iconColor: Color = NovexColors.Text,
     onClick: (() -> Unit)? = null,
     showChevron: Boolean = onClick != null,
     showDivider: Boolean = true,

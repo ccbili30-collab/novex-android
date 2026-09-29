@@ -101,7 +101,7 @@ private fun FeedbackRow(
             .padding(vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.SemiBold)

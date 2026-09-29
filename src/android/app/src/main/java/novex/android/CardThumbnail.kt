@@ -42,3 +42,19 @@ import novex.content.ContentRef
     if(resource!=null)CardThumbnail(resource.content,model,"角色头像")
     else com.openminis.app.ui.novex.NovexArtwork(com.openminis.app.ui.novex.NovexArtworkKind.CHARACTER,role.id,null,"角色头像占位",Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)))
 }
+
+/** 圆形头像：落地页角色行与角色卡的叠放头像槽位共用。 */
+@Composable internal fun RoleAvatarImage(ref:ContentRef,model:CardSessionModel,size:androidx.compose.ui.unit.Dp,modifier:Modifier=Modifier) {
+    var bitmap by remember(ref){mutableStateOf<android.graphics.Bitmap?>(null)}
+    LaunchedEffect(ref){try{bitmap=model.image(ref,512)}catch(cancelled:CancellationException){throw cancelled}catch(_:Exception){}}
+    Box(modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).background(NovexColors.SurfaceMuted),contentAlignment=Alignment.Center) {
+        bitmap?.let {Image(it.asImageBitmap(),"角色头像",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)}
+    }
+}
+
+@Composable internal fun RoleAvatar(role:novex.content.ContentDocument,model:CardSessionModel,size:androidx.compose.ui.unit.Dp=40.dp) {
+    val id=role.appearance.avatarResourceId?:role.appearance.coverResourceId
+    val resource=role.resources.firstOrNull {it.id==id}
+    if(resource!=null)RoleAvatarImage(resource.content,model,size)
+    else com.openminis.app.ui.novex.NovexArtwork(com.openminis.app.ui.novex.NovexArtworkKind.CHARACTER,role.id,null,"角色头像占位",Modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape))
+}

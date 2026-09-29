@@ -145,6 +145,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -314,12 +315,20 @@ internal fun UserMessageBubble(
                     // a red withdraw button alongside. Mirrors iOS
                     // AIChatView.swift queued-bubble overlay.
                     val secondaryTextColor = ChatColors.secondaryText
-                    val userBubbleColor = ChatColors.userBubble
+                    // [feat/ui-rikkahub] User voice = brand mint, soft fill:
+                    // the bubble is the user's action/voice in the transcript,
+                    // which is exactly where the redesign spends its accent.
+                    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    val mint = Color(0xFF34D399)
+                    val userBubbleColor = mint.copy(alpha = if (isDarkTheme) 0.22f else 0.14f)
+                    val userTextColor = if (isDarkTheme) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else Color(0xFF0E3B2E)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        val textColor = if (isQueued) secondaryTextColor else MaterialTheme.colorScheme.onSurface
+                        val textColor = if (isQueued) secondaryTextColor else userTextColor
                         val bubbleBg = if (isQueued) Color.Transparent else userBubbleColor
                         // [feat/ui-rikkahub] 18dp → 16dp: RikkaHub bubble formula.
                         val shape = RoundedCornerShape(16.dp)

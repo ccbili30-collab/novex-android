@@ -195,7 +195,7 @@ fun CheckUpdateSection() {
         }
         SettingsRow(
             icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
-            iconColor = Color(0xFF007AFF),
+            iconColor = NovexColors.Text,
             title = stringResource(
                 if (checking) R.string.check_update_checking
                 else R.string.check_update_check_button
@@ -363,7 +363,7 @@ internal fun NovexUpdateEntry(hub: NovexUpdateHub) {
                     .align(Alignment.TopEnd)
                     .offset(x = (-10).dp, y = 10.dp)
                     .size(8.dp)
-                    .background(NovexColors.Primary, CircleShape),
+                    .background(NovexColors.Danger, CircleShape),
             )
         }
     }

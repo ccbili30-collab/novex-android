@@ -4,6 +4,7 @@ import com.openminis.app.ui.novex.DropdownMenuItem
 
 import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.Button
+import com.openminis.app.ui.novex.OutlinedButton
 import com.openminis.app.ui.novex.TextButton
 import com.openminis.app.ui.novex.OutlinedTextField
 import com.openminis.app.ui.novex.Scaffold
@@ -13,12 +14,18 @@ import com.openminis.app.ui.novex.NovexPageTopBar
 import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexType
 import com.openminis.app.ui.novex.NovexIcons
+import com.openminis.app.ui.noven.NovenColors
+import com.openminis.app.ui.noven.NovenProfileStore
 import novex.content.flattenModules
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,8 +35,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
 import novex.content.ContentBlock
 import novex.content.CardKind
 import androidx.compose.foundation.text.BasicTextField
@@ -93,9 +106,8 @@ import androidx.compose.ui.semantics.semantics
         dismissButton={TextButton(enabled=!state.busy,onClick={deleteCard=false}){Text("取消")}})
     BackHandler(enabled=!WindowInsets.isImeVisible){if(!state.busy || state.page==CardPage.DETAIL)back()}
     Scaffold(
-        bottomBar={if(state.page==CardPage.DETAIL)Button(enabled=!state.busy && state.saved!=null,onClick=onInteract,modifier=Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)){Text("开始互动")}},
-        containerColor=NovexColors.Canvas,
-        topBar={NovexPageTopBar(title=when(state.page){
+        containerColor=NovenColors.Canvas,
+        topBar={if(state.page!=CardPage.DETAIL)NovexPageTopBar(title=when(state.page){
             CardPage.DETAIL->""
             CardPage.MODULES->if(state.shownDraft?.kind==CardKind.WORLD)"编辑世界" else "编辑角色"
             CardPage.EDIT->"编辑模块"
@@ -103,16 +115,11 @@ import androidx.compose.ui.semantics.semantics
             CardPage.BLOCKS->"图文顺序"
             CardPage.PREVIEW->"预览"
         },onBack={if(!state.busy || state.page==CardPage.DETAIL)back()},actions={when(state.page) {
-                CardPage.DETAIL->{
-                    Box {CardAction(NovexIcons.MoreVert,"更多操作",!state.busy && !files.state.busy && state.saved!=null){more=true}
-                        DropdownMenu(expanded=more,onDismissRequest={more=false}){
-                            DropdownMenuItem(text={Text("用于已有对话")},onClick={more=false;onExisting(false)})
-                            DropdownMenuItem(text={Text("导出")},onClick={more=false;onExport()})
-                            if(state.targetId==null || state.targetId==state.saved?.id)DropdownMenuItem(text={Text("删除")},onClick={more=false;deleteCard=true})
-                        }}
-                    CardAction(NovexIcons.Edit,"编辑卡片",!state.busy && state.saved!=null){model.edit()}
-                }
+                CardPage.DETAIL->{}
                 CardPage.MODULES->{
+                    // [A3a] 预览提为顶栏一级文字动作（editor-v1/01），⋯ 只剩
+                    // 卡片级操作。
+                    TextButton(enabled=!state.busy,onClick=model::preview){Text("预览")}
                     Box {
                         CardAction(NovexIcons.MoreVert,"编辑操作",!state.busy){editMore=true}
                         DropdownMenu(expanded=editMore,onDismissRequest={editMore=false}) {
@@ -126,17 +133,12 @@ import androidx.compose.ui.semantics.semantics
                             DropdownMenuItem(text={Text("放弃本次草稿")},onClick={editMore=false;discard=true})
                         }
                     }
-                    PreviewButton(!state.busy,model::preview)
                 }
                 CardPage.EDIT->{
+                    // [A3b] 顶栏：携带与标签提为一级图标（它决定模块进对话的
+                    // 注入路由）；预览眼睛删除——编写页即所写即所见。
                     Box {
-                        CardAction(NovexIcons.MoreVert,"编辑操作",!state.busy){editMore=true}
-                        DropdownMenu(expanded=editMore,onDismissRequest={editMore=false}) {
-                            DropdownMenuItem(text={Text("排列与嵌套")},onClick={editMore=false;model.arrangeModule()})
-                            DropdownMenuItem(text={Text("携带与标签")},onClick={editMore=false;moduleOptions=true})
-                            if(state.blockId!=null)DropdownMenuItem(text={Text("移除当前内容块")},onClick={editMore=false;removeChoice="block"})
-                            DropdownMenuItem(text={Text("移除整个模块")},onClick={editMore=false;removeChoice="module"})
-                        }
+                        CardAction(NovexIcons.PushPin,"携带与标签",!state.busy){moduleOptions=true}
                     }
                     Box {
                         CardAction(NovexIcons.Image,"插入图片",!state.busy){imageOptions=true}
@@ -145,7 +147,14 @@ import androidx.compose.ui.semantics.semantics
                             DropdownMenuItem(text={Text("使用已有图片")},onClick={imageOptions=false;model.pictures()})
                         }
                     }
-                    PreviewButton(!state.busy,model::preview)
+                    Box {
+                        CardAction(NovexIcons.MoreVert,"编辑操作",!state.busy){editMore=true}
+                        DropdownMenu(expanded=editMore,onDismissRequest={editMore=false}) {
+                            DropdownMenuItem(text={Text("排列与嵌套")},onClick={editMore=false;model.arrangeModule()})
+                            if(state.blockId!=null)DropdownMenuItem(text={Text("移除当前内容块")},onClick={editMore=false;removeChoice="block"})
+                            DropdownMenuItem(text={Text("移除整个模块")},onClick={editMore=false;removeChoice="module"})
+                        }
+                    }
                 }
                 CardPage.PICTURES->TextButton(onClick=model::returnFromPictures,enabled=!state.busy){Text("完成")}
                 CardPage.BLOCKS->TextButton(onClick=model::returnFromBlockOrder,enabled=!state.busy){Text("完成")}
@@ -167,7 +176,50 @@ import androidx.compose.ui.semantics.semantics
         }}
         when(state.page) {
             CardPage.DETAIL->state.shownSaved?.let {card->
-                CardReading(card,model,onCharacter=model::showTarget,onModule={model.editPart(it)},onImage={model.edit()},onName={model.edit()},onEmpty={model.edit()},onIntroduction={model.edit()})
+                Box(Modifier.fillMaxSize()) {
+                    val context=LocalContext.current
+                    val profileStore=remember {NovenProfileStore.get(context)}
+                    val profile=profileStore.profile
+                    CardReading(card,model,onCharacter=model::showTarget,onModule={model.editPart(it)},onImage={model.edit()},onName={model.edit()},onEmpty={model.edit()},onIntroduction={model.edit()},
+                        byline={
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                if(profile.avatarPath!=null)AsyncImage(model=java.io.File(profile.avatarPath),contentDescription="作者头像",
+                                    modifier=Modifier.size(28.dp).clip(CircleShape))
+                                else Box(Modifier.size(28.dp).clip(CircleShape).background(NovexColors.SurfaceMuted),contentAlignment=Alignment.Center) {
+                                    Icon(NovexIcons.Person,null,Modifier.size(16.dp),tint=NovexColors.SecondaryText)
+                                }
+                                Text(profile.nickname,style=NovexType.Body,color=NovexColors.SecondaryText)
+                            }
+                        },
+                        trailing={
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                                OutlinedButton(enabled=!state.busy,onClick=onManage,modifier=Modifier.weight(1f),
+                                    shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,NovenColors.Mint),
+                                    colors=ButtonDefaults.outlinedButtonColors(contentColor=NovenColors.Mint)) {Text("以此创作")}
+                                Button(enabled=!state.busy && state.saved!=null,onClick=onInteract,modifier=Modifier.weight(1f),
+                                    shape=RoundedCornerShape(14.dp),
+                                    colors=ButtonDefaults.buttonColors(containerColor=NovenColors.Mint,contentColor=Color.White)) {
+                                    Text(if(card.kind==CardKind.WORLD)"进入世界 →" else "扮演角色 →")
+                                }
+                            }
+                        })
+                    // 悬浮页铬：封面英雄图上直接叠圆形按钮，DETAIL 页无顶栏。
+                    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=12.dp,vertical=6.dp),
+                        verticalAlignment=Alignment.CenterVertically) {
+                        FloatingCircleAction(NovexIcons.ArrowBack,"返回"){if(!state.busy || state.page==CardPage.DETAIL)back()}
+                        Spacer(Modifier.weight(1f))
+                        Box {
+                            FloatingCircleAction(NovexIcons.MoreVert,"更多操作",!state.busy && !files.state.busy && state.saved!=null){more=true}
+                            DropdownMenu(expanded=more,onDismissRequest={more=false}){
+                                DropdownMenuItem(text={Text("用于已有对话")},onClick={more=false;onExisting(false)})
+                                DropdownMenuItem(text={Text("导出")},onClick={more=false;onExport()})
+                                if(state.targetId==null || state.targetId==state.saved?.id)DropdownMenuItem(text={Text("删除")},onClick={more=false;deleteCard=true})
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        FloatingCircleAction(NovexIcons.Edit,"编辑卡片",!state.busy && state.saved!=null){model.edit()}
+                    }
+                }
             }
             CardPage.PREVIEW->state.draft?.let {CardReading(novex.content.ContentTargets.find(it.content,state.previewTargetId?:it.content.id),model,onCharacter=model::previewCharacter,readingScope="draft")}
             CardPage.MODULES->state.shownDraft?.let {card->ModuleTreeEditor(card,model,header={
@@ -207,8 +259,14 @@ import androidx.compose.ui.semantics.semantics
                     val scrollKey="${state.saved?.id}/${state.moduleId}/${state.textStart}"
                     val textScroll=rememberScrollState(model.editorScrollOffsets[scrollKey]?:0)
                     DisposableEffect(scrollKey,textScroll){onDispose {model.editorScrollOffsets[scrollKey]=textScroll.value}}
+                    // [A3b] Live Preview：光标所在行显示 Markdown 源码符号，
+                    // 其余行隐藏定界符按排版渲染——写着的同时就是成品样子。
+                    val liveTransform=remember(state.text.text,state.text.selection) {
+                        LiveMarkdown.transformation(state.text.text,state.text.selection.min)
+                    }
                     BasicTextField(value=state.text,onValueChange=model::changeText,enabled=!state.busy,cursorBrush=androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                         textStyle=MaterialTheme.typography.bodyLarge.copy(color=NovexColors.Text),
+                        visualTransformation=liveTransform,
                         modifier=Modifier.fillMaxWidth().weight(1f).padding(vertical=16.dp).verticalScroll(textScroll).semantics {contentDescription="模块正文"},
                         decorationBox={inner->if(state.text.text.isEmpty())Text("填写内容",color=MaterialTheme.colorScheme.outline);inner()})
                 }
@@ -248,4 +306,13 @@ import androidx.compose.ui.semantics.semantics
 
 @Composable private fun PreviewButton(enabled:Boolean,onClick:()->Unit) {
     CardAction(NovexIcons.Visibility,"预览草稿",enabled,onClick)
+}
+
+/** 落地页悬浮圆形按钮：压在封面图上，白底轻微阴影。 */
+@Composable private fun FloatingCircleAction(icon:ImageVector,description:String,enabled:Boolean=true,onClick:()->Unit) {
+    Box(Modifier.size(40.dp).shadow(4.dp,CircleShape).clip(CircleShape)
+        .background(NovenColors.Surface.copy(alpha=if(enabled)0.96f else 0.55f))
+        .clickable(enabled=enabled,onClick=onClick),contentAlignment=Alignment.Center) {
+        Icon(icon,description,Modifier.size(19.dp),tint=if(enabled)NovenColors.Text else NovexColors.TertiaryText)
+    }
 }

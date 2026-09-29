@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openminis.app.ui.novex.*
+import com.openminis.app.ui.noven.NovenColors
 
 /** Card-specific compositions of the original application's typography, icons and controls. */
 @Composable internal fun CardAction(icon:ImageVector,label:String,enabled:Boolean=true,onClick:()->Unit) {
@@ -49,9 +50,9 @@ import com.openminis.app.ui.novex.*
 @Composable internal fun CardTab(label:String,active:Boolean,onClick:()->Unit,modifier:Modifier=Modifier,enabled:Boolean=true) {
     Column(modifier.width(IntrinsicSize.Max).widthIn(min=88.dp,max=220.dp).semantics {selected=active}.clickable(enabled=enabled,role=Role.Tab,onClick=onClick),horizontalAlignment=Alignment.CenterHorizontally) {
         Box(Modifier.heightIn(min=48.dp).padding(horizontal=16.dp,vertical=12.dp),contentAlignment=Alignment.Center) {
-            Text(label,color=if(active)NovexColors.Primary else NovexColors.SecondaryText,style=NovexType.Body,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(label,color=if(active)NovenColors.Mint else NovexColors.SecondaryText,style=NovexType.Body,maxLines=1,overflow=TextOverflow.Ellipsis)
         }
-        Box(Modifier.fillMaxWidth().height(2.dp).background(if(active)NovexColors.Primary else androidx.compose.ui.graphics.Color.Transparent))
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if(active)NovenColors.Mint else androidx.compose.ui.graphics.Color.Transparent))
     }
 }
 
@@ -80,7 +81,7 @@ import com.openminis.app.ui.novex.*
 @Composable internal fun AddModuleRow(onClick:()->Unit,enabled:Boolean=true) {
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp).clickable(enabled=enabled,onClick=onClick).padding(horizontal=16.dp,vertical=10.dp),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-        Icon(NovexIcons.Add,null,Modifier.size(20.dp),tint=NovexColors.Primary)
-        Text("新增模块",style=NovexType.Metadata,color=NovexColors.Primary)
+        Icon(NovexIcons.Add,null,Modifier.size(20.dp),tint=NovenColors.Mint)
+        Text("新增模块",style=NovexType.Metadata,color=NovenColors.Mint)
     }
 }

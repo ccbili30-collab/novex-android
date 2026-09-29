@@ -109,6 +109,7 @@ internal fun NovexChoiceButtons(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            val mint = com.openminis.app.ui.noven.NovenColors.Mint
             event.options.forEach { choice ->
                 val isSelected = choice.payload in selected
                 OutlinedButton(
@@ -116,16 +117,17 @@ internal fun NovexChoiceButtons(
                         if (!event.allowMultiple) onChoice(choice.payload)
                         else if (choice.payload in selected) selected.remove(choice.payload) else selected.add(choice.payload)
                     },
-                    modifier = Modifier.heightIn(min = 36.dp),
+                    modifier = Modifier.heightIn(min = 34.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        containerColor = if (isSelected) mint.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
+                        contentColor = if (isSelected) com.openminis.app.ui.noven.NovenColors.OnMint else MaterialTheme.colorScheme.onSurface,
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        if (isSelected) mint else MaterialTheme.colorScheme.outlineVariant,
                     ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
                 ) {
                     Text(
                         text = choice.label,
@@ -137,9 +139,14 @@ internal fun NovexChoiceButtons(
             }
         }
         if (event.allowMultiple && selected.isNotEmpty()) {
-            OutlinedButton(
+            com.openminis.app.ui.novex.Button(
                 onClick = { onChoice(selected.joinToString("\n")); selected.clear() },
                 modifier = Modifier.padding(top = 6.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = com.openminis.app.ui.noven.NovenColors.Mint,
+                    contentColor = com.openminis.app.ui.noven.NovenColors.OnMint,
+                ),
             ) { Text("确认选择（${selected.size}）") }
         }
     }
@@ -163,13 +170,14 @@ internal fun NovexChoiceButtons(
         normalized.forEach { choice ->
             OutlinedButton(
                 onClick = { onChoice(choice) },
-                modifier = Modifier.heightIn(min = 36.dp),
+                modifier = Modifier.heightIn(min = 34.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
                 colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
             ) {
                 Text(
                     text = choice,

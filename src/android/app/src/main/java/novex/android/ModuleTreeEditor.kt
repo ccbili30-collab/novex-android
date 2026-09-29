@@ -110,8 +110,8 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
     fun marker(id:String,parent:String?,horizontal:Boolean):Modifier = Modifier
         .onGloballyPositioned {hits[id]=ModuleHit(id,parent,horizontal,Rect(it.positionInRoot(),it.size.toSize()))}
     @Composable fun highlight(id:String,horizontal:Boolean):Modifier {
-        val primary=NovexColors.Primary
-        val soft=NovexColors.PrimarySoft
+        val primary=com.openminis.app.ui.noven.NovenColors.Mint
+        val soft=com.openminis.app.ui.noven.NovenColors.Mint.copy(alpha=0.14f)
         val target=drop
         val info=hits[id]
         val siblings=if(info?.parent==null)card.modules else card.modules.findModule(info.parent)?.children.orEmpty()
@@ -130,7 +130,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
         val open=expanded[module.id]==true
         CardRow(headlineContent={Text(module.name.ifBlank {"未命名模块"},maxLines=1,overflow=TextOverflow.Ellipsis)},
             supportingContent=if(dragged!=module.id && module.blocks.isNotEmpty())({ModuleExcerpt(module,model)}) else null,
-            leadingContent={Icon(if(group)NovexIcons.Folder else NovexIcons.Description,null,Modifier.size(21.dp),tint=NovexColors.Primary)},
+            leadingContent={Icon(if(group)NovexIcons.Folder else NovexIcons.Description,null,Modifier.size(21.dp),tint=NovexColors.Text)},
             trailingContent={Row(verticalAlignment=Alignment.CenterVertically) {
                 CardAction(NovexIcons.MoreVert,"模块操作",enabled){menuTarget=module.id}
                 CardAction(if(open)NovexIcons.ExpandLess else NovexIcons.ChevronRight,
@@ -228,6 +228,9 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
         }
     }.verticalScroll(vertical),verticalArrangement=Arrangement.spacedBy(0.dp)) {
         header()
+        // [A3a] 两区分隔：基础信息（虚线框 hero）与模块区之间留出呼吸间距，
+        // 横向槽行正好落在分界上。
+        Spacer(Modifier.height(10.dp))
         if(card.usesMainSlot()) {
             val mainScroll=rememberScrollState()
             DisposableEffect(card.id){onDispose {tracks.remove(card.id)}}
@@ -257,11 +260,11 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
             }.shadow(3.dp,RoundedCornerShape(6.dp)).background(NovexColors.Surface,RoundedCornerShape(6.dp))
                 .border(1.dp,NovexColors.Primary,RoundedCornerShape(6.dp)).padding(8.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Icon(if(moving.children.isEmpty())NovexIcons.Description else NovexIcons.Folder,null,Modifier.size(16.dp),tint=NovexColors.Primary)
+                    Icon(if(moving.children.isEmpty())NovexIcons.Description else NovexIcons.Folder,null,Modifier.size(16.dp),tint=com.openminis.app.ui.noven.NovenColors.Mint)
                     Text(moving.name.ifBlank {"未命名模块"},style=NovexType.Metadata,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
                 val target=drop?.inside?.let {card.modules.findModule(it)?.name?.ifBlank {"未命名模块"}}
-                Text(when {target!=null->"放入「$target」";drop?.promote==true->"移到横向栏";drop!=null->"同级排序";else->"拖动到目标位置"},style=NovexType.Metadata,color=NovexColors.Primary,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(when {target!=null->"放入「$target」";drop?.promote==true->"移到横向栏";drop!=null->"同级排序";else->"拖动到目标位置"},style=NovexType.Metadata,color=com.openminis.app.ui.noven.NovenColors.Mint,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
         }}
     }

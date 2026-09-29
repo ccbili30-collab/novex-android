@@ -288,13 +288,32 @@ internal fun AssistantHeader() {
 
 /**
  * [feat/ui-rikkahub] Assistant replies render FLAT — full-width borderless
- * text in every conversation mode (RikkaHub/豆包-style). The old character
- * speech-bubble wrapper survives as [LegacyCharacterAssistantBubble] so the
- * change is a one-line revert.
+ * text in the narrative (non-role) mode (RikkaHub/豆包-style). In role
+ * presentation the reply returns to a speech bubble — white surface + hairline
+ * border under the avatar/name header (chat-v1/02). The old gray bubble
+ * survives as [LegacyCharacterAssistantBubble] so the change is a one-line
+ * revert.
  */
 @Composable
 internal fun CharacterAssistantBubble(content: @Composable () -> Unit) {
-    content()
+    if (!LocalImmersiveChatProfile.current.usesRolePresentation) {
+        content()
+        return
+    }
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, MaterialTheme.colorScheme.outlineVariant,
+            ),
+            modifier = Modifier.widthIn(max = 360.dp),
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                content()
+            }
+        }
+    }
 }
 
 @Composable

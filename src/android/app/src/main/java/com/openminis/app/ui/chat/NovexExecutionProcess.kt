@@ -343,19 +343,30 @@ internal fun NovexExecutionProcessDialog(process: FlatChatItem.AssistantProcess,
 
 @Composable
 internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean, onOpenCard: (String, String) -> Unit, onContinue: () -> Unit) {
-    // [feat/ui-rikkahub] 2026-09-27 成果卡：回合的"附件"。旧三行尾巴
-    // （机器状态行 + 打开链接 + 恒挂的继续按钮）收成每卡一枚胶囊——
-    // 整行可点打开，状态徽章弱化，仅任务真未完成时出"继续核对与完成"。
-    // 灰色状态文本删除：其信息由过程行（⚠ + 可展开失败原因）与正文承担。
-    val status = runCatching { JSONObject(block.toolArgs).optString("status") }.getOrDefault("incomplete")
-    // [feat/ui-rikkahub] 徽章永不报警：完整保存 → 已保存 ✓，其余一律 可查看
-    // （卡片本体就在那里，点开即看）。"继续核对与完成"仅作为可选动作挂在
-    // 未完成任务之后。
-    val saved = status == "saved"
+    // [feat/ui-rikkahub] 2026-09-27 成果卡 → 回执卡（chat-v1/03）：回合的
+    // "附件"——缩略图 + 卡名 + 类型徽章 + 真实保存状态 + 「打开 →」。
+    // 状态只来自回执 JSON：saved_verified 才算核验通过（旧数据里出现过
+    // "saved"），其余一律如实标注，绝不替用户宣布成功。
+    val args = runCatching { JSONObject(block.toolArgs) }.getOrNull()
+    val status = args?.optString("status") ?: "incomplete"
+    val label = args?.optString("label").orEmpty()
+    val statusText = when (status) {
+        "saved_verified", "saved" -> "已保存 · 核验通过"
+        "saved_needs_review" -> "已保存 · 待核对"
+        else -> "待完成"
+    }
     val needsContinuation = status in setOf("incomplete", "saved_needs_review")
-    val cards = runCatching { JSONObject(block.toolArgs).optJSONArray("cards") }.getOrNull()
+    val cards = args?.optJSONArray("cards")
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        if (cards != null) {
+        if (cards != null && cards.length() > 0) {
+            if (cards.length() > 1 && label.isNotBlank()) {
+                Text(
+                    label,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
             for (index in 0 until cards.length()) {
                 val card = cards.optJSONObject(index) ?: continue
                 val kind = card.optString("kind")
@@ -363,19 +374,27 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
                 if (id.isBlank()) continue
                 val kindLabel = when (kind) {
                     "integrated" -> "卡片"
-                    "world" -> "世界卡"
-                    "character_version" -> "角色卡"
-                    "game" -> "文游卡"
+                    "world" -> "世界"
+                    "character_version" -> "角色"
+                    "game" -> "文游"
                     else -> "卡片"
                 }
-                val name = card.optString("name").takeIf(String::isNotBlank)
-                CardResultChip(
-                    title = name?.let { "《$it》" } ?: kindLabel,
-                    meta = if (name != null) kindLabel else "",
-                    saved = saved,
+                CardReceiptRow(
+                    kind = kind,
+                    id = id,
+                    name = card.optString("name").takeIf(String::isNotBlank) ?: kindLabel,
+                    kindLabel = kindLabel,
+                    statusText = statusText,
                     onClick = { onOpenCard(kind, id) },
                 )
             }
+        } else if (label.isNotBlank()) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
         }
         if (needsContinuation && canContinue) {
             TextButton(onClick = onContinue) { Text("继续核对与完成") }
@@ -383,43 +402,165 @@ internal fun NovexCardTaskStatusRow(block: AssistantBlock, canContinue: Boolean,
     }
 }
 
+/** Mini 卡面回执：缩略图 + 名称 + 类型徽章 + 状态行 + 「打开 →」。整卡可点。 */
 @Composable
-private fun CardResultChip(title: String, meta: String, saved: Boolean, onClick: () -> Unit) {
-    Row(
+private fun CardReceiptRow(kind: String, id: String, name: String, kindLabel: String, statusText: String, onClick: () -> Unit) {
+    androidx.compose.material3.Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outlineVariant,
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
     ) {
-        Icon(
-            com.openminis.app.ui.novex.NovexIcons.Book,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(
-            title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (meta.isNotBlank()) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            CardReceiptThumbnail(kind, id)
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        name,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        kindLabel,
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHigh,
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = 5.dp, vertical = 1.5.dp),
+                    )
+                }
+                Text(
+                    statusText,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
             Text(
-                "· $meta",
+                "打开 →",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                color = com.openminis.app.ui.noven.NovenColors.Mint,
             )
         }
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            if (saved) "已保存 ✓" else "可查看",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
     }
+}
+
+/** 回执缩略图：封面/头像真实数据，读不到时退回类型图标。 */
+@Composable
+private fun CardReceiptThumbnail(kind: String, id: String) {
+    val image = rememberCardReceiptImage(kind, id)
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            coil.compose.AsyncImage(
+                model = image,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
+            )
+        } else {
+            Icon(
+                when (kind) {
+                    "world", "integrated" -> com.openminis.app.ui.novex.NovexIcons.Book
+                    "character_version" -> com.openminis.app.ui.novex.NovexIcons.Person
+                    "game" -> com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled
+                    else -> com.openminis.app.ui.novex.NovexIcons.Book
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** 按卡种解析封面：legacy 卡走 workspace 媒体库，integrated 卡走 CardStore
+ * 内容寻址文件（与小图解码同一批真实数据，不伪造）。 */
+@Composable
+private fun rememberCardReceiptImage(kind: String, id: String): Any? {
+    val context = LocalContext.current
+    val workspace = remember(context) {
+        (context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace
+    }
+    val image by androidx.compose.runtime.produceState<Any?>(null, kind, id) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            when (kind) {
+                "world" -> runCatching {
+                    val media = workspace?.world(id)?.media
+                    (media?.get(com.openminis.app.data.character.MediaAssetSlot.WORLD_COVER)
+                        ?: media?.get(com.openminis.app.data.character.MediaAssetSlot.WORLD_BACKGROUND))
+                        ?.managedPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                }.getOrNull()
+                "character_version" -> runCatching {
+                    workspace?.characterForVersion(id)
+                        ?.mediaByVersion?.get(id)
+                        ?.get(com.openminis.app.data.character.MediaAssetSlot.CHARACTER_AVATAR)
+                        ?.managedPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                }.getOrNull()
+                "game" -> runCatching {
+                    workspace?.interactiveFiction(id)?.media
+                        ?.get(com.openminis.app.data.character.MediaAssetSlot.INTERACTIVE_FICTION_COVER)
+                        ?.managedPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                }.getOrNull()
+                "integrated" -> runCatching {
+                    val address = JSONObject(id)
+                    val store = novex.storage.CardStore(
+                        context.filesDir.toPath().resolve("rewrite-content"),
+                    )
+                    val root = store.open(address.getString("root")) ?: return@runCatching null
+                    val doc = novex.content.ContentTargets.find(
+                        root.content, address.getString("target"),
+                    )
+                    val resourceId = doc.appearance.coverResourceId
+                        ?: doc.appearance.avatarResourceId
+                    val ref = doc.resources.firstOrNull { it.id == resourceId }?.content
+                        ?: return@runCatching null
+                    val maxEdge = 192
+                    val bounds = android.graphics.BitmapFactory.Options()
+                        .apply { inJustDecodeBounds = true }
+                    store.contents.open(ref).use {
+                        android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+                    }
+                    var sample = 1
+                    while ((bounds.outWidth.toLong() + sample - 1) / sample > maxEdge ||
+                        (bounds.outHeight.toLong() + sample - 1) / sample > maxEdge
+                    ) sample *= 2
+                    store.contents.open(ref).use {
+                        android.graphics.BitmapFactory.decodeStream(
+                            it, null,
+                            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+                        )
+                    }
+                }.getOrNull()
+                else -> null
+            }
+        }
+    }
+    return image
 }
