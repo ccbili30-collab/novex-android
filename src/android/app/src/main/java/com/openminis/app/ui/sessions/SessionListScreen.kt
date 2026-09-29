@@ -342,8 +342,6 @@ fun SessionListScreen(
     onWorldClick: (String) -> Unit = {},
     onAddProviderClick: () -> Unit = {},
     onSelectModelsClick: () -> Unit = {},
-    onTerminalClick: () -> Unit = {},
-    onRootfsClick: () -> Unit = {},
     // [T-android-scheduled-tasks-design] Entry to the scheduled-tasks list.
     onScheduledTasksClick: () -> Unit = {},
     showBottomActions: Boolean = true,

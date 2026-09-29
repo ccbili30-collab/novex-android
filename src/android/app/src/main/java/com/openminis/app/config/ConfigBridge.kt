@@ -23,11 +23,10 @@ import java.util.UUID
  * stdout) and the rest of the Config module (registry, gate, audit
  * log). Mirrors iOS `ConfigOffloadBridge.swift`.
  *
- * Returns plain [JSONObject] envelopes so the handler just wraps them
- * in [com.openminis.app.sandbox.NativeOffloadResult]. The handler
- * thread is on a background pool, so write paths block via runBlocking
- * on the gate suspend — matching the iOS semaphore-on-detached-Task
- * pattern.
+ * Returns plain [JSONObject] envelopes so callers (the retired shell
+ * offload handler, and the debug RPC surface) could wrap them directly.
+ * Write paths block via runBlocking on the gate suspend — matching the
+ * iOS semaphore-on-detached-Task pattern.
  */
 object ConfigBridge {
     private const val TAG = "ConfigBridge"

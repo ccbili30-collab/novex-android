@@ -14,7 +14,6 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.provider.openai.OpenAIProvider
 import com.openminis.app.logging.AppLogger
-import com.openminis.app.sandbox.PRootKernel
 import java.io.File
 import java.security.MessageDigest
 import org.json.JSONObject

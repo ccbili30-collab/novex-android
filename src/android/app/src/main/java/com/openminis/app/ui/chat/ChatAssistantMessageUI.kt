@@ -603,7 +603,6 @@ internal fun ToolCallPill(
     allToolBlocks: List<AssistantBlock> = listOf(block),
     onRetry: (() -> Unit)? = null,
     onStop: (() -> Unit)? = null,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
     // T261: detail open routes through ChatViewModel so the sheet survives
     // LazyColumn item disposal. Default no-op for the legacy
     // AssistantMessageView call site (currently dead code).

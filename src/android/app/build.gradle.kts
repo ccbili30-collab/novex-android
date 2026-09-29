@@ -198,10 +198,6 @@ android {
         buildConfig = true
     }
 
-    androidResources {
-        noCompress += listOf("tar.gz", "proot-aarch64")
-    }
-
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
@@ -232,52 +228,6 @@ android {
         disable += "NonNullableMutableLiveData"
     }
 }
-
-// [T-bash-on-demand] Keep the shared bashism rule table / test vectors as a
-// SINGLE source of truth (src/shared/bashism) — copy into assets at build
-// time instead of committing duplicate JSON. iOS references the same files as
-// bundle resources. Runs before every asset merge so debug/release stay fresh.
-val copyBashismRules by tasks.registering(Copy::class) {
-    from(rootProject.file("../shared/bashism")) {
-        include("bashism_rules.json", "bashism_test_vectors.json")
-    }
-    into(layout.projectDirectory.dir("src/main/assets/bashism"))
-}
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(copyBashismRules) }
-tasks.named("preBuild") { dependsOn(copyBashismRules) }
-
-// A release without these files installs normally but cannot start the Linux
-// sandbox. Keep the checks in Gradle so an ignored/generated asset can never
-// silently disappear from a successful APK again.
-val verifySandboxRuntimeAssets by tasks.registering {
-    val required = mapOf(
-        "src/main/assets/alpine-minirootfs.tar.gz" to 1_000_000L,
-        "src/main/assets/proot-aarch64" to 100_000L,
-        "src/main/jniLibs/arm64-v8a/libproot.so" to 100_000L,
-        "src/main/jniLibs/arm64-v8a/libproot-loader.so" to 4_000L,
-        "src/main/jniLibs/arm64-v8a/libproot-loader32.so" to 2_000L,
-        "src/main/jniLibs/arm64-v8a/libtalloc.so" to 10_000L,
-        "src/main/jniLibs/arm64-v8a/libandroid-shmem.so" to 2_000L,
-    )
-    inputs.files(required.keys.map { layout.projectDirectory.file(it) })
-    doLast {
-        val invalid = required.mapNotNull { (relative, minimumBytes) ->
-            val file = layout.projectDirectory.file(relative).asFile
-            when {
-                !file.isFile -> "$relative (missing)"
-                file.length() < minimumBytes -> "$relative (${file.length()} bytes; expected >= $minimumBytes)"
-                else -> null
-            }
-        }
-        check(invalid.isEmpty()) {
-            "Android sandbox runtime is incomplete:\n" + invalid.joinToString("\n") +
-                "\nRun scripts/prepare_android_sandbox.sh before building."
-        }
-    }
-}
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
-    .configureEach { dependsOn(verifySandboxRuntimeAssets) }
 
 // [T-android-debugserver-skill] Stage the debug-server skill + an Android
 // reference client into the DEBUG-ONLY asset source set, so the debug server

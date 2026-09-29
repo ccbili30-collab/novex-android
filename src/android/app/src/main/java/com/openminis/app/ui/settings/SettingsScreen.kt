@@ -81,9 +81,7 @@ fun SettingsScreen(
     onImageGenerationClick: () -> Unit = {},
     // [T-storage-entry] 存储管理入口（原 onRootfsClick 参数名与去向不符，改名归位）
     onStorageClick: () -> Unit = {},
-    onEnvVarsClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
-    onTerminalClick: () -> Unit = {},
     onMemoryClick: () -> Unit = {},
     // [T-mcp-integration-android] MCP Integrations page, listed directly below
     // Memory. Default no-op for callers that haven't wired the route yet.
@@ -96,9 +94,6 @@ fun SettingsScreen(
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
     onLogsClick: () -> Unit = {},
-    // T219-2: Mount External Folders entry. Default no-op for any caller
-    // that hasn't wired the route yet.
-    onMountedFoldersClick: () -> Unit = {},
     // T235: Shared Folders entry (Shared / Skills / Memory). Default no-op
     // for back-compat with callers wired before T235.
     onSharedFoldersClick: () -> Unit = {},
@@ -136,12 +131,12 @@ fun SettingsScreen(
         }
         NovexSettingsSection(
             title = "数据与存储",
-            footer = "会话文件、数据库、卡片数据与修订历史、沙箱容器的占用与清理",
+            footer = "会话文件、数据库、卡片数据与修订历史的占用与清理",
         ) {
             NovexSettingsRow(
                 icon = R.drawable.ic_phosphor_hard_drive,
                 title = "存储管理",
-                subtitle = "查看会话、卡片与沙箱的空间占用",
+                subtitle = "查看会话与卡片的空间占用",
                 showDivider = false,
                 onClick = onStorageClick,
             )

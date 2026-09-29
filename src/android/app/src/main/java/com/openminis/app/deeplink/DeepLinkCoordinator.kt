@@ -10,21 +10,6 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 object DeepLinkCoordinator {
 
-    data class EnvVarCreate(val key: String, val value: String, val note: String)
-
-    private val _pendingEnvVarCreate = MutableStateFlow<EnvVarCreate?>(null)
-    val pendingEnvVarCreate: StateFlow<EnvVarCreate?> = _pendingEnvVarCreate.asStateFlow()
-
-    fun setPendingEnvVarCreate(key: String, value: String, note: String = "") {
-        _pendingEnvVarCreate.value = EnvVarCreate(key, value, note)
-    }
-
-    fun consumePendingEnvVarCreate(): EnvVarCreate? {
-        val current = _pendingEnvVarCreate.value
-        _pendingEnvVarCreate.value = null
-        return current
-    }
-
     /**
      * Optional `?tab=…` hint from `minis://settings/logs?tab=config-audit`.
      * The Logs screen reads this on appear to land on the right

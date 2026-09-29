@@ -3,7 +3,6 @@ package com.openminis.app.webapp
 import android.content.Context
 import com.openminis.app.data.db.WebAppShortcutEntity
 import com.openminis.app.data.repository.WebAppShortcutRepository
-import com.openminis.app.sandbox.PRootKernel
 import java.io.File
 import novex.android.ContentPaths
 
@@ -37,19 +36,19 @@ object WebAppPathResolver {
      * T-pwa-3: reverse-resolve a host file path to a `(pathScope,
      * scopeContext, linuxPath)` triple suitable for
      * [WebAppShortcutRepository.create]. Walks the
-     * [PRootKernel.bindMounts] map looking for an entry whose host
+     * [ContentPaths.bindMounts] map looking for an entry whose host
      * directory is a prefix of [hostFile]; returns null if none matches
      * (caller should hide the "Add to Home Screen" menu item).
      *
      * Mapping rules:
      *  - `/var/minis/shared` bind  → `pathScope = "shared"`,  `scopeContext = null`
      *  - `/var/minis/mounts/<n>`   → `pathScope = "mount"`,   `scopeContext = "<n>"`
-     *  - everything else (incl. memory/skills, per-session subdirs, rootfs) → null
+     *  - everything else (incl. memory/skills, per-session subdirs) → null
      */
     fun inferScope(hostFile: File): Triple<String, String?, String>? {
         val hostAbs = hostFile.absolutePath
         // Longest host-prefix wins, mirroring resolveHostPath's longest-key match.
-        val sorted = com.openminis.app.sandbox.PRootKernel
+        val sorted = ContentPaths
             .bindMounts.entries.sortedByDescending { it.value.length }
         for ((linuxPrefix, hostBase) in sorted) {
             val baseNorm = hostBase.trimEnd('/')
@@ -73,7 +72,7 @@ object WebAppPathResolver {
 
     private fun resolveSession(context: Context, shortcut: WebAppShortcutEntity): File? {
         val sessionId = shortcut.scopeContext ?: return null
-        // Absolute /var/minis/<perSession>/... — go through PRootKernel which
+        // Absolute /var/minis/<perSession>/... — go through ContentPaths which
         // knows how to map per-session subdirs to <filesDir>/minis-sessions/<id>/<sub>.
         if (shortcut.htmlPath.startsWith("/var/minis/")) {
             return ContentPaths.resolveSessionHostPath(sessionId, shortcut.htmlPath, context)

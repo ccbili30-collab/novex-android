@@ -128,16 +128,24 @@ Shizuku 系统操控全系上游「AI 助理」遗产。**退役后分发物 GPL
       novex.android.ContentPaths（挂载表所有权移交；PRootKernel 留薄委托
       供将亡文件过渡；22 个消费文件直连新解析器；沙箱根回退改为显式登记
       rootfsFallbackDir，随 R2 消失）；JVM 单测钉最长前缀/精确/回退/移除行为
-- [ ] **R2 拆执行层**：删 sandbox/（12f）+ sandbox/offload（23f）+
-      OnDemandBash + ChatViewModel shell_execute 路径 + BrowserUseManager
-      （AI 自动浏览）；删 jniLibs 全部五枚（libproot/-loader/-loader32/
-      libtalloc/libandroid-shmem）+ cpp/pty_bridge.c + 资产（rootfs、
-      proot-aarch64、default_mount）+ prepare_android_sandbox.sh + 三个
-      CI workflow 的 prepare 步骤；Manifest 摘孤儿组件与权限（无障碍、
-      通知监听、日历、通讯录、定位、SYSTEM_ALERT_WINDOW 逐个核可达性）
-- [ ] **R3 拆界面**：ui/sandbox 六屏、ui/terminal 全家（终端+模拟器+
-      canvas）、挂载三屏（MountDetail/MountedFolders/SharedFolders）、
-      设置行、存储管理「沙箱容器」桶、导航路由
+- [x] **R2 拆执行层**：删 sandbox/（12f）+ sandbox/offload（23f）+
+      OnDemandBash + ChatViewModel shell_execute/browser_use 路径；删
+      jniLibs 全部五枚（libproot/-loader/-loader32/libtalloc/
+      libandroid-shmem）+ cpp/pty_bridge.c + 资产（rootfs、proot-aarch64、
+      default_mount）+ prepare_android_sandbox.sh + CI workflow 的 prepare
+      步骤；Manifest 摘 4 组件（AlarmReceiver/ScheduledNotificationReceiver/
+      NotificationListener/无障碍）+ 6 权限（日历×2、定位×2、通讯录×2）。
+      裁决偏离：BrowserUseManager 保留——它是 BrowserTabPool 的 tab 包装器
+      （手动内置浏览器在用），删它断编译；SYSTEM_ALERT_WINDOW 保留——
+      AgentForegroundService 悬浮胶囊在用；offload/ 三件保留
+      （OffloadPermissionManager/ShizukuManager/ShizukuBackend，权限 UI 在用）
+- [x] **R3 拆界面**：ui/terminal 全家（终端+模拟器+canvas）、
+      Mirror/Rootfs 两屏、挂载两屏（MountDetail/MountedFolders）、
+      环境变量屏、设置行、存储管理「沙箱容器」桶、导航路由/深链。裁决
+      偏离：SharedFolders 保留（/var/minis/shared 是全局桶、ContentPaths
+      直连，不依赖沙箱）；ui/sandbox 的 FileBrowser/FileBrowserViewModel/
+      FilePreview 三件保留（聊天附件预览/创作库/会话存储/共享文件夹四个
+      幸存界面共管，已改走 ContentPaths）
 - [ ] **R4 收尾**：THIRD_PARTY_LICENSES 出清 proot/talloc/alpine 条目
       （**GPL=0**）；本计划表重写（P3 沙箱重写项删除、P4 瘦身、P5 解锁）；
       审计复跑 + 八流程冒烟（重点证明制卡/技能/生图/附件零沙箱依赖）
@@ -211,3 +219,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | 见进度 | P0 修正：CrashFileReporter 经 SPI 注册存活被误删，恢复并升级审计工具（SPI 根）；beta.94 构建被 R8 拦截后修复 | 血统分类 261/160/379（+1 上游改动=恢复件） |
 | 2026-09-29 | #53 合并 + beta.95 发布 | P1 完成：三个自有包迁入 novex.*（含遮蔽修复）；公告含请勿更新警告 | 上游命名空间自有代码清零（自包含部分） |
 | 2026-09-29 | 见进度 | P2 完成：BusyBox 出包、dash 承担 /bin/sh、apk 保留（D1）；净眼两轮退回修复（包装去 busybox 硬编码、coreutils-env、apk DB 剔除 busybox 条目、预装脚本、命令真空期兜底） | 分发物 GPL 仅剩 proot 全家 + apk 两个隔离组件；DB 无 busybox 登记，upgrade 不回装 |
+| 2026-09-29 | 见进度 | R2+R3 完成：执行层（sandbox/ 35f、agent/shell 3f、offload 死件 8f）与界面（ui/terminal 全家、Mirror/Rootfs/挂载/环境变量屏）拆除；五枚 so + default_mount + prepare 脚本 + CI prepare 步骤清零；Manifest 摘 4 组件 6 权限 | 源码 -约 3.1 万行（git diff --stat）；BrowserUseManager/BrowserTabPool 因手动浏览器共管保留 |

@@ -2,10 +2,8 @@ package com.openminis.app
 
 import android.app.Activity
 import android.app.Application
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import coil.ImageLoader
@@ -15,7 +13,6 @@ import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
-import com.openminis.app.data.MountedFoldersStore
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
@@ -27,29 +24,6 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.network.NetworkMonitor
 import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.provider.ModelsDevApi
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.sandbox.MountedFolderCoordinator
-import com.openminis.app.sandbox.NativeOffloadServer
-import com.openminis.app.sandbox.PRootKernel
-import com.openminis.app.sandbox.RootfsManager
-import com.openminis.app.sandbox.offload.AccessibilityOffloadHandler
-import com.openminis.app.sandbox.offload.AlarmOffloadHandler
-import com.openminis.app.sandbox.offload.BrowserUseOffloadHandler
-import com.openminis.app.sandbox.offload.CalendarOffloadHandler
-import com.openminis.app.sandbox.offload.ClipboardOffloadHandler
-import com.openminis.app.sandbox.offload.ContactsOffloadHandler
-import com.openminis.app.sandbox.offload.DeviceOffloadHandler
-import com.openminis.app.sandbox.offload.LocationOffloadHandler
-import com.openminis.app.sandbox.offload.ModelUseOffloadHandler
-import com.openminis.app.sandbox.offload.SessionsOffloadHandler
-import com.openminis.app.sandbox.offload.ShizukuOffloadHandler
-import com.openminis.app.sandbox.offload.NotificationOffloadHandler
-import com.openminis.app.sandbox.offload.OpenOffloadHandler
-import com.openminis.app.sandbox.offload.PhotosOffloadHandler
-import com.openminis.app.sandbox.offload.PlayerOffloadHandler
-import com.openminis.app.sandbox.offload.SpeakOffloadHandler
-import com.openminis.app.sandbox.offload.SpeechOffloadHandler
-import com.openminis.app.sandbox.offload.WeatherOffloadHandler
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.startup.NovexStartupCoordinator
 import com.openminis.app.startup.NovexCrashBootstrap
@@ -196,8 +170,6 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     lateinit var backgroundSettingsRepository: BackgroundSettingsRepository
         private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
-        private set
-    lateinit var mountedFoldersStore: MountedFoldersStore
         private set
 
     /**
@@ -377,9 +349,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
 
         // Only dependencies used by the first Activity frame stay on the
-        // launch path. Sandbox probing, native offload registration and model
-        // refresh are initialized after Application.onCreate returns.
-        mountedFoldersStore = MountedFoldersStore(this)
+        // launch path. Model refresh is initialized after
+        // Application.onCreate returns.
         SessionActivityTracker.init(this)
         com.openminis.app.service.SessionBadgeStore.init(this)
         backgroundSettingsRepository = BackgroundSettingsRepository(this)
@@ -465,9 +436,6 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
 
             override fun onActivityResumed(activity: Activity) {
                 com.openminis.app.crash.CrashFrequencyDetector.maybeShowOnActivity(activity)
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    runCatching { mountedFoldersStore.refreshWritability() }
-                }
             }
 
             override fun onActivityPaused(activity: Activity) = Unit
@@ -520,119 +488,22 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // Initialize models.dev registry (loads from bundled asset, refreshes in background)
         ModelsDevApi.init(this)
 
-        // Initialize sandbox singletons (does not trigger extraction)
-        RootfsManager.getInstance(this)
-        ExecutionCoordinator.init(this)
-        ExecutionCoordinator.envVarRepository = envVarRepository
-
         // Privacy Mode store + redactor wiring. Mirrors iOS
         // EnvVarPrivacyStore.init / EnvVarRedactor static handoff.
         com.openminis.app.data.EnvVarPrivacyStore.init(this)
         com.openminis.app.data.EnvVarRedactor.envVarRepository = envVarRepository
 
         // Start network monitoring — mirrors iOS NetworkMonitor.shared.start().
-        // The monitor writes /etc/resolv.conf immediately and on every
-        // ConnectivityManager callback so shells inside the sandbox see fresh
-        // DNS servers after Wi-Fi ↔ cellular swaps or VPN toggles.
         networkMonitor.start(this)
 
-        // Register global /var/minis/{memory,skills,shared} bind mounts up-front
-        // so direct file I/O tools (file_read) resolve these paths even before
-        // PRoot has booted or any shell has started.
+        // Register global /var/minis/{memory,skills,shared,mcp-servers} bind
+        // mounts up-front so direct file I/O tools (file_read, skills,
+        // markdown assets) resolve these paths without a sandbox.
         novex.android.ContentPaths.registerGlobalMounts(this)
 
-        // T219-1: load user-mounted external folders and seed PRoot's
-        // bindMounts before the first proot invocation, so the very first
-        // `shell_execute` already has `/var/minis/mounts/<name>/` visible.
-        // Entries whose SAF tree URI didn't resolve to a real POSIX path
-        // (cloud providers, unmounted SD card) are silently skipped by
-        // bindMountSpecs.
-        // T219-5: hand the singleton to PRootKernel so applyMountedFoldersSnapshot
-        // can read the live state, and wire an onChange callback so any UI CRUD
-        // (add/remove/rename/toggle) re-applies the snapshot.
-        // T277: PersistentShell reuses one PRoot process per chat session for the
-        // session's lifetime, so an applyMountedFoldersSnapshot call alone never
-        // reaches the live shell — proot's `-b` argv is frozen at spawn time.
-        // Kill any live shells so the next execute() rebuilds them with the
-        // updated bind set. Mount CRUD is a Settings-screen action; the user
-        // is not in chat mid-command, so this restart is safe and user-invisible.
-        PRootKernel.mountedFoldersStore = mountedFoldersStore
-        mountedFoldersStore.onChange = {
-            PRootKernel.applyMountedFoldersSnapshot(this)
-            ExecutionCoordinator.stopCurrentCommand()
-        }
-        // T219-6: route launch-time seeding through applyMountedFoldersSnapshot
-        // so it (a) reads the live store consistently and (b) materializes the
-        // /var/minis/mounts/<name> placeholder dirs that PRoot's `-b` needs.
-        // Note: this runs before PRootKernel.boot, so rootfs may not yet exist —
-        // applyMountedFoldersSnapshot tolerates that case (mkdirs fails silently
-        // and PRootKernel.boot calls applyMountedFoldersSnapshot again at the
-        // end of boot to materialize the targets once rootfs is on disk).
-        PRootKernel.applyMountedFoldersSnapshot(this)
-
-        // Register native_offload handlers and start the server eagerly —
-        // the server only needs the rootfs tmp directory, which can be
-        // materialized lazily. Starting here means the abstract socket is
-        // reachable even before any shell session is launched.
-        NativeOffloadServer.register("android-alarm", AlarmOffloadHandler(this))
-        NativeOffloadServer.register("android-calendar", CalendarOffloadHandler(this))
-        NativeOffloadServer.register("android-clipboard", ClipboardOffloadHandler(this))
-        NativeOffloadServer.register("android-contacts", ContactsOffloadHandler(this))
-        NativeOffloadServer.register("android-device", DeviceOffloadHandler(this))
-        NativeOffloadServer.register("android-location", LocationOffloadHandler(this))
-        NativeOffloadServer.register("android-notification", NotificationOffloadHandler(this))
-        NativeOffloadServer.register("android-open", OpenOffloadHandler(this))
-        NativeOffloadServer.register("android-photos", PhotosOffloadHandler(this))
-        NativeOffloadServer.register("android-player", PlayerOffloadHandler())
-        NativeOffloadServer.register("android-speak", SpeakOffloadHandler(this))
-        NativeOffloadServer.register("android-speech", SpeechOffloadHandler(this))
-        NativeOffloadServer.register("android-weather", WeatherOffloadHandler(this))
-        // T323: UI-layer automation backed by MinisAccessibilityService.
-        NativeOffloadServer.register("android-a11y-cli", AccessibilityOffloadHandler(this))
-        NativeOffloadServer.register("minis-model-use", ModelUseOffloadHandler(this, providerRepository))
-        // T-config: minis-config — agent-facing settings management
-        // (read/write registered ConfigFields with audit + revert).
-        // Mirrors iOS `config_offload_register()` in ISHKernel.m.
-        NativeOffloadServer.register(
-            "minis-config",
-            com.openminis.app.sandbox.offload.ConfigOffloadHandler(),
-        )
-        NativeOffloadServer.register("minis-browser-use", BrowserUseOffloadHandler(this))
-        // T188: minis-sessions-cli — agent-side query of chat history.
-        // Registers next to the other minis-* tools so PRootKernel.
-        // installHandlerStubs() picks it up on the next rootfs boot
-        // (writes a 17-byte exit-0 stub at /usr/local/bin/minis-sessions-cli
-        // so PATH lookup succeeds; PRoot intercepts the execve before
-        // the stub runs and routes to this handler).
-        NativeOffloadServer.register("minis-sessions-cli", SessionsOffloadHandler(chatRepository))
-        // [T-android-scheduled-tasks-full] minis-scheduled — create/list/run
-        // timed AI tasks (new chat / follow-up / re-run), mirroring the in-app
-        // Scheduled Tasks editor and the iOS Shortcuts intent set.
-        NativeOffloadServer.register(
-            "minis-scheduled",
-            com.openminis.app.sandbox.offload.ScheduledTaskOffloadHandler(this),
-        )
-        // T322: android-shizuku-cli — privileged Android control via Shizuku.
-        // The handler short-circuits with a typed error envelope when the
-        // user hasn't installed / started / authorized Shizuku, so we
-        // can register unconditionally; ShizukuManager.init below wires
-        // up the binder lifecycle listeners + StateFlow.
-        NativeOffloadServer.register("android-shizuku-cli", ShizukuOffloadHandler(this))
+        // T322: Shizuku — privileged Android control via Shizuku. The
+        // manager wires up the binder lifecycle listeners + StateFlow.
         com.openminis.app.offload.ShizukuManager.init(this)
-
-        // T-android-minis-debug-cli: shell-side CLI wrapper around the in-app
-        // DebugServer (127.0.0.1:5321) JSON-RPC. DEBUG-only — Release builds
-        // ship neither the DebugServer nor this handler, so the
-        // `/usr/local/bin/minis-debug` stub is also absent (PRootKernel.
-        // installHandlerStubs enumerates currently-registered handlers).
-        if (BuildConfig.DEBUG) {
-            NativeOffloadServer.register(
-                "minis-debug",
-                com.openminis.app.sandbox.offload.DebugOffloadHandler(this),
-            )
-        }
-
-        NativeOffloadServer.start(RootfsManager.getInstance(this).rootfsDir)
 
         // [T-android-session-paused-badge-hardkill] Reconcile PAUSED badges
         // against the DB's interrupted-session set. The lifecycle-callback push
@@ -673,40 +544,6 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // Runs per-instance in parallel; `autoRefreshModels` skips instances with custom models.
         providerRepository.refreshAllModelsIfNeeded(
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-        )
-
-        // Propagate system timezone and HTTP-proxy changes into the sandbox.
-        // iOS recomputes TZ for every command (ISHShellExecutor.m:335-353);
-        // here we update PRootKernel.customEnvironment and push `export …`
-        // into every live shell so interactive sessions pick up the change
-        // without a restart.
-        val sandboxSystemReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-                when (intent.action) {
-                    Intent.ACTION_TIMEZONE_CHANGED -> scope.launch {
-                        try {
-                            ExecutionCoordinator.broadcastTimezoneChange()
-                        } catch (t: Throwable) {
-                            Log.w("MinisApp", "broadcastTimezoneChange failed: ${t.message}")
-                        }
-                    }
-                    android.net.Proxy.PROXY_CHANGE_ACTION -> scope.launch {
-                        try {
-                            ExecutionCoordinator.broadcastProxyChange()
-                        } catch (t: Throwable) {
-                            Log.w("MinisApp", "broadcastProxyChange failed: ${t.message}")
-                        }
-                    }
-                }
-            }
-        }
-        registerReceiver(
-            sandboxSystemReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_TIMEZONE_CHANGED)
-                addAction(android.net.Proxy.PROXY_CHANGE_ACTION)
-            },
         )
 
         // Debug server: only start in debug builds (NEVER in release)

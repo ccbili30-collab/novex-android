@@ -7,7 +7,6 @@ on:
       - next
     paths:
       - "src/android/**"
-      - "scripts/prepare_android_sandbox.sh"
       - ".github/workflows/android-*.yml"
   workflow_dispatch:
 
@@ -53,9 +52,6 @@ jobs:
             "build-tools;35.0.0" \
             "cmake;3.22.1" \
             "ndk;27.0.12077973"
-
-      - name: Prepare sandbox runtime
-        run: ./scripts/prepare_android_sandbox.sh
 
       - name: Run quick validation
         working-directory: src/android

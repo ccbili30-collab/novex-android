@@ -1,7 +1,6 @@
 package com.openminis.app.agent
 
 import android.content.Context
-import com.openminis.app.sandbox.PRootKernel
 import novex.android.ContentPaths
 
 /**

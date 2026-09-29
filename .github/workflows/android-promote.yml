@@ -150,7 +150,6 @@ jobs:
               if ! git diff --quiet "$SOURCE_SHA" "$next_sha" -- \
                 src/android \
                 deps \
-                scripts/prepare_android_sandbox.sh \
                 .gitmodules; then
                 echo "Android product inputs changed after the candidate was built." >&2
                 exit 1
