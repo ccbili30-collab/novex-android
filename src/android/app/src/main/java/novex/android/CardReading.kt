@@ -81,7 +81,7 @@ private val CardPadding=18.dp
  * 阅读态头图：有封面时满宽 4:3 裁切；无封面角色卡退化为纯排版 hero
  * （徽标 + 大字标题 + 薄荷重音线，头像作为附加槽位，不占封面位）。
  */
-@Composable internal fun CardHero(card:ContentDocument,model:CardSessionModel,editing:Boolean=false,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onIntroduction:(()->Unit)?=null) {
+@Composable internal fun CardHero(card:ContentDocument,model:CardSessionModel,editing:Boolean=false,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onIntroduction:(()->Unit)?=null,chromeOverlay:Boolean=false) {
     if(editing) {
         val image=card.appearance.coverResourceId?:card.appearance.avatarResourceId
         val shape=RoundedCornerShape(8.dp)
@@ -133,7 +133,8 @@ private val CardPadding=18.dp
             else NovexArtwork(NovexArtworkKind.WORLD,card.id,null,"世界封面",Modifier.fillMaxSize())
         }
     } else {
-        Column(Modifier.fillMaxWidth().padding(start=24.dp,end=24.dp,top=4.dp,bottom=20.dp)) {
+        // 无封面排版：DETAIL 页悬浮圆钮会压在内容顶上，预留铬高度让徽章/标题让位。
+        Column(Modifier.fillMaxWidth().padding(start=24.dp,end=24.dp,top=if(chromeOverlay)76.dp else 4.dp,bottom=20.dp)) {
             val avatar=card.appearance.avatarResourceId?.let {id->card.resources.firstOrNull {it.id==id}}
             if(avatar!=null) {
                 RoleAvatarImage(avatar.content,model,72.dp)
@@ -151,11 +152,11 @@ private val CardPadding=18.dp
 }
 
 /** 同一渲染树读取正式内容或草稿；横向选择仅改变展示，不改变采用规则。 */
-@Composable fun CardReading(card:ContentDocument,model:CardSessionModel,modifier:Modifier=Modifier,onCharacter:((String)->Unit)?=null,readingScope:String="saved",onModule:((String)->Unit)?=null,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onEmpty:(()->Unit)?=null,onIntroduction:(()->Unit)?=null,byline:(@Composable ()->Unit)?=null,trailing:(@Composable ()->Unit)?=null) {
-    key(card.id,readingScope){CardReadingContent(FolderContents.organize(card),model,modifier,onCharacter,readingScope,onModule,onImage,onName,onEmpty,onIntroduction,byline,trailing)}
+@Composable fun CardReading(card:ContentDocument,model:CardSessionModel,modifier:Modifier=Modifier,onCharacter:((String)->Unit)?=null,readingScope:String="saved",onModule:((String)->Unit)?=null,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onEmpty:(()->Unit)?=null,onIntroduction:(()->Unit)?=null,byline:(@Composable ()->Unit)?=null,trailing:(@Composable ()->Unit)?=null,chromeOverlay:Boolean=false) {
+    key(card.id,readingScope){CardReadingContent(FolderContents.organize(card),model,modifier,onCharacter,readingScope,onModule,onImage,onName,onEmpty,onIntroduction,byline,trailing,chromeOverlay)}
 }
 
-@Composable private fun CardReadingContent(card:ContentDocument,model:CardSessionModel,modifier:Modifier=Modifier,onCharacter:((String)->Unit)?=null,readingScope:String="saved",onModule:((String)->Unit)?=null,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onEmpty:(()->Unit)?=null,onIntroduction:(()->Unit)?=null,byline:(@Composable ()->Unit)?=null,trailing:(@Composable ()->Unit)?=null) {
+@Composable private fun CardReadingContent(card:ContentDocument,model:CardSessionModel,modifier:Modifier=Modifier,onCharacter:((String)->Unit)?=null,readingScope:String="saved",onModule:((String)->Unit)?=null,onImage:(()->Unit)?=null,onName:(()->Unit)?=null,onEmpty:(()->Unit)?=null,onIntroduction:(()->Unit)?=null,byline:(@Composable ()->Unit)?=null,trailing:(@Composable ()->Unit)?=null,chromeOverlay:Boolean=false) {
     val bodyModules=card.bodyModules()
     val memory=remember(card.id,readingScope){model.readingMemory(card.id,readingScope)}
     val list=rememberLazyListState(memory.scrollIndex,memory.scrollOffset)
@@ -243,7 +244,7 @@ private val CardPadding=18.dp
             }) {change,amount->distance+=amount;change.consume()}
         }
     },state=list,contentPadding=PaddingValues(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(0.dp)) {
-        item("hero"){CardHero(card,model,onImage=onImage,onName=onName,onIntroduction=onIntroduction)}
+        item("hero"){CardHero(card,model,onImage=onImage,onName=onName,onIntroduction=onIntroduction,chromeOverlay=chromeOverlay)}
         // 卡顶条：恒定发出，提供圆角与封面重叠；角色卡的叠放头像槽位也在这里。
         segment("card-top",first=true) {
             if(avatarRes!=null && hasCoverHero)Box(Modifier.fillMaxWidth().height(44.dp)) {

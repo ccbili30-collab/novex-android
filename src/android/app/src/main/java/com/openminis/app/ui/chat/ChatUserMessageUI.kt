@@ -319,11 +319,11 @@ internal fun UserMessageBubble(
                     // the bubble is the user's action/voice in the transcript,
                     // which is exactly where the redesign spends its accent.
                     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-                    val mint = Color(0xFF34D399)
+                    val mint = com.openminis.app.ui.noven.NovenColors.Mint
                     val userBubbleColor = mint.copy(alpha = if (isDarkTheme) 0.22f else 0.14f)
                     val userTextColor = if (isDarkTheme) {
                         MaterialTheme.colorScheme.onSurface
-                    } else Color(0xFF0E3B2E)
+                    } else com.openminis.app.ui.noven.NovenColors.OnMint
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),

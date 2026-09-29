@@ -78,7 +78,10 @@ import androidx.compose.ui.semantics.semantics
     val replacementPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let(model::replaceImage)}
     val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus=androidx.compose.ui.platform.LocalFocusManager.current
-    val keyboardVisible=WindowInsets.isImeVisible
+    // isImeVisible 在部分设备上会把已隐藏的 IME 残留 hint 当作可见（实测
+    // emulator 上 ime bottom=0 时 isImeVisible 仍为 true），改用实际占位
+    // 高度判断键盘是否弹出，避免返回键被永久吞掉。
+    val keyboardVisible=WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)>0
     val back:()->Unit = {
         if (keyboardVisible) {
             keyboard?.hide()
@@ -104,7 +107,7 @@ import androidx.compose.ui.semantics.semantics
         text={Text("从库中移除这张卡片及其内部角色。已有对话不会被删除；引用此卡的对话将无法继续读取它。历史与原始资源保留。")},
         confirmButton={TextButton(enabled=!state.busy,onClick={deleteCard=false;model.deleteCard(onExit)}){Text("删除")}},
         dismissButton={TextButton(enabled=!state.busy,onClick={deleteCard=false}){Text("取消")}})
-    BackHandler(enabled=!WindowInsets.isImeVisible){if(!state.busy || state.page==CardPage.DETAIL)back()}
+    BackHandler(enabled=!keyboardVisible){if(!state.busy || state.page==CardPage.DETAIL)back()}
     Scaffold(
         containerColor=NovenColors.Canvas,
         topBar={if(state.page!=CardPage.DETAIL)NovexPageTopBar(title=when(state.page){
@@ -180,7 +183,7 @@ import androidx.compose.ui.semantics.semantics
                     val context=LocalContext.current
                     val profileStore=remember {NovenProfileStore.get(context)}
                     val profile=profileStore.profile
-                    CardReading(card,model,onCharacter=model::showTarget,onModule={model.editPart(it)},onImage={model.edit()},onName={model.edit()},onEmpty={model.edit()},onIntroduction={model.edit()},
+                    CardReading(card,model,onCharacter=model::showTarget,onModule={model.editPart(it)},onImage={model.edit()},onName={model.edit()},onEmpty={model.edit()},onIntroduction={model.edit()},chromeOverlay=true,
                         byline={
                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                 if(profile.avatarPath!=null)AsyncImage(model=java.io.File(profile.avatarPath),contentDescription="作者头像",
@@ -198,7 +201,7 @@ import androidx.compose.ui.semantics.semantics
                                     colors=ButtonDefaults.outlinedButtonColors(contentColor=NovenColors.Mint)) {Text("以此创作")}
                                 Button(enabled=!state.busy && state.saved!=null,onClick=onInteract,modifier=Modifier.weight(1f),
                                     shape=RoundedCornerShape(14.dp),
-                                    colors=ButtonDefaults.buttonColors(containerColor=NovenColors.Mint,contentColor=Color.White)) {
+                                    colors=ButtonDefaults.buttonColors(containerColor=NovenColors.Mint,contentColor=NovenColors.OnMint)) {
                                     Text(if(card.kind==CardKind.WORLD)"进入世界 →" else "扮演角色 →")
                                 }
                             }

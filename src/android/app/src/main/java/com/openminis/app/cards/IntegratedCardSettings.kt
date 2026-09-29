@@ -73,7 +73,9 @@ import novex.runtime.*
         catch(failure:Exception){error=failure.message}finally{busy=false}
     }
     val back:()->Unit={if(!busy){if(draft!=null && draft!=(baseline?:CardBinding()))discard=true else onBack()}}
-    androidx.activity.compose.BackHandler(enabled=!WindowInsets.isImeVisible){back()}
+    // 与 CardPages 同理：isImeVisible 在隐藏键盘后仍可能返回 true（IME 残留
+    // inset hint），改用实际占位高度判断。
+    androidx.activity.compose.BackHandler(enabled=WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)==0){back()}
     if(discard)AlertDialog(onDismissRequest={discard=false},title={Text("放弃未保存的设置？")},
         confirmButton={TextButton(onClick={discard=false;onBack()}){Text("放弃更改")}},
         dismissButton={TextButton(onClick={discard=false}){Text("继续设置")}})
