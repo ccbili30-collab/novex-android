@@ -14,7 +14,7 @@ object ProviderFactory {
      * [context] is needed for OAuth (OpenAI/Codex、xAI、Kimi) to access encrypted
      * storage for token refresh.
      *
-     * [P3.1e] 工厂全量换管：四条线协议（OpenAI 兼容 chat / Responses / anthropic /
+     * P3.1e 工厂全量换管：四条线协议（OpenAI 兼容 chat / Responses / anthropic /
      * gemini）九类实例（①Codex-OAuth ②官方直连 ③useResponsesAPI ④Azure ⑤前尘
      * responses 回退 ⑥局域网明文 ⑦OpenRouter ⑧xAI ⑨Kimi）全部构造自有传输适配器
      * novex.android.transport.NovexTransportProvider；上游 provider/openai/ 包已随

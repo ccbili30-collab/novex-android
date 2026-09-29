@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
 /**
- * [P3.1e] 图片学习式降级的进程级共享面（自已删上游 openai 包的 provider 伴生对象迁出，随
+ * P3.1e 图片学习式降级的进程级共享面（自已删上游 openai 包的 provider 伴生对象迁出，随
  * openai 包整体删除落地）。跨实现互相可见：OpenAI 兼容线（chat 与 responses 两
  * 方言）的适配器在此学习/查询；anthropic/gemini 线恒真实发送（与被替换实现一致）。
  *
