@@ -67,7 +67,7 @@ object ContentPaths {
     /**
      * Resolve a session-scoped `/var/minis/...` path to its host directory.
      * Falls back to [resolveHostPath] for paths outside the per-session
-     * subdirs (memory/skills/shared do not depend on sessionId).
+     * subdirs (memory/skills/shared/mcp-servers do not depend on sessionId).
      */
     fun resolveSessionHostPath(sessionId: String, linuxPath: String, context: Context): File? {
         if (!linuxPath.startsWith("/var/minis/")) return resolveHostPath(linuxPath)
