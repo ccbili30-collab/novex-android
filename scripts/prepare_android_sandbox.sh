@@ -12,6 +12,12 @@ ALPINE_VERSION="3.21"
 ALPINE_RELEASE="3.21.3"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/aarch64/alpine-minirootfs-${ALPINE_RELEASE}-aarch64.tar.gz"
 ALPINE_SHA256="ead8a4b37867bd19e7417dd078748e2312c0aea364403d96758d63ea8ff261ea"
+# De-GPL rootfs (P2): BusyBox removed from the bundled rootfs; dash provides
+# /bin/sh. apk stays (GPL-2.0+, isolated runtime component, source on dl-cdn);
+# bash/coreutils/sed/grep/findutils are apk-installed on device at runtime.
+DASH_VERSION="0.5.12-r2"
+DASH_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main/aarch64/dash-${DASH_VERSION}.apk"
+DASH_SHA256="b80f6add5302fa35457a8b8d292db3dd81f942433ecd32b133e42931e7ff920f"
 
 TERMUX_BASE="https://packages.termux.dev/apt/termux-main"
 PROOT_REL="pool/main/p/proot/proot_5.1.107.95_aarch64.deb"
@@ -88,12 +94,50 @@ extract_deb() {
 }
 
 ROOTFS_FILE="$ASSETS_DIR/alpine-minirootfs.tar.gz"
-if [ ! -s "$ROOTFS_FILE" ]; then
-    echo "Downloading Alpine Linux ${ALPINE_RELEASE} aarch64 minirootfs..."
-    download_checked "$ALPINE_URL" "$ALPINE_SHA256" "$ROOTFS_FILE"
-else
-    verify_checksum "$ROOTFS_FILE" "$ALPINE_SHA256" "$ROOTFS_FILE"
+# Always rebuild the rootfs from the pinned Alpine base: the shipped artifact is
+# the de-GPL variant (BusyBox stripped, dash as /bin/sh), not the stock tarball.
+echo "Building de-GPL rootfs from Alpine Linux ${ALPINE_RELEASE} aarch64 minirootfs..."
+download_checked "$ALPINE_URL" "$ALPINE_SHA256" "$WORK_DIR/alpine.tar.gz"
+download_checked "$DASH_URL" "$DASH_SHA256" "$WORK_DIR/dash.apk"
+ROOTFS_SRC="$WORK_DIR/rootfs"
+DASH_SRC="$WORK_DIR/dashpkg"
+mkdir -p "$ROOTFS_SRC" "$DASH_SRC"
+tar xzf "$WORK_DIR/alpine.tar.gz" -C "$ROOTFS_SRC"
+tar xzf "$WORK_DIR/dash.apk" -C "$DASH_SRC"
+install -m 0755 "$DASH_SRC/usr/bin/dash" "$ROOTFS_SRC/usr/bin/dash"
+# Strip BusyBox (GPL-2.0): binaries, applet symlinks and config dirs — this
+# minirootfs uses split /bin + /usr/bin, so sweep both.
+find "$ROOTFS_SRC" -name '*busybox*' -exec rm -rf {} +
+find "$ROOTFS_SRC" -type l -lname '*busybox*' -delete
+# BusyBox 从包管理账本里了断：world 只是声明，apk upgrade 遍历的是已安装
+# DB——把 P:busybox 与 P:busybox-binsh 两个条目块从 installed DB 剔除
+# （已验证无其他已装包反向依赖；/bin/sh 届时是无主的 dash 符号链接），
+# 否则上游 busybox 一 bump，设备上一次 apk upgrade 就静默重装它。
+if [ -f "$ROOTFS_SRC/etc/apk/world" ]; then
+    grep -v '^busybox$' "$ROOTFS_SRC/etc/apk/world" > "$ROOTFS_SRC/etc/apk/world.tmp" || true
+    mv "$ROOTFS_SRC/etc/apk/world.tmp" "$ROOTFS_SRC/etc/apk/world"
 fi
+if [ -f "$ROOTFS_SRC/lib/apk/db/installed" ]; then
+    awk 'BEGIN{RS="";ORS="\n\n"} $0 !~ /(^|\n)P:busybox(-binsh)?\n/ {print $0 "\n"}' \
+        "$ROOTFS_SRC/lib/apk/db/installed" > "$ROOTFS_SRC/lib/apk/db/installed.tmp"
+    mv "$ROOTFS_SRC/lib/apk/db/installed.tmp" "$ROOTFS_SRC/lib/apk/db/installed"
+fi
+mkdir -p "$ROOTFS_SRC/var/novex"
+# 交互 shell 首启一次性预装工具集（后台、幂等）：填补 busybox 出包后的命令
+# 真空期。/var/novex 已在构建期预建，这里只用 shell 内建，装成功才落标记。
+cat > "$ROOTFS_SRC/etc/profile.d/novex-tools.sh" <<'PROF'
+# novex-degpl-1: one-time best-effort toolset provision (BusyBox-free rootfs)
+if [ ! -x /usr/bin/ls ] && [ -x /sbin/apk ] && [ ! -f /var/novex/.tools-done ]; then
+    (apk add -q bash coreutils coreutils-env sed grep findutils >/dev/null 2>&1 && : > /var/novex/.tools-done) &
+fi
+PROF
+# /bin/sh must use a RELATIVE target: the app's tar extractor resolves link
+# targets against the device root, so absolute targets silently break.
+ln -sf dash "$ROOTFS_SRC/usr/bin/sh"
+[ -d "$ROOTFS_SRC/bin" ] && ln -sf ../usr/bin/dash "$ROOTFS_SRC/bin/sh"
+printf 'novex-degpl-1 busybox-removed sh=dash apk-kept\n' > "$ROOTFS_SRC/etc/novex-rootfs.marker"
+tar czf "$ROOTFS_FILE" -C "$ROOTFS_SRC" .
+echo "BusyBox removed, dash installed; apk kept for on-device runtime installs."
 
 download_checked "$TERMUX_BASE/$PROOT_REL" "$PROOT_SHA256" "$WORK_DIR/proot.deb"
 download_checked "$TERMUX_BASE/$TALLOC_REL" "$TALLOC_SHA256" "$WORK_DIR/talloc.deb"

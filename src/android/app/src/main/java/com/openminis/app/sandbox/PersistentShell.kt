@@ -171,7 +171,7 @@ class PersistentShell(
         com.openminis.app.logging.AppLogger.info(
             TAG,
             "spawn ctx: proot=${rootfsManager.prootBinary.exists()} " +
-                "rootfs=${File(rootfsManager.rootfsDir, "bin/busybox").exists()} " +
+                "rootfs-sh=${File(rootfsManager.rootfsDir, "usr/bin/sh").exists()} " +
                 "loader64=${PRootKernel.prootLoaderPath.isNotEmpty()} " +
                 "loader32=${PRootKernel.prootLoader32Path.isNotEmpty()}",
         )

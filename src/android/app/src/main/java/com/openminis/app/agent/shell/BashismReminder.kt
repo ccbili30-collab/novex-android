@@ -33,11 +33,11 @@ object BashismReminder {
         val sb = StringBuilder()
         sb.appendLine("<system-reminder>")
         if (installFailure != null) {
-            sb.appendLine("This command was executed by busybox sh (NOT bash), because bash installation failed: ${sanitize(installFailure)}.")
+            sb.appendLine("This command was executed by /bin/sh (dash, NOT bash), because bash installation failed: ${sanitize(installFailure)}.")
         } else {
-            sb.appendLine("This command was executed by busybox sh (NOT bash).")
+            sb.appendLine("This command was executed by /bin/sh (dash, NOT bash).")
         }
-        sb.appendLine("The script contains bash-only syntax that busybox sh handles incorrectly, which is")
+        sb.appendLine("The script contains bash-only syntax that dash handles incorrectly, which is")
         sb.appendLine("likely (part of) why it failed or produced a wrong result. Detected:")
         sb.appendLine()
         for (h in shown) {

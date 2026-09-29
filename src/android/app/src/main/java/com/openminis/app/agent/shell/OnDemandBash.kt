@@ -18,8 +18,10 @@ import java.net.URL
  *   - persistent failure backoff (24h / 3-strikes) via SharedPreferences (F2),
  *   - one install attempt per process launch.
  *
- * On Android PRoot runs `apk add` natively (~1-3s), so the wait is minor; the
- * guards still matter for the offline / broken-source case.
+ * On Android PRoot runs `apk add` natively (~1-3s per package), so the wait is
+ * minor; the guards still matter for the offline / broken-source case. Since
+ * the bundled rootfs no longer ships BusyBox (de-GPL, P2), this install also
+ * provisions the coreutils toolset the sandbox scripts expect.
  */
 object OnDemandBash {
 
@@ -83,8 +85,8 @@ object OnDemandBash {
             return Outcome.Unavailable("network/apk mirror unreachable")
         }
 
-        Log.i(TAG, "installing bash (budget ${INSTALL_BUDGET_MS / 1000}s)…")
-        val rc = executor.run("apk add bash", INSTALL_BUDGET_MS)
+        Log.i(TAG, "installing bash toolset (budget ${INSTALL_BUDGET_MS / 1000}s)…")
+        val rc = executor.run("apk add bash coreutils coreutils-env sed grep findutils", INSTALL_BUDGET_MS)
         val verified = rc == 0 && executor.run("command -v bash >/dev/null 2>&1", 15_000) == 0
         if (verified) {
             clearFailure(context)
@@ -98,7 +100,7 @@ object OnDemandBash {
         }
         recordFailure(context); markUnavailable()
         Log.e(TAG, "bash install failed (rc=$rc)")
-        return Outcome.Unavailable("apk add bash failed (rc=$rc)")
+        return Outcome.Unavailable("apk toolset install failed (rc=$rc)")
     }
 
     /** Called when `bash <file>` itself returned 127 (user apk del'd) — M5. */
@@ -111,7 +113,7 @@ object OnDemandBash {
     private fun backoffReason(context: Context): String? {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val count = p.getInt(KEY_FAIL_COUNT, 0)
-        if (count >= MAX_STRIKES) return "bash install disabled after $MAX_STRIKES failures (retry manually: apk add bash)"
+        if (count >= MAX_STRIKES) return "bash install disabled after $MAX_STRIKES failures (retry manually: apk add bash coreutils coreutils-env sed grep findutils)"
         val last = p.getLong(KEY_LAST_FAIL, 0)
         if (last > 0 && System.currentTimeMillis() - last < BACKOFF_WINDOW_MS) return "bash install backing off (recent failure)"
         return null
