@@ -1,18 +1,18 @@
 package com.openminis.app.data.attachments
 
 import android.content.Context
-import com.openminis.app.novex.domain.NovexCompatibilityDocument
-import com.openminis.app.novex.domain.NovexDocumentDescriptor
-import com.openminis.app.novex.domain.NovexDocumentFormat
-import com.openminis.app.novex.domain.NovexDocxParseException
-import com.openminis.app.novex.domain.NovexDocxStreamingParser
-import com.openminis.app.novex.domain.NovexDocumentSnapshot
-import com.openminis.app.novex.domain.NovexDocumentSnapshotCache
-import com.openminis.app.novex.domain.NovexDocumentSnapshotPipeline
-import com.openminis.app.novex.domain.NovexDocumentStatus
-import com.openminis.app.novex.domain.NovexDocumentWarning
-import com.openminis.app.novex.domain.NovexResourceRef
-import com.openminis.app.novex.domain.NovexStructuredDocument
+import novex.core.NovexCompatibilityDocument
+import novex.core.NovexDocumentDescriptor
+import novex.core.NovexDocumentFormat
+import novex.core.NovexDocxParseException
+import novex.core.NovexDocxStreamingParser
+import novex.core.NovexDocumentSnapshot
+import novex.core.NovexDocumentSnapshotCache
+import novex.core.NovexDocumentSnapshotPipeline
+import novex.core.NovexDocumentStatus
+import novex.core.NovexDocumentWarning
+import novex.core.NovexResourceRef
+import novex.core.NovexStructuredDocument
 import java.io.File
 import java.security.MessageDigest
 

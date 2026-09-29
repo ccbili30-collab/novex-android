@@ -77,13 +77,17 @@ Android Gradle 依赖全部宽松（Apache-2.0/MIT，见 THIRD_PARTY_LICENSES.md
 - [x] 捎带：ui/chat 注释里的「RikkaHub/ZCode-style」措辞改为
       「主流聊天客户端惯例」（尽观感友好，非法律义务）
 
-### P1 · Novex 自有代码机械搬家 — 绿档 — 379 文件 50.2k 行 — [ ]
+### P1 · Novex 自有代码机械搬家 — 绿档 — 自包含包 main 新路径共 192 文件（app 151 + novex-core 41；含测试共 340 改名/571 文件改写）— [x]
 
-com.openminis.app 命名空间内的自有代码整体迁入 novex 命名空间
-（ui.novex 主源集 42f/全源集 54f、novex.domain 84f、novex.adapter 25f、
-novex.android 18f、data/character 与 ui/settings 里的 Novex 新文件等）。
-纯 git mv + 包名/ import 替换，编译 + 全量测试即验收。完成后上游命名空间
-只剩真血统。包计数以审计工具主源集口径为准。
+执行口径（2026-09-29，PR 见进度日志）：整包迁移自包含的 Novex 包——
+`com.openminis.app.novex.domain` → `novex.core`（app 84 + novex-core 41，split
+package 两半同步迁移）、`com.openminis.app.novex.adapter` → `novex.android.adapter`、
+`com.openminis.app.ui.novex` → `novex.android.ui`。搬家前置排雷：Room 注解零、
+kotlinx.serialization 零（无多态判别式落盘风险）、非 Kotlin 文件引用零。
+散落在上游包内的 Novex 新文件（data/character、ui/settings、ui/chat 等，
+约 169f）**随 P3 所属子系统一并迁移**——它们与上游代码存在同包裸引用，
+单独搬迁非纯机械，强行移动违反本阶段绿档约束。审计工具包前缀已升级为
+`novex.*` 通配。
 
 ### P2 · rootfs 去 GPL — 黄档 — [ ]
 

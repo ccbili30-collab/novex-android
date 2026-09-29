@@ -5,7 +5,7 @@ import androidx.room.Room
 import com.openminis.app.cards.IntegratedCatalog
 import com.openminis.app.data.creative.RoomNovexWorkGroups
 import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import novex.content.*

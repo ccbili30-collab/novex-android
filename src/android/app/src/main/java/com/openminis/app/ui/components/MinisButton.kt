@@ -15,9 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.Button as NovexButtonControl
-import com.openminis.app.ui.novex.OutlinedButton as NovexOutlinedButtonControl
-import com.openminis.app.ui.novex.TextButton as NovexTextButtonControl
+import novex.android.ui.Button as NovexButtonControl
+import novex.android.ui.OutlinedButton as NovexOutlinedButtonControl
+import novex.android.ui.TextButton as NovexTextButtonControl
 
 // Material3 ButtonDefaults.MinHeight = 40dp; tuned to 48dp for touch
 // ergonomics on phones. IconButton family is unaffected (icon-sized).

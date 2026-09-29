@@ -2,12 +2,12 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Slider
+import novex.android.ui.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import com.openminis.app.novex.domain.NovexConversationContextLimit
-import com.openminis.app.ui.novex.TextButton
+import novex.core.NovexConversationContextLimit
+import novex.android.ui.TextButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt

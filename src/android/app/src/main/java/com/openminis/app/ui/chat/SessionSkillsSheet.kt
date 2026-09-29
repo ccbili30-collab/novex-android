@@ -206,7 +206,7 @@ private fun EmptySkillsCard() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.Description,
+                novex.android.ui.NovexIcons.Description,
                 contentDescription = null,
                 modifier = Modifier.size(36.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
 import android.app.Application
-import com.openminis.app.novex.adapter.NovexCardImageSource
+import novex.android.adapter.NovexCardImageSource
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer

@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -96,7 +96,7 @@ fun SkillRowItem(
             if (onClick != null) {
                 Spacer(modifier = Modifier.width(4.dp))
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                    novex.android.ui.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(20.dp),
@@ -122,8 +122,8 @@ fun SkillRowItem(
  * stay consistent between Settings and the in-chat sheet.
  */
 fun sourceIconAndColor(source: SkillRepository.ImportSource): Pair<ImageVector, Color> = when (source) {
-    SkillRepository.ImportSource.URL -> com.openminis.app.ui.novex.NovexIcons.Link to Color(0xFF007AFF)
-    SkillRepository.ImportSource.FILE -> com.openminis.app.ui.novex.NovexIcons.Description to Color(0xFFFF9500)
-    SkillRepository.ImportSource.BUNDLED -> com.openminis.app.ui.novex.NovexIcons.Inventory2 to Color(0xFF34C759)
-    SkillRepository.ImportSource.SESSION -> com.openminis.app.ui.novex.NovexIcons.ChatBubble to Color(0xFFAF52DE)
+    SkillRepository.ImportSource.URL -> novex.android.ui.NovexIcons.Link to Color(0xFF007AFF)
+    SkillRepository.ImportSource.FILE -> novex.android.ui.NovexIcons.Description to Color(0xFFFF9500)
+    SkillRepository.ImportSource.BUNDLED -> novex.android.ui.NovexIcons.Inventory2 to Color(0xFF34C759)
+    SkillRepository.ImportSource.SESSION -> novex.android.ui.NovexIcons.ChatBubble to Color(0xFFAF52DE)
 }

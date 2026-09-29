@@ -7,9 +7,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.openminis.app.novex.domain.NovexGamePlayerChoices
-import com.openminis.app.ui.novex.NovexContentDialog
-import com.openminis.app.ui.novex.TextButton
+import novex.core.NovexGamePlayerChoices
+import novex.android.ui.NovexContentDialog
+import novex.android.ui.TextButton
 
 @Composable
 internal fun NovexGameEntryDialog(

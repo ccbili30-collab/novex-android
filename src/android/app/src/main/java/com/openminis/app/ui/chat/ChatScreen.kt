@@ -44,17 +44,17 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.openminis.app.novex.domain.ConversationControlBehavior
-import com.openminis.app.novex.domain.NovexLearningControl
-import com.openminis.app.novex.domain.NovexLearningControlPolicy
-import com.openminis.app.novex.domain.NovexLearningTaskStatus
-import com.openminis.app.novex.domain.PlaythroughValue
-import com.openminis.app.ui.novex.NovexNoticeDialog
-import com.openminis.app.ui.novex.NovexDecisionAction
-import com.openminis.app.ui.novex.NovexDecisionDialog
-import com.openminis.app.ui.novex.NovexDecisionTone
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSelectionSheet
+import novex.core.ConversationControlBehavior
+import novex.core.NovexLearningControl
+import novex.core.NovexLearningControlPolicy
+import novex.core.NovexLearningTaskStatus
+import novex.core.PlaythroughValue
+import novex.android.ui.NovexNoticeDialog
+import novex.android.ui.NovexDecisionAction
+import novex.android.ui.NovexDecisionDialog
+import novex.android.ui.NovexDecisionTone
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSelectionSheet
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,7 +91,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -99,24 +99,24 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
 import com.openminis.app.ui.components.MinisMenuDivider
-import com.openminis.app.ui.novex.NovexActionMenu
-import com.openminis.app.ui.novex.NovexMenuAction
+import novex.android.ui.NovexActionMenu
+import novex.android.ui.NovexMenuAction
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldDefaults
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -688,10 +688,10 @@ fun ChatScreen(
     var showHistoryNavigation by remember(sessionId) { mutableStateOf(false) }
     var historyJumpId by remember(sessionId) { mutableStateOf<String?>(null) }
     if (showHistoryNavigation) {
-        com.openminis.app.ui.novex.NovexSearchableSelectionSheet(
+        novex.android.ui.NovexSearchableSelectionSheet(
             title = "对话历史", searchPlaceholder = "搜索原文",
             actions = viewModel.historyNavigationMessages().map { message ->
-                com.openminis.app.ui.novex.NovexSelectionAction(
+                novex.android.ui.NovexSelectionAction(
                     label = message.content.take(80).ifBlank { if (message.role == "user") "用户消息" else "回复与执行记录" },
                     description = message.content,
                     onClick = {
@@ -772,23 +772,23 @@ fun ChatScreen(
         }
     }
     if (showSideDeleteDialog && sideParentId != null) {
-        com.openminis.app.ui.novex.NovexContentDialog(
+        novex.android.ui.NovexContentDialog(
             "删除这条侧边对话？",
             onDismiss = { showSideDeleteDialog = false },
             confirmButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = {
+                novex.android.ui.TextButton(onClick = {
                     showSideDeleteDialog = false
                     coroutineScope.launch {
                         runCatching { chatRepository.deleteSession(sessionId) }
                         onBack()
                     }
-                }) { Text("删除", color = com.openminis.app.ui.novex.NovexColors.Danger) }
+                }) { Text("删除", color = novex.android.ui.NovexColors.Danger) }
             },
         ) {
             Text(
                 "聊天记录将删除，且不可恢复。已并入主对话的交接简报不受影响。",
-                style = com.openminis.app.ui.novex.NovexType.Body,
-                color = com.openminis.app.ui.novex.NovexColors.Text,
+                style = novex.android.ui.NovexType.Body,
+                color = novex.android.ui.NovexColors.Text,
             )
         }
     }
@@ -1920,7 +1920,7 @@ fun ChatScreen(
                                         style = noFontPad,
                                     )
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                        novex.android.ui.NovexIcons.KeyboardArrowDown,
                                         contentDescription = null,
                                         tint = ChatColors.tertiaryText,
                                         modifier = Modifier.size(14.dp),
@@ -1970,7 +1970,7 @@ fun ChatScreen(
                                                     .background(Color(0xFFFF9500), CircleShape),
                                             ) {
                                                 Icon(
-                                                    com.openminis.app.ui.novex.NovexIcons.Bolt,
+                                                    novex.android.ui.NovexIcons.Bolt,
                                                     contentDescription = null,
                                                     tint = Color.White,
                                                     modifier = Modifier.size(9.dp),
@@ -2025,7 +2025,7 @@ fun ChatScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = returnFromConversation) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -2041,7 +2041,7 @@ fun ChatScreen(
                         }
                         IconButton(onClick = { showSideDeleteDialog = true }) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Delete,
+                                novex.android.ui.NovexIcons.Delete,
                                 contentDescription = "删除侧边对话",
                                 tint = androidx.compose.ui.graphics.Color(0xFFFF5A5F),
                             )
@@ -2169,7 +2169,7 @@ fun ChatScreen(
             if (isCompactingNow) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("正在压缩对话，原消息保留", Modifier.weight(1f))
-                com.openminis.app.ui.novex.TextButton(onClick = viewModel::cancelCompaction) { Text("停止") }
+                novex.android.ui.TextButton(onClick = viewModel::cancelCompaction) { Text("停止") }
             }
 
             // Dismiss keyboard when the USER scrolls the messages. Gated on
@@ -3146,7 +3146,7 @@ fun ChatScreen(
                 // than jumping to the oldest message.
                 if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value && chromeFadeAlpha > 0.01f) {
                     val upBaseBottom = 8.dp
-                    com.openminis.app.ui.novex.NovexFilledIconButton(
+                    novex.android.ui.NovexFilledIconButton(
                         onClick = {
                             coroutineScope.launch { scrollToPreviousUserTurn() }
                         },
@@ -3166,7 +3166,7 @@ fun ChatScreen(
                             // an arrow pointing at a top line reads as "jump to a top
                             // anchor" for the turn-walk, and keeps this button visually
                             // distinct from the down button's plain chevron.
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.VerticalAlignTop,
+                            imageVector = novex.android.ui.NovexIcons.VerticalAlignTop,
                             contentDescription = "Scroll to previous message",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3177,7 +3177,7 @@ fun ChatScreen(
                     contentOverflows.value && messages.isNotEmpty() && chromeFadeAlpha > 0.01f
                 ) {
                     val fabBottomPadding = 8.dp
-                    com.openminis.app.ui.novex.NovexFilledIconButton(
+                    novex.android.ui.NovexFilledIconButton(
                         onClick = {
                             // [T-android-scrollbtn-turn-walk] Jumping to the
                             // bottom resets the up-button's turn-walk (iOS does
@@ -3210,7 +3210,7 @@ fun ChatScreen(
                         ),
                     ) {
                         Icon(
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                            imageVector = novex.android.ui.NovexIcons.KeyboardArrowDown,
                             contentDescription = "Scroll to bottom",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3433,7 +3433,7 @@ fun ChatScreen(
                                     }
                                     if (cmd.id == "memory") {
                                         Icon(
-                                            imageVector = if (memoryOnState) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Block,
+                                            imageVector = if (memoryOnState) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.Block,
                                             contentDescription = null,
                                             tint = if (memoryOnState) ChatColors.sendButton else ChatColors.secondaryText,
                                             modifier = Modifier.size(18.dp),
@@ -3584,7 +3584,7 @@ fun ChatScreen(
                                             // we keep it uniform here so the row stays
                                             // visually consistent at small sizes on Pixel 4a.
                                             Icon(
-                                                imageVector = com.openminis.app.ui.novex.NovexIcons.Description,
+                                                imageVector = novex.android.ui.NovexIcons.Description,
                                                 contentDescription = null,
                                                 tint = ChatColors.secondaryText,
                                                 modifier = Modifier.size(16.dp),
@@ -3859,7 +3859,7 @@ fun ChatScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            com.openminis.app.ui.novex.NovexIcons.ArrowForward,
+                                            novex.android.ui.NovexIcons.ArrowForward,
                                             contentDescription = null,
                                             modifier = Modifier.size(10.dp),
                                             tint = ChatColors.secondaryText,
@@ -4007,7 +4007,7 @@ fun ChatScreen(
                                             text = { Text(stringResource(R.string.webapp_add_to_home)) },
                                             leadingIcon = {
                                                 Icon(
-                                                    com.openminis.app.ui.novex.NovexIcons.AppShortcut,
+                                                    novex.android.ui.NovexIcons.AppShortcut,
                                                     contentDescription = null,
                                                 )
                                             },
@@ -4242,7 +4242,7 @@ fun ChatScreen(
                                 onClick = { showAttachMenu = true },
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Add,
+                                    novex.android.ui.NovexIcons.Add,
                                     contentDescription = "Attach",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp),
@@ -4255,7 +4255,7 @@ fun ChatScreen(
                                 // iOS parity: Take Photo / Choose Photos & Videos / Add File
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_take_photo)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.CameraAlt, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.CameraAlt, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         val granted = ContextCompat.checkSelfPermission(
@@ -4271,7 +4271,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_choose_photos_videos)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.PhotoLibrary, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.PhotoLibrary, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         mediaPickerLauncher.launch(
@@ -4283,7 +4283,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_add_file)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Description, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.Description, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         // OpenMultipleDocuments takes a mime-
@@ -4540,7 +4540,7 @@ fun ChatScreen(
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                             ) {
                                 Icon(
-                                    if (readReplies) com.openminis.app.ui.novex.NovexIcons.VolumeUp else com.openminis.app.ui.novex.NovexIcons.VolumeOff,
+                                    if (readReplies) novex.android.ui.NovexIcons.VolumeUp else novex.android.ui.NovexIcons.VolumeOff,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
                                     tint = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
@@ -4756,7 +4756,7 @@ fun ChatScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
+                                    novex.android.ui.NovexIcons.KeyboardReturn,
                                     contentDescription = "回传主对话",
                                     tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
                                     modifier = Modifier.size(20.dp),
@@ -4791,7 +4791,7 @@ fun ChatScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Stop,
+                                    novex.android.ui.NovexIcons.Stop,
                                     contentDescription = "Stop",
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp),
@@ -4826,7 +4826,7 @@ fun ChatScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
+                                    novex.android.ui.NovexIcons.ArrowUpward,
                                     contentDescription = "Send",
                                     tint = if (canActivate) ChatColors.background
                                     else ChatColors.primaryText.copy(alpha = 0.5f),
@@ -4946,19 +4946,19 @@ fun ChatScreen(
             }
 
             if (showConversationRecords) {
-                com.openminis.app.ui.novex.NovexSelectionSheet(
+                novex.android.ui.NovexSelectionSheet(
                     title = "资料与存档",
                     onDismissRequest = { showConversationRecords = false },
                     actions = listOf(
-                        com.openminis.app.ui.novex.NovexSelectionAction("本对话文件") {
+                        novex.android.ui.NovexSelectionAction("本对话文件") {
                             showConversationRecords = false
                             viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
                         },
-                        com.openminis.app.ui.novex.NovexSelectionAction("资料整理进度") {
+                        novex.android.ui.NovexSelectionAction("资料整理进度") {
                             showConversationRecords = false
                             viewModel.showNovexLearningCollections()
                         },
-                        com.openminis.app.ui.novex.NovexSelectionAction("文游存档") {
+                        novex.android.ui.NovexSelectionAction("文游存档") {
                             showConversationRecords = false
                             viewModel.showNovexCheckpoints()
                         },
@@ -5120,17 +5120,17 @@ fun ChatScreen(
     // Model Picker bottom sheet
     val modelSetupRequired by viewModel.modelSetupRequired.collectAsState()
     if (modelSetupRequired) {
-        com.openminis.app.ui.novex.NovexContentDialog(
+        novex.android.ui.NovexContentDialog(
             title = "连接模型后再发送",
             onDismiss = viewModel::dismissModelSetup,
             confirmButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = {
+                novex.android.ui.TextButton(onClick = {
                     viewModel.dismissModelSetup()
                     onSettings()
                 }) { Text("连接模型") }
             },
             dismissButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
+                novex.android.ui.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
             },
         ) { Text("先在设置中连接一个可用模型。当前文字和附件会留在输入框中，不会自动发送。") }
     }
@@ -5183,7 +5183,7 @@ fun ChatScreen(
         NovexNoticeDialog(title = "最近一次模型返回", message = message,
             onDismiss = viewModel::closeNovexLearningResponsePreview)
     }
-    novexConversationExport?.let { com.openminis.app.ui.novex.NovexConversationExportDialog(it,
+    novexConversationExport?.let { novex.android.ui.NovexConversationExportDialog(it,
         viewModel::closeNovexConversationExport, viewModel::prepareNovexConversationExport) }
     novexCheckpoints?.let { NovexCheckpointDetails(it, viewModel::closeNovexCheckpoints) }
     if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
@@ -5204,8 +5204,8 @@ fun ChatScreen(
         novexLearningCollections?.let { states ->
             if (states.isEmpty()) NovexNoticeDialog("资料整理", "本分支尚无已导入资料集。添加文档后可在这里查看整理记录。",
                 viewModel::closeNovexLearningDetails)
-            else com.openminis.app.ui.novex.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
-                com.openminis.app.ui.novex.NovexSelectionAction(state.collection.title,
+            else novex.android.ui.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
+                novex.android.ui.NovexSelectionAction(state.collection.title,
                     description = "已整理 ${state.reviewLedger.reviewedBlocks} / ${state.reviewLedger.totalReadableBlocks} 个可读块") {
                     viewModel.selectNovexLearningCollection(state.collection.ref)
                 }

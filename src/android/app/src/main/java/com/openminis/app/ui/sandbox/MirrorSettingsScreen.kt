@@ -27,13 +27,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.Scaffold
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,9 +80,9 @@ enum class MirrorCategory(
 
     val icon: ImageVector
         get() = when (this) {
-            ALPINE -> com.openminis.app.ui.novex.NovexIcons.Terrain
-            PIP -> com.openminis.app.ui.novex.NovexIcons.Inventory2
-            NPM -> com.openminis.app.ui.novex.NovexIcons.Javascript
+            ALPINE -> novex.android.ui.NovexIcons.Terrain
+            PIP -> novex.android.ui.NovexIcons.Inventory2
+            NPM -> novex.android.ui.NovexIcons.Javascript
         }
 
     val iconColor: Color
@@ -494,7 +494,7 @@ fun MirrorsSectionView(onNavigate: (MirrorCategory) -> Unit) {
     ListItem(
         headlineContent = { Text(if (vm.isTesting) stringResource(R.string.mirror_test_speed_testing) else stringResource(R.string.mirror_detect_fast_label)) },
         leadingContent = {
-            CircleIconBadge(icon = com.openminis.app.ui.novex.NovexIcons.Bolt, tint = Color(0xFFFF9500))
+            CircleIconBadge(icon = novex.android.ui.NovexIcons.Bolt, tint = Color(0xFFFF9500))
         },
         modifier = Modifier
             .fillMaxWidth()
@@ -546,7 +546,7 @@ private fun MirrorCategoryRow(category: MirrorCategory, onClick: () -> Unit) {
                     Spacer(Modifier.width(4.dp))
                 }
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                    novex.android.ui.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 )
@@ -617,7 +617,7 @@ fun MirrorCategoryDetailScreen(
                 title = { Text(category.displayName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.mirror_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.mirror_back))
                     }
                 },
             )
@@ -722,7 +722,7 @@ fun MirrorCategoryDetailScreen(
             ListItem(
                 headlineContent = { Text(if (vm.isTesting) stringResource(R.string.mirror_test_speed_testing) else stringResource(R.string.mirror_test_speed_label)) },
                 leadingContent = {
-                    CircleIconBadge(icon = com.openminis.app.ui.novex.NovexIcons.Bolt, tint = Color(0xFFFF9500))
+                    CircleIconBadge(icon = novex.android.ui.NovexIcons.Bolt, tint = Color(0xFFFF9500))
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -760,7 +760,7 @@ private fun MirrorRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+            if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
             contentDescription = null,
             tint = if (isSelected) MaterialTheme.colorScheme.primary
                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),

@@ -16,19 +16,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,7 +74,7 @@ fun RootfsManagementScreen(
                 title = { Text(stringResource(R.string.rootfs_management_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = groupedBg),
@@ -97,7 +97,7 @@ fun RootfsManagementScreen(
                     headlineContent = { Text(stringResource(R.string.rootfs_installed_label)) },
                     trailingContent = {
                         Icon(
-                            if (state.isInstalled) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Cancel,
+                            if (state.isInstalled) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.Cancel,
                             contentDescription = null,
                             tint = if (state.isInstalled)
                                 MaterialTheme.colorScheme.primary
@@ -146,13 +146,13 @@ fun RootfsManagementScreen(
                         headlineContent = { Text(stringResource(R.string.rootfs_browse_files_label)) },
                         leadingContent = {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Folder,
+                                novex.android.ui.NovexIcons.Folder,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         },
                         trailingContent = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.KeyboardArrowRight, contentDescription = null)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -173,7 +173,7 @@ fun RootfsManagementScreen(
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.rootfs_install_label)) },
                         leadingContent = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Download, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Download, contentDescription = null)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -188,7 +188,7 @@ fun RootfsManagementScreen(
                         headlineContent = { Text(stringResource(R.string.rootfs_reset_label)) },
                         supportingContent = { Text(stringResource(R.string.rootfs_reset_description)) },
                         leadingContent = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -203,7 +203,7 @@ fun RootfsManagementScreen(
                         headlineContent = { Text(stringResource(R.string.rootfs_reset_backup_label)) },
                         supportingContent = { Text(stringResource(R.string.rootfs_reset_backup_description)) },
                         leadingContent = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Archive, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Archive, contentDescription = null)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -221,7 +221,7 @@ fun RootfsManagementScreen(
                         headlineContent = { Text(stringResource(R.string.rootfs_restore_label)) },
                         supportingContent = { Text(stringResource(R.string.rootfs_restore_description)) },
                         leadingContent = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Restore, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Restore, contentDescription = null)
                         },
                         modifier = Modifier
                             .fillMaxWidth()

@@ -6,8 +6,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.*
+import novex.core.*
+import novex.android.ui.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -52,7 +52,7 @@ internal fun NovexWorkGroupControls(snapshot: NovexWorkGroupSnapshot?, openMembe
     LaunchedEffect(page) {
         if (page.isNotEmpty()) {
             val database = (context.applicationContext as com.openminis.app.MinisApp).database
-            kotlinx.coroutines.flow.merge(com.openminis.app.novex.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect {
+            kotlinx.coroutines.flow.merge(novex.android.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect {
                 try { entries = com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).directory() }
                 catch (failure: Exception) { if (failure is CancellationException) throw failure; error = "读取仓库失败：${failure.message}" }
             }

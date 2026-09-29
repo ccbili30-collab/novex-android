@@ -19,9 +19,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,12 +68,12 @@ fun ScheduledTaskRunsScreen(
                         Text(
                             stringResource(R.string.scheduled_task_runs_title),
                             fontWeight = FontWeight.Bold,
-                            fontSize = com.openminis.app.ui.novex.novexScaledSp(18),
+                            fontSize = novex.android.ui.novexScaledSp(18),
                         )
                         if (task != null && task.label.isNotBlank()) {
                             Text(
                                 task.label,
-                                fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                                fontSize = novex.android.ui.novexScaledSp(12),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -84,7 +84,7 @@ fun ScheduledTaskRunsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                            novex.android.ui.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.back),
                         )
                     }
@@ -115,7 +115,7 @@ private fun EmptyRuns(padding: PaddingValues) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.History,
+                novex.android.ui.NovexIcons.History,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -141,7 +141,7 @@ private fun RunRow(run: ScheduledRun, onOpenSession: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = if (run.ok) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Error,
+            imageVector = if (run.ok) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.Error,
             contentDescription = null,
             tint = if (run.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             modifier = Modifier.size(20.dp),
@@ -151,14 +151,14 @@ private fun RunRow(run: ScheduledRun, onOpenSession: (String) -> Unit) {
             Text(
                 text = formatRunTime(run.firedAt),
                 fontWeight = FontWeight.Medium,
-                fontSize = com.openminis.app.ui.novex.novexScaledSp(14),
+                fontSize = novex.android.ui.novexScaledSp(14),
             )
             val preview = run.preview
             if (!preview.isNullOrBlank()) {
                 Text(
                     text = preview,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                    fontSize = novex.android.ui.novexScaledSp(12),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -167,7 +167,7 @@ private fun RunRow(run: ScheduledRun, onOpenSession: (String) -> Unit) {
         if (tappable) {
             Spacer(Modifier.width(8.dp))
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                novex.android.ui.NovexIcons.KeyboardArrowRight,
                 contentDescription = stringResource(R.string.scheduled_task_runs_open_session),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),

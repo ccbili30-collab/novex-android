@@ -56,18 +56,18 @@ internal fun toolAccentColor(toolName: String): Color = when (toolName) {
 
 // Helper: tool icon (iOS: distinct SF Symbols per tool type)
 internal fun toolIconFor(toolName: String) = when (toolName) {
-    "shell_execute" -> com.openminis.app.ui.novex.NovexIcons.Terminal
-    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_search", "workspace_read" -> com.openminis.app.ui.novex.NovexIcons.Description
-    "file_write", "workspace_write" -> com.openminis.app.ui.novex.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
-    "file_edit", "workspace_edit" -> com.openminis.app.ui.novex.NovexIcons.EditNote             // iOS: square.and.pencil
-    "workspace_compute" -> com.openminis.app.ui.novex.NovexIcons.Build
-    "browser_use" -> com.openminis.app.ui.novex.NovexIcons.Language            // iOS: globe
-    "read_image" -> com.openminis.app.ui.novex.NovexIcons.Image                // iOS: photo
+    "shell_execute" -> novex.android.ui.NovexIcons.Terminal
+    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_search", "workspace_read" -> novex.android.ui.NovexIcons.Description
+    "file_write", "workspace_write" -> novex.android.ui.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
+    "file_edit", "workspace_edit" -> novex.android.ui.NovexIcons.EditNote             // iOS: square.and.pencil
+    "workspace_compute" -> novex.android.ui.NovexIcons.Build
+    "browser_use" -> novex.android.ui.NovexIcons.Language            // iOS: globe
+    "read_image" -> novex.android.ui.NovexIcons.Image                // iOS: photo
     "memory_write", "memory_get",
     "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes" ->
-        com.openminis.app.ui.novex.NovexIcons.Psychology // iOS: brain.head.profile
-    "web_search" -> com.openminis.app.ui.novex.NovexIcons.Search               // iOS: magnifyingglass
-    else -> com.openminis.app.ui.novex.NovexIcons.Build
+        novex.android.ui.NovexIcons.Psychology // iOS: brain.head.profile
+    "web_search" -> novex.android.ui.NovexIcons.Search               // iOS: magnifyingglass
+    else -> novex.android.ui.NovexIcons.Build
 }
 
 // Helper: tool display name for "Minis is using X"

@@ -22,7 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -87,10 +87,10 @@ enum class QuickTestKind {
 
     val icon: ImageVector
         get() = when (this) {
-            TEXT -> com.openminis.app.ui.novex.NovexIcons.TextFields
-            IMAGE_GEN -> com.openminis.app.ui.novex.NovexIcons.Image
-            SPEECH_OUT -> com.openminis.app.ui.novex.NovexIcons.GraphicEq
-            TRANSCRIPTION -> com.openminis.app.ui.novex.NovexIcons.Mic
+            TEXT -> novex.android.ui.NovexIcons.TextFields
+            IMAGE_GEN -> novex.android.ui.NovexIcons.Image
+            SPEECH_OUT -> novex.android.ui.NovexIcons.GraphicEq
+            TRANSCRIPTION -> novex.android.ui.NovexIcons.Mic
         }
 }
 
@@ -179,7 +179,7 @@ fun QuickTestSheet(
                     enabled = !isRunning,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        novex.android.ui.NovexIcons.Refresh,
                         contentDescription = stringResource(R.string.quicktest_run_again),
                     )
                 }
@@ -202,7 +202,7 @@ fun QuickTestSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Bolt,
+                        novex.android.ui.NovexIcons.Bolt,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -272,14 +272,14 @@ private fun StatusBadge(run: QuickTestRun) {
             strokeWidth = 2.dp,
         )
         is QuickTestState.Failure -> Icon(
-            com.openminis.app.ui.novex.NovexIcons.Cancel,
+            novex.android.ui.NovexIcons.Cancel,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
             modifier = Modifier.size(18.dp),
         )
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.CheckCircle,
+                novex.android.ui.NovexIcons.CheckCircle,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -383,7 +383,7 @@ private fun AudioReplyContent(data: ByteArray) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { if (!isPlaying) play() }) {
             Icon(
-                if (isPlaying) com.openminis.app.ui.novex.NovexIcons.GraphicEq else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+                if (isPlaying) novex.android.ui.NovexIcons.GraphicEq else novex.android.ui.NovexIcons.PlayArrow,
                 contentDescription = stringResource(
                     if (isPlaying) R.string.quicktest_audio_play else R.string.quicktest_audio_replay,
                 ),

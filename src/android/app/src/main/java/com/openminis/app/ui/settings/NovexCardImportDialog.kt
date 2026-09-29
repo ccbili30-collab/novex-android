@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,8 +18,8 @@ import com.openminis.app.data.character.NovexCharacterImportDocument
 import com.openminis.app.data.character.NovexInteractiveFictionImportDocument
 import com.openminis.app.data.character.NovexValidatedCardImport
 import com.openminis.app.data.character.NovexWorldImportDocument
-import com.openminis.app.ui.novex.NovexOutlineButton
-import com.openminis.app.ui.novex.NovexPrimaryButton
+import novex.android.ui.NovexOutlineButton
+import novex.android.ui.NovexPrimaryButton
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import java.io.File
@@ -69,11 +69,11 @@ internal fun NovexCardImportPreviewDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 summary.forEach { line -> Text(line, modifier = Modifier.padding(top = 8.dp)) }
-                if (org.json.JSONObject(preview.document.originalJson).has(com.openminis.app.novex.domain.NovexExternalCardImport.SOURCE)) {
+                if (org.json.JSONObject(preview.document.originalJson).has(novex.core.NovexExternalCardImport.SOURCE)) {
                     Text("按原文导入，可直接使用。以后需要时再让人工智能整理。", modifier = Modifier.padding(top = 8.dp))
                 }
                 (preview.document as? NovexCharacterImportDocument)?.versions?.firstOrNull()?.let { version ->
-                    com.openminis.app.novex.domain.NovexTavernExchange.sourceSummary(version.profileJson)?.let { message ->
+                    novex.core.NovexTavernExchange.sourceSummary(version.profileJson)?.let { message ->
                         Text(message, modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
                     }
                 }

@@ -18,18 +18,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.SegmentedButton
+import novex.android.ui.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.SingleChoiceSegmentedButtonRow
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -446,7 +446,7 @@ fun LogDetailScreen(
                 title = { Text(fileName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -454,7 +454,7 @@ fun LogDetailScreen(
                         val file = File(File(context.filesDir, "logs"), fileName)
                         if (file.exists()) shareLogFile(context, file)
                     }) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = stringResource(R.string.common_share))
+                        Icon(novex.android.ui.NovexIcons.Share, contentDescription = stringResource(R.string.common_share))
                     }
                 },
             )

@@ -25,8 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -471,7 +471,7 @@ fun InlineVoiceInputPanel(
         Box(modifier = Modifier.fillMaxWidth()) {
             // Top-left: expand/collapse chevron.
             CircleIconButton(
-                icon = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                icon = if (expanded) novex.android.ui.NovexIcons.KeyboardArrowDown else novex.android.ui.NovexIcons.KeyboardArrowUp,
                 contentDescription = stringResource(
                     if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
                 ),
@@ -484,7 +484,7 @@ fun InlineVoiceInputPanel(
             // correction runs regardless: consent governs whether we STORE the
             // learning data, not whether the feature works.
             if (showCorrectionConsent) {
-                com.openminis.app.ui.novex.AlertDialog(
+                novex.android.ui.AlertDialog(
                     onDismissRequest = {
                         // Dismissing without choosing is not an answer; leave
                         // hasPrompted unset so the question can be asked again.
@@ -493,7 +493,7 @@ fun InlineVoiceInputPanel(
                     title = { Text(stringResource(R.string.voice_correction_consent_title)) },
                     text = { Text(stringResource(R.string.voice_correction_consent_body)) },
                     confirmButton = {
-                        com.openminis.app.ui.novex.TextButton(onClick = {
+                        novex.android.ui.TextButton(onClick = {
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
                                 .setEnabled(panelContext, true)
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
@@ -505,7 +505,7 @@ fun InlineVoiceInputPanel(
                         }
                     },
                     dismissButton = {
-                        com.openminis.app.ui.novex.TextButton(onClick = {
+                        novex.android.ui.TextButton(onClick = {
                             com.openminis.app.speech.correction.VoiceCorrectionConsent
                                 .setPrompted(panelContext, true)
                             showCorrectionConsent = false
@@ -533,7 +533,7 @@ fun InlineVoiceInputPanel(
                         )
                     } else {
                         CircleIconButton(
-                            icon = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                            icon = novex.android.ui.NovexIcons.AutoAwesome,
                             contentDescription = stringResource(
                                 R.string.voice_correction_button_a11y,
                             ),
@@ -555,7 +555,7 @@ fun InlineVoiceInputPanel(
             } else if (!isEditing) {
                 Box(modifier = Modifier.align(Alignment.TopEnd)) {
                     CircleIconButton(
-                        icon = com.openminis.app.ui.novex.NovexIcons.Language,
+                        icon = novex.android.ui.NovexIcons.Language,
                         contentDescription = stringResource(R.string.voice_panel_language),
                     ) { showLanguageMenu = true }
                     DropdownMenu(
@@ -780,7 +780,7 @@ private fun ExpandedContent(
             )
             Spacer(Modifier.width(3.dp))
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.UnfoldMore,
+                novex.android.ui.NovexIcons.UnfoldMore,
                 contentDescription = null,
                 modifier = Modifier.size(12.dp),
                 tint = ChatColors.secondaryText.copy(alpha = 0.6f),
@@ -960,13 +960,13 @@ private fun MicCircleButton(
         when {
             isRecording -> InlineMiniWaveform(levels = levels)
             isTranscribing -> Icon(
-                com.openminis.app.ui.novex.NovexIcons.Close,
+                novex.android.ui.NovexIcons.Close,
                 contentDescription = stringResource(R.string.voice_panel_cancel_transcription),
                 tint = Color.Black,
                 modifier = Modifier.size(22.dp),
             )
             else -> Icon(
-                com.openminis.app.ui.novex.NovexIcons.Mic,
+                novex.android.ui.NovexIcons.Mic,
                 contentDescription = stringResource(R.string.voice_panel_toggle_recording),
                 tint = Color.Black,
                 modifier = Modifier.size(26.dp),
@@ -1096,7 +1096,7 @@ private fun VoiceDeleteButton(onDeleteOne: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Backspace,
+            novex.android.ui.NovexIcons.Backspace,
             contentDescription = stringResource(R.string.voice_panel_delete),
             tint = ChatColors.secondaryText,
             modifier = Modifier.size(21.dp),
@@ -1207,7 +1207,7 @@ private fun VoiceEngineUnavailableNotice(
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             CircleIconButton(
-                icon = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                icon = if (expanded) novex.android.ui.NovexIcons.KeyboardArrowDown else novex.android.ui.NovexIcons.KeyboardArrowUp,
                 contentDescription = stringResource(
                     if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
                 ),

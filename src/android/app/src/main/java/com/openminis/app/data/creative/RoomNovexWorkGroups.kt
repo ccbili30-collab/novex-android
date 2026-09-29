@@ -2,7 +2,7 @@ package com.openminis.app.data.creative
 
 import androidx.room.withTransaction
 import com.openminis.app.data.db.*
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import kotlinx.coroutines.flow.combine
 import java.util.UUID
 

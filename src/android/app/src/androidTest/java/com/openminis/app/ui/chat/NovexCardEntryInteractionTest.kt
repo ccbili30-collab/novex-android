@@ -7,7 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import java.util.UUID
 import kotlinx.coroutines.runBlocking

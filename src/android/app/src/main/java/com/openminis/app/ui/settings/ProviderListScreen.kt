@@ -23,7 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -124,7 +124,7 @@ fun ProviderListScreen(
         onBack = onBack,
         actions = {
             IconButton(onClick = { showMenu = true }) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
+                Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
             }
         },
     ) {
@@ -142,7 +142,7 @@ fun ProviderListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.VpnKey,
+                    imageVector = novex.android.ui.NovexIcons.VpnKey,
                     contentDescription = null,
                     modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -299,7 +299,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(novex.android.ui.NovexIcons.Add, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_add_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -320,7 +320,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(novex.android.ui.NovexIcons.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_import_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -418,7 +418,7 @@ private fun ProviderInstanceRow(
         }
 
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+            imageVector = novex.android.ui.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),
@@ -445,7 +445,7 @@ private fun ShadowVoiceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.GraphicEq,
+            imageVector = novex.android.ui.NovexIcons.GraphicEq,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary,
@@ -478,7 +478,7 @@ private fun ShadowVoiceRow(
             }
         }
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+            imageVector = novex.android.ui.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),

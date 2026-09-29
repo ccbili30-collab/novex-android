@@ -260,7 +260,7 @@ private fun FloatingMenuButton(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
+                imageVector = novex.android.ui.NovexIcons.MoreHoriz,
                 contentDescription = stringResource(R.string.webpreview_more),
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
@@ -272,10 +272,10 @@ private fun FloatingMenuButton(
             alignEnd = true,
         ) {
             if (onCollapse != null) {
-                com.openminis.app.ui.novex.DropdownMenuItem(
+                novex.android.ui.DropdownMenuItem(
                     text = { androidx.compose.material3.Text(stringResource(R.string.webapp_action_exit_fullscreen)) },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.FullscreenExit, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.FullscreenExit, contentDescription = null)
                     },
                     onClick = {
                         menuOpen = false
@@ -284,10 +284,10 @@ private fun FloatingMenuButton(
                 )
             }
             if (isLoading) {
-                com.openminis.app.ui.novex.DropdownMenuItem(
+                novex.android.ui.DropdownMenuItem(
                     text = { androidx.compose.material3.Text(stringResource(R.string.webpreview_stop)) },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Stop, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Stop, contentDescription = null)
                     },
                     onClick = {
                         menuOpen = false
@@ -295,10 +295,10 @@ private fun FloatingMenuButton(
                     },
                 )
             } else {
-                com.openminis.app.ui.novex.DropdownMenuItem(
+                novex.android.ui.DropdownMenuItem(
                     text = { androidx.compose.material3.Text(stringResource(R.string.webpreview_reload)) },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null)
                     },
                     onClick = {
                         menuOpen = false
@@ -306,10 +306,10 @@ private fun FloatingMenuButton(
                     },
                 )
             }
-            com.openminis.app.ui.novex.DropdownMenuItem(
+            novex.android.ui.DropdownMenuItem(
                 text = { androidx.compose.material3.Text(stringResource(R.string.webpreview_open_external)) },
                 leadingIcon = {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.OpenInBrowser, contentDescription = null)
+                    Icon(novex.android.ui.NovexIcons.OpenInBrowser, contentDescription = null)
                 },
                 onClick = {
                     menuOpen = false
@@ -317,7 +317,7 @@ private fun FloatingMenuButton(
                 },
             )
             com.openminis.app.ui.components.MinisMenuDivider()
-            com.openminis.app.ui.novex.DropdownMenuItem(
+            novex.android.ui.DropdownMenuItem(
                 text = {
                     androidx.compose.material3.Text(
                         stringResource(R.string.webpreview_close),
@@ -326,7 +326,7 @@ private fun FloatingMenuButton(
                 },
                 leadingIcon = {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Close,
+                        novex.android.ui.NovexIcons.Close,
                         contentDescription = null,
                         tint = androidx.compose.material3.MaterialTheme.colorScheme.error,
                     )

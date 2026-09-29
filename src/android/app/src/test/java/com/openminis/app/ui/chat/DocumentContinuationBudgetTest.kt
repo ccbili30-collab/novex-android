@@ -4,7 +4,7 @@ import android.app.Application
 import com.openminis.app.cards.*
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.flow.toList
 import okhttp3.mockwebserver.MockWebServer

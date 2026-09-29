@@ -1,9 +1,9 @@
 package com.openminis.app.ui.settings
 
 import androidx.compose.runtime.Composable
-import com.openminis.app.novex.domain.NovexExternalCardImport
-import com.openminis.app.ui.novex.ContentModuleDraftList
-import com.openminis.app.ui.novex.NovexInlineField
+import novex.core.NovexExternalCardImport
+import novex.android.ui.ContentModuleDraftList
+import novex.android.ui.NovexInlineField
 
 /** Presentation only: the enclosing editor keeps its existing atomic save and dirty checks. */
 internal val ContentModuleDraftList.isVerbatimCard: Boolean

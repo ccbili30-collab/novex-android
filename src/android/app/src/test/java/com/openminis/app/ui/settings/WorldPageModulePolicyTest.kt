@@ -5,9 +5,9 @@ import com.openminis.app.data.character.ContentModuleCatalog
 import com.openminis.app.data.character.ContentModuleScope
 import com.openminis.app.data.character.ContentModuleTextCodec
 import com.openminis.app.data.character.MediaAssetSlot
-import com.openminis.app.ui.novex.NovexContentModuleLayout
-import com.openminis.app.ui.novex.novexContentLayout
-import com.openminis.app.ui.novex.novexModuleSummary
+import novex.android.ui.NovexContentModuleLayout
+import novex.android.ui.novexContentLayout
+import novex.android.ui.novexModuleSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

@@ -144,15 +144,15 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
 
     lateinit var database: AppDatabase
         private set
-    lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
+    lateinit var novexWorkspace: novex.core.NovexWorkspace
         private set
-    val novexWorkGroups: com.openminis.app.novex.domain.NovexWorkGroups by lazy {
+    val novexWorkGroups: novex.core.NovexWorkGroups by lazy {
         com.openminis.app.data.creative.RoomNovexWorkGroups(database) { address ->
             com.openminis.app.cards.IntegratedCatalog(this).contains(address)
         }
     }
     val novexSnapshotMediaStore by lazy {
-        com.openminis.app.novex.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
+        novex.android.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
     }
     lateinit var creativeArtifactRepository: com.openminis.app.data.creative.CreativeArtifactRepository
         private set
@@ -161,18 +161,18 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     lateinit var chatRepository: ChatRepository
         private set
     val conversationWorkspaceStore by lazy {
-        com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(java.io.File(filesDir, "novex/conversation-workspaces"))
+        novex.core.FileNovexConversationWorkspaceStore(java.io.File(filesDir, "novex/conversation-workspaces"))
     }
     val conversationRepositoryImporter by lazy {
         com.openminis.app.data.creative.ConversationRepositoryImporter(this, conversationWorkspaceStore, creativeArtifactRepository)
     }
     val conversationDeletion by lazy {
         val files = conversationWorkspaceStore
-        com.openminis.app.novex.domain.NovexConversationDeletion(
+        novex.core.NovexConversationDeletion(
             chatRepository, novexWorkspace, files,
             com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(files, creativeArtifactRepository),
-            com.openminis.app.novex.domain.NovexToolExecution(
-                com.openminis.app.novex.domain.NovexOperationJournal(java.io.File(filesDir, "novex-operations"))),
+            novex.core.NovexToolExecution(
+                novex.core.NovexOperationJournal(java.io.File(filesDir, "novex-operations"))),
             { id ->
                 conversationRepositoryImporter.stopAndJoin(id)
                 com.openminis.app.ui.chat.ChatViewModelStore.stopAndJoin(id)
@@ -314,7 +314,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
 
     private fun initializeMinimumSubsystems() {
         database = AppDatabase.getInstance(this)
-        novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.createDeferred(
+        novexWorkspace = novex.android.adapter.NovexWorkspaceFactory.createDeferred(
             database,
             java.io.File(filesDir, "novex-media"),
         )

@@ -13,11 +13,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.model.*
 import com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.tools.NovexWorkspaceAgentTools
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
-import com.openminis.app.ui.novex.NovexLibraryPicker
+import novex.android.ui.NovexLibraryPicker
 import com.openminis.app.ui.sessions.NovexWorkGroupControls
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.flow.first

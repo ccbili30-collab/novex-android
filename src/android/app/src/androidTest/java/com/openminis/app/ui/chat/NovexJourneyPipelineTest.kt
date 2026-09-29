@@ -9,7 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
 import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.*

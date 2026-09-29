@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest

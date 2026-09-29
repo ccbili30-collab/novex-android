@@ -2,7 +2,7 @@ package com.openminis.app.cards
 
 import com.openminis.app.MinisApp
 import com.openminis.app.data.character.*
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import novex.content.*
 import novex.storage.*
 import org.json.JSONObject

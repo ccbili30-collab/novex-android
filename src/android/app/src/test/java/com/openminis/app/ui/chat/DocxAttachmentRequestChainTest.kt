@@ -3,7 +3,7 @@ package com.openminis.app.ui.chat
 import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
-import com.openminis.app.novex.domain.InMemoryNovexDocumentSnapshotCache
+import novex.core.InMemoryNovexDocumentSnapshotCache
 import com.openminis.app.provider.openai.OpenAIProvider
 import java.io.File
 import kotlinx.coroutines.runBlocking

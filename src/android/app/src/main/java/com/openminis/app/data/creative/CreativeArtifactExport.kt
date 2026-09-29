@@ -1,6 +1,6 @@
 package com.openminis.app.data.creative
 
-import com.openminis.app.novex.domain.CreativeArtifactKind
+import novex.core.CreativeArtifactKind
 
 internal fun creativeArtifactExportName(record: CreativeArtifactRecord): String {
     val mimeType = record.revisions.maxByOrNull { it.number }?.mimeType.orEmpty()

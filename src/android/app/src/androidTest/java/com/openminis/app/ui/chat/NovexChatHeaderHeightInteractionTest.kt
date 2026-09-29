@@ -10,7 +10,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import com.openminis.app.ui.theme.MinisTheme
 import org.junit.Rule
 import org.junit.Test

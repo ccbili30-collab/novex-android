@@ -27,7 +27,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -196,7 +196,7 @@ fun UnifiedModelPickerSheet(
                 }
             }
 
-            com.openminis.app.ui.novex.NovexSearchField(
+            novex.android.ui.NovexSearchField(
                 value = searchText,
                 onValueChange = { searchText = it },
                 placeholder = stringResource(R.string.model_picker_search_placeholder),
@@ -258,8 +258,8 @@ fun UnifiedModelPickerSheet(
                                     selectedId == null ||
                                         boundGroup.memberEntryIds.contains(selectedId)
                                 Icon(
-                                    if (groupSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle
-                                    else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                    if (groupSelected) novex.android.ui.NovexIcons.CheckCircle
+                                    else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                     contentDescription = null,
                                     tint = if (groupSelected) Color(0xFF34C759)
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -267,7 +267,7 @@ fun UnifiedModelPickerSheet(
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Layers,
+                                    novex.android.ui.NovexIcons.Layers,
                                     contentDescription = null,
                                     tint = Color(0xFF007AFF),
                                     modifier = Modifier.size(18.dp),
@@ -291,7 +291,7 @@ fun UnifiedModelPickerSheet(
                                                 .padding(horizontal = 5.dp, vertical = 1.dp),
                                         ) {
                                             Icon(
-                                                com.openminis.app.ui.novex.NovexIcons.ArrowCircleDown,
+                                                novex.android.ui.NovexIcons.ArrowCircleDown,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(9.dp),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -334,8 +334,8 @@ fun UnifiedModelPickerSheet(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        if (groupExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
-                                        else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                        if (groupExpanded) novex.android.ui.NovexIcons.KeyboardArrowUp
+                                        else novex.android.ui.NovexIcons.KeyboardArrowDown,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -631,8 +631,8 @@ fun UnifiedModelPickerSheet(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        if (collapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
-                                        else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                                        if (collapsed) novex.android.ui.NovexIcons.KeyboardArrowDown
+                                        else novex.android.ui.NovexIcons.KeyboardArrowUp,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -707,7 +707,7 @@ fun UnifiedModelPickerSheet(
                                             modifier = Modifier.size(32.dp),
                                         ) {
                                             Icon(
-                                                com.openminis.app.ui.novex.NovexIcons.Bolt,
+                                                novex.android.ui.NovexIcons.Bolt,
                                                 contentDescription = stringResource(R.string.quicktest_button),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(18.dp),
@@ -760,7 +760,7 @@ private fun PickerSectionHeader(
 @Composable
 private fun SelectionMark(selected: Boolean) {
     Icon(
-        if (selected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+        if (selected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
         contentDescription = null,
         tint = if (selected) Color(0xFF007AFF)
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

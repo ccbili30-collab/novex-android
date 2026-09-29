@@ -18,15 +18,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -221,7 +221,7 @@ private fun MemoryFileRow(
         if (onDelete != null) {
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Delete,
+                    novex.android.ui.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.common_delete),
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
                     modifier = Modifier.size(20.dp),
@@ -229,7 +229,7 @@ private fun MemoryFileRow(
             }
         }
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+            novex.android.ui.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),
@@ -287,7 +287,7 @@ fun MemoryFileEditScreen(
         saveError = e.message ?: "保存失败，请重试"
         false
     }
-    com.openminis.app.ui.novex.NovexDraftExitBoundary(
+    novex.android.ui.NovexDraftExitBoundary(
         baselineDraft = baseline, currentDraft = content, saving = false,
         onBack = onBack, onSaveAndExit = { if (save()) onBack() },
     ) { requestBack ->
@@ -297,7 +297,7 @@ fun MemoryFileEditScreen(
                     title = { Text(fileName) },
                     navigationIcon = {
                         IconButton(onClick = requestBack) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                            Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                         }
                     },
                     actions = {

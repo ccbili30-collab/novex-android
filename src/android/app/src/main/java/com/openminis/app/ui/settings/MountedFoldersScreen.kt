@@ -25,20 +25,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Surface
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import com.openminis.app.ui.components.MinisTextButton
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -157,7 +157,7 @@ fun MountedFoldersScreen(
                 title = { Text(stringResource(R.string.settings_mount_external_folders)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -185,7 +185,7 @@ fun MountedFoldersScreen(
                         },
                         enabled = !isAtCapacity,
                     ) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Add, contentDescription = null)
                     }
                 },
             )
@@ -464,7 +464,7 @@ private fun EmptyState() {
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.FolderShared,
+            imageVector = novex.android.ui.NovexIcons.FolderShared,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(48.dp),
@@ -520,7 +520,7 @@ private fun MountRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Folder,
+            imageVector = novex.android.ui.NovexIcons.Folder,
             contentDescription = null,
             tint = Color(0xFF007AFF),
             modifier = Modifier.size(28.dp),

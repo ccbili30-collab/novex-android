@@ -1,13 +1,13 @@
 package novex.android
 
-import com.openminis.app.ui.novex.NovexPageTopBar
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexSearchField
+import novex.android.ui.NovexPageTopBar
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexSearchField
 
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.Scaffold
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*

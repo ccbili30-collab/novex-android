@@ -43,8 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.NovexContentDialog
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.NovexContentDialog
+import novex.android.ui.TextButton
 import com.openminis.app.ui.theme.ChatColors
 import org.json.JSONObject
 
@@ -155,7 +155,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                 modifier = Modifier.alpha(if (active) shimmerAlpha else 1f),
             )
             Icon(
-                imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                imageVector = if (expanded) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                 contentDescription = if (expanded) "Collapse" else "Expand",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(14.dp),
@@ -188,7 +188,7 @@ internal fun NovexExecutionProcessRow(process: FlatChatItem.AssistantProcess) {
                 Column(modifier = Modifier.padding(vertical = 2.dp)) {
                     process.rows.forEach { row -> when (row) {
                         is FlatChatItem.AssistantThinking -> ProcessStepRow(
-                            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                            icon = novex.android.ui.NovexIcons.Psychology,
                             label = "思考 · " + if (row.block.content.length >= 1000) {
                                 "${row.block.content.length / 1000}K 字"
                             } else {
@@ -292,7 +292,7 @@ private fun ProcessStepRow(
         )
         if (expandable) {
             Icon(
-                imageVector = if (open) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                imageVector = if (open) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                 contentDescription = if (open) "Collapse" else "Expand",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(12.dp),
@@ -397,7 +397,7 @@ private fun CardResultChip(title: String, meta: String, saved: Boolean, onClick:
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Book,
+            novex.android.ui.NovexIcons.Book,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp),

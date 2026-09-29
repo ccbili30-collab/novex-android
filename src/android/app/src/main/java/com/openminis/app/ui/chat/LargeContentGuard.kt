@@ -15,7 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -134,7 +134,7 @@ internal fun LargeContentBadge(
                 modifier = Modifier.padding(0.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.UnfoldMore,
+                    imageVector = novex.android.ui.NovexIcons.UnfoldMore,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )
@@ -161,7 +161,7 @@ internal fun LargeContentBadge(
                 modifier = Modifier.padding(0.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.IosShare,
+                    imageVector = novex.android.ui.NovexIcons.IosShare,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )

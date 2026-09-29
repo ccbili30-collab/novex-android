@@ -1,0 +1,226 @@
+package novex.core
+
+import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.ModuleOwner
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class NovexManagementPlanTest {
+    private val world = NovexContentAddress.world("world-1")
+    private val version = NovexContentAddress.characterVersion("version-1")
+
+    @Test fun `approval preview contains complete replacement and original text without a confirmation phrase`() {
+        val before = "旧正文\n保留原始细节"
+        val after = "新正文\n" + "长篇细节".repeat(500)
+        fun article(value: String) = org.json.JSONObject().put("version", 1).put("kind", "article").put("text", value).toString()
+        val plan = NovexManagementPlan("plan", "chat",
+            listOf(NovexManagedChange.UpdateModule("module", "规则", article(after))), setOf(world),
+            NovexManagementRisk.SHARED_CHANGE, "修改规则", expectedModuleContents = mapOf("module" to "revision-fingerprint"), originalModuleDocuments = mapOf("module" to article(before)))
+        val review = plan.reviewText()
+        assertFalse(review.contains("revision-fingerprint"))
+        assertTrue(review.contains(before))
+        assertTrue(review.contains(after))
+        assertTrue(review.contains("新名称：规则"))
+        assertFalse(review.contains("确认执行"))
+    }
+
+    @Test fun `natural creation wording is not an authorization whitelist`() {
+        for (request in listOf("存为文游卡", "保存成文游卡", "把它收入文游库", "创建文游卡，角色模块不要添加新角色")) {
+            val change = NovexManagedChange.CreateInteractiveFiction("生生", "正文",
+                com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode.FREE_SANDBOX, "")
+            val plan = NovexManagementPolicy.plan(NovexConversationConfigurationSnapshot("chat"), listOf(change),
+                NovexManagementFacts(), request, "operation")
+            assertEquals(listOf(change), plan.changes)
+        }
+    }
+
+    @Test
+    fun `read only managed subjects can be inspected but cannot be changed`() {
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(ManagedSubject(world, ManagedAccess.READ_ONLY)),
+        )
+        val facts = NovexManagementFacts()
+
+        assertTrue(NovexManagementPolicy.canRead(configuration, world))
+        assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementPolicy.plan(
+                configuration = configuration,
+                changes = listOf(
+                    NovexManagedChange.AddModule(
+                        owner = ModuleOwner.world(world.id),
+                        type = ContentModuleType.MAP,
+                        name = "地图",
+                        contentJson = "{}",
+                    ),
+                ),
+                facts = facts,
+                latestUserRequest = "补充地图",
+                planId = "proposal-12345678",
+            )
+        }
+    }
+
+    @Test
+    fun `module changes inherit authorization from their resolved owner`() {
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(ManagedSubject(version, ManagedAccess.EDIT)),
+        )
+        val change = NovexManagedChange.UpdateModule("module-1", "经历", "{\"text\":\"新内容\"}")
+
+        val plan = NovexManagementPolicy.plan(
+            configuration = configuration,
+            changes = listOf(change),
+            facts = NovexManagementFacts(
+                moduleOwners = mapOf("module-1" to ModuleOwner.characterVersion(version.id)),
+            ),
+            latestUserRequest = "修改她的经历",
+            planId = "proposal-12345678",
+        )
+
+        assertEquals(setOf(version), plan.targets)
+        assertEquals(NovexManagementRisk.SHARED_CHANGE, plan.risk)
+    }
+
+    @Test
+    fun `cross project links require edit access to both endpoints`() {
+        val change = NovexManagedChange.LinkCharacterVersion("world-1", "version-1", 0)
+        val oneSided = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(ManagedSubject(world, ManagedAccess.EDIT)),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementPolicy.plan(
+                configuration = oneSided,
+                changes = listOf(change),
+                facts = NovexManagementFacts(),
+                latestUserRequest = "关联角色",
+                planId = "proposal-12345678",
+            )
+        }
+
+        val both = oneSided.copy(
+            managedSubjects = oneSided.managedSubjects + ManagedSubject(version, ManagedAccess.EDIT),
+        )
+        val plan = NovexManagementPolicy.plan(
+            configuration = both,
+            changes = listOf(change),
+            facts = NovexManagementFacts(),
+            latestUserRequest = "关联角色",
+            planId = "proposal-12345678",
+        )
+        assertEquals(NovexManagementRisk.CROSS_PROJECT, plan.risk)
+    }
+
+    @Test
+    fun `continued creation retains its exact requested changes`() {
+        val plan = NovexManagementPolicy.plan(
+            configuration = NovexConversationConfigurationSnapshot(conversationId = "chat-1"),
+            changes = listOf(NovexManagedChange.CreateWorld("雾海", "被雾包围的群岛")),
+            facts = NovexManagementFacts(),
+            priorUserRequests = listOf("请创建一个叫雾海的世界", "把地图和地区分成两个模块"),
+            latestUserRequest = "按刚才的方案做",
+            planId = "proposal-12345678",
+        )
+
+        assertEquals(NovexManagementRisk.CREATE_GLOBAL, plan.risk)
+        assertEquals("雾海", (plan.changes.single() as NovexManagedChange.CreateWorld).name)
+    }
+
+    @Test
+    fun `character variant retains its concrete source version`() {
+        val plan = NovexManagementPolicy.plan(
+            configuration = NovexConversationConfigurationSnapshot(
+                conversationId = "chat-1",
+                managedSubjects = listOf(ManagedSubject(version, ManagedAccess.EDIT)),
+            ),
+            changes = listOf(NovexManagedChange.CreateCharacterVersion(version.id, "云岚分身", "{}")),
+            facts = NovexManagementFacts(versionCharacterIds = mapOf(version.id to "character-1")),
+            priorUserRequests = listOf("从这个本体创建一个分身", "名字叫云岚分身"),
+            latestUserRequest = "继续",
+            planId = "proposal-12345678",
+        )
+        assertEquals(version.id, (plan.changes.single() as NovexManagedChange.CreateCharacterVersion).sourceVersionId)
+    }
+
+    @Test
+    fun `structured change codec preserves module JSON and ordering`() {
+        val changes = NovexManagementChangeCodec.decode(
+            """
+            [
+              {"operation":"add_module","subject_kind":"world","subject_id":"w1","module_type":"MAP","name":"地图","content_json":{"caption":"北境"}},
+              {"operation":"move_module","module_id":"m1","to_index":0}
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(2, changes.size)
+        val add = changes.first() as NovexManagedChange.AddModule
+        assertEquals(ModuleOwner.world("w1"), add.owner)
+        assertEquals(ContentModuleType.MAP, add.type)
+        assertEquals("北境", org.json.JSONObject(add.contentJson).getString("caption"))
+        assertEquals(0, (changes.last() as NovexManagedChange.MoveModule).toIndex)
+    }
+
+    @Test
+    fun `structured change codec accepts stable module names instead of database enum names`() {
+        val world = NovexManagementChangeCodec.decode(
+            """[{"operation":"add_module","subject_kind":"world","subject_id":"w1","module_type":"map","name":"地图","content_json":{}}]""",
+        ).single() as NovexManagedChange.AddModule
+        val game = NovexManagementChangeCodec.decode(
+            """[{"operation":"add_module","subject_kind":"game","subject_id":"g1","module_type":"narrative_rules","name":"规则","content_json":{}}]""",
+        ).single() as NovexManagedChange.AddModule
+
+        assertEquals(ContentModuleType.MAP, world.type)
+        assertEquals(ContentModuleType.GAME_NARRATIVE_RULES, game.type)
+    }
+
+    @Test
+    fun `invalid module type reports legal stable values and no internal enum exception`() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementChangeCodec.decode(
+                """[{"operation":"add_module","subject_kind":"world","subject_id":"w1","module_type":"rule","name":"规则","content_json":{}}]""",
+            )
+        }
+
+        assertTrue(failure.message.orEmpty().contains("timeline"))
+        assertTrue(failure.message.orEmpty().contains("map"))
+        assertFalse(failure.message.orEmpty().contains("No enum constant"))
+        assertFalse(failure.message.orEmpty().contains("ContentModuleType"))
+    }
+
+    @Test
+    fun `an artifact cannot be attached through a module owned by another subject`() {
+        val otherWorld = NovexContentAddress.world("world-2")
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat-1",
+            managedSubjects = listOf(
+                ManagedSubject(world, ManagedAccess.EDIT),
+                ManagedSubject(otherWorld, ManagedAccess.EDIT),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            NovexManagementPolicy.plan(
+                configuration = configuration,
+                changes = listOf(
+                    NovexManagedChange.AttachArtifact(
+                        artifactId = "artifact-1",
+                        owner = world,
+                        moduleId = "module-2",
+                    ),
+                ),
+                facts = NovexManagementFacts(
+                    moduleOwners = mapOf("module-2" to ModuleOwner.world(otherWorld.id)),
+                    existingArtifactIds = setOf("artifact-1"),
+                ),
+                latestUserRequest = "把图片放进地图",
+                planId = "proposal-12345678",
+            )
+        }
+    }
+}

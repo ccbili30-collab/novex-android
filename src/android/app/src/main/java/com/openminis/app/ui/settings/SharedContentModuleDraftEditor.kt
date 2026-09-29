@@ -31,16 +31,16 @@ import com.openminis.app.data.character.ContentModuleCollectionItem
 import com.openminis.app.data.character.ContentModuleDocument
 import com.openminis.app.data.character.ContentModuleDocumentCodec
 import com.openminis.app.data.character.ContentModuleTimelineNode
-import com.openminis.app.novex.domain.NovexModuleDraft
-import com.openminis.app.ui.novex.ContentModuleDraftList
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexOutlineButton
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSelectionSheet
-import com.openminis.app.ui.novex.NovexTextActionRow
-import com.openminis.app.ui.novex.NovexTextField
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.novexModuleSummary
+import novex.core.NovexModuleDraft
+import novex.android.ui.ContentModuleDraftList
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexOutlineButton
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSelectionSheet
+import novex.android.ui.NovexTextActionRow
+import novex.android.ui.NovexTextField
+import novex.android.ui.NovexType
+import novex.android.ui.novexModuleSummary
 import com.openminis.app.data.character.toPlainText
 import java.util.UUID
 
@@ -284,11 +284,11 @@ private fun CollectionFields(
                 val conditionDocument = org.json.JSONObject().apply {
                     item.contextTriggerJson?.let { put("contextTrigger", org.json.JSONTokener(it).nextValue()) }
                 }.toString()
-                com.openminis.app.ui.novex.NovexWorldbookConditionField(
+                novex.android.ui.NovexWorldbookConditionField(
                     conditionDocument, com.openminis.app.data.character.ContentModuleType.CUSTOM,
                 ) { updated ->
                     onChange(document.copy(items = document.items.replaceAt(index, item.copy(
-                        contextTriggerJson = com.openminis.app.novex.domain.NovexWorldbookConditions.read(updated),
+                        contextTriggerJson = novex.core.NovexWorldbookConditions.read(updated),
                     ))))
                 }
             }

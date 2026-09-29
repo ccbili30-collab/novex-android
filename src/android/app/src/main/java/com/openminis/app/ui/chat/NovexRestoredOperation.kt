@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.NovexOperationRecord
-import com.openminis.app.novex.domain.NovexOperationStatus
+import novex.core.NovexOperationRecord
+import novex.core.NovexOperationStatus
 
 /** A missing receipt is never presented as successful execution. */
 internal fun restoredOperationStatus(record: NovexOperationRecord?): ToolBlockStatus = when (record?.status) {

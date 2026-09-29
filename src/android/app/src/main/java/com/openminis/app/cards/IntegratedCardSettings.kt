@@ -1,19 +1,19 @@
 package com.openminis.app.cards
 
-import com.openminis.app.ui.novex.NovexPageTopBar
-import com.openminis.app.ui.novex.NovexColors
+import novex.android.ui.NovexPageTopBar
+import novex.android.ui.NovexColors
 
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 
-import com.openminis.app.ui.novex.RadioButton
+import novex.android.ui.RadioButton
 
-import com.openminis.app.ui.novex.Checkbox
+import novex.android.ui.Checkbox
 
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 
-import com.openminis.app.ui.novex.Button
+import novex.android.ui.Button
 
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 
 import novex.content.flattenModules
 import androidx.compose.runtime.*

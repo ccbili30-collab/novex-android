@@ -84,7 +84,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -95,12 +95,12 @@ import com.openminis.app.ui.components.MinisMenuDivider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.SnackbarHost
@@ -375,7 +375,7 @@ internal fun ModelPickerSheet(
                 }
             }
 
-            com.openminis.app.ui.novex.NovexSearchField(
+            novex.android.ui.NovexSearchField(
                 value = searchText,
                 onValueChange = { searchText = it },
                 placeholder = stringResource(R.string.model_picker_search_placeholder),
@@ -480,7 +480,7 @@ internal fun ModelPickerSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
-                                        if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                        if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                         contentDescription = null,
                                         tint = if (isSelected) Color(0xFF34C759)
                                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -496,7 +496,7 @@ internal fun ModelPickerSheet(
                                     // different things (a group can fail over
                                     // or load-balance; a model cannot).
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.Layers,
+                                        novex.android.ui.NovexIcons.Layers,
                                         contentDescription = null,
                                         tint = Color(0xFF007AFF),
                                         modifier = Modifier.size(18.dp),
@@ -522,8 +522,8 @@ internal fun ModelPickerSheet(
                                             ) {
                                                 Icon(
                                                     if (group.strategy == RoutingStrategy.fallback)
-                                                        com.openminis.app.ui.novex.NovexIcons.ArrowCircleDown
-                                                    else com.openminis.app.ui.novex.NovexIcons.AccountTree,
+                                                        novex.android.ui.NovexIcons.ArrowCircleDown
+                                                    else novex.android.ui.NovexIcons.AccountTree,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(9.dp),
                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -627,7 +627,7 @@ internal fun ModelPickerSheet(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            if (isExpanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                            if (isExpanded) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -687,7 +687,7 @@ internal fun ModelPickerSheet(
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 Icon(
-                                                    if (isActive) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                                    if (isActive) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                                     contentDescription = null,
                                                     tint = if (isActive) Color(0xFF007AFF)
                                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
@@ -831,7 +831,7 @@ internal fun ModelPickerSheet(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            if (isCollapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                                            if (isCollapsed) novex.android.ui.NovexIcons.KeyboardArrowDown else novex.android.ui.NovexIcons.KeyboardArrowUp,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -870,7 +870,7 @@ internal fun ModelPickerSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Icon(
-                                                if (selectedEntry != null) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                                if (selectedEntry != null) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                                 contentDescription = null,
                                                 tint = if (selectedEntry != null) Color(0xFF007AFF)
                                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -955,7 +955,7 @@ internal fun ModelPickerSheet(
                                             // floating under the model names above
                                             // rather than aligned with the card.
                                             Icon(
-                                                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                                novex.android.ui.NovexIcons.KeyboardArrowDown,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(16.dp),
                                                 tint = Color(0xFF007AFF),
@@ -997,7 +997,7 @@ internal fun ModelPickerSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Icon(
-                                                if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                                if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                                 contentDescription = null,
                                                 tint = if (isSelected) Color(0xFF007AFF)
                                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -1076,7 +1076,7 @@ internal fun ModelPickerSheet(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
-                                if (searchText.isNotEmpty()) com.openminis.app.ui.novex.NovexIcons.Search else com.openminis.app.ui.novex.NovexIcons.Memory,
+                                if (searchText.isNotEmpty()) novex.android.ui.NovexIcons.Search else novex.android.ui.NovexIcons.Memory,
                                 contentDescription = null,
                                 modifier = Modifier.size(28.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -1143,7 +1143,7 @@ private fun QuickTestButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            com.openminis.app.ui.novex.NovexIcons.Bolt,
+            novex.android.ui.NovexIcons.Bolt,
             contentDescription = stringResource(R.string.model_picker_quick_test),
             tint = Color(0xFF007AFF),
             modifier = Modifier.size(17.dp),

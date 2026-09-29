@@ -37,7 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.Checkbox
+import novex.android.ui.Checkbox
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -1724,7 +1724,7 @@ private fun RenderBlock(block: MdBlock) {
                         modifier = Modifier.weight(1f),
                     )
                     Icon(
-                        imageVector = if (copied) com.openminis.app.ui.novex.NovexIcons.Check else com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                        imageVector = if (copied) novex.android.ui.NovexIcons.Check else novex.android.ui.NovexIcons.ContentCopy,
                         contentDescription = if (copied) "Copied" else "Copy code",
                         tint = if (copied) Color(0xFF34C759) else Color.White.copy(alpha = 0.4f),
                         modifier = Modifier
@@ -2223,7 +2223,7 @@ private fun BrokenImagePlaceholder(alt: String?) {
             modifier = Modifier.padding(12.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.BrokenImage,
+                imageVector = novex.android.ui.NovexIcons.BrokenImage,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
                 tint = palette.secondaryText,
@@ -2411,7 +2411,7 @@ private fun RenderMdVideo(block: MdBlock.Video) {
                 )
             }
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled,
+                imageVector = novex.android.ui.NovexIcons.PlayCircleFilled,
                 contentDescription = "Play video",
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.size(56.dp),
@@ -2424,7 +2424,7 @@ private fun RenderMdVideo(block: MdBlock.Video) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.Videocam,
+                imageVector = novex.android.ui.NovexIcons.Videocam,
                 contentDescription = null,
                 tint = colors.blockquote,
                 modifier = Modifier.size(14.dp),
@@ -2499,7 +2499,7 @@ private fun RenderMdAudio(block: MdBlock.Audio) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Audiotrack,
+            imageVector = novex.android.ui.NovexIcons.Audiotrack,
             contentDescription = null,
             tint = colors.blockquote,
             modifier = Modifier.size(18.dp),
@@ -2534,7 +2534,7 @@ private fun RenderMdAudio(block: MdBlock.Audio) {
             }
         }
         Icon(
-            imageVector = if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+            imageVector = if (isPlaying) novex.android.ui.NovexIcons.Pause else novex.android.ui.NovexIcons.PlayArrow,
             contentDescription = if (isPlaying) "Pause" else "Play",
             tint = tint,
             modifier = Modifier.size(28.dp),

@@ -234,16 +234,16 @@ private data class ShizukuCapability(
 )
 
 private val ShizukuCapabilities: List<ShizukuCapability> = listOf(
-    ShizukuCapability("package", R.string.shizuku_cap_package_desc, com.openminis.app.ui.novex.NovexIcons.Apps),
-    ShizukuCapability("permission", R.string.shizuku_cap_permission_desc, com.openminis.app.ui.novex.NovexIcons.Lock),
-    ShizukuCapability("activity", R.string.shizuku_cap_activity_desc, com.openminis.app.ui.novex.NovexIcons.Launch),
-    ShizukuCapability("display", R.string.shizuku_cap_display_desc, com.openminis.app.ui.novex.NovexIcons.Fullscreen),
-    ShizukuCapability("settings", R.string.shizuku_cap_settings_desc, com.openminis.app.ui.novex.NovexIcons.Settings),
-    ShizukuCapability("user", R.string.shizuku_cap_user_desc, com.openminis.app.ui.novex.NovexIcons.Person),
-    ShizukuCapability("network", R.string.shizuku_cap_network_desc, com.openminis.app.ui.novex.NovexIcons.Wifi),
-    ShizukuCapability("input", R.string.shizuku_cap_input_desc, com.openminis.app.ui.novex.NovexIcons.TouchApp),
-    ShizukuCapability("notification", R.string.shizuku_cap_notification_desc, com.openminis.app.ui.novex.NovexIcons.Notifications),
-    ShizukuCapability("file", R.string.shizuku_cap_file_desc, com.openminis.app.ui.novex.NovexIcons.Folder),
-    ShizukuCapability("device", R.string.shizuku_cap_device_desc, com.openminis.app.ui.novex.NovexIcons.PhoneAndroid),
-    ShizukuCapability("service", R.string.shizuku_cap_service_desc, com.openminis.app.ui.novex.NovexIcons.Dns),
+    ShizukuCapability("package", R.string.shizuku_cap_package_desc, novex.android.ui.NovexIcons.Apps),
+    ShizukuCapability("permission", R.string.shizuku_cap_permission_desc, novex.android.ui.NovexIcons.Lock),
+    ShizukuCapability("activity", R.string.shizuku_cap_activity_desc, novex.android.ui.NovexIcons.Launch),
+    ShizukuCapability("display", R.string.shizuku_cap_display_desc, novex.android.ui.NovexIcons.Fullscreen),
+    ShizukuCapability("settings", R.string.shizuku_cap_settings_desc, novex.android.ui.NovexIcons.Settings),
+    ShizukuCapability("user", R.string.shizuku_cap_user_desc, novex.android.ui.NovexIcons.Person),
+    ShizukuCapability("network", R.string.shizuku_cap_network_desc, novex.android.ui.NovexIcons.Wifi),
+    ShizukuCapability("input", R.string.shizuku_cap_input_desc, novex.android.ui.NovexIcons.TouchApp),
+    ShizukuCapability("notification", R.string.shizuku_cap_notification_desc, novex.android.ui.NovexIcons.Notifications),
+    ShizukuCapability("file", R.string.shizuku_cap_file_desc, novex.android.ui.NovexIcons.Folder),
+    ShizukuCapability("device", R.string.shizuku_cap_device_desc, novex.android.ui.NovexIcons.PhoneAndroid),
+    ShizukuCapability("service", R.string.shizuku_cap_service_desc, novex.android.ui.NovexIcons.Dns),
 )

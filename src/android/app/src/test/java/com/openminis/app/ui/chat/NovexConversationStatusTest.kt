@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*

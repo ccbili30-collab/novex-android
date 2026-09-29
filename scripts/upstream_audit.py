@@ -30,7 +30,7 @@ from collections import defaultdict
 
 APP_MAIN = "src/android/app/src/main/java"
 MANIFEST = "src/android/app/src/main/AndroidManifest.xml"
-PKGS = ("com.openminis.app", "novex.android")
+PKGS = ("com.openminis.app", "novex.")
 
 pat_pkg = re.compile(r"^package\s+([\w.]+)", re.M)
 pat_imp = re.compile(r"^import\s+([\w.]+)\.(\w+|\*)", re.M)
@@ -42,7 +42,7 @@ pat_tlfun = re.compile(
     r"fun\s+(?:<[^>]+>\s+)?(?:[\w.]+\.)?(\w+)\s*[(<]", re.M)
 pat_tlval = re.compile(
     r"^(?:@\w+\s+)*(?:public\s+|internal\s+|private\s+)?(?:val|var)\s+(\w+)", re.M)
-pat_fqn = re.compile(r"\b(?:com\.openminis\.app|novex\.android)(?:\.\w+)+")
+pat_fqn = re.compile(r"\b(?:com\.openminis\.app|novex)(?:\.\w+)+")
 pat_man_name = re.compile(r'android:(?:name|targetActivity)="([^"]+)"')
 
 

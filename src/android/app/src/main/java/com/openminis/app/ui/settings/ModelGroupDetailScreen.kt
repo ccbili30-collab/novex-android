@@ -13,24 +13,24 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.SegmentedButton
+import novex.android.ui.Scaffold
+import novex.android.ui.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
-import com.openminis.app.ui.novex.Slider
+import novex.android.ui.SingleChoiceSegmentedButtonRow
+import novex.android.ui.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -136,7 +136,7 @@ fun ModelGroupDetailScreen(
                 title = { Text(group.name, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -295,7 +295,7 @@ fun ModelGroupDetailScreen(
                                 },
                                 leadingContent = {
                                     Icon(
-                                        imageVector = com.openminis.app.ui.novex.NovexIcons.Warning,
+                                        imageVector = novex.android.ui.NovexIcons.Warning,
                                         contentDescription = stringResource(R.string.model_group_detail_unavailable),
                                         tint = MaterialTheme.colorScheme.error,
                                     )
@@ -307,7 +307,7 @@ fun ModelGroupDetailScreen(
                                         providerRepository.updateGroup(group.copy(memberEntryIds = newIds.toMutableList()))
                                     }) {
                                         Icon(
-                                            imageVector = com.openminis.app.ui.novex.NovexIcons.Delete,
+                                            imageVector = novex.android.ui.NovexIcons.Delete,
                                             contentDescription = stringResource(R.string.common_remove),
                                             tint = MaterialTheme.colorScheme.error,
                                         )
@@ -345,13 +345,13 @@ fun ModelGroupDetailScreen(
                                         modifier = Modifier.draggableHandle(),
                                         onClick = {},
                                     ) {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.DragHandle, contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder))
+                                        Icon(novex.android.ui.NovexIcons.DragHandle, contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder))
                                     }
                                 },
                                 trailingContent = {
                                     Box {
                                         IconButton(onClick = { showMenu = true }) {
-                                            Icon(com.openminis.app.ui.novex.NovexIcons.MoreVert, contentDescription = stringResource(R.string.model_group_detail_more_options))
+                                            Icon(novex.android.ui.NovexIcons.MoreVert, contentDescription = stringResource(R.string.model_group_detail_more_options))
                                         }
                                         com.openminis.app.ui.components.MinisMenu(
                                             expanded = showMenu,
@@ -410,7 +410,7 @@ fun ModelGroupDetailScreen(
                                 group.copy(defaultThinkingLevel = newLevel)
                             )
                         },
-                        icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                        icon = novex.android.ui.NovexIcons.Psychology,
                         iconColor = Color(0xFFAF52DE),
                         showDivider = reasoningEnabled,
                     )
@@ -525,7 +525,7 @@ fun ModelGroupDetailScreen(
                                 )
                             }
                         },
-                        icon = com.openminis.app.ui.novex.NovexIcons.Memory,
+                        icon = novex.android.ui.NovexIcons.Memory,
                         iconColor = Color(0xFF5856D6),
                         showDivider = contextEnabled,
                     )

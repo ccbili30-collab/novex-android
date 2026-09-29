@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.novex.domain.NovexResourceRef
-import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
+import novex.core.NovexResourceRef
+import novex.core.NovexSourceCollectionPromptReceipt
 import java.nio.file.Files
 import org.json.JSONArray
 import org.json.JSONObject

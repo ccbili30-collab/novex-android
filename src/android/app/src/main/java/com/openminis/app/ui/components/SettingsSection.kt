@@ -4,9 +4,9 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.openminis.app.ui.novex.NovexSettingsSection
-import com.openminis.app.ui.novex.NovexDivider
-import com.openminis.app.ui.novex.NovexDimensions
+import novex.android.ui.NovexSettingsSection
+import novex.android.ui.NovexDivider
+import novex.android.ui.NovexDimensions
 
 /** Kept for existing callers; no independent styling remains. */
 @Composable

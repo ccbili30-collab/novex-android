@@ -5,10 +5,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.db.AppDatabase
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.domain.CreativeArtifactAttachment
-import com.openminis.app.novex.domain.CreativeArtifactKind
-import com.openminis.app.novex.domain.CreativeArtifactOrigin
-import com.openminis.app.novex.domain.NovexContentAddress
+import novex.core.CreativeArtifactAttachment
+import novex.core.CreativeArtifactKind
+import novex.core.CreativeArtifactOrigin
+import novex.core.NovexContentAddress
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After

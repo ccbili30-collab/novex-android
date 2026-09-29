@@ -1,13 +1,13 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
-import com.openminis.app.novex.domain.AnswerIdentity
-import com.openminis.app.novex.domain.ConversationControlBehavior
-import com.openminis.app.novex.domain.ConversationControlDefinition
-import com.openminis.app.novex.domain.ConversationControlSource
-import com.openminis.app.novex.domain.ManagedAccess
-import com.openminis.app.novex.domain.NovexContentAddress
+import novex.core.ActiveInteractiveFictionSnapshot
+import novex.core.AnswerIdentity
+import novex.core.ConversationControlBehavior
+import novex.core.ConversationControlDefinition
+import novex.core.ConversationControlSource
+import novex.core.ManagedAccess
+import novex.core.NovexContentAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -37,7 +37,7 @@ class NovexConversationEditorDraftStateTest {
             .activateGame(game)
             .activateGame(game.copy(projectId = "game-2", snapshotId = "snapshot-2", title = "新文游"))
 
-        assertEquals(com.openminis.app.novex.domain.NovexPersonaPresets.gameHost, draft.configuration.answerIdentity)
+        assertEquals(novex.core.NovexPersonaPresets.gameHost, draft.configuration.answerIdentity)
         assertEquals("game-2", draft.configuration.activeInteractiveFiction?.projectId)
     }
 
@@ -71,7 +71,7 @@ class NovexConversationEditorDraftStateTest {
 
         val reopened = NovexConversationEditorDraftState.from("chat-1", settings)
 
-        assertEquals(com.openminis.app.novex.domain.NovexPersonaPresets.gameHost, reopened.configuration.answerIdentity)
+        assertEquals(novex.core.NovexPersonaPresets.gameHost, reopened.configuration.answerIdentity)
         assertEquals(listOf(world, role), reopened.configuration.backgroundSettings.map { it.subject })
         assertEquals(game, reopened.configuration.activeInteractiveFiction)
         assertEquals(world, reopened.configuration.managedSubjects.single().subject)

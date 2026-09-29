@@ -6,7 +6,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.openminis.app.MinisApp
 import com.openminis.app.ui.creative.CreativeLibraryScreen
-import com.openminis.app.ui.novex.NovexTextActionRow
+import novex.android.ui.NovexTextActionRow
 import com.openminis.app.ui.sandbox.FileItem
 import com.openminis.app.ui.sandbox.FilePreviewScreen
 
@@ -21,7 +21,7 @@ internal fun ConversationWorkspaceFiles(sessionId: String) {
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         CreativeLibraryScreen(app.creativeArtifactRepository, app.creativeArtifactDeviceDirectory, app.novexWorkspace,
             sessionId, onBack = { browsing = false }, onOpenArtifact = { record, file ->
-                preview = FileItem(file, com.openminis.app.novex.domain.NovexDisplayName.file(record.artifact.title), false, false, file.length(), record.artifact.updatedAt)
+                preview = FileItem(file, novex.core.NovexDisplayName.file(record.artifact.title), false, false, file.length(), record.artifact.updatedAt)
             })
     }
     preview?.let { item -> Dialog(onDismissRequest = { preview = null }, properties = DialogProperties(

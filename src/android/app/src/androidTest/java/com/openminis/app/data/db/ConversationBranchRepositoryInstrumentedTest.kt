@@ -5,8 +5,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.ConversationBranchGraph
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.domain.AnswerIdentity
-import com.openminis.app.novex.domain.ContextUsageRecord
+import novex.core.AnswerIdentity
+import novex.core.ContextUsageRecord
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

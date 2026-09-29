@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -124,7 +124,7 @@ fun SpeechLanguagePickerSheet(
                             }
                             if (selected) {
                                 Icon(
-                                    imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
+                                    imageVector = novex.android.ui.NovexIcons.Check,
                                     contentDescription = stringResource(R.string.speech_lang_picker_selected),
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp),

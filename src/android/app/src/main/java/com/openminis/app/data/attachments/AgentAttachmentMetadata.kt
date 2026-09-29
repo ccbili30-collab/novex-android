@@ -1,6 +1,6 @@
 package com.openminis.app.data.attachments
 
-import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
+import novex.core.NovexSourceCollectionPromptReceipt
 
 private val AGENT_ATTACHMENT_ENVELOPES = listOf(
     "user-attached-files",

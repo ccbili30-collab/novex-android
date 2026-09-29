@@ -2,10 +2,10 @@ package com.openminis.app.tools
 
 import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.novex.domain.NovexToolCapability
-import com.openminis.app.novex.domain.NovexToolCatalog
-import com.openminis.app.novex.domain.NovexToolParameter
-import com.openminis.app.novex.domain.NovexToolParameterKind
+import novex.core.NovexToolCapability
+import novex.core.NovexToolCatalog
+import novex.core.NovexToolParameter
+import novex.core.NovexToolParameterKind
 
 /** Single provider adapter for every Novex-owned model tool definition. */
 internal object NovexAgentToolCatalogAdapter {

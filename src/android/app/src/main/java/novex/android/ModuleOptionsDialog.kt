@@ -1,13 +1,13 @@
 package novex.android
 
-import com.openminis.app.ui.novex.FilterChip
+import novex.android.ui.FilterChip
 
-import com.openminis.app.ui.novex.Checkbox
+import novex.android.ui.Checkbox
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.OutlinedTextField
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState

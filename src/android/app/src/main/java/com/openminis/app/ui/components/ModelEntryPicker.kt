@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
@@ -169,7 +169,7 @@ fun LazyListScope.modelEntryPickerItems(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             leadingIcon = {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Search,
+                    novex.android.ui.NovexIcons.Search,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -179,7 +179,7 @@ fun LazyListScope.modelEntryPickerItems(
                 if (searchQuery.value.isNotEmpty()) {
                     IconButton(onClick = { searchQuery.value = "" }) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Close,
+                            novex.android.ui.NovexIcons.Close,
                             contentDescription = stringResource(clearContentDescriptionRes),
                             modifier = Modifier.size(18.dp),
                         )
@@ -232,7 +232,7 @@ fun LazyListScope.modelEntryPickerItems(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (isCollapsed) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                        if (isCollapsed) novex.android.ui.NovexIcons.KeyboardArrowDown else novex.android.ui.NovexIcons.KeyboardArrowUp,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -360,7 +360,7 @@ fun LazyListScope.modelEntryPickerItems(
                                     modifier = Modifier.size(32.dp),
                                 ) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.Bolt,
+                                        novex.android.ui.NovexIcons.Bolt,
                                         contentDescription = stringResource(R.string.quicktest_button),
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(18.dp),
@@ -395,7 +395,7 @@ fun LazyListScope.modelEntryPickerItems(
 @Composable
 private fun SelectionDot(isSelected: Boolean) {
     Icon(
-        if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+        if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
         contentDescription = null,
         tint = if (isSelected) Color(0xFF007AFF)
         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

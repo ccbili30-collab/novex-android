@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.novex.domain.NovexConversationWorkspaceScope
-import com.openminis.app.novex.domain.NovexResourceRef
+import novex.core.NovexConversationWorkspaceScope
+import novex.core.NovexResourceRef
 import java.io.File
 import org.json.JSONArray
 

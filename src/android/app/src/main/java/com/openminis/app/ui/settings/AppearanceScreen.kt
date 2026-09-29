@@ -30,7 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Slider
+import novex.android.ui.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -212,9 +212,9 @@ fun AppearanceScreen(
         ) {
             data class ThemeRow(val label: String, val icon: ImageVector, val tint: Color)
             val themeRows = listOf(
-                ThemeRow(stringResource(R.string.appearance_theme_system), com.openminis.app.ui.novex.NovexIcons.BrightnessAuto, tilePurple),
-                ThemeRow(stringResource(R.string.appearance_theme_light), com.openminis.app.ui.novex.NovexIcons.LightMode, tileOrange),
-                ThemeRow(stringResource(R.string.appearance_theme_dark), com.openminis.app.ui.novex.NovexIcons.DarkMode, tilePurple),
+                ThemeRow(stringResource(R.string.appearance_theme_system), novex.android.ui.NovexIcons.BrightnessAuto, tilePurple),
+                ThemeRow(stringResource(R.string.appearance_theme_light), novex.android.ui.NovexIcons.LightMode, tileOrange),
+                ThemeRow(stringResource(R.string.appearance_theme_dark), novex.android.ui.NovexIcons.DarkMode, tilePurple),
             )
             themeRows.forEachIndexed { idx, row ->
                 SettingsChoiceRow(
@@ -236,7 +236,7 @@ fun AppearanceScreen(
                 )
             }
             SettingsRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Palette,
+                icon = novex.android.ui.NovexIcons.Palette,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_color_theme_title),
                 subtitle = stringResource(R.string.appearance_color_theme_subtitle),
@@ -269,13 +269,13 @@ fun AppearanceScreen(
                     leading = {
                         if (idx == 0) {
                             androidx.compose.material3.Icon(
-                                com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
+                                novex.android.ui.NovexIcons.KeyboardReturn,
                                 contentDescription = null,
                                 tint = tilePurple,
                             )
                         } else {
                             androidx.compose.material3.Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Send,
+                                novex.android.ui.NovexIcons.Send,
                                 contentDescription = null,
                                 tint = tileGreen,
                             )
@@ -296,7 +296,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_keep_awake_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.ScreenLockPortrait,
+                icon = novex.android.ui.NovexIcons.ScreenLockPortrait,
                 iconColor = tileGreen,
                 title = stringResource(R.string.appearance_keep_awake_title),
                 checked = keepScreenAwake,
@@ -315,7 +315,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_chrome_autofade_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.VisibilityOff,
+                icon = novex.android.ui.NovexIcons.VisibilityOff,
                 iconColor = tilePurple,
                 title = stringResource(R.string.appearance_chrome_autofade_title),
                 checked = chromeAutoFade,
@@ -333,7 +333,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_tool_preview_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Visibility,
+                icon = novex.android.ui.NovexIcons.Visibility,
                 iconColor = tileTeal,
                 title = stringResource(R.string.appearance_tool_preview_title),
                 checked = toolPreview,
@@ -350,7 +350,7 @@ fun AppearanceScreen(
             footer = "在输入框旁显示当前模型实际上下文窗口的使用进度。",
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.DataUsage,
+                icon = novex.android.ui.NovexIcons.DataUsage,
                 iconColor = tileBlue,
                 title = "显示上下文用量",
                 subtitle = "点击圆圈可切换百分比与进度视图",
@@ -373,7 +373,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_expand_thinking_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                icon = novex.android.ui.NovexIcons.Psychology,
                 iconColor = tilePurple,
                 title = stringResource(R.string.appearance_auto_expand_thinking_title),
                 checked = autoExpandThinking,
@@ -393,7 +393,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_focus_after_reply_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Keyboard,
+                icon = novex.android.ui.NovexIcons.Keyboard,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_auto_focus_after_reply_title),
                 checked = autoFocusAfterReply,
@@ -414,7 +414,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_show_chat_title_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.ChatBubbleOutline,
+                icon = novex.android.ui.NovexIcons.ChatBubbleOutline,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_show_chat_title),
                 subtitle = stringResource(R.string.appearance_show_chat_title_subtitle),
@@ -435,7 +435,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_auto_grouping_footer),
         ) {
             SettingsSwitchRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+                icon = novex.android.ui.NovexIcons.Folder,
                 iconColor = tileBlue,
                 title = stringResource(R.string.appearance_auto_grouping),
                 subtitle = stringResource(R.string.appearance_auto_grouping_subtitle),
@@ -454,7 +454,7 @@ fun AppearanceScreen(
             footer = stringResource(R.string.appearance_font_size_footer),
         ) {
             SettingsRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.FormatSize,
+                icon = novex.android.ui.NovexIcons.FormatSize,
                 iconColor = tileOrange,
                 title = stringResource(R.string.appearance_font_scale_title),
                 subtitle = stringResource(R.string.appearance_font_scale_subtitle),
@@ -621,7 +621,7 @@ fun AppearanceScreen(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.CheckCircle,
+                                        novex.android.ui.NovexIcons.CheckCircle,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(22.dp),

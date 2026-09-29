@@ -29,7 +29,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.novex.domain.NovexContentAddress
+import novex.core.NovexContentAddress
 import com.openminis.app.ui.chat.ChatScreen
 import com.openminis.app.ui.chat.ConversationSettingsScreen
 import com.openminis.app.ui.creative.CreativeLibraryScreen
@@ -754,7 +754,7 @@ fun AppNavigation(
                 onOpenArtifact = { record, file ->
                     FilePreviewHolder.currentItem = FileItem(
                         file = file,
-                        name = com.openminis.app.novex.domain.NovexDisplayName.file(record.artifact.title),
+                        name = novex.core.NovexDisplayName.file(record.artifact.title),
                         isDirectory = false,
                         isSymlink = false,
                         size = file.length(),
@@ -1018,7 +1018,7 @@ fun AppNavigation(
         }
 
         composable("settings/component-gallery") {
-            com.openminis.app.ui.novex.NovexComponentGallery { navController.safePopBackStack() }
+            novex.android.ui.NovexComponentGallery { navController.safePopBackStack() }
         }
 
         composable(Routes.PROVIDER_LIST) {

@@ -14,8 +14,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openminis.app.novex.domain.FileNovexLearningRepository
-import com.openminis.app.novex.domain.NovexLearningStateJsonCodec
+import novex.core.FileNovexLearningRepository
+import novex.core.NovexLearningStateJsonCodec
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
 import java.util.UUID

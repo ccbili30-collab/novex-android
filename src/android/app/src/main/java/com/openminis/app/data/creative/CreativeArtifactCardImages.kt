@@ -3,7 +3,7 @@ package com.openminis.app.data.creative
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import java.io.File
 import org.json.JSONObject
 

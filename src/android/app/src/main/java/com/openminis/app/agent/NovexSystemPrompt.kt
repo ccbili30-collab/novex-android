@@ -112,7 +112,7 @@ internal fun buildNovexToolWorldSection(
 这是会话 $sessionId。长期记忆当前${if (memoryEnabled) "开启" else "关闭"}。
 $persistentContext
 正常系统提示词与当前活动消息分支共同参与本轮调用。对话原文负责叙事连续性，结构化状态负责事实连续性；状态与摘要都不能取代原始消息和已保存成果。
-${com.openminis.app.novex.domain.NovexProductToolGuide.build(availableToolNames)}
+${novex.core.NovexProductToolGuide.build(availableToolNames)}
 </持续世界与工具>
 """.trimIndent()
 

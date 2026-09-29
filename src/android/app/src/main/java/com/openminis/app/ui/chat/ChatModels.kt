@@ -133,7 +133,7 @@ data class ChatMessage(
     val isQueued: Boolean = false,
     val queuedPromptId: String? = null,
     /** Exact structured sources selected for this request; null before selection or on legacy turns. */
-    val novexContextUsage: com.openminis.app.novex.domain.ContextUsageRecord? = null,
+    val novexContextUsage: novex.core.ContextUsageRecord? = null,
     // Set to true when this message belongs to a range that has been folded
     // into a compact summary marker. Mirrors iOS ChatMessage.isCompactedHistory:
     // the message stays in the UI, but renders at reduced opacity so the user

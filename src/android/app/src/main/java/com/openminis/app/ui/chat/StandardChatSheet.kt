@@ -16,7 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -140,7 +140,7 @@ fun StandardChatSheetHeader(
         Spacer(modifier = Modifier.weight(1f))
         IconButton(onClick = onDismiss) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.Close,
+                imageVector = novex.android.ui.NovexIcons.Close,
                 contentDescription = stringResource(R.string.standard_sheet_close),
                 tint = ChatColors.secondaryText,
             )

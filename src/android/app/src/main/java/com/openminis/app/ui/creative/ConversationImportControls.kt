@@ -12,7 +12,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openminis.app.MinisApp
 import com.openminis.app.R
-import com.openminis.app.ui.novex.*
+import novex.android.ui.*
 
 @Composable
 internal fun ConversationImportControls(conversationId: String) {

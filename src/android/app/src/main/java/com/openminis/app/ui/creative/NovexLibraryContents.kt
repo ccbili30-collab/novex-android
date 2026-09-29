@@ -8,8 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.*
+import novex.core.*
+import novex.android.ui.*
 
 @Composable
 internal fun NovexLibraryContents(group: NovexWorkGroup, entries: List<NovexLibraryEntry>, onOpen: (NovexContentAddress) -> Unit) {

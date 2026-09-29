@@ -207,7 +207,7 @@ private fun ExpandableModelRow(model: ModelStats, showDivider: Boolean) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Icon(
-                    if (expanded) com.openminis.app.ui.novex.NovexIcons.ExpandMore else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                    if (expanded) novex.android.ui.NovexIcons.ExpandMore else novex.android.ui.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )

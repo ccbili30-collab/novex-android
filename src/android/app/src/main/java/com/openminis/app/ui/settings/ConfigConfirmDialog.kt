@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -167,7 +167,7 @@ private fun ConfirmRow(item: PendingConfigChangeItem, onToggle: (Boolean) -> Uni
                 )
                 Spacer(Modifier.width(6.dp))
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowForward,
+                    imageVector = novex.android.ui.NovexIcons.ArrowForward,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(top = 2.dp),
@@ -227,7 +227,7 @@ private fun VerbBadge(verb: String) {
 private fun RiskHint(text: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Warning,
+            imageVector = novex.android.ui.NovexIcons.Warning,
             contentDescription = null,
             tint = color,
             modifier = Modifier.height(14.dp),
