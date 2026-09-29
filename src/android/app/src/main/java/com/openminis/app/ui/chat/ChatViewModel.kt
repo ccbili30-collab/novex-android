@@ -11129,6 +11129,557 @@ class ChatViewModel(
             )
         }
 
+    private fun executeMemoryWriteTool(argsJson: String): ToolExecutionResult {
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
+        if (!_memoryEnabled.value) {
+            val msg = "Memory writes are disabled for this session (user toggled /memory off). Reads remain available."
+            return ToolExecutionResult(msg, false, toolTitle = "Memory (disabled)")
+        }
+        val result = MemoryTools.executeMemoryWrite(argsJson, repo)
+        // Record for SessionMemorySheet
+        val content = try {
+            JSONObject(argsJson).optString("content", "")
+        } catch (_: Exception) { "" }
+        _memoryToolRecords.value = _memoryToolRecords.value + MemoryToolRecord(
+            title = result.toolTitle,
+            isWrite = true,
+            preview = content.lines().firstOrNull { it.isNotBlank() }?.take(100) ?: "",
+            output = result.output,
+            writtenContent = content,
+        )
+        return ToolExecutionResult(result.output, result.success, toolTitle = result.toolTitle)
+    }
+
+    private fun executeMemoryGetTool(argsJson: String): ToolExecutionResult {
+        val repo = activeMemoryRepository() ?: return ToolExecutionResult("Error: Memory not available", false)
+        val result = MemoryTools.executeMemoryGet(argsJson, repo, excludedBranchMemoryWrites)
+        val keywords = try {
+            JSONObject(argsJson).optString("keywords", "")
+        } catch (_: Exception) { "" }
+        _memoryToolRecords.value = _memoryToolRecords.value + MemoryToolRecord(
+            title = result.toolTitle,
+            isWrite = false,
+            preview = if (keywords.isNotBlank()) "Search: $keywords" else result.output.take(100),
+            output = result.output,
+            keywords = keywords,
+        )
+        return ToolExecutionResult(result.output, result.success, toolTitle = result.toolTitle)
+    }
+
+    // ─── UI Helpers ──────────────────────────────────────────────────────
+
+    private fun updateAssistantMessage(
+        id: String,
+        content: String,
+        isStreaming: Boolean,
+        toolBlocks: List<AssistantBlock>,
+        isAwaitingModelResponse: Boolean = false,
+    ) {
+        // T-streaming-side-channel: during a live turn, write high-frequency
+        // fields into [_streamingById] instead of mutating the canonical
+        // message list. This keeps the `messages` StateFlow reference stable
+        // across the turn so ChatScreen's top-level reads
+        // (`messages.any/.associate/.isNotEmpty/.lastOrNull`) don't trigger
+        // a full recompose of the 8980-line composable on every token.
+        //
+        // On stream end (isStreaming=false), drain the accumulated delta
+        // back into the canonical message in a single `_messages` emit, then
+        // clear the side-channel entry so post-turn reads (history rebuild,
+        // persist, agent loop) see the canonical truth.
+        if (isStreaming) {
+            val toolBlocksImmutable = toolBlocks.toList()
+
+            // [T-android-stream-flush-dualpath] Dual-path flush at the
+            // message-accumulation layer (NOT per-fragment, which never
+            // throttled). Decide whether to publish this delta now:
+            //   • structural change (toolBlocks count / awaiting flag) →
+            //     publish immediately — these drive tool-bubble UI and must
+            //     never be coalesced away or the bubble state stalls.
+            //   • else time-path: enough ms since last publish for this length.
+            //   • else newline fast-path: a line break in the newly-streamed
+            //     chunk + ≥50 new chars, gated to short docs (iOS parity).
+            // When none fire, stash the latest as a trailing publish so the
+            // final chunk before a pause still lands; a fresh delta cancels
+            // and replaces it.
+            val st = streamFlushStates.getOrPut(id) {
+                StreamFlushState().also { it.lastFlushedLen = 0 }
+            }
+            val prev = _streamingById.value[id]
+            // [T-android-stream-flush-review] Structural change also covers an
+            // in-place tool-block STATUS flip (running → success), not just a
+            // count change — otherwise a spinner→checkmark could lag up to one
+            // throttle tier. Compare a cheap (kind,status) fingerprint.
+            val toolStatusChanged = prev != null &&
+                prev.toolBlocks.size == toolBlocksImmutable.size &&
+                toolBlocksImmutable.indices.any { i ->
+                    prev.toolBlocks[i].toolStatus != toolBlocksImmutable[i].toolStatus
+                }
+            val structuralChange = prev == null ||
+                prev.toolBlocks.size != toolBlocksImmutable.size ||
+                prev.isAwaitingModelResponse != isAwaitingModelResponse ||
+                toolStatusChanged
+            val now = System.currentTimeMillis()
+            val elapsed = now - st.lastFlushMs
+            val throttle = streamFlushThrottleMs(content.length)
+            val newChunk = if (content.length > st.lastFlushedLen) {
+                content.substring(st.lastFlushedLen.coerceAtMost(content.length))
+            } else ""
+            val unflushed = content.length - st.lastFlushedLen
+            val newlineFlush = content.length < NEWLINE_FLUSH_MAX_LEN &&
+                newChunk.contains('\n') &&
+                unflushed >= NEWLINE_FLUSH_MIN_CHARS
+
+            fun publish(text: String, blocks: List<AssistantBlock>, awaiting: Boolean) {
+                _streamingById.value = _streamingById.value + (
+                    id to StreamingDelta(
+                        content = text,
+                        toolBlocks = blocks,
+                        isAwaitingModelResponse = awaiting,
+                    )
+                )
+                st.lastFlushMs = System.currentTimeMillis()
+                st.lastFlushedLen = text.length
+            }
+
+            if (structuralChange || elapsed >= throttle || newlineFlush) {
+                st.trailingJob?.cancel()
+                st.trailingJob = null
+                st.pendingContent = null
+                publish(content, toolBlocksImmutable, isAwaitingModelResponse)
+            } else {
+                // Throttled: always record this delta as the freshest pending
+                // value, so whenever the trailing job fires it publishes the
+                // latest text — not whatever was captured when it was first
+                // scheduled (review #2). Schedule the job only once.
+                st.pendingContent = content
+                st.pendingBlocks = toolBlocksImmutable
+                st.pendingAwaiting = isAwaitingModelResponse
+                if (st.trailingJob == null) {
+                    val wait = (throttle - elapsed).coerceAtLeast(16L)
+                    st.trailingJob = viewModelScope.launch {
+                        kotlinx.coroutines.delay(wait)
+                        val pc = st.pendingContent
+                        if (pc != null) {
+                            publish(pc, st.pendingBlocks, st.pendingAwaiting)
+                            st.pendingContent = null
+                        }
+                        st.trailingJob = null
+                    }
+                }
+            }
+            // [T-android-timeout-while-running] If a transient banner
+            // (`message.error`) is still on the canonical assistant message
+            // when a fresh streaming event arrives, the banner is stale —
+            // the model is producing again, by construction the prior
+            // transient timeout / retry / fallback has been resolved.
+            // Clear it in the same mutation. setTransientInlineError /
+            // setInlineError are the only paths that write `error`; the
+            // terminal path (setInlineError) sets isStreaming=false on the
+            // same message in the same emit, so it cannot reach this
+            // branch and the clear is safe.
+            //
+            // 𝙓𝙄𝙉 TG36302 (0.10): user saw a red "timeout / retry" banner
+            // glued to the bottom of the conversation while the agent
+            // continued running (LM Studio tool loop on 30/30, "Minis is
+            // thinking" indicator). Caused by (a) the fallback-switch branch in
+            // runAgentLoop not calling clearInlineError(), and (b) the
+            // streaming-side-channel writing every subsequent delta into
+            // _streamingById without ever touching _messages where
+            // `error` lives. (a) is fixed at the fallback site; (b) is
+            // fixed here defensively so any future write-path that forgets
+            // to clear can't strand a stale banner across the rest of
+            // the turn.
+            val canonical = _messages.value
+            val canonicalIdx = canonical.indexOfLast { it.id == id }
+            if (canonicalIdx >= 0 && canonical[canonicalIdx].error != null) {
+                val updated = canonical.toMutableList()
+                updated[canonicalIdx] = canonical[canonicalIdx].copy(error = null)
+                _messages.value = updated
+            }
+            return
+        }
+        // [T-android-stream-flush-dualpath] Stream end → cancel any pending
+        // trailing flush and drop the throttle accumulator for this message;
+        // the canonical drain below publishes the final, complete text.
+        clearStreamFlushState(id)
+        // Stream end → sync delta into canonical message + clear side-channel.
+        val current = _messages.value
+        val idx = current.indexOfLast { it.id == id }
+        if (idx < 0) {
+            // The message itself is gone (e.g. clearChat raced ahead) —
+            // just clear any leftover stream delta and bail.
+            if (_streamingById.value.containsKey(id)) {
+                _streamingById.value = _streamingById.value - id
+            }
+            return
+        }
+        val updated = current.toMutableList()
+        updated[idx] = current[idx].copy(
+            content = content,
+            isStreaming = false,
+            toolBlocks = toolBlocks.toList(),
+            isAwaitingModelResponse = isAwaitingModelResponse,
+        )
+        _messages.value = updated
+        if (_streamingById.value.containsKey(id)) {
+            _streamingById.value = _streamingById.value - id
+        }
+    }
+
+    /**
+     * Read a message's content + toolBlocks honoring any active streaming
+     * delta. Use this from non-render code that needs the "current" view of
+     * a message during a live turn (e.g. agent history builders, persistence
+     * snapshots) without forcing the render layer to consult the delta map.
+     */
+    internal fun effectiveContent(id: String): String? {
+        val delta = _streamingById.value[id]
+        if (delta != null) return delta.content
+        return _messages.value.firstOrNull { it.id == id }?.content
+    }
+
+    /**
+     * Force-drain any outstanding streaming delta for [id] back into the
+     * canonical message and clear the side-channel slot. Called from turn
+     * exit paths (cancel / error / retry / resume / clearChat) so the
+     * canonical message reflects all accumulated content even if the last
+     * [updateAssistantMessage] call had isStreaming=true.
+     */
+    private fun flushStreamingDelta(id: String) {
+        val delta = _streamingById.value[id] ?: return
+        val current = _messages.value
+        val idx = current.indexOfLast { it.id == id }
+        if (idx >= 0) {
+            val updated = current.toMutableList()
+            updated[idx] = current[idx].copy(
+                content = delta.content,
+                isStreaming = false,
+                toolBlocks = delta.toolBlocks,
+                isAwaitingModelResponse = delta.isAwaitingModelResponse,
+            )
+            _messages.value = updated
+        }
+        // [T-android-stream-flush-review] Cancel the pending trailing flush
+        // BEFORE clearing the side channel — otherwise its viewModelScope
+        // coroutine (not cancelled by streamJob.cancel) fires later and
+        // re-adds the orphan side-channel entry, reviving a stale "thinking"
+        // row after the turn was stopped/drained.
+        clearStreamFlushState(id)
+        _streamingById.value = _streamingById.value - id
+    }
+
+    /** Drain ALL outstanding streaming deltas (called on global resets). */
+    private fun flushAllStreamingDeltas() {
+        clearAllStreamFlushStates()
+        val pending = _streamingById.value
+        if (pending.isEmpty()) return
+        val current = _messages.value.toMutableList()
+        var changed = false
+        for ((id, delta) in pending) {
+            val idx = current.indexOfLast { it.id == id }
+            if (idx < 0) continue
+            current[idx] = current[idx].copy(
+                content = delta.content,
+                isStreaming = false,
+                toolBlocks = delta.toolBlocks,
+                isAwaitingModelResponse = delta.isAwaitingModelResponse,
+            )
+            changed = true
+        }
+        if (changed) _messages.value = current
+        _streamingById.value = emptyMap()
+    }
+
+    /**
+     * Build the ordered AgentContentPart list for this turn by walking the slice of
+     * `allToolBlocks` that belongs to the current turn (from `turnStartBlockIndex` to
+     * the end). Text blocks become `Text`, tool_use blocks become `ToolUse` — the
+     * original stream order is preserved by the list slice order. Thinking and info
+     * blocks are skipped (they're persisted via `reasoningContent` or not at all).
+     */
+    private suspend fun persistAssistantTurn(
+        parts: List<AgentContentPart>,
+        usage: LLMUsage?,
+        reasoningContent: String? = null,
+        toolBlockMeta: Map<String, AssistantBlock> = emptyMap(),
+        messageId: String = java.util.UUID.randomUUID().toString(),
+    ): String? {
+        if (parts.isEmpty()) return null
+        val partsJson = encodeAssistantTurnParts(parts, toolBlockMeta)
+        val tokenJson = usage?.let {
+            """{"inputTokens":${it.inputTokens},"outputTokens":${it.outputTokens},"cacheCreationTokens":${it.cacheCreationInputTokens ?: 0},"cacheReadTokens":${it.cacheReadInputTokens ?: 0},"latestContextTokens":${it.latestContextTokens}}"""
+        }
+        val entity = chatRepository.appendMessage(
+            realSessionId.ifEmpty { sessionId }, "assistant", partsJson, tokenJson,
+            reasoningContent = reasoningContent,
+            messageId = messageId,
+        )
+        recordActiveBranchMessage(entity.id)
+        return entity.id
+    }
+
+    @Deprecated("Use persistAssistantTurn(parts, ...) for per-turn delta persistence")
+    private suspend fun persistAssistantMessage(
+        text: String,
+        usage: LLMUsage?,
+        toolBlocks: List<AssistantBlock>? = null,
+        toolCallInputs: Map<String, String> = emptyMap()
+        ,
+        reasoningContent: String? = null,
+    ) {
+        if (text.isEmpty() && (toolBlocks == null || toolBlocks.isEmpty())) return
+
+        val partsJson = buildString {
+            append("[")
+            var first = true
+            if (text.isNotEmpty()) {
+                append("""{"type":"text","value":${escapeJson(text)}}""")
+                first = false
+            }
+            toolBlocks?.forEach { block ->
+                // Only persist real tool-use blocks. text / thinking / info blocks are
+                // either represented via the `text` parameter (accumulatedText) or
+                // reconstructed from thinking metadata; persisting them as `toolUse`
+                // produces empty-name records that Anthropic rejects with
+                // "messages.N.content.M.tool_use.name: String should have at least 1 character".
+                if (block.kind != "tool_use") return@forEach
+                if (block.toolName.isBlank()) return@forEach  // extra safety
+                if (!first) append(",")
+                first = false
+                val inputJson = toolCallInputs[block.id]?.let { escapeJson(it) } ?: "\"\""
+                val pUrl = block.browserURL ?: ""
+                val iPath = block.imageFilePath ?: ""
+                append("""{"type":"toolUse","value":{"toolUseId":${escapeJson(block.id)},"name":${escapeJson(block.toolName)},"input":$inputJson,"description":${escapeJson(block.toolTitle)},"pageURL":${escapeJson(pUrl)},"imageFilePath":${escapeJson(iPath)},"thoughtSignature":null}}""")
+            }
+            append("]")
+        }
+        val tokenJson = usage?.let {
+            """{"inputTokens":${it.inputTokens},"outputTokens":${it.outputTokens},"cacheCreationTokens":${it.cacheCreationInputTokens ?: 0},"cacheReadTokens":${it.cacheReadInputTokens ?: 0},"latestContextTokens":${it.latestContextTokens}}"""
+        }
+        chatRepository.appendMessage(
+            realSessionId.ifEmpty { sessionId }, "assistant", partsJson, tokenJson,
+            reasoningContent = reasoningContent,
+        )
+    }
+
+    /** Persist tool results as a user-role message (mirrors iOS behavior). */
+    private suspend fun persistToolResultMessage(parts: List<AgentContentPart>): String? {
+        val results = parts.filterIsInstance<AgentContentPart.ToolResult>()
+        if (results.isEmpty()) return null
+        val partsJson = buildString {
+            append("[")
+            results.forEachIndexed { index, result ->
+                if (index > 0) append(",")
+                val snapshotText = escapeJson(result.content.lines().takeLast(30).joinToString("\n"))
+                append("""{"type":"toolResult","value":{"toolUseId":${escapeJson(result.id)},"name":${escapeJson(result.name)},"output":${escapeJson(result.content)},"success":${!result.isError},"snapshot":{"type":"text","text":$snapshotText}}}""")
+            }
+            append("]")
+        }
+        val entity = chatRepository.appendMessage(realSessionId.ifEmpty { sessionId }, "user", partsJson)
+        return entity.id
+    }
+
+    private fun buildSystemPrompt(): String? {
+        // Cache-friendly layout: keep `base` byte-stable by stripping out anything
+        // that varies per request, then append a "Runtime context" suffix at the
+        // very end with all the dynamic bits (date, timezone, locale, configured
+        // minis-model-use count). OpenAI / DeepSeek prompt caching is prefix-
+        // based, so the longer the static head, the better the hit rate.
+        // Pre-T122 the prompt embedded `Current time: yyyy-MM-dd HH:mm` mid-base,
+        // which guaranteed cache misses across minute boundaries — even a quick
+        // follow-up could land on a different minute and pay full ingestion.
+        val today = java.time.LocalDate.now()
+        val dateStr = today.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+        val tzId = java.util.TimeZone.getDefault().id
+        val lang = context.resources.configuration.locales[0].toLanguageTag()
+
+        // Count of agent-loop-visible models for the `minis-model-use` CLI
+        // (exposed as a shell command via the native_offload handler).
+        val toolsEnabled = agentTools.isNotEmpty()
+        val modelUseCount = if (toolsEnabled) {
+            try { providerRepository.resolvedAgentLoopEntries().size } catch (_: Exception) { 0 }
+        } else 0
+
+        // The selected identity is assembled by prepareNovexRequestContext. The editable
+        // conversation instructions survive identity changes and never mutate shared cards.
+        val legacyProfile = _immersiveProfile.value
+        val identitySection = novex.core.NovexLegacyPromptProjection.project(
+            prompt = _conversationPrompt.value ?: inheritedEditablePrompt(),
+            configuration = currentNovexConfiguration(),
+            legacyRoleId = legacyProfile.characterVersionId ?: legacyProfile.character?.id,
+            legacyPlayerId = legacyProfile.persona?.id,
+            legacyWorldId = legacyProfile.worldId,
+            legacyGeneratedPrompt = com.openminis.app.data.character.CharacterPromptComposer.compose(
+                legacyProfile.character?.toJson()?.toString(), legacyProfile.persona?.toJson()?.toString(), legacyProfile.world?.toJson()?.toString()),
+        )
+        // Keep memory prompt injection and the Novex memory tool set behind the
+        // same per-conversation switch.
+        val memoryOn = _memoryEnabled.value
+        val preparedTeaching = if(integratedCardBinding()!=null) com.openminis.app.cards.IntegratedCardPrompt.build(
+            // [T-prompt-identity-priority]（用户 2026-09-27 报告"写了对话提示词不代入"）
+            // identitySection（含用户手写的对话提示词/人格指令）作为第一参数：
+            // 挂卡链路下它被前置到 system 开头，不再压在十几条卡片管理条款之后。
+            identitySection,memoryOn,agentTools.mapTo(linkedSetOf()){it.name}) else com.openminis.app.agent.NovexSystemPrompt.buildPrepared(
+            sessionId = activeSessionId,
+            context = context,
+            personalitySection = identitySection,
+            memoryEnabled = memoryOn,
+            toolsEnabled = toolsEnabled,
+            availableToolNames = agentTools.mapTo(linkedSetOf()) { it.name },
+        )
+        val base = preparedTeaching.prompt
+        // Match iOS order exactly: skills → global memory → recent daily memory.
+        // See ios/Agent/Chat/AIChatViewModel.swift:4375-4387. Each fragment is
+        // appended only when non-null; absent fragments leave no separator.
+        // Skills may be installed outside this view model, so refresh the adapter
+        // before reading the prompt fragment. This scan performs no network I/O.
+        if (toolsEnabled) skillRepository?.reloadFromDisk()
+        val skillFragment = if (toolsEnabled) skillRepository?.skillPromptFragment(activeSessionId) else null
+        val imageGenerationSkill = if (
+            toolsEnabled && providerRepository.resolvedImageGenerationEntries().isNotEmpty()
+        ) GenerateImageTool.skillPrompt() else null
+        // [T-mcp-integration-android] Re-read servers.json (the CLI / file
+        // browser may have changed it out-of-band) then build the Top-20
+        // enabled-MCP disclosure, injected right after the skills fragment.
+        if (toolsEnabled) mcpRepository?.reloadFromDisk()
+        // R0 沙箱退役灰度（P2.5）：minis-mcp-cli 经沙箱 shell 执行，AI 侧已不可
+        // 达——灰度期不注入这条幽灵命令广告（服务器配置保留，R2 随沙箱裁决）。
+        val mcpFragment: String? = null
+        // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
+        // GLOBAL.md + recent daily logs entirely when the user has turned
+        // memory off for this session. Cheaper (no disk read) and — more
+        // importantly — keeps the model from seeing stale persistent state
+        // it can't tell the user how to manage. Skills and SOUL.md are
+        // intentionally NOT gated by this toggle: skills are part of the
+        // tool surface and SOUL.md is part of identity, both orthogonal
+        // to the memory feature.
+        val activeMemory = activeMemoryRepository()
+        val globalMemoryFragment = if (memoryOn) activeMemory?.loadGlobalMemoryFragment() else null
+        val dailyMemoryFragment = if (memoryOn) {
+            activeMemory?.loadRecentDailyMemoryFragment(excludedBranchMemoryWrites)
+        } else null
+        val novexMemoryFragment = if (memoryOn) activeNovexMemoryFragment() else null
+        // [T-stage2-memory] AI 随身笔记（水位刻度后台整理产物，常驻小块）；
+        // [净眼 P3] 与其他记忆源同受 /memory 开关门控。
+        val sessionMemoryBlock = if (memoryOn) memoryStoreFor(activeSessionId)
+            .injectionBlock(_sessionMemory.value) else null
+        // [T-stage3-snapshot]（总纲 §3.6 记忆干扰根治）压缩后：常量模块重注入
+        // （幂等安全）+ 当前状态锚（快照一行版，§3.8 注意力锚）+ 元说明分工。
+        val compacted = _cachedLatestMarker != null && _compactSummary.value?.isNotBlank() == true
+        var constantReinjectionBlock: String? = null
+        var statusAnchorLine: String? = null
+        if (compacted) {
+            constantReinjectionBlock = buildConstantReinjection()
+            statusAnchorLine = novex.core.NovexStateSnapshot.anchorLine(_worldSnapshot.value)
+        }
+        // [T-stage4-reading]（总纲 §3.8 第 2 层·AI 主动层）待命资料目录指针：
+        // 只列模块名（几十 token 的菜单，非内容）——模型看得到"有什么可查"才
+        // 会主动 read_card/read_text_block。三层读取的其余两层已落地（系统
+        // 保障层=Adoption 关键词判定；注意力锚=状态锚）。sticky 挂账（需
+        // Adoption 有状态化重构）。
+        val standbyDirectoryBlock = buildStandbyDirectory()
+
+        return buildString {
+            append(base)
+            if (skillFragment != null) {
+                append("\n\n")
+                append(skillFragment)
+            }
+            if (imageGenerationSkill != null) {
+                append("\n\n")
+                append(imageGenerationSkill)
+            }
+            if (mcpFragment != null) {
+                append("\n\n")
+                append(mcpFragment)
+            }
+            if (globalMemoryFragment != null) {
+                append("\n\n")
+                append(globalMemoryFragment)
+            }
+            if (dailyMemoryFragment != null) {
+                append("\n\n")
+                append(dailyMemoryFragment)
+            }
+            if (novexMemoryFragment != null) {
+                append("\n\n")
+                append(novexMemoryFragment)
+            }
+            // [T-stage2-memory] AI 随身笔记常驻块（水位刻度后台整理产物；
+            // 空笔记零痕迹）。置于 Runtime context 之前、静态区末尾。
+            if (sessionMemoryBlock != null) {
+                append("\n\n")
+                append(sessionMemoryBlock)
+            }
+            if (constantReinjectionBlock != null) {
+                append("\n\n")
+                append(constantReinjectionBlock)
+            }
+            if (statusAnchorLine != null) {
+                append("\n\n<当前状态锚>\n")
+                append(statusAnchorLine)
+                append("\n</当前状态锚>")
+            }
+            if (standbyDirectoryBlock != null) {
+                append("\n\n")
+                append(standbyDirectoryBlock)
+            }
+            // Runtime context goes last so the prefix above stays byte-stable
+            // across requests within the same day. Keep ordering deterministic
+            // (date → tz → lang → model count) — any reorder defeats the cache.
+            append("\n\nRuntime context:\n")
+            append("- Current date: ").append(dateStr).append(" (").append(tzId).append(")\n")
+            append("- Device language: ").append(lang).append("\n")
+            if (toolsEnabled) {
+                append("- minis-model-use models available: ").append(modelUseCount)
+            } else {
+                append("- Model mode: pure chat; structured tools disabled")
+            }
+        }.also { assembled ->
+            novexPromptAuditInput = NovexPromptAuditInput(assembled, identitySection, preparedTeaching.persistentContext, assembled.removePrefix(base))
+        }
+    }
+
+    // ─── Legacy tool execution methods (kept for compatibility) ───────────
+
+    fun executeMemoryWrite(argsJson: String): MemoryTools.ToolResult {
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        if (!_memoryEnabled.value) {
+            return MemoryTools.ToolResult(
+                "Memory writes are disabled for this session. Reads are still available. The user can re-enable writes via the /memory slash command.",
+                false,
+            )
+        }
+        val result = MemoryTools.executeMemoryWrite(argsJson, repo)
+        val content = try {
+            JSONObject(argsJson).optString("content", "")
+        } catch (_: Exception) { "" }
+        _memoryToolRecords.value = _memoryToolRecords.value + MemoryToolRecord(
+            title = result.toolTitle,
+            isWrite = true,
+            preview = content.lines().firstOrNull { it.isNotBlank() }?.take(100) ?: "",
+            output = result.output,
+            writtenContent = content,
+        )
+        return result
+    }
+
+    fun executeMemoryGet(argsJson: String): MemoryTools.ToolResult {
+        val repo = activeMemoryRepository() ?: return MemoryTools.ToolResult("Error: Memory not available", false)
+        val result = MemoryTools.executeMemoryGet(argsJson, repo, excludedBranchMemoryWrites)
+        val keywords = try {
+            JSONObject(argsJson).optString("keywords", "")
+        } catch (_: Exception) { "" }
+        _memoryToolRecords.value = _memoryToolRecords.value + MemoryToolRecord(
+            title = result.toolTitle,
+            isWrite = false,
+            preview = if (keywords.isNotBlank()) "Search: $keywords" else result.output.take(100),
+            output = result.output,
+            keywords = keywords,
+        )
+        return result
+    }
+
     // ─── Misc Helpers ────────────────────────────────────────────────────
 
     /**
