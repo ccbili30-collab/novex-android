@@ -73,6 +73,33 @@ object ProviderFactory {
                     // /v1/responses.
                     val base = basePath ?: "https://api.openai.com/v1"
                     val effectiveKey = if (!manualBearer.isNullOrEmpty()) manualBearer else apiKey
+                    // [P3.1b 绞杀换管] OpenAI 兼容中转线路（自定 base URL）的
+                    // 聊天流量改走自有 novex.model 传输（NovexTransportProvider
+                    // 实现同一 LLMProvider 接口，调用面零改动）。接管条件：
+                    //   ① 自定 base URL（官方直连仍走上游——gpt-5/o 系的
+                    //      max_completion_tokens 与 Responses 语义暂不迁移）；
+                    //   ② 纯 chat completions 形态：未开 useResponsesAPI、非
+                    //      Azure（api-key 头 + deployments 路径）、未开前尘
+                    //      预设的 responses 自动回退；
+                    //   ③ 端点满足自有传输的安全契约（https 或本机 http）——
+                    //      局域网明文中继（ollama/LM Studio 等）暂留上游。
+                    // 其余分支（anthropic/gemini/openRouter/xAI/kimi、语音、
+                    // 生图）一行不动。
+                    val novexCandidate =
+                        if (basePath != null && !instance.useResponsesAPI &&
+                            !instance.azureMode && !instance.autoResponsesFallback
+                        ) {
+                            novex.android.transport.NovexTransportProvider(
+                                apiKey = effectiveKey,
+                                model = model,
+                                basePath = basePath,
+                                customUserAgent = instance.customUserAgent,
+                                instanceId = instance.id,
+                            )
+                        } else null
+                    if (novexCandidate != null && novexCandidate.endpointAcceptable()) {
+                        novexCandidate
+                    } else {
                     OpenAIProvider(
                         apiKey = effectiveKey,
                         model = model,
@@ -92,6 +119,7 @@ object ProviderFactory {
                         isAzure = instance.azureMode,
                         azureBase = instance.customBaseURL,
                     )
+                    }
                 }
             }
             ProviderType.openRouter -> {

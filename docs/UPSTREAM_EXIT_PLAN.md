@@ -182,6 +182,19 @@ API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.
 SSE 流式：stream=true 编码（stream_options 兼容开关）、逐行容错解析（CRLF/
 注释/半行/非 JSON）、TextDelta/ThinkingDelta/ToolCallDelta/Usage/Done/Failure
 块、聚合器、取消即断；模块零上游依赖不变，app 侧接线是下一步 P3.1b。
+P3.1b 适配器换管（PR #63，2026-09-29）——OpenAI 兼容线路（自定 base URL
+的纯 chat completions）已切自有传输：`novex.android.transport
+.NovexTransportProvider` 实现上游 LLMProvider、内部全走 novex.model；官方
+直连/Azure/Responses/前尘回退/局域网明文与 anthropic/gemini/openRouter/
+xAI/kimi/语音/生图暂留上游（生图经 imageDelegate 回上游实现）。模块面小进化
+（ModelEndpoint 附加头、WireMessage reasoning_content 回放与音频块、
+TextRequest 附加顶层参数）；流时序/错误分类/取消语义贴上游。净眼退回两修后：
+流桥改 trySendBlocking（维持 stream 的背压契约——慢消费者放慢读取而非丢块）、
+token 上限键按主机对齐（OpenRouter 收 max_tokens，其余一切端点收
+max_completion_tokens，两键在模块层互斥）、流中 error 对象按数字 code 走上游
+分类矩阵（含 503 永久失败标记与 OpenCode 日落文案）。已知不对齐（记录在案）：
+<think> 前缀拆分不做、HTTP 错误不带 error body 文本、usage 无 cache 字段、
+temperature 丢弃（调用点皆 null）、模块容量闸门在适配层直通。
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -234,3 +247,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | 见进度 | R2+R3 完成：执行层（sandbox/ 主 11f + offload 26f、agent/shell 3f、offload 死件 8f）与界面（ui/terminal 全家、Mirror/Rootfs/挂载/环境变量屏）拆除；五枚 so + default_mount + prepare 脚本 + CI prepare 步骤清零；Manifest 摘 4 组件 6 权限 | 源码 -约 3.1 万行（git diff --stat）；BrowserUseManager/BrowserTabPool 因手动浏览器共管保留 |
 | 2026-09-29 | #60（merge `fc50cf1`） | R2+R3 合并入 next | 155 文件 −29,968 行（+87） |
 | 2026-09-29 | 本 PR（R4） | R4 收尾清剿：terminal 死码两件（MinisOpenUrlBroker/MinisUrlMarker + ChatScreen 死流）、a11y 死路 UI（SystemPermissions/OffloadPermission 卡与恢复对话框）+ accessibility/ 整包删除、ImageEditRoutingMatrixTest、OpenAIProvider 过时归因、toolPattern 去 browser_use、THIRD_PARTY GPL=0 出清、审计复跑 | 血统 191f/39,865 行（上游未动）、161f/100,520 行（上游改动）、379f/50,349 行（Novex 新增）；死代码 0f |
+| 2026-09-29 | #63 | P3.1b 适配器换管：OpenAI 兼容中转（自定 base 纯 chat）聊天流量切自有 novex.model 传输；model-transport 小进化（附加头/reasoning 回放/音频块/附加参数，ChatCompletionClient +54/-12）；净眼退回两修（流桥 trySendBlocking 背压、token 上限键按主机选择）+ 流中 error 数字 code 矩阵；44 条新增单测（模块 7 + 适配器 28 + 工厂 9） | 上游 OpenAIProvider 及其测试零改动（P3.1d 处置）；model-transport 零上游依赖不变 |

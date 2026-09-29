@@ -188,7 +188,10 @@ object GenerateImageTool {
         )
         try {
             val provider = ProviderFactory.create(instance, credential, entry.model, context)
-            val openAI = provider as? OpenAIProvider
+            // [P3.1b] OpenAI 兼容聊天线路可能换管到 NovexTransportProvider；生图
+            // 仍走上游实现——适配器暴露 imageDelegate 保持 Images API 原行为。
+            val openAI = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? OpenAIProvider
             if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
                 try {
                     val response = if (reference == null) {

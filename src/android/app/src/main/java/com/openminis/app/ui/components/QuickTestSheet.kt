@@ -521,7 +521,10 @@ internal suspend fun performTest(
         }
 
         QuickTestKind.IMAGE_GEN -> {
-            val openAI = provider as? OpenAIProvider
+            // [P3.1b] 聊天线路换管到 NovexTransportProvider 的实例，生图仍走
+            // 上游实现（imageDelegate），Images API 行为不变。
+            val openAI = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? OpenAIProvider
                 ?: return@withContext failure(context.getString(R.string.quicktest_image_unsupported))
             runCatching {
                 val resp = openAI.generateImage(
