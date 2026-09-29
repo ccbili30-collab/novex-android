@@ -8,7 +8,9 @@ import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import novex.model.StreamChunk
 import novex.model.StreamRequest
@@ -449,7 +451,7 @@ class NovexTransportProviderTest {
         val provider = provider(call = call)
         val collected = java.util.concurrent.ConcurrentLinkedQueue<LLMStreamChunk>()
         runBlocking {
-            val job = kotlinx.coroutines.launch(kotlinx.coroutines.Dispatchers.Default) {
+            val job = launch(Dispatchers.Default) {
                 (provider as LLMProvider).streamMessage(
                     listOf(LLMMessage(LLMMessage.Role.USER, "慢速")), null, 64,
                 ).collect { collected.add(it) }
