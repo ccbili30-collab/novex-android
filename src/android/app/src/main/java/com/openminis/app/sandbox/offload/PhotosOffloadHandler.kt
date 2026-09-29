@@ -26,6 +26,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import novex.android.ContentPaths
 
 /**
  * android-photos — query and manage the device photo library via MediaStore.
@@ -526,7 +527,7 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
         // [GH#139] Session-scoped when we know the caller's chat, so the export
         // lands in the dir PRoot bind-mounts at /var/minis/offloads for THIS
         // session. Mirrors ModelUseOffloadHandler.sessionScopedHostFile and
-        // PRootKernel.resolveSessionHostPath, which use the same layout.
+        // ContentPaths.resolveSessionHostPath, which use the same layout.
         val sandboxVisible = sessionId != null
         val outDir = if (sandboxVisible) {
             File(context.filesDir, "minis-sessions/$sessionId/offloads").also { it.mkdirs() }

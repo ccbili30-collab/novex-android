@@ -8,6 +8,7 @@ import com.openminis.app.deeplink.DeepLinkHandler
 import com.openminis.app.sandbox.PRootKernel
 import com.openminis.app.ui.sandbox.FileItem
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * Decides what should happen when a link inside chat markdown is tapped.
@@ -84,9 +85,9 @@ object ChatLinkResolver {
     ): File? {
         fun lookup(linuxPath: String): File? =
             if (sessionId != null && context != null) {
-                PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
+                ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
             } else {
-                PRootKernel.resolveHostPath(linuxPath)
+                ContentPaths.resolveHostPath(linuxPath)
             }
         return when (scheme) {
             "minis" -> {

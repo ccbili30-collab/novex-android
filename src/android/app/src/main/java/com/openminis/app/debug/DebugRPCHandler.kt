@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
+import novex.android.ContentPaths
 
 /**
  * JSON-RPC 2.0 method dispatcher for the debug server.
@@ -300,7 +301,7 @@ class DebugRPCHandler(private val context: Context) {
         val recursive = params.optBoolean("recursive", false)
         val maxDepth = params.optInt("maxDepth", 3)
 
-        val hostFile = PRootKernel.resolveHostPath(path)
+        val hostFile = ContentPaths.resolveHostPath(path)
             ?: throw RPCException(-32602, "Cannot resolve path: $path")
 
         if (!hostFile.isDirectory) throw RPCException(-32602, "Not a directory: $path")
@@ -378,7 +379,7 @@ class DebugRPCHandler(private val context: Context) {
         if (path.isEmpty()) throw RPCException(-32602, "Invalid params: 'path' is required")
         if (path.contains("..")) throw RPCException(-32602, "Invalid path: '..' not allowed")
 
-        val hostFile = PRootKernel.resolveHostPath(path)
+        val hostFile = ContentPaths.resolveHostPath(path)
             ?: throw RPCException(-32602, "Cannot resolve path: $path")
 
         if (!hostFile.exists()) throw RPCException(-32602, "File not found: $path")
@@ -993,7 +994,7 @@ class DebugRPCHandler(private val context: Context) {
 
     /**
      * Write a file into the proot-mounted Linux namespace. Resolves the
-     * Linux path through PRootKernel.resolveHostPath, creates parent dirs,
+     * Linux path through ContentPaths.resolveHostPath, creates parent dirs,
      * writes the bytes, and best-effort applies the requested mode bits.
      * No fakefs registration is needed — proot reads the host directly,
      * so the guest sees the file the moment it lands on disk.
@@ -1013,7 +1014,7 @@ class DebugRPCHandler(private val context: Context) {
         // (it lazy-initializes its RootfsManager). Test harnesses commonly
         // want to stage files BEFORE booting, so route through the rootfs
         // dir directly when the kernel isn't ready yet.
-        val hostFile = PRootKernel.resolveHostPath(path) ?: run {
+        val hostFile = ContentPaths.resolveHostPath(path) ?: run {
             val rootfsDir = com.openminis.app.sandbox.RootfsManager.getInstance(context).rootfsDir
             File(rootfsDir, path.removePrefix("/"))
         }
@@ -1163,7 +1164,7 @@ class DebugRPCHandler(private val context: Context) {
         val finalArgv: List<String> = if (params.has("input")) {
             val inputBlob = params.optString("input", "")
             val linuxPath = "/tmp/.debug-modeluse-input-${System.currentTimeMillis()}.json"
-            val hostFile = com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)
+            val hostFile = ContentPaths.resolveHostPath(linuxPath)
                 ?: throw RPCException(-32603, "cannot resolve $linuxPath under rootfs")
             hostFile.parentFile?.mkdirs()
             hostFile.writeText(inputBlob)

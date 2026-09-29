@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import novex.android.ContentPaths
 
 /**
  * Source of HTML bytes for the "Add to Home Screen" sheet. T-pwa-2 only
@@ -390,7 +391,7 @@ fun AddToHomeSheet(
                                 is WebAppSource.HostFile -> {
                                     // T-pwa-3: link in place — htmlPath is the
                                     // /var/minis/... linux path; WebAppPathResolver
-                                    // routes through PRootKernel.resolveHostPath.
+                                    // routes through ContentPaths.resolveHostPath.
                                     app.webAppShortcutRepository.create(
                                         htmlPath = source.linuxPath,
                                         pathScope = source.pathScope,

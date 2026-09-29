@@ -18,6 +18,7 @@ import com.openminis.app.sandbox.PRootKernel
 import java.io.File
 import java.security.MessageDigest
 import org.json.JSONObject
+import novex.android.ContentPaths
 
 internal fun imageCredentialFingerprint(credential: String): String =
     MessageDigest.getInstance("SHA-256")
@@ -126,7 +127,7 @@ object GenerateImageTool {
         val saved = images.mapIndexed { index, media ->
             val suffix = if (images.size == 1) "" else "-${index + 1}"
             val linuxPath = "$linuxDir/generated-$stamp$suffix.${extensionForMime(media.mimeType)}"
-            val outputFile = PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
+            val outputFile = ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
                 ?: return ToolExecutionResult("无法创建会话生图目录", false, toolTitle = title)
             outputFile.parentFile?.mkdirs()
             outputFile.writeBytes(media.data)
@@ -239,8 +240,8 @@ object GenerateImageTool {
         val linuxPath = if (rawPath.startsWith("minis://")) {
             "/var/minis/" + java.net.URLDecoder.decode(rawPath.removePrefix("minis://"), "UTF-8")
         } else rawPath
-        val file = PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
-            ?: PRootKernel.resolveHostPath(linuxPath)
+        val file = ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
+            ?: ContentPaths.resolveHostPath(linuxPath)
             ?: error("无法解析参考图路径：$linuxPath")
         require(file.exists() && file.isFile) { "参考图不存在：$linuxPath" }
         LLMMessage.ImagePart(file.readBytes(), mimeForFile(file), linuxPath)

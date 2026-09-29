@@ -5,6 +5,7 @@ import com.openminis.app.data.db.WebAppShortcutEntity
 import com.openminis.app.data.repository.WebAppShortcutRepository
 import com.openminis.app.sandbox.PRootKernel
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * T-pwa-1 (renamed Pwa → WebApp): resolve the stored
@@ -16,8 +17,8 @@ import java.io.File
  *   - session_attachment → `<filesDir>/sessions/<sessionId>/attachments/<htmlPath>`
  *     (htmlPath relative to the session's attachments dir; absolute paths
  *      under /var/minis/<sub>/ are also accepted via resolveSessionHostPath)
- *   - shared             → resolved via [PRootKernel.resolveHostPath]
- *   - mount              → resolved via [PRootKernel.resolveHostPath]
+ *   - shared             → resolved via [ContentPaths.resolveHostPath]
+ *   - mount              → resolved via [ContentPaths.resolveHostPath]
  *                          (longest-prefix match against bindMounts)
  */
 object WebAppPathResolver {
@@ -25,8 +26,8 @@ object WebAppPathResolver {
     fun resolve(context: Context, shortcut: WebAppShortcutEntity): File? {
         val file = when (shortcut.pathScope) {
             WebAppShortcutRepository.SCOPE_SESSION_ATTACHMENT -> resolveSession(context, shortcut)
-            WebAppShortcutRepository.SCOPE_SHARED -> PRootKernel.resolveHostPath(shortcut.htmlPath)
-            WebAppShortcutRepository.SCOPE_MOUNT -> PRootKernel.resolveHostPath(shortcut.htmlPath)
+            WebAppShortcutRepository.SCOPE_SHARED -> ContentPaths.resolveHostPath(shortcut.htmlPath)
+            WebAppShortcutRepository.SCOPE_MOUNT -> ContentPaths.resolveHostPath(shortcut.htmlPath)
             else -> null
         }
         return file?.takeIf { it.exists() && it.isFile }
@@ -75,7 +76,7 @@ object WebAppPathResolver {
         // Absolute /var/minis/<perSession>/... — go through PRootKernel which
         // knows how to map per-session subdirs to <filesDir>/minis-sessions/<id>/<sub>.
         if (shortcut.htmlPath.startsWith("/var/minis/")) {
-            return PRootKernel.resolveSessionHostPath(sessionId, shortcut.htmlPath, context)
+            return ContentPaths.resolveSessionHostPath(sessionId, shortcut.htmlPath, context)
         }
         // Relative path — under the session's attachments dir.
         val attachmentsDir = File(context.filesDir, "sessions/$sessionId/attachments")

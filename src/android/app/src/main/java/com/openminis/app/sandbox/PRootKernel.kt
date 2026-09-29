@@ -44,8 +44,8 @@ object PRootKernel {
     /** Custom environment variables injected into every proot command. */
     val customEnvironment: MutableMap<String, String> = mutableMapOf()
 
-    /** Bind mounts: Linux path -> host filesystem path. */
-    val bindMounts: MutableMap<String, String> = linkedMapOf()
+    /** Bind mounts: Linux path -> host filesystem path. Owned by [novex.android.ContentPaths] since P2.5 R1. */
+    val bindMounts: MutableMap<String, String> get() = novex.android.ContentPaths.bindMounts
 
     /**
      * Initialize the PRoot environment: install rootfs and proot binary.
@@ -57,6 +57,9 @@ object PRootKernel {
         }
 
         rootfsManager = RootfsManager.getInstance(context)
+        // P2.5 R1: 路径解析的所有权在 novex.android.ContentPaths；沙箱根仅作
+        // 非 /var/minis 路径的回退登记，R2 退役后随沙箱消失。
+        novex.android.ContentPaths.rootfsFallbackDir = rootfsManager.rootfsDir
         rootfsManager.installIfNeeded()
         rootfsManager.installProotIfNeeded()
 
@@ -179,7 +182,7 @@ object PRootKernel {
     }
 
     fun addBindMount(linuxPath: String, hostPath: String) {
-        bindMounts[linuxPath] = hostPath
+        novex.android.ContentPaths.addBindMount(linuxPath, hostPath)
     }
 
     /**
@@ -189,22 +192,15 @@ object PRootKernel {
      * booted or any shell to have started. Safe to call repeatedly.
      */
     fun registerGlobalBindMounts(context: Context) {
-        val globalBase = File(context.filesDir, "minis-global")
-        // [T-mcp-integration-android] mcp-servers is global (like memory/skills):
-        // binding it here makes the in-PRoot minis-mcp-cli read/write the SAME
-        // servers.json the Android Settings UI does (host: minis-global/mcp-servers).
-        listOf("memory", "skills", "shared", "mcp-servers").forEach { subdir ->
-            val hostDir = File(globalBase, subdir).also { it.mkdirs() }
-            bindMounts["/var/minis/$subdir"] = hostDir.absolutePath
-        }
+        novex.android.ContentPaths.registerGlobalMounts(context)
     }
 
     fun removeBindMount(linuxPath: String) {
-        bindMounts.remove(linuxPath)
+        novex.android.ContentPaths.removeBindMount(linuxPath)
     }
 
     fun clearBindMounts() {
-        bindMounts.clear()
+        novex.android.ContentPaths.clearBindMounts()
     }
 
     // ── User-mounted external folders (T219) ──────────────────────────────
@@ -660,54 +656,18 @@ object PRootKernel {
         return cmd
     }
 
-    /** Subdirs that live under `minis-sessions/<sessionId>/` rather than the global pool. */
-    private val perSessionSubdirs = setOf("attachments", "offloads", "workspace", "browser")
-
     /**
-     * Resolve a `/var/minis/...` Linux path directly against a specific session's
-     * host directory, bypassing the global [bindMounts] map. Use this when the
-     * caller knows the owning session (chat link resolver, file preview, etc.) —
-     * the global map is overwritten every time another session boots its shell,
-     * so its answer is last-writer-wins rather than "this session's view".
-     *
-     * Falls back to [resolveHostPath] for paths outside `/var/minis/` or for the
-     * shared subdirs (memory/skills/shared) which don't depend on sessionId.
+     * Resolve a `/var/minis/...` Linux path against a specific session's host
+     * directory. Delegates to [novex.android.ContentPaths] since P2.5 R1 —
+     * kept as a thin forwarder for callers that predate the extraction;
+     * surviving callers are being re-pointed to ContentPaths directly.
      */
-    fun resolveSessionHostPath(sessionId: String, linuxPath: String, context: Context): File? {
-        if (!linuxPath.startsWith("/var/minis/")) return resolveHostPath(linuxPath)
-        val rest = linuxPath.removePrefix("/var/minis/")
-        val slash = rest.indexOf('/')
-        val subdir = if (slash < 0) rest else rest.substring(0, slash)
-        if (subdir !in perSessionSubdirs) return resolveHostPath(linuxPath)
-        val sessionBase = File(context.filesDir, "minis-sessions/$sessionId/$subdir")
-        val tail = if (slash < 0) "" else rest.substring(slash + 1)
-        return if (tail.isEmpty()) sessionBase else File(sessionBase, tail)
-    }
+    fun resolveSessionHostPath(sessionId: String, linuxPath: String, context: Context): File? =
+        novex.android.ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
 
-    /**
-     * Resolve a Linux path to a host filesystem File by checking bind mounts.
-     * Returns null if no matching mount is found.
-     */
-    fun resolveHostPath(linuxPath: String): File? {
-        // Check bind mounts (longest prefix match)
-        val sorted = bindMounts.keys.sortedByDescending { it.length }
-        for (mountPoint in sorted) {
-            if (linuxPath == mountPoint || linuxPath.startsWith("$mountPoint/")) {
-                val hostBase = bindMounts[mountPoint]!!
-                val relativePath = linuxPath.removePrefix(mountPoint).removePrefix("/")
-                return if (relativePath.isEmpty()) {
-                    File(hostBase)
-                } else {
-                    File(hostBase, relativePath)
-                }
-            }
-        }
-
-        // Fallback: resolve relative to rootfs
-        if (!::rootfsManager.isInitialized) return null
-        val stripped = linuxPath.removePrefix("/")
-        return if (stripped.isEmpty()) rootfsManager.rootfsDir else File(rootfsManager.rootfsDir, stripped)
-    }
+    /** Longest-prefix bind-mount resolution. Delegates to [novex.android.ContentPaths]. */
+    fun resolveHostPath(linuxPath: String): File? =
+        novex.android.ContentPaths.resolveHostPath(linuxPath)
 
     /**
      * Create a stub executable inside the rootfs for every registered

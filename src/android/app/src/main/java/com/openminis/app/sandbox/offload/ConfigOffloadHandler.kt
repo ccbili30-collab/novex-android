@@ -9,6 +9,7 @@ import com.openminis.app.sandbox.PRootKernel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * `minis-config` offload handler. Mirrors iOS `ConfigOffload.m`.
@@ -382,7 +383,7 @@ class ConfigOffloadHandler : NativeOffloadHandler {
      * null when the path can't be resolved, doesn't exist, or read fails.
      */
     private fun readLinuxPath(linuxPath: String): String? {
-        val hostFile: File = PRootKernel.resolveHostPath(linuxPath) ?: return null
+        val hostFile: File = ContentPaths.resolveHostPath(linuxPath) ?: return null
         if (!hostFile.exists() || !hostFile.isFile) return null
         return try { hostFile.readText() } catch (_: Throwable) { null }
     }

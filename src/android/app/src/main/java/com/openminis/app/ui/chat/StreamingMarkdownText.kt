@@ -104,6 +104,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import java.io.File
+import novex.android.ContentPaths
 
 // ─── MinisTextKit hook ────────────────────────────────────────────────────────
 // Each markdown fragment renders inside a [MarkdownBlock] / [RenderBlock]
@@ -233,7 +234,7 @@ val LocalMarkdownImageTapHandler =
 
 /**
  * Session id that owns the currently-rendering markdown. Used by
- * `resolveMdMediaFile` to prefer `PRootKernel.resolveSessionHostPath` — the
+ * `resolveMdMediaFile` to prefer `ContentPaths.resolveSessionHostPath` — the
  * session-scoped resolver — over the global `bindMounts` map, which is
  * last-writer-wins across sessions. Null in contexts that don't know the
  * owning session (e.g. standalone previews).
@@ -1891,7 +1892,7 @@ private fun RenderBlock(block: MdBlock) {
             val sessionId = LocalMarkdownSessionId.current
             // Resolve to a host File via the session-scoped resolver before
             // handing off to Coil. AsyncImage(model = "minis://...") routes
-            // through MinisImageFetcher → PRootKernel.resolveHostPath, which
+            // through MinisImageFetcher → ContentPaths.resolveHostPath, which
             // reads the *global* bindMounts map — last-writer-wins across
             // sessions. When another session booted its shell more recently,
             // that global lookup answers with the wrong session's path (or
@@ -2246,7 +2247,7 @@ private fun BrokenImagePlaceholder(alt: String?) {
  * Resolve a markdown media URL (`minis://attachments/foo.mp4`, file://, or
  * plain absolute path) to a host File.
  *
- * First tries `PRootKernel.resolveHostPath` (same as MinisImageFetcher). If
+ * First tries `ContentPaths.resolveHostPath` (same as MinisImageFetcher). If
  * that fails — e.g. bind mounts are pointing at a different session, or the
  * file was written under a `__new__...` draft id that predates
  * `ensureSession()` rename — we fall back to scanning all per-session
@@ -2270,8 +2271,8 @@ internal fun resolveMdMediaFile(context: Context, url: String, sessionId: String
             // another session boots its shell, so without sessionId we'd route
             // this chat's attachment lookup to whichever session happened to
             // boot last.
-            if (sessionId != null) PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
-            else PRootKernel.resolveHostPath(linuxPath)
+            if (sessionId != null) ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
+            else ContentPaths.resolveHostPath(linuxPath)
         }
         stripped.startsWith("file://") -> File(Uri.parse(stripped).path ?: return null)
         stripped.startsWith("/") -> File(stripped)

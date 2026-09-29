@@ -19,6 +19,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import novex.android.ContentPaths
 
 /**
  * minis-browser-use — expose the agent's browser_use tool as a CLI inside the
@@ -171,7 +172,7 @@ class BrowserUseOffloadHandler(private val app: MinisApp) : NativeOffloadHandler
         // dropping the array (which used to reach set_cookies as empty).
         val cookiesFile = args.get("cookies-file", "cookies_file")
         val cookiesRaw: String? = if (cookiesFile != null) {
-            val host = PRootKernel.resolveHostPath(cookiesFile)
+            val host = ContentPaths.resolveHostPath(cookiesFile)
                 ?: throw IllegalArgumentException("--cookies-file: cannot resolve path '$cookiesFile'")
             runCatching { host.readText() }.getOrNull()
                 ?: throw IllegalArgumentException("--cookies-file: could not read '$cookiesFile'")
@@ -245,7 +246,7 @@ class BrowserUseOffloadHandler(private val app: MinisApp) : NativeOffloadHandler
         // Persist screenshot bytes under /var/minis/browser/ so shells can
         // reference the JPEG via image_path + minis_url instead of piping
         // base64 through stdout.
-        val browserHostDir: File? = PRootKernel.resolveHostPath(VAR_MINIS_BROWSER)?.also {
+        val browserHostDir: File? = ContentPaths.resolveHostPath(VAR_MINIS_BROWSER)?.also {
             try { it.mkdirs() } catch (_: Throwable) { /* non-fatal — write will fail below */ }
         }
 

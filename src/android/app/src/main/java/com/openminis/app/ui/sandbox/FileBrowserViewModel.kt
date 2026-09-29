@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import novex.android.ContentPaths
 
 /** Mirrors iOS FileSortKey. */
 enum class FileSortKey { NAME, MODIFIED, SIZE, KIND }
@@ -262,7 +263,7 @@ class FileBrowserViewModel(
                     .resolveSessionHostPath(sid, linuxPath, ctx)
                     ?.let { return it }
             }
-            com.openminis.app.sandbox.PRootKernel.resolveHostPath(linuxPath)?.let { return it }
+            ContentPaths.resolveHostPath(linuxPath)?.let { return it }
         }
         return if (relativePath.isEmpty()) rootPath else File(rootPath, relativePath)
     }
