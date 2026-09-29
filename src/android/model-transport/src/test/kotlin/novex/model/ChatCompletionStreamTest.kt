@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class ChatCompletionStreamTest {
     private val capacity=ModelCapacity(128_000)
     private val request=TextRequest("test-model",listOf(WireMessage("system","明确资料用途"),WireMessage("user","保留原文\n\"你好\"")),1024)
+    private val payload=StreamRequest(request)
     private fun measure(value:String)=TokenMeasurement(value.toByteArray().size.toLong(),"测试用字节估算，非模型分词",true)
     private fun server(block:(HttpServer,ModelEndpoint)->Unit) {
         val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0)
@@ -46,7 +47,7 @@ class ChatCompletionStreamTest {
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
         val call=ChatCompletionCall(endpoint)
-        val result=call.stream(request,capacity,128_000,::measure) { chunks.add(it) }
+        val result=call.stream(payload,capacity,128_000,::measure) { chunks.add(it) }
         val delivered=chunks.toList()
         assertEquals(listOf(StreamChunk.TextDelta("你"),StreamChunk.TextDelta("好"),StreamChunk.Usage(20,4),StreamChunk.Done("stop")),delivered)
         assertEquals(StreamResult.Completed,result)
@@ -57,7 +58,7 @@ class ChatCompletionStreamTest {
         assertEquals(request.messages[1].text,encoded.getJSONArray("messages").getJSONObject(1).getString("content"))
         assertTrue(encoded.getBoolean("stream"));assertEquals(1024,encoded.getInt("max_tokens"))
         assertTrue(encoded.getJSONObject("stream_options").getBoolean("include_usage"))
-        assertThrows(IllegalStateException::class.java){call.stream(request,capacity,128_000,::measure){}}
+        assertThrows(IllegalStateException::class.java){call.stream(payload,capacity,128_000,::measure){}}
         assertEquals(1,calls.get())
     }
     @Test fun `思考与文本交错流分通道送达`()=server { server,endpoint ->
@@ -72,7 +73,7 @@ class ChatCompletionStreamTest {
                 "data: [DONE]\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
-        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
         val delivered=chunks.toList()
         assertEquals(listOf(StreamChunk.ThinkingDelta("先想"),StreamChunk.ThinkingDelta("清楚"),StreamChunk.TextDelta("答复"),
             StreamChunk.ThinkingDelta("补充"),StreamChunk.TextDelta("在此"),StreamChunk.Done(null)),delivered)
@@ -90,7 +91,7 @@ class ChatCompletionStreamTest {
                 "data: [DONE]\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
-        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
         val delivered=chunks.toList()
         assertEquals(StreamChunk.ToolCallDelta(0,"call-1","save_card","{\"title\":"),delivered[0])
         assertEquals(StreamChunk.ToolCallDelta(0,null,null,"\"灯塔\""),delivered[1])
@@ -120,19 +121,19 @@ class ChatCompletionStreamTest {
         server { server,endpoint ->
             server.createContext("/"){it.sendResponseHeaders(401,-1);it.close()}
             val chunks=ConcurrentLinkedQueue<StreamChunk>()
-            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
             assertEquals(listOf(StreamChunk.Failure("HTTP 401",401,"authentication",null,null)),chunks.toList())
         }
         server { server,endpoint ->
             server.createContext("/"){exchange ->exchange.responseHeaders.set("Retry-After","60");exchange.sendResponseHeaders(429,-1);exchange.close()}
             val chunks=ConcurrentLinkedQueue<StreamChunk>()
-            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
             assertEquals(listOf(StreamChunk.Failure("HTTP 429",429,"rate_limit",null,"60")),chunks.toList())
         }
         server { server,endpoint ->
             server.createContext("/"){it.sendResponseHeaders(500,-1);it.close()}
             val chunks=ConcurrentLinkedQueue<StreamChunk>()
-            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+            assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
             assertEquals(listOf(StreamChunk.Failure("HTTP 500",500,"service",null,null)),chunks.toList())
         }
     }
@@ -145,7 +146,7 @@ class ChatCompletionStreamTest {
                 "data: [DONE]\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
-        assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(StreamResult.Failed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
         assertEquals(listOf(StreamChunk.TextDelta("开头"),StreamChunk.Failure("额度耗尽",code="insufficient_quota")),chunks.toList())
     }
     @Test fun `读到一半取消立即断开且返回已取消`()=server { server,endpoint ->
@@ -159,12 +160,12 @@ class ChatCompletionStreamTest {
             }
         }
         val preCancelled=ChatCompletionCall(endpoint);preCancelled.cancel()
-        assertEquals(StreamResult.Cancelled,preCancelled.stream(request,capacity,128_000,::measure){})
+        assertEquals(StreamResult.Cancelled,preCancelled.stream(payload,capacity,128_000,::measure){})
         val firstChunk=CountDownLatch(1)
         val call=ChatCompletionCall(endpoint,5000)
         val executor=Executors.newSingleThreadExecutor()
         try {
-            val pending=executor.submit<StreamResult> { call.stream(request,capacity,128_000,::measure){firstChunk.countDown()} }
+            val pending=executor.submit<StreamResult> { call.stream(payload,capacity,128_000,::measure){firstChunk.countDown()} }
             assertTrue(entered.await(2,TimeUnit.SECONDS));assertTrue(firstChunk.await(2,TimeUnit.SECONDS))
             call.cancel()
             assertEquals(StreamResult.Cancelled,pending.get(3,TimeUnit.SECONDS))
@@ -177,7 +178,7 @@ class ChatCompletionStreamTest {
                 "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
-        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(StreamResult.Completed,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
         assertEquals(listOf(StreamChunk.TextDelta("答复"),StreamChunk.Done("stop")),chunks.toList())
     }
     @Test fun `无任何终止信号的断流按网络失败处理`()=server { server,endpoint ->
@@ -185,7 +186,7 @@ class ChatCompletionStreamTest {
             streamBody(exchange,listOf("data: {\"choices\":[{\"delta\":{\"content\":\"半截\"}}]}\n\n"))
         }
         val chunks=ConcurrentLinkedQueue<StreamChunk>()
-        assertEquals(StreamResult.NetworkFailure,ChatCompletionCall(endpoint).stream(request,capacity,128_000,::measure){chunks.add(it)})
+        assertEquals(StreamResult.NetworkFailure,ChatCompletionCall(endpoint).stream(payload,capacity,128_000,::measure){chunks.add(it)})
         assertEquals(listOf(StreamChunk.TextDelta("半截")),chunks.toList())
     }
     @Test fun `读超时返回超时且不误报取消`()=server { server,endpoint ->
@@ -198,13 +199,13 @@ class ChatCompletionStreamTest {
             }
         }
         val received=ConcurrentLinkedQueue<StreamChunk>()
-        try { assertEquals(StreamResult.TimedOut,ChatCompletionCall(endpoint,1000).stream(request,capacity,128_000,::measure){received.add(it)}) }
+        try { assertEquals(StreamResult.TimedOut,ChatCompletionCall(endpoint,1000).stream(payload,capacity,128_000,::measure){received.add(it)}) }
         finally { release.countDown() }
         assertEquals(listOf(StreamChunk.TextDelta("先到")),received.toList())
     }
     @Test fun `容量超限不发送任何流式请求`()=server { server,endpoint ->
         val calls=AtomicInteger();server.createContext("/"){calls.incrementAndGet();it.close()}
-        val outcome=ChatCompletionCall(endpoint).stream(request,capacity,2048,{TokenMeasurement(2048,"测试计量",false)},{})
+        val outcome=ChatCompletionCall(endpoint).stream(payload,capacity,2048,{TokenMeasurement(2048,"测试计量",false)},{})
         assertTrue(outcome is StreamResult.NotSent)
         assertEquals(0,calls.get())
     }
