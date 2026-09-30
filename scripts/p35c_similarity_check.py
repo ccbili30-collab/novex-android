@@ -78,7 +78,6 @@ OLD_PATH_KEEPERS = {
     "com/openminis/app/auth/XAIOAuthManager.kt": "typealias 门面",
     "com/openminis/app/auth/KimiOAuthManager.kt": "typealias 门面",
     "com/openminis/app/auth/OpenAIOAuthManager.kt": "typealias 门面",
-    "com/openminis/app/auth/OpenRouterOAuthManager.kt": "typealias 门面",
     "com/openminis/app/auth/OAuthCallbackServer.kt": "typealias 门面",
     "com/openminis/app/provider/ModelsDevApi.kt": "typealias 门面",
     "com/openminis/app/network/NetworkMonitor.kt": "typealias 门面",
