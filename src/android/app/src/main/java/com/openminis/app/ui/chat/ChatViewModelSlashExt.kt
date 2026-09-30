@@ -72,11 +72,20 @@ import kotlinx.coroutines.yield
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-// [A2c-cards] 指令卡托盘不再列任何系统指令：清空/压缩/记忆/思考/存档组/
-// 同步/skills/MCP 全部移除——卡盘只承载银卡（AI 自注册的本会话能力，
-// 存档等由引擎按会话态注册进 novexControls）。typed-"/" 的执行路径
-// 保留为零暴露的后备：tryExecuteInputAsSlashCommand 仍按
-// availableSlashCommands 派发，但没有 UI 再把它摆出来。
+/**
+ * [A2c-cards] 指令卡托盘的金卡只剩压缩一张：清空/记忆/思考/存档组/
+ * 同步已移除（开关类归设置、会话管理归 ⋯/额度环、存档由引擎按会话
+ * 态自注册为银卡、同步是双边时代残留），skills/MCP 同样不出行。
+ * typed-"/" 的隐藏执行路径不受影响：tryExecuteInputAsSlashCommand
+ * 仍按 availableSlashCommands 派发全部内建指令。
+ */
+internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
+    val filter = _slashFilter.value.lowercase()
+    val base = availableSlashCommands
+        .filter { it.id == "compact" }
+        .map { it.copy(subtitle = context.getString(R.string.slash_compact_subtitle)) }
+    return if (filter.isEmpty()) base else base.filter { it.title.lowercase().contains(filter) }
+}
 
 /**
  * Update slash-menu state based on composer text. Call from the composer's

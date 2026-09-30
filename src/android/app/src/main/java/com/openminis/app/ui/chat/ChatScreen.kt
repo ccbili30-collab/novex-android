@@ -3242,8 +3242,13 @@ fun ChatScreen(
                 // PopupProperties so its bottom edge sits just above this Column.
                 // Tap-outside dismisses via dismissOnClickOutside.
                 val showSlashMenu by viewModel.showSlashMenu.collectAsState()
-                // [A2c-cards] 卡盘只承载银卡——AI 自注册的本会话能力。
-                // 系统指令卡已全部移除（含存档组：将来由引擎按需注册）。
+                // [A2c-cards] 卡盘=银卡（AI 自注册的本会话能力）+ 唯一
+                // 保留的系统金卡「压缩卡」。其余系统指令卡已全部移除
+                // （含存档组：将来由引擎按需注册为银卡）。
+                val filteredSlashCommands = remember(
+                    showSlashMenu,
+                    viewModel.slashFilter.collectAsState().value,
+                ) { viewModel.filteredSlashCommands() }
                 if (showSlashMenu) {
                     androidx.compose.ui.window.Popup(
                         popupPositionProvider = remember {
@@ -3352,9 +3357,54 @@ fun ChatScreen(
                                     }
                                 }
                             }
-                            // [A2c-cards] 金卡组已移除。无银卡时给一行
-                            // 空态说明，按钮不至于点了没反应。
-                            if (novexControls.isEmpty()) {
+                            if (novexControls.isNotEmpty() && filteredSlashCommands.isNotEmpty()) {
+                                item(key = "__card_group_divider__") {
+                                    HorizontalDivider(
+                                        thickness = 0.5.dp,
+                                        color = ChatColors.toolBorder,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                            // [A2c-cards] 金卡区：目前只剩「压缩卡」。
+                            itemsIndexed(filteredSlashCommands, key = { _, c -> "cmd:${c.id}" }) { _, cmd ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .novexClickable {
+                                            // [T-android-slash-menu-clears-input] Pass the
+                                            // LIVE input so an action command keeps the
+                                            // user's body text instead of wiping it.
+                                            viewModel.setInputText(viewModel.executeSlashCommand(cmd, inputText))
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    NovexMiniCardGlyph(color = Color(0xFFC9A24B))
+                                    Spacer(modifier = Modifier.width(11.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "压缩卡",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = ChatColors.primaryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = "把对话历史压缩成摘要，腾出上下文",
+                                            fontSize = 11.sp,
+                                            color = ChatColors.secondaryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            // [A2c-cards] 两组皆空时给一行说明，按钮不至于
+                            // 点了没反应。
+                            if (novexControls.isEmpty() && filteredSlashCommands.isEmpty()) {
                                 item(key = "__card_empty__") {
                                     Text(
                                         text = "本会话暂无可用的指令卡",
