@@ -3,11 +3,11 @@ package com.openminis.app.ui.chat
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
-import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.data.model.*
+import novex.android.data.NovexMainDatabase
+import novex.android.data.model.*
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.adapter.NovexContextReadJournal
-import com.openminis.app.novex.domain.*
+import novex.android.adapter.NovexContextReadJournal
+import novex.core.*
 import com.openminis.app.tools.NovexDocumentAgentTools
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -35,7 +35,7 @@ class AttachmentReadPipelineTest {
                 zip.closeEntry()
             }
         }
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val snapshot = requireNotNull(NovexDocumentSnapshotExtractor(InMemoryNovexDocumentSnapshotCache())

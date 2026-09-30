@@ -4,8 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.NovexMainDatabase
+import novex.android.data.chat.SessionRow
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.junit.After
@@ -19,13 +19,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LegacyCharacterCatalogMigratorInstrumentedTest {
     private lateinit var context: Context
-    private lateinit var database: AppDatabase
+    private lateinit var database: NovexMainDatabase
 
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java)
             .allowMainThreadQueries()
             .build()
     }
@@ -71,7 +71,7 @@ class LegacyCharacterCatalogMigratorInstrumentedTest {
             .putString("personas", JSONArray().put(persona.toJson()).toString())
             .commit()
 
-        val session = ChatSessionEntity(
+        val session = SessionRow(
             id = "session-1",
             modelId = "test-model",
             createdAt = 100,
@@ -85,7 +85,7 @@ class LegacyCharacterCatalogMigratorInstrumentedTest {
             conversationPrompt = "保持角色",
             imageStylePrompt = "水彩",
         )
-        database.chatDao().insertSession(session)
+        database.chatDao().upsertSession(session)
 
         val first = LegacyCharacterCatalogMigrator.migrate(context, database, now = 1_000)
         val catalog = CharacterCatalogRepository(database.characterCatalogDao())
@@ -100,7 +100,7 @@ class LegacyCharacterCatalogMigratorInstrumentedTest {
         assertEquals(1, first.characterCount)
         assertEquals(1, first.membershipCount)
 
-        val migratedSession = database.chatDao().getSession(session.id)!!
+        val migratedSession = database.chatDao().sessionById(session.id)!!
         assertEquals(world.id, migratedSession.worldId)
         assertEquals(card.id, migratedSession.characterVersionId)
         assertEquals(session.characterSnapshotJson, migratedSession.characterSnapshotJson)

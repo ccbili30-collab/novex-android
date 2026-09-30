@@ -40,12 +40,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.novex.domain.PlaythroughState
-import com.openminis.app.novex.domain.PlaythroughValue
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
+import novex.core.PlaythroughState
+import novex.core.PlaythroughValue
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,7 +102,7 @@ internal fun NovexSideConversations(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var sides by remember(railSessionId) { mutableStateOf(listOf<ChatSessionEntity>()) }
+    var sides by remember(railSessionId) { mutableStateOf(listOf<SessionRow>()) }
     var sidesLoaded by remember(railSessionId) { mutableStateOf(false) }
     var order by remember(railSessionId) { mutableStateOf<List<String>>(emptyList()) }
     val savedHandleFraction = remember(railSessionId) {
@@ -114,6 +114,15 @@ internal fun NovexSideConversations(
     // Drag state — one component at a time, never hides the others.
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragY by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(railSessionId) {
+        sides = runCatching { chatRepository.sideSessionsOf(railSessionId) }.getOrDefault(emptyList())
+        val stored = NovexEdgePrefs.readOrder(context, EDGE_PREFS_SIDES, "order:$railSessionId").orEmpty()
+        // Stored order first, then any sides never ordered (new ones appended at
+        // the bottom = 往下排), deleted ids dropped silently.
+        order = stored.filter { id -> sides.any { it.id == id } } + sides.map { it.id }.filter { it !in stored }
+        sidesLoaded = true
+    }
 
     fun createSide() {
         scope.launch {
@@ -133,14 +142,6 @@ internal fun NovexSideConversations(
         }
     }
 
-    LaunchedEffect(railSessionId) {
-        sides = runCatching { chatRepository.listSideSessions(railSessionId) }.getOrDefault(emptyList())
-        val stored = NovexEdgePrefs.readOrder(context, EDGE_PREFS_SIDES, "order:$railSessionId").orEmpty()
-        // Stored order first, then any sides never ordered (new ones appended at
-        // the bottom = 往下排), deleted ids dropped silently.
-        order = stored.filter { id -> sides.any { it.id == id } } + sides.map { it.id }.filter { it !in stored }
-        sidesLoaded = true
-    }
     LaunchedEffect(requestNewSide) {
         if (!requestNewSide) return@LaunchedEffect
         onNewSideConsumed()
@@ -425,7 +426,7 @@ internal fun NovexSideConversations(
                             fontWeight = FontWeight.SemiBold,
                             color = NovexColors.Text,
                         )
-                        com.openminis.app.ui.novex.TextButton(onClick = { showSidePanel = false }) {
+                        novex.android.ui.TextButton(onClick = { showSidePanel = false }) {
                             Text("收起")
                         }
                     }

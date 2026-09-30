@@ -50,14 +50,14 @@ import com.openminis.app.data.BulletinStackCard
 import com.openminis.app.data.BulletinUiState
 import com.openminis.app.data.UpdateChecker
 import com.openminis.app.ui.markdown.MarkdownText
-import com.openminis.app.ui.novex.GhostIconButton
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.PillButton
-import com.openminis.app.ui.novex.SegmentedTabs
+import novex.android.ui.GhostIconButton
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIconAction
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
+import novex.android.ui.PillButton
+import novex.android.ui.SegmentedTabs
 
 // ---------------------------------------------------------------------------
 // 入口：沿用原铃铛图标（用户 2026-09-28：交叠形态只属于跳脸的两张卡），

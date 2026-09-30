@@ -1,0 +1,162 @@
+package novex.core
+
+import com.openminis.app.data.character.CharacterAggregate
+import com.openminis.app.data.character.CharacterEntity
+import com.openminis.app.data.character.CharacterVersionEntity
+import com.openminis.app.data.character.CharacterVersionKind
+import com.openminis.app.data.character.ContentModuleDocument
+import com.openminis.app.data.character.ContentModuleDocumentCodec
+import com.openminis.app.data.character.ContentModuleEntity
+import com.openminis.app.data.character.ContentModuleType
+import com.openminis.app.data.character.ModuleOwner
+import com.openminis.app.data.character.WorldEntity
+import novex.android.adapter.WorkspaceNovexContextLoader
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class WorkspaceNovexContextLoaderTest {
+    @Test
+    fun legacyRoleSnapshotsAreUsedOnlyWhileThatExactRoleIsSelected() = kotlinx.coroutines.test.runTest {
+        val legacy = novex.android.adapter.NovexLegacyContext(
+            characterVersionId = "old-role",
+            character = com.openminis.app.data.character.CharacterCard(
+                "old-role", "伏生", systemPrompt = "讲述古书，不知未来", createdAt = 1, updatedAt = 1,
+            ),
+        )
+        val configuration = NovexConversationConfigurationSnapshot("chat", answerIdentity = AnswerIdentity.CharacterVersion("old-role"))
+        val loader = WorkspaceNovexContextLoader(FakeWorkspace(), legacy)
+        assertTrue(loader.load(configuration).any { it.content.contains("讲述古书，不知未来") })
+        val switched = configuration.copy(answerIdentity = AnswerIdentity.PersonaPreset("creator", "共创者"))
+        assertFalse(loader.load(switched).any { it.content.contains("讲述古书，不知未来") })
+    }
+
+    @Test
+    fun changingThePlayerDoesNotInjectThePreviousGamePlayerAlongsideIt() = kotlinx.coroutines.test.runTest {
+        val game = ActiveInteractiveFictionSnapshot("game", "snapshot", "修行", contentJson =
+            """{"playerIdentity":"外门弟子","modules":[{"id":"player","type":"GAME_PLAYER_IDENTITY","name":"玩家","contentJson":"{\"text\":\"外门弟子\"}"}]}""",
+            playerIdentity = ConversationPlayerIdentity("disciple", "外门弟子", "外门弟子"),
+        )
+        val configuration = NovexConversationConfigurationSnapshot("chat",
+            activeInteractiveFiction = game,
+            playerIdentity = ConversationPlayerIdentity("visitor", "访客", "远方访客"),
+        )
+        val text = WorkspaceNovexContextLoader(FakeWorkspace()).load(configuration).joinToString { it.content }
+        assertTrue(text.contains("远方访客"))
+        assertFalse(text.contains("外门弟子"))
+    }
+
+    @Test
+    fun independentPersonaInstructionsReachTheRequestWithoutLoadingManagedCards() = kotlinx.coroutines.test.runTest {
+        val workspace = FakeWorkspace()
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat",
+            answerIdentity = AnswerIdentity.PersonaPreset("historian", "史官", "逐条辨明史实与推测"),
+            managedSubjects = listOf(ManagedSubject(NovexContentAddress.world("private"), ManagedAccess.EDIT)),
+        )
+        val candidates = WorkspaceNovexContextLoader(workspace).load(configuration)
+        val composition = NovexContextComposer.compose("整理资料", 1000, candidates)
+        val request = NovexContextPromptFormatter.appendTo("保留对话自定义指令", composition.fragments)
+
+        assertTrue(request.contains("逐条辨明史实与推测"))
+        assertTrue(request.contains("保留对话自定义指令"))
+        assertTrue(composition.fragments.any { it.kind == ContextSourceKind.ANSWER_IDENTITY })
+        assertTrue(workspace.requestedWorldIds.isEmpty())
+    }
+
+    @Test
+    fun managedWorldIsNotLoadedUnlessItIsAlsoMountedAsBackground() = kotlinx.coroutines.test.runTest {
+        val background = world("background", "云岚书院")
+        val managedOnly = world("managed", "未注入世界")
+        val workspace = FakeWorkspace(worlds = mapOf("background" to background, "managed" to managedOnly))
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat",
+            backgroundSettings = listOf(BackgroundSetting(NovexContentAddress.world("background"))),
+            managedSubjects = listOf(ManagedSubject(NovexContentAddress.world("managed"), ManagedAccess.EDIT)),
+        )
+
+        val result = WorkspaceNovexContextLoader(workspace).load(configuration)
+
+        assertTrue(result.any { it.label.contains("云岚书院") })
+        assertFalse(result.any { it.label.contains("未注入世界") })
+        assertFalse("managed" in workspace.requestedWorldIds)
+    }
+
+    @Test
+    fun selectedCharacterIdentityHasAnswerAuthorityAndItsModulesStayStructured() = kotlinx.coroutines.test.runTest {
+        val version = CharacterVersionEntity(
+            id = "version",
+            characterId = "character",
+            kind = CharacterVersionKind.ORIGINAL,
+            label = "本体",
+            profileJson = com.openminis.app.data.character.CharacterVersionProfile(
+                name = "苏晚晴",
+                summary = "江南医馆之女",
+            ).toJson(),
+            createdAt = 1,
+            updatedAt = 1,
+        )
+        val module = ContentModuleEntity(
+            id = "quotes",
+            ownerType = ModuleOwner.characterVersion("version").type,
+            ownerId = "version",
+            type = ContentModuleType.QUOTES,
+            name = "语录",
+            contentJson = ContentModuleDocumentCodec.encode(ContentModuleDocument.Article("医者仁心")),
+            position = 0,
+            createdAt = 1,
+            updatedAt = 1,
+        )
+        val root = CharacterEntity("character", "苏晚晴", "version", 1, 1)
+        val workspace = FakeWorkspace(
+            characters = listOf(NovexCharacterCard(CharacterAggregate(root, version, emptyList()), null)),
+            modules = mapOf(ModuleOwner.characterVersion("version") to listOf(module)),
+        )
+        val configuration = NovexConversationConfigurationSnapshot(
+            conversationId = "chat",
+            answerIdentity = AnswerIdentity.CharacterVersion("version"),
+        )
+
+        val result = WorkspaceNovexContextLoader(workspace).load(configuration)
+
+        assertTrue(result.any { it.sourceId == "character-version:version:profile" && it.kind == ContextSourceKind.ANSWER_IDENTITY })
+        assertTrue(result.any { it.sourceId == "quotes" && it.kind == ContextSourceKind.ANSWER_IDENTITY })
+    }
+
+    private fun world(id: String, name: String) = NovexWorldSnapshot(
+        world = WorldEntity(id, name, "世界概述", "[]", null, 1, 1),
+        versions = emptyList(),
+        availableVersions = emptyList(),
+        worldsByVersion = emptyMap(),
+        media = emptyMap(),
+        modules = emptyList(),
+        moduleImages = emptyMap(),
+        moduleItemImages = emptyMap(),
+    )
+
+    private class FakeWorkspace(
+        private val worlds: Map<String, NovexWorldSnapshot> = emptyMap(),
+        private val characters: List<NovexCharacterCard> = emptyList(),
+        private val modules: Map<ModuleOwner, List<ContentModuleEntity>> = emptyMap(),
+    ) : NovexWorkspace {
+        val requestedWorldIds = mutableListOf<String>()
+        override suspend fun worlds() = worlds.values.map { snapshot ->
+            NovexWorldCard(snapshot.world, null, snapshot.versions.size, snapshot.modules.size)
+        }
+        override suspend fun characters() = characters
+        override suspend fun interactiveFictions() = emptyList<NovexInteractiveFictionCard>()
+        override suspend fun world(id: String): NovexWorldSnapshot? {
+            requestedWorldIds += id
+            return worlds[id]
+        }
+        override suspend fun character(id: String) = characters.firstOrNull { it.character.character.id == id }?.let { card ->
+            NovexCharacterSnapshot(card.character, emptyMap(), emptyMap(),
+                card.character.allVersions.associate { version -> version.id to modules[ModuleOwner.characterVersion(version.id)].orEmpty() },
+                emptyMap(), emptyMap())
+        }
+        override suspend fun interactiveFiction(id: String) = null
+        override suspend fun modules(owner: ModuleOwner) = NovexModuleSnapshot(modules[owner].orEmpty(), emptyMap(), emptyMap())
+        override suspend fun module(id: String): NovexModuleDetail? = null
+        override suspend fun apply(command: NovexCommand): NovexChange = error("测试不执行领域命令")
+    }
+}

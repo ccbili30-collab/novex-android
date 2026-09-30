@@ -85,8 +85,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -189,27 +189,25 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.character.effectiveAssistantAvatarPath
 import com.openminis.app.data.character.effectiveAssistantName
 import com.openminis.app.data.character.usesRolePresentation
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
 
@@ -252,7 +250,7 @@ internal fun AssistantHeader() {
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Person,
+                        imageVector = novex.android.ui.NovexIcons.Person,
                         contentDescription = "$displayName 默认头像",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
@@ -264,7 +262,7 @@ internal fun AssistantHeader() {
                 colors = listOf(SparkleColor1, SparkleColor2),
             )
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                imageVector = novex.android.ui.NovexIcons.AutoAwesome,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier
@@ -368,7 +366,7 @@ internal fun AssistantMessageView(message: ChatMessage, onRetry: (() -> Unit)? =
                     // gate stays here so any future re-introduction
                     // doesn't silently bring back the always-render bug.
                     val effectiveLevel = message.thinkingLevel
-                        ?: com.openminis.app.data.model.ThinkingLevel.MEDIUM
+                        ?: novex.android.data.model.ThinkingLevel.MEDIUM
                     if (effectiveLevel.isEnabled) {
                         // [T-android-thinking-auto-collapse] Stream signal
                         // requires THIS block to be the trailing block of
@@ -487,7 +485,7 @@ internal fun InlineErrorBanner(error: String, onRetry: (() -> Unit)? = null) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Error,
+            imageVector = novex.android.ui.NovexIcons.Error,
             contentDescription = null,
             tint = Color(0xFFFF3B30),
             modifier = Modifier.size(14.dp),
@@ -513,7 +511,7 @@ internal fun InlineErrorBanner(error: String, onRetry: (() -> Unit)? = null) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                    imageVector = novex.android.ui.NovexIcons.Refresh,
                     contentDescription = null,
                     tint = Color(0xFFFF3B30),
                     modifier = Modifier.size(10.dp),
@@ -622,7 +620,6 @@ internal fun ToolCallPill(
     allToolBlocks: List<AssistantBlock> = listOf(block),
     onRetry: (() -> Unit)? = null,
     onStop: (() -> Unit)? = null,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
     // T261: detail open routes through ChatViewModel so the sheet survives
     // LazyColumn item disposal. Default no-op for the legacy
     // AssistantMessageView call site (currently dead code).
@@ -682,7 +679,7 @@ internal fun ToolCallPill(
 
     // T125: the iOS shimmer sweep died with the capsule pill
     // ([feat/ui-rikkahub] timeline step). Running state now reads from the
-    // bouncing dots + muted label, same as RikkaHub's tool steps.
+    // bouncing dots + muted label, same as mainstream chat clients' tool steps.
 
     // [T-android-tool-bubble-longpress-menu] Long-press menu state, scoped
     // to this pill. The DropdownMenu is anchored to the pill via the Box
@@ -823,14 +820,14 @@ internal fun ToolCallPill(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.tool_longpress_rerun_from_here)) },
                     onClick = { showToolMenu = false; onRerunFromHere() },
-                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
             }
             if (onCopyDetails != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.tool_longpress_copy_details)) },
                     onClick = { showToolMenu = false; onCopyDetails() },
-                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
             }
         }
@@ -1076,7 +1073,7 @@ internal fun ThinkingBlock(
         ) {
             Box(modifier = Modifier.width(16.dp), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                    imageVector = novex.android.ui.NovexIcons.Psychology,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(14.dp),
@@ -1102,7 +1099,7 @@ internal fun ThinkingBlock(
                 )
             } else {
                 Icon(
-                    imageVector = if (expanded) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                    imageVector = if (expanded) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                     contentDescription = if (expanded) "Collapse" else "Expand",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier.size(14.dp),
@@ -1112,7 +1109,7 @@ internal fun ThinkingBlock(
 
         // [feat/ui-rikkahub] Collapsed live preview while streaming: tail of
         // the thought capped at 100dp with a bottom fade — the ChainOfThought
-        // reasoning-step behavior from RikkaHub.
+        // reasoning-step behavior from mainstream chat clients.
         if (!expanded && liveThinking && !overHardCap && charCount > 0) {
             val previewTail = remember(charCount) {
                 if (charCount > 600) block.content.substring(charCount - 600) else block.content
@@ -1307,7 +1304,7 @@ private fun ThinkingFullContentDialog(content: String, onDismiss: () -> Unit) {
  * copy / regenerate / more. Long-press on AI text stays with text selection
  * (the SelectionContainer owns that gesture and Compose offers no way to
  * re-enter selection programmatically), so message-level actions surface
- * here instead — the same division of labour as Doubao/RikkaHub: your own
+ * here instead — the same division of labour as mainstream chat clients: your own
  * bubbles keep the long-press menu, replies wear a visible row.
  */
 @Composable
@@ -1327,7 +1324,7 @@ internal fun AssistantMessageActionRow(
     ) {
         if (markdown.isNotBlank()) {
             AssistantActionIcon(
-                icon = com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                icon = novex.android.ui.NovexIcons.ContentCopy,
                 contentDescription = "复制全文",
             ) {
                 val clipboard = context.getSystemService(
@@ -1341,7 +1338,7 @@ internal fun AssistantMessageActionRow(
         // in-flight turn, so they vanish while any stream is running.
         if (showMutations && onRegenerate != null) {
             AssistantActionIcon(
-                icon = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                icon = novex.android.ui.NovexIcons.Refresh,
                 contentDescription = "重新生成本轮",
                 onClick = onRegenerate,
             )
@@ -1349,7 +1346,7 @@ internal fun AssistantMessageActionRow(
         if (hasMenuEntries) {
             Box {
                 AssistantActionIcon(
-                    icon = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
+                    icon = novex.android.ui.NovexIcons.MoreHoriz,
                     contentDescription = "更多操作",
                 ) { showMenu = true }
                 MinisMenu(
@@ -1360,14 +1357,14 @@ internal fun AssistantMessageActionRow(
                         DropdownMenuItem(
                             text = { Text("分享到其他文游") },
                             onClick = { showMenu = false; onShare() },
-                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            leadingIcon = { Icon(novex.android.ui.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         )
                     }
                     if (showMutations && onDelete != null) {
                         DropdownMenuItem(
                             text = { Text("从此处删除") },
                             onClick = { showMenu = false; onDelete() },
-                            leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            leadingIcon = { Icon(novex.android.ui.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         )
                     }
                 }
@@ -1376,7 +1373,7 @@ internal fun AssistantMessageActionRow(
     }
 }
 
-/** RikkaHub's ChatMessageActionButtons idiom: 16dp ghost icon, 8dp tap halo. */
+/** Mainstream chat client action-button idiom: 16dp ghost icon, 8dp tap halo. */
 @Composable
 private fun AssistantActionIcon(
     icon: ImageVector,

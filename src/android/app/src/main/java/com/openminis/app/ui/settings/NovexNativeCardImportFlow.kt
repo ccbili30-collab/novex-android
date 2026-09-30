@@ -15,10 +15,10 @@ import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
 import com.openminis.app.data.character.NovexCardTransferParser
 import com.openminis.app.data.character.NovexValidatedCardImport
-import com.openminis.app.novex.domain.NovexCommand
-import com.openminis.app.novex.domain.requireNativeImport
-import com.openminis.app.ui.novex.NovexNoticeDialog
-import com.openminis.app.ui.novex.rememberNovexWorkspace
+import novex.core.NovexCommand
+import novex.core.requireNativeImport
+import novex.android.ui.NovexNoticeDialog
+import novex.android.ui.rememberNovexWorkspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -91,7 +91,7 @@ internal fun rememberNovexNativeCardImporter(
                     val fileName = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                         if (it.moveToFirst()) it.getString(0) else null
                     }
-                    com.openminis.app.novex.domain.NovexExternalCardImport.decode(kind, bytes, fileName.orEmpty())
+                    novex.core.NovexExternalCardImport.decode(kind, bytes, fileName.orEmpty())
                 }
             }.onSuccess {
                 preview = it

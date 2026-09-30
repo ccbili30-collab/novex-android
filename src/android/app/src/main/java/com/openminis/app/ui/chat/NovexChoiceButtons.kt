@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedButton
+import novex.android.ui.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
@@ -139,7 +139,7 @@ internal fun NovexChoiceButtons(
             }
         }
         if (event.allowMultiple && selected.isNotEmpty()) {
-            com.openminis.app.ui.novex.Button(
+            novex.android.ui.Button(
                 onClick = { onChoice(selected.joinToString("\n")); selected.clear() },
                 modifier = Modifier.padding(top = 6.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(50),

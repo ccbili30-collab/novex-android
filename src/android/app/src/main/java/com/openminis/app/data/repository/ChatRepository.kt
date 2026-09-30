@@ -2,31 +2,31 @@ package com.openminis.app.data.repository
 
 import android.database.sqlite.SQLiteBlobTooBigException
 import com.openminis.app.data.ConversationBranchGraph
-import com.openminis.app.data.db.ChatDao
-import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.CompactMarkerEntity
-import com.openminis.app.data.db.FolderEntity
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.data.db.NovexContextUsageRecordEntity
-import com.openminis.app.novex.domain.ContextUsageRecord
-import com.openminis.app.novex.domain.NovexContextUsageCodec
+import novex.android.data.chat.ChatDao
+import novex.android.data.chat.SessionRow
+import novex.android.data.chat.CompactMarkerRow
+import novex.android.data.chat.SessionFolderRow
+import novex.android.data.chat.MessageRow
+import novex.android.data.chat.ContextUsageRow
+import novex.core.ContextUsageRecord
+import novex.core.NovexContextUsageCodec
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
 class ChatRepository(internal val dao: ChatDao) {
 
     data class ActiveConversation(
-        val allMessages: List<MessageEntity>,
-        val activeMessages: List<MessageEntity>,
+        val allMessages: List<MessageRow>,
+        val activeMessages: List<MessageRow>,
         val graph: ConversationBranchGraph,
     )
 
     data class DeletedConversationBranch(
         val conversation: ActiveConversation,
-        val deletedMessages: List<MessageEntity>,
+        val deletedMessages: List<MessageRow>,
     )
 
-    fun observeSessions(): Flow<List<ChatSessionEntity>> = dao.observeSessions()
+    fun observeSessionIndex(): Flow<List<SessionRow>> = dao.observeSessionIndex()
 
     suspend fun createSession(
         modelId: String,
@@ -58,9 +58,9 @@ class ChatRepository(internal val dao: ChatDao) {
         textStylePrompt: String? = null,
         runtimeDiceEnabled: Int = 0,
         runtimeLedgerEnabled: Int = 0,
-    ): ChatSessionEntity {
+    ): SessionRow {
         val now = System.currentTimeMillis()
-        val session = ChatSessionEntity(
+        val session = SessionRow(
             id = UUID.randomUUID().toString(),
             title = title,
             modelId = modelId,
@@ -89,7 +89,7 @@ class ChatRepository(internal val dao: ChatDao) {
             runtimeLedgerEnabled = runtimeLedgerEnabled,
             sideOfSession = sideOfSession,
         )
-        dao.insertSession(session)
+        dao.upsertSession(session)
         return session
     }
 
@@ -101,9 +101,9 @@ class ChatRepository(internal val dao: ChatDao) {
      * 主对话标题）。N 取现有侧边编号的最大值 +1——新旧两种命名（「侧边 N」/
      * 「主对话标题·侧N」）都参与计数，删除中间一条后新建也不会重号。
      */
-    suspend fun createSideSession(parentId: String): ChatSessionEntity {
-        val parent = requireNotNull(dao.getSession(parentId)) { "主对话不存在" }
-        val existingSides = dao.listSideSessions(parentId)
+    suspend fun createSideSession(parentId: String): SessionRow {
+        val parent = requireNotNull(dao.sessionById(parentId)) { "主对话不存在" }
+        val existingSides = dao.sideSessionsOf(parentId)
         require(existingSides.size < MAX_SIDE_CONVERSATIONS) {
             "侧边对话最多 ${MAX_SIDE_CONVERSATIONS} 条，请先删除旧的"
         }
@@ -138,18 +138,18 @@ class ChatRepository(internal val dao: ChatDao) {
         return side
     }
 
-    suspend fun listSideSessions(parentId: String): List<ChatSessionEntity> = dao.listSideSessions(parentId)
+    suspend fun sideSessionsOf(parentId: String): List<SessionRow> = dao.sideSessionsOf(parentId)
 
-    suspend fun getSession(id: String): ChatSessionEntity? = dao.getSession(id)
+    suspend fun sessionById(id: String): SessionRow? = dao.sessionById(id)
 
-    suspend fun saveComposerDraft(id: String, text: String) = dao.updateComposerDraft(id, text.takeIf { it.isNotEmpty() })
+    suspend fun saveComposerDraft(id: String, text: String) = dao.saveComposerDraft(id, text.takeIf { it.isNotEmpty() })
 
     /** All persisted token_usage JSON strings for a session (one per LLM call). */
-    suspend fun sessionTokenUsages(sessionId: String): List<String> = dao.tokenUsages(sessionId)
+    suspend fun sessionTokenUsages(sessionId: String): List<String> = dao.tokenUsageJsonFor(sessionId)
 
     suspend fun recordNovexContextUsage(sessionId: String, record: ContextUsageRecord) {
-        dao.insertNovexContextUsage(
-            NovexContextUsageRecordEntity(
+        dao.recordContextUsage(
+            ContextUsageRow(
                 id = record.id,
                 sessionId = sessionId,
                 requestMessageId = record.requestMessageId,
@@ -162,7 +162,7 @@ class ChatRepository(internal val dao: ChatDao) {
     }
 
     suspend fun novexContextUsage(sessionId: String): List<ContextUsageRecord> =
-        dao.listNovexContextUsage(sessionId).mapNotNull { row ->
+        dao.contextUsageFor(sessionId).mapNotNull { row ->
             runCatching { NovexContextUsageCodec.decode(row.payloadJson) }.getOrNull()
         }
 
@@ -176,7 +176,7 @@ class ChatRepository(internal val dao: ChatDao) {
      * ChatStore.interruptedSessionIds.
      */
     suspend fun interruptedSessionIds(): Set<String> {
-        val tails = runCatching { dao.lastMessageTailPerSession() }.getOrElse { emptyList() }
+        val tails = runCatching { dao.sessionTails() }.getOrElse { emptyList() }
         val result = HashSet<String>()
         for (row in tails) {
             if (isInterruptedTail(row.role, row.partsJson)) result.add(row.sessionId)
@@ -192,7 +192,7 @@ class ChatRepository(internal val dao: ChatDao) {
      *     fired), OR
      *   - role ASSISTANT + any tool_use part (model asked for tools that never ran)
      * Part type discriminator is the JSON "type" field — the @SerialName values
-     * from [com.openminis.app.data.model.ContentPart]: "toolUse" / "toolResult"
+     * from [novex.android.data.model.ContentPart]: "toolUse" / "toolResult"
      * / "text" (camelCase, NOT snake_case).
      */
     private fun isInterruptedTail(role: String, partsJson: String): Boolean {
@@ -208,29 +208,29 @@ class ChatRepository(internal val dao: ChatDao) {
         return com.openminis.app.ui.chat.isInterruptedAgentTail(role, types, singleText)
     }
 
-    suspend fun updateSessionTitle(id: String, title: String) {
-        dao.updateSessionTitle(id, title, System.currentTimeMillis())
+    suspend fun renameSession(id: String, title: String) {
+        dao.renameSession(id, title, System.currentTimeMillis())
     }
 
-    suspend fun updateSessionTitleAndCategory(id: String, title: String, category: String?) {
-        dao.updateSessionTitleAndCategory(id, title, category, System.currentTimeMillis())
+    suspend fun renameSessionWithCategory(id: String, title: String, category: String?) {
+        dao.renameSessionWithCategory(id, title, category, System.currentTimeMillis())
     }
 
     suspend fun updateSessionModel(sessionId: String, modelId: String) {
-        dao.updateSessionModel(sessionId, modelId)
+        dao.switchSessionModel(sessionId, modelId)
     }
 
-    suspend fun updateChatBackground(sessionId: String, path: String?) {
-        dao.updateChatBackground(sessionId, path)
+    suspend fun setChatWallpaper(sessionId: String, path: String?) {
+        dao.setChatWallpaper(sessionId, path)
     }
 
-    suspend fun updateConversationSettings(
+    suspend fun writeConversationSettings(
         sessionId: String,
         settings: com.openminis.app.data.ConversationSettingsSnapshot,
     ) {
         val value = com.openminis.app.data.normalizeConversationSettings(settings)
-        dao.updateConversationSettings(
-            id = sessionId,
+        dao.writeConversationSettings(
+            sessionId = sessionId,
             conversationPrompt = value.conversationPrompt,
             imageStylePrompt = value.imageStylePrompt.ifBlank { null },
             perTurnPrompt = value.perTurnPrompt.ifBlank { null },
@@ -247,62 +247,62 @@ class ChatRepository(internal val dao: ChatDao) {
         )
     }
 
-    suspend fun updateSessionBinding(sessionId: String, binding: String, modelId: String) {
-        dao.updateSessionBinding(sessionId, binding, modelId)
+    suspend fun rebindSessionModel(sessionId: String, binding: String, modelId: String) {
+        dao.rebindSessionModel(sessionId, binding, modelId)
     }
 
     /** [T-side-snapshot] 按消息 ID 只读拉取（分裂点快照回放用，认 ID 不认活跃路径）。 */
-    suspend fun findMessageById(messageId: String) = dao.findMessage(messageId)
+    suspend fun findMessageById(messageId: String) = dao.messageById(messageId)
 
     suspend fun markAssistantTextFormal(messageId: String) {
-        val row = dao.findMessage(messageId) ?: return
+        val row = dao.messageById(messageId) ?: return
         require(row.role == "assistant")
         val parts = org.json.JSONArray(row.partsJson)
         for (index in 0 until parts.length()) {
             val part = parts.getJSONObject(index)
             if (part.optString("type") == "text") part.put("execution", false)
         }
-        dao.updateAssistantTurnBody(messageId, parts.toString(), row.tokenUsage, row.reasoningContent)
+        dao.overwriteAssistantBody(messageId, parts.toString(), row.tokenUsage, row.reasoningContent)
     }
 
-    suspend fun deleteSession(id: String) {
+    suspend fun dropSession(id: String) {
         // Cascade: deleting a main line takes its side conversations with it —
         // they are subordinate (side_of_session) and would otherwise become
         // unreachable orphans, invisible in the session list forever.
-        dao.listSideSessions(id).forEach { side -> dao.deleteConversation(side.id) }
-        dao.deleteConversation(id)
+        dao.sideSessionsOf(id).forEach { side -> dao.removeConversation(side.id) }
+        dao.removeConversation(id)
     }
 
     // ─── Session groups ("folders") ────────────────────────────────────────
     // [T-android-session-grouping] Ported from iOS ChatStore's Folders section.
-    // Code says Folder, UI says Group — see FolderEntity for why.
+    // Code says Folder, UI says Group — see SessionFolderRow for why.
 
-    fun observeFolders(): Flow<List<FolderEntity>> = dao.observeFolders()
+    fun observeFolders(): Flow<List<SessionFolderRow>> = dao.observeFolders()
 
-    suspend fun listFolders(): List<FolderEntity> = dao.listFolders()
+    suspend fun allFolders(): List<SessionFolderRow> = dao.allFolders()
 
-    suspend fun getFolder(id: String): FolderEntity? = dao.getFolder(id)
+    suspend fun getFolder(id: String): SessionFolderRow? = dao.folderById(id)
 
     /**
      * Create a group. The description is trimmed and capped at
-     * [FolderEntity.DESC_MAX_CHARS]; blank collapses to null so "no
+     * [SessionFolderRow.DESCRIPTION_MAX_CHARS]; blank collapses to null so "no
      * description" is one value rather than two.
      */
     suspend fun createFolder(
         name: String,
         description: String? = null,
-        origin: String = FolderEntity.ORIGIN_MANUAL,
-    ): FolderEntity {
+        origin: String = SessionFolderRow.MANUAL_ORIGIN,
+    ): SessionFolderRow {
         val now = System.currentTimeMillis()
-        val folder = FolderEntity(
+        val folder = SessionFolderRow(
             id = UUID.randomUUID().toString(),
             name = name.trim(),
             origin = origin,
-            description = description?.trim()?.take(FolderEntity.DESC_MAX_CHARS)?.ifBlank { null },
+            description = description?.trim()?.take(SessionFolderRow.DESCRIPTION_MAX_CHARS)?.ifBlank { null },
             createdAt = now,
             updatedAt = now,
         )
-        dao.insertFolder(folder)
+        dao.upsertFolder(folder)
         return folder
     }
 
@@ -319,19 +319,19 @@ class ChatRepository(internal val dao: ChatDao) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         dao.renameFolder(
-            id = id,
+            folderId = id,
             name = trimmed,
-            description = description?.trim()?.take(FolderEntity.DESC_MAX_CHARS),
+            description = description?.trim()?.take(SessionFolderRow.DESCRIPTION_MAX_CHARS),
             updatedAt = System.currentTimeMillis(),
         )
     }
 
     /** @return the new pinned state. Bumps `updated_at` so the edit is stamped. */
     suspend fun toggleFolderPin(id: String): Boolean {
-        val current = dao.getFolder(id) ?: return false
+        val current = dao.folderById(id) ?: return false
         val nowPinned = current.pinnedAt == null
         val now = System.currentTimeMillis()
-        dao.setFolderPinned(id, if (nowPinned) now else null, now)
+        dao.setFolderPinStamp(id, if (nowPinned) now else null, now)
         return nowPinned
     }
 
@@ -347,13 +347,13 @@ class ChatRepository(internal val dao: ChatDao) {
      * @return ids of the sessions that became ungrouped.
      */
     suspend fun dissolveFolder(id: String): List<String> {
-        val memberIds = dao.sessionIdsInFolder(id)
-        dao.clearFolderForSessions(id)
-        dao.deleteFolder(id)
+        val memberIds = dao.sessionIdsFiledUnder(id)
+        dao.releaseFolderSessions(id)
+        dao.dropFolder(id)
         return memberIds
     }
 
-    suspend fun sessionIdsInFolder(folderId: String): List<String> = dao.sessionIdsInFolder(folderId)
+    suspend fun sessionIdsFiledUnder(folderId: String): List<String> = dao.sessionIdsFiledUnder(folderId)
 
     /**
      * Move sessions into a group, or out of one when [folderId] is null.
@@ -374,24 +374,24 @@ class ChatRepository(internal val dao: ChatDao) {
      * @return true if this call actually filed the session.
      */
     suspend fun setFolderIfUnfiled(folderId: String, sessionId: String): Boolean =
-        dao.setSessionFolderIfUnfiled(sessionId, folderId) > 0
+        dao.claimUnfiledSession(sessionId, folderId) > 0
 
     /**
      * Name → group, case- and whitespace-insensitive. Duplicate-tolerant by
      * construction (names are not unique); returns the most recently updated
      * match, which is what [listFolders]' ordering already puts first.
      */
-    suspend fun findFolderByName(name: String): FolderEntity? {
+    suspend fun findFolderByName(name: String): SessionFolderRow? {
         val needle = name.trim().lowercase()
         if (needle.isEmpty()) return null
-        return dao.listFolders().firstOrNull { it.name.trim().lowercase() == needle }
+        return dao.allFolders().firstOrNull { it.name.trim().lowercase() == needle }
     }
 
-    suspend fun searchSessions(query: String): List<ChatSessionEntity> =
+    suspend fun searchSessions(query: String): List<SessionRow> =
         dao.searchSessions("%$query%")
 
-    fun observeMessages(sessionId: String): Flow<List<MessageEntity>> =
-        dao.observeMessages(sessionId)
+    fun observeHistory(sessionId: String): Flow<List<MessageRow>> =
+        dao.observeHistory(sessionId)
 
     /**
      * Load all messages for a session in bounded pages instead of a
@@ -404,14 +404,14 @@ class ChatRepository(internal val dao: ChatDao) {
      * This paginated loader keeps each underlying query small enough that
      * the CursorWindow can hold a normal-shaped page. If a single page
      * still contains an individual >2MB row we fall back to fetching
-     * that range row-by-row and substitute a proxy MessageEntity for
+     * that range row-by-row and substitute a proxy MessageRow for
      * any single row that genuinely can't be materialised — the
      * transcript stays continuous instead of crashing the load.
      *
      * Existing oversized rows are not migrated; new oversized inserts
      * are prevented by the cap in [appendMessage].
      */
-    suspend fun loadMessages(sessionId: String): List<MessageEntity> {
+    suspend fun historyFor(sessionId: String): List<MessageRow> {
         // T-android-crash-safe-mode-v2: defensive guard. ChatViewModel.loadSession
         // is already gated upstream, but loadMessages has other call sites
         // (compaction, fork, regenerate-title, debug menu) that could fire
@@ -425,14 +425,14 @@ class ChatRepository(internal val dao: ChatDao) {
             )
             return emptyList()
         }
-        val total = dao.messageCountForSession(sessionId)
+        val total = dao.messageCountIn(sessionId)
         if (total == 0) return emptyList()
-        val out = ArrayList<MessageEntity>(total)
+        val out = ArrayList<MessageRow>(total)
         var offset = 0
         while (offset < total) {
             val limit = LOAD_PAGE_SIZE
             val page = try {
-                dao.loadMessagesPage(sessionId, offset, limit)
+                dao.messagePage(sessionId, offset, limit)
             } catch (e: SQLiteBlobTooBigException) {
                 // Fall back to single-row pages so we can isolate the
                 // offending blob(s) and serve the rest of the slice.
@@ -456,8 +456,8 @@ class ChatRepository(internal val dao: ChatDao) {
 
     /** Resolve the one persisted path shared by UI, model context and preview. */
     suspend fun loadActiveConversation(sessionId: String): ActiveConversation {
-        val all = loadMessages(sessionId)
-        val state = dao.conversationBranchState(sessionId)
+        val all = historyFor(sessionId)
+        val state = dao.branchAnchorsOf(sessionId)
         val graph = ConversationBranchGraph.open(
             nodes = all.map { row ->
                 ConversationBranchGraph.Node(
@@ -470,7 +470,7 @@ class ChatRepository(internal val dao: ChatDao) {
             activeRootId = state?.activeRootMessageId ?: all.firstOrNull()?.id,
             activeLeafId = state?.activeLeafMessageId ?: all.lastOrNull()?.id,
         )
-        val byId = all.associateBy(MessageEntity::id)
+        val byId = all.associateBy(MessageRow::id)
         return ActiveConversation(
             allMessages = all,
             activeMessages = graph.activePathIds.mapNotNull(byId::get),
@@ -478,16 +478,16 @@ class ChatRepository(internal val dao: ChatDao) {
         )
     }
 
-    suspend fun loadActiveMessages(sessionId: String): List<MessageEntity> =
+    suspend fun loadActiveMessages(sessionId: String): List<MessageRow> =
         loadActiveConversation(sessionId).activeMessages
 
     /** Latest summary whose persisted boundary belongs to the selected path. */
     suspend fun latestActiveCompactMarker(
         sessionId: String,
-        activeMessages: List<MessageEntity>,
-    ): CompactMarkerEntity? {
-        val activeIds = activeMessages.mapTo(hashSetOf(), MessageEntity::id)
-        return dao.listCompactMarkers(sessionId).asReversed().firstOrNull { marker ->
+        activeMessages: List<MessageRow>,
+    ): CompactMarkerRow? {
+        val activeIds = activeMessages.mapTo(hashSetOf(), MessageRow::id)
+        return dao.markersFor(sessionId).asReversed().firstOrNull { marker ->
             val anchorId = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.firstKeptMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.boundaryMessageId?.takeIf(String::isNotEmpty)
@@ -536,10 +536,10 @@ class ChatRepository(internal val dao: ChatDao) {
         before: ActiveConversation,
         plan: ConversationBranchGraph.Mutation,
     ): ActiveConversation {
-        val byId = before.allMessages.associateBy(MessageEntity::id)
+        val byId = before.allMessages.associateBy(MessageRow::id)
         val activeRows = plan.activePathIds.mapNotNull(byId::get)
         val preview = activeRows.lastOrNull()?.let { extractTextPreview(it.partsJson) }
-        dao.applyConversationBranchMutation(
+        dao.applyBranchMutation(
             sessionId = sessionId,
             rootId = plan.activeRootId,
             leafId = plan.activeLeafId,
@@ -555,11 +555,11 @@ class ChatRepository(internal val dao: ChatDao) {
         sessionId: String,
         baseOffset: Int,
         limit: Int,
-    ): List<MessageEntity> {
-        val result = ArrayList<MessageEntity>(limit)
+    ): List<MessageRow> {
+        val result = ArrayList<MessageRow>(limit)
         for (i in 0 until limit) {
             val row = try {
-                dao.loadMessagesPage(sessionId, baseOffset + i, 1).firstOrNull()
+                dao.messagePage(sessionId, baseOffset + i, 1).firstOrNull()
             } catch (e: SQLiteBlobTooBigException) {
                 null
             } catch (e: IllegalStateException) {
@@ -571,8 +571,8 @@ class ChatRepository(internal val dao: ChatDao) {
     }
 
     /** [T-error-persist-android] Set/clear the error sticker on a row by id. */
-    suspend fun updateMessageErrorInfo(messageId: String, errorInfo: String?) =
-        dao.updateMessageErrorInfo(messageId, errorInfo)
+    suspend fun setMessageSticker(messageId: String, errorInfo: String?) =
+        dao.setMessageSticker(messageId, errorInfo)
 
     /**
      * Set/clear the error sticker on the selected path's last assistant row.
@@ -584,7 +584,7 @@ class ChatRepository(internal val dao: ChatDao) {
         val assistant = messages.indexOfLast { it.role.equals("assistant", ignoreCase = true) }
         val user = messages.indexOfLast { it.role.equals("user", ignoreCase = true) }
         // A new user turn without a persisted reply must not mark the previous reply.
-        if (assistant > user) dao.updateMessageErrorInfo(messages[assistant].id, errorInfo)
+        if (assistant > user) dao.setMessageSticker(messages[assistant].id, errorInfo)
     }
 
     suspend fun appendMessage(
@@ -594,7 +594,7 @@ class ChatRepository(internal val dao: ChatDao) {
         tokenUsage: String? = null,
         reasoningContent: String? = null,
         messageId: String = UUID.randomUUID().toString(),
-    ): MessageEntity {
+    ): MessageRow {
         val now = System.currentTimeMillis()
         // Cap the body so a runaway tool_result (e.g. a 13 MB browser_use
         // dump — Issue #17) cannot land an oversize blob into a Room row
@@ -607,7 +607,7 @@ class ChatRepository(internal val dao: ChatDao) {
         } else {
             partsJson
         }
-        val message = MessageEntity(
+        val message = MessageRow(
             id = messageId,
             sessionId = sessionId,
             role = role,
@@ -619,8 +619,8 @@ class ChatRepository(internal val dao: ChatDao) {
             reasoningContent = reasoningContent,
         )
         val preview = extractTextPreview(capped)
-        return if (role == "assistant") dao.checkpointAssistantTurn(message, preview, now)
-        else dao.appendMessageOnActivePath(message, preview, now)
+        return if (role == "assistant") dao.checkpointRunningTurn(message, preview, now)
+        else dao.appendOnActivePath(message, preview, now)
     }
 
     /**
@@ -639,17 +639,17 @@ class ChatRepository(internal val dao: ChatDao) {
      */
     suspend fun updateSessionPreview(sessionId: String, partsJson: String) {
         val preview = extractTextPreview(partsJson) ?: return
-        dao.updateLastMessage(sessionId, preview, System.currentTimeMillis())
+        dao.storePreview(sessionId, preview, System.currentTimeMillis())
     }
 
     /** Recompute the session-list preview after an inclusive history rewind. */
     suspend fun refreshSessionPreviewFromHistory(
         sessionId: String,
-        remainingMessages: List<MessageEntity>? = null,
+        remainingMessages: List<MessageRow>? = null,
     ) {
         val remaining = remainingMessages ?: loadActiveMessages(sessionId)
         val preview = remaining.lastOrNull()?.let { extractTextPreview(it.partsJson) }
-        dao.updateLastMessage(sessionId, preview, System.currentTimeMillis())
+        dao.storePreview(sessionId, preview, System.currentTimeMillis())
     }
 
     private fun extractTextPreview(partsJson: String): String? {
@@ -845,7 +845,7 @@ class ChatRepository(internal val dao: ChatDao) {
         """.trimIndent()
         args += limit
 
-        val rows = dao.runSessionsMetaQuery(
+        val rows = dao.runSessionMetaQuery(
             androidx.sqlite.db.SimpleSQLiteQuery(sql, args.toTypedArray()),
         )
         return rows.map { r ->
@@ -910,7 +910,7 @@ class ChatRepository(internal val dao: ChatDao) {
         """.trimIndent()
         args += (limit * 3)
 
-        val rows = dao.runMessageSearchQuery(
+        val rows = dao.runMessageSearch(
             androidx.sqlite.db.SimpleSQLiteQuery(sql, args.toTypedArray()),
         )
         val out = mutableListOf<MessageSearchMatch>()
@@ -946,9 +946,9 @@ class ChatRepository(internal val dao: ChatDao) {
         endMs: Long? = null,
     ): List<MessagePageItem> {
         val rows = if (startMs == null && endMs == null) {
-            dao.loadMessagesPage(sessionId, offset, limit)
+            dao.messagePage(sessionId, offset, limit)
         } else {
-            dao.loadMessagesPageInRange(sessionId, offset, limit, startMs, endMs)
+            dao.messagePageBetween(sessionId, offset, limit, startMs, endMs)
         }
         return rows.mapNotNull { e ->
             val text = extractTextForOffload(e.partsJson)
@@ -962,7 +962,7 @@ class ChatRepository(internal val dao: ChatDao) {
         }
     }
 
-    suspend fun messageCount(sessionId: String): Int = dao.messageCountForSession(sessionId)
+    suspend fun messageCount(sessionId: String): Int = dao.messageCountIn(sessionId)
 
     /**
      * [T-android-sessions-cli-messages-daterange] Count under the same optional
@@ -971,13 +971,13 @@ class ChatRepository(internal val dao: ChatDao) {
      */
     suspend fun messageCountInRange(sessionId: String, startMs: Long?, endMs: Long?): Int =
         if (startMs == null && endMs == null) {
-            dao.messageCountForSession(sessionId)
+            dao.messageCountIn(sessionId)
         } else {
-            dao.messageCountForSessionInRange(sessionId, startMs, endMs)
+            dao.messageCountBetween(sessionId, startMs, endMs)
         }
 
     /**
-     * Paginated raw [MessageEntity] page — used by [com.openminis.app.share.ChatExporter]
+     * Paginated raw [MessageRow] page — used by [com.openminis.app.share.ChatExporter]
      * to stream-export long sessions without loading every message into
      * memory. Unlike [loadMessagePage] this does not strip / project the
      * row; the exporter needs the full `parts_json` payload to serialize.
@@ -986,8 +986,8 @@ class ChatRepository(internal val dao: ChatDao) {
         sessionId: String,
         offset: Int,
         limit: Int,
-    ): List<MessageEntity> =
-        dao.loadMessagesPage(sessionId, offset, limit)
+    ): List<MessageRow> =
+        dao.messagePage(sessionId, offset, limit)
 
     /**
      * Walk parts_json and concatenate every `{type:"text", value:...}`

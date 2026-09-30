@@ -18,18 +18,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.SegmentedButton
+import novex.android.ui.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import com.openminis.app.ui.novex.SingleChoiceSegmentedButtonRow
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.SingleChoiceSegmentedButtonRow
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -84,13 +84,9 @@ fun LogManagementScreen(
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var loggingEnabled by remember { mutableStateOf(AppLogger.isEnabled(context)) }
 
-    // T-config: Logs / Config Changes segmented control. Default to
-    // "logs"; a `?tab=config-audit` deep-link query lands users straight
-    // on the audit list. Mirrors iOS LogManagementView.
-    val initialTab = remember {
-        com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingLogsTab() ?: "logs"
-    }
-    var tab by remember { mutableStateOf(initialTab) }
+    // [P3.3 裁军] Logs / Config Changes 分段控制随 minis-config 体系退役：
+    // 只剩日志页；?tab= 深链参数静默忽略（pendingLogsTab 仍消费以清空）。
+    remember { com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingLogsTab() }
 
     val refreshTrigger = remember { mutableStateOf(0) }
     LaunchedEffect(refreshTrigger.value) {
@@ -125,31 +121,9 @@ fun LogManagementScreen(
         onBack = onBack,
         scrollable = false,
     ) {
-        // Segmented selector lives outside the scrolling content so the
-        // tabs stay visible as the body scrolls.
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            SegmentedButton(
-                selected = tab == "logs",
-                onClick = { tab = "logs" },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) { Text(stringResource(R.string.log_title)) }
-            SegmentedButton(
-                selected = tab == "config-audit",
-                onClick = { tab = "config-audit" },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) { Text(stringResource(R.string.logs_tab_config_changes)) }
-        }
-
-        if (tab == "config-audit") {
-            // Audit body. Owns its own scrolling.
-            ConfigAuditScreen(modifier = Modifier.fillMaxSize())
-        } else {
-            // Logs body — original layout. The LazyColumn picks up
-            // viewport height since the scaffold gave us a Column slot.
+        // Logs body — original layout. The LazyColumn picks up
+        // viewport height since the scaffold gave us a Column slot.
+        run {
             LogsBody(
                 context = context,
                 dailyLogs = dailyLogs,
@@ -446,7 +420,7 @@ fun LogDetailScreen(
                 title = { Text(fileName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -454,7 +428,7 @@ fun LogDetailScreen(
                         val file = File(File(context.filesDir, "logs"), fileName)
                         if (file.exists()) shareLogFile(context, file)
                     }) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = stringResource(R.string.common_share))
+                        Icon(novex.android.ui.NovexIcons.Share, contentDescription = stringResource(R.string.common_share))
                     }
                 },
             )

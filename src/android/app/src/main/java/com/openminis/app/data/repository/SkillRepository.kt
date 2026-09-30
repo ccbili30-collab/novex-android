@@ -227,8 +227,9 @@ class SkillRepository(private val context: Context) {
      * session id ([toReal]) once `ensureSession()` creates the real DB row.
      * Without this hop, a pre-first-message skill toggle stays bound to the
      * draft key and becomes invisible the next time the chat is opened
-     * under its real id — exactly the symptom XIN reported. Paired with
-     * [MCPRepository.renameSessionOverrides].
+     * under its real id — exactly the symptom XIN reported.
+     * [P3.3 裁军] 原 MCP 侧同名改名对（mcp_session_overrides）已随 MCP
+     * 集成面退役。
      */
     fun renameSessionOverrides(fromDraft: String, toReal: String) {
         if (fromDraft == toReal) return
@@ -1357,7 +1358,7 @@ class SkillRepository(private val context: Context) {
             // before the installer re-materializes the file.
             //
             // Only one location to check, unlike iOS's Library+rootfs pair:
-            // PRootKernel.registerGlobalBindMounts binds /var/minis/skills
+            // ContentPaths.registerGlobalMounts binds /var/minis/skills
             // straight to this same filesDir/minis-global/skills.
             if (importSource != ImportSource.BUNDLED &&
                 !File(skillsDir, "$id/SKILL.md").exists()

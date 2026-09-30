@@ -1,7 +1,7 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 
 /** Provider-facing names for confirmed, scoped Novex memory operations. */
 object NovexMemoryAgentTools {

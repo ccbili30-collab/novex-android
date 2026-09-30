@@ -1,14 +1,14 @@
 package com.openminis.app.tools
 
-import com.openminis.app.novex.domain.NovexDocumentBlock
-import com.openminis.app.novex.domain.NovexDocumentBlockId
-import com.openminis.app.novex.domain.NovexDocumentBlockKind
-import com.openminis.app.novex.domain.NovexDocumentFormat
-import com.openminis.app.novex.domain.NovexDocumentSnapshot
-import com.openminis.app.novex.domain.NovexDocumentSnapshotStore
-import com.openminis.app.novex.domain.NovexDocumentSourceAnchor
-import com.openminis.app.novex.domain.NovexDocumentStatus
-import com.openminis.app.novex.domain.NovexResourceRef
+import novex.core.NovexDocumentBlock
+import novex.core.NovexDocumentBlockId
+import novex.core.NovexDocumentBlockKind
+import novex.core.NovexDocumentFormat
+import novex.core.NovexDocumentSnapshot
+import novex.core.NovexDocumentSnapshotStore
+import novex.core.NovexDocumentSourceAnchor
+import novex.core.NovexDocumentStatus
+import novex.core.NovexResourceRef
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

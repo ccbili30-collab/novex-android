@@ -29,24 +29,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import com.openminis.app.ui.components.DialogTextField
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.Scaffold
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -145,7 +145,7 @@ fun SkillsManagementScreen(
                 var sortMenuExpanded by remember { mutableStateOf(false) }
                 IconButton(onClick = { sortMenuExpanded = true }) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Sort,
+                        novex.android.ui.NovexIcons.Sort,
                         contentDescription = stringResource(R.string.filebrowser_sort_by),
                     )
                 }
@@ -156,7 +156,7 @@ fun SkillsManagementScreen(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.filebrowser_sort_name)) },
                         leadingIcon = {
-                            if (!sortByModified) Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
+                            if (!sortByModified) Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
                             else Spacer(modifier = Modifier.size(24.dp))
                         },
                         onClick = {
@@ -168,7 +168,7 @@ fun SkillsManagementScreen(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.filebrowser_sort_modified)) },
                         leadingIcon = {
-                            if (sortByModified) Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
+                            if (sortByModified) Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
                             else Spacer(modifier = Modifier.size(24.dp))
                         },
                         onClick = {
@@ -187,7 +187,7 @@ fun SkillsManagementScreen(
                         },
                         leadingIcon = {
                             Icon(
-                                if (sortAscending) com.openminis.app.ui.novex.NovexIcons.ArrowUpward else com.openminis.app.ui.novex.NovexIcons.ArrowDownward,
+                                if (sortAscending) novex.android.ui.NovexIcons.ArrowUpward else novex.android.ui.NovexIcons.ArrowDownward,
                                 contentDescription = null,
                             )
                         },
@@ -200,7 +200,7 @@ fun SkillsManagementScreen(
                 }
             }
             IconButton(onClick = { showAddMenu = true }) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.skill_add))
+                Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.skill_add))
             }
         },
     ) {
@@ -234,7 +234,7 @@ fun SkillsManagementScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Description,
+                        novex.android.ui.NovexIcons.Description,
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -308,7 +308,7 @@ fun SkillsManagementScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Description, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(novex.android.ui.NovexIcons.Description, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.skill_import_modal_title), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -617,7 +617,7 @@ fun SkillDetailScreen(
                 title = { Text(skill.name) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -647,7 +647,7 @@ fun SkillDetailScreen(
                         },
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.IosShare,
+                            novex.android.ui.NovexIcons.IosShare,
                             contentDescription = stringResource(R.string.skill_export_share),
                         )
                     }
@@ -670,7 +670,7 @@ fun SkillDetailScreen(
                     Text(skill.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = "Edit name",
+                        novex.android.ui.NovexIcons.Edit, contentDescription = "Edit name",
                         modifier = Modifier.size(14.dp).clickable {
                             editName = skill.name
                             showEditNameDialog = true
@@ -726,7 +726,7 @@ fun SkillDetailScreen(
                             }
                         }
                     }) {
-                        SettingsActionIcon(com.openminis.app.ui.novex.NovexIcons.Refresh, SettingsIconBlue)
+                        SettingsActionIcon(novex.android.ui.NovexIcons.Refresh, SettingsIconBlue)
                         Spacer(Modifier.width(14.dp))
                         Text(stringResource(R.string.skill_detail_update_url), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                         Text(relativeTime(skill.updatedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -738,7 +738,7 @@ fun SkillDetailScreen(
                     if (isBusy) return@DetailRow
                     fileUpdateLauncher.launch("*/*")
                 }) {
-                    SettingsActionIcon(com.openminis.app.ui.novex.NovexIcons.Description, SettingsIconBlue)
+                    SettingsActionIcon(novex.android.ui.NovexIcons.Description, SettingsIconBlue)
                     Spacer(Modifier.width(14.dp))
                     Text(stringResource(R.string.skill_detail_update_file), color = MaterialTheme.colorScheme.primary)
                 }
@@ -751,7 +751,7 @@ fun SkillDetailScreen(
                     updateStatus = if (refreshed != null) UpdateStatus.Done
                         else UpdateStatus.Failed(context.getString(R.string.skill_detail_error_missing))
                 }) {
-                    SettingsActionIcon(com.openminis.app.ui.novex.NovexIcons.Refresh, SettingsIconGreen)
+                    SettingsActionIcon(novex.android.ui.NovexIcons.Refresh, SettingsIconGreen)
                     Spacer(Modifier.width(14.dp))
                     Text(stringResource(R.string.skill_detail_rescan), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 }
@@ -771,7 +771,7 @@ fun SkillDetailScreen(
                     is UpdateStatus.Done -> {
                         DetailDivider()
                         DetailRow {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.CheckCircle, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(16.dp))
+                            Icon(novex.android.ui.NovexIcons.CheckCircle, contentDescription = null, tint = Color(0xFF34C759), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(stringResource(R.string.skill_detail_updated), style = MaterialTheme.typography.bodySmall, color = Color(0xFF34C759))
                         }
@@ -779,7 +779,7 @@ fun SkillDetailScreen(
                     is UpdateStatus.Failed -> {
                         DetailDivider()
                         DetailRow {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                            Icon(novex.android.ui.NovexIcons.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(s.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
@@ -817,7 +817,7 @@ fun SkillDetailScreen(
                 skillFiles.forEachIndexed { index, relativePath ->
                     if (index > 0) DetailDivider()
                     DetailRow(clickable = true, onClick = { onFileClick(skill.id, relativePath) }) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Description, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(novex.android.ui.NovexIcons.Description, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
                         Text(
                             relativePath,
@@ -825,7 +825,7 @@ fun SkillDetailScreen(
                             modifier = Modifier.weight(1f),
                         )
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                            novex.android.ui.NovexIcons.KeyboardArrowRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier.size(20.dp),
@@ -1124,7 +1124,7 @@ fun SkillFileViewerScreen(
                 title = { Text(fileName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {

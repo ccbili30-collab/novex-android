@@ -5,8 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
-import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.SessionRow
+import novex.android.data.chat.MessageRow
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.logging.AppLogger
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +28,7 @@ import java.util.zip.ZipOutputStream
 /**
  * Streaming chat export — T-export-optimize (b443b54d).
  *
- * Previously [SessionListScreen.exportSession] loaded every [MessageEntity]
+ * Previously [SessionListScreen.exportSession] loaded every [MessageRow]
  * for a session at once, built the full JSON / TXT payload as a single
  * [String] in memory, and handed that to [Intent.EXTRA_TEXT]. Hundreds of
  * messages caused jank, ghosting and OOM crashes.
@@ -87,7 +87,7 @@ object ChatExporter {
      */
     suspend fun exportToZip(
         context: Context,
-        session: ChatSessionEntity,
+        session: SessionRow,
         repository: ChatRepository,
         format: String,
     ): Pair<Uri, Summary> = withContext(Dispatchers.IO) {
@@ -137,7 +137,7 @@ object ChatExporter {
 
     private suspend fun streamTranscript(
         repository: ChatRepository,
-        session: ChatSessionEntity,
+        session: SessionRow,
         isJson: Boolean,
         out: File,
     ): Summary {
@@ -221,7 +221,7 @@ object ChatExporter {
         repository: ChatRepository,
         sessionId: String,
         total: Int,
-        block: (List<MessageEntity>) -> Unit,
+        block: (List<MessageRow>) -> Unit,
     ) {
         if (total <= 0) return
         var offset = 0
@@ -234,7 +234,7 @@ object ChatExporter {
         }
     }
 
-    private fun writeSessionMeta(file: File, session: ChatSessionEntity, summary: Summary) {
+    private fun writeSessionMeta(file: File, session: SessionRow, summary: Summary) {
         val meta = JSONObject().apply {
             put("id", session.id)
             put("title", session.title ?: "")

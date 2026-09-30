@@ -7,7 +7,7 @@ internal fun novexErrorMessage(raw: String): String {
     val summary = when {
         text.startsWith("资料选择未完成") || text.startsWith("发送准备失败") ||
             text.startsWith("本轮资料准备未完成") -> text
-        com.openminis.app.data.model.ProviderFailure.isContextLimit(text) ->
+        novex.android.data.model.ProviderFailure.isContextLimit(text) ->
             "本次请求超过模型实际接受的上下文长度。请减少本轮携带内容，或换用容量更大的模型；原文保留。"
         "上下文" in text && ("容量" in text || "不足" in text || "超出" in text) ->
             "当前启用的上下文容量不足以容纳本轮内容。请调高对话容量，或减少本轮携带资料；原文保留。"

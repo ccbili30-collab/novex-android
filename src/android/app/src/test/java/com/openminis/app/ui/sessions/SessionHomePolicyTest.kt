@@ -1,6 +1,6 @@
 package com.openminis.app.ui.sessions
 
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import java.util.Calendar
 import java.util.TimeZone
 import org.junit.Assert.assertEquals
@@ -40,7 +40,7 @@ class SessionHomePolicyTest {
         worldSnapshotJson: String? = null,
         characterVersionId: String? = null,
         updatedAt: Long = 0,
-    ) = ChatSessionEntity(
+    ) = SessionRow(
         id = id,
         modelId = "model",
         createdAt = updatedAt,

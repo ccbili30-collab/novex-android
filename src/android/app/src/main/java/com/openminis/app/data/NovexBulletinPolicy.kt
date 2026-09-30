@@ -6,6 +6,18 @@ internal data class NovexAnnouncement(
     val markdown: String,
     /** [T-announcement-v2] 已读键：hub 道用索引文件名，GitHub 道默认=versionName。 */
     val id: String = versionName,
+    /**
+     * [T-announcement-hero] 索引可选元数据：[version] 有值=发布公告，
+     * 面板渲染 hero 横幅；[badge] 徽标胶囊；[tagline] 一句话标语；
+     * [coverUrl] 横幅图完整 URL（source 层按当前道拼好）。全可空=
+     * 通用公告维持简排版，旧条目/旧缓存不受影响。
+     */
+    val version: String? = null,
+    val badge: String? = null,
+    val tagline: String? = null,
+    val coverUrl: String? = null,
+    /** hero 副行「日期 · 渠道」用；通用公告为 null。 */
+    val channel: String? = null,
 )
 
 internal data class NovexBulletin(

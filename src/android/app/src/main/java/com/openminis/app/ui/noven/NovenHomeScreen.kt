@@ -47,10 +47,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openminis.app.R
 import com.openminis.app.cards.IntegratedCardStart
 import com.openminis.app.cards.IntegratedCards
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
+import novex.android.ui.TextButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -5,8 +5,8 @@ import android.database.Cursor
 import androidx.room.withTransaction
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
-import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.novex.domain.*
+import novex.android.data.NovexMainDatabase
+import novex.core.*
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -27,7 +27,7 @@ private class BundleLimitExceeded : IllegalStateException("对话包超过一吉
 data class NovexConversationBundleResult(val file: File, val messageCount: Int, val fileCount: Int,
     val missing: List<String>, val traceCount: Int)
 
-class NovexConversationBundleExporter(private val context: Context, private val database: AppDatabase,
+class NovexConversationBundleExporter(private val context: Context, private val database: NovexMainDatabase,
     private val workspace: NovexWorkspace) {
     suspend fun export(conversationId: String, runtime: JSONObject): NovexConversationBundleResult = withContext(Dispatchers.IO) {
         require(conversationId.isNotBlank()) { "尚无可导出的对话" }
@@ -246,7 +246,7 @@ class NovexConversationBundleExporter(private val context: Context, private val 
 
             NovexMemoryToolExecutor.exportPlans(File(context.filesDir, "novex/memory-plans"), conversationId)
                 .forEach { (name, raw) -> write("execution/memory-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
-            com.openminis.app.novex.domain.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
+            novex.core.NovexLearningExecutionPlans.exportPlans(File(context.filesDir, "novex/learning-plans"), conversationId)
                 .forEach { (name, raw) -> write("execution/learning-plans/$name", raw.toByteArray(Charsets.UTF_8)) }
             NovexOperationJournal(File(context.filesDir, "novex-operations")).exportRecords(conversationId)
                 .forEach { (operationId, raw) ->

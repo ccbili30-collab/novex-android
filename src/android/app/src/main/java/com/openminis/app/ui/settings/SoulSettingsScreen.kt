@@ -13,12 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -119,20 +119,20 @@ fun SoulSettingsScreen(onBack: () -> Unit) {
                 // emoji field was removed; see [SoulMetadata.displayEmoji].
                 Text(
                     text = SoulMetadata.DISPLAY_EMOJI,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(28),
+                    fontSize = novex.android.ui.novexScaledSp(28),
                     modifier = Modifier.width(48.dp),
                 )
                 Column(modifier = Modifier.padding(start = 4.dp)) {
                     Text(
                         text = name.ifBlank { "Nova" },
-                        fontSize = com.openminis.app.ui.novex.novexScaledSp(17),
+                        fontSize = novex.android.ui.novexScaledSp(17),
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (style.isNotBlank()) {
                         Text(
                             text = style,
-                            fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
+                            fontSize = novex.android.ui.novexScaledSp(13),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -203,7 +203,7 @@ fun SoulSettingsScreen(onBack: () -> Unit) {
                 }
                 Text(
                     text = indicatorText,
-                    fontSize = com.openminis.app.ui.novex.novexScaledSp(12),
+                    fontSize = novex.android.ui.novexScaledSp(12),
                     color = warnColor,
                 )
             }
@@ -338,7 +338,7 @@ private fun LangPicker(lang: String, onLangChange: (String) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = stringResource(R.string.soul_field_lang),
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(13),
+            fontSize = novex.android.ui.novexScaledSp(13),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
         )

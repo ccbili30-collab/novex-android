@@ -1,11 +1,11 @@
 package novex.android
 
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.DropdownMenu
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.DropdownMenu
 
 import novex.content.flattenModules
 import androidx.compose.foundation.clickable
@@ -14,9 +14,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexType
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn

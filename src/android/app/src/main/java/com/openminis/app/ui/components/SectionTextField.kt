@@ -8,8 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
-import com.openminis.app.ui.novex.NovexInputSurface
-import com.openminis.app.ui.novex.NovexType
+import novex.android.ui.NovexInputSurface
+import novex.android.ui.NovexType
 
 /** Compatibility contract; all input rendering and caret ownership live in Novex. */
 @Composable

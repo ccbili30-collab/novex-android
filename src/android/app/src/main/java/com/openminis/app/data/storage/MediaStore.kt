@@ -1,7 +1,7 @@
 package com.openminis.app.data.storage
 
 import android.content.Context
-import com.openminis.app.data.model.MediaRef
+import novex.android.data.model.MediaRef
 import java.io.File
 import java.io.InputStream
 import java.text.SimpleDateFormat

@@ -2,22 +2,21 @@ package com.openminis.app.tools
 
 import android.content.Context
 import android.util.Log
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMMediaAttachment
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMResponse
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMMediaAttachment
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMResponse
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
 import com.openminis.app.logging.AppLogger
-import com.openminis.app.sandbox.PRootKernel
 import java.io.File
 import java.security.MessageDigest
 import org.json.JSONObject
+import novex.android.ContentPaths
 
 internal fun imageCredentialFingerprint(credential: String): String =
     MessageDigest.getInstance("SHA-256")
@@ -126,7 +125,7 @@ object GenerateImageTool {
         val saved = images.mapIndexed { index, media ->
             val suffix = if (images.size == 1) "" else "-${index + 1}"
             val linuxPath = "$linuxDir/generated-$stamp$suffix.${extensionForMime(media.mimeType)}"
-            val outputFile = PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
+            val outputFile = ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
                 ?: return ToolExecutionResult("无法创建会话生图目录", false, toolTitle = title)
             outputFile.parentFile?.mkdirs()
             outputFile.writeBytes(media.data)
@@ -188,13 +187,17 @@ object GenerateImageTool {
         )
         try {
             val provider = ProviderFactory.create(instance, credential, entry.model, context)
-            val openAI = provider as? OpenAIProvider
-            if (openAI != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
+            // [P3.1d] 生图接口面：适配器（OpenAI 兼容中转线）的 imageDelegate 走自有
+            // novex.model ImagesClient；该九类线路自 P3.1e 起全由适配器 imageDelegate 承担（官方直连/
+            // Azure/Responses/OpenRouter/xAI/Kimi，P3.1e 换管）实现同一接口，行为不变。
+            val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? com.openminis.app.provider.ImagesCapableProvider
+            if (images != null && effectiveEndpointMode != ImageEndpointMode.chatCompletions) {
                 try {
                     val response = if (reference == null) {
-                        openAI.generateImage(prompt, count, size, quality)
+                        images.generateImage(prompt, count, size, quality)
                     } else {
-                        openAI.editImage(prompt, listOf(reference), count, size, quality)
+                        images.editImage(prompt, listOf(reference), count, size, quality)
                     }
                     if (configuredEndpointMode == ImageEndpointMode.auto) {
                         repository.setImageModelEndpointResolved(entry.id, ImageEndpointMode.imagesGenerations)
@@ -239,8 +242,8 @@ object GenerateImageTool {
         val linuxPath = if (rawPath.startsWith("minis://")) {
             "/var/minis/" + java.net.URLDecoder.decode(rawPath.removePrefix("minis://"), "UTF-8")
         } else rawPath
-        val file = PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
-            ?: PRootKernel.resolveHostPath(linuxPath)
+        val file = ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
+            ?: ContentPaths.resolveHostPath(linuxPath)
             ?: error("无法解析参考图路径：$linuxPath")
         require(file.exists() && file.isFile) { "参考图不存在：$linuxPath" }
         LLMMessage.ImagePart(file.readBytes(), mimeForFile(file), linuxPath)

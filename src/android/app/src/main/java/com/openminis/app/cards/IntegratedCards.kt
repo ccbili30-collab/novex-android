@@ -2,8 +2,8 @@ package com.openminis.app.cards
 
 import kotlinx.coroutines.ensureActive
 import android.content.Context
-import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.android.data.model.*
+import novex.core.*
 import com.openminis.app.tools.ToolExecutionResult
 import novex.content.*
 import novex.storage.*

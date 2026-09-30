@@ -85,7 +85,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -96,7 +96,7 @@ import com.openminis.app.ui.components.MinisMenuDivider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -185,24 +185,22 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.LocalAppCodeFontFamily
 import com.openminis.app.ui.theme.LocalAppSemanticPalette
@@ -214,8 +212,7 @@ internal fun ToolDetailSheet(
     toolBlocks: List<AssistantBlock>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
-    onOpenBrowserForUrl: (String) -> Unit = {},
+    onOpenUrl: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var currentIdx by remember { mutableStateOf(initialIndex.coerceIn(0, toolBlocks.lastIndex.coerceAtLeast(0))) }
@@ -257,7 +254,7 @@ internal fun ToolDetailSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Close,
+                        novex.android.ui.NovexIcons.Close,
                         contentDescription = "Close",
                         tint = ChatColors.primaryText,
                         modifier = Modifier.size(16.dp),
@@ -293,7 +290,6 @@ internal fun ToolDetailSheet(
                 val clipboardManager = LocalClipboardManager.current
                 val actionContext = LocalContext.current
                 var copyDone by remember { mutableStateOf(false) }
-                val isShellTool = block.toolName == "shell_execute"
                 val isBrowserTool = block.toolName == "browser_use"
                 val toolArgsForAction = remember(block.toolArgs) {
                     try { org.json.JSONObject(block.toolArgs) } catch (_: Exception) { org.json.JSONObject() }
@@ -332,30 +328,17 @@ internal fun ToolDetailSheet(
                         .border(0.5.dp, ChatColors.inputIconBorder, CircleShape)
                         .clip(CircleShape)
                         .clickable {
-                            if (isShellTool) {
-                                val command = extractShellCommand(toolArgsForAction, block)
-                                if (command.isNotBlank() && command != "Shell command") {
-                                    AppLogger.info(
-                                        "ChatScreen",
-                                        "opening terminal with prefill: ${command.take(120)}",
-                                    )
-                                    onDismiss()
-                                    onOpenTerminalWithCommand(command)
-                                }
-                            } else if (hasBrowserUrl) {
-                                // Mirror iOS ToolLiveSheet: nav-bar globe
-                                // routes back into the Session WebView pool
-                                // (BrowserTabPool.selectOrCreateTabForURL)
-                                // so an existing browser_use tab for this
-                                // URL is reused; otherwise a new tab is
-                                // spawned and loaded. Avoids dumping the
-                                // user into a system chooser for what is
-                                // already a live in-app browser session.
+                            if (hasBrowserUrl) {
+                                // [P3.3 裁军→P3.4 净眼] 原先回跳内置浏览器
+                                // Session WebView 池（BrowserTabPool），内置
+                                // 浏览器全家退役后 onOpenUrl 由调用方
+                                // ACTION_VIEW 外跳系统浏览器——措辞与日志
+                                // 同步改口，不再提 session pool。
                                 AppLogger.info(
                                     "ChatScreen",
-                                    "browser_use action → open in session pool: ${browserActionUrl.take(160)}",
+                                    "browser_use action → open in system browser (external): ${browserActionUrl.take(160)}",
                                 )
-                                onOpenBrowserForUrl(browserActionUrl)
+                                onOpenUrl(browserActionUrl)
                             } else if (block.content.isNotEmpty()) {
                                 clipboardManager.setText(AnnotatedString(block.content))
                                 copyDone = true
@@ -365,14 +348,12 @@ internal fun ToolDetailSheet(
                 ) {
                     Icon(
                         when {
-                            copyDone -> com.openminis.app.ui.novex.NovexIcons.Check
-                            isShellTool -> com.openminis.app.ui.novex.NovexIcons.Terminal
-                            isBrowserTool -> com.openminis.app.ui.novex.NovexIcons.Public
-                            else -> com.openminis.app.ui.novex.NovexIcons.ContentCopy
+                            copyDone -> novex.android.ui.NovexIcons.Check
+                            isBrowserTool -> novex.android.ui.NovexIcons.Public
+                            else -> novex.android.ui.NovexIcons.ContentCopy
                         },
                         contentDescription = when {
-                            isShellTool -> "Open in terminal"
-                            isBrowserTool -> "Open in session browser"
+                            isBrowserTool -> "Open in system browser"
                             else -> "Copy"
                         },
                         tint = ChatColors.primaryText,
@@ -607,7 +588,7 @@ internal fun ToolDetailSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.EditNote,
+                                        novex.android.ui.NovexIcons.EditNote,
                                         contentDescription = null,
                                         tint = Color(0xFFFF9500),
                                         modifier = Modifier.size(12.dp),
@@ -737,8 +718,8 @@ internal fun ToolDetailSheet(
                         }
                         EditorCard(
                             title = fileName.ifEmpty { "file" },
-                            icon = if (block.toolName == "file_read") com.openminis.app.ui.novex.NovexIcons.Description
-                                   else com.openminis.app.ui.novex.NovexIcons.NoteAdd,
+                            icon = if (block.toolName == "file_read") novex.android.ui.NovexIcons.Description
+                                   else novex.android.ui.NovexIcons.NoteAdd,
                             iconTint = ChatColors.secondaryText,
                             titleColor = ChatColors.primaryText,
                             sizeColor = ChatColors.tertiaryText,
@@ -771,10 +752,9 @@ internal fun ToolDetailSheet(
                                     }
                                 } else null
                             } ?: ""
-                        // Preview priority (matches iOS): live WebView snapshot while the
-                        // tool is running → current block's saved imageFilePath → most
-                        // recent preceding browser_use block's screenshot.
-                        val liveBitmap = rememberBrowserLiveSnapshot(block)
+                        // [P3.3 裁军] live WebView 快照随内置浏览器退役；
+                        // 仅渲染 current block 的持久化截图 → 最近前序
+                        // browser_use 块的截图。
                         // T285: decode off main thread. Pre-T285 this was a
                         // synchronous BitmapFactory.decodeFile inside `remember{}`
                         // — for a multi-MB browser screenshot it ran a ~150-350ms
@@ -807,7 +787,7 @@ internal fun ToolDetailSheet(
                                 }
                             }
                         }
-                        val screenshotBitmap = liveBitmap ?: savedBitmap
+                        val screenshotBitmap = savedBitmap
 
                         Column(
                             modifier = Modifier
@@ -919,7 +899,7 @@ internal fun ToolDetailSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
-                                            com.openminis.app.ui.novex.NovexIcons.Language,
+                                            novex.android.ui.NovexIcons.Language,
                                             contentDescription = null,
                                             tint = ChatColors.tertiaryText,
                                             modifier = Modifier.size(12.dp),
@@ -963,7 +943,7 @@ internal fun ToolDetailSheet(
                             "Keywords: $keywords\n\n" else ""
                         EditorCard(
                             title = block.toolName,
-                            icon = com.openminis.app.ui.novex.NovexIcons.Psychology,
+                            icon = novex.android.ui.NovexIcons.Psychology,
                             iconTint = ToolMemoryAccent.copy(alpha = 0.6f),
                             titleColor = ToolMemoryAccent,
                             sizeColor = ToolMemoryAccent.copy(alpha = 0.5f),
@@ -1120,11 +1100,11 @@ internal fun ToolDetailSheet(
                         )
                     } else {
                         val (icon, tint) = when (block.toolStatus) {
-                            ToolBlockStatus.SUCCESS -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
-                            ToolBlockStatus.FAILED -> com.openminis.app.ui.novex.NovexIcons.Error to ToolErrorColor
-                            ToolBlockStatus.CANCELLED -> com.openminis.app.ui.novex.NovexIcons.Cancel to ToolCancelColor
-                            ToolBlockStatus.TIMEOUT -> com.openminis.app.ui.novex.NovexIcons.Schedule to ToolErrorColor
-                            else -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.SUCCESS -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
+                            ToolBlockStatus.FAILED -> novex.android.ui.NovexIcons.Error to ToolErrorColor
+                            ToolBlockStatus.CANCELLED -> novex.android.ui.NovexIcons.Cancel to ToolCancelColor
+                            ToolBlockStatus.TIMEOUT -> novex.android.ui.NovexIcons.Schedule to ToolErrorColor
+                            else -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
                         }
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
                     }
@@ -1198,7 +1178,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.SkipPrevious,
+                            novex.android.ui.NovexIcons.SkipPrevious,
                             contentDescription = "Previous",
                             tint = if (currentIdx > 0) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),
@@ -1244,7 +1224,7 @@ internal fun ToolDetailSheet(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.SkipNext,
+                            novex.android.ui.NovexIcons.SkipNext,
                             contentDescription = "Next",
                             tint = if (currentIdx < toolBlocks.lastIndex) ChatColors.primaryText else ChatColors.disabledText,
                             modifier = Modifier.size(22.dp),

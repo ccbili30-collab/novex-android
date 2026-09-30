@@ -1,10 +1,10 @@
 package com.openminis.app.tools
 
 import android.content.Context
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.sandbox.PRootKernel
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
+import novex.android.ContentPaths
 
 object FileEditTool {
     const val NAME = "file_edit"
@@ -39,17 +39,9 @@ object FileEditTool {
                 return ToolExecutionResult("Error: 'old_string' is required and cannot be empty", false, toolTitle = toolTitle)
             }
 
-            // T219: read-only mount guard — see FileWriteTool for rationale.
-            if (PRootKernel.isLinuxPathUnderReadOnlyMount(path)) {
-                return ToolExecutionResult(
-                    "Error: $path is inside a read-only mounted folder and cannot be modified. " +
-                        "Toggle writability in Settings → Mount External Folders if this is a mistake.",
-                    false, toolTitle = toolTitle,
-                )
-            }
 
             // T123: per-session resolver — see FileWriteTool for rationale.
-            val file = PRootKernel.resolveSessionHostPath(sessionId, path, context)
+            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
                 ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
 
             if (!file.exists()) {

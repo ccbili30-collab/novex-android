@@ -20,7 +20,7 @@ import java.io.ByteArrayOutputStream
  *      brand-new attachments through [compressUnderBudget] so every part is
  *      ≤ MAX_PER_IMAGE_BYTES, then tallies cumulative bytes and drops the
  *      tail with a Snackbar notice once MAX_TOTAL_BYTES is exceeded.
- *   2. Provider boundary (AnthropicProvider / OpenAIProvider) — belt and
+ *   2. Provider boundary (适配器 encodeImage) — belt and
  *      braces for history image parts that bypass the composer (e.g. tool
  *      results screenshot bytes, restored sessions, retry-after-edit). Each
  *      oversize part is silently re-encoded in-place via [compressBytes].

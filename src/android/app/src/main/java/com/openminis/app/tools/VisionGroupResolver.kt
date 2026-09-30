@@ -1,10 +1,10 @@
 package com.openminis.app.tools
 
 import android.content.Context
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.hasImageInput
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.hasImageInput
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
 import kotlinx.coroutines.TimeoutCancellationException
@@ -14,7 +14,7 @@ import kotlinx.coroutines.withTimeout
  * [T-android-vision-group / GH#182] Image understanding for main models that
  * can't see. Android port of iOS `VisionGroupResolver`.
  *
- * A "Vision Group" is an ordinary [com.openminis.app.data.model.ModelGroup] that
+ * A "Vision Group" is an ordinary [novex.android.data.model.ModelGroup] that
  * `ProviderConfig.visionGroupId` points at — deliberately NOT a new group kind.
  * That reuses the existing member ordering / availability filtering for free and
  * leaves ModelGroup (and its iCloud CRDT member maps) untouched; the pointer is
@@ -233,7 +233,7 @@ object VisionGroupResolver {
 
         return withTimeout(PER_ATTEMPT_TIMEOUT_MS) {
             // Images go through the provider's dedicated `imageParts` argument
-            // (that's what OpenAIProvider/Anthropic/Gemini read — msg.imageParts
+            // (that's what the provider wire layer reads — msg.imageParts
             // is not consumed by the request builders); `content` carries only
             // the text instruction.
             val message = LLMMessage(

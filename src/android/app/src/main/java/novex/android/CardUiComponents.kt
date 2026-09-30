@@ -17,7 +17,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.*
+import novex.android.ui.*
 import com.openminis.app.ui.noven.NovenColors
 
 /** Card-specific compositions of the original application's typography, icons and controls. */
@@ -34,7 +34,7 @@ import com.openminis.app.ui.noven.NovenColors
     leadingContent:(@Composable ()->Unit)?=null,
     trailingContent:(@Composable ()->Unit)?=null,
 ) {
-    com.openminis.app.ui.novex.ListItem(
+    novex.android.ui.ListItem(
         headlineContent=headlineContent,modifier=modifier,supportingContent=supportingContent,
         leadingContent=leadingContent,trailingContent=trailingContent,
         contentPadding=PaddingValues(horizontal=16.dp,vertical=0.dp),minimumHeight=NovexDimensions.MinimumTouch,

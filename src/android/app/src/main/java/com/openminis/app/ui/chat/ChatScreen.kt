@@ -44,17 +44,17 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.openminis.app.novex.domain.ConversationControlBehavior
-import com.openminis.app.novex.domain.NovexLearningControl
-import com.openminis.app.novex.domain.NovexLearningControlPolicy
-import com.openminis.app.novex.domain.NovexLearningTaskStatus
-import com.openminis.app.novex.domain.PlaythroughValue
-import com.openminis.app.ui.novex.NovexNoticeDialog
-import com.openminis.app.ui.novex.NovexDecisionAction
-import com.openminis.app.ui.novex.NovexDecisionDialog
-import com.openminis.app.ui.novex.NovexDecisionTone
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSelectionSheet
+import novex.core.ConversationControlBehavior
+import novex.core.NovexLearningControl
+import novex.core.NovexLearningControlPolicy
+import novex.core.NovexLearningTaskStatus
+import novex.core.PlaythroughValue
+import novex.android.ui.NovexNoticeDialog
+import novex.android.ui.NovexDecisionAction
+import novex.android.ui.NovexDecisionDialog
+import novex.android.ui.NovexDecisionTone
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSelectionSheet
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,7 +91,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -99,24 +99,24 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.MinisAlertDialog
 import com.openminis.app.ui.components.MinisMenu
 import com.openminis.app.ui.components.MinisMenuDivider
-import com.openminis.app.ui.novex.NovexActionMenu
-import com.openminis.app.ui.novex.NovexMenuAction
+import novex.android.ui.NovexActionMenu
+import novex.android.ui.NovexMenuAction
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldDefaults
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -211,29 +211,34 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.character.effectiveAssistantAvatarPath
 import com.openminis.app.data.character.effectiveAssistantName
 import com.openminis.app.data.character.usesRolePresentation
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
+
+// [P3.3 裁军] 语音全家（speech/ + novex.android.voice/ + ui/chat/voice/）、
+// 内置浏览器全家（browser/ + ui/browser/ + ui/preview/ + UrlPreviewSheet）、
+// WebApp（webapp/）、内嵌媒体播放器（ui/media/InlineMediaPlayer）按用户
+// 裁决整体退役：朗读/语音面板/麦克风按钮/浏览器 Sheet/HTML 沉浸预览/
+// 桌面捷径/内嵌音视频播放等入口全部摘除；链接点击改走
+// openExternalUrl/openMediaFileExternally 外跳系统处理器。
 
 // iOS ChatColors equivalent
 internal val ToolCheckColor = Color(0xFF34C759) // iOS .green
@@ -324,7 +329,6 @@ fun ChatScreen(
     providerRepository: ProviderRepository,
     memoryRepository: MemoryRepository? = null,
     skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
-    mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     onBack: () -> Unit,
     onBackReturnsToList: Boolean = false,
     /** [T-new-chat-menu-entry] "New Chat" from the chat "..." menu: caller
@@ -337,11 +341,6 @@ fun ChatScreen(
         personaId: String?,
     ) -> Unit = { _, _, _, _ -> },
     onSettings: () -> Unit = {},
-    onOpenTerminal: () -> Unit = {},
-    /** Open the in-app terminal with [command] pre-filled at the prompt
-     *  (no trailing newline — the user reviews and presses Enter manually).
-     *  Wired to the top-right Terminal button on a shell_execute ToolDetailSheet. */
-    onOpenTerminalWithCommand: (command: String) -> Unit = {},
     /** "Move to…" capsule (T51): called when the user picks a target session
      *  from MoveToSessionSheet after a share-injected turn. The caller is
      *  responsible for navigating; this screen has already stashed the
@@ -377,7 +376,6 @@ fun ChatScreen(
             appContext = context.applicationContext,
             memoryRepository = memoryRepository,
             skillRepository = skillRepository,
-            mcpRepository = mcpRepository,
         ),
     )
     // [T-android-larky-longsession-followup] Consume the tail-windowed
@@ -422,7 +420,6 @@ fun ChatScreen(
     val attachments by viewModel.attachments.collectAsState()
     val availableGroups by viewModel.availableGroups.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
-    val showBrowserSheet by viewModel.showBrowserSheet.collectAsState()
     val showMemorySheet by viewModel.showMemorySheet.collectAsState()
     val memoryToolRecords by viewModel.memoryToolRecords.collectAsState()
     val selectedGroupName by viewModel.selectedGroupName.collectAsState()
@@ -439,44 +436,9 @@ fun ChatScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val panelExpansionState = remember(viewModel) { PanelExpansionState() }
 
-    // [T-android-voice-panel] Shared 3-stage RECORD_AUDIO permission flow
-    // (system dialog → post-DENY poll → in-app settings gate). Extracted from
-    // the mic button's triggerVoiceInput so the inline voice panel can request
-    // the same way. Returns true when granted.
-    val ensureMicPermissionFlow: suspend () -> Boolean = ensure@{
-        val perm = android.Manifest.permission.RECORD_AUDIO
-        val hasPerm: () -> Boolean = {
-            androidx.core.content.ContextCompat.checkSelfPermission(context, perm) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-        if (hasPerm()) return@ensure true
-        var result = com.openminis.app.offload.OffloadPermissionManager
-            .requestAndroidPermission(listOf(perm))
-        if (result == com.openminis.app.offload.OffloadPermissionManager
-                .AndroidPermissionResult.DENIED &&
-            com.openminis.app.offload.OffloadPermissionManager.pollForPermissionGrant(hasPerm)
-        ) {
-            result = com.openminis.app.offload.OffloadPermissionManager
-                .AndroidPermissionResult.GRANTED
-        }
-        if (result == com.openminis.app.offload.OffloadPermissionManager
-                .AndroidPermissionResult.DENIED
-        ) {
-            result = com.openminis.app.offload.OffloadPermissionManager.requestSettingsGate(
-                com.openminis.app.offload.OffloadPermissionManager.SettingsGateRequest(
-                    id = perm,
-                    title = context.getString(R.string.mic_permission_title),
-                    message = context.getString(R.string.mic_permission_message),
-                    settingsAction = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    requiresPackageUri = true,
-                    positiveLabel = context.getString(R.string.mic_permission_open_settings),
-                    negativeLabel = context.getString(R.string.mic_permission_cancel),
-                ),
-                check = hasPerm,
-            )
-        }
-        result == com.openminis.app.offload.OffloadPermissionManager.AndroidPermissionResult.GRANTED
-    }
+    // [P3.3 裁军] 原 RECORD_AUDIO 三段式授权流（ensureMicPermissionFlow）随
+    // 语音输入整体退役删除。
+
     // Hoisted to ChatViewModel so it survives ChatScreen disposal/recomposition
     // across forward navigation (file preview, env vars, etc.); see
     // ChatViewModel.listState for the why.
@@ -623,23 +585,8 @@ fun ChatScreen(
     // their pending candidate back through onValueChange even after we
     // cleared inputText. Drop those late commits during a short window.
     var lastSendTimeMs by remember { mutableStateOf(0L) }
-    // [T-voice-mode-memory-refine-android] True when a voice recording started
-    // since the composer was last cleared. The SEND is what commits the mode:
-    // mic-start no longer writes "voice" (an accidental mic tap with no send
-    // must not flip the default) — instead this flag is consulted on send.
-    var voiceUsedSinceClear by remember { mutableStateOf(false) }
-    // Shared by both send paths (send button / Enter): commit the composer
-    // mode at send time — "voice" if this composition used voice, otherwise
-    // "text" — then reset the tracker for the now-cleared composer.
-    val noteSendForInputModePref: () -> Unit = {
-        ComposerInputModePrefs.save(context, voice = voiceUsedSinceClear)
-        voiceUsedSinceClear = false
-        // [T-android-voice-correction] A send is the natural moment to mine
-        // typed vocabulary: the message is committed, and the builder's own
-        // hourly throttle makes the common case a no-op. Consent-gated and
-        // fire-and-forget inside.
-        com.openminis.app.speech.correction.VoiceCorrection.mineVocabularyIfNeeded(context)
-    }
+    // [P3.3 裁军] voiceUsedSinceClear + noteSendForInputModePref（语音输入
+    // 模式记账，ComposerInputModePrefs）随语音输入退役删除。
     androidx.compose.runtime.LaunchedEffect(inputText) {
         if (!composerInputSynchronizer.shouldApplyExternal(inputText)) {
             return@LaunchedEffect
@@ -696,13 +643,13 @@ fun ChatScreen(
     var showHistoryNavigation by remember(sessionId) { mutableStateOf(false) }
     var historyJumpId by remember(sessionId) { mutableStateOf<String?>(null) }
     if (showHistoryNavigation) {
-        com.openminis.app.ui.novex.NovexSearchableSelectionSheet(
+        novex.android.ui.NovexSearchableSelectionSheet(
             title = "对话历史", searchPlaceholder = "搜索原文",
             actions = viewModel.historyNavigationMessages().mapIndexed { index, message ->
                 // 行升级（design-system §13）：序号 + 角色 + 内容预览；ChatMessage
                 // 不带时间戳，时间以序号近似定位。
                 val roleLabel = if (message.role == "user") "我" else "AI"
-                com.openminis.app.ui.novex.NovexSelectionAction(
+                novex.android.ui.NovexSelectionAction(
                     label = "#${index + 1} $roleLabel",
                     description = message.content.take(200).ifBlank {
                         if (message.role == "user") "（无文字内容）" else "回复与执行记录"
@@ -716,7 +663,7 @@ fun ChatScreen(
     }
     var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
-    var showMcpsSheet by remember { mutableStateOf(false) }
+    // [P3.3 裁军] showMcpsSheet（会话内 MCP 开关 Sheet）随 MCP 集成面退役。
     var requestSideConversation by remember { mutableStateOf(false) }
     var requestSidePanel by remember { mutableStateOf(false) }
     // ── 侧边对话页状态（决策 12/16）──────────────────────────────────────
@@ -724,7 +671,7 @@ fun ChatScreen(
     // 书签列与状态把手（防嵌套；状态只属于主线）。
     var sideParentId by remember(sessionId) { mutableStateOf<String?>(null) }
     LaunchedEffect(sessionId) {
-        sideParentId = runCatching { chatRepository.getSession(sessionId)?.sideOfSession }.getOrNull()
+        sideParentId = runCatching { chatRepository.sessionById(sessionId)?.sideOfSession }.getOrNull()
     }
     // ── 沉浸淡化（2026-09-15 用户确认：不做收起做淡化）──────────────────
     // 范围：顶栏 + 主线页侧边组件（书签列/状态把手）+ 右下浮动按钮——全部原地
@@ -786,23 +733,23 @@ fun ChatScreen(
         }
     }
     if (showSideDeleteDialog && sideParentId != null) {
-        com.openminis.app.ui.novex.NovexContentDialog(
+        novex.android.ui.NovexContentDialog(
             "删除这条侧边对话？",
             onDismiss = { showSideDeleteDialog = false },
             confirmButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = {
+                novex.android.ui.TextButton(onClick = {
                     showSideDeleteDialog = false
                     coroutineScope.launch {
-                        runCatching { chatRepository.deleteSession(sessionId) }
+                        runCatching { chatRepository.dropSession(sessionId) }
                         onBack()
                     }
-                }) { Text("删除", color = com.openminis.app.ui.novex.NovexColors.Danger) }
+                }) { Text("删除", color = novex.android.ui.NovexColors.Danger) }
             },
         ) {
             Text(
                 "聊天记录将删除，且不可恢复。已并入主对话的交接简报不受影响。",
-                style = com.openminis.app.ui.novex.NovexType.Body,
-                color = com.openminis.app.ui.novex.NovexColors.Text,
+                style = novex.android.ui.NovexType.Body,
+                color = novex.android.ui.NovexColors.Text,
             )
         }
     }
@@ -978,8 +925,7 @@ fun ChatScreen(
     // App-icon quick action: when the user launched via
     // `minis://action/camera_chat`, auto-open the camera on first compose.
     // Consumed exactly once so re-entering the chat later does NOT re-trigger.
-    // Voice variant lives next to the MicButton because it needs sttAvailable
-    // — camera is always available so it can fire from the top-level scope.
+    // [P3.3 裁军] 原 voice_chat 快捷动作变体随语音输入退役（详见输入区墓碑）。
     LaunchedEffect(sessionId) {
         val pending = com.openminis.app.deeplink.DeepLinkCoordinator
             .pendingChatAction.value
@@ -1025,39 +971,9 @@ fun ChatScreen(
         }
     }
 
-    // Android system permission launcher for agent tools (e.g. location).
-    //
-    // The launcher's `results` map can't be trusted alone: on several Android
-    // versions `RequestMultiplePermissions` returns an empty map (or `false`
-    // entries) for permissions that were already granted and thus didn't need
-    // a dialog. Re-query the live permission state via checkSelfPermission to
-    // decide success — this is what actually matters to the caller.
-    val currentPermissionsRef = remember { mutableStateOf<Array<String>>(emptyArray()) }
-    val androidPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        val perms = currentPermissionsRef.value
-        val grantedNow = perms.isNotEmpty() && perms.any { p ->
-            ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
-        }
-        OffloadPermissionManager.respondToAndroidPermission(grantedNow)
-    }
-    val pendingAndroidPermission by OffloadPermissionManager.pendingAndroidPermission.collectAsState()
-    LaunchedEffect(pendingAndroidPermission) {
-        val req = pendingAndroidPermission ?: return@LaunchedEffect
-        val perms = req.permissions.toTypedArray()
-        // Short-circuit when everything's already granted — some OEM builds
-        // launch a no-op dialog that still flashes on screen otherwise.
-        val alreadyGranted = perms.isNotEmpty() && perms.any { p ->
-            ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
-        }
-        if (alreadyGranted) {
-            OffloadPermissionManager.respondToAndroidPermission(true)
-            return@LaunchedEffect
-        }
-        currentPermissionsRef.value = perms
-        androidPermissionLauncher.launch(perms)
-    }
+    // [P3.3 裁军] Android 系统权限桥（OffloadPermissionManager：系统弹窗 +
+    // 设置页门 + OffloadPermissionDialog）随 offload/ 整包退役删除；沙箱
+    // 退役后已无发起运行时权限请求的工具调用方。
 
     val tagScroll = "ChatScrollFollow"
     // Scroll wrappers used by every code path that mutates the LazyColumn
@@ -1146,12 +1062,12 @@ fun ChatScreen(
         }
     }
 
-    // [feat/ui-rikkahub] RikkaHub-style re-anchor: a scroll that SETTLES at the
+    // [feat/ui-rikkahub] mainstream-style re-anchor: a scroll that SETTLES at the
     // live tail re-grants follow, so glancing up mid-stream and flicking back
     // down re-sticks the tail without the return-to-latest button. Upward
     // drags still revoke at DragStart. Programmatic moves also settle at the
     // tail, but they only run while follow is active or for explicit moves —
-    // re-granting there matches intent. The 8dp tolerance mirrors RikkaHub's
+    // re-granting there matches intent. The 8dp tolerance mirrors mainstream clients'
     // isAtBottom(): a fling that decelerates just short of the end still
     // counts as "at the bottom".
     val settleGrantTolerancePx = with(LocalDensity.current) { 8.dp.toPx() }
@@ -1418,7 +1334,6 @@ fun ChatScreen(
         keyboardController?.hide()
         focusManager.clearFocus()
         viewModel.sendMessage(rawText)
-        noteSendForInputModePref()
     }
     // [T-android-composer-input-blocked-while-streaming] True only while the
     // user's FINGER is actively dragging the message list. Explicit navigation
@@ -1560,7 +1475,7 @@ fun ChatScreen(
     // exact same SessionEditSheet hosted by the session list home screen,
     // reused via `internal` visibility — no duplicate UI). Populated by an
     // async repo lookup once the user taps the title pill.
-    var editingSession by remember { mutableStateOf<com.openminis.app.data.db.ChatSessionEntity?>(null) }
+    var editingSession by remember { mutableStateOf<novex.android.data.chat.SessionRow?>(null) }
     DisposableEffect(appearancePrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
             when (key) {
@@ -1577,57 +1492,13 @@ fun ChatScreen(
     val markdownFontScale = com.openminis.app.ui.settings.fontScaleForLevel(messageFontLevel)
     val chatInputFontScale = com.openminis.app.ui.settings.fontScaleForLevel(chatInputLevel)
 
-    var previewUrl by remember { mutableStateOf<String?>(null) }
-    // T146: dedicated state for the immersive HTML preview path. Holding
-    // both a `holder` and `fullscreen` flag (rather than two separate
-    // states) ensures the same WebView survives the sheet→fullscreen
-    // toggle without reloading the page (iOS parity, WebPreviewSheet.swift).
-    var htmlPreviewHolder by remember {
-        mutableStateOf<com.openminis.app.ui.preview.WebViewHolder?>(null)
-    }
-    var htmlPreviewFallbackTitle by remember { mutableStateOf("") }
-    var htmlPreviewFullscreen by remember { mutableStateOf(false) }
-    val appCtx = context.applicationContext
-    val openHtmlPreview = remember<(java.io.File, String) -> Unit>(appCtx) {
-        { file, title ->
-            // Reuse the same WebViewHolder as long as the file path doesn't
-            // change. Tapping the same html link twice should pick up wherever
-            // the user left off rather than reloading from scratch.
-            val url = "file://${file.absolutePath}"
-            val existing = htmlPreviewHolder
-            if (existing == null || existing.currentUrl != url) {
-                existing?.destroy()
-                htmlPreviewHolder = com.openminis.app.ui.preview.WebViewHolder(appCtx, url)
-            }
-            htmlPreviewFallbackTitle = title
-            htmlPreviewFullscreen = false
-        }
-    }
-    // Pinned-shortcut deep link: minis://session/<id>/<resource-path>
-    // consumes here on first composition iff this screen is showing the
-    // matching session; opens fullscreen HTML preview backed by a fresh
-    // holder. Pending state is left untouched when a different chat is on
-    // screen so the right ChatScreen instance still consumes it later.
-    LaunchedEffect(sessionId) {
-        val pending = com.openminis.app.deeplink.DeepLinkCoordinator
-            .pendingHtmlPreview.value ?: return@LaunchedEffect
-        if (pending.sessionId != sessionId) return@LaunchedEffect
-        com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingHtmlPreview()
-        val absPath = "/var/minis" + pending.resourcePath
-        val file = java.io.File(absPath)
-        if (!file.exists()) {
-            com.openminis.app.logging.AppLogger.warning(
-                "ChatScreen",
-                "pinned HTML preview path missing: $absPath",
-            )
-            return@LaunchedEffect
-        }
-        val url = "file://${file.absolutePath}"
-        htmlPreviewHolder?.destroy()
-        htmlPreviewHolder = com.openminis.app.ui.preview.WebViewHolder(appCtx, url)
-        htmlPreviewFallbackTitle = pending.title
-        htmlPreviewFullscreen = true
-    }
+    // [P3.3 裁军] 原 previewUrl（UrlPreviewSheet 内预览）+ htmlPreviewHolder
+    // （WebViewHolder 沉浸式 HTML 预览，ui/preview/ 整包）+ 固定捷径
+    // minis://session/<id>/<path> 深链消费块随内置浏览器退役删除：
+    //  - web 链接 → openExternalUrl（系统浏览器外跳）
+    //  - 会话内 HTML 文件 → onPreviewAttachment（FilePreviewScreen 的 WebView）
+    //  - 会话内视频文件 → openMediaFileExternally（系统播放器）
+
     // T-imgswipe-4f446d83: replace previous single-image preview state with a
     // gallery (list + start index) so callers can pass sibling images (input
     // chip row, message attachments, file-browser dir contents). Single-image
@@ -1635,17 +1506,6 @@ fun ChatScreen(
     var previewImageGallery by remember {
         mutableStateOf<Pair<List<com.openminis.app.ui.components.ImageGalleryItem>, Int>?>(null)
     }
-    // Video links from chat go through MinisFullscreenVideoPlayer rather than
-    // FilePreviewScreen → InlineVideoPlayer. The inline player wraps a bare
-    // VideoView with an anchored MediaController and never starts playback,
-    // so a tap on an mp4 link rendered as a black surface until the user
-    // happened to tap again to surface the controller. The fullscreen player
-    // auto-starts on prepared, has a built-in scrubber + play/pause, and an
-    // onError listener so failures actually log instead of silently blanking.
-    var previewVideoFile by remember { mutableStateOf<java.io.File?>(null) }
-    // T-pwa-2: long-press on an HTML attachment chip opens the
-    // "Add to Home Screen" sheet for that attachment.
-    var webAppSheetTarget by remember { mutableStateOf<InputAttachment?>(null) }
     val urlClickHandler = remember<(String) -> Unit>(viewModel) {
         { url ->
             // Pass the current session id so `minis://attachments/...` resolves
@@ -1668,13 +1528,13 @@ fun ChatScreen(
                                 ),
                             ) to 0
                         }
-                        action.item.isVideoFile -> previewVideoFile = action.item.file
-                        // T146: HTML files take the immersive web-preview path
-                        // (iOS-style 90% bottom sheet + fullscreen toggle)
-                        // instead of FilePreviewScreen's plain fullscreen
-                        // Scaffold. snake_game.html and similar generated
-                        // pages need browser controls to feel right.
-                        action.item.isHtmlFile -> openHtmlPreview(action.item.file, action.item.name)
+                        // [P3.3 裁军] 视频改经 FileProvider 交给系统播放器
+                        // （原 MinisFullscreenVideoPlayer 内嵌播放退役）；
+                        // HTML 文件改走 FilePreviewScreen 的 WebView（原
+                        // WebViewHolder 沉浸预览退役）。
+                        action.item.isVideoFile ->
+                            com.openminis.app.ui.components.openMediaFileExternally(context, action.item.file)
+                        action.item.isHtmlFile -> onPreviewAttachment(action.item)
                         // T279: route through the NavHost FILE_PREVIEW destination
                         // (same path as user-bubble attachments and "Browse Chat Files")
                         // so FilePreviewScreen inherits the Activity's edge-to-edge
@@ -1684,32 +1544,15 @@ fun ChatScreen(
                         else -> onPreviewAttachment(action.item)
                     }
                 }
+                // [P3.3 裁军] 外部 scheme（intent/market/tel/mailto…）与 web
+                // 链接一律 ACTION_VIEW 外跳系统处理器（原
+                // BrowserExternalSchemeHandler + UrlPreviewSheet 退役）。
                 is ChatLinkAction.ExternalApp ->
-                    com.openminis.app.ui.browser.BrowserExternalSchemeHandler
-                        .handle(context, action.url)
-                is ChatLinkAction.Web -> previewUrl = action.url
+                    com.openminis.app.ui.components.openExternalUrl(context, action.url)
+                is ChatLinkAction.Web ->
+                    com.openminis.app.ui.components.openExternalUrl(context, action.url)
             }
         }
-    }
-
-    // Auto-present the in-app preview when a shell tool's stdout emits an
-    // OSC MinisOpenURL marker (via /usr/local/bin/minis-open). The broker is
-    // populated by ChatViewModel's shell lineCallback; forwarding the URL
-    // into `urlClickHandler` routes it exactly like a chat-link tap —
-    // http(s)/about → UrlPreviewSheet, minis:// deep links → DeepLinkHandler,
-    // minis://<host>/<path> → in-app file preview by extension.
-    val pendingMinisOpenUrl by com.openminis.app.terminal.MinisOpenUrlBroker.pendingUrl
-        .collectAsState()
-    val minisOpenTerminalVisible by com.openminis.app.terminal.MinisOpenUrlBroker.terminalVisible
-        .collectAsState()
-    LaunchedEffect(pendingMinisOpenUrl, minisOpenTerminalVisible) {
-        val url = pendingMinisOpenUrl ?: return@LaunchedEffect
-        // The fullscreen TerminalScreen owns the broker while it's up —
-        // let it present its own web preview (mirrors iOS ISHTerminalView)
-        // so we don't try to open a sheet on a covered ChatScreen.
-        if (minisOpenTerminalVisible) return@LaunchedEffect
-        urlClickHandler(url.toString())
-        com.openminis.app.terminal.MinisOpenUrlBroker.consume()
     }
 
     // [T-android-markdown-image-gallery-cross-message] Collect every
@@ -1760,7 +1603,7 @@ fun ChatScreen(
                 ?: 0
             val items = refs.map { ref ->
                 // Resolve minis://... / file:// / /abs → host File so Coil
-                // doesn't have to re-walk PRootKernel for every page swipe.
+                // doesn't have to re-walk ContentPaths for every page swipe.
                 // Falls back to the raw URL string when resolution misses —
                 // AsyncImage will route it through MinisImageFetcher anyway.
                 val resolved = resolveMdMediaFile(context, ref.source, sessionId)
@@ -1774,7 +1617,6 @@ fun ChatScreen(
     }
 
     CompositionLocalProvider(
-        LocalBrowserTabPool provides viewModel.browserTabPool,
         LocalMarkdownFontScale provides markdownFontScale,
         LocalToolPreviewEnabled provides toolPreviewEnabled,
         LocalMarkdownUrlClickHandler provides urlClickHandler,
@@ -1948,7 +1790,7 @@ fun ChatScreen(
                                         modifier = Modifier.widthIn(max = 96.dp),
                                     )
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                        novex.android.ui.NovexIcons.KeyboardArrowDown,
                                         contentDescription = null,
                                         tint = ChatColors.tertiaryText,
                                         modifier = Modifier.size(13.dp),
@@ -1962,7 +1804,7 @@ fun ChatScreen(
                                                 .background(Color(0xFFFF9500), CircleShape),
                                         ) {
                                             Icon(
-                                                com.openminis.app.ui.novex.NovexIcons.Bolt,
+                                                novex.android.ui.NovexIcons.Bolt,
                                                 contentDescription = null,
                                                 tint = Color.White,
                                                 modifier = Modifier.size(10.dp),
@@ -1981,7 +1823,7 @@ fun ChatScreen(
                     // content[1]：返回键
                     Box {
                         IconButton(onClick = returnFromConversation) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
+                            Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = "Back")
                         }
                     }
                     // content[2]：动作簇（模型 pill / DeepSeek 时钟 / ⋯；侧边页为导出+删除）
@@ -1998,7 +1840,7 @@ fun ChatScreen(
                         }
                         IconButton(onClick = { showSideDeleteDialog = true }) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Delete,
+                                novex.android.ui.NovexIcons.Delete,
                                 contentDescription = "删除侧边对话",
                                 tint = androidx.compose.ui.graphics.Color(0xFFFF5A5F),
                             )
@@ -2019,7 +1861,7 @@ fun ChatScreen(
                             showChatMenu = true
                         }) {
                             Icon(
-                                imageVector = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
+                                imageVector = novex.android.ui.NovexIcons.MoreHoriz,
                                 contentDescription = "更多操作",
                             )
                         }
@@ -2139,7 +1981,7 @@ fun ChatScreen(
             if (isCompactingNow) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("正在压缩对话，原消息保留", Modifier.weight(1f))
-                com.openminis.app.ui.novex.TextButton(onClick = viewModel::cancelCompaction) { Text("停止") }
+                novex.android.ui.TextButton(onClick = viewModel::cancelCompaction) { Text("停止") }
             }
 
             // Dismiss keyboard when the USER scrolls the messages. Gated on
@@ -2543,17 +2385,9 @@ fun ChatScreen(
                 // scrolling back in re-registers the shard and the highlight
                 // redraws automatically.
                 val selectionController = remember { SelectionController() }
-                // [T-android-selection-readaloud] Player backing the selection
-                // toolbar's "Read Aloud". Screen-scoped and independent of the
-                // voice panel's own player (that one only exists while voice
-                // mode is active), so reading a selection works any time. Built
-                // lazily on first use — an unused ChatScreen never binds a TTS
-                // engine — and shut down with the screen.
-                val selectionReader = remember { LazyReadAloudPlayer(context) }
-                DisposableEffect(selectionReader) {
-                    onDispose { selectionReader.shutdown() }
-                }
-                val markdownToolbar = remember(context, messageBounds, viewModel, inputFocusRequester, keyboardController, selectionController, selectionReader) {
+                // [P3.3 裁军] selectionReader（LazyReadAloudPlayer，选区朗读）
+                // 随语音全家退役；工具栏不再提供“朗读”动作。
+                val markdownToolbar = remember(context, messageBounds, viewModel, inputFocusRequester, keyboardController, selectionController) {
                     MinisMarkdownTextToolbar(
                         context = context,
                         registry = messageBounds,
@@ -2571,7 +2405,6 @@ fun ChatScreen(
                             pendingShareText = snippet
                             showMoveSheet = true
                         },
-                        onReadAloud = { snippet -> selectionReader.speak(snippet) },
                         selectionController = selectionController,
                     )
                 }
@@ -2865,7 +2698,6 @@ fun ChatScreen(
                                     if (action.navigateToLatest) coroutineScope.launch { scrollToLatestOnce(TranscriptViewportMove.UserRetriedTurn) }
                                 }
                                 ChatTranscriptAction.Stop -> viewModel.cancelStream()
-                                is ChatTranscriptAction.OpenTerminal -> onOpenTerminalWithCommand(action.command)
                                 is ChatTranscriptAction.OpenToolDetail -> viewModel.openToolDetail(action.id)
                                 is ChatTranscriptAction.RerunFrom -> {
                                     safeMutate { viewModel.rerunFromToolBlock(action.messageId, action.blockId) }
@@ -3021,14 +2853,11 @@ fun ChatScreen(
                             try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
                             keyboardController?.show()
                         },
-                        // [T-android-selection-readaloud] Speak the selection
-                        // through the same screen-scoped lazy player the
-                        // Compose-SelectionContainer toolbar uses.
+                        // [P3.3 裁军] 选区“朗读”动作随语音全家退役。
                         onShare = { snippet ->
                             pendingShareText = snippet
                             showMoveSheet = true
                         },
-                        onReadAloud = { snippet -> selectionReader.speak(snippet) },
                     ),
                 )
                 // iOS-style selection handle dots, one at each endpoint.
@@ -3063,21 +2892,12 @@ fun ChatScreen(
                             .filter { it.toolStatus != null && it.kind != "thinking" && it.kind != "info" }
                     }.collect { lastToolBlocks = it }
                 }
-                // Speech controls clear only the visible transcript navigation buttons.
+                // [P3.3 裁军] SpeechPlayerCapsule（语音播报浮动胶囊）随语音
+                // 全家退役；浮动按钮堆叠的原避让参数一并删除。
                 val upFabVisible = transcriptViewportReady &&
                     messages.isNotEmpty() && !isNearBottom.value
                 val downFabVisible = transcriptViewportReady &&
                     !isNearBottom.value && contentOverflows.value && messages.isNotEmpty()
-                val fabBaseDp = 8.dp
-                val fabStackTopDp = when {
-                    upFabVisible -> fabBaseDp + 46.dp + 36.dp
-                    downFabVisible -> fabBaseDp + 36.dp
-                    else -> 0.dp
-                }
-                com.openminis.app.ui.chat.voice.SpeechPlayerCapsule(
-                    bottomObstructionPx = 0,
-                    additionalObstructionDp = fabStackTopDp,
-                )
 
                 // T261: tool-detail sheet hoisted out of LazyColumn item
                 // scope. Visibility driven by ViewModel state so streaming /
@@ -3102,10 +2922,11 @@ fun ChatScreen(
                         toolBlocks = lastToolBlocks,
                         initialIndex = initialIdx,
                         onDismiss = { viewModel.closeToolDetail() },
-                        onOpenTerminalWithCommand = onOpenTerminalWithCommand,
-                        onOpenBrowserForUrl = { url ->
+                        // [P3.3 裁军] 工具详情里的链接改外跳系统浏览器（原
+                        // openBrowserSheetForUrl 内置浏览器 Sheet 退役）。
+                        onOpenUrl = { url ->
                             viewModel.closeToolDetail()
-                            viewModel.openBrowserSheetForUrl(url)
+                            com.openminis.app.ui.components.openExternalUrl(context, url)
                         },
                     )
                 }
@@ -3132,7 +2953,7 @@ fun ChatScreen(
                 // than jumping to the oldest message.
                 if (transcriptViewportReady && messages.isNotEmpty() && !isNearBottom.value && chromeFadeAlpha > 0.01f) {
                     val upBaseBottom = 8.dp
-                    com.openminis.app.ui.novex.NovexFilledIconButton(
+                    novex.android.ui.NovexFilledIconButton(
                         onClick = {
                             coroutineScope.launch { scrollToPreviousUserTurn() }
                         },
@@ -3152,7 +2973,7 @@ fun ChatScreen(
                             // an arrow pointing at a top line reads as "jump to a top
                             // anchor" for the turn-walk, and keeps this button visually
                             // distinct from the down button's plain chevron.
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.VerticalAlignTop,
+                            imageVector = novex.android.ui.NovexIcons.VerticalAlignTop,
                             contentDescription = "Scroll to previous message",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3163,7 +2984,7 @@ fun ChatScreen(
                     contentOverflows.value && messages.isNotEmpty() && chromeFadeAlpha > 0.01f
                 ) {
                     val fabBottomPadding = 8.dp
-                    com.openminis.app.ui.novex.NovexFilledIconButton(
+                    novex.android.ui.NovexFilledIconButton(
                         onClick = {
                             // [T-android-scrollbtn-turn-walk] Jumping to the
                             // bottom resets the up-button's turn-walk (iOS does
@@ -3196,7 +3017,7 @@ fun ChatScreen(
                         ),
                     ) {
                         Icon(
-                            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                            imageVector = novex.android.ui.NovexIcons.KeyboardArrowDown,
                             contentDescription = "Scroll to bottom",
                             modifier = Modifier.size(20.dp),
                         )
@@ -3561,7 +3382,7 @@ fun ChatScreen(
                                             // we keep it uniform here so the row stays
                                             // visually consistent at small sizes on Pixel 4a.
                                             Icon(
-                                                imageVector = com.openminis.app.ui.novex.NovexIcons.Description,
+                                                imageVector = novex.android.ui.NovexIcons.Description,
                                                 contentDescription = null,
                                                 tint = ChatColors.secondaryText,
                                                 modifier = Modifier.size(16.dp),
@@ -3730,7 +3551,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         // [feat/ui-rikkahub] card radius 20 → 24dp + 1dp hairline
-                        // border (RikkaHub input-bar formula: big rounded container
+                        // border (mainstream input-bar formula: big rounded container
                         // with a low-alpha outline over the soft shadow).
                         .drawBehind {
                             val radiusPx = 24.dp.toPx()
@@ -3833,7 +3654,7 @@ fun ChatScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Icon(
-                                            com.openminis.app.ui.novex.NovexIcons.ArrowForward,
+                                            novex.android.ui.NovexIcons.ArrowForward,
                                             contentDescription = null,
                                             modifier = Modifier.size(10.dp),
                                             tint = ChatColors.secondaryText,
@@ -3865,27 +3686,12 @@ fun ChatScreen(
                             horizontalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             items(attachments, key = { it.id }) { attachment ->
-                                // T-pwa-2: long-press menu only appears for
-                                // .html / .htm attachments. The menu lives in
-                                // a Box that anchors to the chip; the sheet
-                                // itself is hosted at screen level (see
-                                // webAppSheetTarget).
-                                val isHtmlAttachment = attachment.fileName
-                                    .substringAfterLast('.', "")
-                                    .lowercase()
-                                    .let { it == "html" || it == "htm" }
-                                var webAppMenuExpanded by remember(attachment.id) { mutableStateOf(false) }
-                                Box {
+                                // [P3.3 裁军] 附件长按的 WebApp「添加到主屏」
+                                // 菜单（webAppMenuExpanded，已被 TODO 停用的
+                                // 死代码）随 webapp/ 整包退役删除。
                                 AttachmentChip(
                                     attachment = attachment,
                                     onRemove = { viewModel.removeAttachment(attachment.id) },
-                                    // TODO(webapp-hidden): long-press opened
-                                    // the WebApp "Add to Home Screen" menu —
-                                    // disabled while entry point is hidden.
-                                    // Re-enable by restoring `if (isHtmlAttachment)`.
-                                    onLongClick = if (false && isHtmlAttachment) {
-                                        { webAppMenuExpanded = true }
-                                    } else null,
                                     onClick = {
                                         // Mirror iOS InputAttachmentTile
                                         // (AIChatView.swift:3699) which
@@ -3968,104 +3774,14 @@ fun ChatScreen(
                                         }
                                     },
                                 )
-                                // TODO(webapp-hidden): WebApp / "Add to Home
-                                // Screen" entry point temporarily hidden —
-                                // feature not yet validated/complete. Re-enable
-                                // by removing `false &&` from the guard below.
-                                if (false && isHtmlAttachment) {
-                                    com.openminis.app.ui.components.MinisMenu(
-                                        expanded = webAppMenuExpanded,
-                                        onDismissRequest = { webAppMenuExpanded = false },
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.webapp_add_to_home)) },
-                                            leadingIcon = {
-                                                Icon(
-                                                    com.openminis.app.ui.novex.NovexIcons.AppShortcut,
-                                                    contentDescription = null,
-                                                )
-                                            },
-                                            onClick = {
-                                                webAppMenuExpanded = false
-                                                webAppSheetTarget = attachment
-                                            },
-                                        )
-                                    }
-                                }
-                                }
                             }
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                     }
 
-                    // While a voice session is active, the TextField is
-                    // replaced by a live waveform + partial-transcription
-                    // preview (matches iOS `inputFieldOrWaveform`). Recognized
-                    // text is already delta-appended into `inputText` by the
-                    // mic button's callback, so when recording ends the field
-                    // shows the full recognized string automatically.
-                    val recSttState by com.openminis.app.speech.SpeechRecognitionManager
-                        .state.collectAsState()
-                    val recIsRecording = recSttState == com.openminis.app.speech.RecognitionState.RECORDING ||
-                        recSttState == com.openminis.app.speech.RecognitionState.STARTING ||
-                        recSttState == com.openminis.app.speech.RecognitionState.FINISHING
-                    // [T-android-voice-panel] Inline voice mode replaces the text
-                    // field with the panel (mirrors iOS inputFieldOrWaveform →
-                    // InlineVoiceInputView). The legacy in-composer waveform
-                    // branch below only serves captures started OUTSIDE the
-                    // panel (none today, kept as a safety net).
-                    if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive) {
-                        com.openminis.app.ui.chat.voice.InlineVoiceInputPanel(
-                            providerRepository = providerRepository,
-                            inputText = inputText,
-                            onInputTextChange = { text ->
-                                viewModel.setInputText(text)
-                                viewModel.updateSlashMenuState(text)
-                            },
-                            ensureMicPermission = { ensureMicPermissionFlow() },
-                            // [T-android-correction-context-wiring] Feed AI
-                            // correction the live conversation context. Reads the
-                            // FULL message list (not the windowed uiMessages) so
-                            // older turns still contribute rare-term grounding;
-                            // evaluated lazily at correction time.
-                            conversationContextProvider = {
-                                com.openminis.app.speech.correction.VoiceCorrection
-                                    .buildConversationContext(context, viewModel.messages.value)
-                            },
-                        )
-                    } else if (recIsRecording) {
-                        val levels by com.openminis.app.speech.SpeechRecognitionManager
-                            .audioLevels.collectAsState()
-                        val partial by com.openminis.app.speech.SpeechRecognitionManager
-                            .recognizedText.collectAsState()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        ) {
-                            AudioWaveformView(
-                                levels = levels,
-                                barColor = Color.Red.copy(alpha = 0.75f),
-                                heightDp = 28,
-                            )
-                            if (partial.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = partial,
-                                    fontSize = 14.sp,
-                                    color = ChatColors.secondaryText,
-                                    maxLines = 2,
-                                )
-                            }
-                        }
-                    } else
-                    // [feat/ui-rikkahub] 胶囊单行：文本区 + 内嵌发送/回传钮；
-                    // +、/、文游、麦克风、上下文计排第二行按钮区。
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
-                    ) {
-                    Box(Modifier.weight(1f)) {
+                    // [P3.3 裁军] 语音会话波形/InlineVoiceInputPanel（语音
+                    // 输入面板整块）随语音全家退役；输入区恒为文本框。
+                    // Text field (iOS: placeholder "Message Minis", no border)
                     run {
                         // [T-android-enter-to-send-broken] Live read of the
                         // "Return key sends" preference. Bound here (not
@@ -4109,7 +3825,6 @@ fun ChatScreen(
                             keyboardController?.hide()
                             focusManager.clearFocus()
                             viewModel.sendMessage(toSend)
-                            noteSendForInputModePref()
                             true
                         }
                         ChatComposerTextField(
@@ -4225,7 +3940,7 @@ fun ChatScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
+                                novex.android.ui.NovexIcons.KeyboardReturn,
                                 contentDescription = "回传主对话",
                                 tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else com.openminis.app.ui.noven.NovenColors.OnMint,
                                 modifier = Modifier.size(20.dp),
@@ -4260,7 +3975,7 @@ fun ChatScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Stop,
+                                novex.android.ui.NovexIcons.Stop,
                                 contentDescription = "Stop",
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp),
@@ -4297,7 +4012,7 @@ fun ChatScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Send,
+                                novex.android.ui.NovexIcons.Send,
                                 contentDescription = "Send",
                                 tint = if (canActivate) com.openminis.app.ui.noven.NovenColors.OnMint
                                 else ChatColors.primaryText.copy(alpha = 0.5f),
@@ -4322,7 +4037,7 @@ fun ChatScreen(
                                 onClick = { showAttachMenu = true },
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Add,
+                                    novex.android.ui.NovexIcons.Add,
                                     contentDescription = "Attach",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(21.dp),
@@ -4335,7 +4050,7 @@ fun ChatScreen(
                                 // iOS parity: Take Photo / Choose Photos & Videos / Add File
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_take_photo)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.CameraAlt, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.CameraAlt, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         val granted = ContextCompat.checkSelfPermission(
@@ -4351,7 +4066,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_choose_photos_videos)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.PhotoLibrary, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.PhotoLibrary, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         mediaPickerLauncher.launch(
@@ -4363,7 +4078,7 @@ fun ChatScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_add_file)) },
-                                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Description, contentDescription = null) },
+                                    leadingIcon = { Icon(novex.android.ui.NovexIcons.Description, contentDescription = null) },
                                     onClick = {
                                         showAttachMenu = false
                                         // OpenMultipleDocuments takes a mime-
@@ -4424,370 +4139,11 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Right: Mic button — only renders when a speech engine
-                        // is actually available on this device (handles the
-                        // AOSP / HarmonyOS / GMS-free case).
-                        val sttAvailable by com.openminis.app.speech.SpeechRecognitionManager
-                            .isAvailable.collectAsState()
-                        val sttState by com.openminis.app.speech.SpeechRecognitionManager
-                            .state.collectAsState()
-                        val sttLocale by com.openminis.app.speech.SpeechRecognitionManager
-                            .locale.collectAsState()
-                        var showLangSheet by remember { mutableStateOf(false) }
-                        // While recording, a tappable 2-letter language pill
-                        // appears to the left of the mic button. Outside a
-                        // session the mic button's own badge stays hidden and
-                        // the pill is not rendered — matches iOS.
-                        if (sttAvailable && !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
-                            (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
-                                sttState == com.openminis.app.speech.RecognitionState.STARTING)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(ChatColors.inputIconBg, CircleShape)
-                                    .border(0.5.dp, ChatColors.inputIconBorder, CircleShape)
-                                    .clip(CircleShape)
-                                    .clickable { showLangSheet = true },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = sttLocale.language.uppercase().take(2),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ChatColors.primaryText,
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        if (showLangSheet) {
-                            SpeechLanguagePickerSheet(onDismiss = { showLangSheet = false })
-                        }
-                        // Extracted so the app-icon "voice chat" quick action
-                        // (DeepLinkCoordinator.ChatAction.START_VOICE) can
-                        // fire the same flow on first compose without
-                        // duplicating the 3-stage permission dance.
-                        val triggerVoiceInput: () -> Unit = lambda@{
-                            // [T-android-voice-panel] The mic button now toggles
-                            // the INLINE VOICE PANEL (mirrors iOS MicButton →
-                            // voiceInputActive). Capture start/stop lives inside
-                            // the panel; this button only enters/exits the mode.
-                            if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive) {
-                                // Exit voice → keyboard. Keep the transcript: the
-                                // composer mirrors it (iOS keyboard-text-carry).
-                                if (com.openminis.app.speech.SpeechRecognitionManager.state.value !=
-                                    com.openminis.app.speech.RecognitionState.IDLE
-                                ) {
-                                    com.openminis.app.speech.SpeechRecognitionManager.stopRecording()
-                                }
-                                com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive = false
-                                ComposerInputModePrefs.save(context, voice = false)
-                                voiceUsedSinceClear = false
-                            } else {
-                                // [T-android-voice-entry-always-available]
-                                // Entering voice mode is an explicit retry — give
-                                // every engine a fresh start so a past transient
-                                // failure (mic was busy, permission since granted,
-                                // provider since configured) doesn't keep the
-                                // feature dead for the rest of the process.
-                                com.openminis.app.speech.SpeechRecognitionManager
-                                    .clearDegradationAndRefresh()
-                                voiceUsedSinceClear = true
-                                com.openminis.app.ui.chat.voice.VoiceModePrefs.enteredFromText = true
-                                com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive = true
-                            }
-                        }
+                        // [P3.3 裁军] 麦克风按钮、语言胶囊、SpeechLanguagePickerSheet、
+                        // voice_chat 快捷动作消费块与「朗读回复」TTS 胶囊（ReadAloudPlayer/
+                        // VoiceOutputState 流式喂入）随语音全家（ASR+TTS）整体退役删除。
+                        Spacer(modifier = Modifier.width(8.dp))
 
-                        // App-icon quick action: when the user launched via
-                        // `minis://action/voice_chat`, auto-fire the mic on
-                        // first compose. Consumed exactly once so re-entering
-                        // the chat later does NOT re-trigger.
-                        //
-                        // [T-android-voice-entry-always-available] Gated on the
-                        // STRUCTURAL check, not the sttAvailable runtime probe.
-                        // The probe is false on ROMs without a system speech
-                        // service (ColorOS et al.), which made this shortcut a
-                        // silent no-op there — while the mic button itself had
-                        // already moved to hasMicrophoneHardware. Entering the
-                        // panel without a live engine is fine: the panel owns
-                        // the "no engine → here's how to configure one" story.
-                        LaunchedEffect(Unit) {
-                            if (!com.openminis.app.speech.SpeechRecognitionManager
-                                    .hasMicrophoneHardware
-                            ) {
-                                return@LaunchedEffect
-                            }
-                            val pending = com.openminis.app.deeplink.DeepLinkCoordinator
-                                .pendingChatAction.value
-                            if (pending == com.openminis.app.deeplink.DeepLinkCoordinator
-                                    .ChatAction.START_VOICE
-                            ) {
-                                com.openminis.app.deeplink.DeepLinkCoordinator
-                                    .consumePendingChatAction()
-                                triggerVoiceInput()
-                            }
-                        }
-
-                        // [T-android-remove-auto-enter-voice] Auto-enter-voice on
-                        // cold launch / new chat removed (was ec95451a). The
-                        // composer now always starts in text mode; voice is only
-                        // entered when the user taps the mic button below.
-                        // [T-android-voice-panel] "Read replies" TTS toggle —
-                        // shown only while the voice panel is active (mirrors
-                        // iOS readAloudToolbarToggle, 2-state on Android).
-                        // [T-android-edit-readreplies-hide] Hidden while message
-                        // edit mode is active: the Exit-Edit pill lives in the
-                        // same bottom row, and both capsules plus their spacers
-                        // overflow the constrained width and render overlapped
-                        // (iOS af9f3d3e parity).
-                        if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive && editingId == null) {
-                            // [T-android-tts-capsule] Source of truth is the
-                            // GLOBAL VoiceOutputState (same "readReplies" pref
-                            // key as before), shared with the floating
-                            // speech-player capsule — so the pill reflects the
-                            // capsule's mute/close actions too. Mirrors iOS
-                            // readAloudToolbarToggle's three states:
-                            //   active → muted → off → active …
-                            LaunchedEffect(Unit) {
-                                com.openminis.app.speech.VoiceOutputState.init(context)
-                            }
-                            val ttsEnabled by com.openminis.app.speech.VoiceOutputState
-                                .isEnabled.collectAsState()
-                            val ttsMuted by com.openminis.app.speech.VoiceOutputState
-                                .isMuted.collectAsState()
-                            val readReplies = ttsEnabled && !ttsMuted
-                            // [T-android-provider-tts-readaloud] Routes each
-                            // utterance through the resolved Voice Output
-                            // selection (provider TTS, system engine as
-                            // fallback) instead of always using the on-device
-                            // engine, and sanitizes Markdown before speaking.
-                            val replyTts = remember {
-                                com.openminis.app.speech.ReadAloudPlayer(context)
-                            }
-                            // The previous bare TextToSpeechManager() was never
-                            // shut down, leaking an engine binding on every
-                            // entry into the voice panel.
-                            DisposableEffect(replyTts) {
-                                onDispose { replyTts.shutdown() }
-                            }
-                            // [T-android-read-replies-pill-metrics] Sizing mirrors
-                            // iOS readAloudToolbarToggle: 10/6 padding around a
-                            // 5pt-spaced icon+label, on a capsule that HUGS its
-                            // content (iOS pins it with .fixedSize()).
-                            //
-                            // Two Compose-specific corrections are needed to land
-                            // on the same result:
-                            //  • wrapContentWidth() + centered arrangement — this
-                            //    pill sits between weight(1f) spacers, so without
-                            //    hugging it absorbs slack and the un-arranged Row
-                            //    packed icon+text against the start edge, which is
-                            //    what read as "not horizontally centered".
-                            //  • the label's line height is pinned to the font size
-                            //    and its font padding disabled. Compose Text
-                            //    otherwise reserves the font's full ascent/descent
-                            //    leading on top of the 6dp padding, making the pill
-                            //    visibly taller than iOS's for the same numbers.
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier
-                                    .wrapContentWidth()
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        if (ttsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                        else ChatColors.secondaryText.copy(alpha = 0.10f),
-                                    )
-                                    .clickable {
-                                        // iOS tap-cycle (readAloudToolbarToggle):
-                                        // active → mute (capsule stays visible);
-                                        // muted → fully off (capsule hides);
-                                        // off → on, un-muted.
-                                        val s = com.openminis.app.speech.VoiceOutputState
-                                        when {
-                                            ttsEnabled && !ttsMuted -> s.setMuted(true)
-                                            ttsEnabled && ttsMuted -> s.setEnabled(false)
-                                            else -> { s.setMuted(false); s.setEnabled(true) }
-                                        }
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                            ) {
-                                Icon(
-                                    if (readReplies) com.openminis.app.ui.novex.NovexIcons.VolumeUp else com.openminis.app.ui.novex.NovexIcons.VolumeOff,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    stringResource(R.string.voice_panel_read_replies),
-                                    // Metrics live IN the style, not as separate
-                                    // Text parameters: passing `style =` replaces
-                                    // the merged style, so a lineHeight given
-                                    // alongside it can be lost.
-                                    //
-                                    // includeFontPadding=false drops the font's
-                                    // ascent/descent slack that Compose otherwise
-                                    // adds on top of the 6dp padding — that slack
-                                    // was what made the pill overshoot its
-                                    // siblings. lineHeight is pinned to 1.25× the
-                                    // font size (a normal text leading) and
-                                    // centered, so the label occupies a
-                                    // predictable box and the 6dp padding reads
-                                    // evenly above and below.
-                                    style = LocalTextStyle.current.copy(
-                                        fontSize = 13.sp,
-                                        lineHeight = 16.25.sp,
-                                        platformStyle = PlatformTextStyle(includeFontPadding = false),
-                                        lineHeightStyle = LineHeightStyle(
-                                            alignment = LineHeightStyle.Alignment.Center,
-                                            trim = LineHeightStyle.Trim.None,
-                                        ),
-                                    ),
-                                    color = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
-                                )
-                            }
-                            // [T-android-streaming-readaloud] Speak the reply AS
-                            // IT STREAMS. Previously this waited for isStreaming
-                            // to flip false and then spoke the whole finished
-                            // message, so the user heard nothing until
-                            // generation completed — while the sentence-splitting
-                            // machinery built for exactly this sat uncalled.
-                            //
-                            // Now each new chunk of the in-flight assistant
-                            // message is fed to the player, which emits complete
-                            // sentences immediately and flushes the tail at
-                            // stream end (mirrors iOS feedDynamicTTS).
-                            //
-                            // `spokenUpTo` tracks how much of the current
-                            // message has been handed over, so a recomposition
-                            // mid-stream doesn't re-speak the prefix. It resets
-                            // whenever the target message identity changes.
-                            val lastAssistant = messages.lastOrNull { it.role == "assistant" }
-                            val lastAssistantId = lastAssistant?.id
-                            var spokenUpTo by remember(lastAssistantId) { mutableStateOf(0) }
-                            // [T-android-readreplies-sidechannel] Feed the TTS
-                            // from the STREAMING SIDE-CHANNEL, not the messages
-                            // list. The previous effect keyed on
-                            // `lastAssistant?.content` — but under
-                            // T-streaming-side-channel the canonical list stays
-                            // STATIC during a turn (per-token text rides
-                            // streamingById; messages is only rewritten at turn
-                            // end). So the effect fired exactly twice per turn:
-                            //  1. Turn start (empty placeholder): fell through
-                            //     the guard, marked lastSpokenAssistantKey, had
-                            //     no text to feed — spokenUpTo stayed 0.
-                            //  2. Turn end (final content lands): spokenUpTo was
-                            //     still 0, and the key it now compared against
-                            //     was the one IT marked in step 1 —
-                            //     alreadySeen=true, whole message suppressed.
-                            // Net effect: TTS engines bound and initialized on
-                            // every panel entry and speak() was never called
-                            // once — minis-2026-08-16.log has 5 "suppressed"
-                            // lines, 0 "feeding" lines, which is exactly the
-                            // reported "朗读回复开了但没有任何声音". The
-                            // self-poisoning also explains the paradoxical
-                            // `alreadySeen=true streaming=true` entries.
-                            //
-                            // Keys are (id, toggle) ONLY — the effect survives
-                            // the whole turn and collects live deltas inside,
-                            // so the history guard runs once per message
-                            // identity and can no longer poison itself.
-                            LaunchedEffect(lastAssistantId, readReplies) {
-                                if (!readReplies || lastAssistantId == null) return@LaunchedEffect
-                                val key = lastAssistantId.hashCode()
-                                val alreadySeen = com.openminis.app.ui.chat.voice.VoiceModePrefs
-                                    .lastSpokenAssistantKey == key
-                                val liveAtEntry =
-                                    viewModel.streamingById.value.containsKey(lastAssistantId)
-                                // History on entry must not be read aloud: only
-                                // a message that is live right now (or mid-turn
-                                // awaiting its first token) is followed.
-                                if (alreadySeen || (!viewModel.isStreaming.value && !liveAtEntry)) {
-                                    android.util.Log.i(
-                                        "ReadReplies",
-                                        "suppressed: alreadySeen=$alreadySeen " +
-                                            "streamingNow=${viewModel.isStreaming.value} " +
-                                            "(history is never spoken)",
-                                    )
-                                    com.openminis.app.ui.chat.voice.VoiceModePrefs
-                                        .lastSpokenAssistantKey = key
-                                    return@LaunchedEffect
-                                }
-                                com.openminis.app.ui.chat.voice.VoiceModePrefs
-                                    .lastSpokenAssistantKey = key
-                                // [T-android-tts-scope-align] New reply → stop
-                                // the PREVIOUS reply's still-playing speech and
-                                // drop its queue, exactly once per followed
-                                // message. iOS does this on the first text delta
-                                // of a turn (hasClearedTTSForCurrentTurn +
-                                // stopSpeechForThisSession); without it the old
-                                // reply keeps talking and the new one queues
-                                // BEHIND it, minutes late on long replies.
-                                replyTts.stop()
-                                // Read the same formal-answer projection as copy and selection.
-                                kotlinx.coroutines.flow.combine(
-                                    viewModel.streamingById,
-                                    viewModel.isStreaming,
-                                    viewModel.messages,
-                                ) { stream, streamingNow, history ->
-                                    val live = stream[lastAssistantId]
-                                    val saved = history.lastOrNull { it.id == lastAssistantId }
-                                    Triple(
-                                        if (live != null) formalAssistantText(live.toolBlocks, live.content)
-                                        else saved?.let { formalAssistantText(it.toolBlocks, it.content) }.orEmpty(),
-                                        streamingNow,
-                                        live != null,
-                                    )
-                                }.collect { (text, streamingNow, live) ->
-                                    if (text.length > spokenUpTo) {
-                                        // [T-android-tts-diag] Kept: a field log
-                                        // must show WHY nothing spoke (or that
-                                        // feeding did happen and the fault is
-                                        // further down, in the player/engine).
-                                        android.util.Log.i(
-                                            "ReadReplies",
-                                            "feeding tts +${text.length - spokenUpTo} chars " +
-                                                "(total=${text.length}) live=$live " +
-                                                "streaming=$streamingNow",
-                                        )
-                                        replyTts.appendText(text.substring(spokenUpTo))
-                                        spokenUpTo = text.length
-                                    }
-                                    // Stream over and side-channel drained —
-                                    // flush the trailing fragment that never got
-                                    // a sentence terminator.
-                                    if (!streamingNow && !live) replyTts.flush()
-                                }
-                            }
-                            // [T-android-read-replies-pill-metrics] Balancing
-                            // spacer. There is a weight(1f) spacer BEFORE the
-                            // pill but the trailing side only had a fixed 8dp,
-                            // so all the row's slack collected on the left and
-                            // pushed the pill right of the bar's centre (measured
-                            // +59px on a 1080px screen). Matching weights on both
-                            // sides centre it between the leading (+, /) and
-                            // trailing (keyboard, mic/send) button groups.
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-
-                        // [T-android-voice-entry-always-available] The voice /
-                        // keyboard toggle is ALWAYS shown. It used to be gated on
-                        // `sttAvailable`, a runtime probe — so when the active
-                        // engine degraded mid-session the button disappeared while
-                        // `isVoiceActive` stayed true, leaving the user inside the
-                        // voice panel with no way back to the keyboard (the toggle
-                        // IS this button). Gating an escape hatch on the health of
-                        // the thing you're escaping from is the bug.
-                        //
-                        // Existence now depends only on a structural fact —
-                        // microphone hardware. "No speech service", "engine
-                        // degraded" and "no ASR provider configured" are all
-                        // RECOVERABLE states, explained inside the panel with a
-                        // link to the relevant settings rather than by silently
-                        // removing the control.
-                        // [A2c-meter] 额度环收成 20dp 纯三环（上限底环/启用
-                        // 弧/已用墨弧），点按切换百分比——信息量配不上大圆钮，
-                        // 但三层额度语义必须保留（否则用户不知道为何上下文短）。
                         if (showContextMeter) {
                             NovexContextMeter(
                                 usedTokens = lastTurnContextTokens,
@@ -4800,11 +4156,106 @@ fun ChatScreen(
                             )
                         }
 
+                        // 侧边页回传（决策 16/17；状态机 2026-09-15 下沉 ViewModel）：
+                        // 符号入口——让侧边模型产出增量交接简报并并入主线；
+                        // 全程反馈见输入栏上方的回传状态条。
+                        val handoffRunning = sideHandoffState is ChatViewModel.SideHandoffState.Running
+                        if (sideParentId != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(
+                                        if (handoffRunning) ChatColors.sendButtonDisabled else ChatColors.sendButton,
+                                        CircleShape,
+                                    )
+                                    .clip(CircleShape)
+                                    .clickable(enabled = !handoffRunning && !isStreaming) { startHandoff() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    novex.android.ui.NovexIcons.KeyboardReturn,
+                                    contentDescription = "回传主对话",
+                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+
+                        // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
+                        //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
+                        //     which dispatches to enqueuePrompt since _isStreaming is true).
+                        //     Visual feedback for the queued prompt comes from the dashed
+                        //     bubble that ChatViewModel.enqueuePrompt appends to the message
+                        //     list — no extra button badge needed (matches iOS).
+                        //   • streaming + !hasText → STOP (cancel current run).
+                        //   • !streaming           → SEND (full color when hasText, dimmed
+                        //     when empty; same as before).
+                        // T180: an attachments-only send (no caption) is a
+                        // valid message — mirrors iOS where !attachments.isEmpty
+                        // satisfies the composer's send guard. Without this an
+                        // image-only "look at this" send is impossible.
+                        val hasText = inputText.isNotBlank()
+                        val hasContent = hasText || attachments.isNotEmpty()
+                        val showStop = isStreaming && !hasContent
+                        if (showStop) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(Color(0xFFFF3B30), CircleShape)
+                                    .clip(CircleShape)
+                                    .clickable { viewModel.cancelStream() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    novex.android.ui.NovexIcons.Stop,
+                                    contentDescription = "Stop",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        } else {
+                            // Streaming with content → Send-into-queue; Idle with content → Send.
+                            // Idle without text or attachments → disabled.
+                            val canActivate = hasContent
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(
+                                        if (canActivate) ChatColors.sendButton
+                                        else ChatColors.sendButtonDisabled,
+                                        CircleShape,
+                                    )
+                                    .clip(CircleShape)
+                                    // [T-longpress-stop] 2026-09-16 用户批④：生成中
+                                    // 长按发送键=立即打断（不用去够停止键）；平时行为不变。
+                                    .combinedClickable(
+                                        enabled = canActivate || isStreaming,
+                                        onLongClick = {
+                                            if (isStreaming) {
+                                                viewModel.cancelStream()
+                                            }
+                                        },
+                                        // T-drag-send-queue: 点击走共享 send-or-enqueue
+                                        // 处理器（斜杠短路、快照文本、清输入，发送中入队）。
+                                        onClick = { performSendOrEnqueue(inputText) },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    novex.android.ui.NovexIcons.ArrowUpward,
+                                    contentDescription = "Send",
+                                    tint = if (canActivate) ChatColors.background
+                                    else ChatColors.primaryText.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
                         // [A2c-expand] 全屏编写入口——长文输入是创作产品的常态，
                         // 价值高于常驻的额度环。
                         ComposerGlyphButton(onClick = { showComposerExpanded = true }) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Fullscreen,
+                                novex.android.ui.NovexIcons.Fullscreen,
                                 contentDescription = "展开输入",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(19.dp),
@@ -4892,7 +4343,7 @@ fun ChatScreen(
                             ) {
                                 IconButton(onClick = { showComposerExpanded = false }) {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.Close,
+                                        novex.android.ui.NovexIcons.Close,
                                         contentDescription = "关闭",
                                         tint = ChatColors.primaryText,
                                     )
@@ -4905,7 +4356,7 @@ fun ChatScreen(
                                     color = ChatColors.primaryText,
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
-                                com.openminis.app.ui.novex.TextButton(
+                                novex.android.ui.TextButton(
                                     onClick = { showComposerExpanded = false },
                                     colors = ButtonDefaults.textButtonColors(
                                         contentColor = com.openminis.app.ui.noven.NovenColors.Mint,
@@ -4996,21 +4447,21 @@ fun ChatScreen(
             }
 
             if (showConversationRecords) {
-                com.openminis.app.ui.novex.NovexSelectionSheet(
+                novex.android.ui.NovexSelectionSheet(
                     title = "资料与存档",
                     onDismissRequest = { showConversationRecords = false },
                     actions = listOf(
                         // 「本对话成果」而非「本对话文件」——进的是创作件库，
                         // 与会话设置里「对话空间」的原始文件浏览器拉开语义。
-                        com.openminis.app.ui.novex.NovexSelectionAction("本对话成果") {
+                        novex.android.ui.NovexSelectionAction("本对话成果") {
                             showConversationRecords = false
                             viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
                         },
-                        com.openminis.app.ui.novex.NovexSelectionAction("资料整理进度") {
+                        novex.android.ui.NovexSelectionAction("资料整理进度") {
                             showConversationRecords = false
                             viewModel.showNovexLearningCollections()
                         },
-                        com.openminis.app.ui.novex.NovexSelectionAction("文游存档") {
+                        novex.android.ui.NovexSelectionAction("文游存档") {
                             showConversationRecords = false
                             viewModel.showNovexCheckpoints()
                         },
@@ -5118,13 +4569,8 @@ fun ChatScreen(
         }
     }
 
-    // Browser bottom sheet
-    if (showBrowserSheet) {
-        BrowserSheet(
-            tabPool = viewModel.browserTabPool,
-            onDismiss = { viewModel.dismissBrowserSheet() },
-        )
-    }
+    // [P3.3 裁军] 内置浏览器底部 Sheet（BrowserSheet/BrowserTabPool）随
+    // browser/ + ui/browser/ 整包退役删除。
 
     // Memory bottom sheet
     if (showMemorySheet && memoryRepository != null) {
@@ -5146,14 +4592,7 @@ fun ChatScreen(
         )
     }
 
-    // [T-mcp-integration-android] MCPs-in-Session sheet.
-    if (showMcpsSheet && mcpRepository != null) {
-        SessionMcpsSheet(
-            mcpRepository = mcpRepository,
-            sessionId = sessionId,
-            onDismiss = { showMcpsSheet = false },
-        )
-    }
+    // [P3.3 裁军] SessionMcpsSheet 渲染块随 MCP 集成面退役删除。
 
     // [T-android-thinking-badge-navbar] Thinking-level sheet opened by tapping
     // the navbar thinking badge. Mirrors iOS ThinkingLevelSheetView: an Off row
@@ -5174,17 +4613,17 @@ fun ChatScreen(
     // Model Picker bottom sheet
     val modelSetupRequired by viewModel.modelSetupRequired.collectAsState()
     if (modelSetupRequired) {
-        com.openminis.app.ui.novex.NovexContentDialog(
+        novex.android.ui.NovexContentDialog(
             title = "连接模型后再发送",
             onDismiss = viewModel::dismissModelSetup,
             confirmButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = {
+                novex.android.ui.TextButton(onClick = {
                     viewModel.dismissModelSetup()
                     onSettings()
                 }) { Text("连接模型") }
             },
             dismissButton = {
-                com.openminis.app.ui.novex.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
+                novex.android.ui.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
             },
         ) { Text("先在设置中连接一个可用模型。当前文字和附件会留在输入框中，不会自动发送。") }
     }
@@ -5208,8 +4647,7 @@ fun ChatScreen(
         )
     }
 
-    // Offload permission dialog
-    OffloadPermissionDialog()
+    // [P3.3 裁军] OffloadPermissionDialog 随 offload/ 退役删除。
 
     pendingNovexLearningPreflight?.let { preflight ->
         val scope = NovexLearningControlPolicy.preflightMessage(preflight)
@@ -5237,7 +4675,7 @@ fun ChatScreen(
         NovexNoticeDialog(title = "最近一次模型返回", message = message,
             onDismiss = viewModel::closeNovexLearningResponsePreview)
     }
-    novexConversationExport?.let { com.openminis.app.ui.novex.NovexConversationExportDialog(it,
+    novexConversationExport?.let { novex.android.ui.NovexConversationExportDialog(it,
         viewModel::closeNovexConversationExport, viewModel::prepareNovexConversationExport) }
     novexCheckpoints?.let { NovexCheckpointDetails(it, viewModel::closeNovexCheckpoints) }
     if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
@@ -5258,8 +4696,8 @@ fun ChatScreen(
         novexLearningCollections?.let { states ->
             if (states.isEmpty()) NovexNoticeDialog("资料整理", "本分支尚无已导入资料集。添加文档后可在这里查看整理记录。",
                 viewModel::closeNovexLearningDetails)
-            else com.openminis.app.ui.novex.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
-                com.openminis.app.ui.novex.NovexSelectionAction(state.collection.title,
+            else novex.android.ui.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
+                novex.android.ui.NovexSelectionAction(state.collection.title,
                     description = "已整理 ${state.reviewLedger.reviewedBlocks} / ${state.reviewLedger.totalReadableBlocks} 个可读块") {
                     viewModel.selectNovexLearningCollection(state.collection.ref)
                 }
@@ -5330,47 +4768,9 @@ fun ChatScreen(
         }
     }
 
-    // URL preview sheet — shown when a markdown link is tapped
-    previewUrl?.let { url ->
-        com.openminis.app.ui.components.UrlPreviewSheet(
-            url = url,
-            onDismiss = { previewUrl = null },
-        )
-    }
-
-    // T146: immersive HTML preview — bottom sheet (90% height) by default,
-    // with a Fullscreen button that swaps to a Dialog-based fullscreen
-    // surface using the SAME WebViewHolder so the page never reloads.
-    htmlPreviewHolder?.let { holder ->
-        val onFullDismiss = {
-            holder.destroy()
-            htmlPreviewHolder = null
-            htmlPreviewFallbackTitle = ""
-            htmlPreviewFullscreen = false
-        }
-        if (htmlPreviewFullscreen) {
-            com.openminis.app.ui.preview.WebPreviewFullscreenScreen(
-                holder = holder,
-                fallbackTitle = htmlPreviewFallbackTitle,
-                onCollapseToSheet = {
-                    holder.detach()
-                    htmlPreviewFullscreen = false
-                },
-                onDismiss = onFullDismiss,
-            )
-        } else {
-            com.openminis.app.ui.preview.WebPreviewBottomSheet(
-                holder = holder,
-                fallbackTitle = htmlPreviewFallbackTitle,
-                pinSessionId = sessionId,
-                onExpandFullscreen = {
-                    holder.detach()
-                    htmlPreviewFullscreen = true
-                },
-                onDismiss = onFullDismiss,
-            )
-        }
-    }
+    // [P3.3 裁军] UrlPreviewSheet（内预览）与 WebPreview 沉浸式 HTML 预览
+    // （WebPreviewBottomSheet/WebPreviewFullscreenScreen/WebViewHolder）随
+    // 内置浏览器全家退役删除；链接点击已在 urlClickHandler 收口外跳。
 
     // T279: sandbox file preview is now routed through the NavHost
     // FILE_PREVIEW destination via onPreviewAttachment (see line ~1103),
@@ -5392,31 +4792,9 @@ fun ChatScreen(
         )
     }
 
-    // Fullscreen video player — tapped video link (mp4/mov/m4v/…) from chat
-    // markdown. Reuses the same dialog player as the markdown-rendered
-    // ![](minis://...) syntax so behaviour is consistent regardless of how
-    // the LLM emitted the reference.
-    previewVideoFile?.let { file ->
-        com.openminis.app.ui.media.MinisFullscreenVideoPlayer(
-            file = file,
-            onDismiss = { previewVideoFile = null },
-        )
-    }
-
-    // T-pwa-2: Add-to-Home-Screen sheet, hosted at screen level so it can
-    // outlive the chip that triggered it (the chip Box may scroll out of
-    // composition while the sheet is up).
-    webAppSheetTarget?.let { target ->
-        com.openminis.app.webapp.AddToHomeSheet(
-            source = com.openminis.app.webapp.WebAppSource.ChatAttachment(
-                uri = target.uri,
-                fileName = target.fileName,
-                sessionId = sessionId,
-                sessionTitle = null,
-            ),
-            onDismiss = { webAppSheetTarget = null },
-        )
-    }
+    // [P3.3 裁军] 视频全屏内嵌播放器（MinisFullscreenVideoPlayer）与
+    // WebApp「添加到主屏」Sheet（AddToHomeSheet）随对应体系退役删除；
+    // 视频链接改经 openMediaFileExternally 外跳系统播放器。
     } // CompositionLocalProvider
 }
 

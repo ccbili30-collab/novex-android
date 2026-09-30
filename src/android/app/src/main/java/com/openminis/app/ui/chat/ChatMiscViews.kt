@@ -85,8 +85,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -185,24 +185,22 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
 
@@ -469,10 +467,10 @@ internal fun FallbackInfoBlock(
         // Compress squeeze. Other system rows (legacy compact notices that
         // pre-date the dedicated compactor) keep the squeeze for backward
         // visual continuity if any old sessions still hold them.
-        "compact" -> com.openminis.app.ui.novex.NovexIcons.CloseFullscreen
-        "memory" -> com.openminis.app.ui.novex.NovexIcons.Psychology
-        "thinking" -> com.openminis.app.ui.novex.NovexIcons.Lightbulb
-        else -> com.openminis.app.ui.novex.NovexIcons.Info
+        "compact" -> novex.android.ui.NovexIcons.CloseFullscreen
+        "memory" -> novex.android.ui.NovexIcons.Psychology
+        "thinking" -> novex.android.ui.NovexIcons.Lightbulb
+        else -> novex.android.ui.NovexIcons.Info
     }
     // Mirrors iOS systemDividerRow: HStack { Divider, label, Divider }.
     // Implemented via SubcomposeLayout so the centered label can be measured
@@ -538,7 +536,7 @@ internal fun FallbackInfoBlock(
                 )
                 if (hasDetail) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Info,
+                        imageVector = novex.android.ui.NovexIcons.Info,
                         contentDescription = "Show full summary",
                         tint = fg,
                         modifier = Modifier
@@ -549,9 +547,9 @@ internal fun FallbackInfoBlock(
                 if (compactedHistoryExpanded != null) {
                     Icon(
                         imageVector = if (compactedHistoryExpanded) {
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp
+                            novex.android.ui.NovexIcons.KeyboardArrowUp
                         } else {
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown
+                            novex.android.ui.NovexIcons.KeyboardArrowDown
                         },
                         contentDescription = if (compactedHistoryExpanded) {
                             "折叠已压缩对话"
@@ -633,7 +631,7 @@ private fun CompactSummarySheet(
                 }
             }) {
                 Icon(
-                    imageVector = if (copied) com.openminis.app.ui.novex.NovexIcons.Check else com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                    imageVector = if (copied) novex.android.ui.NovexIcons.Check else novex.android.ui.NovexIcons.ContentCopy,
                     contentDescription = "Copy",
                     tint = if (copied) Color(0xFF34C759) else ChatColors.secondaryText,
                 )
@@ -661,7 +659,7 @@ private fun CompactSummarySheet(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 ) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        imageVector = novex.android.ui.NovexIcons.Refresh,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(18.dp),
@@ -802,52 +800,10 @@ private fun parseInlineMarkdown(
     }
 }
 
-// ─── Browser live-preview plumbing ──────────────────────────────────────────
-//
-// Mirrors iOS `takeBrowserSnapshot()` timer (ToolLiveSheet.swift:1803-1825):
-// while a browser_use block is RUNNING/STREAMING, poll the active WebView at
-// a fixed interval so the Minis Computer sheet, detail sheet, and floating
-// thumbnail can show the current page state — not just screenshots saved by
-// visualChangeActions (NAVIGATE/CLICK/SCROLL/HOVER/TYPE). Actions like
-// get_readable, get_text, execute_js, fetch never save an imageFilePath, so
-// without this they'd render a blank/globe placeholder.
-
-// [T-android-split-chat] internal (was private) — referenced from ChatScreen.kt
-// after the move.
-internal val LocalBrowserTabPool = compositionLocalOf<com.openminis.app.browser.BrowserTabPool?> { null }
+// [P3.3 裁军] Browser live-preview plumbing（LocalBrowserTabPool +
+// rememberBrowserLiveSnapshot，browser_use 运行中轮询 WebView 快照）随
+// 内置浏览器全家退役删除。LocalToolPreviewEnabled 保留（工具预览开关）。
 internal val LocalToolPreviewEnabled = compositionLocalOf { true }
-
-@Composable
-internal fun rememberBrowserLiveSnapshot(
-    block: AssistantBlock,
-    intervalMs: Long = 3000L,
-): android.graphics.Bitmap? {
-    if (block.toolName != "browser_use") return null
-    val isLive = block.toolStatus == ToolBlockStatus.RUNNING ||
-        block.toolStatus == ToolBlockStatus.STREAMING ||
-        block.toolStatus == ToolBlockStatus.PENDING
-    // Only live blocks poll the WebView. Completed blocks fall through to
-    // their own saved imageFilePath — capturing the active WebView for a
-    // completed block would bleed the latest navigation's frame across all
-    // earlier completed blocks (iOS parity: ToolLiveSheet resets
-    // browserSnapshot on imageFilePath change, achieving the same result).
-    if (!isLive) return null
-    val tabPool = LocalBrowserTabPool.current ?: return null
-    val snapshot by produceState<android.graphics.Bitmap?>(
-        initialValue = null,
-        block.id,
-        tabPool,
-    ) {
-        val first = tabPool.activeManager?.captureLiveSnapshot()
-        if (first != null) value = first
-        while (true) {
-            kotlinx.coroutines.delay(intervalMs)
-            val next = tabPool.activeManager?.captureLiveSnapshot() ?: continue
-            value = next
-        }
-    }
-    return snapshot
-}
 
 /**
  * Resume banner shown at the visual bottom of the message list when an
@@ -888,7 +844,7 @@ internal fun ResumeBanner(onResume: () -> Unit) {
             modifier = Modifier.weight(1f),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+                imageVector = novex.android.ui.NovexIcons.PlayArrow,
                 contentDescription = null,
                 tint = orange,
                 modifier = Modifier.size(12.dp),
@@ -913,7 +869,7 @@ internal fun ResumeBanner(onResume: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+                imageVector = novex.android.ui.NovexIcons.PlayArrow,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(10.dp),
@@ -995,7 +951,7 @@ internal fun SwipeToSendHint(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
+                imageVector = novex.android.ui.NovexIcons.ArrowUpward,
                 contentDescription = null,
                 tint = chipFg,
                 modifier = Modifier.size(18.dp),

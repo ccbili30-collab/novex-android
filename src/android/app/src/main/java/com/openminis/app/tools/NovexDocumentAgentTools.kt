@@ -1,20 +1,20 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.novex.domain.NovexDocumentSnapshotStore
-import com.openminis.app.novex.domain.NovexDocumentToolRouter
-import com.openminis.app.novex.domain.NovexDocumentTools
-import com.openminis.app.novex.domain.NovexToolCapability
+import novex.android.data.model.AgentToolDefinition
+import novex.core.NovexDocumentSnapshotStore
+import novex.core.NovexDocumentToolRouter
+import novex.core.NovexDocumentTools
+import novex.core.NovexToolCapability
 
 /** Thin provider adapter around the Novex-owned document tool contract. */
 class NovexDocumentAgentTools(
     snapshots: NovexDocumentSnapshotStore,
-    isAllowed: (com.openminis.app.novex.domain.NovexResourceRef) -> Boolean,
+    isAllowed: (novex.core.NovexResourceRef) -> Boolean,
 ) {
     private val scopedSnapshots = object : NovexDocumentSnapshotStore {
-        override fun find(requested: com.openminis.app.novex.domain.NovexResourceRef) =
+        override fun find(requested: novex.core.NovexResourceRef) =
             if (isAllowed(requested)) snapshots.find(requested) else null
-        override fun findRevision(requested: com.openminis.app.novex.domain.NovexResourceRef, revision: String) =
+        override fun findRevision(requested: novex.core.NovexResourceRef, revision: String) =
             if (isAllowed(requested)) snapshots.findRevision(requested, revision) else null
     }
     private val router = NovexDocumentToolRouter(NovexDocumentTools(scopedSnapshots))

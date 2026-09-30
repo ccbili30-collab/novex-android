@@ -2,60 +2,33 @@ package com.openminis.app
 
 import android.app.Activity
 import android.app.Application
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
-import com.openminis.app.data.MountedFoldersStore
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.data.repository.WebAppShortcutRepository
-import com.openminis.app.data.repository.MCPRepository
 import com.openminis.app.data.repository.SkillRepository
 import com.openminis.app.notification.BackgroundTaskNotifier
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.network.NetworkMonitor
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.provider.ModelsDevApi
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.sandbox.MountedFolderCoordinator
-import com.openminis.app.sandbox.NativeOffloadServer
-import com.openminis.app.sandbox.PRootKernel
-import com.openminis.app.sandbox.RootfsManager
-import com.openminis.app.sandbox.offload.AccessibilityOffloadHandler
-import com.openminis.app.sandbox.offload.AlarmOffloadHandler
-import com.openminis.app.sandbox.offload.BrowserUseOffloadHandler
-import com.openminis.app.sandbox.offload.CalendarOffloadHandler
-import com.openminis.app.sandbox.offload.ClipboardOffloadHandler
-import com.openminis.app.sandbox.offload.ContactsOffloadHandler
-import com.openminis.app.sandbox.offload.DeviceOffloadHandler
-import com.openminis.app.sandbox.offload.LocationOffloadHandler
-import com.openminis.app.sandbox.offload.ModelUseOffloadHandler
-import com.openminis.app.sandbox.offload.SessionsOffloadHandler
-import com.openminis.app.sandbox.offload.ShizukuOffloadHandler
-import com.openminis.app.sandbox.offload.NotificationOffloadHandler
-import com.openminis.app.sandbox.offload.OpenOffloadHandler
-import com.openminis.app.sandbox.offload.PhotosOffloadHandler
-import com.openminis.app.sandbox.offload.PlayerOffloadHandler
-import com.openminis.app.sandbox.offload.SpeakOffloadHandler
-import com.openminis.app.sandbox.offload.SpeechOffloadHandler
-import com.openminis.app.sandbox.offload.WeatherOffloadHandler
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.startup.NovexStartupCoordinator
 import com.openminis.app.startup.NovexCrashBootstrap
 import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.ui.MinisImageFetcher
 import kotlinx.coroutines.launch
+
+/** [P3.4 净眼] 一次性旧 alarm 清扫的完成标志键（minis_maintenance_prefs）。 */
+private const val KEY_RETIRED_ALARM_SWEEP_DONE = "retired_alarm_sweep_done_v1"
 
 class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProvider {
     override fun prepareCardImport(store:novex.storage.CardStore,input:java.io.InputStream,name:String,kind:novex.content.CardKind):novex.storage.CardDraft =
@@ -142,17 +115,17 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
      */
     fun subsystemsReady(): Boolean = subsystemsInitialized
 
-    lateinit var database: AppDatabase
+    lateinit var database: NovexMainDatabase
         private set
-    lateinit var novexWorkspace: com.openminis.app.novex.domain.NovexWorkspace
+    lateinit var novexWorkspace: novex.core.NovexWorkspace
         private set
-    val novexWorkGroups: com.openminis.app.novex.domain.NovexWorkGroups by lazy {
+    val novexWorkGroups: novex.core.NovexWorkGroups by lazy {
         com.openminis.app.data.creative.RoomNovexWorkGroups(database) { address ->
             com.openminis.app.cards.IntegratedCatalog(this).contains(address)
         }
     }
     val novexSnapshotMediaStore by lazy {
-        com.openminis.app.novex.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
+        novex.android.adapter.NovexSnapshotMediaStore(java.io.File(filesDir, "novex/adopted-media"))
     }
     lateinit var creativeArtifactRepository: com.openminis.app.data.creative.CreativeArtifactRepository
         private set
@@ -161,18 +134,18 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     lateinit var chatRepository: ChatRepository
         private set
     val conversationWorkspaceStore by lazy {
-        com.openminis.app.novex.domain.FileNovexConversationWorkspaceStore(java.io.File(filesDir, "novex/conversation-workspaces"))
+        novex.core.FileNovexConversationWorkspaceStore(java.io.File(filesDir, "novex/conversation-workspaces"))
     }
     val conversationRepositoryImporter by lazy {
         com.openminis.app.data.creative.ConversationRepositoryImporter(this, conversationWorkspaceStore, creativeArtifactRepository)
     }
     val conversationDeletion by lazy {
         val files = conversationWorkspaceStore
-        com.openminis.app.novex.domain.NovexConversationDeletion(
+        novex.core.NovexConversationDeletion(
             chatRepository, novexWorkspace, files,
             com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge(files, creativeArtifactRepository),
-            com.openminis.app.novex.domain.NovexToolExecution(
-                com.openminis.app.novex.domain.NovexOperationJournal(java.io.File(filesDir, "novex-operations"))),
+            novex.core.NovexToolExecution(
+                novex.core.NovexOperationJournal(java.io.File(filesDir, "novex-operations"))),
             { id ->
                 conversationRepositoryImporter.stopAndJoin(id)
                 com.openminis.app.ui.chat.ChatViewModelStore.stopAndJoin(id)
@@ -187,17 +160,11 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         private set
     lateinit var skillRepository: SkillRepository
         private set
-    lateinit var mcpRepository: MCPRepository
-        private set
     lateinit var memoryRepository: MemoryRepository
-        private set
-    lateinit var webAppShortcutRepository: WebAppShortcutRepository
         private set
     lateinit var backgroundSettingsRepository: BackgroundSettingsRepository
         private set
     lateinit var backgroundTaskNotifier: BackgroundTaskNotifier
-        private set
-    lateinit var mountedFoldersStore: MountedFoldersStore
         private set
 
     /**
@@ -235,14 +202,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         NetworkMonitor()
     }
 
-    /**
-     * Application-scoped BrowserTabPool for shell-invoked `minis-browser-use`.
-     * Separate from the per-ChatViewModel pool so browser state driven from
-     * within an ish shell doesn't collide with the agent's own tabs.
-     */
-    val sharedBrowserTabPool: BrowserTabPool by lazy {
-        BrowserTabPool(this).also { it.setSession("minis-browser-use") }
-    }
+    // [P3.3 裁军] Application-scoped BrowserTabPool（minis-browser-use 壳工具
+    // 伴奏池）随内置浏览器全家（browser/ + ui/browser/）整体退役删除。
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
@@ -313,8 +274,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     }
 
     private fun initializeMinimumSubsystems() {
-        database = AppDatabase.getInstance(this)
-        novexWorkspace = com.openminis.app.novex.adapter.NovexWorkspaceFactory.createDeferred(
+        database = NovexMainDatabase.getInstance(this)
+        novexWorkspace = novex.android.adapter.NovexWorkspaceFactory.createDeferred(
             database,
             java.io.File(filesDir, "novex-media"),
         )
@@ -333,12 +294,100 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     fun startPostHomeMaintenance() {
         startupScope.launch {
             ensurePostHomeMaintenance()
+            sweepRetiredAlarmsOnce()
             if (cardDirectoryMigrationStarted.compareAndSet(false, true)) {
                 runCatching { creativeArtifactRepository.migrateCardImages() + novexWorkspace.migrateCardDirectories() }
                     .onSuccess { count -> if (count > 0) Log.w("NovexCardDirectories", "$count card directories need retry") }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w("NovexCardDirectories", "Card directory migration will retry next launch") }
             }
         }
+    }
+
+    /**
+     * [P3.3 裁军→P3.4 净眼] 一次性清扫已删 receiver 的存量 alarm。
+     *
+     * 定时任务（scheduled/，P3.3 退役）与上游助理闹钟（offload/
+     * AlarmReceiver，P2.5/R2 退役）的 receiver 类已删，但老用户设备上
+     * AlarmManager 里的 PendingIntent 还挂着——receiver 不存在后广播静默
+     * 丢弃，纯留垃圾。两家调度器都把精确重建 PendingIntent 所需的键
+     * （taskId / requestCode）落在各自的 SharedPreferences JSON 里，照原
+     * 形重建（FLAG_NO_CREATE 不新建）逐个 cancel，再清掉存档。
+     *
+     * 幂等：SharedPreferences 一次性标志位，跑过即跳过；标志与存档清除
+     * 在同一次成功路径里落盘。任何异常吞掉（下轮重试），绝不影响维护链。
+     */
+    private fun sweepRetiredAlarmsOnce() {
+        runCatching {
+            val flagPrefs = getSharedPreferences("minis_maintenance_prefs", Context.MODE_PRIVATE)
+            if (flagPrefs.getBoolean(KEY_RETIRED_ALARM_SWEEP_DONE, false)) return@runCatching
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+            var cancelled = 0
+            // ① 定时任务（P3.3 删 scheduled/）：requestCode = taskId.hashCode()
+            // 正数化，action=FIRE（filterEquals 含 action，缺了匹配不上）。
+            val taskIds = mutableListOf<String>()
+            getSharedPreferences("minis_scheduled_tasks_prefs", Context.MODE_PRIVATE)
+                .getString("tasks_json", null)?.let { raw ->
+                    runCatching {
+                        val arr = org.json.JSONArray(raw)
+                        for (i in 0 until arr.length()) {
+                            arr.optJSONObject(i)?.optString("id")?.takeIf { it.isNotEmpty() }
+                                ?.let(taskIds::add)
+                        }
+                    }
+                }
+            for (id in taskIds) {
+                val intent = Intent().setClassName(this, "com.openminis.app.scheduled.ScheduledTaskAlarmReceiver")
+                    .setAction("com.openminis.app.scheduled.FIRE")
+                val pi = android.app.PendingIntent.getBroadcast(
+                    this, id.hashCode() and 0x7FFFFFFF, intent,
+                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
+                if (pi != null) {
+                    alarmManager.cancel(pi)
+                    pi.cancel()
+                    cancelled++
+                }
+            }
+            // ② 上游助理闹钟/计时器（R2 删 offload/）：requestCode 原样存档。
+            val offloadAlarms = mutableListOf<Int>()
+            getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
+                .getString("alarms_json", null)?.let { raw ->
+                    runCatching {
+                        val arr = org.json.JSONArray(raw)
+                        for (i in 0 until arr.length()) {
+                            arr.optJSONObject(i)?.optInt("requestCode", 0)?.takeIf { it != 0 }
+                                ?.let(offloadAlarms::add)
+                        }
+                    }
+                }
+            for (requestCode in offloadAlarms) {
+                val intent = Intent().setClassName(this, "com.openminis.app.offload.AlarmReceiver")
+                val pi = android.app.PendingIntent.getBroadcast(
+                    this, requestCode, intent,
+                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
+                if (pi != null) {
+                    alarmManager.cancel(pi)
+                    pi.cancel()
+                    cancelled++
+                }
+            }
+
+            // 清存档 + 落一次性标志（同一次提交，崩溃也不留半程状态）。
+            getSharedPreferences("minis_scheduled_tasks_prefs", Context.MODE_PRIVATE)
+                .edit().remove("tasks_json").apply()
+            getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
+                .edit().remove("alarms_json").apply()
+            flagPrefs.edit().putBoolean(KEY_RETIRED_ALARM_SWEEP_DONE, true).apply()
+            if (cancelled > 0 || taskIds.isNotEmpty() || offloadAlarms.isNotEmpty()) {
+                AppLogger.info(
+                    "MinisApp",
+                    "retired alarm sweep: cancelled=$cancelled " +
+                        "(scheduled=${taskIds.size} ids, offload=${offloadAlarms.size} ids)",
+                )
+            }
+        }.onFailure { Log.w("MinisApp", "retired alarm sweep failed (will retry next launch): ${it.message}") }
     }
 
     private fun ensurePostHomeMaintenance() = synchronized(postHomeLock) {
@@ -352,6 +401,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         com.openminis.app.diagnostics.HangDetector.start(this)
         // [T-dual-update-source] 用户选的更新源要先于冷启动检查注水（默认 Gitee）
         com.openminis.app.data.UpdateSourceStore.hydrate(this)
+        // [T-reading-view-global] 阅读视图偏好注水（默认翻页）
+        novex.android.ReadingViewPrefs.hydrate(this)
         // [T-bulletin-cache] 冷启动公告缓存写入需要 filesDir
         NovexUpdateMonitor.attachContext(this)
         // [T-bulletin-v3] 冷启动唯一主动拉取：更新+名册+未读正文，产出叠卡跳脸
@@ -372,14 +423,11 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // the comment there for why an exception at this point permanently
         // breaks the Application and produces the GH#147 crash loop.
         skillRepository = SkillRepository(this)
-        mcpRepository = MCPRepository(this)
         memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
-        webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
 
         // Only dependencies used by the first Activity frame stay on the
-        // launch path. Sandbox probing, native offload registration and model
-        // refresh are initialized after Application.onCreate returns.
-        mountedFoldersStore = MountedFoldersStore(this)
+        // launch path. Model refresh is initialized after
+        // Application.onCreate returns.
         SessionActivityTracker.init(this)
         com.openminis.app.service.SessionBadgeStore.init(this)
         backgroundSettingsRepository = BackgroundSettingsRepository(this)
@@ -393,7 +441,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             backgroundTaskNotifier.notifyTaskCompleted(sessionId, isError)
         }
         registerForegroundTracking()
-        OffloadPermissionManager.init(this)
+        // [P3.3 裁军] OffloadPermissionManager.init（Shizuku/特权后门面）随
+        // offload/ 整包与 SystemPermissions/Offload/Shizuku 权限屏一并退役。
 
         initializeDeferredRuntime()
         subsystemsInitialized = true
@@ -465,9 +514,6 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
 
             override fun onActivityResumed(activity: Activity) {
                 com.openminis.app.crash.CrashFrequencyDetector.maybeShowOnActivity(activity)
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    runCatching { mountedFoldersStore.refreshWritability() }
-                }
             }
 
             override fun onActivityPaused(activity: Activity) = Unit
@@ -476,7 +522,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
                 foregroundActivityCount = (foregroundActivityCount - 1).coerceAtLeast(0)
                 if (foregroundActivityCount == 0) {
                     _isAppForegroundFlow.value = false
-                    com.openminis.app.config.confirm.ConfigConfirmationGate.notifyPending()
+                    // [P3.3 裁军] ConfigConfirmationGate.notifyPending() 随
+                    // minis-config 体系退役删除。
                 }
             }
 
@@ -507,23 +554,12 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             }
         }
 
-        // T-config: minis-config CLI surface — registry / audit log /
-        // master-switch store. Initialized eagerly here so
-        // ConfigRegistry.get() is safe from any thread for the rest of
-        // the process. Mirrors iOS ConfigRegistry.shared.registerBuiltinsIfNeeded().
-        com.openminis.app.config.MinisConfigPermissionStore.init(this)
-        com.openminis.app.config.audit.ConfigAuditLog.init(this)
-        com.openminis.app.config.ConfigRegistry.init(
-            this, providerRepository, envVarRepository, chatRepository,
-        )
+        // [P3.3 裁军] minis-config 体系（ConfigRegistry/审计日志/确认门/
+        // 权限开关，config/ 整族 19f）随自定义配置面退役整体删除；iOS 侧
+        // 对应的 minis-config CLI 不再映射到 Android。
 
         // Initialize models.dev registry (loads from bundled asset, refreshes in background)
         ModelsDevApi.init(this)
-
-        // Initialize sandbox singletons (does not trigger extraction)
-        RootfsManager.getInstance(this)
-        ExecutionCoordinator.init(this)
-        ExecutionCoordinator.envVarRepository = envVarRepository
 
         // Privacy Mode store + redactor wiring. Mirrors iOS
         // EnvVarPrivacyStore.init / EnvVarRedactor static handoff.
@@ -531,108 +567,14 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         com.openminis.app.data.EnvVarRedactor.envVarRepository = envVarRepository
 
         // Start network monitoring — mirrors iOS NetworkMonitor.shared.start().
-        // The monitor writes /etc/resolv.conf immediately and on every
-        // ConnectivityManager callback so shells inside the sandbox see fresh
-        // DNS servers after Wi-Fi ↔ cellular swaps or VPN toggles.
         networkMonitor.start(this)
 
-        // Register global /var/minis/{memory,skills,shared} bind mounts up-front
-        // so direct file I/O tools (file_read) resolve these paths even before
-        // PRoot has booted or any shell has started.
-        PRootKernel.registerGlobalBindMounts(this)
-
-        // T219-1: load user-mounted external folders and seed PRoot's
-        // bindMounts before the first proot invocation, so the very first
-        // `shell_execute` already has `/var/minis/mounts/<name>/` visible.
-        // Entries whose SAF tree URI didn't resolve to a real POSIX path
-        // (cloud providers, unmounted SD card) are silently skipped by
-        // bindMountSpecs.
-        // T219-5: hand the singleton to PRootKernel so applyMountedFoldersSnapshot
-        // can read the live state, and wire an onChange callback so any UI CRUD
-        // (add/remove/rename/toggle) re-applies the snapshot.
-        // T277: PersistentShell reuses one PRoot process per chat session for the
-        // session's lifetime, so an applyMountedFoldersSnapshot call alone never
-        // reaches the live shell — proot's `-b` argv is frozen at spawn time.
-        // Kill any live shells so the next execute() rebuilds them with the
-        // updated bind set. Mount CRUD is a Settings-screen action; the user
-        // is not in chat mid-command, so this restart is safe and user-invisible.
-        PRootKernel.mountedFoldersStore = mountedFoldersStore
-        mountedFoldersStore.onChange = {
-            PRootKernel.applyMountedFoldersSnapshot(this)
-            ExecutionCoordinator.stopCurrentCommand()
-        }
-        // T219-6: route launch-time seeding through applyMountedFoldersSnapshot
-        // so it (a) reads the live store consistently and (b) materializes the
-        // /var/minis/mounts/<name> placeholder dirs that PRoot's `-b` needs.
-        // Note: this runs before PRootKernel.boot, so rootfs may not yet exist —
-        // applyMountedFoldersSnapshot tolerates that case (mkdirs fails silently
-        // and PRootKernel.boot calls applyMountedFoldersSnapshot again at the
-        // end of boot to materialize the targets once rootfs is on disk).
-        PRootKernel.applyMountedFoldersSnapshot(this)
-
-        // Register native_offload handlers and start the server eagerly —
-        // the server only needs the rootfs tmp directory, which can be
-        // materialized lazily. Starting here means the abstract socket is
-        // reachable even before any shell session is launched.
-        NativeOffloadServer.register("android-alarm", AlarmOffloadHandler(this))
-        NativeOffloadServer.register("android-calendar", CalendarOffloadHandler(this))
-        NativeOffloadServer.register("android-clipboard", ClipboardOffloadHandler(this))
-        NativeOffloadServer.register("android-contacts", ContactsOffloadHandler(this))
-        NativeOffloadServer.register("android-device", DeviceOffloadHandler(this))
-        NativeOffloadServer.register("android-location", LocationOffloadHandler(this))
-        NativeOffloadServer.register("android-notification", NotificationOffloadHandler(this))
-        NativeOffloadServer.register("android-open", OpenOffloadHandler(this))
-        NativeOffloadServer.register("android-photos", PhotosOffloadHandler(this))
-        NativeOffloadServer.register("android-player", PlayerOffloadHandler())
-        NativeOffloadServer.register("android-speak", SpeakOffloadHandler(this))
-        NativeOffloadServer.register("android-speech", SpeechOffloadHandler(this))
-        NativeOffloadServer.register("android-weather", WeatherOffloadHandler(this))
-        // T323: UI-layer automation backed by MinisAccessibilityService.
-        NativeOffloadServer.register("android-a11y-cli", AccessibilityOffloadHandler(this))
-        NativeOffloadServer.register("minis-model-use", ModelUseOffloadHandler(this, providerRepository))
-        // T-config: minis-config — agent-facing settings management
-        // (read/write registered ConfigFields with audit + revert).
-        // Mirrors iOS `config_offload_register()` in ISHKernel.m.
-        NativeOffloadServer.register(
-            "minis-config",
-            com.openminis.app.sandbox.offload.ConfigOffloadHandler(),
-        )
-        NativeOffloadServer.register("minis-browser-use", BrowserUseOffloadHandler(this))
-        // T188: minis-sessions-cli — agent-side query of chat history.
-        // Registers next to the other minis-* tools so PRootKernel.
-        // installHandlerStubs() picks it up on the next rootfs boot
-        // (writes a 17-byte exit-0 stub at /usr/local/bin/minis-sessions-cli
-        // so PATH lookup succeeds; PRoot intercepts the execve before
-        // the stub runs and routes to this handler).
-        NativeOffloadServer.register("minis-sessions-cli", SessionsOffloadHandler(chatRepository))
-        // [T-android-scheduled-tasks-full] minis-scheduled — create/list/run
-        // timed AI tasks (new chat / follow-up / re-run), mirroring the in-app
-        // Scheduled Tasks editor and the iOS Shortcuts intent set.
-        NativeOffloadServer.register(
-            "minis-scheduled",
-            com.openminis.app.sandbox.offload.ScheduledTaskOffloadHandler(this),
-        )
-        // T322: android-shizuku-cli — privileged Android control via Shizuku.
-        // The handler short-circuits with a typed error envelope when the
-        // user hasn't installed / started / authorized Shizuku, so we
-        // can register unconditionally; ShizukuManager.init below wires
-        // up the binder lifecycle listeners + StateFlow.
-        NativeOffloadServer.register("android-shizuku-cli", ShizukuOffloadHandler(this))
-        com.openminis.app.offload.ShizukuManager.init(this)
-
-        // T-android-minis-debug-cli: shell-side CLI wrapper around the in-app
-        // DebugServer (127.0.0.1:5321) JSON-RPC. DEBUG-only — Release builds
-        // ship neither the DebugServer nor this handler, so the
-        // `/usr/local/bin/minis-debug` stub is also absent (PRootKernel.
-        // installHandlerStubs enumerates currently-registered handlers).
-        if (BuildConfig.DEBUG) {
-            NativeOffloadServer.register(
-                "minis-debug",
-                com.openminis.app.sandbox.offload.DebugOffloadHandler(this),
-            )
-        }
-
-        NativeOffloadServer.start(RootfsManager.getInstance(this).rootfsDir)
+        // Register global /var/minis/{memory,skills,shared} bind mounts
+        // up-front so direct file I/O tools (file_read, skills, markdown
+        // assets) resolve these paths without a sandbox.
+        // [P3.3 裁军] mcp-servers 桶随 MCP 集成面退役（MCPRepository 已删，
+        // 该桶零消费方）；memory/skills/shared 三桶原样保留。
+        novex.android.ContentPaths.registerGlobalMounts(this)
 
         // [T-android-session-paused-badge-hardkill] Reconcile PAUSED badges
         // against the DB's interrupted-session set. The lifecycle-callback push
@@ -650,24 +592,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             com.openminis.app.service.SessionBadgeStore.reconcileInterruptedSessions(interrupted - active)
         }
 
-        // [T-android-config-confirm-timeout] Wire the config-confirm background
-        // notifier into the (Context-free) gate, so a minis-config approval that
-        // is waiting while the app is backgrounded nudges the user before the
-        // 120s timeout. Mirrors iOS ConfigConfirmationGate.notifyIfBackgrounded.
-        val configConfirmNotifier = com.openminis.app.notification.ConfigConfirmNotifier(
-            context = this,
-            backgroundSettings = backgroundSettingsRepository,
-            isAppForeground = ::isAppForeground,
-        )
-        com.openminis.app.config.confirm.ConfigConfirmationGate.backgroundNotifier = {
-            configConfirmNotifier.notifyIfBackgrounded(it)
-        }
-        com.openminis.app.config.confirm.ConfigConfirmationGate.cancelNotification = {
-            configConfirmNotifier.cancel(it)
-        }
-
-        // Initialize speech-recognition adapter layer (system + provider engines).
-        com.openminis.app.speech.SpeechRecognitionManager.init(this)
+        // [P3.3 裁军] ConfigConfirmationGate 后台通知器（config-confirm 门）
+        // 与语音识别适配层（SpeechRecognitionManager.init）随各自体系退役。
 
         // Refresh model lists once per calendar day (mirrors iOS MinisApp.swift).
         // Runs per-instance in parallel; `autoRefreshModels` skips instances with custom models.
@@ -675,48 +601,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
         )
 
-        // Propagate system timezone and HTTP-proxy changes into the sandbox.
-        // iOS recomputes TZ for every command (ISHShellExecutor.m:335-353);
-        // here we update PRootKernel.customEnvironment and push `export …`
-        // into every live shell so interactive sessions pick up the change
-        // without a restart.
-        val sandboxSystemReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-                when (intent.action) {
-                    Intent.ACTION_TIMEZONE_CHANGED -> scope.launch {
-                        try {
-                            ExecutionCoordinator.broadcastTimezoneChange()
-                        } catch (t: Throwable) {
-                            Log.w("MinisApp", "broadcastTimezoneChange failed: ${t.message}")
-                        }
-                    }
-                    android.net.Proxy.PROXY_CHANGE_ACTION -> scope.launch {
-                        try {
-                            ExecutionCoordinator.broadcastProxyChange()
-                        } catch (t: Throwable) {
-                            Log.w("MinisApp", "broadcastProxyChange failed: ${t.message}")
-                        }
-                    }
-                }
-            }
-        }
-        registerReceiver(
-            sandboxSystemReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_TIMEZONE_CHANGED)
-                addAction(android.net.Proxy.PROXY_CHANGE_ACTION)
-            },
-        )
-
-        // Debug server: only start in debug builds (NEVER in release)
-        if (BuildConfig.DEBUG) {
-            try {
-                com.openminis.app.debug.DebugServer(this).start()
-            } catch (e: Exception) {
-                Log.w("MinisApp", "Failed to start debug server: ${e.message}")
-            }
-        }
+        // [P3.3 裁军] 调试面板（DebugServer，debug/ 整包 12f）按用户裁决退役；
+        // ACRA（crash/）与 AppLogger（logging/）不在裁刀范围内，全部保留。
 
         // T268: one-shot migration of pre-T266 internal alarms into the
         // system Clock app. Pre-T266 builds wrote alarms into Minis's own
@@ -816,6 +702,15 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
                 add(MinisImageFetcher.MtimeKeyer())
                 add(MinisImageFetcher.StringMtimeKeyer())
             }
+            // [T-memory-cap-and-storage] 用户实测内存 1-5G（GH#206 同病：位图
+            // 像素堆积在 GC 够不到的 native/graphics 区）。Coil 默认按可用
+            // 内存比例给缓存（largeHeap 再放大）——改为固定 128MB 封顶，
+            // 到顶丢最旧；磁盘文件不受影响。
+            .memoryCache(
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizeBytes(128 * 1024 * 1024)
+                    .build()
+            )
             .build()
 
     /**

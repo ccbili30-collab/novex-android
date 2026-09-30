@@ -5,9 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.platform.LocalDensity
-import com.openminis.app.ui.novex.NovexSearchField
-import com.openminis.app.ui.novex.NovexTextActionRow
-import com.openminis.app.ui.novex.NovexSummaryRow
+import novex.android.ui.NovexSearchField
+import novex.android.ui.NovexTextActionRow
+import novex.android.ui.NovexSummaryRow
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
@@ -30,11 +30,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexDisplayName
-import com.openminis.app.novex.domain.NovexLibraryEntry
-import com.openminis.app.novex.domain.libraryDirectory
-import com.openminis.app.ui.novex.rememberNovexWorkGroups
+import novex.core.NovexContentAddress
+import novex.core.NovexDisplayName
+import novex.core.NovexLibraryEntry
+import novex.core.libraryDirectory
+import novex.android.ui.rememberNovexWorkGroups
 import com.openminis.app.ui.sessions.NovexWorkGroupControls
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,25 +58,25 @@ import com.openminis.app.data.creative.CreativeArtifactDeviceDirectory
 import com.openminis.app.data.creative.CreativeArtifactDeviceDirectorySettings
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.creative.creativeArtifactExportName
-import com.openminis.app.novex.domain.CreativeArtifactKind
-import com.openminis.app.novex.domain.NovexContentKind
-import com.openminis.app.novex.domain.NovexCreativeArtifactOwnerOption
-import com.openminis.app.novex.domain.NovexWorkspace
-import com.openminis.app.novex.domain.creativeArtifactOwnerOptions
-import com.openminis.app.ui.novex.NovexActionMenu
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDecisionAction
-import com.openminis.app.ui.novex.NovexDecisionDialog
-import com.openminis.app.ui.novex.NovexDecisionTone
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexFilterTabs
-import com.openminis.app.ui.novex.NovexMenuAction
-import com.openminis.app.ui.novex.NovexSettingsCustomRow
-import com.openminis.app.ui.novex.NovexSettingsScaffold
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSearchableSelectionSheet
-import com.openminis.app.ui.novex.NovexTopAction
-import com.openminis.app.ui.novex.NovexType
+import novex.core.CreativeArtifactKind
+import novex.core.NovexContentKind
+import novex.core.NovexCreativeArtifactOwnerOption
+import novex.core.NovexWorkspace
+import novex.core.creativeArtifactOwnerOptions
+import novex.android.ui.NovexActionMenu
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDecisionAction
+import novex.android.ui.NovexDecisionDialog
+import novex.android.ui.NovexDecisionTone
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexFilterTabs
+import novex.android.ui.NovexMenuAction
+import novex.android.ui.NovexSettingsCustomRow
+import novex.android.ui.NovexSettingsScaffold
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSearchableSelectionSheet
+import novex.android.ui.NovexTopAction
+import novex.android.ui.NovexType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -218,7 +218,7 @@ fun CreativeLibraryScreen(
 
     LaunchedEffect(repository) {
         val database = (context.applicationContext as com.openminis.app.MinisApp).database
-        kotlinx.coroutines.flow.merge(com.openminis.app.novex.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect { refresh() }
+        kotlinx.coroutines.flow.merge(novex.android.adapter.observeNovexLibraryChanges(database),com.openminis.app.cards.IntegratedCatalog(context.applicationContext as com.openminis.app.MinisApp).changes()).collect { refresh() }
     }
 
     LaunchedEffect(workspace) {
@@ -278,7 +278,7 @@ fun CreativeLibraryScreen(
     }
 
     fun relativePath(record: CreativeArtifactRecord): String = runCatching {
-        val ref = com.openminis.app.novex.domain.NovexWorkspaceFileRef.parse(record.sourcePath.orEmpty())
+        val ref = novex.core.NovexWorkspaceFileRef.parse(record.sourcePath.orEmpty())
         if (ref.relativePath.startsWith("imports/")) ref.relativePath.removePrefix("imports/") else record.artifact.title
     }.getOrDefault(record.artifact.title)
     val folderPrefix = repositoryFolder.takeIf { it.isNotEmpty() }?.let { "$it/" }.orEmpty()

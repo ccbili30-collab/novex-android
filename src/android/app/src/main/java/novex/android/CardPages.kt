@@ -1,19 +1,19 @@
 package novex.android
 
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.DropdownMenu
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.OutlinedButton
+import novex.android.ui.TextButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
+import novex.android.ui.DropdownMenu
 
-import com.openminis.app.ui.novex.NovexPageTopBar
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexPageTopBar
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
+import novex.android.ui.NovexIcons
 import com.openminis.app.ui.noven.NovenColors
 import com.openminis.app.ui.noven.NovenProfileStore
 import novex.content.flattenModules
@@ -129,8 +129,8 @@ import androidx.compose.ui.semantics.semantics
                             DropdownMenuItem(text={Text("交给 AI")},onClick={editMore=false;model.prepareAi(onManage)})
                             DropdownMenuItem(text={Text("交给已有对话")},onClick={editMore=false;model.prepareAi {onExisting(true)}})
                             DropdownMenuItem(text={Text("改名")},onClick={editMore=false;cardName=state.shownDraft?.name.orEmpty();renameCard=true})
-                            DropdownMenuItem(text={Text("默认连续阅读")},onClick={editMore=false;model.setReadingLayout(novex.content.ReadingLayout.CONTINUOUS)})
-                            DropdownMenuItem(text={Text("默认模块翻页")},onClick={editMore=false;model.setReadingLayout(novex.content.ReadingLayout.PAGED)})
+                            DropdownMenuItem(text={Text("滚动模式")},onClick={editMore=false;model.setReadingLayout(novex.content.ReadingLayout.CONTINUOUS)})
+                            DropdownMenuItem(text={Text("翻页模式")},onClick={editMore=false;model.setReadingLayout(novex.content.ReadingLayout.PAGED)})
                             if(state.shownDraft?.appearance?.coverResourceId!=null)DropdownMenuItem(text={Text("清除封面")},onClick={editMore=false;model.clearAppearance(true)})
                             if(state.shownDraft?.appearance?.avatarResourceId!=null)DropdownMenuItem(text={Text("清除头像")},onClick={editMore=false;model.clearAppearance(false)})
                             DropdownMenuItem(text={Text("放弃本次草稿")},onClick={editMore=false;discard=true})

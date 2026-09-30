@@ -2,8 +2,8 @@ package com.openminis.app.ui.sessions
 
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexColors
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -14,10 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexActionMenu
-import com.openminis.app.ui.novex.NovexMenuAction
-import com.openminis.app.ui.novex.NovexRootHeader
+import novex.android.ui.NovexIconAction
+import novex.android.ui.NovexActionMenu
+import novex.android.ui.NovexMenuAction
+import novex.android.ui.NovexRootHeader
+import com.openminis.app.ui.settings.NovexUpdateAction
 
 internal data class NovexCreateMenuItem(
     val label: String,

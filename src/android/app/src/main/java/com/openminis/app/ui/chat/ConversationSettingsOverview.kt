@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
 import androidx.compose.runtime.Composable
-import com.openminis.app.ui.novex.NovexEditorSection
-import com.openminis.app.ui.novex.NovexSummaryRow
+import novex.android.ui.NovexEditorSection
+import novex.android.ui.NovexSummaryRow
 
 internal fun conversationSettingsPageTitle(page: String): String = when (page) {
     "answer" -> "回答身份"; "player" -> "我的身份"; "prompt" -> "对话提示词"

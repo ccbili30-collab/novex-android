@@ -1,6 +1,6 @@
 package com.openminis.app.ui.noven
 
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import novex.content.CardKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -12,7 +12,7 @@ class SessionCardTagsTest {
         config: String? = null,
         worldId: String? = null,
         characterId: String? = null,
-    ) = ChatSessionEntity(
+    ) = SessionRow(
         id = id,
         modelId = "m",
         createdAt = 0,

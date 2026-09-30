@@ -5,9 +5,9 @@ import android.content.Intent
 import androidx.core.net.toUri
 import com.openminis.app.deeplink.DeepLinkAction
 import com.openminis.app.deeplink.DeepLinkHandler
-import com.openminis.app.sandbox.PRootKernel
 import com.openminis.app.ui.sandbox.FileItem
 import java.io.File
+import novex.android.ContentPaths
 
 /**
  * Decides what should happen when a link inside chat markdown is tapped.
@@ -45,22 +45,21 @@ object ChatLinkResolver {
 
         // 2. Sandbox file resolution — prefer a session-scoped resolver when
         //    the caller knows which chat this link belongs to. The global
-        //    `PRootKernel.bindMounts` is last-writer-wins, so on a device
+        //    `ContentPaths.bindMounts` is last-writer-wins, so on a device
         //    with multiple sessions the resolver otherwise points at
         //    whichever session booted its shell most recently.
         val hostFile = resolveSandboxFile(trimmed, scheme, sessionId, context)
-        android.util.Log.w("ChatLinkDiag",
-            "resolve url=${trimmed.take(200)} sid=$sessionId hostFile=${hostFile?.absolutePath} exists=${hostFile?.exists()}")
         if (hostFile != null && hostFile.exists() && !hostFile.isDirectory) {
             FileItem.from(hostFile)?.let { return ChatLinkAction.SandboxFile(it) }
         }
 
-        // T136: intent://, mailto:, tel:, geo:, market: etc. need a system
-        // dispatch — the in-app preview WebView's `loadUrl(...)` doesn't
-        // trip `shouldOverrideUrlLoading` for the initial URL, so without
-        // this hop those schemes hit the WebView and surface as
-        // ERR_UNKNOWN_URL_SCHEME.
-        if (com.openminis.app.ui.browser.BrowserExternalSchemeHandler.shouldHandleExternally(trimmed)) {
+        // [P3.3 裁军] 原 BrowserExternalSchemeHandler.shouldHandleExternally
+        // 的外跳 scheme 判定（intent/market/tel/mailto/geo/…）随内置浏览器
+        // 退役改为本地白名单：非 http(s) 的 scheme 一律走 ExternalApp 分支
+        // 由调用方 ACTION_VIEW 外跳，http(s) 保持 Web 分支（同样外跳系统
+        // 浏览器）。
+        val lowerScheme = scheme?.lowercase()
+        if (lowerScheme != null && lowerScheme != "http" && lowerScheme != "https") {
             return ChatLinkAction.ExternalApp(trimmed)
         }
 
@@ -84,9 +83,9 @@ object ChatLinkResolver {
     ): File? {
         fun lookup(linuxPath: String): File? =
             if (sessionId != null && context != null) {
-                PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
+                ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
             } else {
-                PRootKernel.resolveHostPath(linuxPath)
+                ContentPaths.resolveHostPath(linuxPath)
             }
         return when (scheme) {
             "minis" -> {

@@ -86,7 +86,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -186,24 +186,22 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
 
@@ -260,7 +258,7 @@ internal fun AttachmentChip(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                        novex.android.ui.NovexIcons.InsertDriveFile,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
@@ -291,7 +289,7 @@ internal fun AttachmentChip(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.Close,
+                novex.android.ui.NovexIcons.Close,
                 contentDescription = "Remove",
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 modifier = Modifier.size(13.dp),
@@ -496,63 +494,7 @@ internal fun InputCircleButton(
     }
 }
 
-/**
- * Mic button with a two-state appearance — mirrors iOS `MicButton`.
- *
- * Idle: outlined mic, neutral bg.
- * Recording: filled mic, red-tinted bg, optional 2-letter locale badge
- * overlayed on the top-right (e.g. "EN", "ZH").
- */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-internal fun MicButton(
-    isRecording: Boolean,
-    localeBadge: String?,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
-    // [T-android-voice-panel] While the inline voice panel is active the same
-    // slot switches back to text input — keyboard glyph (mirrors iOS "T").
-    isVoiceActive: Boolean = false,
-) {
-    val bg = if (isRecording) Color.Red.copy(alpha = 0.15f)
-             else ChatColors.inputIconBg
-    val tint = if (isRecording) Color.Red
-               else MaterialTheme.colorScheme.onSurfaceVariant
-    val borderColor = if (isRecording) Color.Transparent else ChatColors.inputIconBorder
-    Box(
-        modifier = Modifier
-            .size(38.dp)
-            .background(bg, CircleShape)
-            .border(0.5.dp, borderColor, CircleShape)
-            .clip(CircleShape)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            if (isVoiceActive) com.openminis.app.ui.novex.NovexIcons.Keyboard else com.openminis.app.ui.novex.NovexIcons.Mic,
-            contentDescription = if (isVoiceActive) "Switch to keyboard"
-            else if (isRecording) "Stop recording" else "Voice input",
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
-        if (!localeBadge.isNullOrEmpty()) {
-            Text(
-                text = localeBadge,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Red,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 2.dp, end = 2.dp)
-                    .background(Color.White, CircleShape)
-                    .padding(horizontal = 3.dp, vertical = 1.dp),
-            )
-        }
-    }
-}
+// [P3.3 裁军] MicButton（语音/键盘切换按钮）随语音输入退役删除。
 
 // ─── Tool Preview Thumbnail (iOS: ToolPreviewThumbnail — tool-specific preview) ──
 
@@ -792,14 +734,13 @@ private fun ToolPreviewThumbnail(
             }
 
             "browser_use" -> {
-                // Prefer live WebView snapshot while the tool is running; fall back to
-                // any saved imageFilePath, then globe icon.
+                // [P3.3 裁军] live WebView 快照（rememberBrowserLiveSnapshot）
+                // 随内置浏览器退役；仅渲染历史块持久化的截图，然后 globe 图标。
                 // T285: decode the saved screenshot off the main thread —
                 // BitmapFactory.decodeFile inside `remember {}` was running
                 // synchronously on the composition thread, blocking the
                 // chat-tap → preview navigation transition for ~150-350ms
                 // on multi-MB browser screenshots.
-                val liveBitmap = rememberBrowserLiveSnapshot(block)
                 val savedBitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
                     initialValue = null,
                     block.imageFilePath,
@@ -814,7 +755,7 @@ private fun ToolPreviewThumbnail(
                         try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null }
                     }
                 }
-                val bitmap = liveBitmap ?: savedBitmap
+                val bitmap = savedBitmap
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
@@ -825,7 +766,7 @@ private fun ToolPreviewThumbnail(
                 } else {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Language,
+                            novex.android.ui.NovexIcons.Language,
                             contentDescription = null,
                             tint = toolAccent.copy(alpha = 0.6f),
                             modifier = Modifier.size(24.dp),
@@ -892,7 +833,6 @@ internal fun FloatingToolStatusBar(
     onStop: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    onOpenTerminalWithCommand: (String) -> Unit = {},
     // T261: detail open routes through ChatViewModel state so this bar
     // shares one always-mounted sheet with the in-list pills (no more
     // dueling local-remember sheets, no LaunchedEffect(lastIndex) page
@@ -960,10 +900,10 @@ internal fun FloatingToolStatusBar(
                 )
             } else {
                 val (icon, tint) = when {
-                    isDone -> com.openminis.app.ui.novex.NovexIcons.CheckCircle to ToolCheckColor
-                    isFailed -> com.openminis.app.ui.novex.NovexIcons.Error to ToolErrorColor
-                    isCancelled -> com.openminis.app.ui.novex.NovexIcons.Close to ToolCancelColor
-                    else -> com.openminis.app.ui.novex.NovexIcons.Build to MaterialTheme.colorScheme.onSurfaceVariant
+                    isDone -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
+                    isFailed -> novex.android.ui.NovexIcons.Error to ToolErrorColor
+                    isCancelled -> novex.android.ui.NovexIcons.Close to ToolCancelColor
+                    else -> novex.android.ui.NovexIcons.Build to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
             }
@@ -999,7 +939,7 @@ internal fun FloatingToolStatusBar(
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
+                        novex.android.ui.NovexIcons.ChevronLeft,
                         contentDescription = "Previous",
                         tint = if (currentIndex > 0) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
@@ -1019,7 +959,7 @@ internal fun FloatingToolStatusBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.ChevronRight,
+                        novex.android.ui.NovexIcons.ChevronRight,
                         contentDescription = "Next",
                         tint = if (currentIndex < toolBlocks.lastIndex) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
@@ -1036,7 +976,7 @@ internal fun FloatingToolStatusBar(
             if (!isRunning && onDismiss != null) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Close,
+                    novex.android.ui.NovexIcons.Close,
                     contentDescription = "关闭",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -1158,7 +1098,7 @@ internal fun ThinkingLevelPicker(
                 )
                 if (isClampedHighlight) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                        imageVector = novex.android.ui.NovexIcons.KeyboardArrowUp,
                         contentDescription = null,
                         tint = fg,
                         modifier = Modifier.size(12.dp),

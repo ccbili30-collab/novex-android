@@ -1,10 +1,10 @@
 package com.openminis.app.tools
 
 import android.content.Context
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.sandbox.PRootKernel
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
+import novex.android.ContentPaths
 
 object FileWriteTool {
     const val NAME = "file_write"
@@ -36,25 +36,13 @@ object FileWriteTool {
                 return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
             }
 
-            // T219: read-only mount guard. Reject before opening so we don't
-            // half-create files inside a Locked external mount and surface a
-            // friendly hint pointing the user at Settings. Mirrors iOS
-            // MountedFolderCoordinator.isLinuxPathUnderReadOnlyMount used by
-            // AIChatViewModel.fileWrite (AIChatViewModel.swift:8333-8341).
-            if (PRootKernel.isLinuxPathUnderReadOnlyMount(path)) {
-                return ToolExecutionResult(
-                    "Error: $path is inside a read-only mounted folder and cannot be modified. " +
-                        "Toggle writability in Settings → Mount External Folders if this is a mistake.",
-                    false, toolTitle = toolTitle,
-                )
-            }
 
             // T123: per-session resolver so /var/minis/workspace/...,
             // /var/minis/attachments/..., /var/minis/offloads/...,
             // /var/minis/browser/... land in this session's host dir
             // rather than the global bind-mount map (which is overwritten
             // every time another session boots its shell, last-writer-wins).
-            val file = PRootKernel.resolveSessionHostPath(sessionId, path, context)
+            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
                 ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
 
             // Validate UTF-8

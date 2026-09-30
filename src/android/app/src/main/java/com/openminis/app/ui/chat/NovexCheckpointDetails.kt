@@ -3,8 +3,8 @@ package com.openminis.app.ui.chat
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Text
-import com.openminis.app.novex.domain.*
-import com.openminis.app.ui.novex.*
+import novex.core.*
+import novex.android.ui.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

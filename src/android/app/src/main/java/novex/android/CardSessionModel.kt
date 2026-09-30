@@ -323,7 +323,10 @@ class CardSessionModel(application:Application):AndroidViewModel(application) {
         state=state.copy(draft=next)
         loadModule(moduleId,next.position.blockId)
     }
-    fun setReadingLayout(layout:ReadingLayout)=applyComposition(EditorCommand.Layout(layout))
+    // [T-reading-view-global] 布局降级为全局视图偏好（用户裁决：纯渲染模式，
+    // 数据不变，默认翻页）——写偏好即生效，不碰卡数据、不产生修订。
+    // 卡内 appearance.readingLayout 只剩编辑器归置新模块的存量信号。
+    fun setReadingLayout(layout:ReadingLayout)=ReadingViewPrefs.set(getApplication(), layout)
     fun removeResource(id:String,removeUses:Boolean,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveResource(id,removeUses),onSaved)
     fun removeCharacter(id:String,onSaved:()->Unit={})=applyComposition(EditorCommand.RemoveCharacter(id),onSaved)
     private fun applyComposition(command:EditorCommand,onSaved:()->Unit={})=action(onSaved) {

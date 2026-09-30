@@ -1,7 +1,7 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -2,8 +2,9 @@ package com.openminis.app.ui.chat
 
 // [T-android-split-chat] Small UI-state toggle methods extracted from
 // ChatViewModel as extension functions (verbatim): tool-detail sheet,
-// browser sheet, memory sheet, attachment list. The 4 backing state fields
-// were flipped private->internal. No logic change.
+// memory sheet, attachment list. The backing state fields were flipped
+// private->internal. [P3.3 裁军] browser sheet 三件套（toggleBrowserSheet/
+// dismissBrowserSheet/openBrowserSheetForUrl）随内置浏览器退役删除。
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -16,9 +17,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserActionInput
-import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
@@ -31,15 +30,15 @@ import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
-import com.openminis.app.data.db.CompactMarkerEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.LLMUsage
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.chat.CompactMarkerRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.LLMUsage
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.R
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
@@ -47,9 +46,6 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.terminal.MinisOpenUrlBroker
-import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
 import com.openminis.app.tools.FileEditTool
 import com.openminis.app.tools.FileReadTool
@@ -57,7 +53,6 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -85,32 +80,6 @@ internal fun ChatViewModel.openToolDetail(toolBlockId: String) {
 
 internal fun ChatViewModel.closeToolDetail() {
     _selectedToolDetailId.value = null
-}
-
-internal fun ChatViewModel.toggleBrowserSheet() {
-    val opening = !_showBrowserSheet.value
-    if (opening) browserTabPool.ensureTabForUI()
-    _showBrowserSheet.value = opening
-}
-
-internal fun ChatViewModel.dismissBrowserSheet() {
-    _showBrowserSheet.value = false
-}
-
-/**
- * Open the session browser sheet, focused on the tab whose URL matches
- * [url]. If no pool tab currently has that URL, a new tab is created and
- * loaded. Used by the tool-call preview's globe button so the agent's
- * existing browser_use page is reused when available instead of spawning
- * a duplicate tab.
- */
-internal fun ChatViewModel.openBrowserSheetForUrl(url: String) {
-    if (url.isBlank()) {
-        browserTabPool.ensureTabForUI()
-    } else {
-        browserTabPool.selectOrCreateTabForURL(url)
-    }
-    _showBrowserSheet.value = true
 }
 
 internal fun ChatViewModel.toggleMemorySheet() {

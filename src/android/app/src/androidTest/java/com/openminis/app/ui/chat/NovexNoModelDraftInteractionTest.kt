@@ -43,7 +43,7 @@ class NovexNoModelDraftInteractionTest {
         val meterKey = com.openminis.app.ui.settings.KEY_SHOW_CONTEXT_METER
         val oldMeter = appearance.getBoolean(meterKey, false)
         appearance.edit().putBoolean(meterKey, true).commit()
-        val before = runBlocking { app.chatRepository.dao.listSessions().map { it.id }.toSet() }
+        val before = runBlocking { app.chatRepository.dao.primarySessions().map { it.id }.toSet() }
         var route by mutableStateOf("")
         var visible by mutableStateOf(false)
         var openedSettings = false
@@ -91,12 +91,12 @@ class NovexNoModelDraftInteractionTest {
             ui.onNodeWithText("继续编辑").performClick()
             ui.onNode(hasSetTextAction()).assertTextEquals(original)
             ui.waitUntil(30_000) { runBlocking {
-                app.chatRepository.dao.listSessions().firstOrNull { it.id !in before && it.composerDraft == original }
+                app.chatRepository.dao.primarySessions().firstOrNull { it.id !in before && it.composerDraft == original }
                     ?.also { persistedId = it.id } != null
             } }
             val id = requireNotNull(persistedId)
             val draftTitle = "未连接模型的草稿"
-            runBlocking { app.chatRepository.updateSessionTitle(id, draftTitle) }
+            runBlocking { app.chatRepository.renameSession(id, draftTitle) }
             assertEquals(0, runBlocking { app.chatRepository.messageCount(id) })
             ui.onNodeWithContentDescription("Send").performTouchInput { click() }
             ui.waitUntil(15_000) { ui.onAllNodesWithText("连接模型", substring = false).fetchSemanticsNodes().isNotEmpty() }
@@ -135,7 +135,7 @@ class NovexNoModelDraftInteractionTest {
             ui.runOnIdle { visible = false }
             persistedId?.let { id -> runBlocking {
                 ChatViewModelStore.stopAndJoin(id)
-                app.chatRepository.deleteSession(id)
+                app.chatRepository.dropSession(id)
                 ChatViewModelStore.finishDeletion(id, true)
             } }
             instances.forEach(app.providerRepository::updateInstance)

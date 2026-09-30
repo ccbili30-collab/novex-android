@@ -1,16 +1,16 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
+import novex.android.data.chat.MessageRow
+import novex.core.NovexConversationConfigurationSnapshot
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
-import com.openminis.app.novex.domain.NovexStoryIllustrations
+import novex.core.NovexStoryIllustrations
 import com.openminis.app.tools.NovexIllustrationTools
 
 /** Stateless presentation coordinator; callers provide the adopted configuration and active branch only. */
 internal object NovexStoryImageCoordinator {
-    fun tool(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, name: String, arguments: String, providedImages:List<com.openminis.app.novex.domain.NovexSnapshotMedia>?=null): JSONObject {
+    fun tool(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, name: String, arguments: String, providedImages:List<novex.core.NovexSnapshotMedia>?=null): JSONObject {
         val images = providedImages ?: NovexStoryIllustrations.available(configuration, visibleMessages)
         val output = if (name == NovexIllustrationTools.INSPECT) {
             val args = JSONObject(arguments.ifBlank { "{}" })
@@ -30,7 +30,7 @@ internal object NovexStoryImageCoordinator {
         return output
     }
     fun completed(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, blocks: List<AssistantBlock>,
-        start: Int, rows: List<MessageEntity>, messageId: String, providedImages:List<com.openminis.app.novex.domain.NovexSnapshotMedia>?=null): AssistantBlock? {
+        start: Int, rows: List<MessageRow>, messageId: String, providedImages:List<novex.core.NovexSnapshotMedia>?=null): AssistantBlock? {
         if (blocks.any { it.toolName == NOVEX_STORY_IMAGE }) return null
         val text = formalAssistantText(blocks.drop(start), "")
         if (text.isBlank()) return null

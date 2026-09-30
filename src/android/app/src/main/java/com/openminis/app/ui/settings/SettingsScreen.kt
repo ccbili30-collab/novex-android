@@ -47,10 +47,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,9 +68,9 @@ import androidx.compose.ui.res.stringResource
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.ui.components.openExternalUrl
-import com.openminis.app.ui.novex.NovexSettingsRow
-import com.openminis.app.ui.novex.NovexSettingsScaffold
-import com.openminis.app.ui.novex.NovexSettingsSection
+import novex.android.ui.NovexSettingsRow
+import novex.android.ui.NovexSettingsScaffold
+import novex.android.ui.NovexSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,25 +79,19 @@ fun SettingsScreen(
     onProvidersClick: () -> Unit,
     onModelGroupsClick: () -> Unit,
     onImageGenerationClick: () -> Unit = {},
-    onRootfsClick: () -> Unit = {},
-    onEnvVarsClick: () -> Unit = {},
+    // [T-storage-entry] 存储管理入口（原 onRootfsClick 参数名与去向不符，改名归位）
+    onStorageClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
-    onTerminalClick: () -> Unit = {},
     onMemoryClick: () -> Unit = {},
-    // [T-mcp-integration-android] MCP Integrations page, listed directly below
-    // Memory. Default no-op for callers that haven't wired the route yet.
-    onMcpClick: () -> Unit = {},
+    // [P3.3 裁军] onMcpClick（MCP 集成页入口参数）随 MCP 集成面退役摘除。
     // [T-soul-md] Soul settings page lives between Skills and Memory in the
     // Agent Runtime section; default no-op for callers that haven't wired
     // the route yet.
     onSoulClick: () -> Unit = {},
-    onPermissionsClick: () -> Unit = {},
+    // [P3.3 裁军] onPermissionsClick（权限页入口参数）随 offload 权限屏退役摘除。
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
     onLogsClick: () -> Unit = {},
-    // T219-2: Mount External Folders entry. Default no-op for any caller
-    // that hasn't wired the route yet.
-    onMountedFoldersClick: () -> Unit = {},
     // T235: Shared Folders entry (Shared / Skills / Memory). Default no-op
     // for back-compat with callers wired before T235.
     onSharedFoldersClick: () -> Unit = {},
@@ -131,6 +125,18 @@ fun SettingsScreen(
                 subtitle = "集中查看对话生成的文档、图片、地图和卡片",
                 showDivider = false,
                 onClick = onCreativeLibraryClick,
+            )
+        }
+        NovexSettingsSection(
+            title = "数据与存储",
+            footer = "会话文件、数据库、卡片数据与修订历史的占用与清理",
+        ) {
+            NovexSettingsRow(
+                icon = R.drawable.ic_phosphor_hard_drive,
+                title = "存储管理",
+                subtitle = "查看会话与卡片的空间占用",
+                showDivider = false,
+                onClick = onStorageClick,
             )
         }
         NovexSettingsSection(

@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.novex.domain.NovexResourceRef
-import com.openminis.app.novex.domain.NovexSourceCollectionPromptReceipt
+import novex.android.data.chat.MessageRow
+import novex.core.NovexResourceRef
+import novex.core.NovexSourceCollectionPromptReceipt
 import java.nio.file.Files
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,8 +18,8 @@ class NovexLearningWorkspaceBindingTest {
             listOf("safe" to "file.docx", "escape" to "../outside.docx").forEach { (id, path) ->
                 parts.put(JSONObject().put("type", "mediaRef").put("value", JSONObject().put("id", id).put("relativePath", path)))
             }
-            val owner = MessageEntity("attachment", "chat", "user", parts.toString(), 0, sortOrder = 0)
-            val reply = MessageEntity("reply", "chat", "assistant", "[]", 1, sortOrder = 1)
+            val owner = MessageRow("attachment", "chat", "user", parts.toString(), 0, sortOrder = 0)
+            val reply = MessageRow("reply", "chat", "assistant", "[]", 1, sortOrder = 1)
             val binding = requireNotNull(novexLearningWorkspaceBinding(ref, "chat", listOf(owner, reply), root))
             assertEquals("attachment", binding.scope.writeBranchId)
             assertEquals(setOf(NovexResourceRef("novex://sources/safe")), binding.originals.keys)

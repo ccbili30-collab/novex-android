@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
@@ -42,8 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
 
 @Composable
 fun MinisMenu(
@@ -67,7 +67,7 @@ fun MinisMenu(
     alignEnd: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    com.openminis.app.ui.novex.NovexPopupMenu(
+    novex.android.ui.NovexPopupMenu(
         expanded = expanded, onDismissRequest = onDismissRequest, modifier = modifier,
         offset = offset, scrollState = scrollState, properties = properties,
         shape = shape, containerColor = containerColor, tonalElevation = tonalElevation,

@@ -16,9 +16,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserActionInput
-import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
@@ -31,15 +29,15 @@ import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
-import com.openminis.app.data.db.CompactMarkerEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.LLMUsage
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.chat.CompactMarkerRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.LLMUsage
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.R
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
@@ -47,9 +45,6 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.terminal.MinisOpenUrlBroker
-import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
 import com.openminis.app.tools.FileEditTool
 import com.openminis.app.tools.FileReadTool
@@ -57,7 +52,6 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -126,14 +120,14 @@ data class ChatMessage(
     // analysis report for why we hide rather than silence). In-memory
     // only; assistant messages restored from DB get null and fall back
     // to the chat's current thinking level at render time.
-    val thinkingLevel: com.openminis.app.data.model.ThinkingLevel? = null,
+    val thinkingLevel: novex.android.data.model.ThinkingLevel? = null,
     val error: String? = null,
     // Queued user prompt awaiting injection into the running agent loop.
     // Mirrors iOS ChatMessage.isQueued / queuedPromptId.
     val isQueued: Boolean = false,
     val queuedPromptId: String? = null,
     /** Exact structured sources selected for this request; null before selection or on legacy turns. */
-    val novexContextUsage: com.openminis.app.novex.domain.ContextUsageRecord? = null,
+    val novexContextUsage: novex.core.ContextUsageRecord? = null,
     // Set to true when this message belongs to a range that has been folded
     // into a compact summary marker. Mirrors iOS ChatMessage.isCompactedHistory:
     // the message stays in the UI, but renders at reduced opacity so the user
@@ -247,14 +241,7 @@ data class SlashCommand(
      * built-in rows construct unchanged.
      */
     val isSkill: Boolean = false,
-    /**
-     * [T-mcp-integration-android] True when this row was synthesized from a
-     * configured MCP server (vs. a built-in command or a skill). Distinct from
-     * [isSkill] so the picker can tag MCP rows with [mcp] + a wrench icon and
-     * skills with ⚡. Tapping fills the composer with the server name; the
-     * actual discovery/call happens model-side via minis-mcp-cli.
-     */
-    val isMcp: Boolean = false,
+    // [P3.3 裁军] isMcp 标志随 MCP 集成面退役删除。
 )
 
 data class AssistantBlock(

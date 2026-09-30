@@ -10,9 +10,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
 import java.util.UUID
@@ -86,8 +86,8 @@ class NovexWorkspacePagingPipelineTest {
         val entry = app.providerRepository.entriesFor(providerId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "仓库分页验收")
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
                 NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.FREE))))
             created
         }

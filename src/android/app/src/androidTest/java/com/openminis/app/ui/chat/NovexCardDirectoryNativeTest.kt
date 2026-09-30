@@ -3,7 +3,7 @@ package com.openminis.app.ui.chat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.character.*
-import com.openminis.app.novex.adapter.NovexCardDirectoryStore
+import novex.android.adapter.NovexCardDirectoryStore
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

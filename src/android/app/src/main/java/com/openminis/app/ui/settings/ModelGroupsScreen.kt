@@ -23,24 +23,24 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyListState
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.AlertDialog
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,8 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.RoutingStrategy
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.RoutingStrategy
 import com.openminis.app.data.ModelGroupBinding
 import com.openminis.app.data.ModelGroupMove
 import com.openminis.app.data.modelGroupRemovalImpact
@@ -191,7 +191,7 @@ fun ModelGroupsScreen(
                 title = { Text(stringResource(R.string.model_groups_model_groups)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
                     }
                 },
                 actions = {
@@ -208,7 +208,7 @@ fun ModelGroupsScreen(
                     }
                     if (!isManagingGroups) {
                         IconButton(onClick = { showNewGroupDialog = true }) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.model_groups_new_group))
+                            Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.model_groups_new_group))
                         }
                     }
                 },
@@ -236,7 +236,7 @@ fun ModelGroupsScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Layers,
+                            novex.android.ui.NovexIcons.Layers,
                             contentDescription = null,
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -307,7 +307,7 @@ fun ModelGroupsScreen(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                             ) {
                                                 Icon(
-                                                    com.openminis.app.ui.novex.NovexIcons.DeleteOutline,
+                                                    novex.android.ui.NovexIcons.DeleteOutline,
                                                     contentDescription = null,
                                                     tint = MaterialTheme.colorScheme.onErrorContainer,
                                                 )
@@ -375,22 +375,8 @@ fun ModelGroupsScreen(
                             selectedId = config.defaultSubGroupId,
                             onSelect = { providerRepository.defaultSubGroupId = it },
                         )
-                        // [T-android-provider-voice] Voice group bindings —
-                        // mirrors iOS voiceInputGroupId / voiceOutputGroupId.
-                        SectionDivider()
-                        GroupDropdown(
-                            label = stringResource(R.string.model_groups_voice_input),
-                            groups = groups,
-                            selectedId = config.voiceInputGroupId,
-                            onSelect = { providerRepository.voiceInputGroupId = it },
-                        )
-                        SectionDivider()
-                        GroupDropdown(
-                            label = stringResource(R.string.model_groups_voice_output),
-                            groups = groups,
-                            selectedId = config.voiceOutputGroupId,
-                            onSelect = { providerRepository.voiceOutputGroupId = it },
-                        )
+                        // [P3.3 裁军] 语音输入/输出分组绑定两行（voiceInput/
+                        // OutputGroupId 下拉）随语音全家退役删除。
                         // [T-android-vision-group / GH#182] Vision Group — the
                         // group whose vision-capable members read images for a
                         // main model that cannot natively see them.
@@ -555,7 +541,7 @@ private fun BadgeLabel(text: String, color: androidx.compose.ui.graphics.Color) 
             style = MaterialTheme.typography.labelSmall,
             color = color,
             fontWeight = FontWeight.SemiBold,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(11),
+            fontSize = novex.android.ui.novexScaledSp(11),
         )
     }
 }
@@ -571,7 +557,7 @@ private fun GroupDropdown(
     val noneLabel = stringResource(R.string.model_groups_none)
     val selected = groups.find { it.id == selectedId }
     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Text(label, style = com.openminis.app.ui.novex.NovexType.Metadata)
+        Text(label, style = novex.android.ui.NovexType.Metadata)
         com.openminis.app.ui.components.SectionDropdown(
             selected = selected,
             items = listOf<ModelGroup?>(null) + groups,
@@ -599,7 +585,7 @@ private fun GroupDropdown(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LazyListScope.agentLoopModelsSectionItems(
     providerRepository: ProviderRepository,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
     reorderState: ReorderableLazyListState,
     onAddModelsTap: () -> Unit,
     onAddGroupsTap: () -> Unit,
@@ -732,7 +718,7 @@ private fun LazyListScope.agentLoopModelsSectionItems(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Add,
+                    novex.android.ui.NovexIcons.Add,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
@@ -746,7 +732,7 @@ private fun LazyListScope.agentLoopModelsSectionItems(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Add,
+                    novex.android.ui.NovexIcons.Add,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
@@ -793,7 +779,7 @@ private fun AgentLoopRow(
             modifier = dragHandleModifier.size(36.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.DragHandle,
+                imageVector = novex.android.ui.NovexIcons.DragHandle,
                 contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(20.dp),
@@ -825,7 +811,7 @@ private fun AgentLoopRow(
             modifier = Modifier.size(36.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.Close,
+                imageVector = novex.android.ui.NovexIcons.Close,
                 contentDescription = stringResource(R.string.agent_loop_section_remove),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp),
@@ -919,7 +905,7 @@ private val GROUP_MODALITY_PRIORITY: List<GroupModalityMarker> = listOf(
  */
 private fun groupTopModalities(
     group: ModelGroup,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
 ): List<GroupModalityMarker> {
     val inputs = mutableSetOf<String>()
     val outputs = mutableSetOf<String>()
@@ -946,14 +932,14 @@ private fun GroupModalityIcon(marker: GroupModalityMarker) {
     val inputTint = MaterialTheme.colorScheme.onSurfaceVariant
     val size = Modifier.size(14.dp)
     val (vector, labelRes, tint) = when {
-        marker.isOutput && marker.kind == "video" -> Triple(com.openminis.app.ui.novex.NovexIcons.MovieCreation, R.string.modeldetail_video_output, outputTint)
-        marker.isOutput && marker.kind == "image" -> Triple(com.openminis.app.ui.novex.NovexIcons.AddPhotoAlternate, R.string.modeldetail_image_output, outputTint)
-        marker.isOutput && marker.kind == "audio" -> Triple(com.openminis.app.ui.novex.NovexIcons.VolumeUp, R.string.modelgroup_speech_output, outputTint)
-        marker.isOutput && marker.kind == "text" -> Triple(com.openminis.app.ui.novex.NovexIcons.Article, R.string.modelgroup_text_generation, outputTint)
-        marker.kind == "audio" -> Triple(com.openminis.app.ui.novex.NovexIcons.Mic, R.string.modelgroup_speech_transcription, inputTint)
-        marker.kind == "video" -> Triple(com.openminis.app.ui.novex.NovexIcons.Videocam, R.string.modeldetail_video_input, inputTint)
-        marker.kind == "image" -> Triple(com.openminis.app.ui.novex.NovexIcons.Image, R.string.modeldetail_image_input, inputTint)
-        marker.kind == "pdf" -> Triple(com.openminis.app.ui.novex.NovexIcons.InsertDriveFile, R.string.modeldetail_pdf_input, inputTint)
+        marker.isOutput && marker.kind == "video" -> Triple(novex.android.ui.NovexIcons.MovieCreation, R.string.modeldetail_video_output, outputTint)
+        marker.isOutput && marker.kind == "image" -> Triple(novex.android.ui.NovexIcons.AddPhotoAlternate, R.string.modeldetail_image_output, outputTint)
+        marker.isOutput && marker.kind == "audio" -> Triple(novex.android.ui.NovexIcons.VolumeUp, R.string.modelgroup_speech_output, outputTint)
+        marker.isOutput && marker.kind == "text" -> Triple(novex.android.ui.NovexIcons.Article, R.string.modelgroup_text_generation, outputTint)
+        marker.kind == "audio" -> Triple(novex.android.ui.NovexIcons.Mic, R.string.modelgroup_speech_transcription, inputTint)
+        marker.kind == "video" -> Triple(novex.android.ui.NovexIcons.Videocam, R.string.modeldetail_video_input, inputTint)
+        marker.kind == "image" -> Triple(novex.android.ui.NovexIcons.Image, R.string.modeldetail_image_input, inputTint)
+        marker.kind == "pdf" -> Triple(novex.android.ui.NovexIcons.InsertDriveFile, R.string.modeldetail_pdf_input, inputTint)
         else -> return
     }
     Icon(imageVector = vector, contentDescription = stringResource(labelRes), modifier = size, tint = tint)
@@ -966,7 +952,7 @@ private fun GroupModalityIcon(marker: GroupModalityMarker) {
 @Composable
 private fun GroupRow(
     group: ModelGroup,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
     onClick: () -> Unit,
     isManaging: Boolean,
     canMoveUp: Boolean,
@@ -1031,7 +1017,7 @@ private fun GroupRow(
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.DeleteOutline,
+                    imageVector = novex.android.ui.NovexIcons.DeleteOutline,
                     contentDescription = stringResource(R.string.model_group_detail_delete_group),
                     tint = MaterialTheme.colorScheme.error,
                 )
@@ -1098,7 +1084,7 @@ private fun GroupRow(
                 modifier = dragHandleModifier.size(44.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.DragHandle,
+                    imageVector = novex.android.ui.NovexIcons.DragHandle,
                     contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(24.dp),
@@ -1108,7 +1094,7 @@ private fun GroupRow(
             Box {
                 IconButton(onClick = { actionsExpanded = true }) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.MoreVert,
+                        novex.android.ui.NovexIcons.MoreVert,
                         contentDescription = stringResource(R.string.model_groups_more_actions),
                     )
                 }
@@ -1122,7 +1108,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onEdit()
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.Edit, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.model_groups_duplicate_group)) },
@@ -1130,7 +1116,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onDuplicate()
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.model_groups_move_to_top)) },
@@ -1139,7 +1125,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onMove(ModelGroupMove.TOP)
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.VerticalAlignTop, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.VerticalAlignTop, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.model_groups_move_up)) },
@@ -1148,7 +1134,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onMove(ModelGroupMove.UP)
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.KeyboardArrowUp, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.model_groups_move_down)) },
@@ -1157,7 +1143,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onMove(ModelGroupMove.DOWN)
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.KeyboardArrowDown, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.model_groups_move_to_bottom)) },
@@ -1166,7 +1152,7 @@ private fun GroupRow(
                             actionsExpanded = false
                             onMove(ModelGroupMove.BOTTOM)
                         },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.VerticalAlignBottom, contentDescription = null) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.VerticalAlignBottom, contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = {
@@ -1181,7 +1167,7 @@ private fun GroupRow(
                         },
                         leadingIcon = {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.DeleteOutline,
+                                novex.android.ui.NovexIcons.DeleteOutline,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error,
                             )

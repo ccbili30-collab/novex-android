@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentContentPart
+import novex.android.data.model.AgentContentPart
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -55,7 +55,7 @@ internal fun encodeAssistantTurnParts(
         result.put(JSONObject().put("type", "novexCardTask").put("value", JSONObject(task.toolArgs)))
     }
     metadata.values.filter { it.toolName == NOVEX_STORY_IMAGE }.forEach { block ->
-        readStoryImage(block)?.let { result.put(JSONObject().put("type", NOVEX_STORY_IMAGE).put("value", com.openminis.app.novex.domain.NovexSnapshotMediaCodec.encode(it))) }
+        readStoryImage(block)?.let { result.put(JSONObject().put("type", NOVEX_STORY_IMAGE).put("value", novex.core.NovexSnapshotMediaCodec.encode(it))) }
     }
     return result.toString()
 }

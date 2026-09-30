@@ -178,7 +178,7 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                             .padding(horizontal = 20.dp, vertical = 16.dp),
                     ) {
                         CircularProgressIndicator(
-                            color = com.openminis.app.ui.novex.NovexColors.Primary,
+                            color = novex.android.ui.NovexColors.Primary,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(22.dp),
                         )

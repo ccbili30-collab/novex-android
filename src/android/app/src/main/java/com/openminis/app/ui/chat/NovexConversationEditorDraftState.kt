@@ -1,16 +1,16 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
-import com.openminis.app.novex.domain.AnswerIdentity
-import com.openminis.app.novex.domain.ConversationControlDefinition
-import com.openminis.app.novex.domain.ConversationPlayerIdentity
-import com.openminis.app.novex.domain.ManagedAccess
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexConversationCommand
-import com.openminis.app.novex.domain.NovexConversationConfiguration
-import com.openminis.app.novex.domain.NovexConversationConfigurationCodec
-import com.openminis.app.novex.domain.NovexConversationConfigurationSnapshot
+import novex.core.ActiveInteractiveFictionSnapshot
+import novex.core.AnswerIdentity
+import novex.core.ConversationControlDefinition
+import novex.core.ConversationPlayerIdentity
+import novex.core.ManagedAccess
+import novex.core.NovexContentAddress
+import novex.core.NovexConversationCommand
+import novex.core.NovexConversationConfiguration
+import novex.core.NovexConversationConfigurationCodec
+import novex.core.NovexConversationConfigurationSnapshot
 
 /** Labelled catalog entry used by the editor without exposing repositories to presentation code. */
 internal data class ConversationContentOption(
@@ -28,7 +28,7 @@ internal data class NovexConversationEditorDraftState(
         edit: (ConversationSettingsSnapshot) -> ConversationSettingsSnapshot,
     ) = copy(settings = edit(settings))
 
-    fun setExecutionMode(mode: com.openminis.app.novex.domain.NovexExecutionMode) = apply(
+    fun setExecutionMode(mode: novex.core.NovexExecutionMode) = apply(
         NovexConversationCommand.SetExecutionMode(mode),
     )
 
@@ -48,7 +48,7 @@ internal data class NovexConversationEditorDraftState(
         NovexConversationCommand.RemoveBackground(subject),
     )
 
-    fun setSettingEnabled(target: com.openminis.app.novex.domain.NovexReferenceTarget, enabled: Boolean) = apply(
+    fun setSettingEnabled(target: novex.core.NovexReferenceTarget, enabled: Boolean) = apply(
         NovexConversationCommand.SetSettingEnabled(target, enabled),
     )
 
@@ -68,8 +68,8 @@ internal data class NovexConversationEditorDraftState(
 
     /** Both purposes are saved together; identity and active play remain independent. */
     fun useAndManage(subject: NovexContentAddress): NovexConversationEditorDraftState {
-        require(subject.kind == com.openminis.app.novex.domain.NovexContentKind.WORLD ||
-            subject.kind == com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION)
+        require(subject.kind == novex.core.NovexContentKind.WORLD ||
+            subject.kind == novex.core.NovexContentKind.CHARACTER_VERSION)
         return addBackground(subject).mount(subject, ManagedAccess.EDIT)
     }
 

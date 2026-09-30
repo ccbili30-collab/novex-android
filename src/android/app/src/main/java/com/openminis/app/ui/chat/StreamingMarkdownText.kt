@@ -37,7 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.Checkbox
+import novex.android.ui.Checkbox
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -94,7 +94,6 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.openminis.app.ui.DisplayBitmapLimits.limitDisplaySize
-import com.openminis.app.sandbox.PRootKernel
 import com.openminis.app.ui.theme.ChatColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -104,6 +103,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import java.io.File
+import novex.android.ContentPaths
 
 // ─── MinisTextKit hook ────────────────────────────────────────────────────────
 // Each markdown fragment renders inside a [MarkdownBlock] / [RenderBlock]
@@ -233,7 +233,7 @@ val LocalMarkdownImageTapHandler =
 
 /**
  * Session id that owns the currently-rendering markdown. Used by
- * `resolveMdMediaFile` to prefer `PRootKernel.resolveSessionHostPath` — the
+ * `resolveMdMediaFile` to prefer `ContentPaths.resolveSessionHostPath` — the
  * session-scoped resolver — over the global `bindMounts` map, which is
  * last-writer-wins across sessions. Null in contexts that don't know the
  * owning session (e.g. standalone previews).
@@ -1724,7 +1724,7 @@ private fun RenderBlock(block: MdBlock) {
                         modifier = Modifier.weight(1f),
                     )
                     Icon(
-                        imageVector = if (copied) com.openminis.app.ui.novex.NovexIcons.Check else com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                        imageVector = if (copied) novex.android.ui.NovexIcons.Check else novex.android.ui.NovexIcons.ContentCopy,
                         contentDescription = if (copied) "Copied" else "Copy code",
                         tint = if (copied) Color(0xFF34C759) else Color.White.copy(alpha = 0.4f),
                         modifier = Modifier
@@ -1891,7 +1891,7 @@ private fun RenderBlock(block: MdBlock) {
             val sessionId = LocalMarkdownSessionId.current
             // Resolve to a host File via the session-scoped resolver before
             // handing off to Coil. AsyncImage(model = "minis://...") routes
-            // through MinisImageFetcher → PRootKernel.resolveHostPath, which
+            // through MinisImageFetcher → ContentPaths.resolveHostPath, which
             // reads the *global* bindMounts map — last-writer-wins across
             // sessions. When another session booted its shell more recently,
             // that global lookup answers with the wrong session's path (or
@@ -2223,7 +2223,7 @@ private fun BrokenImagePlaceholder(alt: String?) {
             modifier = Modifier.padding(12.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.BrokenImage,
+                imageVector = novex.android.ui.NovexIcons.BrokenImage,
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
                 tint = palette.secondaryText,
@@ -2246,7 +2246,7 @@ private fun BrokenImagePlaceholder(alt: String?) {
  * Resolve a markdown media URL (`minis://attachments/foo.mp4`, file://, or
  * plain absolute path) to a host File.
  *
- * First tries `PRootKernel.resolveHostPath` (same as MinisImageFetcher). If
+ * First tries `ContentPaths.resolveHostPath` (same as MinisImageFetcher). If
  * that fails — e.g. bind mounts are pointing at a different session, or the
  * file was written under a `__new__...` draft id that predates
  * `ensureSession()` rename — we fall back to scanning all per-session
@@ -2270,8 +2270,8 @@ internal fun resolveMdMediaFile(context: Context, url: String, sessionId: String
             // another session boots its shell, so without sessionId we'd route
             // this chat's attachment lookup to whichever session happened to
             // boot last.
-            if (sessionId != null) PRootKernel.resolveSessionHostPath(sessionId, linuxPath, context)
-            else PRootKernel.resolveHostPath(linuxPath)
+            if (sessionId != null) ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
+            else ContentPaths.resolveHostPath(linuxPath)
         }
         stripped.startsWith("file://") -> File(Uri.parse(stripped).path ?: return null)
         stripped.startsWith("/") -> File(stripped)
@@ -2356,7 +2356,6 @@ private fun RenderMdVideo(block: MdBlock.Video) {
     val sessionId = LocalMarkdownSessionId.current
     val file = remember(block.url, sessionId) { resolveMdMediaFile(context, block.url, sessionId) }
     val filename = remember(block.url) { filenameFromMdUrl(block.url) }
-    var showPlayer by remember { mutableStateOf(false) }
 
     val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = file?.absolutePath) {
         val f = file ?: run { value = null; return@produceState }
@@ -2376,12 +2375,8 @@ private fun RenderMdVideo(block: MdBlock.Video) {
         }
     }
 
-    if (showPlayer && file != null) {
-        com.openminis.app.ui.media.MinisFullscreenVideoPlayer(
-            file = file,
-            onDismiss = { showPlayer = false },
-        )
-    }
+    // [P3.3 裁军] 全屏内嵌视频播放器（MinisFullscreenVideoPlayer）退役；
+    // 点击改经 FileProvider 外跳系统播放器。
 
     Column(
         modifier = Modifier
@@ -2391,8 +2386,8 @@ private fun RenderMdVideo(block: MdBlock.Video) {
             .background(colors.inlineCodeBg)
             .border(0.5.dp, colors.tableBorder, RoundedCornerShape(8.dp))
             .clickable(enabled = file != null) {
-                android.util.Log.d("MdStream", "open fullscreen video for ${file?.absolutePath}")
-                showPlayer = true
+                android.util.Log.d("MdStream", "open external video for ${file?.absolutePath}")
+                file?.let { com.openminis.app.ui.components.openMediaFileExternally(context, it) }
             },
     ) {
         Box(
@@ -2411,7 +2406,7 @@ private fun RenderMdVideo(block: MdBlock.Video) {
                 )
             }
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled,
+                imageVector = novex.android.ui.NovexIcons.PlayCircleFilled,
                 contentDescription = "Play video",
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.size(56.dp),
@@ -2424,7 +2419,7 @@ private fun RenderMdVideo(block: MdBlock.Video) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.Videocam,
+                imageVector = novex.android.ui.NovexIcons.Videocam,
                 contentDescription = null,
                 tint = colors.blockquote,
                 modifier = Modifier.size(14.dp),
@@ -2499,7 +2494,7 @@ private fun RenderMdAudio(block: MdBlock.Audio) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Audiotrack,
+            imageVector = novex.android.ui.NovexIcons.Audiotrack,
             contentDescription = null,
             tint = colors.blockquote,
             modifier = Modifier.size(18.dp),
@@ -2534,7 +2529,7 @@ private fun RenderMdAudio(block: MdBlock.Audio) {
             }
         }
         Icon(
-            imageVector = if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+            imageVector = if (isPlaying) novex.android.ui.NovexIcons.Pause else novex.android.ui.NovexIcons.PlayArrow,
             contentDescription = if (isPlaying) "Pause" else "Play",
             tint = tint,
             modifier = Modifier.size(28.dp),

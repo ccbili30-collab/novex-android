@@ -1,8 +1,8 @@
 package com.openminis.app.provider.openrouter
 
 import android.content.Context
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.normalizeModalities
+import novex.android.data.model.LLMModel
+import novex.android.data.model.normalizeModalities
 import com.openminis.app.provider.ModelsDevApi
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.ProviderModelsCache
@@ -89,7 +89,7 @@ object OpenRouterModelsApi {
             val inputModalities = arch?.optJSONArray("input_modalities")?.toStringList().normalizeModalities()
             val outputModalities = arch?.optJSONArray("output_modalities")?.toStringList().normalizeModalities()
 
-            val contextWindow = com.openminis.app.data.model.ReportedContextWindow.read(obj)
+            val contextWindow = novex.android.data.model.ReportedContextWindow.read(obj)
             val maxOutputTokens = obj.optJSONObject("top_provider")
                 ?.optInt("max_completion_tokens")?.takeIf { it > 0 }
 

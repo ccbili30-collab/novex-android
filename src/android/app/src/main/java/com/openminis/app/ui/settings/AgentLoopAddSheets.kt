@@ -19,9 +19,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -94,7 +94,7 @@ fun AddAgentLoopModelsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                            novex.android.ui.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.model_group_detail_back),
                         )
                     }
@@ -185,7 +185,7 @@ fun AddAgentLoopGroupsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.ArrowBack,
+                            novex.android.ui.NovexIcons.ArrowBack,
                             contentDescription = stringResource(R.string.model_group_detail_back),
                         )
                     }
@@ -281,7 +281,7 @@ fun AddAgentLoopGroupsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
-                                    if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.RadioButtonUnchecked,
+                                    if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
                                     contentDescription = null,
                                     tint = if (isSelected) Color(0xFF007AFF)
                                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),

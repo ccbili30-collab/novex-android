@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -41,8 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.db.ChatDao
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.ChatDao
+import novex.android.data.chat.SessionRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,25 +62,31 @@ private data class SessionStorageInfo(
 fun StorageManagementScreen(
     chatDao: ChatDao,
     onBack: () -> Unit,
-    onRootfsClick: () -> Unit,
     onSessionClick: (sessionId: String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(true) }
-    var shellSize by remember { mutableLongStateOf(0L) }
     var dbSize by remember { mutableLongStateOf(0L) }
+    // [T-memory-cap-and-storage] 卡片数据拆两桶：修订历史（revisions/）每次
+    // 保存累积一个文件、无上限——1.98G 数据目录的主嫌，必须单独可见。
+    var cardContentSize by remember { mutableLongStateOf(0L) }
+    var cardRevisionSize by remember { mutableLongStateOf(0L) }
     var sessions by remember { mutableStateOf<List<SessionStorageInfo>>(emptyList()) }
 
     fun reload() {
         scope.launch {
             isLoading = true
             withContext(Dispatchers.IO) {
-                shellSize = directorySize(File(context.filesDir, "alpine-rootfs"))
                 dbSize = databaseSize(context)
 
-                val allSessions = chatDao.listSessions()
+                val cardDir = File(context.filesDir, "rewrite-content")
+                val revisions = directorySize(File(cardDir, "revisions"))
+                cardRevisionSize = revisions
+                cardContentSize = (directorySize(cardDir) - revisions).coerceAtLeast(0L)
+
+                val allSessions = chatDao.primarySessions()
                 val sessionsDir = File(context.filesDir, "minis-sessions")
                 val mediaDir = File(context.filesDir, "media")
 
@@ -107,13 +113,6 @@ fun StorageManagementScreen(
     SettingsScaffold(title = stringResource(R.string.storage_title), onBack = onBack) {
         SettingsSection(header = stringResource(R.string.storage_section_overview)) {
             StorageOverviewRow(
-                color = Color(0xFF8E8E93),
-                label = stringResource(R.string.storage_overview_shell),
-                value = Formatter.formatFileSize(context, shellSize),
-                onClick = onRootfsClick,
-                showDivider = true,
-            )
-            StorageOverviewRow(
                 color = Color(0xFF007AFF),
                 label = stringResource(R.string.storage_overview_database),
                 value = Formatter.formatFileSize(context, dbSize),
@@ -123,6 +122,18 @@ fun StorageManagementScreen(
                 color = Color(0xFF5856D6),
                 label = stringResource(R.string.storage_overview_sessions),
                 value = Formatter.formatFileSize(context, totalSessionSize),
+                showDivider = true,
+            )
+            StorageOverviewRow(
+                color = Color(0xFF34C759),
+                label = stringResource(R.string.storage_overview_card_content),
+                value = Formatter.formatFileSize(context, cardContentSize),
+                showDivider = true,
+            )
+            StorageOverviewRow(
+                color = Color(0xFFFF9500),
+                label = stringResource(R.string.storage_overview_card_revisions),
+                value = Formatter.formatFileSize(context, cardRevisionSize),
                 showDivider = false,
             )
         }
@@ -169,7 +180,7 @@ fun SessionStorageDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var session by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var session by remember { mutableStateOf<SessionRow?>(null) }
     var minisSize by remember { mutableLongStateOf(0L) }
     var mediaSize by remember { mutableLongStateOf(0L) }
     var isClearing by remember { mutableStateOf(false) }
@@ -181,7 +192,7 @@ fun SessionStorageDetailScreen(
     fun reload() {
         scope.launch {
             withContext(Dispatchers.IO) {
-                session = chatDao.getSession(sessionId)
+                session = chatDao.sessionById(sessionId)
                 minisSize = directorySize(File(sessionsDir, sessionId))
                 val mediaSizes = mediaSizesBySession(mediaDir, setOf(sessionId))
                 mediaSize = mediaSizes[sessionId] ?: 0L
@@ -335,7 +346,7 @@ private fun StorageOverviewRow(
             if (onClick != null) {
                 Spacer(Modifier.width(4.dp))
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                    novex.android.ui.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(20.dp),

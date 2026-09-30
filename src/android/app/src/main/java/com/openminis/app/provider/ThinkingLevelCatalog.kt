@@ -1,8 +1,8 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ThinkingLevel
 
 /**
  * [T-android-thinking-level-arch] Declarative catalog of each model's thinking-

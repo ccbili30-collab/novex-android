@@ -10,9 +10,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File
 import java.util.UUID
@@ -70,8 +70,8 @@ class NovexStreamCompletionViewportTest {
         val entry = app.providerRepository.entriesFor(providerId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "仓库分页验收")
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
                 NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.FREE))))
             created
         }
@@ -145,7 +145,7 @@ class NovexStreamCompletionViewportTest {
                 .put("entry_exists", app.providerRepository.config.value.modelEntries.any { it.id == entry.id })
                 .put("provider_exists", app.providerRepository.instance(providerId) != null)
                 .put("credential_exists", app.providerRepository.instance(providerId)?.let { app.providerRepository.usableApiKey(it) != null })
-                .put("stored_binding", runBlocking { app.chatRepository.getSession(session.id) }?.modelBinding)
+                .put("stored_binding", runBlocking { app.chatRepository.sessionById(session.id) }?.modelBinding)
                 .put("provider_url", app.providerRepository.instance(providerId)?.customBaseURL)
                 .toString(2))
             val label = if (waitForBody) "body-history" else if (readHistory) "history" else "following"

@@ -84,8 +84,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.BuildConfig
 import com.openminis.app.R
 import com.openminis.app.data.FileMentionIndex
@@ -187,32 +187,30 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.character.effectivePlayerAvatarPath
 import com.openminis.app.data.character.effectivePlayerName
 import com.openminis.app.data.character.usesRolePresentation
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
-import com.openminis.app.novex.domain.ContextSourceKind
-import com.openminis.app.ui.novex.NovexContentDialog
-import com.openminis.app.ui.novex.TextButton as NovexTextButton
+import novex.core.ContextSourceKind
+import novex.android.ui.NovexContentDialog
+import novex.android.ui.TextButton as NovexTextButton
 
 // ─── User Message (right-aligned, iOS: tertiarySystemFill bubble, 18dp radius) ─
 
@@ -330,7 +328,7 @@ internal fun UserMessageBubble(
                     ) {
                         val textColor = if (isQueued) secondaryTextColor else userTextColor
                         val bubbleBg = if (isQueued) Color.Transparent else userBubbleColor
-                        // [feat/ui-rikkahub] 18dp → 16dp: RikkaHub bubble formula.
+                        // [feat/ui-rikkahub] 18dp → 16dp: mainstream chat bubble formula.
                         val shape = RoundedCornerShape(16.dp)
                         val dashedStroke = if (isQueued) {
                             Modifier.drawBehind {
@@ -402,7 +400,7 @@ internal fun UserMessageBubble(
                                 modifier = Modifier.size(44.dp),
                             ) {
                                 Icon(
-                                    imageVector = com.openminis.app.ui.novex.NovexIcons.Cancel,
+                                    imageVector = novex.android.ui.NovexIcons.Cancel,
                                     contentDescription = "Withdraw queued message",
                                     tint = Color(0xFFFF3B30),
                                     modifier = Modifier.size(24.dp),
@@ -496,13 +494,13 @@ internal fun UserMessageBubble(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.chat_longpress_copy)) },
                     onClick = { showMenu = false; onCopy() },
-                    leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    leadingIcon = { Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )
                 if (onShare != null) {
                     DropdownMenuItem(
                         text = { Text("分享到其他文游") },
                         onClick = { showMenu = false; onShare() },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 // T119: while the model is generating, hide every action that
@@ -513,7 +511,7 @@ internal fun UserMessageBubble(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_retry)) },
                         onClick = { showMenu = false; onRetry() },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 // T187: Edit replaces the original turn with edited text. Same
@@ -522,14 +520,14 @@ internal fun UserMessageBubble(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_edit)) },
                         onClick = { showMenu = false; onEdit() },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
                 if (onDelete != null) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_longpress_delete_from_here)) },
                         onClick = { showMenu = false; onDelete() },
-                        leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        leadingIcon = { Icon(novex.android.ui.NovexIcons.Delete, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     )
                 }
             }
@@ -551,7 +549,7 @@ internal fun UserMessageBubble(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = com.openminis.app.ui.novex.NovexIcons.Person,
+                        imageVector = novex.android.ui.NovexIcons.Person,
                         contentDescription = "玩家默认头像",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(19.dp),
@@ -595,7 +593,7 @@ internal fun UserMessageBubble(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Icon(
-                            imageVector = if (perTurnOpen) com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp else com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                            imageVector = if (perTurnOpen) novex.android.ui.NovexIcons.KeyboardArrowUp else novex.android.ui.NovexIcons.KeyboardArrowDown,
                             contentDescription = if (perTurnOpen) "Collapse" else "Expand",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier.size(12.dp),
@@ -635,7 +633,7 @@ internal fun UserMessageBubble(
                 }
                 if (usage.sourceReads.isNotEmpty()) {
                     Text("本轮查看记录", color = ChatColors.primaryText, fontWeight = FontWeight.SemiBold)
-                    com.openminis.app.novex.domain.NovexSourceReadCoverage.from(usage.sourceReads).forEach { coverage ->
+                    novex.core.NovexSourceReadCoverage.from(usage.sourceReads).forEach { coverage ->
                         val methods = usage.sourceReads.filter { it.sourceId == coverage.sourceId && it.revision == coverage.revision }
                             .map { it.method.label }.distinct().joinToString("、")
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -659,17 +657,17 @@ internal fun UserMessageBubble(
 }
 
 /** [feat/ui-rikkahub] 上下文来源类型的中文标签——弹窗里标明每条注入是什么。 */
-private fun contextSourceKindLabel(kind: com.openminis.app.novex.domain.ContextSourceKind): String = when (kind) {
-    com.openminis.app.novex.domain.ContextSourceKind.ANSWER_IDENTITY -> "回答身份"
-    com.openminis.app.novex.domain.ContextSourceKind.CONVERSATION_PROMPT -> "系统提示"
-    com.openminis.app.novex.domain.ContextSourceKind.ACTIVE_BRANCH_MESSAGE -> "对话消息"
-    com.openminis.app.novex.domain.ContextSourceKind.ATTACHED_DOCUMENT -> "附件"
-    com.openminis.app.novex.domain.ContextSourceKind.BACKGROUND_MODULE -> "背景模块"
-    com.openminis.app.novex.domain.ContextSourceKind.SUMMARY -> "摘要"
-    com.openminis.app.novex.domain.ContextSourceKind.MEMORY -> "记忆"
-    com.openminis.app.novex.domain.ContextSourceKind.PLAYTHROUGH_STATE -> "游玩状态"
-    com.openminis.app.novex.domain.ContextSourceKind.TOOL_DEFINITION -> "工具定义"
-    com.openminis.app.novex.domain.ContextSourceKind.TOOL_RESULT -> "工具结果"
+private fun contextSourceKindLabel(kind: novex.core.ContextSourceKind): String = when (kind) {
+    novex.core.ContextSourceKind.ANSWER_IDENTITY -> "回答身份"
+    novex.core.ContextSourceKind.CONVERSATION_PROMPT -> "系统提示"
+    novex.core.ContextSourceKind.ACTIVE_BRANCH_MESSAGE -> "对话消息"
+    novex.core.ContextSourceKind.ATTACHED_DOCUMENT -> "附件"
+    novex.core.ContextSourceKind.BACKGROUND_MODULE -> "背景模块"
+    novex.core.ContextSourceKind.SUMMARY -> "摘要"
+    novex.core.ContextSourceKind.MEMORY -> "记忆"
+    novex.core.ContextSourceKind.PLAYTHROUGH_STATE -> "游玩状态"
+    novex.core.ContextSourceKind.TOOL_DEFINITION -> "工具定义"
+    novex.core.ContextSourceKind.TOOL_RESULT -> "工具结果"
 }
 
 /** [feat/ui-rikkahub] 携带展示名：卡类模块去掉归属前缀，显示"卡 · 模块"；
@@ -796,13 +794,13 @@ private fun FileAttachmentTile(
 private fun fileIconFor(fileName: String): androidx.compose.ui.graphics.vector.ImageVector {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     return when (ext) {
-        "pdf" -> com.openminis.app.ui.novex.NovexIcons.PictureAsPdf
-        "doc", "docx", "pages" -> com.openminis.app.ui.novex.NovexIcons.Article
-        "txt", "log", "csv", "md", "markdown" -> com.openminis.app.ui.novex.NovexIcons.Article
-        "mp4", "mov", "avi", "mkv" -> com.openminis.app.ui.novex.NovexIcons.VideoFile
-        "mp3", "wav", "m4a", "aac" -> com.openminis.app.ui.novex.NovexIcons.AudioFile
-        "zip", "tar", "gz", "7z" -> com.openminis.app.ui.novex.NovexIcons.FolderZip
-        else -> com.openminis.app.ui.novex.NovexIcons.InsertDriveFile
+        "pdf" -> novex.android.ui.NovexIcons.PictureAsPdf
+        "doc", "docx", "pages" -> novex.android.ui.NovexIcons.Article
+        "txt", "log", "csv", "md", "markdown" -> novex.android.ui.NovexIcons.Article
+        "mp4", "mov", "avi", "mkv" -> novex.android.ui.NovexIcons.VideoFile
+        "mp3", "wav", "m4a", "aac" -> novex.android.ui.NovexIcons.AudioFile
+        "zip", "tar", "gz", "7z" -> novex.android.ui.NovexIcons.FolderZip
+        else -> novex.android.ui.NovexIcons.InsertDriveFile
     }
 }
 
@@ -850,7 +848,7 @@ private fun ImageGalleryDialog(
                     .padding(8.dp),
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Close,
+                    novex.android.ui.NovexIcons.Close,
                     contentDescription = "Close",
                     tint = Color.White,
                 )

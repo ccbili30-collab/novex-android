@@ -8,8 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.android.data.model.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -74,8 +74,8 @@ class NovexHistoryPrivacyInteractionTest {
         val secret = "旧身份私有口令_紫色雨伞_仅此一次"
         val session = runBlocking {
             val session = app.chatRepository.createSession(model.id, title = "历史隔离验收")
-            app.chatRepository.updateSessionBinding(session.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(session.id, ConversationSettingsSnapshot("", novexConfigurationJson =
+            app.chatRepository.rebindSessionModel(session.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(session.id, ConversationSettingsSnapshot("", novexConfigurationJson =
                 NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(session.id, executionMode = NovexExecutionMode.FREE))))
             fun text(value: String) = JSONArray().put(JSONObject().put("type", "text").put("value", value)).toString()
             val user = app.chatRepository.appendMessage(session.id, "user", text("请保存这份工作，下一次继续整理邮局资料。"))
@@ -104,7 +104,7 @@ class NovexHistoryPrivacyInteractionTest {
                 responseMessageId = assistant.id, branchId = assistant.id,
                 answerIdentity = AnswerIdentity.PersonaPreset("old-private", "旧身份", secret), includedSources = emptyList(),
                 usedTokens = 100, effectiveWindowTokens = 128000))
-            if (withCompactSummary) app.chatRepository.dao.insertCompactMarker(com.openminis.app.data.db.CompactMarkerEntity(
+            if (withCompactSummary) app.chatRepository.dao.addMarker(novex.android.data.chat.CompactMarkerRow(
                 id = "legacy-private-${session.id}", sessionId = session.id, summary = "旧环境的压缩摘要：$secret",
                 firstKeptSortOrder = Int.MAX_VALUE, compactedCount = 4, createdAt = System.currentTimeMillis(),
                 lastCompactedMessageId = formal.id, version = 2))

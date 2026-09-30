@@ -13,12 +13,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexSettingsCustomRow
-import com.openminis.app.ui.novex.NovexSettingsScaffold
-import com.openminis.app.ui.novex.NovexSettingsSection
-import com.openminis.app.ui.novex.NovexSettingsVectorRow
-import com.openminis.app.ui.novex.NovexSettingsVectorToggleRow
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexSettingsCustomRow
+import novex.android.ui.NovexSettingsScaffold
+import novex.android.ui.NovexSettingsSection
+import novex.android.ui.NovexSettingsVectorRow
+import novex.android.ui.NovexSettingsVectorToggleRow
 
 /**
  * Compatibility adapter for existing settings pages.
@@ -159,7 +159,7 @@ fun SettingsChoiceRow(
         trailing = if (selected) {
             {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Check,
+                    novex.android.ui.NovexIcons.Check,
                     contentDescription = "已选择",
                     tint = NovexColors.Primary,
                 )

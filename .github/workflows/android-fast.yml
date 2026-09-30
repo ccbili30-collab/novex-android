@@ -31,7 +31,6 @@ on:
     paths:
       - "src/android/**"
       - "scripts/android_fast_check_plan.sh"
-      - "scripts/prepare_android_sandbox.sh"
       - "scripts/verify_android_release.sh"
       - "scripts/tests/android_*fast*"
       - ".github/workflows/android-fast.yml"
@@ -138,12 +137,6 @@ jobs:
             "build-tools;35.0.0" \
             "cmake;3.22.1" \
             "ndk;27.0.12077973"
-
-      - name: Prepare sandbox runtime
-        if: >-
-          ${{ steps.plan.outputs.plan != 'novex-core' && steps.plan.outputs.plan != 'skip' ||
-              github.event_name == 'workflow_dispatch' && inputs.build_preview }}
-        run: ./scripts/prepare_android_sandbox.sh
 
       - name: Restore preview signing
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_preview }}

@@ -23,7 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -46,7 +46,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.key
 import sh.calvin.reorderable.ReorderableColumn
-import com.openminis.app.data.model.ProviderInstance
+import novex.android.data.model.ProviderInstance
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +60,7 @@ fun ProviderListScreen(
     onBack: () -> Unit,
     onAddProvider: () -> Unit,
     onProviderClick: (String) -> Unit,
-    onVoiceServiceClick: (String) -> Unit = {},
+    // [P3.3 裁军] onVoiceServiceClick（语音服务影子页跳转）随语音全家退役摘除。
 ) {
     val config by providerRepository.config.collectAsState()
     val scope = rememberCoroutineScope()
@@ -124,7 +124,7 @@ fun ProviderListScreen(
         onBack = onBack,
         actions = {
             IconButton(onClick = { showMenu = true }) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
+                Icon(novex.android.ui.NovexIcons.Add, contentDescription = stringResource(R.string.provider_list_add_provider))
             }
         },
     ) {
@@ -142,7 +142,7 @@ fun ProviderListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.VpnKey,
+                    imageVector = novex.android.ui.NovexIcons.VpnKey,
                     contentDescription = null,
                     modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
@@ -204,7 +204,7 @@ fun ProviderListScreen(
                             // instances always show the gray dot even after a
                             // successful sign-in or manual token paste.
                             val isConfigured = if (instance.credentialType ==
-                                com.openminis.app.data.model.ProviderCredential.oauth) {
+                                novex.android.data.model.ProviderCredential.oauth) {
                                 val mgr = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                                 mgr?.isAuthenticated() == true
                             } else {
@@ -248,38 +248,8 @@ fun ProviderListScreen(
             }
         }
 
-        // [T-android-provider-voice] Voice Services: runtime shadow mirror of
-        // every enabled instance that owns audio-modality models (mirrors iOS
-        // ProviderInstancesView's Voice Services section). Rows are read-only
-        // views onto the underlying instance — no stored entity.
-        val shadows = remember(config) { providerRepository.shadowVoiceProviders() }
-        if (shadows.isNotEmpty()) {
-            SettingsSection(
-                header = stringResource(R.string.voice_services_section),
-                footer = if (providerRepository.hasFoldedShadowDuplicates()) {
-                    stringResource(R.string.voice_services_duplicate_hint)
-                } else {
-                    null
-                },
-            ) {
-                shadows.forEachIndexed { index, shadow ->
-                    ShadowVoiceRow(
-                        shadow = shadow,
-                        onClick = { onVoiceServiceClick(shadow.instanceId) },
-                    )
-                    if (index < shadows.size - 1) {
-                        val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 38.dp, end = 14.dp)
-                                .height(0.5.dp)
-                                .background(divider),
-                        )
-                    }
-                }
-            }
-        }
+        // [P3.3 裁军] Voice Services 影子区（shadowVoiceSources + ShadowVoiceRow）
+        // 随语音全家退役删除。
         Spacer(Modifier.height(80.dp))
     }
 
@@ -299,7 +269,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(novex.android.ui.NovexIcons.Add, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_add_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -320,7 +290,7 @@ fun ProviderListScreen(
                         .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Icon(novex.android.ui.NovexIcons.FileDownload, contentDescription = null, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(stringResource(R.string.provider_list_import_provider), style = MaterialTheme.typography.bodyLarge)
                 }
@@ -418,7 +388,7 @@ private fun ProviderInstanceRow(
         }
 
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+            imageVector = novex.android.ui.NovexIcons.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp),
@@ -431,57 +401,5 @@ private fun maskKey(key: String): String {
     return key.take(6) + "..." + key.takeLast(4)
 }
 
-/** One shadow Voice Service row: name + ASR/TTS model counts. */
-@Composable
-private fun ShadowVoiceRow(
-    shadow: ProviderRepository.ShadowVoiceProvider,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.GraphicEq,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = shadow.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            val parts = buildList {
-                if (shadow.inputModels.isNotEmpty()) {
-                    add(stringResource(R.string.voice_services_stt_count, shadow.inputModels.size))
-                }
-                if (shadow.outputModels.isNotEmpty()) {
-                    add(stringResource(R.string.voice_services_tts_count, shadow.outputModels.size))
-                }
-            }
-            if (parts.isNotEmpty()) {
-                Text(
-                    text = parts.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
+// [P3.3 裁军] ShadowVoiceRow 随 Voice Services 影子区退役删除。
+

@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMStreamChunk
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMStreamChunk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose

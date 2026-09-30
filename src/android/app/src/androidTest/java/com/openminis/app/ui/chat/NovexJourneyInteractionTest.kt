@@ -8,9 +8,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.data.character.ContentModuleType
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
 import com.openminis.app.ui.theme.MinisTheme
@@ -63,7 +63,7 @@ class NovexJourneyInteractionTest {
                 NovexModuleDraft("journey-profile", ContentModuleType.CUSTOM, "邮差档案", """{"text":"替亡者送信，害怕鬼。"}""", false)))).requireCharacter() }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "卡片成果验收", memoryEnabled = false)
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", savedEntry.id).toString(), model.id)
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", savedEntry.id).toString(), model.id)
             app.chatRepository.appendMessage(created.id, "user", """[{"type":"text","value":"创建验收邮差角色"}]""")
             created
         }
@@ -84,7 +84,7 @@ class NovexJourneyInteractionTest {
             ui.onNodeWithText("邮差档案").assertIsDisplayed()
             screenshot("created-card-open")
         } finally {
-            runBlocking { app.novexWorkspace.apply(NovexCommand.DeleteCharacter(character.character.id)); app.chatRepository.deleteSession(session.id) }
+            runBlocking { app.novexWorkspace.apply(NovexCommand.DeleteCharacter(character.character.id)); app.chatRepository.dropSession(session.id) }
             app.providerRepository.removeGroup(group.id)
             app.providerRepository.removeInstance(providerId)
         }

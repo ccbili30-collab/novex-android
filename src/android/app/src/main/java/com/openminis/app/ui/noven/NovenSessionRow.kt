@@ -40,11 +40,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.service.SessionActivityTracker
-import com.openminis.app.ui.novex.NovexArtwork
-import com.openminis.app.ui.novex.NovexArtworkKind
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexArtwork
+import novex.android.ui.NovexArtworkKind
+import novex.android.ui.NovexIcons
 import com.openminis.app.ui.sessions.NovexConversationThumbnail
 import com.openminis.app.ui.sessions.SpinningRing
 import com.openminis.app.ui.sessions.highlightedAnnotatedString
@@ -130,7 +130,7 @@ internal val SessionInitialPalette = listOf(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun NovenSessionRow(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onClick: () -> Unit,
     onLongClick: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,

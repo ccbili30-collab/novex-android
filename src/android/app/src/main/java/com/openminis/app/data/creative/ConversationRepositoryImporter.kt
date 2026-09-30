@@ -6,7 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import java.io.File
 import java.io.FilterInputStream
 import java.util.concurrent.ConcurrentHashMap

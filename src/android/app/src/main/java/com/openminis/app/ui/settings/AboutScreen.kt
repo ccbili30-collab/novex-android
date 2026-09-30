@@ -97,13 +97,12 @@ fun AboutScreen(onBack: () -> Unit) {
 
         SettingsSection(header = stringResource(R.string.about_links)) {
             SettingsRow(
-                icon = com.openminis.app.ui.novex.NovexIcons.Code,
+                icon = novex.android.ui.NovexIcons.Code,
                 iconColor = iconTint,
                 title = stringResource(R.string.about_github_repository),
                 // Settings → ABOUT siblings (Privacy Policy / Submit GitHub
-                // Issues) all use openExternalUrl directly. The
-                // LocalInAppBrowserLauncher ambient defaults to a no-op when
-                // no InAppBrowserHost is in the tree above this screen — and
+                // Issues) all use openExternalUrl directly. [P3.3 裁军]
+                // LocalInAppBrowserLauncher 氛围值已随内置浏览器退役删除。
                 // nothing wraps Settings, so the row used to be a dead tap.
                 onClick = { openExternalUrl(context, "https://github.com/ccbili30-collab/novex-android") },
                 trailing = { ExternalLinkIcon() },
@@ -132,7 +131,7 @@ private fun ExternalLinkIcon() {
 /**
  * Back-compat shim for legacy call sites that still call [openUrl] with a
  * Context. Dispatches as a system Intent — the in-app preview path is the new
- * `LocalInAppBrowserLauncher` ambient; prefer that at the call site.
+ * [P3.3 裁军] 内置浏览器预览退役后唯一路径就是系统外跳。
  */
 internal fun openUrl(context: android.content.Context, url: String) {
     openExternalUrl(context, url)

@@ -22,7 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -43,14 +43,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMMediaAttachment
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.normalizeModalityName
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMMediaAttachment
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.normalizeModalityName
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,24 +72,20 @@ private const val TAG = "QuickTest"
  *  imageGen > speechOut > transcription > text. */
 enum class QuickTestKind {
     IMAGE_GEN,
-    SPEECH_OUT,
-    TRANSCRIPTION,
     TEXT;
+
+    // [P3.3 裁军] SPEECH_OUT/TRANSCRIPTION 两档随语音全家退役删除。
 
     val titleRes: Int
         get() = when (this) {
             TEXT -> R.string.quicktest_kind_text
             IMAGE_GEN -> R.string.quicktest_kind_image
-            SPEECH_OUT -> R.string.quicktest_kind_speech
-            TRANSCRIPTION -> R.string.quicktest_kind_transcription
         }
 
     val icon: ImageVector
         get() = when (this) {
-            TEXT -> com.openminis.app.ui.novex.NovexIcons.TextFields
-            IMAGE_GEN -> com.openminis.app.ui.novex.NovexIcons.Image
-            SPEECH_OUT -> com.openminis.app.ui.novex.NovexIcons.GraphicEq
-            TRANSCRIPTION -> com.openminis.app.ui.novex.NovexIcons.Mic
+            TEXT -> novex.android.ui.NovexIcons.TextFields
+            IMAGE_GEN -> novex.android.ui.NovexIcons.Image
         }
 }
 
@@ -99,8 +94,7 @@ sealed class QuickTestState {
     object Running : QuickTestState()
     data class TextReply(val text: String) : QuickTestState()
     data class ImageReply(val data: ByteArray) : QuickTestState()
-    /** [T-android-provider-voice] Synthesized audio bytes, playable in place. */
-    data class AudioReply(val data: ByteArray) : QuickTestState()
+    // [P3.3 裁军] AudioReply（TTS 试听音频）随语音测试退役删除。
     data class Failure(val message: String) : QuickTestState()
 }
 
@@ -122,8 +116,7 @@ internal fun applicableKinds(entry: ModelEntry): List<QuickTestKind> {
     val inputs = (model.inputModalities ?: emptyList()).map { it.normalizeModalityName() }
     val kinds = mutableListOf<QuickTestKind>()
     if ("image" in outputs) kinds.add(QuickTestKind.IMAGE_GEN)
-    if ("audio" in outputs) kinds.add(QuickTestKind.SPEECH_OUT)
-    if ("audio" in inputs) kinds.add(QuickTestKind.TRANSCRIPTION)
+    // [P3.3 裁军] audio 输入/输出两档（语音试听/听写）随语音全家退役。
     // outputModalities null/empty ⇒ text-out (documented convention), so text
     // is applicable whenever the list is empty OR explicitly contains text.
     if (outputs.isEmpty() || "text" in outputs) kinds.add(QuickTestKind.TEXT)
@@ -179,7 +172,7 @@ fun QuickTestSheet(
                     enabled = !isRunning,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        novex.android.ui.NovexIcons.Refresh,
                         contentDescription = stringResource(R.string.quicktest_run_again),
                     )
                 }
@@ -202,7 +195,7 @@ fun QuickTestSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Bolt,
+                        novex.android.ui.NovexIcons.Bolt,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -272,14 +265,14 @@ private fun StatusBadge(run: QuickTestRun) {
             strokeWidth = 2.dp,
         )
         is QuickTestState.Failure -> Icon(
-            com.openminis.app.ui.novex.NovexIcons.Cancel,
+            novex.android.ui.NovexIcons.Cancel,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
             modifier = Modifier.size(18.dp),
         )
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.CheckCircle,
+                novex.android.ui.NovexIcons.CheckCircle,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -333,7 +326,6 @@ private fun TestContent(run: QuickTestRun) {
                 )
             }
         }
-        is QuickTestState.AudioReply -> AudioReplyContent(s.data)
         is QuickTestState.Failure -> Text(
             s.message,
             style = MaterialTheme.typography.bodySmall,
@@ -342,61 +334,7 @@ private fun TestContent(run: QuickTestRun) {
     }
 }
 
-/**
- * [T-android-provider-voice] Playable synthesized-audio result. Writes the
- * bytes to a cache file and drives a MediaPlayer; auto-plays once on first
- * appearance (mirrors iOS Quick Test playing the returned clip).
- */
-@Composable
-private fun AudioReplyContent(data: ByteArray) {
-    val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
-    val player = remember { android.media.MediaPlayer() }
-    val file = remember(data) {
-        java.io.File(context.cacheDir, "quicktest-audio-${data.hashCode()}.bin").apply {
-            writeBytes(data)
-        }
-    }
-
-    fun play() {
-        runCatching {
-            player.reset()
-            player.setDataSource(file.absolutePath)
-            player.setOnCompletionListener { isPlaying = false }
-            player.prepare()
-            player.start()
-            isPlaying = true
-        }.onFailure {
-            AppLogger.warning(TAG, "[QuickTest] audio playback failed: ${it.message}")
-            isPlaying = false
-        }
-    }
-
-    androidx.compose.runtime.LaunchedEffect(file) { play() }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            runCatching { player.release() }
-            runCatching { file.delete() }
-        }
-    }
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { if (!isPlaying) play() }) {
-            Icon(
-                if (isPlaying) com.openminis.app.ui.novex.NovexIcons.GraphicEq else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
-                contentDescription = stringResource(
-                    if (isPlaying) R.string.quicktest_audio_play else R.string.quicktest_audio_replay,
-                ),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Text(
-            "%.1f KB".format(data.size / 1024.0),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
+// [P3.3 裁军] AudioReplyContent（TTS 试听播放器）随语音测试退役删除。
 
 /** Reset every run to Running and fire each test concurrently. */
 private fun runAll(
@@ -438,63 +376,8 @@ internal suspend fun performTest(
     val apiKey = providerRepository.loadApiKey(instance.id)
         ?: return@withContext failure("No API key configured for this provider.")
 
-    // [T-android-provider-voice] Speech tests route through the VoiceProvider
-    // stack (vendor adapters + endpoints), NOT the chat provider — mirrors iOS
-    // ModelQuickTestSheet .speechOut / .transcription.
-    if (kind == QuickTestKind.SPEECH_OUT || kind == QuickTestKind.TRANSCRIPTION) {
-        val voice = com.openminis.app.provider.voice.VoiceProviderFactory.make(instance, apiKey)
-            ?: return@withContext failure(context.getString(R.string.quicktest_voice_unsupported))
-        return@withContext when (kind) {
-            QuickTestKind.SPEECH_OUT -> {
-                if (!voice.supportsVoiceOutput) {
-                    failure(context.getString(R.string.quicktest_voice_unsupported))
-                } else {
-                    runCatching {
-                        // The selected entry id is the model AND the voice id
-                        // (template voices carry the voice id as the model id) —
-                        // iOS 0a52bdbf: pass entry.model.id for both so the test
-                        // speaks in THAT voice, not the vendor default.
-                        val data = voice.synthesize(
-                            com.openminis.app.provider.voice.VoiceOutputRequest(
-                                input = "Hi! This is Minis testing text to speech.",
-                                model = entry.model.id,
-                                voice = entry.model.id,
-                            ),
-                        )
-                        if (data.isEmpty()) {
-                            failure(context.getString(R.string.quicktest_no_audio))
-                        } else {
-                            QuickTestState.AudioReply(data)
-                        }
-                    }.getOrElse { failure(it.message ?: "Speech request failed.") }
-                }
-            }
-            else -> { // TRANSCRIPTION
-                if (!voice.supportsVoiceInput) {
-                    failure(context.getString(R.string.quicktest_voice_unsupported))
-                } else {
-                    val spoken = "Hello from Minis, testing speech to text."
-                    val clip = synthesizeTestClip(context, spoken)
-                        ?: return@withContext failure(context.getString(R.string.quicktest_clip_failed))
-                    runCatching {
-                        val resp = voice.transcribe(
-                            com.openminis.app.provider.voice.VoiceInputRequest(
-                                audioData = clip,
-                                model = entry.baseModel.id,
-                                language = "en",
-                                resolvedModel = entry.model,
-                            ),
-                        )
-                        val heard = resp.text.trim().ifEmpty { "(empty transcription)" }
-                        QuickTestState.TextReply(
-                            context.getString(R.string.quicktest_transcript_result, spoken, heard),
-                        )
-                    }.getOrElse { failure(it.message ?: "Transcription request failed.") }
-                }
-            }
-        }
-    }
-
+    // [P3.3 裁军] 语音试听/听写测试分支（VoiceClientFactory + TTS/ASR 请求）
+    // 随语音全家退役删除；快捷测试只保留文本与生图两线。
     val provider = runCatching {
         ProviderFactory.create(instance, apiKey, entry.model, context)
     }.getOrElse { return@withContext failure(it.message ?: "Couldn't create provider.") }
@@ -521,10 +404,13 @@ internal suspend fun performTest(
         }
 
         QuickTestKind.IMAGE_GEN -> {
-            val openAI = provider as? OpenAIProvider
+            // [P3.1d] 生图接口面：适配器走自有 novex.model ImagesClient；上游
+            // 九类线路均已换管适配器（上游 openai 包已随 P3.1e 删除），行为不变。
+            val images = (provider as? novex.android.transport.NovexTransportProvider)?.imageDelegate
+                ?: provider as? com.openminis.app.provider.ImagesCapableProvider
                 ?: return@withContext failure(context.getString(R.string.quicktest_image_unsupported))
             runCatching {
-                val resp = openAI.generateImage(
+                val resp = images.generateImage(
                     prompt = "A friendly cute mascot logo for an app called Minis, minimalist, centered, soft colors",
                     n = 1,
                     size = "1024x1024",
@@ -537,55 +423,7 @@ internal suspend fun performTest(
             }.getOrElse { failure(it.message ?: "Image request failed.") }
         }
 
-        // Handled above.
-        QuickTestKind.SPEECH_OUT, QuickTestKind.TRANSCRIPTION ->
-            failure(context.getString(R.string.quicktest_speech_unavailable))
     }
 }
 
-/**
- * [T-android-provider-voice] Synthesize a short English test clip as a WAV via
- * the system TextToSpeech engine (no bundled audio asset). Android equivalent
- * of iOS synthesizeTestWAV (AVSpeechSynthesizer buffer capture); Android's
- * synthesizeToFile already writes a WAV container. Returns null on any
- * engine/init failure (caller reports a friendly message). 15 s guard so a
- * stuck engine can't hang the test card forever.
- */
-private suspend fun synthesizeTestClip(context: android.content.Context, text: String): ByteArray? {
-    val file = java.io.File(context.cacheDir, "quicktest-clip-${System.currentTimeMillis()}.wav")
-    return try {
-        kotlinx.coroutines.withTimeoutOrNull(15_000) {
-            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-                var tts: android.speech.tts.TextToSpeech? = null
-                fun finish(ok: Boolean) {
-                    runCatching { tts?.shutdown() }
-                    if (cont.isActive) cont.resumeWith(Result.success(ok))
-                }
-                tts = android.speech.tts.TextToSpeech(context) { status ->
-                    if (status != android.speech.tts.TextToSpeech.SUCCESS) {
-                        finish(false)
-                        return@TextToSpeech
-                    }
-                    tts?.language = java.util.Locale.US
-                    tts?.setOnUtteranceProgressListener(
-                        object : android.speech.tts.UtteranceProgressListener() {
-                            override fun onStart(utteranceId: String?) {}
-                            override fun onDone(utteranceId: String?) = finish(true)
-                            @Deprecated("Deprecated in Java")
-                            override fun onError(utteranceId: String?) = finish(false)
-                            override fun onError(utteranceId: String?, errorCode: Int) = finish(false)
-                        },
-                    )
-                    val result = tts?.synthesizeToFile(text, android.os.Bundle(), file, "quicktest-clip")
-                    if (result != android.speech.tts.TextToSpeech.SUCCESS) finish(false)
-                }
-                cont.invokeOnCancellation { runCatching { tts?.shutdown() } }
-            }
-        }?.takeIf { it }?.let { file.readBytes() }
-    } catch (e: Exception) {
-        AppLogger.warning(TAG, "[QuickTest] test clip synthesis failed: ${e.message}")
-        null
-    } finally {
-        runCatching { file.delete() }
-    }
-}
+// [P3.3 裁军] synthesizeTestClip（系统 TTS 合成测试音频）随语音测试退役删除。

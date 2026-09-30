@@ -1,6 +1,6 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.model.ProviderConfig
+import novex.android.data.model.ProviderConfig
 
 /** Explicit alternatives to drag-and-drop on the phone model-groups page. */
 internal enum class ModelGroupMove {

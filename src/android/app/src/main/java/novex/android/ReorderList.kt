@@ -1,12 +1,12 @@
 package novex.android
 
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.NovexIcons
 
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.DropdownMenu
+import novex.android.ui.Button
+import novex.android.ui.TextButton
+import novex.android.ui.DropdownMenu
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture

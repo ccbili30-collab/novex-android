@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Context
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,13 +70,13 @@ fun MoveToSessionSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var sessions by remember { mutableStateOf<List<ChatSessionEntity>>(emptyList()) }
-    var currentSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var sessions by remember { mutableStateOf<List<SessionRow>>(emptyList()) }
+    var currentSession by remember { mutableStateOf<SessionRow?>(null) }
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) {
-            chatRepository.getSession(currentSessionId) to
-                chatRepository.dao.listSessions().filter { it.id != currentSessionId }
+            chatRepository.sessionById(currentSessionId) to
+                chatRepository.dao.primarySessions().filter { it.id != currentSessionId }
         }
         currentSession = loaded.first
         sessions = loaded.second
@@ -85,8 +85,8 @@ fun MoveToSessionSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             onImportCard?.let {import->
-                com.openminis.app.ui.novex.TextButton(onClick={import(true)}){Text("导入为世界")}
-                com.openminis.app.ui.novex.TextButton(onClick={import(false)}){Text("导入为角色")}
+                novex.android.ui.TextButton(onClick={import(true)}){Text("导入为世界")}
+                novex.android.ui.TextButton(onClick={import(false)}){Text("导入为角色")}
             }
             Text(
                 stringResource(R.string.move_to_sheet_title),
@@ -128,7 +128,7 @@ fun MoveToSessionSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Forum,
+                        novex.android.ui.NovexIcons.Forum,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                     )
@@ -184,7 +184,7 @@ fun MoveToSessionSheet(
  */
 @Composable
 private fun MoveToPickerRow(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -245,23 +245,23 @@ private data class CategoryStyle(val icon: ImageVector, val color: Color)
 
 private fun categoryStyle(category: String?): CategoryStyle {
     return when (category?.lowercase()) {
-        "code"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Code, Color(0xFFF09A37))
-        "writing"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Description, Color(0xFF3478F6))
-        "research"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Language, Color(0xFF30B0C7))
-        "analysis"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.BarChart, Color(0xFF5856D6))
-        "creative"     -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Brush, Color(0xFFFF2D55))
-        "chat"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF34C759))
-        "math"         -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Calculate, Color(0xFF9B59B6))
-        "translation"  -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Translate, Color(0xFF00BCD4))
-        "health"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Favorite, Color(0xFFFF3B30))
-        "finance"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Payments, Color(0xFF00C7BE))
-        "travel"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Map, Color(0xFFF09A37))
-        "education"    -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Book, Color(0xFF3478F6))
-        "design"       -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Palette, Color(0xFFFF2D55))
-        "productivity" -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
-        "support"      -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Settings, Color(0xFF8B6914))
-        "other"        -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.GridView, Color(0xFF8E8E93))
-        else           -> CategoryStyle(com.openminis.app.ui.novex.NovexIcons.Forum, Color(0xFF8E8E93))
+        "code"         -> CategoryStyle(novex.android.ui.NovexIcons.Code, Color(0xFFF09A37))
+        "writing"      -> CategoryStyle(novex.android.ui.NovexIcons.Description, Color(0xFF3478F6))
+        "research"     -> CategoryStyle(novex.android.ui.NovexIcons.Language, Color(0xFF30B0C7))
+        "analysis"     -> CategoryStyle(novex.android.ui.NovexIcons.BarChart, Color(0xFF5856D6))
+        "creative"     -> CategoryStyle(novex.android.ui.NovexIcons.Brush, Color(0xFFFF2D55))
+        "chat"         -> CategoryStyle(novex.android.ui.NovexIcons.Forum, Color(0xFF34C759))
+        "math"         -> CategoryStyle(novex.android.ui.NovexIcons.Calculate, Color(0xFF9B59B6))
+        "translation"  -> CategoryStyle(novex.android.ui.NovexIcons.Translate, Color(0xFF00BCD4))
+        "health"       -> CategoryStyle(novex.android.ui.NovexIcons.Favorite, Color(0xFFFF3B30))
+        "finance"      -> CategoryStyle(novex.android.ui.NovexIcons.Payments, Color(0xFF00C7BE))
+        "travel"       -> CategoryStyle(novex.android.ui.NovexIcons.Map, Color(0xFFF09A37))
+        "education"    -> CategoryStyle(novex.android.ui.NovexIcons.Book, Color(0xFF3478F6))
+        "design"       -> CategoryStyle(novex.android.ui.NovexIcons.Palette, Color(0xFFFF2D55))
+        "productivity" -> CategoryStyle(novex.android.ui.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
+        "support"      -> CategoryStyle(novex.android.ui.NovexIcons.Settings, Color(0xFF8B6914))
+        "other"        -> CategoryStyle(novex.android.ui.NovexIcons.GridView, Color(0xFF8E8E93))
+        else           -> CategoryStyle(novex.android.ui.NovexIcons.Forum, Color(0xFF8E8E93))
     }
 }
 

@@ -16,23 +16,21 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserActionInput
-import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
-import com.openminis.app.data.db.CompactMarkerEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.LLMUsage
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.chat.CompactMarkerRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.LLMUsage
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.R
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
@@ -40,9 +38,6 @@ import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.sandbox.ExecutionCoordinator
-import com.openminis.app.terminal.MinisOpenUrlBroker
-import com.openminis.app.terminal.MinisUrlMarker
 import com.openminis.app.tools.AgentTools
 import com.openminis.app.tools.FileEditTool
 import com.openminis.app.tools.FileReadTool
@@ -50,7 +45,6 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -81,10 +75,55 @@ import java.io.ByteArrayOutputStream
  */
 internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
     val filter = _slashFilter.value.lowercase()
-    val base = availableSlashCommands
-        .filter { it.id == "compact" }
-        .map { it.copy(subtitle = context.getString(R.string.slash_compact_subtitle)) }
-    return if (filter.isEmpty()) base else base.filter { it.title.lowercase().contains(filter) }
+    val base = availableSlashCommands.map { cmd ->
+        when (cmd.id) {
+            "compact" -> cmd.copy(
+                subtitle = context.getString(R.string.slash_compact_subtitle),
+            )
+            "sync" -> cmd.copy(
+                subtitle = "压缩记忆发给另一边（沟通简报并入两边历史）",
+            )
+            "memory" -> cmd.copy(
+                subtitle = context.getString(
+                    if (_memoryEnabled.value) R.string.slash_memory_writes_on
+                    else R.string.slash_memory_writes_off,
+                ),
+            )
+            "thinking" -> cmd.copy(
+                subtitle = if (!currentModelSupportsReasoning) {
+                    context.getString(R.string.slash_thinking_unsupported)
+                } else {
+                    context.getString(
+                        R.string.slash_thinking_subtitle,
+                        _thinkingLevel.value.localizedName(context),
+                    )
+                },
+            )
+            "clear" -> cmd.copy(
+                subtitle = context.getString(R.string.slash_clear_subtitle),
+            )
+            else -> cmd
+        }
+    }
+    val sid = activeSessionId
+    val skillRows: List<SlashCommand> = skillRepository?.skills?.value
+        ?.filter { skillRepository.isEnabledForSession(it.id, sid) }
+        ?.sortedBy { it.name.lowercase() }
+        ?.map { skill ->
+            val trimmed = skill.description.trim()
+            val sub = if (trimmed.isNotEmpty()) trimmed else "Skill · v${skill.version}"
+            SlashCommand(
+                id = "skill:${skill.id}",
+                icon = novex.android.ui.NovexIcons.Extension,
+                title = skill.name,
+                subtitle = sub,
+                isSkill = true,
+            )
+        } ?: emptyList()
+    // [P3.3 裁军] MCP 服务器行（mcpRows）随 MCP 集成面退役删除；斜杠
+    // 菜单只剩基础命令与技能行。
+    val all = base + skillRows
+    return if (filter.isEmpty()) all else all.filter { it.title.lowercase().contains(filter) }
 }
 
 /**

@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import com.openminis.app.MinisApp
-import com.openminis.app.ui.novex.*
+import novex.android.ui.*
 import com.openminis.app.ui.chat.ChatViewModel
 import com.openminis.app.ui.chat.ChatViewModelStore
 import kotlinx.coroutines.launch
@@ -18,7 +18,7 @@ import novex.runtime.ManagementTarget
 /** 使用既有对话设置保存器；不直接改数据库，不创建卡片副本。 */
 @Composable internal fun ExistingCardConversation(app:MinisApp,source:SourceSelection,manage:Boolean,
     onDismiss:()->Unit,onOpen:(String)->Unit) {
-    val sessions by app.chatRepository.observeSessions().collectAsState(initial=emptyList())
+    val sessions by app.chatRepository.observeSessionIndex().collectAsState(initial=emptyList())
     var chosen by remember {mutableStateOf<String?>(null)}
     var query by remember {mutableStateOf("")}
     var usage by remember {mutableStateOf(if(manage)"管理" else "背景")}
@@ -29,7 +29,7 @@ import novex.runtime.ManagementTarget
     val model:ChatViewModel?=if(id!=null)androidx.lifecycle.viewmodel.compose.viewModel(
         viewModelStoreOwner=ChatViewModelStore.ownerFor(id),
         factory=ChatViewModel.factory(id,app.chatRepository,app.providerRepository,appContext=app,
-            memoryRepository=app.memoryRepository,skillRepository=app.skillRepository,mcpRepository=app.mcpRepository)) else null
+            memoryRepository=app.memoryRepository,skillRepository=app.skillRepository)) else null
     val ready=if(model!=null)model.conversationSettingsReady.collectAsState().value else false
     NovexContentDialog("用于已有对话",onDismiss={if(!saving)onDismiss()},confirmButton={
         TextButton(enabled=ready && !saving,onClick={scope.launch {

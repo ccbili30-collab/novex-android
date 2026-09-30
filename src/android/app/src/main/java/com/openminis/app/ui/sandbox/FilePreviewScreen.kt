@@ -46,11 +46,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import com.openminis.app.ui.novex.ListItem
+import novex.android.ui.ListItem
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,8 +75,8 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.rememberIosBounceOverscrollEffect
 import com.openminis.app.ui.markdown.MarkdownText
 import com.openminis.app.ui.chat.StreamingMarkdownText
-import com.openminis.app.ui.media.InlineAudioPlayer
-import com.openminis.app.ui.media.InlineVideoPlayer
+import com.openminis.app.ui.components.mediaMimeTypeFor
+import com.openminis.app.ui.components.openMediaFileExternally
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -170,14 +170,14 @@ fun FilePreviewScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     // T142: Share works for any file — FileProvider URI +
                     // ACTION_SEND + FLAG_GRANT_READ_URI_PERMISSION. iOS parity.
                     IconButton(onClick = { shareFile(context, item) }) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = stringResource(R.string.filepreview_share))
+                        Icon(novex.android.ui.NovexIcons.Share, contentDescription = stringResource(R.string.filepreview_share))
                     }
                     // Print: HTML renders via WebView; markdown / plain text /
                     // json / csv print their raw text wrapped in a WebView so we
@@ -188,7 +188,7 @@ fun FilePreviewScreen(
                         item.isJsonFile || item.isCsvFile
                     ) {
                         IconButton(onClick = { printFile(context, item) }) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Print, contentDescription = stringResource(R.string.action_print))
+                            Icon(novex.android.ui.NovexIcons.Print, contentDescription = stringResource(R.string.action_print))
                         }
                     }
                     if (item.isImageFile) {
@@ -203,12 +203,12 @@ fun FilePreviewScreen(
                                 ).show()
                             }
                         }) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_to_gallery))
+                            Icon(novex.android.ui.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_to_gallery))
                         }
                     } else {
                         // T144 non-image → SAF Save-As (user picks location).
                         IconButton(onClick = { saveAsLauncher.launch(item.name) }) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_as))
+                            Icon(novex.android.ui.NovexIcons.Download, contentDescription = stringResource(R.string.filepreview_save_as))
                         }
                     }
                 },
@@ -271,7 +271,7 @@ private fun ImagePreview(item: FileItem) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                        novex.android.ui.NovexIcons.InsertDriveFile,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -478,40 +478,46 @@ private fun HtmlPreview(item: FileItem) {
 
 // ==================== Audio Preview ====================
 
+// [P3.3 裁军] 音频内嵌播放器（InlineAudioPlayer）退役；改为信息卡 +
+// 「用其他应用打开」经 FileProvider 外跳系统播放器。
 @Composable
 private fun AudioPreview(item: FileItem) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top,
-    ) {
-        InlineAudioPlayer(filePath = item.file.absolutePath)
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = item.formattedSize,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    ExternalOpenMediaFallback(item = item)
 }
 
 // ==================== Video Preview ====================
 
+// [P3.3 裁军] 视频内嵌播放器（InlineVideoPlayer）退役；同音频走外跳。
 @Composable
 private fun VideoPreview(item: FileItem) {
+    ExternalOpenMediaFallback(item = item)
+}
+
+@Composable
+private fun ExternalOpenMediaFallback(item: FileItem) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        InlineVideoPlayer(filePath = item.file.absolutePath)
-        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = item.formattedSize,
+            text = item.name,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "${item.formattedSize} · ${mediaMimeTypeFor(item.file)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        novex.android.ui.Button(onClick = { openMediaFileExternally(context, item.file) }) {
+            // [P3.3 裁军→P3.4 净眼] 文案走 R.string（八语言包补键；
+            // 原先硬编码中文「用其他应用打开」）。
+            Text(stringResource(R.string.filepreview_open_with_other_apps))
+        }
     }
 }
 
@@ -598,7 +604,7 @@ private fun PdfOpenExternalFallback(item: FileItem, reason: String) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                novex.android.ui.NovexIcons.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -891,7 +897,7 @@ private fun OfficeOpenExternal(item: FileItem) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                novex.android.ui.NovexIcons.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -950,7 +956,7 @@ private fun FileInfoView(item: FileItem) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.InsertDriveFile,
+                    novex.android.ui.NovexIcons.InsertDriveFile,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -4,8 +4,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.openminis.app.MinisApp
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.TextButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

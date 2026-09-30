@@ -17,10 +17,8 @@ import java.io.File
  * session is opened on iOS (or vice versa) via cloud sync.
  *
  * Linux-visible mount: `/var/minis/offloads/tools/<file>`. The host base
- * `filesDir/minis-sessions/<sid>/offloads` is bind-mounted into the
- * sandbox by [com.openminis.app.sandbox.PRootKernel.perSessionSubdirs]
- * (which already includes the "offloads" subdir — no kernel changes
- * required for this feature).
+ * `filesDir/minis-sessions/<sid>/offloads` resolves through
+ * ContentPaths' per-session subdirs (which include the "offloads" dir).
  */
 object ContextOffload {
     /** Linux-side mount point — keep in lock-step with iOS `minisOffloadsLinuxDir`. */

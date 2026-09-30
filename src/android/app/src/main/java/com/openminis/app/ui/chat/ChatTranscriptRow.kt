@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.ui.sandbox.FileItem
 import com.openminis.app.ui.theme.ChatColors
 
@@ -44,7 +44,6 @@ internal sealed interface ChatTranscriptAction {
     data class OpenProcess(val process: FlatChatItem.AssistantProcess) : ChatTranscriptAction
     data class RetryLast(val navigateToLatest: Boolean) : ChatTranscriptAction
     data object Stop : ChatTranscriptAction
-    data class OpenTerminal(val command: String) : ChatTranscriptAction
     data class OpenToolDetail(val id: String) : ChatTranscriptAction
     data class RerunFrom(val messageId: String, val blockId: String) : ChatTranscriptAction
     data class OpenCard(val kind: String, val id: String) : ChatTranscriptAction
@@ -243,7 +242,6 @@ internal fun ChatTranscriptRow(
             // ToolCallPill `isRunning && onStop != null`
             // — so passing it unconditionally is safe.
             onStop = { onAction(ChatTranscriptAction.Stop) },
-            onOpenTerminalWithCommand = { onAction(ChatTranscriptAction.OpenTerminal(it)) },
             // T261: route detail open through ViewModel so
             // the sheet is hoisted out of LazyColumn item
             // scope (otherwise the sheet snaps shut when
@@ -365,7 +363,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronLeft,
+                imageVector = novex.android.ui.NovexIcons.ChevronLeft,
                 contentDescription = "上一分支",
                 modifier = Modifier.size(18.dp),
             )
@@ -384,7 +382,7 @@ private fun ConversationBranchSwitcher(
             modifier = Modifier.size(28.dp),
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.ChevronRight,
+                imageVector = novex.android.ui.NovexIcons.ChevronRight,
                 contentDescription = "下一分支",
                 modifier = Modifier.size(18.dp),
             )

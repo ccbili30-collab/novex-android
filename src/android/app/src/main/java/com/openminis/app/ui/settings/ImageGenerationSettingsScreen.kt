@@ -13,20 +13,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.Button
+import novex.android.ui.Button
 import androidx.compose.material3.CircularProgressIndicator
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,18 +41,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.provider.image.ImageModelCatalog
+import novex.android.models.ImageGenerationModels
 import com.openminis.app.R
-import com.openminis.app.ui.novex.NovexTopAction
-import com.openminis.app.ui.novex.NovexTopTextAction
-import com.openminis.app.ui.novex.NovexDestructiveConfirmationDialog
+import novex.android.ui.NovexTopAction
+import novex.android.ui.NovexTopTextAction
+import novex.android.ui.NovexDestructiveConfirmationDialog
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -111,7 +111,7 @@ fun ImageGenerationSettingsScreen(
                 ) {
                     Text("还没有生图来源", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = onAddSource) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Add, null)
+                        Icon(novex.android.ui.NovexIcons.Add, null)
                         Text("新增来源", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
@@ -155,7 +155,7 @@ fun ImageGenerationSettingsScreen(
                             order.add(index - 1, order.removeAt(index))
                             providerRepository.reorderImageGenerationProviders(order)
                         },
-                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowUpward, "上移") }
+                    ) { Icon(novex.android.ui.NovexIcons.ArrowUpward, "上移") }
                     IconButton(
                         enabled = index < sources.lastIndex,
                         onClick = {
@@ -163,8 +163,8 @@ fun ImageGenerationSettingsScreen(
                             order.add(index + 1, order.removeAt(index))
                             providerRepository.reorderImageGenerationProviders(order)
                         },
-                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowDownward, "下移") }
-                    Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight, null)
+                    ) { Icon(novex.android.ui.NovexIcons.ArrowDownward, "下移") }
+                    Icon(novex.android.ui.NovexIcons.KeyboardArrowRight, null)
                 }
                 if (index < sources.lastIndex) HorizontalDivider()
             }
@@ -258,7 +258,7 @@ fun ImageGenerationSourceScreen(
             status = "正在拉取模型…"
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    ImageModelCatalog.fetch(
+                    ImageGenerationModels.fetch(
                         providerType = if (protocol == ImageProtocol.GEMINI) ProviderType.gemini else ProviderType.openAI,
                         baseURL = apiBase.trim().trimEnd('/'),
                         apiKey = apiKey.trim(),
@@ -392,7 +392,7 @@ fun ImageGenerationSourceScreen(
                 Button(onClick = { saveSource() }, modifier = Modifier.weight(1f)) { Text("保存来源") }
                 OutlinedButton(onClick = ::pullModels, enabled = !pulling, modifier = Modifier.weight(1f)) {
                     if (pulling) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp)
-                    else Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, null)
+                    else Icon(novex.android.ui.NovexIcons.Refresh, null)
                     Text("拉取模型", modifier = Modifier.padding(start = 6.dp))
                 }
             }
@@ -441,7 +441,7 @@ fun ImageGenerationSourceScreen(
                             providerRepository.setImageGenerationModelEnabled(currentId, entry.id, true)
                             manualModel = ""
                         },
-                    ) { Icon(com.openminis.app.ui.novex.NovexIcons.Add, "添加") }
+                    ) { Icon(novex.android.ui.NovexIcons.Add, "添加") }
                 }
                 orderedEntries.forEach { entry ->
                     val selected = entry.id in selectedIds
@@ -523,10 +523,10 @@ private fun ImageModelRow(
             }
         }
         IconButton(enabled = onMoveUp != null, onClick = { onMoveUp?.invoke() }) {
-            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowUpward, "上移")
+            Icon(novex.android.ui.NovexIcons.ArrowUpward, "上移")
         }
         IconButton(enabled = onMoveDown != null, onClick = { onMoveDown?.invoke() }) {
-            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowDownward, "下移")
+            Icon(novex.android.ui.NovexIcons.ArrowDownward, "下移")
         }
     }
 }

@@ -27,9 +27,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import com.openminis.app.novex.domain.libraryDirectory
-import com.openminis.app.novex.domain.NovexLibraryEntry
-import com.openminis.app.ui.novex.NovexLibraryPicker
+import novex.core.libraryDirectory
+import novex.core.NovexLibraryEntry
+import novex.android.ui.NovexLibraryPicker
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -54,39 +54,39 @@ import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.repository.SkillRepository
-import com.openminis.app.novex.domain.ActiveInteractiveFictionSnapshot
-import com.openminis.app.novex.domain.NovexGamePlayerChoices
-import com.openminis.app.novex.domain.AnswerIdentity
-import com.openminis.app.novex.domain.ConversationPlayerIdentity
-import com.openminis.app.novex.domain.ConversationControlBehavior
-import com.openminis.app.novex.domain.ConversationControlDefinition
-import com.openminis.app.novex.domain.ConversationControlSource
-import com.openminis.app.novex.adapter.NovexGameSnapshotAssembler
+import novex.core.ActiveInteractiveFictionSnapshot
+import novex.core.NovexGamePlayerChoices
+import novex.core.AnswerIdentity
+import novex.core.ConversationPlayerIdentity
+import novex.core.ConversationControlBehavior
+import novex.core.ConversationControlDefinition
+import novex.core.ConversationControlSource
+import novex.android.adapter.NovexGameSnapshotAssembler
 import kotlinx.coroutines.launch
-import com.openminis.app.novex.domain.ManagedAccess
-import com.openminis.app.novex.domain.NovexContentAddress
-import com.openminis.app.novex.domain.NovexContentKind
-import com.openminis.app.ui.novex.NovexCheckToggle
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexDivider
-import com.openminis.app.ui.novex.NovexEditorScaffold
-import com.openminis.app.ui.novex.NovexEditorSection
-import com.openminis.app.ui.novex.NovexInlineField
-import com.openminis.app.ui.novex.NovexNoticeDialog
-import com.openminis.app.ui.novex.NovexOptionalImageRow
-import com.openminis.app.ui.novex.NovexOutlineButton
-import com.openminis.app.ui.novex.NovexSelectionAction
-import com.openminis.app.ui.novex.NovexSelectionSheet
-import com.openminis.app.ui.novex.NovexSummaryRow
-import com.openminis.app.ui.novex.NovexTextActionRow
-import com.openminis.app.ui.novex.NovexTextField
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.rememberNovexWorkspace
-import com.openminis.app.ui.novex.rememberNovexCreativeArtifacts
-import com.openminis.app.ui.novex.rememberNovexWorkGroups
-import com.openminis.app.ui.novex.NovexSearchableSelectionSheet
-import com.openminis.app.novex.domain.NovexWorkGroupSnapshot
+import novex.core.ManagedAccess
+import novex.core.NovexContentAddress
+import novex.core.NovexContentKind
+import novex.android.ui.NovexCheckToggle
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexDivider
+import novex.android.ui.NovexEditorScaffold
+import novex.android.ui.NovexEditorSection
+import novex.android.ui.NovexInlineField
+import novex.android.ui.NovexNoticeDialog
+import novex.android.ui.NovexOptionalImageRow
+import novex.android.ui.NovexOutlineButton
+import novex.android.ui.NovexSelectionAction
+import novex.android.ui.NovexSelectionSheet
+import novex.android.ui.NovexSummaryRow
+import novex.android.ui.NovexTextActionRow
+import novex.android.ui.NovexTextField
+import novex.android.ui.NovexType
+import novex.android.ui.rememberNovexWorkspace
+import novex.android.ui.rememberNovexCreativeArtifacts
+import novex.android.ui.rememberNovexWorkGroups
+import novex.android.ui.NovexSearchableSelectionSheet
+import novex.core.NovexWorkGroupSnapshot
 
 private data class ImageStylePreset(val name: String, val prompt: String)
 
@@ -108,7 +108,7 @@ fun ConversationSettingsScreen(
     providerRepository: ProviderRepository,
     memoryRepository: MemoryRepository? = null,
     skillRepository: SkillRepository? = null,
-    mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+    // [P3.3 裁军] mcpRepository 参数随 MCP 集成面退役删除。
     onBack: () -> Unit,
     // [§9d] 三仓分离：answer|background|manage 各自路由到独立绑定页
     onCardSettings: (String) -> Unit = {},
@@ -133,7 +133,6 @@ fun ConversationSettingsScreen(
             appContext = context.applicationContext,
             memoryRepository = memoryRepository,
             skillRepository = skillRepository,
-            mcpRepository = mcpRepository,
         ),
     )
     val ready by viewModel.conversationSettingsReady.collectAsState()
@@ -179,7 +178,7 @@ fun ConversationSettingsScreen(
     LaunchedEffect(workspace, artifacts, ready) {
         if (!ready) return@LaunchedEffect
         val database = (context.applicationContext as com.openminis.app.MinisApp).database
-        com.openminis.app.novex.adapter.observeNovexLibraryChanges(database).collect {
+        novex.android.adapter.observeNovexLibraryChanges(database).collect {
         runCatching {
             val owned = workspace.conversationDrafts(viewModel.activeSessionId)
             val ownCards = owned?.cards.orEmpty()
@@ -216,7 +215,7 @@ fun ConversationSettingsScreen(
             try {
                 val application = context.applicationContext as com.openminis.app.MinisApp
                 val updated = application.database.withTransaction {
-                    val adoption = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore)
+                    val adoption = novex.android.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore)
                     if (root == null) adoption.refreshGame(expected) else adoption.refresh(expected, root, acting)
                 }
                 require(draft.configuration == expected) { "刷新期间对话设定已改变，请重新刷新" }
@@ -239,7 +238,7 @@ fun ConversationSettingsScreen(
         draft = draft.updateSettings { it.copy(backgroundPath = path) }
     }
     val labels = options.associateBy(ConversationContentOption::address)
-    val adoptedImages = com.openminis.app.novex.domain.NovexSnapshotMediaProjection.visible(draft.configuration)
+    val adoptedImages = novex.core.NovexSnapshotMediaProjection.visible(draft.configuration)
     val answerLabel = when (val identity = draft.configuration.answerIdentity) {
         AnswerIdentity.Nova -> "Nova（诺瓦）"
         is AnswerIdentity.PersonaPreset -> "自定义 · ${identity.label}"
@@ -269,7 +268,7 @@ fun ConversationSettingsScreen(
             return@NovexEditorScaffold
         }
         val cardBinding=viewModel.integratedCardBinding()
-        if(settingsPage.isEmpty() && cardBinding==null)NovexSummaryRow("采用新版卡片", "历史设定仍保留，选择新版互动对象与管理范围",onClick={onCardSettings("answer")})
+        if(settingsPage.isEmpty() && cardBinding==null)NovexSummaryRow("采用新版卡片", "历史设定仍保留，选择新版互动对象与管理范围",onClick={onCardSettings("identity")})
         if (settingsPage.isEmpty()) ConversationSettingsOverview(
             answer = if(cardBinding?.primary!=null)"已采用卡片" else answerLabel,
             integrated=cardBinding!=null,
@@ -284,8 +283,7 @@ fun ConversationSettingsScreen(
             backgroundOverridden = draft.settings.backgroundPath != null,
             perTurnSet = draft.settings.perTurnPrompt.isNotBlank(),
             styleSet = draft.settings.textStylePrompt.isNotBlank(),
-            // [§9d] 绑定会话只有三仓走卡片页；"game" 对绑定会话隐藏、"image" 是本页内页（旧 "images" 是笔误死键）。
-            onOpen = { if(it in setOf("answer","background","manage"))onCardSettings(it) else settingsPage = it }, onPermission = { choosingExecutionMode = true },
+            onOpen = { when(it) { "answer" -> onCardSettings("identity"); "background" -> onCardSettings("background"); "manage" -> onCardSettings("manage"); else -> settingsPage = it } }, onPermission = { choosingExecutionMode = true },
             onTokenUsage = { showingTokenUsage = true },
         )
         if (settingsPage == "workspace") {
@@ -377,15 +375,15 @@ fun ConversationSettingsScreen(
                 onClick = { showingSettingUse = true })
             NovexSummaryRow("查看已采用的资料", "查看本对话实际使用的版本和来源",
                 onClick = { showingAdoptedSources = true })
-            draft.configuration.backgroundSettings.filterNot { it.subject in privateSubjects }.sortedBy { !com.openminis.app.novex.domain.NovexSettingUse.enabled(draft.configuration,
-                com.openminis.app.novex.domain.NovexReferenceTarget(it.subject)) }.forEachIndexed { index, setting ->
+            draft.configuration.backgroundSettings.filterNot { it.subject in privateSubjects }.sortedBy { !novex.core.NovexSettingUse.enabled(draft.configuration,
+                novex.core.NovexReferenceTarget(it.subject)) }.forEachIndexed { index, setting ->
                 ConversationSubjectRow(
                     labels[setting.subject]?.label ?: setting.subject.fallbackLabel(),
                     (labels[setting.subject]?.kindLabel ?: setting.subject.kind.displayName()) +
-                        if (com.openminis.app.novex.domain.NovexSettingUse.enabled(draft.configuration, com.openminis.app.novex.domain.NovexReferenceTarget(setting.subject))) " · 直接加入" else " · 已关闭",
+                        if (novex.core.NovexSettingUse.enabled(draft.configuration, novex.core.NovexReferenceTarget(setting.subject))) " · 直接加入" else " · 已关闭",
                     onRemove = { draft = draft.removeBackground(setting.subject) },
                 )
-                if (com.openminis.app.novex.domain.NovexEffectiveFrozenContext.gameSources(draft.configuration)
+                if (novex.core.NovexEffectiveFrozenContext.gameSources(draft.configuration)
                         .any { it.adoptedByGame && it.target.subject == setting.subject }) {
                     NovexSummaryRow("仍有文游来源", "移除上面的直接加入关系后，文游采用的修订仍会继续使用")
                 }
@@ -484,9 +482,9 @@ fun ConversationSettingsScreen(
                     completed.states.entries.forEachIndexed { branchIndex, (_, state) ->
                         state.values.forEach { (key, value) ->
                             NovexSummaryRow("分支 ${branchIndex + 1} · $key", when (value) {
-                                is com.openminis.app.novex.domain.PlaythroughValue.Text -> value.value
-                                is com.openminis.app.novex.domain.PlaythroughValue.Number -> value.value.toString()
-                                is com.openminis.app.novex.domain.PlaythroughValue.Flag -> if (value.value) "是" else "否"
+                                is novex.core.PlaythroughValue.Text -> value.value
+                                is novex.core.PlaythroughValue.Number -> value.value.toString()
+                                is novex.core.PlaythroughValue.Flag -> if (value.value) "是" else "否"
                             })
                         }
                     }
@@ -498,7 +496,7 @@ fun ConversationSettingsScreen(
             header = "采用的图片",
             footer = "按当前用途显示，保存后随对话保留。原卡改图或删除不会移除这些副本；刷新资料后再保存可采用新图片。",
         ) {
-            val sources = com.openminis.app.novex.domain.NovexEffectiveFrozenContext.sources(draft.configuration)
+            val sources = novex.core.NovexEffectiveFrozenContext.sources(draft.configuration)
             adoptedImages.forEach { media ->
                 val source = sources.firstOrNull { it.target.subject == media.owner }
                 val label = media.moduleId?.let { id -> source?.candidates?.firstOrNull {
@@ -539,7 +537,7 @@ fun ConversationSettingsScreen(
             footer = "修改按本对话的工具权限执行。",
         ) {
             val managedRows = (draft.configuration.managedSubjects + ownedOptions.map {
-                com.openminis.app.novex.domain.ManagedSubject(it.address, ManagedAccess.EDIT)
+                novex.core.ManagedSubject(it.address, ManagedAccess.EDIT)
             }).distinctBy { it.subject }.filter { it.subject in labels }
             val ownedAddresses = ownedOptions.map { it.address }.toSet()
             managedRows.forEachIndexed { index, subject ->
@@ -774,8 +772,8 @@ fun ConversationSettingsScreen(
                     scope.launch {
                         try {
                             val identity = AnswerIdentity.CharacterVersion(versionId)
-                            val companions = com.openminis.app.novex.adapter.NovexPlayerIdentityReader(workspace).read(
-                                com.openminis.app.novex.domain.NovexReferenceTarget(NovexContentAddress.characterVersion(versionId)))
+                            val companions = novex.android.adapter.NovexPlayerIdentityReader(workspace).read(
+                                novex.core.NovexReferenceTarget(NovexContentAddress.characterVersion(versionId)))
                             require(draft.configuration == expected) { "准备角色期间对话设定已改变，请重新选择角色" }
                             val current = expected.playerIdentity
                             if (companions.size > 1 || (companions.isNotEmpty() && current != null && companions.singleOrNull() != current)) {
@@ -800,7 +798,7 @@ fun ConversationSettingsScreen(
                         try {
                             val application = context.applicationContext as com.openminis.app.MinisApp
                             val (capturedConfiguration, game) = application.database.withTransaction {
-                                val captured = com.openminis.app.novex.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore).adopt(expected)
+                                val captured = novex.android.adapter.NovexConversationContextAdoption(workspace, mediaStore = application.novexSnapshotMediaStore).adopt(expected)
                                 captured to NovexGameSnapshotAssembler(workspace, application.novexSnapshotMediaStore).create(projectId, captured.backgroundSettings, captured.adoptedContexts)
                             }
                             require(draft.configuration == expected) { "准备文游期间对话设定已改变，请重新选择文游" }
@@ -819,8 +817,8 @@ fun ConversationSettingsScreen(
                 }
             }) { updated -> draft = updated }
         if (active == ConversationPicker.ANSWER) ConversationSelectionSheet(active, active.pickerTitle(), actions) { picker = null }
-        else if (!directoryReady) com.openminis.app.ui.novex.NovexContentDialog("正在读取仓库", onDismiss = { picker = null },
-            confirmButton = { com.openminis.app.ui.novex.TextButton(onClick = { picker = null }) { Text("返回") } }) {
+        else if (!directoryReady) novex.android.ui.NovexContentDialog("正在读取仓库", onDismiss = { picker = null },
+            confirmButton = { novex.android.ui.TextButton(onClick = { picker = null }) { Text("返回") } }) {
             Text("正在读取可选择的内容…")
         }
         else {
@@ -870,9 +868,9 @@ fun ConversationSettingsScreen(
         try { draft = draft.setReferenceEnabled(id, enabled) }
         catch (failure: IllegalArgumentException) { error = failure.message ?: "设定开关尚未保存" }
     }, onDismiss = { showingSettingUse = false })
-    if (showingAdoptedSources) com.openminis.app.ui.novex.NovexContentDialog("实际采用的来源", onDismiss = { showingAdoptedSources = false },
-        confirmButton = { com.openminis.app.ui.novex.TextButton(onClick = { showingAdoptedSources = false }) { Text("返回对话配置") } }) {
-        val sources = com.openminis.app.novex.domain.NovexAdoptedSourceUsageProjection.read(draft.configuration).filterNot { it.source.target.subject in privateSubjects }
+    if (showingAdoptedSources) novex.android.ui.NovexContentDialog("实际采用的来源", onDismiss = { showingAdoptedSources = false },
+        confirmButton = { novex.android.ui.TextButton(onClick = { showingAdoptedSources = false }) { Text("返回对话配置") } }) {
+        val sources = novex.core.NovexAdoptedSourceUsageProjection.read(draft.configuration).filterNot { it.source.target.subject in privateSubjects }
         if (sources.isEmpty()) Text("当前没有已保存的采用快照；新选择的资料在保存对话配置时采用。")
         sources.forEach { usage ->
             Text(labels[usage.source.target.subject]?.label ?: usage.source.candidates.firstOrNull()?.label ?: "已采用的资料")
@@ -923,7 +921,7 @@ fun ConversationSettingsScreen(
     managedAction?.let { address ->
         val ownedHere = ownedOptions.any { it.address == address }
         val current = draft.configuration.managedSubjects.firstOrNull { it.subject == address }
-            ?: if (ownedHere) com.openminis.app.novex.domain.ManagedSubject(address, ManagedAccess.EDIT) else null
+            ?: if (ownedHere) novex.core.ManagedSubject(address, ManagedAccess.EDIT) else null
         NovexSelectionSheet(
             title = labels[address]?.label ?: address.fallbackLabel(),
             onDismissRequest = { managedAction = null },
@@ -947,10 +945,10 @@ fun ConversationSettingsScreen(
         )
     }
     if (choosingExecutionMode) {
-        com.openminis.app.ui.novex.NovexSelectionSheet(
+        novex.android.ui.NovexSelectionSheet(
             title = "执行权限",
-            actions = com.openminis.app.novex.domain.NovexExecutionMode.entries.map { mode ->
-                com.openminis.app.ui.novex.NovexSelectionAction(mode.label,
+            actions = novex.core.NovexExecutionMode.entries.map { mode ->
+                novex.android.ui.NovexSelectionAction(mode.label,
                     description = mode.description, selected = mode == draft.configuration.executionMode) {
                     draft = draft.setExecutionMode(mode)
                     choosingExecutionMode = false

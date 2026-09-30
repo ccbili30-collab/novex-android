@@ -1,7 +1,7 @@
 package com.openminis.app.ui.noven
 
 import com.openminis.app.cards.CardBinding
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.ui.sessions.hasNovexContext
 import novex.content.CardKind
 import novex.content.ContentDocument
@@ -24,7 +24,7 @@ internal data class SessionCardFace(
  * 从 novexConfigurationJson 里取 cardBinding。与 SessionHomePolicy.hasNovexContext
  * 读取同一字段同一键名；解析失败视为无绑定。
  */
-internal fun ChatSessionEntity.sessionCardBinding(): CardBinding? = runCatching {
+internal fun SessionRow.sessionCardBinding(): CardBinding? = runCatching {
     val raw = novexConfigurationJson?.takeIf(String::isNotBlank) ?: return null
     val binding = org.json.JSONObject(raw).optJSONObject("cardBinding") ?: return null
     CardBinding.decode(binding.toString())
@@ -39,7 +39,7 @@ internal fun ChatSessionEntity.sessionCardBinding(): CardBinding? = runCatching 
  *  - 旧式会话（legacy world/character 字段，无 cardBinding）→ 空列表
  */
 internal fun sessionCardTags(
-    session: ChatSessionEntity,
+    session: SessionRow,
     lookup: (rootId: String, targetId: String) -> NovenCardFace?,
 ): List<String> {
     val binding = session.sessionCardBinding()
@@ -68,7 +68,7 @@ internal fun trimSessionTags(tags: List<String>, limit: Int = 2): Pair<List<Stri
     if (tags.size <= limit) tags to 0 else tags.take(limit) to tags.size - limit
 
 /** primary 目标的封面/头像资源引用，用作会话行缩略图；没有返回 null。 */
-internal fun sessionPrimaryThumbnail(session: ChatSessionEntity, store: CardStore): ContentRef? {
+internal fun sessionPrimaryThumbnail(session: SessionRow, store: CardStore): ContentRef? {
     val primary = session.sessionCardBinding()?.primary ?: return null
     val root = runCatching { store.open(primary.rootId)?.content }.getOrNull() ?: return null
     val target = runCatching { ContentTargets.find(root, primary.targetId) }.getOrNull() ?: return null
@@ -95,7 +95,7 @@ internal fun novenCardLookup(store: CardStore): (String, String) -> NovenCardFac
 
 /** 一次构建整份会话卡片面信息（标签 + 缩略图引用）。 */
 internal fun sessionCardFaces(
-    sessions: List<ChatSessionEntity>,
+    sessions: List<SessionRow>,
     store: CardStore,
 ): Map<String, SessionCardFace> {
     val lookup = novenCardLookup(store)
@@ -111,7 +111,7 @@ internal fun sessionCardFaces(
  * 「我的」页统计：某张根卡被多少段会话引用（primary、背景、管理任一角色都算，
  * 同一会话内对同一根卡的多次引用只计一次）。
  */
-internal fun cardSessionReferenceCounts(sessions: List<ChatSessionEntity>): Map<String, Int> {
+internal fun cardSessionReferenceCounts(sessions: List<SessionRow>): Map<String, Int> {
     val counts = HashMap<String, Int>()
     sessions.forEach { session ->
         val binding = session.sessionCardBinding() ?: return@forEach

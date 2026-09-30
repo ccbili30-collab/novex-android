@@ -7,7 +7,10 @@
          downloaded APK. The user must additionally grant "install unknown
          apps" for this package the first time they upgrade. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- [P3.3 裁军] RECORD_AUDIO（语音输入/ASR）、SCHEDULE_EXACT_ALARM +
+         RECEIVE_BOOT_COMPLETED + com.android.alarm.permission.SET_ALARM
+         （定时任务/闹钟双写）、moe.shizuku.manager.permission.API_V23
+         （Shizuku/AXManager 特权后端）随对应功能整体退役摘除。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- T-android-fgs-timeout-crash: switched from dataSync to mediaPlayback.
          dataSync has a hard 6h/24h cumulative cap on Android 14+, after
@@ -42,16 +45,7 @@
          status-chip / "dynamic island" surface. Non-runtime (install-time)
          permission; ignored on pre-16 devices. -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_CALENDAR" />
-    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <!-- T36: WRITE_CONTACTS — required by `android-contacts delete <id>`. -->
-    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
@@ -78,68 +72,18 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
-    <!-- T262-1: required to dispatch AlarmClock.ACTION_SET_ALARM to
-         com.google.android.deskclock/.HandleSetApiCalls. The receiving
-         activity is permission-protected; without this normal-protection
-         permission the OS throws SecurityException at startActivity time
-         and android-alarm's dual-write silently degrades to the internal
-         AlarmManager copy only. T259 added <queries> + FLAG_ACTIVITY_NEW_TASK
-         which made resolveActivity report the target, but resolution alone
-         doesn't unblock the call — the permission does. -->
-    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
-
-    <!-- [T-android-privileged-backend] AXManager only pushes its binder to
-         apps whose requestedPermissions list contains one of three sentinels
-         (see AxManager BinderSender#sendBinder). Without one of these
-         declared, AXManager skips us and Shizuku.pingBinder() stays false
-         even though AXManager's service is running. Shizuku itself does NOT
-         need this permission — it discovers clients via its ContentProvider
-         + INTERACT_ACROSS_USERS_FULL gating — but declaring it is the
-         standard Shizuku-client manifest practice (used by Magisk Manager,
-         Brevent, etc.) and unlocks the AXManager push path. The permission
-         is normal-protection and isn't actually granted; AXManager only
-         checks that we *requested* it. -->
-    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
-
-    <!-- Package visibility for speech recognition services + Custom Tabs
-         (Android 11+ scoped queries). -->
+    <!-- Package visibility for Custom Tabs (Android 11+ scoped queries). -->
     <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
         <!-- T234: needed for androidx.browser CustomTabsClient.bindCustomTabsService
              to discover the user's Chrome (or any Custom Tabs provider) under
              Android 11+ package-visibility rules. Without this the bind silently
              returns false and Google login navigation falls back to the
-             ACTION_VIEW path. -->
+             ACTION_VIEW path. [P3.3 裁军] 语音 RecognitionService / 闹钟
+             SET_ALARM・SHOW_ALARMS・SET_TIMER / Shizuku・AXManager 包可见项
+             随对应功能退役移除。 -->
         <intent>
             <action android:name="android.support.customtabs.action.CustomTabsService" />
         </intent>
-        <!-- T259: surface the system Clock app for diagnostics so
-             android-alarm's dual-write resolveActivity returns non-null
-             on Android 11+. SET_ALARM is in the visibility allowlist
-             so startActivity already works without this, but the
-             pre-flight resolve gives us a cleaner log/fallback path. -->
-        <intent>
-            <action android:name="android.intent.action.SET_ALARM" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.SHOW_ALARMS" />
-        </intent>
-        <!-- T266b: SET_TIMER for android-alarm timer — same Clock activity
-             handles it, but the queries entry keeps resolveActivity honest
-             on Android 11+. The com.android.alarm.permission.SET_ALARM perm
-             gates dispatch for both SET_ALARM and SET_TIMER. -->
-        <intent>
-            <action android:name="android.intent.action.SET_TIMER" />
-        </intent>
-        <!-- T322: Shizuku — package-visibility entry so we can detect whether the
-             user has the Shizuku Manager app installed and report accurate state
-             in Settings (NOT_INSTALLED vs NOT_RUNNING vs RUNNING_NEED_PERM …). -->
-        <package android:name="moe.shizuku.privileged.api" />
-        <!-- [T-android-privileged-backend] AXManager — same package-visibility
-             need so PrivilegedBackend can detect/launch it under Android 11+. -->
-        <package android:name="frb.axeron.manager" />
         <!-- Crash-share dialog: ACTION_SENDTO mailto: needs explicit
              visibility under Android 11+ before resolveActivity / startActivity
              will return a real email-app candidate. Without it the
@@ -352,26 +296,9 @@
             </intent-filter>
         </activity>
 
-        <!-- T-pwa-1 (renamed Pwa → WebApp): WebApp shortcut host.
-             Reachable only via explicit Intent from a pinned launcher
-             shortcut (ACTION_OPEN_WEBAPP + extras). Old ACTION_OPEN_PWA
-             intent-filter intentionally removed: per user direction,
-             home-screen icons pinned before the rename are not preserved
-             and will return "intent not found" on tap; the user has to
-             re-add them from inside the app. -->
-        <activity
-            android:name=".webapp.WebAppActivity"
-            android:label="@string/webapp_activity_label"
-            android:launchMode="singleInstance"
-            android:exported="true"
-            android:taskAffinity=""
-            android:excludeFromRecents="false"
-            android:theme="@style/Theme.Minis">
-            <intent-filter>
-                <action android:name="com.openminis.app.action.OPEN_WEBAPP" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
+        <!-- [P3.3 裁军] WebAppActivity（PWA 捷径宿主，webapp/ 整包）按用户
+             裁决退役：不再注册 OPEN_WEBAPP，旧桌面图标点击将提示 intent
+             not found（与 T-pwa-1 改名时同口径）。 -->
 
         <!-- OAuth callback handler: captures localhost redirects for all providers -->
         <!-- Prevents "Choose activity" dialog when OAuth provider redirects to localhost -->
@@ -455,62 +382,9 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Alarm broadcast receiver (also handles BOOT_COMPLETED for re-scheduling) -->
-        <receiver
-            android:name=".offload.AlarmReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Scheduled notification receiver — fires `android-notification schedule`
-             alarms so the deferred notification posts at the requested time. -->
-        <receiver
-            android:name=".offload.ScheduledNotificationReceiver"
-            android:exported="false" />
-
-        <!-- [T-android-scheduled-tasks-design] AlarmManager target for
-             user-defined scheduled tasks (Settings → home top-right
-             schedule icon). The receiver dispatches to ScheduledAgentRunner
-             which drives the agent loop headlessly. -->
-        <receiver
-            android:name=".scheduled.ScheduledTaskAlarmReceiver"
-            android:exported="false" />
-
-        <!-- Notification listener — lets android-notification read active notifications.
-             User must enable this manually in Settings → Notifications → Device &
-             app notifications → Notification access. -->
-        <service
-            android:name=".offload.MinisNotificationListenerService"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
-
-        <!-- T322: Shizuku in-process content provider. Required by Shizuku
-             SDK >=12 to host the binder receiver inside our process. Marked
-             multiprocess=false so :acra reporter process doesn't try to host
-             a second copy. -->
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
-            android:multiprocess="false"
-            android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-
-        <!-- [T-android-privileged-backend] AXManager (Axeron) reuses this
-             same `<applicationId>.shizuku` ShizukuProvider — its
-             AxeronService#sendBinderToUserApp() resolves
-             "$packageName.shizuku" and calls Shizuku's "sendBinder" provider
-             method with extra "moe.shizuku.privileged.api.intent.extra.BINDER"
-             (verified in fahrez182/AxManager server/AxeronService.kt). The
-             only client-side requirement is the API_V23 uses-permission
-             above; no separate provider or AIDL surface is needed. -->
+        <!-- [P3.3 裁军] ScheduledTaskAlarmReceiver（定时任务闹钟入口）与
+             rikka.shizuku.ShizukuProvider（Shizuku 进程内宿主）随对应
+             功能整体退役移除。 -->
 
         <!-- FileProvider for sharing exported JSON (provider config, etc.)
              to other apps. Paths exposed are under app-scoped cache. -->
@@ -523,22 +397,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
-
-        <!-- T323: AccessibilityService backing `android-a11y-cli`. The user
-             must enable this manually under Settings → Accessibility; we
-             never start it programmatically (Android forbids that). -->
-        <service
-            android:name=".accessibility.MinisAccessibilityService"
-            android:exported="true"
-            android:label="@string/a11y_service_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/minis_accessibility_service" />
-        </service>
 
     </application>
 </manifest>

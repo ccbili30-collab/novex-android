@@ -22,17 +22,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.platform.LocalContext
-import com.openminis.app.ui.novex.AlertDialog
+import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,9 +55,8 @@ fun FileBrowserScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var deleteTarget by remember { mutableStateOf<FileItem?>(null) }
-    // T-pwa-3: long-press → "Add to Home Screen" sheet, hosted at screen
-    // scope so the dropdown can dismiss before the bottom-sheet appears.
-    var webAppSheetSource by remember { mutableStateOf<com.openminis.app.webapp.WebAppSource.HostFile?>(null) }
+    // [P3.3 裁军] webAppSheetSource（HTML 长按「添加到主屏」Sheet 状态）随
+    // webapp/ 整包退役删除。
 
     // When navigated into a subdirectory, the top-bar back button and the
     // system back gesture both pop one directory level first. The
@@ -79,7 +78,7 @@ fun FileBrowserScreen(
                 title = { Text(stringResource(R.string.filebrowser_title)) },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
@@ -131,7 +130,7 @@ fun FileBrowserScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.Folder,
+                                novex.android.ui.NovexIcons.Folder,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -162,7 +161,6 @@ fun FileBrowserScreen(
                                     }
                                 },
                                 onDelete = { deleteTarget = item },
-                                onAddToHome = { source -> webAppSheetSource = source },
                             )
                             HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
                         }
@@ -194,15 +192,7 @@ fun FileBrowserScreen(
         )
     }
 
-    // T-pwa-3: Add-to-Home-Screen sheet, hosted at screen scope so it
-    // outlives the row that triggered it (rows scroll out of composition
-    // and the menu dismisses before the sheet animates in).
-    webAppSheetSource?.let { src ->
-        com.openminis.app.webapp.AddToHomeSheet(
-            source = src,
-            onDismiss = { webAppSheetSource = null },
-        )
-    }
+    // [P3.3 裁军] AddToHomeSheet 渲染块随 webapp/ 退役删除。
 
     // Error dialog
     state.errorMessage?.let { msg ->
@@ -241,7 +231,7 @@ private fun BreadcrumbBar(
             )
             if (index < pathComponents.lastIndex) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                    novex.android.ui.NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -258,14 +248,9 @@ private fun FileItemRow(
     currentLinuxPath: String?,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    onAddToHome: (com.openminis.app.webapp.WebAppSource.HostFile) -> Unit,
 ) {
-    // T-pwa-3: long-press menu for .html / .htm files whose host path
-    // sits under a recognised PRoot bind mount (`/var/minis/shared` or
-    // `/var/minis/mounts/<n>`). Computed lazily because the bindMounts
-    // map can change while the screen is open (mount add/remove).
-    val ext = item.file.extension.lowercase()
-    val isHtml = !item.isDirectory && (ext == "html" || ext == "htm")
+    // [P3.3 裁军] HTML 长按「添加到主屏」菜单（isHtml 判定 + WebApp 源）随
+    // webapp/ 退役删除；长按菜单只保留「复制绝对路径」。
     var menuExpanded by remember(item.file.absolutePath) { mutableStateOf(false) }
 
     // [T-android-file-context-copy-abs-path] The file's Linux (PRoot) absolute
@@ -341,7 +326,7 @@ private fun FileItemRow(
         if (!item.isDirectory) {
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Delete,
+                    novex.android.ui.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.delete),
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -352,7 +337,7 @@ private fun FileItemRow(
         // Chevron for directories
         if (item.isDirectory) {
             Icon(
-                com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                novex.android.ui.NovexIcons.KeyboardArrowRight,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -373,7 +358,7 @@ private fun FileItemRow(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.filebrowser_copy_abs_path)) },
                 leadingIcon = {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null)
+                    Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null)
                 },
                 onClick = {
                     menuExpanded = false
@@ -391,36 +376,6 @@ private fun FileItemRow(
                     ).show()
                 },
             )
-            // TODO(webapp-hidden): WebApp / "Add to Home Screen" item temporarily
-            // hidden — feature not yet validated/complete. Re-enable by removing
-            // `false &&` from the guard below.
-            if (false && isHtml) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.webapp_add_to_home)) },
-                leadingIcon = {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.AppShortcut, contentDescription = null)
-                },
-                onClick = {
-                    menuExpanded = false
-                    val triple = com.openminis.app.webapp.WebAppPathResolver.inferScope(item.file)
-                    if (triple != null) {
-                        val (scope, ctx, linuxPath) = triple
-                        onAddToHome(
-                            com.openminis.app.webapp.WebAppSource.HostFile(
-                                file = item.file,
-                                fileName = item.name,
-                                pathScope = scope,
-                                scopeContext = ctx,
-                                linuxPath = linuxPath,
-                            ),
-                        )
-                    }
-                    // No matching scope → silently no-op (chip is rare and
-                    // only appears for files that do live under a bind mount;
-                    // future T-pwa-4 may surface a toast).
-                },
-            )
-            } // end HTML-only Add-to-Home gate
         }
     }
     } // anchoring Box
@@ -440,7 +395,7 @@ private fun MoreMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(com.openminis.app.ui.novex.NovexIcons.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
+            Icon(novex.android.ui.NovexIcons.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
         }
         com.openminis.app.ui.components.MinisMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             // Display options — sort key choices first so the most
@@ -455,7 +410,7 @@ private fun MoreMenu(
                     })) },
                     leadingIcon = {
                         if (key == sortKey) {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
                         } else {
                             Spacer(modifier = Modifier.size(24.dp))
                         }
@@ -471,7 +426,7 @@ private fun MoreMenu(
                 text = { Text(stringResource(if (ascending) R.string.filebrowser_sort_ascending else R.string.filebrowser_sort_descending)) },
                 leadingIcon = {
                     Icon(
-                        if (ascending) com.openminis.app.ui.novex.NovexIcons.ArrowUpward else com.openminis.app.ui.novex.NovexIcons.ArrowDownward,
+                        if (ascending) novex.android.ui.NovexIcons.ArrowUpward else novex.android.ui.NovexIcons.ArrowDownward,
                         contentDescription = null,
                     )
                 },
@@ -484,7 +439,7 @@ private fun MoreMenu(
                 text = { Text(stringResource(R.string.filebrowser_sort_folders_first)) },
                 leadingIcon = {
                     if (foldersFirst) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Check, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
                     } else {
                         Spacer(modifier = Modifier.size(24.dp))
                     }
@@ -503,7 +458,7 @@ private fun MoreMenu(
                 },
                 leadingIcon = {
                     Icon(
-                        if (showHidden) com.openminis.app.ui.novex.NovexIcons.VisibilityOff else com.openminis.app.ui.novex.NovexIcons.Visibility,
+                        if (showHidden) novex.android.ui.NovexIcons.VisibilityOff else novex.android.ui.NovexIcons.Visibility,
                         contentDescription = null,
                     )
                 },
@@ -517,17 +472,17 @@ private fun MoreMenu(
 }
 
 private fun fileIcon(item: FileItem): ImageVector {
-    if (item.isDirectory) return com.openminis.app.ui.novex.NovexIcons.Folder
+    if (item.isDirectory) return novex.android.ui.NovexIcons.Folder
     return when (item.iconRes) {
-        "text" -> com.openminis.app.ui.novex.NovexIcons.Description
-        "terminal" -> com.openminis.app.ui.novex.NovexIcons.Terminal
-        "code" -> com.openminis.app.ui.novex.NovexIcons.Code
-        "image" -> com.openminis.app.ui.novex.NovexIcons.Image
-        "audio" -> com.openminis.app.ui.novex.NovexIcons.AudioFile
-        "video" -> com.openminis.app.ui.novex.NovexIcons.VideoFile
-        "archive" -> com.openminis.app.ui.novex.NovexIcons.Archive
-        "pdf" -> com.openminis.app.ui.novex.NovexIcons.PictureAsPdf
-        "database" -> com.openminis.app.ui.novex.NovexIcons.Storage
-        else -> com.openminis.app.ui.novex.NovexIcons.InsertDriveFile
+        "text" -> novex.android.ui.NovexIcons.Description
+        "terminal" -> novex.android.ui.NovexIcons.Terminal
+        "code" -> novex.android.ui.NovexIcons.Code
+        "image" -> novex.android.ui.NovexIcons.Image
+        "audio" -> novex.android.ui.NovexIcons.AudioFile
+        "video" -> novex.android.ui.NovexIcons.VideoFile
+        "archive" -> novex.android.ui.NovexIcons.Archive
+        "pdf" -> novex.android.ui.NovexIcons.PictureAsPdf
+        "database" -> novex.android.ui.NovexIcons.Storage
+        else -> novex.android.ui.NovexIcons.InsertDriveFile
     }
 }

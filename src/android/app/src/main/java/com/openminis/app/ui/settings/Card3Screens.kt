@@ -20,21 +20,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.Card
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.Card
 import androidx.compose.material3.CardDefaults
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.NovexCheckToggle
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,7 +60,7 @@ import com.openminis.app.data.character.PlayerPersona
 import com.openminis.app.data.character.SillyTavernCardExporter
 import com.openminis.app.data.character.SillyTavernCardParser
 import com.openminis.app.data.character.StoryWorld
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -85,7 +85,7 @@ fun WorldLibraryScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onCreateWorld,
-                icon = { Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null) },
+                icon = { Icon(novex.android.ui.NovexIcons.Add, contentDescription = null) },
                 text = { Text("创建世界") },
             )
         },
@@ -133,7 +133,7 @@ fun WorldLibraryScreen(
 @Composable
 fun StoryWorldDetailScreen(
     worldId: String,
-    sessions: List<ChatSessionEntity>,
+    sessions: List<SessionRow>,
     onBack: () -> Unit,
     onEditWorld: () -> Unit,
     onEditPersona: (String?) -> Unit,
@@ -199,7 +199,7 @@ fun StoryWorldDetailScreen(
                     )
                 }
                 TextButton(onClick = { onEditPersona(null) }, modifier = Modifier.padding(horizontal = 12.dp)) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null)
+                    Icon(novex.android.ui.NovexIcons.Add, contentDescription = null)
                     Text("添加玩家身份")
                 }
             }
@@ -211,7 +211,7 @@ fun StoryWorldDetailScreen(
             ) {
                 Text("${characters.size} 张角色卡", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Box {
-                    IconButton(onClick = { addMenu = true }) { Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = "添加角色卡") }
+                    IconButton(onClick = { addMenu = true }) { Icon(novex.android.ui.NovexIcons.Add, contentDescription = "添加角色卡") }
                     DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("创建空白角色卡") },
@@ -281,7 +281,7 @@ fun StoryWorldDetailScreen(
 @Composable
 fun CharacterDetailScreen(
     characterId: String,
-    sessions: List<ChatSessionEntity>,
+    sessions: List<SessionRow>,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onNewChat: () -> Unit,
@@ -297,15 +297,15 @@ fun CharacterDetailScreen(
         actions = {
             if (card != null) {
                 IconButton(onClick = { shareStandardCard3Json(context, card) }) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Upload, contentDescription = "导出角色卡 JSON")
+                    Icon(novex.android.ui.NovexIcons.Upload, contentDescription = "导出角色卡 JSON")
                 }
-                IconButton(onClick = onEdit) { Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = "编辑角色卡") }
+                IconButton(onClick = onEdit) { Icon(novex.android.ui.NovexIcons.Edit, contentDescription = "编辑角色卡") }
             }
         },
         floatingActionButton = {
             if (card != null) ExtendedFloatingActionButton(
                 onClick = onNewChat,
-                icon = { Icon(com.openminis.app.ui.novex.NovexIcons.Add, contentDescription = null) },
+                icon = { Icon(novex.android.ui.NovexIcons.Add, contentDescription = null) },
                 text = { Text("新建对话") },
             )
         },
@@ -432,7 +432,7 @@ fun Card3CharacterEditorScreen(worldId: String, cardId: String?, onBack: () -> U
         actions = {
             TextButton(onClick = ::save, enabled = name.isNotBlank()) { Text("保存") }
             if (existing != null) IconButton(onClick = { showDelete = true }) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = "删除角色卡")
+                Icon(novex.android.ui.NovexIcons.Delete, contentDescription = "删除角色卡")
             }
         },
     ) {
@@ -561,7 +561,7 @@ private fun Card3SummaryRow(imagePath: String?, title: String, subtitle: String,
             Text(title, fontWeight = FontWeight.SemiBold)
             Text(subtitle, maxLines = 3, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowForward, contentDescription = null)
+        Icon(novex.android.ui.NovexIcons.ArrowForward, contentDescription = null)
     }
 }
 
@@ -575,7 +575,7 @@ private fun Card3ActionRow(title: String, subtitle: String, onClick: () -> Unit)
             Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowForward, contentDescription = null)
+        Icon(novex.android.ui.NovexIcons.ArrowForward, contentDescription = null)
     }
 }
 
@@ -599,7 +599,7 @@ private fun Card3ProfileImage(path: String?, circle: Boolean) {
     ) else Box(
         modifier = Modifier.size(56.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
-    ) { Icon(com.openminis.app.ui.novex.NovexIcons.Person, contentDescription = null) }
+    ) { Icon(novex.android.ui.NovexIcons.Person, contentDescription = null) }
 }
 
 @Composable

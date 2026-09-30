@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
-import com.openminis.app.sandbox.PRootKernel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -68,6 +67,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import novex.android.ContentPaths
 
 /**
  * Renders markdown text with full formatting support.
@@ -222,7 +222,7 @@ private fun CodeBlockView(block: MarkdownParser.Block.CodeBlock) {
                 modifier = Modifier.height(28.dp),
             ) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.ContentCopy,
+                    novex.android.ui.NovexIcons.ContentCopy,
                     contentDescription = "Copy code",
                     modifier = Modifier.height(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -302,7 +302,7 @@ private fun BulletListView(
                 if (item.checked != null) {
                     // Task list item
                     Icon(
-                        imageVector = if (item.checked) com.openminis.app.ui.novex.NovexIcons.CheckBox else com.openminis.app.ui.novex.NovexIcons.CheckBoxOutlineBlank,
+                        imageVector = if (item.checked) novex.android.ui.NovexIcons.CheckBox else novex.android.ui.NovexIcons.CheckBoxOutlineBlank,
                         contentDescription = null,
                         tint = color.copy(alpha = 0.6f),
                         modifier = Modifier
@@ -507,24 +507,13 @@ private fun InlineContent(
         }
     }
 
-    // T136: route non-http(s) link taps (intent://, mailto:, tel:, …) through
-    // BrowserExternalSchemeHandler instead of Compose's default UriHandler,
-    // which fires a plain ACTION_VIEW and breaks for `intent://...#Intent;…`
-    // URIs. For http(s)/about/file the handler is a no-op and we fall back to
-    // a plain ACTION_VIEW to the system browser.
+    // [P3.3 裁军] 原 BrowserExternalSchemeHandler（内置浏览器的外跳 scheme
+    // 路由）退役；链接点击一律 ACTION_VIEW 外跳系统处理器。
     val context = LocalContext.current
     val linkListener = remember(context) {
         LinkInteractionListener { link ->
             val url = (link as? LinkAnnotation.Url)?.url ?: return@LinkInteractionListener
-            val handled = com.openminis.app.ui.browser.BrowserExternalSchemeHandler
-                .handle(context, url)
-            if (handled) return@LinkInteractionListener
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
+            com.openminis.app.ui.components.openExternalUrl(context, url)
         }
     }
 
@@ -677,7 +666,7 @@ private fun resolveMediaFile(url: String): File? {
     val hostFile: File? = when {
         stripped.startsWith("minis://") -> {
             val decoded = java.net.URLDecoder.decode(stripped.removePrefix("minis://"), "UTF-8")
-            PRootKernel.resolveHostPath("/var/minis/$decoded")
+            ContentPaths.resolveHostPath("/var/minis/$decoded")
         }
         stripped.startsWith("file://") -> File(Uri.parse(stripped).path ?: return null)
         stripped.startsWith("/") -> File(stripped)
@@ -802,7 +791,7 @@ private fun MinisVideoBlock(block: MarkdownParser.Block.Video) {
                 )
             }
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled,
+                imageVector = novex.android.ui.NovexIcons.PlayCircleFilled,
                 contentDescription = "Play video",
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.width(56.dp).height(56.dp),
@@ -815,7 +804,7 @@ private fun MinisVideoBlock(block: MarkdownParser.Block.Video) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.Videocam,
+                imageVector = novex.android.ui.NovexIcons.Videocam,
                 contentDescription = null,
                 tint = captionColor,
                 modifier = Modifier.width(14.dp).height(14.dp),
@@ -896,7 +885,7 @@ private fun MinisAudioBlock(block: MarkdownParser.Block.Audio) {
     ) {
         // Leading icon
         Icon(
-            imageVector = com.openminis.app.ui.novex.NovexIcons.Audiotrack,
+            imageVector = novex.android.ui.NovexIcons.Audiotrack,
             contentDescription = null,
             tint = subtle,
             modifier = Modifier.width(18.dp).height(18.dp),
@@ -932,7 +921,7 @@ private fun MinisAudioBlock(block: MarkdownParser.Block.Audio) {
             }
         }
         Icon(
-            imageVector = if (isPlaying) com.openminis.app.ui.novex.NovexIcons.Pause else com.openminis.app.ui.novex.NovexIcons.PlayArrow,
+            imageVector = if (isPlaying) novex.android.ui.NovexIcons.Pause else novex.android.ui.NovexIcons.PlayArrow,
             contentDescription = if (isPlaying) "Pause" else "Play",
             tint = tint,
             modifier = Modifier.width(28.dp).height(28.dp),

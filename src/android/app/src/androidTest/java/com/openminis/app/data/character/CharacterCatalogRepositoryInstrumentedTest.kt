@@ -3,7 +3,7 @@ package com.openminis.app.data.character
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -15,13 +15,13 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CharacterCatalogRepositoryInstrumentedTest {
-    private lateinit var database: AppDatabase
+    private lateinit var database: NovexMainDatabase
     private lateinit var repository: CharacterCatalogRepository
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         repository = CharacterCatalogRepository(database.characterCatalogDao())

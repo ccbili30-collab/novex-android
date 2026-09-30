@@ -1,8 +1,8 @@
 package novex.android
 
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.TextButton
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.*
@@ -17,9 +17,9 @@ import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexType
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -177,9 +177,9 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
                 CardRow(headlineContent={Text(role.name,maxLines=1,overflow=TextOverflow.Ellipsis)},leadingContent={RoleThumbnail(role,model)},
                     trailingContent={Box {
                         CardAction(NovexIcons.MoreVert,"角色操作",enabled){roleMore=true}
-                        com.openminis.app.ui.novex.NovexActionMenu(expanded=roleMore,onDismissRequest={roleMore=false},actions=listOf(
-                            com.openminis.app.ui.novex.NovexMenuAction(label="编辑角色",icon=com.openminis.app.R.drawable.ic_phosphor_pencil_simple,onClick={model.editTarget(id)}),
-                            com.openminis.app.ui.novex.NovexMenuAction(label="移出此模块",icon=com.openminis.app.R.drawable.ic_phosphor_caret_right,onClick={model.placeCharacter(id,null)})
+                        novex.android.ui.NovexActionMenu(expanded=roleMore,onDismissRequest={roleMore=false},actions=listOf(
+                            novex.android.ui.NovexMenuAction(label="编辑角色",icon=com.openminis.app.R.drawable.ic_phosphor_pencil_simple,onClick={model.editTarget(id)}),
+                            novex.android.ui.NovexMenuAction(label="移出此模块",icon=com.openminis.app.R.drawable.ic_phosphor_caret_right,onClick={model.placeCharacter(id,null)})
                         ))
                     }},modifier=Modifier.clickable(enabled=enabled){model.editTarget(id)})
             }
@@ -231,7 +231,7 @@ private data class ModuleDrop(val parent:String?,val before:String?,val inside:S
         // [A3a] 两区分隔：基础信息（虚线框 hero）与模块区之间留出呼吸间距，
         // 横向槽行正好落在分界上。
         Spacer(Modifier.height(10.dp))
-        if(card.usesMainSlot()) {
+        if(card.usesMainSlotByData()) {
             val mainScroll=rememberScrollState()
             DisposableEffect(card.id){onDispose {tracks.remove(card.id)}}
             Row(Modifier.fillMaxWidth().onGloballyPositioned {tracks[card.id]=HorizontalTrack(it.boundsInRoot(),mainScroll)}

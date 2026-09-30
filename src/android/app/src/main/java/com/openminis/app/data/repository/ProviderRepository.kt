@@ -4,42 +4,34 @@ package com.openminis.app.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
-import com.openminis.app.data.db.ProviderConfigDao
-import com.openminis.app.data.db.ProviderConfigMetaKeys
-import com.openminis.app.data.db.ProviderConfigSnapshot
-import com.openminis.app.data.db.ProviderThinkingRuleEntity
-import com.openminis.app.provider.thinking.ThinkingRule
-import com.openminis.app.provider.thinking.ThinkingRuleCoding
-import com.openminis.app.provider.thinking.ThinkingRuleResolver
-import com.openminis.app.data.db.ProviderDatabase
-import com.openminis.app.data.db.compositeEntryKey
-import com.openminis.app.data.db.toProviderConfig
-import com.openminis.app.data.db.toSnapshot
+import novex.android.data.provider.ProviderStoreDao
+import novex.android.data.provider.ProviderMetaKeys
+import novex.android.data.provider.ProviderRowsSnapshot
+import novex.android.data.provider.ThinkingRuleRow
+import novex.android.thinking.ThinkingContract
+import novex.android.thinking.ThinkingContractResolver
+import novex.android.data.NovexProviderDatabase
+import novex.android.data.provider.entryCompositeId
+import novex.android.data.provider.toConfig
+import novex.android.data.provider.toRows
 import com.openminis.app.data.normalizeModelGroupOrder
 import com.openminis.app.data.removeModelGroupAndBindings
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.SystemVoiceIds
-import com.openminis.app.data.model.VoiceProviderTemplate
-import com.openminis.app.data.model.hasAudioInput
-import com.openminis.app.data.model.hasAudioOutput
-import com.openminis.app.data.model.hasImageInput
-import com.openminis.app.data.model.hasVoiceModality
-import com.openminis.app.data.model.isVoiceTemplateSeedShape
-import com.openminis.app.data.model.withInferredVoiceModality
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.hasAudioInput
+import novex.android.data.model.hasAudioOutput
+import novex.android.data.model.hasImageInput
 import com.openminis.app.provider.ModelReleaseIndex
 import com.openminis.app.provider.ModelsDevApi
-import com.openminis.app.provider.anthropic.AnthropicModelsApi
-import com.openminis.app.provider.gemini.GeminiModelsApi
-import com.openminis.app.provider.openai.OpenAIModelsApi
+import com.openminis.app.provider.ModelsCatalogApi
 import com.openminis.app.provider.openrouter.OpenRouterModelsApi
 import com.openminis.app.tools.migrateLegacyImageGenerationConfig
 import com.openminis.app.tools.resolveImageGenerationEntries
@@ -97,8 +89,8 @@ class ProviderRepository(private val context: Context) {
     // Opening provider.db is not a first-frame dependency. The initial config
     // loader already runs on Dispatchers.IO, so defer Room construction until
     // that loader first touches the DAO instead of blocking Application.onCreate.
-    private val providerDao: ProviderConfigDao by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ProviderDatabase.getInstance(context).providerConfigDao()
+    private val providerDao: ProviderStoreDao by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        NovexProviderDatabase.getInstance(context).providerStoreDao()
     }
 
     companion object {
@@ -123,21 +115,10 @@ class ProviderRepository(private val context: Context) {
         /** [T-newchat-default-model-fallback-android] Global last-used model entry id. */
         private const val KEY_LAST_USED_ENTRY = "lastUsedModelEntryId"
 
-        /**
-         * [T-android-provider-voice] Normalize a base URL for shadow-voice
-         * cross-instance de-dup: lowercased, trailing "/" and "/v1" stripped.
-         * Mirrors iOS ProviderConfigStore.normalizedShadowKey.
-         */
-        fun normalizedShadowKey(baseURL: String?): String {
-            var s = baseURL?.trim()?.lowercase() ?: return ""
-            while (s.endsWith("/")) s = s.dropLast(1)
-            if (s.endsWith("/v1")) s = s.dropLast(3)
-            while (s.endsWith("/")) s = s.dropLast(1)
-            return s
-        }
+        // [P3.3 裁军] normalizedShadowKey（shadow voice 折叠去重的 base URL
+        // 归一）随 Shadow Voice 区退役删除。
     }
 
-    /** Record the time of a successful model fetch for [instanceId]. */
     private fun markInstanceFetched(instanceId: String) {
         prefs.edit().putLong(lastFetchKey(instanceId), System.currentTimeMillis()).apply()
     }
@@ -249,14 +230,8 @@ class ProviderRepository(private val context: Context) {
             // Completed in every path, including the failure one: awaitConfigLoaded()
             // callers (refreshAllModelsIfNeeded) would otherwise suspend forever.
             if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
-            // [T-android-provider-voice] Reconcile voice-template seeds after
-            // the initial load (add new template models, drop retired seeds,
-            // heal corrupted modality). Mirrors iOS ProviderConfigStore.init.
-            try {
-                ensureVoiceTemplateModels()
-            } catch (e: Exception) {
-                android.util.Log.w("ProviderRepo", "[Voice] ensureVoiceTemplateModels failed: ${e.message}")
-            }
+            // [P3.3 裁军] 语音厂商模板种子对账（ensureVoiceTemplateModels）随
+            // 语音全家退役删除。
             // [T-qianchen-preset] Seed the built-in 前尘 API relay preset once per
             // install (用户 2026-09-16 决策：预填协议地址、不内置密钥、密钥链接
             // 指向官网、gemini 模型省略思考参数规避中转的错误参数翻译、chat 失败
@@ -285,7 +260,7 @@ class ProviderRepository(private val context: Context) {
     private val configLock = Any()
 
     private fun loadConfig(): ProviderConfig =
-        com.openminis.app.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() })
+        novex.android.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() })
 
     /**
      * [T-android-provider-room-store] DB-first load with three-way
@@ -332,16 +307,16 @@ class ProviderRepository(private val context: Context) {
 
         val (dbConfig, dbHashStored) = if (instanceCount > 0) {
             try {
-                val snapshot = ProviderConfigSnapshot(
-                    instances = providerDao.loadInstances(),
-                    entries = providerDao.loadEntries(),
-                    groups = providerDao.loadGroups(),
-                    loopIds = providerDao.loadAgentLoopIds(),
-                    meta = providerDao.loadMeta(),
+                val snapshot = ProviderRowsSnapshot(
+                    instanceRows = providerDao.instanceRows(),
+                    modelRows = providerDao.modelRows(),
+                    groupRows = providerDao.groupRows(),
+                    loopRows = providerDao.agentLoopRows(),
+                    metaRows = providerDao.metaRows(),
                 )
-                val cfg = snapshot.toProviderConfig(json)
-                val storedHash = snapshot.meta.firstOrNull {
-                    it.key == ProviderConfigMetaKeys.JSON_SYNC_HASH
+                val cfg = snapshot.toConfig(json)
+                val storedHash = snapshot.metaRows.firstOrNull {
+                    it.key == ProviderMetaKeys.JSON_SYNC_HASH
                 }?.value
                 cfg to storedHash
             } catch (e: Exception) {
@@ -394,7 +369,7 @@ class ProviderRepository(private val context: Context) {
                 if (legacyLastUsed != null && !legacyLastUsed.contains('/')) {
                     val rewritten = parsed.modelEntries
                         .firstOrNull { it.uuid == legacyLastUsed }
-                        ?.let { compositeEntryKey(it.providerInstanceId, it.baseModel.id) }
+                        ?.let { entryCompositeId(it.providerInstanceId, it.baseModel.id) }
                     if (rewritten != null) {
                         prefs.edit().putString(KEY_LAST_USED_ENTRY, rewritten).apply()
                         android.util.Log.i(
@@ -481,13 +456,13 @@ class ProviderRepository(private val context: Context) {
         // older builds will read, not a hash-of-itself).
         val mirrorStr = json.encodeToString(ProviderConfig.serializer(), config)
         val mirrorHash = hashJsonMirror(mirrorStr)
-        val snapshot = config.toSnapshot(json, jsonSyncHash = mirrorHash)
-        providerDao.replaceAll(
-            instances = snapshot.instances,
-            entries = snapshot.entries,
-            groups = snapshot.groups,
-            loopIds = snapshot.loopIds,
-            meta = snapshot.meta,
+        val snapshot = config.toRows(json, jsonSyncHash = mirrorHash)
+        providerDao.overwriteConfigTables(
+            instances = snapshot.instanceRows,
+            models = snapshot.modelRows,
+            groups = snapshot.groupRows,
+            loopTargets = snapshot.loopRows,
+            meta = snapshot.metaRows,
         )
         // commit() not apply(): the json_sync_hash we just stored to DB is
         // a hash of THIS mirror string. If apply() queues the disk write
@@ -518,7 +493,7 @@ class ProviderRepository(private val context: Context) {
         }
         // Return canonicalized form so the caller's _config.value reflects
         // entry uuids in composite-key shape from this write forward.
-        return snapshot.toProviderConfig(json)
+        return snapshot.toConfig(json)
     }
 
     /**
@@ -566,7 +541,8 @@ class ProviderRepository(private val context: Context) {
         }
         // [T-android-thinking-rules-phase2] Warm the resolver's custom-rule cache once
         // config is available, so the (sync) request builder can read user rules.
-        loadAllThinkingRulesIntoCache()
+        // [P3.3 裁军] 自定义思考规则缓存装载随 CUSTOM 路径退役删除
+        // （resolver 只跑内置座次表）。
         if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
     }
 
@@ -711,23 +687,8 @@ class ProviderRepository(private val context: Context) {
                     "models will populate from upstream /v1/models on refresh",
             )
         }
-        // [T-android-provider-voice] Seed voice-template mock models when the
-        // base URL matches a voice vendor (MiMo / MiniMax / Doubao …). These
-        // vendors have no /v1/models for their voices, so the template list is
-        // the only source. Mirrors iOS addInstance + VoiceProviderTemplate.
-        val voiceSeeds = VoiceProviderTemplate.mockEntries(instance)
-            .filter { seed ->
-                config.modelEntries.none {
-                    it.providerInstanceId == instance.id && it.baseModel.id == seed.baseModel.id
-                }
-            }
-        if (voiceSeeds.isNotEmpty()) {
-            config.modelEntries.addAll(voiceSeeds)
-            android.util.Log.i(
-                "ProviderRepo",
-                "[Voice] addInstance seeded ${voiceSeeds.size} voice-template models for ${instance.label}",
-            )
-        }
+        // [P3.3 裁军] 语音厂商模板种子（VoiceVendorTemplate.mockEntries）随
+        // 语音全家退役删除。
         saveConfig(config)
         // Stale from the start so the next background sweep (or an explicit
         // triggerBackgroundRefreshIfStale call) will fetch it.
@@ -735,28 +696,12 @@ class ProviderRepository(private val context: Context) {
     }
 
     /**
-     * [T-android-provider-voice] Reconcile voice-template seed entries on every
-     * launch: add template models a previous build didn't know, remove RETIRED
-     * seeds, and heal corrupted modality. Straight port of iOS
-     * ProviderConfigStore.ensureVoiceTemplateModels with its two hard-won
-     * guards:
-     *
-     *  - [T-voice-seed-shape-exact] Stale-seed removal matches ONLY the exact
-     *    single-flag seed shape (isVoiceTemplateSeedShape). API-fetched models
-     *    always carry the paired text side (≥2 flags), so a future API ASR/TTS
-     *    model can never be mistaken for a seed and wiped every launch
-     *    (regression class of cffbec0e: MiMo launch model count 15→11).
-     *  - Heal: a models refresh can overwrite a template entry with text-only
-     *    modality from /v1/models; restore the template's authoritative
-     *    modality when it diverged.
-     */
-    /**
      * [T-qianchen-preset] 种子内置「前尘 API」预设（每安装一次）。实例带固定 id、
      * OpenAI 兼容协议、地址预填（自动追加 /v1：实测 chat 必须走 /v1/chat/completions，
      * responses 同 host 的 /v1/responses 亦通）；不内置密钥；密钥链接指向官网；
-     * 附带一条 gemini-* → 完全省略的思考规则（中转会把根级 reasoning_effort 错译成
-     * Claude thinking 参数触发 400）；chat 失败自动改走 responses（见
-     * OpenAIProvider 的 responsesFallback）。
+     * gemini-* 思考参数完全省略的行为由内置座次表承接（见 resolver 的
+     * qianchen-relay-gemini 席）；chat 失败自动改走 responses（见
+     * 适配器 NovexTransportProvider 的 responsesFallback）。
      */
     private fun seedQianchenPreset() {
         val prefs = context.getSharedPreferences("novex_provider_presets", Context.MODE_PRIVATE)
@@ -777,68 +722,16 @@ class ProviderRepository(private val context: Context) {
                 autoResponsesFallback = true,
             ),
         )
-        saveThinkingRule(
-            QIANCHEN_INSTANCE_ID,
-            ThinkingRule(
-                kind = ThinkingRule.Kind.CUSTOM,
-                scope = ThinkingRule.Scope.ModelPattern("gemini-*"),
-                wireFormat = com.openminis.app.provider.thinking.ThinkingWireFormat.OmitEverything,
-                label = "中转兼容：gemini 模型不发思考参数",
-            ),
-        )
+        // [P3.3 裁军] 原预设在此写一条 CUSTOM 思考规则（gemini-* 不发思考
+        // 参数，规避中转把根级 reasoning_effort 错译成 Claude thinking 参数
+        // 触发 400）。CUSTOM 规则机器随 minis-config 体系随葬后，该行为收进
+        // 内置座次表（ThinkingContractResolver.SEATS 的 qianchen-relay-gemini
+        // 席，按 base URL 嗅探命中），resolver 只跑内置。
         android.util.Log.i("ProviderRepo", "[Preset] seeded 前尘 API relay instance")
     }
 
-    fun ensureVoiceTemplateModels() = synchronized(configLock) {
-        ensureConfigLoaded()
-        val config = workingCopy()
-        var changed = false
-        for (instance in config.instances) {
-            val tpl = VoiceProviderTemplate.template(instance.customBaseURL) ?: continue
-            val templateById = tpl.mockModels.associateBy { it.id }
-            val instanceEntries = config.modelEntries.filter { it.providerInstanceId == instance.id }
-            val existingIds = instanceEntries.map { it.baseModel.id }.toSet()
+    // [P3.3 裁军] ensureVoiceTemplateModels（语音模板对账）随语音全家退役删除。
 
-            // Remove stale template seeds (exact seed shape only) not in the
-            // current template version.
-            val staleSeedIds = instanceEntries
-                .filter { it.baseModel.isVoiceTemplateSeedShape }
-                .map { it.baseModel.id }
-                .filter { it !in templateById }
-            if (staleSeedIds.isNotEmpty()) {
-                config.modelEntries.removeAll {
-                    it.providerInstanceId == instance.id && it.baseModel.id in staleSeedIds
-                }
-                changed = true
-                android.util.Log.i("ProviderRepo", "[VoiceTemplateMigrate] ${instance.label}: removed stale voice entries: ${staleSeedIds.sorted()}")
-            }
-
-            // Add template models missing from this instance.
-            val toAdd = templateById.keys - existingIds
-            if (toAdd.isNotEmpty()) {
-                val newEntries = tpl.mockModels
-                    .filter { it.id in toAdd }
-                    .map { ModelEntry(providerInstanceId = instance.id, baseModel = it) }
-                config.modelEntries.addAll(newEntries)
-                changed = true
-                android.util.Log.i("ProviderRepo", "[VoiceTemplateMigrate] ${instance.label}: added ${newEntries.size} new entries: ${toAdd.sorted()}")
-            }
-
-            // Heal corrupted modality on surviving template entries.
-            for (i in config.modelEntries.indices) {
-                val e = config.modelEntries[i]
-                if (e.providerInstanceId != instance.id) continue
-                val tplModel = templateById[e.baseModel.id] ?: continue
-                if (e.baseModel.inputModalities == tplModel.inputModalities &&
-                    e.baseModel.outputModalities == tplModel.outputModalities
-                ) continue
-                android.util.Log.i("ProviderRepo", "[VoiceTemplateMigrate] ${instance.label}: healing modality for ${e.baseModel.id}")
-                config.modelEntries[i] = e.copy(baseModel = tplModel)
-                changed = true
-            }
-        }
-        if (changed) saveConfig(config)
-    }
 
     /**
      * Whether [instance] points at a third-party OpenAI-compatible host
@@ -915,29 +808,26 @@ class ProviderRepository(private val context: Context) {
 
         saveConfig(config)
         deleteApiKey(instanceId)
-        // [T-android-thinking-rules-phase2] The instance is gone — drop its custom
-        // rules from Room and the resolver cache (they can never fire again).
-        runCatching {
-            runBlocking { providerDao.deleteThinkingRulesForInstance(instanceId) }
-            ThinkingRuleResolver.setCustomRules(instanceId, emptyList())
-        }
+        // [P3.3 裁军] 删实例时的自定义思考规则级联清理（dropRulesFor +
+        // setCustomRules）随 CUSTOM 路径退役删除；历史规则行留在
+        // provider_thinking_rules 表中（schema 冻结），不再被读取。
     }
 
     /**
      * [T-android-image-endpoint-mode] Persist the endpoint that last worked for
-     * `auto`-mode image generation on [instanceId]. Called by
-     * ModelUseOffloadHandler after a successful /images/generations call (cache
-     * `imagesGenerations`) or after a route-missing fallback (cache
-     * `chatCompletions`). No-op when unchanged so we don't churn the config /
-     * iCloud sync on every image call. Does not invalidate the model cache —
-     * the endpoint choice never moves the model list.
+     * `auto`-mode image generation on [instanceId]. Called after a successful
+     * /images/generations call (cache `imagesGenerations`) or after a
+     * route-missing fallback (cache `chatCompletions`). No-op when unchanged so
+     * we don't churn the config / iCloud sync on every image call. Does not
+     * invalidate the model cache — the endpoint choice never moves the model
+     * list.
      */
     // [T-android-provider-mutator-lock] `ProviderInstance` has mutable `var`
     // fields, so `workingCopy()`'s list copy is not enough on its own — the
     // instance objects inside it are still the published ones. Replace the
     // element with a `.copy()` rather than writing through to the shared
-    // object. Called from ModelUseOffloadHandler on an offload worker thread
-    // during image generation, so the unsynchronized write had no
+    // object. Called from an offload worker thread during image generation,
+    // so the unsynchronized write had no
     // happens-before with main-thread readers.
     fun setImageEndpointResolved(instanceId: String, endpoint: ImageEndpointMode): Unit =
         synchronized(configLock) {
@@ -1018,7 +908,7 @@ class ProviderRepository(private val context: Context) {
      */
     fun lastUsedVisibleEntry(): ModelEntry? {
         val id = lastUsedEntryId ?: return null
-        return allVisibleEntries().firstOrNull { it.id == id && com.openminis.app.data.model.ChatModelSelection.eligible(it) }
+        return allVisibleEntries().firstOrNull { it.id == id && novex.android.data.model.ChatModelSelection.eligible(it) }
     }
 
     /**
@@ -1041,7 +931,7 @@ class ProviderRepository(private val context: Context) {
             .sortedByDescending { it.createdAt }
         for (instance in enabledProviders) {
             val textEntry = config.modelEntries
-                .filter { it.providerInstanceId == instance.id && com.openminis.app.data.model.ChatModelSelection.eligible(it) }
+                .filter { it.providerInstanceId == instance.id && novex.android.data.model.ChatModelSelection.eligible(it) }
                 .lastOrNull()
             if (textEntry != null) return textEntry
         }
@@ -1124,29 +1014,13 @@ class ProviderRepository(private val context: Context) {
 
         // Build new entries, carrying forward uuid / overrides / isHidden from prior entries
         val refreshedModelIds = models.map { it.id }.toSet()
-        // [T-android-provider-voice] Template-sourced voice models carry an
-        // authoritative modality that API-inferred modality (typically no audio
-        // bits) must never overwrite. Mirrors iOS replaceEntries
-        // templateModalityById guard (d55cd821).
-        val instanceBaseURL = config.instances.firstOrNull { it.id == instanceId }?.customBaseURL
-        val voiceTemplate = VoiceProviderTemplate.template(instanceBaseURL)
-        val templateVoiceModelById = voiceTemplate?.mockModels
-            ?.filter { it.hasVoiceModality }
-            ?.associateBy { it.id }
-            ?: emptyMap()
+        // [P3.3 裁军] 语音模板模态守护 + ASR/TTS 模态推断
+        // （withInferredVoiceModality）随语音全家退役删除。
         val newEntries = models.map { model ->
             val prior = existingByModelId[model.id]
-            // Dedicated ASR/TTS id/name patterns fill the exact voice shape when
-            // the API returned no modality info; the template's shape wins last.
-            var resolved = com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
-                model.withInferredVoiceModality(), config.instances.firstOrNull { it.id == instanceId }?.effectiveBaseURL,
+            val resolved = novex.android.data.model.NovexDeepSeekModelMetadata.official(
+                model, config.instances.firstOrNull { it.id == instanceId }?.effectiveBaseURL,
             )
-            templateVoiceModelById[model.id]?.let { tplModel ->
-                resolved = resolved.copy(
-                    inputModalities = tplModel.inputModalities,
-                    outputModalities = tplModel.outputModalities,
-                )
-            }
             ModelEntry(
                 providerInstanceId = instanceId,
                 baseModel = resolved,
@@ -1161,25 +1035,11 @@ class ProviderRepository(private val context: Context) {
         // Keep custom entries that weren't in the refreshed list
         val remainingCustom = existing.filter { it.isCustom && it.baseModel.id !in refreshedModelIds }
 
-        // [T-android-provider-voice] Preserve voice-template SEED entries the
-        // /models list didn't return. Vendors like MiMo never expose their
-        // ASR/TTS voices via /v1/models, so without this every refresh wipes
-        // the seeds (iOS regression cffbec0e: MiMo launch model count 15→11).
-        // Only genuine template members are protected — never stray audio
-        // entries. Mirrors iOS replaceEntries preservedVoice.
-        val preservedVoice = existing.filter { e ->
-            !e.isCustom &&
-                e.baseModel.id !in refreshedModelIds &&
-                e.baseModel.id in templateVoiceModelById
-        }
-
+        // [P3.3 裁军] 语音模板种子保留段（preservedVoice，随
+        // templateVoiceModelById 而去）随语音全家退役删除。
         config.modelEntries.removeAll { it.providerInstanceId == instanceId }
         config.modelEntries.addAll(newEntries)
         config.modelEntries.addAll(remainingCustom)
-        if (preservedVoice.isNotEmpty()) {
-            config.modelEntries.addAll(preservedVoice)
-            android.util.Log.i("ProviderRepo", "[ModelList] replaceEntries preserved ${preservedVoice.size} voice-template seed entries: ${preservedVoice.map { it.baseModel.id }.take(10)}")
-        }
 
         // Prune stale group member references
         val survivingEntryIds = config.modelEntries.map { it.id }.toSet()
@@ -1434,7 +1294,7 @@ class ProviderRepository(private val context: Context) {
         // configLock KDoc above was written to close (it cites the
         // "ConcurrentModificationException → ArrayList.next" crash seen on
         // Pixel 6 / 4a). Concurrent readers iterate that same list with no
-        // lock: hasFoldedShadowDuplicates() and shadowVoiceProviders() are
+        // lock: hasFoldedShadowDuplicates() and shadowVoiceSources() are
         // called from ProviderListScreen during composition — on the main
         // thread, and recomposition fires precisely BECAUSE this reorder just
         // emitted — while the background model-refresh fan-out reads it too.
@@ -1775,25 +1635,9 @@ class ProviderRepository(private val context: Context) {
             saveConfig(config)
         }
 
-    // --- Voice groups [T-android-provider-voice] ---
-
-    var voiceInputGroupId: String?
-        get() = _config.value.voiceInputGroupId
-        set(value) = synchronized(configLock) {
-            ensureConfigLoaded()
-            val config = workingCopy()
-            config.voiceInputGroupId = value
-            saveConfig(config)
-        }
-
-    var voiceOutputGroupId: String?
-        get() = _config.value.voiceOutputGroupId
-        set(value) = synchronized(configLock) {
-            ensureConfigLoaded()
-            val config = workingCopy()
-            config.voiceOutputGroupId = value
-            saveConfig(config)
-        }
+    // [P3.3 裁军] 语音输入/输出分组绑定存取器（voiceInputGroupId/
+    // voiceOutputGroupId setter）随语音全家退役删除；ProviderConfig 的
+    // 同名字段为持久化格式（provider.db 快照）原样保留（schema 冻结）。
 
     // --- Vision group [T-android-vision-group / GH#182] ---
 
@@ -1858,535 +1702,20 @@ class ProviderRepository(private val context: Context) {
     // User-authored rules live in provider.db (provider_thinking_rules), keyed by
     // provider-instance id, in sort_order priority order. Built-in vendor rules are
     // never stored. On every mutation we publish the instance's rules into the
-    // ThinkingRuleResolver cache so the (sync) request-builder can read them.
+    // ThinkingContractResolver cache so the (sync) request-builder can read them.
 
-    /** Load one instance's custom rules from Room, in stored order. */
-    fun thinkingRules(instanceId: String): List<ThinkingRule> = runBlocking {
-        runCatching { providerDao.loadThinkingRules(instanceId).map { ThinkingRuleCoding.toRule(it) } }
-            .getOrDefault(emptyList())
-    }
+    // [P3.3 裁军] 自定义思考规则读取面（thinkingContracts/thinkingContractIds）
+    // 随 CUSTOM 路径退役删除；Room 表 provider_thinking_rules 本体保留
+    // （schema 冻结），resolver 只跑内置座次表。
 
-    /** The persisted ids for one instance's custom rules, parallel to [thinkingRules]. */
-    fun thinkingRuleIds(instanceId: String): List<String> = runBlocking {
-        runCatching { providerDao.loadThinkingRules(instanceId).map { it.id } }.getOrDefault(emptyList())
-    }
+    // [P3.3 裁军] 语音输出选择面（voiceOutputOverrideEntryId/
+    // VoiceOutputChoice/resolveVoiceOutputChoice/activeVoiceGroupMemberId/
+    // voiceOutputGroupName/resolveVoiceOutputEntry）随语音全家退役删除。
 
-    /** First model id served by [instanceId], for the resolution-trace sample. Null if none. */
-    fun firstModelId(instanceId: String): String? {
-        ensureConfigLoaded()
-        return _config.value.modelEntries.firstOrNull { it.providerInstanceId == instanceId }?.model?.id
-    }
-
-    /** Warm the resolver cache with every instance's custom rules (called on config load). */
-    fun loadAllThinkingRulesIntoCache() {
-        runCatching {
-            val rows = runBlocking { providerDao.loadAllThinkingRules() }
-            val byInstance = rows.groupBy { it.providerInstanceId }
-                .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingRuleCoding.toRule(it) } }
-            ThinkingRuleResolver.setAllCustomRules(byInstance)
-        }
-    }
-
-    private fun republishThinkingCache(instanceId: String) {
-        ThinkingRuleResolver.setCustomRules(instanceId, thinkingRules(instanceId))
-    }
-
-    /**
-     * Insert or update a custom rule. [id] null ⇒ new rule minted at the TOP of the
-     * list (position 0) — a rule overriding a built-in is useless below it; existing
-     * rules shift down. A non-null [id] updates in place, preserving position.
-     * Returns the rule id.
-     */
-    fun saveThinkingRule(instanceId: String, rule: ThinkingRule, id: String? = null): String = runBlocking {
-        val existing = providerDao.loadThinkingRules(instanceId).toMutableList()
-        val ruleId = id ?: java.util.UUID.randomUUID().toString()
-        val idx = existing.indexOfFirst { it.id == ruleId }
-        if (idx >= 0) {
-            // Update in place at its current sort_order.
-            existing[idx] = ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, existing[idx].sortOrder)
-        } else {
-            // New rule at the top; everything else shifts down.
-            existing.add(0, ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, 0))
-        }
-        val renumbered = existing.mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingRules(instanceId, renumbered)
-        republishThinkingCache(instanceId)
-        ruleId
-    }
-
-    /** Delete a custom rule by id. Hard delete — Android provider config is local-only,
-     *  so there is no sync channel that could resurrect it (no tombstone needed). */
-    fun deleteThinkingRule(instanceId: String, id: String) = runBlocking {
-        providerDao.deleteThinkingRule(id)
-        // Renumber survivors so sort_order stays dense.
-        val survivors = providerDao.loadThinkingRules(instanceId)
-            .sortedBy { it.sortOrder }
-            .mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingRules(instanceId, survivors)
-        republishThinkingCache(instanceId)
-    }
-
-    /** Reorder an instance's custom rules to match [orderedIds] (a permutation). */
-    fun reorderThinkingRules(instanceId: String, orderedIds: List<String>) = runBlocking {
-        val byId = providerDao.loadThinkingRules(instanceId).associateBy { it.id }
-        val reordered = orderedIds.mapNotNull { byId[it] }
-            .mapIndexed { i, e -> e.copy(sortOrder = i) }
-        // Keep any id the caller omitted (defensive against a partial list) appended.
-        val omitted = byId.values.filter { it.id !in orderedIds }.map { it }
-        providerDao.replaceThinkingRules(instanceId, reordered + omitted)
-        republishThinkingCache(instanceId)
-    }
-
-    /**
-     * Built-in rules relevant to THIS instance, for the Provider-detail UI. Mirrors iOS
-     * builtInRulesForDisplay: resolve the vendor context from the instance's base URL,
-     * then keep every AllModels-scoped rule (endpoint/provider-type defaults) plus any
-     * ModelPattern rule the provider actually serves a matching model for. An empty
-     * catalog keeps everything (list must not be mysteriously empty before first fetch).
-     */
-    fun builtInThinkingRulesForDisplay(instanceId: String): List<ThinkingRule> {
-        ensureConfigLoaded()
-        val config = _config.value
-        val inst = config.instances.find { it.id == instanceId } ?: return emptyList()
-        val base = (inst.effectiveBaseURL ?: "").lowercase()
-        val ctx = com.openminis.app.provider.thinking.ThinkingResolveContext(
-            modelId = "",
-            supportsReasoning = null,
-            declaredEffortValues = null,
-            level = com.openminis.app.data.model.ThinkingLevel.OFF,
-            maxTokens = 0,
-            isOpenRouter = base.contains("openrouter.ai"),
-            usesUnifiedReasoningEffort = base.contains("volces") || base.contains("ark.") || base.contains("venice.ai"),
-            isMistral = base.contains("mistral.ai"),
-            isDashScope = base.contains("dashscope"),
-            offEffort = null,
-        )
-        val modelIds = config.modelEntries.filter { it.providerInstanceId == instanceId }.map { it.model.id }
-        return ThinkingRuleResolver.builtInRules(ctx).filter { rule ->
-            when (rule.scope) {
-                is ThinkingRule.Scope.AllModels -> true
-                is ThinkingRule.Scope.ModelPattern ->
-                    modelIds.isEmpty() || modelIds.any { rule.scope.matches(it) }
-            }
-        }
-    }
-
-    /**
-     * Ensure a default Voice INPUT group exists and is bound when the user
-     * hasn't configured one. Seeds "Voice Input" with the System ASR sentinel
-     * entries (device SpeechRecognizer online/offline). Sentinel composite ids
-     * match iOS so a config moved cross-platform keeps its selection. No-op
-     * when a valid binding already exists. Mirrors iOS
-     * ProviderConfigStore.ensureDefaultVoiceInputGroup.
-     */
-    fun ensureDefaultVoiceInputGroup(): String? = synchronized(configLock) {
-        ensureConfigLoaded()
-        val config = workingCopy()
-        config.voiceInputGroupId?.let { gid ->
-            if (config.modelGroups.any { it.id == gid }) return gid
-        }
-        val sentinel = SystemVoiceIds.BUILTIN_PROVIDER_ID
-        val group = ModelGroup(
-            name = "Voice Input",
-            memberEntryIds = mutableListOf(
-                "$sentinel/${SystemVoiceIds.SYSTEM_ASR_ONLINE}",
-                "$sentinel/${SystemVoiceIds.SYSTEM_ASR_OFFLINE}",
-            ),
-        )
-        config.modelGroups.add(group)
-        config.voiceInputGroupId = group.id
-        saveConfig(config)
-        android.util.Log.i("ProviderRepo", "[Voice] auto-created default Voice Input group ${group.id.take(8)} [System ASR online+offline]")
-        return group.id
-    }
-
-    /**
-     * Ensure a default Voice OUTPUT group exists and is bound. Seeds
-     * "Voice Output" with the System TTS auto sentinel (device TextToSpeech,
-     * best voice per reply language). Mirrors iOS ensureDefaultVoiceOutputGroup.
-     */
-    fun ensureDefaultVoiceOutputGroup(): String? = synchronized(configLock) {
-        ensureConfigLoaded()
-        val config = workingCopy()
-        config.voiceOutputGroupId?.let { gid ->
-            if (config.modelGroups.any { it.id == gid }) return gid
-        }
-        val sentinel = SystemVoiceIds.BUILTIN_PROVIDER_ID
-        val group = ModelGroup(
-            name = "Voice Output",
-            memberEntryIds = mutableListOf("$sentinel/${SystemVoiceIds.SYSTEM_TTS}"),
-        )
-        config.modelGroups.add(group)
-        config.voiceOutputGroupId = group.id
-        saveConfig(config)
-        android.util.Log.i("ProviderRepo", "[Voice] auto-created default Voice Output group ${group.id.take(8)} [System Voice (Auto)]")
-        return group.id
-    }
-
-    /**
-     * [T-android-voice-panel] Explicit voice-input engine override picked in
-     * the panel's model selector (mirrors iOS VoiceSelectionStore.inputEntryId).
-     * Values: a System sentinel composite id ("<sentinel>/system-asr-online" /
-     * "-offline"), a provider entry composite id, or null = follow the Voice
-     * Input group binding. Per-device (prefs), not part of the synced config.
-     */
-    var voiceInputOverrideEntryId: String?
-        get() = prefs.getString("voice.input.overrideEntryId", null)
-        set(value) {
-            prefs.edit().putString("voice.input.overrideEntryId", value).apply()
-            synchronized(configLock) {
-                val config = _config.value
-                _config.value = config.copy(revision = ProviderConfig.nextRevision())
-            }
-        }
-
-    /**
-     * The resolved ACTIVE voice-input choice for the panel: either the on-device
-     * System engine (with an online/offline preference) or a provider entry.
-     * Resolution order mirrors iOS VoiceProviderResolver: explicit override
-     * first, then the Voice Input group's members in fallback order (a System
-     * sentinel member selects the System engine), then the System default.
-     */
-    data class VoiceInputChoice(
-        /** null → provider-backed; non-null → System engine (true = prefer offline). */
-        val systemPreferOffline: Boolean?,
-        val entry: Pair<ProviderInstance, ModelEntry>?,
-    ) {
-        val isSystem: Boolean get() = entry == null
-    }
-
-    fun resolveVoiceInputChoice(): VoiceInputChoice {
-        ensureConfigLoaded()
-        val config = _config.value
-
-        fun systemChoice(memberId: String): VoiceInputChoice = VoiceInputChoice(
-            systemPreferOffline = memberId.endsWith("/${SystemVoiceIds.SYSTEM_ASR_OFFLINE}"),
-            entry = null,
-        )
-
-        fun providerEntry(memberId: String): Pair<ProviderInstance, ModelEntry>? {
-            val entry = config.modelEntries.find { it.id == memberId } ?: return null
-            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: return null
-            if (!inst.isEnabled || !entry.model.hasAudioInput) return null
-            return inst to entry
-        }
-
-        voiceInputOverrideEntryId?.let { override ->
-            if (override.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) return systemChoice(override)
-            providerEntry(override)?.let { return VoiceInputChoice(null, it) }
-            // Stale override (entry removed) — fall through to the group.
-        }
-        val gid = config.voiceInputGroupId
-        val group = gid?.let { g -> config.modelGroups.find { it.id == g } }
-        if (group != null) {
-            for (memberId in group.memberEntryIds) {
-                if (memberId.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) return systemChoice(memberId)
-                providerEntry(memberId)?.let { return VoiceInputChoice(null, it) }
-            }
-        }
-        return VoiceInputChoice(systemPreferOffline = null, entry = null)
-    }
-
-    /** Bound Voice Input group's display name, or null (chip's "Group · Model"). */
-    fun voiceInputGroupName(): String? {
-        val gid = _config.value.voiceInputGroupId ?: return null
-        return _config.value.modelGroups.find { it.id == gid }?.name
-    }
-
-    /**
-     * [T-android-provider-voice] Resolve the current provider-backed voice
-     * INPUT selection: honours the explicit override first, then walks the
-     * Voice Input group's members in order (fallback semantics). System
-     * sentinel members are skipped — they are served by
-     * SystemSpeechRecognitionEngine, not a cloud provider.
-     */
-    fun resolveVoiceInputEntry(): Pair<ProviderInstance, ModelEntry>? =
-        resolveVoiceInputChoice().entry
-
-    /**
-     * [T-voice-asr-group-failover] Ordered ASR fail-over candidates: the
-     * explicit override first (if usable and provider-backed), then every
-     * usable member of the Voice Input group, ordered per the group's routing
-     * strategy — `fallback` keeps group order, `loadBalance` rotates the start
-     * position by [loadBalanceSeed] so separate capture sessions spread across
-     * members (mirrors ModelGroupRouter's per-session rotation for text chat,
-     * and iOS VoiceProviderResolver.resolvedInputCandidates). An explicit
-     * System override returns [] — the caller uses the System engine directly.
-     * System sentinel group members are skipped: they never serve cloud ASR.
-     */
-    fun resolveVoiceInputCandidates(loadBalanceSeed: Int = 0): List<Pair<ProviderInstance, ModelEntry>> {
-        ensureConfigLoaded()
-        val config = _config.value
-
-        fun providerEntry(memberId: String): Pair<ProviderInstance, ModelEntry>? {
-            val entry = config.modelEntries.find { it.id == memberId } ?: return null
-            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: return null
-            if (!inst.isEnabled || !entry.model.hasAudioInput) return null
-            return inst to entry
-        }
-
-        val out = mutableListOf<Pair<ProviderInstance, ModelEntry>>()
-        voiceInputOverrideEntryId?.let { override ->
-            // Explicit System override → System engine, no cloud candidates.
-            if (override.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) return emptyList()
-            providerEntry(override)?.let { out.add(it) }
-            // Stale override (entry removed) — fall through to the group.
-        }
-        val gid = config.voiceInputGroupId
-        val group = gid?.let { g -> config.modelGroups.find { it.id == g } }
-        if (group != null) {
-            var members = group.memberEntryIds
-                .filter { !it.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID) }
-                .mapNotNull { providerEntry(it) }
-            if (group.strategy == RoutingStrategy.loadBalance && members.size > 1) {
-                val offset = kotlin.math.abs(loadBalanceSeed) % members.size
-                members = members.drop(offset) + members.take(offset)
-            }
-            for (m in members) {
-                if (out.none { it.second.id == m.second.id }) out.add(m)
-            }
-        }
-        return out
-    }
-
-    // --- Voice OUTPUT resolution [T-android-voice-output-resolver] ---
-    //
-    // Mirror of the voice-INPUT resolution above. Before this existed,
-    // `voiceOutputGroupId` was write-only: the user could bind a Voice Output
-    // group in settings and it was persisted, but nothing at runtime ever read
-    // it back, so read-aloud always fell through to the on-device engine and
-    // every provider TTS voice was unreachable outside the Quick Test sheet.
-
-    /**
-     * Explicit voice-output voice override picked in a selector (mirrors iOS
-     * VoiceSelectionStore.outputEntryId, and [voiceInputOverrideEntryId] on the
-     * input side). Values: a System sentinel composite id
-     * ("<sentinel>/system-tts"), a provider entry composite id, or null =
-     * follow the Voice Output group binding. Per-device (prefs), not part of
-     * the synced config.
-     */
-    var voiceOutputOverrideEntryId: String?
-        get() = prefs.getString("voice.output.overrideEntryId", null)
-        set(value) {
-            prefs.edit().putString("voice.output.overrideEntryId", value).apply()
-            synchronized(configLock) {
-                val config = _config.value
-                _config.value = config.copy(revision = ProviderConfig.nextRevision())
-            }
-        }
-
-    /**
-     * The resolved ACTIVE voice-output choice for read-aloud: either the
-     * on-device System TextToSpeech or a provider entry. Same shape and
-     * resolution order as [VoiceInputChoice].
-     */
-    data class VoiceOutputChoice(
-        /** null → provider-backed; true → System TextToSpeech. */
-        val isSystemEngine: Boolean,
-        val entry: Pair<ProviderInstance, ModelEntry>?,
-    ) {
-        val isSystem: Boolean get() = entry == null
-    }
-
-    /**
-     * Resolution order mirrors [resolveVoiceInputChoice] exactly: explicit
-     * override first, then the Voice Output group's members in fallback order
-     * (a System sentinel member selects the device engine), then the System
-     * default as the terminal fallback.
-     *
-     * The capability gate is `hasAudioOutput` (vs `hasAudioInput` on the input
-     * side) — a model that only *accepts* audio must never be picked to
-     * *produce* it.
-     */
-    fun resolveVoiceOutputChoice(): VoiceOutputChoice {
-        ensureConfigLoaded()
-        val config = _config.value
-
-        fun providerEntry(memberId: String): Pair<ProviderInstance, ModelEntry>? {
-            val entry = config.modelEntries.find { it.id == memberId } ?: return null
-            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: return null
-            if (!inst.isEnabled || !entry.model.hasAudioOutput) return null
-            return inst to entry
-        }
-
-        voiceOutputOverrideEntryId?.let { override ->
-            if (override.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) {
-                return VoiceOutputChoice(isSystemEngine = true, entry = null)
-            }
-            providerEntry(override)?.let { return VoiceOutputChoice(false, it) }
-            // Stale override (entry removed) — fall through to the group.
-        }
-        val gid = config.voiceOutputGroupId
-        val group = gid?.let { g -> config.modelGroups.find { it.id == g } }
-        if (group != null) {
-            for (memberId in group.memberEntryIds) {
-                if (memberId.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) {
-                    return VoiceOutputChoice(isSystemEngine = true, entry = null)
-                }
-                providerEntry(memberId)?.let { return VoiceOutputChoice(false, it) }
-            }
-        }
-        return VoiceOutputChoice(isSystemEngine = true, entry = null)
-    }
-
-    /**
-     * [T-android-voice-picker-active] Which MEMBER of a bound voice group is
-     * the one that would actually serve the next request — the id the picker
-     * marks "Active" when no explicit override is set.
-     *
-     * Deliberately derived here rather than recomputed in the picker: this is
-     * the same first-usable-member-in-group-order walk that
-     * [resolveVoiceInputChoice] / [resolveVoiceOutputChoice] perform, and a
-     * second copy in the UI would silently drift from the runtime rule the
-     * moment either resolver's usability test changes. Returns null when no
-     * member is usable (the group can serve nothing).
-     *
-     * Note this reports the group's *static* first choice. Under
-     * `loadBalance`, or after a fail-over, the request may land on a later
-     * member; the badge answers "which one leads", which is what the row's
-     * fallback-strategy chip already promises.
-     */
-    fun activeVoiceGroupMemberId(output: Boolean): String? {
-        ensureConfigLoaded()
-        val config = _config.value
-        val gid = if (output) config.voiceOutputGroupId else config.voiceInputGroupId
-        val group = config.modelGroups.find { it.id == gid } ?: return null
-        for (memberId in group.memberEntryIds) {
-            // System sentinels are always usable — the on-device engine needs
-            // no instance and is never disabled.
-            if (memberId.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) return memberId
-            val entry = config.modelEntries.find { it.id == memberId } ?: continue
-            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: continue
-            if (!inst.isEnabled) continue
-            val usable = if (output) entry.model.hasAudioOutput else entry.model.hasAudioInput
-            if (usable) return memberId
-        }
-        return null
-    }
-
-    /** Bound Voice Output group's display name, or null. */
-    fun voiceOutputGroupName(): String? {
-        val gid = _config.value.voiceOutputGroupId ?: return null
-        return _config.value.modelGroups.find { it.id == gid }?.name
-    }
-
-    /**
-     * Resolve the current provider-backed voice OUTPUT selection, or null when
-     * read-aloud should use the on-device engine. Counterpart of
-     * [resolveVoiceInputEntry].
-     */
-    fun resolveVoiceOutputEntry(): Pair<ProviderInstance, ModelEntry>? =
-        resolveVoiceOutputChoice().entry
-
-    // --- Shadow Voice Providers [T-android-provider-voice] ---
-    // Port of iOS [T-mimo-shadow-voice]: a "Voice Service" is NOT a stored
-    // entity — it's a runtime read-only MIRROR of any ordinary instance that
-    // owns audio-modality model entries (dual-purpose vendors like MiMo serve
-    // text + voice on one host). Voice ability is a per-MODEL concern; no
-    // base-URL "voice-only" whitelist.
-
-    /** True if [instanceId] has ANY model entry with an audio modality. */
-    fun hasVoiceModels(instanceId: String): Boolean =
-        _config.value.modelEntries.any {
-            it.providerInstanceId == instanceId && it.model.hasVoiceModality
-        }
-
-    /**
-     * Per-instance "hide from Voice Services" flag ("I only want the text
-     * models"). Absent = shadow shown by default. Stored in prefs (mirrors iOS
-     * UserDefaults voiceShadowDisabled.<id>), not the synced config.
-     */
-    fun isVoiceShadowDisabled(instanceId: String): Boolean =
-        prefs.getBoolean("voiceShadowDisabled.$instanceId", false)
-
-    fun setVoiceShadowDisabled(instanceId: String, disabled: Boolean) {
-        prefs.edit().putBoolean("voiceShadowDisabled.$instanceId", disabled).apply()
-        // Bump revision so Compose collectors re-read the shadow list.
-        // The read must be INSIDE the lock: reading _config.value outside it
-        // and re-publishing that snapshot afterwards would silently revert any
-        // save that landed in between (lost update). The other two
-        // revision-bump sites already read inside their block.
-        synchronized(configLock) {
-            _config.value = _config.value.copy(revision = ProviderConfig.nextRevision())
-        }
-    }
-
-    /**
-     * A read-only mirror of an instance's voice capability, surfaced in Voice
-     * Services. Shares the underlying instance's credential + endpoint.
-     */
-    data class ShadowVoiceProvider(
-        val instanceId: String,
-        val displayName: String,
-        val inputModels: List<ModelEntry>,   // audio-in entries (ASR)
-        val outputModels: List<ModelEntry>,  // audio-out entries (TTS)
-    )
-
-    /**
-     * All shadow voice providers: one per enabled instance that has audio
-     * models and isn't shadow-disabled, FOLDED by normalized base URL so two
-     * instances on one host show a single deterministic representative row.
-     */
-    fun shadowVoiceProviders(): List<ShadowVoiceProvider> {
-        ensureConfigLoaded()
-        val config = _config.value
-        // [T-android-reorder-unlocked-mutation] Snapshot first — same
-        // main-thread composition reader as hasFoldedShadowDuplicates.
-        val candidates = config.instances.toList().filter { inst ->
-            inst.isEnabled && hasVoiceModels(inst.id) && !isVoiceShadowDisabled(inst.id) &&
-                com.openminis.app.provider.voice.VoiceProviderFactory.supports(inst, loadApiKey(inst.id))
-        }
-        val byKey = candidates.groupBy { inst ->
-            normalizedShadowKey(inst.customBaseURL).ifEmpty { "id:${inst.id}" }
-        }
-
-        fun mostRecentModified(instanceId: String): Long =
-            config.modelEntries
-                .filter { it.providerInstanceId == instanceId }
-                .mapNotNull { it.userModifiedAt }
-                .maxOrNull() ?: Long.MIN_VALUE
-
-        return byKey.values.map { insts ->
-            // Representative selection — deterministic across devices: enabled
-            // first, then most-recently-modified entries, then oldest createdAt,
-            // then id.
-            val rep = insts.sortedWith(
-                compareByDescending<ProviderInstance> { it.isEnabled }
-                    .thenByDescending { mostRecentModified(it.id) }
-                    .thenBy { it.createdAt }
-                    .thenBy { it.id },
-            ).first()
-            val entries = config.modelEntries.filter { it.providerInstanceId == rep.id }
-            ShadowVoiceProvider(
-                instanceId = rep.id,
-                displayName = rep.label,
-                inputModels = entries.filter { it.model.hasAudioInput },
-                outputModels = entries.filter { it.model.hasAudioOutput },
-            )
-        }.sortedWith(compareBy({ it.displayName }, { it.instanceId }))
-    }
-
-    /**
-     * True when ≥2 enabled instances share a normalized base URL AND have voice
-     * models — the folded-duplicate case; UI shows a non-destructive hint.
-     */
-    fun hasFoldedShadowDuplicates(): Boolean {
-        val seen = mutableSetOf<String>()
-        // [T-android-reorder-unlocked-mutation] Snapshot before iterating.
-        // This runs on the MAIN thread from ProviderListScreen's composition,
-        // so taking configLock here would block the UI behind a DB write.
-        // toList() copies under no contention and removes the CME risk
-        // outright — the writer's structural edits can no longer be observed
-        // mid-iteration.
-        for (inst in _config.value.instances.toList()) {
-            if (!inst.isEnabled || !hasVoiceModels(inst.id)) continue
-            val key = normalizedShadowKey(inst.customBaseURL)
-            if (key.isEmpty()) continue
-            if (!seen.add(key)) return true
-        }
-        return false
-    }
-
+    // [P3.3 裁军] Shadow Voice 全段（hasVoiceModels/isVoiceShadowDisabled/
+    // setVoiceShadowDisabled/ShadowVoiceSource/shadowVoiceSources/
+    // hasFoldedShadowDuplicates）随语音全家退役删除；companion 的
+    // normalizedShadowKey（仅被 shadow 折叠使用）一并随葬。
 
     suspend fun refreshModels(instance: ProviderInstance) {
         // [T-opencode-sunset] Sunset instances are disabled and hidden;
@@ -2395,7 +1724,7 @@ class ProviderRepository(private val context: Context) {
         var apiKey = loadApiKey(instance.id)
 
         // For OAuth providers, try to refresh the token before using it (mirrors iOS validAccessToken)
-        if (instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth && apiKey != null) {
+        if (instance.credentialType == novex.android.data.model.ProviderCredential.oauth && apiKey != null) {
             try {
                 val manager = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                 val freshToken = manager?.validAccessToken()
@@ -2415,7 +1744,7 @@ class ProviderRepository(private val context: Context) {
         if (instance.providerType == ProviderType.openAI
             && instance.credentialType == ProviderCredential.oauth
         ) {
-            val models = OpenAIModelsApi.fetchModelsOAuth()
+            val models = ModelsCatalogApi.fetchOpenAiModelsOAuth()
             if (models.isNotEmpty()) {
                 replaceEntries(instance.id, models)
                 return
@@ -2433,15 +1762,15 @@ class ProviderRepository(private val context: Context) {
             val baseURL = instance.effectiveBaseURL
             val models = try {
                 when (instance.providerType) {
-                    ProviderType.anthropic -> AnthropicModelsApi.fetchModels(
+                    ProviderType.anthropic -> ModelsCatalogApi.fetchAnthropicModels(
                         apiKey, baseURL,
-                        isOAuth = instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth,
+                        isOAuth = instance.credentialType == novex.android.data.model.ProviderCredential.oauth,
                         // [T-provider-custom-user-agent] models-list UA override.
                         customUserAgent = instance.customUserAgent,
                     )
-                    ProviderType.gemini -> GeminiModelsApi.fetchModels(apiKey)
+                    ProviderType.gemini -> ModelsCatalogApi.fetchGeminiModels(apiKey)
                     // [T-provider-custom-user-agent] models-list UA override.
-                    ProviderType.openAI -> OpenAIModelsApi.fetchModels(apiKey, baseURL, customUserAgent = instance.customUserAgent)
+                    ProviderType.openAI -> ModelsCatalogApi.fetchOpenAiModels(apiKey, baseURL, customUserAgent = instance.customUserAgent)
                     ProviderType.openRouter -> OpenRouterModelsApi.fetchModels(apiKey)
                     // xAI: the OAuth model list is fixed (no /v1/models gating
                     // call needed — XAIModelsApi exposes the spec-mandated set).
@@ -2454,7 +1783,7 @@ class ProviderRepository(private val context: Context) {
                     // from GET /coding/v1/models (OpenAI-compatible shape).
                     // The upstream lineup shifts across generations, so the
                     // live list replaces the minimal built-in fallback.
-                    ProviderType.kimiCode -> OpenAIModelsApi.fetchModels(
+                    ProviderType.kimiCode -> ModelsCatalogApi.fetchOpenAiModels(
                         apiKey,
                         baseURL ?: "${com.openminis.app.auth.KimiDeviceFlow.CODING_API_BASE}/v1",
                         customUserAgent = instance.customUserAgent,
@@ -2502,7 +1831,7 @@ class ProviderRepository(private val context: Context) {
             // capacity metadata, without adding models, changing groups, or overriding users.
             if (instance.providerType == ProviderType.openAI) {
                 val key = loadApiKey(instance.id) ?: return
-                val fetched = OpenAIModelsApi.fetchModels(key, instance.effectiveBaseURL, forceRefresh = true,
+                val fetched = ModelsCatalogApi.fetchOpenAiModels(key, instance.effectiveBaseURL, forceRefresh = true,
                     customUserAgent = instance.customUserAgent).associateBy { it.id }
                 synchronized(configLock) {
                     val updated = workingCopy()

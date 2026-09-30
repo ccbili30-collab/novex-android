@@ -8,43 +8,94 @@ import java.net.URI
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** 凭据不进入数据类的自动文本输出。 */
-class ModelEndpoint(val completionUrl: URI, private val token: String?) {
+/**
+ * 凭据不进入数据类的自动文本输出。permitQueryParams 仅为带非凭据查询串的端点开
+ * （gemini 的 alt=sse）；默认禁止查询串——历史原因是防令牌进 URL。
+ */
+class ModelEndpoint(val completionUrl: URI, private val token: String?, private val extraHeaders: Map<String,String> = emptyMap(),
+                    permitQueryParams: Boolean = false,
+                    /** 非 Bearer 鉴权头名（Azure OpenAI 的 api-key）；null=Authorization: Bearer。 */
+                    val tokenHeader: String? = null) {
     init {
-        require(completionUrl.userInfo == null && completionUrl.fragment == null && completionUrl.query == null)
+        require(completionUrl.userInfo == null && completionUrl.fragment == null && (permitQueryParams || completionUrl.query == null))
         require(completionUrl.scheme == "https" || (completionUrl.scheme == "http" && completionUrl.host in setOf("127.0.0.1","localhost","::1")))
         require(token == null || ('\r' !in token && '\n' !in token))
+        extraHeaders.forEach { (name,value) ->
+            require(name.isNotBlank() && '\r' !in name && '\n' !in name && ':' !in name)
+            require('\r' !in value && '\n' !in value)
+        }
     }
-    internal fun authorize(connection: HttpURLConnection) { if (!token.isNullOrBlank()) connection.setRequestProperty("Authorization","Bearer $token") }
+    internal fun authorize(connection: HttpURLConnection) {
+        if (!token.isNullOrBlank()) {
+            if (tokenHeader != null) connection.setRequestProperty(tokenHeader, token)
+            else connection.setRequestProperty("Authorization","Bearer $token")
+        }
+        extraHeaders.forEach { (name,value) -> connection.setRequestProperty(name,value) }
+    }
 }
 data class WireImage(val mediaType:String,val base64:String) {
     init {require(mediaType in setOf("image/png","image/jpeg","image/webp","image/gif"));require(base64.isNotBlank())}
     internal fun encode()=JSONObject().put("type","image_url").put("image_url",JSONObject().put("url","data:$mediaType;base64,$base64"))
     override fun toString()="WireImage（图片内容隐藏）"
 }
-data class WireMessage(val role: String, val text: String, val toolCalls: List<PendingTool> = emptyList(), val toolCallId: String? = null,val images:List<WireImage> = emptyList()) {
+data class WireAudio(val format:String,val base64:String) {
+    init { require(format.isNotBlank() && base64.isNotBlank()) }
+    internal fun encode()=JSONObject().put("type","input_audio").put("input_audio",JSONObject().put("data",base64).put("format",format))
+    override fun toString()="WireAudio（音频内容隐藏）"
+}
+data class WireMessage(val role: String, val text: String, val toolCalls: List<PendingTool> = emptyList(), val toolCallId: String? = null,val images:List<WireImage> = emptyList(),
+                      val audios:List<WireAudio> = emptyList(), val reasoningContent: String? = null, val isError: Boolean = false) {
     init {
         require(role in setOf("system","user","assistant","tool"))
-        require(images.isEmpty() || role=="user")
+        // 图片可挂 user（用户输入）与 tool（工具结果内嵌图片，anthropic 方言消费——
+        // OpenAI 兼容线与 gemini 的编码不读 tool 图片，适配器按协议装填）。
+        require(images.isEmpty() || role=="user" || role=="tool")
+        require(audios.isEmpty() || role=="user")
         require(toolCalls.isEmpty() || role=="assistant")
+        require(reasoningContent==null || role=="assistant")
         require(if(role=="tool")!toolCallId.isNullOrBlank() else toolCallId==null)
+        require(!isError || role=="tool")
         require(toolCalls.map { it.id }.distinct().size==toolCalls.size)
     }
-    internal fun encode():JSONObject = JSONObject().put("role",role).put("content",if(images.isEmpty())text else JSONArray().put(JSONObject().put("type","text").put("text",text)).also {parts->images.forEach {parts.put(it.encode())}}).also { message ->
-        if(toolCallId!=null)message.put("tool_call_id",toolCallId)
-        if(toolCalls.isNotEmpty())message.put("tool_calls",JSONArray(toolCalls.map { call ->
-            require(call.id.isNotBlank() && call.name.isNotBlank());JSONObject(call.arguments)
-            JSONObject().put("id",call.id).put("type","function").put("function",JSONObject().put("name",call.name).put("arguments",call.arguments))
-        }))
+    internal fun encode():JSONObject {
+        val content:Any = if(images.isEmpty() && audios.isEmpty()) text
+            else JSONArray().put(JSONObject().put("type","text").put("text",text)).also {parts->
+                images.forEach {parts.put(it.encode())};audios.forEach {parts.put(it.encode())}
+            }
+        return JSONObject().put("role",role).put("content",content).also { message ->
+            if(reasoningContent!=null)message.put("reasoning_content",reasoningContent)
+            if(toolCallId!=null)message.put("tool_call_id",toolCallId)
+            if(toolCalls.isNotEmpty())message.put("tool_calls",JSONArray(toolCalls.map { call ->
+                require(call.id.isNotBlank() && call.name.isNotBlank());JSONObject(call.arguments)
+                JSONObject().put("id",call.id).put("type","function").put("function",JSONObject().put("name",call.name).put("arguments",call.arguments))
+            }))
+        }
     }
 }
-data class ToolDefinition(val name:String,val description:String,val parameters:String) {
+data class ToolDefinition(val name:String,val description:String,val parameters:String,
+                          /** Gemini 专属：function_declarations 的 propertyOrdering；其余协议忽略。 */
+                          val propertyOrdering:List<String>? = null) {
     init { require(name.isNotBlank() && description.isNotBlank());require(JSONObject(parameters).getString("type")=="object") }
     internal fun encode()=JSONObject().put("type","function").put("function",JSONObject().put("name",name).put("description",description).put("parameters",JSONObject(parameters)))
 }
-data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList()) {
-    init { require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0);require(tools.map { it.name }.distinct().size==tools.size) }
-    fun encode(): String {
+data class TextRequest(val model: String, val messages: List<WireMessage>, val outputReserve: Long, val tools:List<ToolDefinition> = emptyList(),
+                       /** 附加顶层参数（如 reasoning_effort / thinking / max_completion_tokens），合并进请求体。
+                        * 不得触碰本层契约键；token 上限键是唯一例外——调用方可用 max_tokens 或
+                        * max_completion_tokens 之一顶替默认键（不同兼容网关收键不同），两键同给即拒绝。 */
+                       val extraParameters: JSONObject? = null) {
+    init {
+        require(model.isNotBlank() && messages.isNotEmpty() && outputReserve > 0)
+        require(tools.map { it.name }.distinct().size==tools.size)
+        extraParameters?.let { extra ->
+            require(RESERVED_TOP_LEVEL_KEYS.none(extra::has)) { "附加参数不得覆盖请求体契约键" }
+            require(!(extra.has("max_tokens") && extra.has("max_completion_tokens"))) { "max_tokens 与 max_completion_tokens 互斥，只能顶替其一" }
+        }
+    }
+    fun encode(): String = wire().put("stream",false).toString()
+    /** 共享装配：工具配对校验后给出除 stream 开关外的完整请求体，供非流式与流式编码各自补开关。 */
+    /** 共享装配。注意：org.json 的 JSONObject 键序不保证（HashMap 支撑），
+     * 序列化字节序不是契约——只保证 JSON 语义等价。 */
+    internal fun wire():JSONObject {
         val pending=mutableSetOf<String>()
         messages.forEach { message ->
             if(message.role=="tool")require(pending.remove(message.toolCallId)){"工具结果没有对应的待处理调用"}
@@ -54,13 +105,41 @@ data class TextRequest(val model: String, val messages: List<WireMessage>, val o
             }
         }
         require(pending.isEmpty()){"工具调用结果尚未齐全，不能继续请求"}
-        return JSONObject().put("model",model).put("stream",false).put("max_tokens",outputReserve)
+        // 调用方经附加参数自带 token 上限键（max_tokens / max_completion_tokens）时，
+        // 默认 max_tokens 退位——由附加键顶替，避免同体双键。
+        val carriesLimitKey = extraParameters?.let { it.has("max_tokens") || it.has("max_completion_tokens") } == true
+        return JSONObject().put("model",model).apply { if(!carriesLimitKey) put("max_tokens",outputReserve) }
             .put("messages",JSONArray(messages.map { it.encode() })).also {
                 if(tools.isNotEmpty())it.put("tools",JSONArray(tools.map { tool -> tool.encode() }))
-            }.toString()
+                extraParameters?.let { extra -> extra.keys().forEach { key -> it.put(key,extra.get(key)) } }
+            }
+    }
+    companion object {
+        /** 本层自己负责装配的键；附加参数与之重叠即拒绝，防止调用方改写传输契约。
+         *  token 上限两键不在其中（允许顶替默认 max_tokens），由 init 的互斥校验把守。 */
+        internal val RESERVED_TOP_LEVEL_KEYS = setOf("model","messages","tools","stream","stream_options")
     }
 }
-data class PendingTool(val id: String,val name: String,val arguments: String)
+data class PendingTool(val id: String,val name: String,val arguments: String,val thoughtSignature: String? = null)
+
+/** 线协议方言：决定 [ChatCompletionCall] 流式读取用的 SSE 解码器。非流式 [ChatCompletionCall.execute] 只实现 OpenAI 兼容线（anthropic/gemini/responses 由调用方经流式聚合）。 */
+enum class WireProtocol { CHAT_COMPLETIONS, ANTHROPIC_MESSAGES, GEMINI_GENERATE_CONTENT, RESPONSES }
+
+/** 线协议 ↔ 请求体方言配套判定（[ChatCompletionCall] 开连接前的防呆，错配早失败）。 */
+internal fun CompletionStreamRequest.matchesProtocol(protocol: WireProtocol): Boolean = when (protocol) {
+    WireProtocol.CHAT_COMPLETIONS -> this is StreamRequest
+    WireProtocol.ANTHROPIC_MESSAGES -> this is AnthropicMessagesRequest
+    WireProtocol.GEMINI_GENERATE_CONTENT -> this is GeminiGenerateContentRequest
+    WireProtocol.RESPONSES -> this is ResponsesStreamRequest
+}
+
+internal val WireProtocol.requestTypeName: String
+    get() = when (this) {
+        WireProtocol.CHAT_COMPLETIONS -> "StreamRequest"
+        WireProtocol.ANTHROPIC_MESSAGES -> "AnthropicMessagesRequest"
+        WireProtocol.GEMINI_GENERATE_CONTENT -> "GeminiGenerateContentRequest"
+        WireProtocol.RESPONSES -> "ResponsesStreamRequest"
+    }
 sealed interface ModelResult {
     data class Reply(val text: String,val inputTokens: Long?,val outputTokens: Long?) : ModelResult
     data class Partial(val text: String,val reason: String) : ModelResult
@@ -73,8 +152,13 @@ sealed interface ModelResult {
     data object Cancelled : ModelResult
 }
 
-/** 一次调用，无隐式重试。当前为非流式文字协议，工具请求只能返回待处理事实。 */
-class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeoutMillis: Int = 30_000) {
+/**
+ * 一次调用，无隐式重试。非流式走 [execute] 返回整体结果；流式走 [stream] 逐块回调。工具请求只能返回待处理事实。
+ * 连接/取消/超时/容量骨架为三家线协议共用（OpenAI 兼容 / anthropic / gemini），经
+ * [protocol] 选 SSE 解码方言；请求体由 [CompletionStreamRequest] 的协议方言自编码。
+ */
+class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeoutMillis: Int = 30_000,
+                         private val protocol: WireProtocol = WireProtocol.CHAT_COMPLETIONS) {
     @Volatile var networkAttempted:Boolean=false
         private set
     private val started=AtomicBoolean(false)
@@ -86,6 +170,8 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
     fun execute(request: TextRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
                 measureCompletePayload: (String) -> TokenMeasurement): ModelResult {
         check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
+        // 防呆（绞杀缝错配早失败）：非流式 execute 只实现 OpenAI 兼容线。
+        require(protocol == WireProtocol.CHAT_COMPLETIONS) { "非流式 execute 仅支持 OpenAI 兼容线，当前协议为 $protocol" }
         if (cancelled.get()) return ModelResult.Cancelled
         val body=request.encode()
         val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.outputReserve,measureCompletePayload(body))
@@ -98,7 +184,7 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
             connection.instanceFollowRedirects=false
             connection.requestMethod="POST";connection.doOutput=true
             connection.connectTimeout=timeoutMillis;connection.readTimeout=timeoutMillis
-            connection.setRequestProperty("Content-Type","application/json; charset=utf-8")
+            connection.setRequestProperty("Content-Type", contentTypeOf())
             endpoint.authorize(connection)
             val bytes=body.toByteArray(Charsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.size)
             networkAttempted=true
@@ -116,8 +202,140 @@ class ChatCompletionCall(private val endpoint: ModelEndpoint,private val timeout
         } finally { active=null;connection?.disconnect() }
     }
 
-    private fun decode(body:String):ModelResult = try {
-        val root=JSONObject(body);val choices=root.getJSONArray("choices")
+    /**
+     * 流式调用，与 [execute] 同一风格：同步阻塞在调用线程上，无内部重试。
+     *
+     * 线程与背压：[onChunk] 在调用线程上就地回调——读一段原文、解出若干块、逐块回调，再读下一段。
+     * 模块不在回调之外缓冲事件，慢消费者会自然放慢读取（即背压）。超时语义沿用 [timeoutMillis]：
+     * 连接阶段与相邻数据块之间的间隔各自受上限约束，持续有数据的流不受总时长限制。
+     *
+     * 取消：[cancel] 可从任意线程随时调用，未完的读取立刻断开并返回 [StreamResult.Cancelled]；
+     * 已送达的块不撤回。块顺序即服务端事件顺序；收尾结论见 [StreamResult]。
+     */
+    fun stream(request: CompletionStreamRequest, modelCapacity: ModelCapacity, selectedWindow: Long,
+               measureCompletePayload: (String) -> TokenMeasurement, onChunk: (StreamChunk) -> Unit): StreamResult {
+        check(started.compareAndSet(false,true)) { "同一次请求不能重复执行" }
+        // 防呆（绞杀缝错配早失败）：线协议与请求体方言必须配套——错配意味着 SSE 用
+        // 错误方言解码（静默产出空流），这里在开连接前以确定性异常暴露。
+        require(request.matchesProtocol(protocol)) {
+            "请求体类型 ${request::class.simpleName} 与线协议 $protocol 不匹配（期望 ${protocol.requestTypeName}）"
+        }
+        if (cancelled.get()) return StreamResult.Cancelled
+        val body=request.encode()
+        val decision=RequestCapacity.check(modelCapacity,selectedWindow,request.outputReserve,measureCompletePayload(body))
+        if (decision !is CapacityDecision.Fits) return StreamResult.NotSent(decision)
+        var connection:HttpURLConnection?=null
+        try {
+            connection=endpoint.completionUrl.toURL().openConnection() as HttpURLConnection
+            active=connection
+            if(cancelled.get()) return StreamResult.Cancelled
+            connection.instanceFollowRedirects=false
+            connection.requestMethod="POST";connection.doOutput=true
+            connection.connectTimeout=timeoutMillis;connection.readTimeout=timeoutMillis
+            connection.setRequestProperty("Content-Type", contentTypeOf())
+            endpoint.authorize(connection)
+            val bytes=body.toByteArray(Charsets.UTF_8);connection.setFixedLengthStreamingMode(bytes.size)
+            networkAttempted=true
+            connection.outputStream.use { it.write(bytes) }
+            val status=connection.responseCode
+            if(cancelled.get()) return StreamResult.Cancelled
+            if(status !in 200..299) {
+                onChunk(httpFailure(status,connection.getHeaderField("Retry-After"),connection.errorStream))
+                return StreamResult.Failed
+            }
+            val decoder=when(protocol) {
+                WireProtocol.CHAT_COMPLETIONS->SseDecoder()
+                WireProtocol.ANTHROPIC_MESSAGES->AnthropicSseDecoder()
+                WireProtocol.GEMINI_GENERATE_CONTENT->GeminiSseDecoder()
+                // codex 生图流（gpt-image-2）需要带标志构造：文本增量转拒答文案、
+                // image_generation_call 转媒体块。标志从请求体自带，免开工厂参数。
+                WireProtocol.RESPONSES->ResponsesSseDecoder(request is ResponsesStreamRequest && request.codexImageRun)
+            }
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                val buffer=CharArray(8192)
+                while(true) {
+                    val count=reader.read(buffer)
+                    if(count<0) break
+                    decoder.feed(String(buffer,0,count)).forEach(onChunk)
+                    if(decoder.sawDone()) return StreamResult.Completed
+                    if(decoder.sawFailure()) return StreamResult.Failed
+                    if(cancelled.get()) return StreamResult.Cancelled
+                }
+            }
+            if(cancelled.get()) return StreamResult.Cancelled
+            // 流断在半途：补冲缓冲里的半行；见过 finish_reason 却没等到哨兵的流在这里收尾。
+            decoder.finish().forEach(onChunk)
+            return when {
+                decoder.sawFailure() -> StreamResult.Failed
+                decoder.sawDone() -> StreamResult.Completed
+                // 干净断开却没有任何终止信号（无哨兵、无 finish_reason）：按连接异常处理，内容可能不完整。
+                else -> StreamResult.NetworkFailure
+            }
+        } catch(failure:SocketTimeoutException) { return if(cancelled.get()) StreamResult.Cancelled else StreamResult.TimedOut
+        } catch(failure:java.io.IOException) { return if(cancelled.get()) StreamResult.Cancelled else StreamResult.NetworkFailure
+        } finally { active=null;connection?.disconnect() }
+    }
+
+    /**
+     * 请求体 Content-Type：Responses 方言发裸 `application/json`——部分第三方
+     * Responses 中转对 `; charset=utf-8` 后缀严格拒收（对齐被替换实现的绕行）；
+     * 其余方言沿用 `application/json; charset=utf-8`。
+     */
+    private fun contentTypeOf(): String =
+        if (protocol == WireProtocol.RESPONSES) "application/json" else "application/json; charset=utf-8"
+
+    /**
+     * HTTP 非 200 → 失败块。错误体照读并按协议方言解析出可诊断的 message 与
+     * code（恢复换管后 400 的可诊断性；无体或非 JSON 时退回「HTTP 状态码」字样）：
+     *  - OpenAI 兼容线：error.message（附 error.request_id，贴上游口径）；
+     *  - anthropic：error.type 进 code，message 拼「[type] message」；
+     *  - gemini：error.status 进 code，message 取 error.message。
+     * 分类矩阵与 Retry-After 透传不变。
+     */
+    private fun httpFailure(status: Int, retryAfter: String?, errorStream: java.io.InputStream?): StreamChunk.Failure {
+        val category=when(status) {
+            401,403 -> "authentication";429 -> "rate_limit";in 300..399 -> "redirect";in 500..599 -> "service";else -> "request"
+        }
+        val body=try { errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }?.take(4_000) } catch(_:Exception) { null }.orEmpty()
+        val root=try { JSONObject(body) } catch(_:Exception) { null }
+        val error=root?.optJSONObject("error")
+        var code:String?=null
+        val message=when(protocol) {
+            WireProtocol.CHAT_COMPLETIONS, WireProtocol.RESPONSES -> {
+                val detail=error?.streamText("message").orEmpty()
+                val requestId=(error?.streamText("request_id") ?: root?.streamText("request_id") ?: "")
+                    .takeIf { it.isNotEmpty() && it !in detail }
+                buildString {
+                    if(detail.isNotEmpty()) { append("HTTP $status: ").append(detail.take(1_200)) }
+                    else append("HTTP $status")
+                    if(requestId!=null) append("; request_id=").append(requestId.take(200))
+                }
+            }
+            WireProtocol.ANTHROPIC_MESSAGES -> {
+                val type=error?.streamText("type").orEmpty()
+                val detail=error?.streamText("message").orEmpty()
+                code=type.takeIf { it.isNotEmpty() }
+                when {
+                    type.isNotEmpty() && detail.isNotEmpty() -> "HTTP $status: [$type] $detail"
+                    detail.isNotEmpty() -> "HTTP $status: $detail"
+                    body.isNotEmpty() -> "HTTP $status: ${body.take(500)}"
+                    else -> "HTTP $status"
+                }
+            }
+            WireProtocol.GEMINI_GENERATE_CONTENT -> {
+                val detail=error?.streamText("message").orEmpty()
+                code=error?.streamText("status")?.takeIf { it.isNotEmpty() }
+                when {
+                    detail.isNotEmpty() -> "HTTP $status: $detail"
+                    body.isNotEmpty() -> "HTTP $status: ${body.take(500)}"
+                    else -> "HTTP $status"
+                }
+            }
+        }
+        return StreamChunk.Failure(message,status,category,code,retryAfter)
+    }
+
+    private fun decode(body:String):ModelResult = try {        val root=JSONObject(body);val choices=root.getJSONArray("choices")
         require(choices.length()==1) { "回复数量不符合当前单回复请求" }
         val choice=choices.getJSONObject(0);val message=choice.getJSONObject("message")
         val text=if(message.isNull("content")) "" else message.getString("content")

@@ -3,11 +3,11 @@ package com.openminis.app.tools
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.sandbox.PRootKernel
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import novex.android.ContentPaths
 
 object ReadImageTool {
     const val NAME = "read_image"
@@ -93,7 +93,7 @@ object ReadImageTool {
 
     /**
      * T178: when the caller knows the owning session, prefer
-     * [PRootKernel.resolveSessionHostPath] so per-session subdirs
+     * [ContentPaths.resolveSessionHostPath] so per-session subdirs
      * (`/var/minis/{attachments,workspace,offloads,browser}/...`) resolve
      * directly against this session's host dir instead of consulting the
      * global, last-writer-wins `bindMounts` map. Without this, an agent
@@ -120,9 +120,9 @@ object ReadImageTool {
 
             val file = (
                 if (sessionId != null && context != null) {
-                    PRootKernel.resolveSessionHostPath(sessionId, path, context)
+                    ContentPaths.resolveSessionHostPath(sessionId, path, context)
                 } else null
-            ) ?: PRootKernel.resolveHostPath(path)
+            ) ?: ContentPaths.resolveHostPath(path)
                 ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
 
             if (!file.exists()) {

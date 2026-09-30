@@ -11,13 +11,13 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.creative.WorkspaceCreativeArtifactBridge
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.tools.NovexWorkspaceAgentTools
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
-import com.openminis.app.ui.novex.NovexLibraryPicker
+import novex.android.ui.NovexLibraryPicker
 import com.openminis.app.ui.sessions.NovexWorkGroupControls
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.flow.first
@@ -63,7 +63,7 @@ class NovexRepositoryEntryInteractionTest {
         val entry = app.providerRepository.entriesFor(providerId).single()
         val group = ModelGroup(name = "本地仓库验收", memberEntryIds = mutableListOf(entry.id))
         app.providerRepository.addGroup(group)
-        val before = runBlocking { app.chatRepository.observeSessions().first().map { it.id }.toSet() }
+        val before = runBlocking { app.chatRepository.observeSessionIndex().first().map { it.id }.toSet() }
         var savedId: String? = null
         val route = Routes.chat("__new__${UUID.randomUUID()}")
         try {
@@ -72,7 +72,7 @@ class NovexRepositoryEntryInteractionTest {
                     initialRoute = route)
             } }
             ui.waitUntil(30_000) {
-                savedId = runBlocking { app.chatRepository.observeSessions().first().firstOrNull { it.id !in before }?.id }
+                savedId = runBlocking { app.chatRepository.observeSessionIndex().first().firstOrNull { it.id !in before }?.id }
                 savedId != null
             }
             val id = requireNotNull(savedId)
@@ -102,7 +102,7 @@ class NovexRepositoryEntryInteractionTest {
             finally { capture("repository-open"); println(ui.onRoot(useUnmergedTree = true).printToString()) }
             titles.forEach { ui.onNodeWithText(it).assertIsDisplayed() }
         } finally {
-            savedId?.let { runBlocking { app.chatRepository.deleteSession(it) } }
+            savedId?.let { runBlocking { app.chatRepository.dropSession(it) } }
             app.providerRepository.removeGroup(group.id)
             app.providerRepository.removeInstance(providerId)
         }

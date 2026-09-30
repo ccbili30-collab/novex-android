@@ -16,7 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.ModalBottomSheet
+import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.data.db.FolderEntity
+import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.ui.components.MinisSmallButton
 import com.openminis.app.ui.components.SectionDesign
 import com.openminis.app.ui.components.SectionTextField
@@ -67,7 +67,7 @@ sealed interface GroupChoice {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupPickerSheet(
-    folders: List<FolderEntity>,
+    folders: List<SessionFolderRow>,
     memberCounts: Map<String, Int>,
     sessionCount: Int,
     anyFiled: Boolean,
@@ -91,7 +91,7 @@ fun GroupPickerSheet(
     androidx.compose.runtime.LaunchedEffect(createSuggestion) {
         if (createSuggestion != null) {
             newName = createSuggestion.name
-            createSuggestion.description?.let { newDesc = it.take(FolderEntity.DESC_MAX_CHARS) }
+            createSuggestion.description?.let { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) }
         }
     }
 
@@ -132,7 +132,7 @@ fun GroupPickerSheet(
                 value = newDesc,
                 // Hard-cap at the storage limit as the user types, so the field
                 // can never hold text the repository would silently truncate.
-                onValueChange = { newDesc = it.take(FolderEntity.DESC_MAX_CHARS) },
+                onValueChange = { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
                 placeholder = stringResource(R.string.group_desc_hint),
                 modifier = Modifier.padding(horizontal = 20.dp),
                 containerColor = SectionDesign.screenBackgroundColor(),
@@ -150,7 +150,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Warning,
+                        novex.android.ui.NovexIcons.Warning,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp),
@@ -183,7 +183,7 @@ fun GroupPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                        novex.android.ui.NovexIcons.AutoAwesome,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -218,7 +218,7 @@ fun GroupPickerSheet(
                             )
                         } else {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.AutoAwesome,
+                                novex.android.ui.NovexIcons.AutoAwesome,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp),
@@ -273,7 +273,7 @@ fun GroupPickerSheet(
                             GroupRow(
                                 title = label,
                                 subtitle = hint,
-                                icon = com.openminis.app.ui.novex.NovexIcons.FolderOff,
+                                icon = novex.android.ui.NovexIcons.FolderOff,
                                 onClick = { onChoose(GroupChoice.RemoveFromGroup) },
                                 // Merge the two lines for screen readers;
                                 // announced separately they read as unrelated
@@ -294,7 +294,7 @@ fun GroupPickerSheet(
                             subtitle = folder.description?.takeIf { it.isNotBlank() }
                                 ?: if (count > 0) stringResource(R.string.group_n_chats, count)
                                 else stringResource(R.string.group_empty),
-                            icon = com.openminis.app.ui.novex.NovexIcons.Folder,
+                            icon = novex.android.ui.NovexIcons.Folder,
                             onClick = { onChoose(GroupChoice.Existing(folder.id)) },
                         )
                     }

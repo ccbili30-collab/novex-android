@@ -1,9 +1,9 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ThinkingLevel
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -17,7 +17,7 @@ import org.junit.Test
 /**
  * GOLDEN SNAPSHOT of the thinking-parameter injection on the Chat Completions path.
  *
- * WHY THIS EXISTS, and how it differs from [ThinkingRulesRegressionTest]: that suite
+ * WHY THIS EXISTS, and how it differs from [ThinkingContractsRegressionTest]: that suite
  * asserts the *rules we knew to look for* — one hand-written assertion per catalogued
  * rule. This file asserts something weaker but far broader: for a matrix of
  * (model × level × endpoint) combinations, the emitted thinking fields are
@@ -52,7 +52,7 @@ import org.junit.Test
  * base, so a MockWebServer URL never qualifies and OFF renders `{}` rather than
  * `{"reasoning_effort":"none"}`. Both are correct for their layer. Each snapshot is an
  * oracle for ITS OWN platform across the refactor; cross-platform parity is what
- * ThinkingRulesRegressionTest asserts.
+ * ThinkingContractsRegressionTest asserts.
  *
  * READING THE BASELINE — `mimo/XHIGH` and `seed/XHIGH` record `reasoning_effort:"xhigh"`
  * even though both families 400 on that value (72968c4f). That is correct: the family
@@ -109,7 +109,7 @@ class ThinkingWireGoldenSnapshotTest {
         repeat(4) {
             server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(ok))
         }
-        val provider = OpenAIProvider(apiKey = "test-key", model = m, basePath = basePath)
+        val provider = NovexTransportProvider(apiKey = "test-key", model = m, basePath = basePath)
         runCatching {
             runBlocking {
                 provider.sendMessageClamped(

@@ -1,7 +1,7 @@
 package novex.android
 
-import com.openminis.app.ui.novex.TextButton
-
+import novex.android.ui.Button
+import novex.android.ui.TextButton
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -18,11 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.openminis.app.ui.novex.NovexColors
-import com.openminis.app.ui.novex.NovexType
-import com.openminis.app.ui.novex.NovexIcons
-import com.openminis.app.ui.novex.NovexArtwork
-import com.openminis.app.ui.novex.NovexArtworkKind
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexType
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexArtwork
+import novex.android.ui.NovexArtworkKind
 import com.openminis.app.ui.noven.NovenColors
 import com.openminis.app.ui.theme.LocalChatPalette
 import androidx.compose.ui.Alignment

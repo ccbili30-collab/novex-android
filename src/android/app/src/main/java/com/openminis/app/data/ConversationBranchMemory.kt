@@ -1,12 +1,12 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import org.json.JSONArray
 
 /** Resolves memory writes that belong only to inactive conversation branches. */
 object ConversationBranchMemory {
     fun excludedWriteCounts(
-        allMessages: List<MessageEntity>,
+        allMessages: List<MessageRow>,
         activeMessageIds: Set<String>,
     ): Map<String, Int> {
         val active = linkedSetOf<String>()
@@ -25,8 +25,8 @@ object ConversationBranchMemory {
     }
 
     fun writesOwnedOnlyByDeletedMessages(
-        deletedMessages: List<MessageEntity>,
-        remainingMessages: List<MessageEntity>,
+        deletedMessages: List<MessageRow>,
+        remainingMessages: List<MessageRow>,
     ): List<String> {
         val survivingContents = remainingMessages.flatMapTo(hashSetOf()) {
             memoryWriteContents(it.partsJson)

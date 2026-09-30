@@ -21,20 +21,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.provider.openai.OpenAIModelsApi
 import com.openminis.app.tools.AgentTools
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.Button
-import com.openminis.app.ui.novex.NovexCheckToggle
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.Scaffold
-import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.AlertDialog
+import novex.android.ui.Button
+import novex.android.ui.NovexCheckToggle
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.Scaffold
+import novex.android.ui.TextButton
+import novex.android.ui.TopAppBar
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +77,7 @@ internal fun toggleModelSelection(current: List<String>, clicked: String): List<
 }
 
 internal fun looksLikeImageGenerationModel(modelId: String): Boolean =
-    com.openminis.app.data.model.ChatModelSelection.imageGenerationId(modelId)
+    novex.android.data.model.ChatModelSelection.imageGenerationId(modelId)
 
 /** Input capability assigned to a chat model saved by the simplified setup. */
 internal fun novexChatInputModalities(
@@ -216,7 +215,7 @@ fun NovexProviderSetupScreen(
     var deleteConfirm by remember(instanceId) { mutableStateOf(false) }
     val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
     val initialModels = remember(instanceId) {
-        existingEntries.filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        existingEntries.filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
             .map { it.model.id }.distinct()
             .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
     }
@@ -224,7 +223,7 @@ fun NovexProviderSetupScreen(
     val modelToolsEnabled = remember(instanceId) {
         mutableStateMapOf<String, Boolean>().apply {
             existingEntries
-                .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+                .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
                 .forEach { entry -> put(entry.model.id, entry.model.supportsTools != false) }
         }
     }
@@ -340,11 +339,11 @@ fun NovexProviderSetupScreen(
 
     Scaffold(topBar = { TopAppBar(
         title = { Text(if (existing == null) "连接模型" else "模型连接") },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, "返回") } },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(novex.android.ui.NovexIcons.ArrowBack, "返回") } },
         actions = {
             if (existing != null) {
                 IconButton(onClick = { deleteConfirm = true }) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Delete, contentDescription = "删除 AI 服务商")
+                    Icon(novex.android.ui.NovexIcons.Delete, contentDescription = "删除 AI 服务商")
                 }
             }
         },
@@ -402,7 +401,7 @@ fun NovexProviderSetupScreen(
                     },
                 )
             }
-            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(com.openminis.app.ui.novex.NovexIcons.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            OutlinedTextField(label = { Text("API（应用程序接口）密钥") }, value = apiKey, onValueChange = { apiKey = it; invalidateVerification() }, leadingIcon = { Icon(novex.android.ui.NovexIcons.Key, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
             Text(
                 "滑到最下方获取密钥",
                 style = MaterialTheme.typography.bodySmall,
@@ -481,7 +480,7 @@ fun NovexProviderSetupScreen(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Build,
+                                    novex.android.ui.NovexIcons.Build,
                                     contentDescription = if (toolsEnabled(modelId)) "关闭该模型的工具调用" else "开启该模型的工具调用",
                                     modifier = Modifier.size(20.dp),
                                     tint = if (toolsEnabled(modelId)) Color(0xFF168A45) else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -504,7 +503,7 @@ fun NovexProviderSetupScreen(
                             },
                         ) {
                             Icon(
-                                if (checkingModelId == modelId) com.openminis.app.ui.novex.NovexIcons.Stop else com.openminis.app.ui.novex.NovexIcons.Refresh,
+                                if (checkingModelId == modelId) novex.android.ui.NovexIcons.Stop else novex.android.ui.NovexIcons.Refresh,
                                 contentDescription = if (checkingModelId == modelId) "停止检测 $modelId" else "检测 $modelId",
                             )
                         }
@@ -538,7 +537,7 @@ fun NovexProviderSetupScreen(
                     },
                     enabled = manualModelId.isNotBlank(),
                 ) {
-                    Icon(com.openminis.app.ui.novex.NovexIcons.Add, "添加模型")
+                    Icon(novex.android.ui.NovexIcons.Add, "添加模型")
                 }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -552,9 +551,9 @@ fun NovexProviderSetupScreen(
                         ModelResultState.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                     val icon = when (result.state) {
-                        ModelResultState.PASSED -> com.openminis.app.ui.novex.NovexIcons.CheckCircle
-                        ModelResultState.WARNING, ModelResultState.FAILED -> com.openminis.app.ui.novex.NovexIcons.Error
-                        ModelResultState.CANCELLED -> com.openminis.app.ui.novex.NovexIcons.Close
+                        ModelResultState.PASSED -> novex.android.ui.NovexIcons.CheckCircle
+                        ModelResultState.WARNING, ModelResultState.FAILED -> novex.android.ui.NovexIcons.Error
+                        ModelResultState.CANCELLED -> novex.android.ui.NovexIcons.Close
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -631,13 +630,13 @@ private suspend fun fetchModels(
 ): List<LLMModel> = runCatching {
     val canonical = novexCanonicalBase(base, appendV1Suffix)
     val models = if (direction == NovexProviderDirection.ANTHROPIC) {
-        com.openminis.app.provider.anthropic.AnthropicModelsApi.fetchModels(
+        com.openminis.app.provider.ModelsCatalogApi.fetchAnthropicModels(
             key,
             canonical,
             forceRefresh = true,
         )
     } else {
-        OpenAIModelsApi.fetchModels(
+        com.openminis.app.provider.ModelsCatalogApi.fetchOpenAiModels(
             key,
             canonical,
             forceRefresh = true,
@@ -659,7 +658,7 @@ private suspend fun verifyConnection(
         return ConnectionVerification(NovexModelVerification(emptyList(), emptyList()), message)
     }
     // [T-provider-direction] Anthropic 方向的探活/鉴权探测带上版本头；
-    // 兼容中转普遍同时收 Bearer，与 AnthropicModelsApi 的自定义端点行为一致。
+    // 兼容中转普遍同时收 Bearer，与模型目录 anthropic 方言的自定义端点行为一致。
     fun probeRequest(url: String, withKey: Boolean): Request = Request.Builder()
         .url(url)
         .apply { if (direction == NovexProviderDirection.ANTHROPIC) header("anthropic-version", "2023-06-01") }
@@ -777,21 +776,21 @@ private fun saveConnections(
     modelToolsEnabled: Map<String, Boolean>,
     metadata: Map<String, LLMModel> = emptyMap(),
 ) {
-    require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(com.openminis.app.data.model.ChatModelSelection::imageOutput) == true }) {
+    require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(novex.android.data.model.ChatModelSelection::imageOutput) == true }) {
         "请选择聊天模型，生图模型不能用于此对话"
     }
     val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix, direction)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)
-        .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
     val previousIds = previousEntries.map { it.id }.toSet()
     val group = repository.config.value.modelGroups.firstOrNull { candidate ->
         candidate.memberEntryIds.any { it in previousIds }
     }
     previousEntries.filter { it.model.id !in modelIds }.forEach { repository.removeEntry(it.id) }
     modelIds.forEach { modelId ->
-        if (repository.entriesFor(instance.id).none { it.model.id == modelId && com.openminis.app.data.model.ChatModelSelection.eligible(it) }) {
+        if (repository.entriesFor(instance.id).none { it.model.id == modelId && novex.android.data.model.ChatModelSelection.eligible(it) }) {
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
@@ -811,7 +810,7 @@ private fun saveConnections(
         }
     }
     repository.entriesFor(instance.id)
-        .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
         .forEach { entry ->
         val refreshedBase = novexConnectionModel(metadata[entry.model.id], entry.baseModel, instance.effectiveBaseURL)
         val desiredInput = novexChatInputModalities(entry.model.id, entry.model.inputModalities)
@@ -834,7 +833,7 @@ private fun saveConnections(
         }
     }
     val selectedEntries = repository.entriesFor(instance.id).filter {
-        it.model.id in modelIds && com.openminis.app.data.model.ChatModelSelection.eligible(it)
+        it.model.id in modelIds && novex.android.data.model.ChatModelSelection.eligible(it)
     }
     val selectedIds = selectedEntries.map { it.id }
     if (group == null) {
@@ -851,5 +850,5 @@ private fun saveConnections(
 
 /** Fetched capacities survive saving; separately stored user overrides are untouched. */
 internal fun novexConnectionModel(fetched: LLMModel?, previous: LLMModel, base: String?): LLMModel =
-    com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
+    novex.android.data.model.NovexDeepSeekModelMetadata.official(
         fetched ?: com.openminis.app.provider.ModelsDevApi.enrichModel(previous), base)

@@ -8,8 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.android.data.model.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -39,13 +39,13 @@ class NovexRealModelJourneyTest {
         val entry = app.providerRepository.entriesFor(providerId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "真实中文旅程验收")
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
                 NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.FREE))))
             created
         }
         var visible by mutableStateOf(true)
-        fun configuration() = runBlocking { NovexConversationConfigurationCodec.decode(app.chatRepository.getSession(session.id)!!.novexConfigurationJson, session.id) }
+        fun configuration() = runBlocking { NovexConversationConfigurationCodec.decode(app.chatRepository.sessionById(session.id)!!.novexConfigurationJson, session.id) }
         fun send(text: String) {
             ui.waitUntil(30_000) { ui.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
             val previous = runBlocking { app.chatRepository.loadActiveMessages(session.id) }.map { it.id }.toSet()

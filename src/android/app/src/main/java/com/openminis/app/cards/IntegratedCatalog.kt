@@ -1,7 +1,7 @@
 package com.openminis.app.cards
 
 import com.openminis.app.MinisApp
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import novex.content.CardKind
@@ -14,7 +14,7 @@ import kotlinx.coroutines.channels.awaitClose
 class IntegratedCatalog(private val app:MinisApp) {
     suspend fun contains(address:NovexContentAddress):Boolean = withContext(Dispatchers.IO) {
         if(address.kind==NovexContentKind.CREATIVE_ARTIFACT)
-            app.database.novexWorkGroupDao().targetExists(address.kind.name,address.id)
+            app.database.workGroupDao().targetExists(address.kind.name,address.id)
         else contains(address,IntegratedCards(app).store)
     }
     fun changes()=callbackFlow {

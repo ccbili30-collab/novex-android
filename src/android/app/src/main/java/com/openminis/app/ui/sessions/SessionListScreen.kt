@@ -49,8 +49,8 @@ import android.content.Intent
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
 import com.openminis.app.ui.noven.NovenSessionRow
 import com.openminis.app.ui.noven.categoryStyle
 import com.openminis.app.ui.noven.relativeDate
@@ -62,14 +62,14 @@ import com.openminis.app.ui.components.MinisMenuDivider
 import com.openminis.app.ui.components.SectionDesign
 import com.openminis.app.ui.components.SectionTextField
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.openminis.app.ui.novex.ModalBottomSheet
-import com.openminis.app.ui.novex.OutlinedButton
-import com.openminis.app.ui.novex.OutlinedTextField
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.OutlinedButton
+import novex.android.ui.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -123,14 +123,14 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.FolderEntity
+import novex.android.data.chat.SessionRow
+import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.data.character.WorldEntity
 import com.openminis.app.data.model.ProviderConfig
 import com.openminis.app.data.model.hasUsableNovexModel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.novex.rememberNovexWorkspace
+import novex.android.ui.rememberNovexWorkspace
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -161,14 +161,14 @@ private fun datePeriod(timestamp: Long): DatePeriod = when (sessionHomeRecency(t
  *
  * Holds session IDS, not session objects — the list differ re-evaluates this on
  * every emission, so the value must stay cheap to compare. (iOS learned the
- * same lesson as `SidebarGroup`; a `List<ChatSessionEntity>` here deep-compares
+ * same lesson as `SidebarGroup`; a `List<SessionRow>` here deep-compares
  * long message strings on every tick.)
  *
  * `ids` is EMPTY while collapsed, but [totalCount] keeps the real number so the
  * card can still say "5 chats".
  */
 data class FolderGroupBlock(
-    val folder: FolderEntity,
+    val folder: SessionFolderRow,
     val ids: List<String>,
     val totalCount: Int,
     val isCollapsed: Boolean,
@@ -199,15 +199,15 @@ data class FolderGroupBlock(
  *    moves out reads as data loss.
  */
 private fun partitionByFolder(
-    sessions: List<ChatSessionEntity>,
-    folders: List<FolderEntity>,
+    sessions: List<SessionRow>,
+    folders: List<SessionFolderRow>,
     collapsedIds: Set<String>,
-): Pair<List<FolderGroupBlock>, List<ChatSessionEntity>> {
+): Pair<List<FolderGroupBlock>, List<SessionRow>> {
     if (folders.isEmpty()) return emptyList<FolderGroupBlock>() to sessions
 
     val byId = folders.associateBy { it.id }
-    val members = LinkedHashMap<String, MutableList<ChatSessionEntity>>()
-    val ungrouped = mutableListOf<ChatSessionEntity>()
+    val members = LinkedHashMap<String, MutableList<SessionRow>>()
+    val ungrouped = mutableListOf<SessionRow>()
 
     for (s in sessions) {
         val fid = s.folderId
@@ -247,11 +247,11 @@ private fun partitionByFolder(
     return pinnedFirst to ungrouped
 }
 
-private fun groupSessionsByDate(sessions: List<ChatSessionEntity>): List<Pair<DatePeriod, List<ChatSessionEntity>>> {
+private fun groupSessionsByDate(sessions: List<SessionRow>): List<Pair<DatePeriod, List<SessionRow>>> {
     val pinned = sessions.filter { it.pinnedAt != null }.sortedByDescending { it.pinnedAt }
     val unpinned = sessions.filter { it.pinnedAt == null }
     val grouped = unpinned.groupBy { datePeriod(it.updatedAt) }
-    val result = mutableListOf<Pair<DatePeriod, List<ChatSessionEntity>>>()
+    val result = mutableListOf<Pair<DatePeriod, List<SessionRow>>>()
     if (pinned.isNotEmpty()) {
         result.add(DatePeriod.PINNED to pinned)
     }
@@ -416,14 +416,14 @@ fun SessionListScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<String?>(null) }
     // [T-android-session-grouping] Group management dialogs.
-    var folderToRename by remember { mutableStateOf<FolderEntity?>(null) }
-    var folderToDissolve by remember { mutableStateOf<FolderEntity?>(null) }
+    var folderToRename by remember { mutableStateOf<SessionFolderRow?>(null) }
+    var folderToDissolve by remember { mutableStateOf<SessionFolderRow?>(null) }
     // iOS "Delete Group & N Sessions" — pair carries the member count so the
     // confirmation can restate the consequence.
-    var folderToDelete by remember { mutableStateOf<Pair<FolderEntity, Int>?>(null) }
+    var folderToDelete by remember { mutableStateOf<Pair<SessionFolderRow, Int>?>(null) }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    var editSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var editSession by remember { mutableStateOf<SessionRow?>(null) }
 
     // [T-android-session-grouping] Groups are pulled out FIRST; only the
     // leftovers go through date bucketing. Assembly order below is
@@ -649,7 +649,7 @@ fun SessionListScreen(
                                         viewModel.isSelecting.value = true
                                     },
                                     leadingIcon = {
-                                        Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
+                                        Icon(novex.android.ui.NovexIcons.ChecklistRtl, contentDescription = null)
                                     },
                                 )
                             }
@@ -687,7 +687,7 @@ fun SessionListScreen(
                 // 列表：只依赖 Room + 卡片库（novexWorkGroups / novexWorkspace
                 // 均为 minimum 子系统），轻量启动面同样可用。多选时隐藏。
                 if (!isSelecting) {
-                    com.openminis.app.ui.novex.NovexConversationCardLookup(onSessionClickGuarded)
+                    novex.android.ui.NovexConversationCardLookup(onSessionClickGuarded)
                 }
                 // 轻量启动面读不到 provider 配置：worlds 不再参与空态判定 —
                 // 有卡无会话同样落到普通空态，而不是一张空白列表。
@@ -770,7 +770,7 @@ fun SessionListScreen(
                         val existingFolderIds = folders.mapTo(HashSet()) { it.id }
 
                         @Composable
-                        fun sessionRowContent(session: ChatSessionEntity) {
+                        fun sessionRowContent(session: SessionRow) {
                             val activeQuery =
                                 if (isSearchActive && searchQuery.isNotBlank()) searchQuery else ""
                             SessionItemContent(
@@ -811,7 +811,7 @@ fun SessionListScreen(
                         // welded container; per-item animateItem gives the
                         // accordion its motion.
                         fun androidx.compose.foundation.lazy.LazyListScope.renderFolderRows(
-                            rows: List<ChatSessionEntity>,
+                            rows: List<SessionRow>,
                         ) {
                             items(rows, key = { it.id }) { session ->
                                 val isLast = session.id == rows.last().id
@@ -852,7 +852,7 @@ fun SessionListScreen(
                         // 仍是独立 lazy item；行间 0.5dp 分隔线从 72dp 开始。
                         fun androidx.compose.foundation.lazy.LazyListScope.renderSessionGroup(
                             key: String,
-                            rows: List<ChatSessionEntity>,
+                            rows: List<SessionRow>,
                         ) {
                             itemsIndexed(
                                 rows,
@@ -1025,7 +1025,7 @@ fun SessionListScreen(
                                     },
                             ) {
                                 Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.KeyboardArrowUp,
+                                    novex.android.ui.NovexIcons.KeyboardArrowUp,
                                     contentDescription = stringResource(R.string.group_collapse),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp),
@@ -1119,7 +1119,7 @@ fun SessionListScreen(
         // text fields, and MinisAlertDialog is a title/text/buttons component.
         // Widening it for a single caller would push layout complexity into
         // every other dialog in the app.
-        com.openminis.app.ui.novex.AlertDialog(
+        novex.android.ui.AlertDialog(
             onDismissRequest = { folderToRename = null },
             title = { Text(stringResource(R.string.group_rename)) },
             text = {
@@ -1143,7 +1143,7 @@ fun SessionListScreen(
                     DialogTextFieldFrame {
                         SectionTextField(
                             value = desc,
-                            onValueChange = { desc = it.take(FolderEntity.DESC_MAX_CHARS) },
+                            onValueChange = { desc = it.take(SessionFolderRow.DESC_MAX_CHARS) },
                             placeholder = stringResource(R.string.group_desc_hint),
                         )
                     }
@@ -1243,7 +1243,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Share,
+                    novex.android.ui.NovexIcons.Share,
                     contentDescription = stringResource(R.string.sessionlist_export),
                     modifier = Modifier.size(20.dp),
                 )
@@ -1259,7 +1259,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Folder,
+                    novex.android.ui.NovexIcons.Folder,
                     contentDescription = stringResource(R.string.group_move_action),
                     modifier = Modifier.size(20.dp),
                 )
@@ -1275,7 +1275,7 @@ private fun SelectionToolbar(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
-                    com.openminis.app.ui.novex.NovexIcons.Delete,
+                    novex.android.ui.NovexIcons.Delete,
                     contentDescription = stringResource(R.string.delete),
                     tint = if (selectedCount > 0) MaterialTheme.colorScheme.error else Color.Gray,
                     modifier = Modifier.size(20.dp),
@@ -1347,7 +1347,7 @@ private fun SessionInlineSearchField(
             )
         } else {
             IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                Icon(com.openminis.app.ui.novex.NovexIcons.Close, contentDescription = stringResource(R.string.sessionlist_dismiss))
+                Icon(novex.android.ui.NovexIcons.Close, contentDescription = stringResource(R.string.sessionlist_dismiss))
             }
         }
     }
@@ -1368,7 +1368,7 @@ private fun SectionHeader(title: String) {
     ) {
         if (isPinned) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.PushPin,
+                imageVector = novex.android.ui.NovexIcons.PushPin,
                 contentDescription = null,
                 tint = com.openminis.app.ui.noven.NovenColors.Secondary,
                 modifier = Modifier
@@ -1391,7 +1391,7 @@ private fun SectionHeader(title: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionItemContent(
-    session: ChatSessionEntity,
+    session: SessionRow,
     isSelecting: Boolean,
     selectedIds: Set<String>,
     onSessionClick: (String) -> Unit,
@@ -1401,8 +1401,8 @@ private fun SessionItemContent(
     // which only flips set membership while ALREADY selecting).
     onEnterSelect: (String) -> Unit,
     onPinToggle: (String) -> Unit,
-    onEditRequest: (ChatSessionEntity) -> Unit,
-    onExportRequest: (ChatSessionEntity, String) -> Unit,
+    onEditRequest: (SessionRow) -> Unit,
+    onExportRequest: (SessionRow, String) -> Unit,
     onRegenerateTitle: (String) -> Unit,
     /** 轻量启动面（无 provider 运行时）隐藏「重新生成标题」菜单项。 */
     canRegenerateTitle: Boolean = true,
@@ -1446,7 +1446,7 @@ private fun SessionItemContent(
             cardReader = cardReader,
             leadingIcon = {
                 Icon(
-                    imageVector = if (isSelected) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Circle,
+                    imageVector = if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.Circle,
                     contentDescription = null,
                     tint = if (isSelected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1500,7 +1500,7 @@ private fun SessionItemContent(
                             modifier = Modifier.size(36.dp),
                         ) {
                             Icon(
-                                com.openminis.app.ui.novex.NovexIcons.MoreVert,
+                                novex.android.ui.NovexIcons.MoreVert,
                                 contentDescription = stringResource(R.string.sessionlist_row_actions),
                                 tint = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.size(18.dp),
@@ -1516,7 +1516,7 @@ private fun SessionItemContent(
                                 onClick = { rowMenuOpen = false; onPinToggle(session.id) },
                                 leadingIcon = {
                                     Icon(
-                                        if (isPinned) com.openminis.app.ui.novex.NovexIcons.Close else com.openminis.app.ui.novex.NovexIcons.PushPin,
+                                        if (isPinned) novex.android.ui.NovexIcons.Close else novex.android.ui.NovexIcons.PushPin,
                                         contentDescription = null,
                                     )
                                 },
@@ -1526,7 +1526,7 @@ private fun SessionItemContent(
                                 onClick = { rowMenuOpen = false; onDeleteRequest(session.id) },
                                 leadingIcon = {
                                     Icon(
-                                        com.openminis.app.ui.novex.NovexIcons.Delete,
+                                        novex.android.ui.NovexIcons.Delete,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error,
                                     )
@@ -1581,7 +1581,7 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            if (isPinned) com.openminis.app.ui.novex.NovexIcons.Close else com.openminis.app.ui.novex.NovexIcons.PushPin,
+                            if (isPinned) novex.android.ui.NovexIcons.Close else novex.android.ui.NovexIcons.PushPin,
                             contentDescription = null,
                         )
                     },
@@ -1592,12 +1592,12 @@ private fun SessionItemContent(
                     text = {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(stringResource(R.string.sessionlist_export))
-                            Icon(com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(novex.android.ui.NovexIcons.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     },
                     onClick = { showExportSub = !showExportSub },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Share, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Share, contentDescription = null)
                     },
                 )
                 if (showExportSub) {
@@ -1624,7 +1624,7 @@ private fun SessionItemContent(
                         onEditRequest(session)
                     },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.Edit, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.Edit, contentDescription = null)
                     },
                 )
                 // Regenerate Title —— 需要 provider 运行时（sub model/主模型
@@ -1637,7 +1637,7 @@ private fun SessionItemContent(
                             onRegenerateTitle(session.id)
                         },
                         leadingIcon = {
-                            Icon(com.openminis.app.ui.novex.NovexIcons.Refresh, contentDescription = null)
+                            Icon(novex.android.ui.NovexIcons.Refresh, contentDescription = null)
                         },
                     )
                 }
@@ -1649,7 +1649,7 @@ private fun SessionItemContent(
                         onDuplicate(session.id)
                     },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ContentCopy, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null)
                     },
                 )
                 // Move to / Change Group
@@ -1676,8 +1676,8 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            if (isFiled) com.openminis.app.ui.novex.NovexIcons.DriveFileMove
-                            else com.openminis.app.ui.novex.NovexIcons.Folder,
+                            if (isFiled) novex.android.ui.NovexIcons.DriveFileMove
+                            else novex.android.ui.NovexIcons.Folder,
                             contentDescription = null,
                         )
                     },
@@ -1694,7 +1694,7 @@ private fun SessionItemContent(
                         onEnterSelect(session.id)
                     },
                     leadingIcon = {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ChecklistRtl, contentDescription = null)
+                        Icon(novex.android.ui.NovexIcons.ChecklistRtl, contentDescription = null)
                     },
                 )
                 MinisMenuDivider()
@@ -1707,7 +1707,7 @@ private fun SessionItemContent(
                     },
                     leadingIcon = {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Delete,
+                            novex.android.ui.NovexIcons.Delete,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                         )
@@ -2035,14 +2035,14 @@ private fun FolderCard(
                 ) {
                     if (block.folder.isPinned) {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.PushPin,
+                            novex.android.ui.NovexIcons.PushPin,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(12.dp),
                         )
                     }
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                        novex.android.ui.NovexIcons.KeyboardArrowDown,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier
@@ -2088,19 +2088,19 @@ private fun FolderCard(
                         )
                     },
                     onClick = { menuOpen = false; onTogglePin() },
-                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.PushPin) },
+                    leadingIcon = { menuIcon(novex.android.ui.NovexIcons.PushPin) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_rename)) },
                     onClick = { menuOpen = false; onRename() },
-                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.Edit) },
+                    leadingIcon = { menuIcon(novex.android.ui.NovexIcons.Edit) },
                 )
                 // iOS folder menu parity: "New Chat in Group" (plus.bubble)
                 // sits between Rename and the divider.
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_new_chat_in)) },
                     onClick = { menuOpen = false; onNewChatInGroup() },
-                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.AddComment) },
+                    leadingIcon = { menuIcon(novex.android.ui.NovexIcons.AddComment) },
                 )
                 MinisMenuDivider()
                 // Dissolve is deliberately NOT destructive-tinted (iOS note):
@@ -2110,7 +2110,7 @@ private fun FolderCard(
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.group_dissolve)) },
                     onClick = { menuOpen = false; onDissolve() },
-                    leadingIcon = { menuIcon(com.openminis.app.ui.novex.NovexIcons.FolderOff) },
+                    leadingIcon = { menuIcon(novex.android.ui.NovexIcons.FolderOff) },
                 )
                 MinisMenuDivider()
                 // The one destructive item, last, with the count in the title
@@ -2128,7 +2128,7 @@ private fun FolderCard(
                     onClick = { menuOpen = false; onDeleteWithSessions() },
                     leadingIcon = {
                         Icon(
-                            com.openminis.app.ui.novex.NovexIcons.Delete,
+                            novex.android.ui.NovexIcons.Delete,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp),
@@ -2235,19 +2235,19 @@ private fun SessionListEmptyState(onNewChat: () -> Unit) {
         Text(
             "还没有对话",
             color = com.openminis.app.ui.noven.NovenColors.Text,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(18),
+            fontSize = novex.android.ui.novexScaledSp(18),
             fontWeight = FontWeight.SemiBold,
         )
         Text(
             "从一个新的想法开始",
             color = com.openminis.app.ui.noven.NovenColors.Secondary,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(14),
+            fontSize = novex.android.ui.novexScaledSp(14),
             modifier = Modifier.padding(top = 7.dp),
         )
         Text(
             "新建对话",
-            color = com.openminis.app.ui.novex.NovexColors.Primary,
-            fontSize = com.openminis.app.ui.novex.novexScaledSp(15),
+            color = novex.android.ui.NovexColors.Primary,
+            fontSize = novex.android.ui.novexScaledSp(15),
             fontWeight = FontWeight.Medium,
             modifier = Modifier
                 .padding(top = 18.dp)
@@ -2408,7 +2408,7 @@ private fun SetupStepCard(
         ) {
             if (isDone) {
                 Icon(
-                    imageVector = com.openminis.app.ui.novex.NovexIcons.Check,
+                    imageVector = novex.android.ui.NovexIcons.Check,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(16.dp),
@@ -2443,7 +2443,7 @@ private fun SetupStepCard(
 
         if (!isDone && isEnabled) {
             Icon(
-                imageVector = com.openminis.app.ui.novex.NovexIcons.KeyboardArrowRight,
+                imageVector = novex.android.ui.NovexIcons.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
             )
@@ -2463,7 +2463,7 @@ private val allCategories = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SessionEditSheet(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onDismiss: () -> Unit,
     onSave: (title: String, category: String?) -> Unit,
     // [T-android-sessionedit-regenerate-button] Regenerate-Title support,
@@ -2472,7 +2472,7 @@ internal fun SessionEditSheet(
     // drives the button's loading/disabled state; `onRegenerate` reuses the
     // existing SessionListViewModel.regenerateTitle logic. Defaults make the
     // button a no-op when a caller doesn't wire them up.
-    liveSession: ChatSessionEntity = session,
+    liveSession: SessionRow = session,
     isRegenerating: Boolean = false,
     onRegenerate: () -> Unit = {},
     /** 轻量启动面（无 provider 运行时）隐藏 Regenerate 区块。 */
@@ -2603,7 +2603,7 @@ internal fun SessionEditSheet(
                     Text(stringResource(R.string.sessionlist_regenerating_title))
                 } else {
                     Icon(
-                        com.openminis.app.ui.novex.NovexIcons.Refresh,
+                        novex.android.ui.NovexIcons.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -2635,7 +2635,7 @@ internal fun SessionEditSheet(
  */
 private fun exportSession(
     context: Context,
-    session: ChatSessionEntity,
+    session: SessionRow,
     chatRepository: ChatRepository,
     scope: kotlinx.coroutines.CoroutineScope,
     format: String,

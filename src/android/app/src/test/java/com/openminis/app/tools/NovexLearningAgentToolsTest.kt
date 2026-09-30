@@ -1,10 +1,10 @@
 package com.openminis.app.tools
 
-import com.openminis.app.novex.domain.NovexLearningPreflight
-import com.openminis.app.novex.domain.NovexLearningPreflightRequest
-import com.openminis.app.novex.domain.NovexLearningSourceEstimate
-import com.openminis.app.novex.domain.NovexLearningTokenBudget
-import com.openminis.app.novex.domain.NovexResourceRef
+import novex.core.NovexLearningPreflight
+import novex.core.NovexLearningPreflightRequest
+import novex.core.NovexLearningSourceEstimate
+import novex.core.NovexLearningTokenBudget
+import novex.core.NovexResourceRef
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,7 +32,7 @@ class NovexLearningAgentToolsTest {
                 proposedBudget = NovexLearningTokenBudget(120_000, 12_000),
             ),
         )
-        val tools = NovexLearningAgentTools(com.openminis.app.novex.domain.NovexLearningPreflightResolver { requested, _ ->
+        val tools = NovexLearningAgentTools(novex.core.NovexLearningPreflightResolver { requested, _ ->
             preflight.takeIf { requested == collectionRef }
         }, start = { _, _ -> error("准备计划不得启动整理") })
 

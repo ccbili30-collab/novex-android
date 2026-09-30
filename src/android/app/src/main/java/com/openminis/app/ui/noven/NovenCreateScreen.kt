@@ -46,8 +46,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openminis.app.R
 import com.openminis.app.deeplink.DeepLinkCoordinator
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.TextButton
 import novex.android.LibraryModel
 import java.util.UUID
 

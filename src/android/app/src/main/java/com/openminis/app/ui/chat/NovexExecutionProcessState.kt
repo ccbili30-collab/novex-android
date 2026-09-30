@@ -63,7 +63,7 @@ internal fun foldNovexExecutionProcesses(input: List<FlatChatItem>): List<FlatCh
                 .filter { it.messageIsStreaming && it.block.toolStatus?.isInFlight() == true }
                 .mapNotNull { it.block.toolStatus }
             val process = FlatChatItem.AssistantProcess(messageId, folded, first.key, liveStatuses)
-            // [feat/ui-rikkahub] 2026-09-27 对齐 ZCode：工作行插在回合**问题
+            // [feat/ui-rikkahub] 2026-09-27 对齐主流聊天客户端惯例：工作行插在回合**问题
             // 之后、回答之前**——跳过段首的用户气泡/名头再落位。叙述与交互
             // 类工具保留原位。
             val kept = turn.filter { it.key !in keys }

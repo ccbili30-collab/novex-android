@@ -50,14 +50,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.DropdownMenu
-import com.openminis.app.ui.novex.DropdownMenuItem
-import com.openminis.app.ui.novex.NovexExportFileName
-import com.openminis.app.ui.novex.OutlinedTextField
-import com.openminis.app.ui.novex.TextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.DropdownMenu
+import novex.android.ui.DropdownMenuItem
+import novex.android.ui.NovexExportFileName
+import novex.android.ui.OutlinedTextField
+import novex.android.ui.TextButton
 import com.openminis.app.ui.settings.NovexUpdateEntry
 import com.openminis.app.ui.settings.NovexUpdateHub
 import androidx.compose.runtime.rememberCoroutineScope
@@ -109,7 +109,7 @@ internal fun NovenMeScreen(
 
     // 会话引用计数：每张根卡被多少段会话引用（primary/背景/管理任一）。
     val sessions by (chatRepository?.observeSessions()
-        ?: kotlinx.coroutines.flow.flowOf<List<ChatSessionEntity>>(emptyList()))
+        ?: kotlinx.coroutines.flow.flowOf<List<SessionRow>>(emptyList()))
         .collectAsState(initial = emptyList())
     val referenceCounts = remember(sessions) { cardSessionReferenceCounts(sessions) }
 
@@ -353,7 +353,7 @@ internal fun NovenMeScreen(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("删除", color = com.openminis.app.ui.novex.NovexColors.Danger) },
+                                text = { Text("删除", color = novex.android.ui.NovexColors.Danger) },
                                 onClick = { more = false; deleting = card },
                             )
                         }

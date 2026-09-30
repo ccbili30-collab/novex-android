@@ -1,9 +1,9 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.provider.openai.OpenAIProvider
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -25,7 +25,7 @@ import org.junit.Test
  */
 class OpenAIEditImageTest {
     private lateinit var server: MockWebServer
-    private lateinit var provider: OpenAIProvider
+    private lateinit var provider: NovexTransportProvider
 
     /** 1x1 PNG-ish bytes; content is irrelevant, only transport matters here. */
     private val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
@@ -33,6 +33,9 @@ class OpenAIEditImageTest {
 
     private fun imagePart(data: ByteArray, mime: String) =
         LLMMessage.ImagePart(data = data, mimeType = mime)
+
+    /** P3.1e：生图接口经适配器 imageDelegate（自有 ImagesClient）取。 */
+    private fun images() = requireNotNull(provider.imageDelegate) { "chat 线应暴露生图接口" }
 
     /**
      * Minimal success envelope — same shape /images/generations returns.
@@ -52,7 +55,7 @@ class OpenAIEditImageTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        provider = OpenAIProvider(
+        provider = NovexTransportProvider(
             apiKey = "test-key",
             model = LLMModel.gpt4oMini,
             basePath = server.url("/").toString().trimEnd('/'),
@@ -70,7 +73,7 @@ class OpenAIEditImageTest {
     fun `editImage posts multipart to images-edits with image and prompt`() = runBlocking {
         server.enqueue(MockResponse().setBody(imageResponseBody()))
 
-        val response = provider.editImage(
+        val response = images().editImage(
             prompt = "make it a white studio backdrop",
             images = listOf(imagePart(pngBytes, "image/png")),
         )
@@ -102,7 +105,7 @@ class OpenAIEditImageTest {
     @Test
     fun `editImage sends b64_json response_format by default`() = runBlocking {
         server.enqueue(MockResponse().setBody(imageResponseBody()))
-        provider.editImage("p", listOf(imagePart(pngBytes, "image/png")))
+        images().editImage("p", listOf(imagePart(pngBytes, "image/png")))
         val body = server.takeRequest().body.readUtf8()
         assertTrue("expected b64_json response_format", body.contains("b64_json"))
     }
@@ -113,7 +116,7 @@ class OpenAIEditImageTest {
     fun `editImage sends extra images as image array parts, dropping none`() = runBlocking {
         server.enqueue(MockResponse().setBody(imageResponseBody()))
 
-        provider.editImage(
+        images().editImage(
             prompt = "blend these",
             images = listOf(
                 imagePart(pngBytes, "image/png"),
@@ -146,7 +149,7 @@ class OpenAIEditImageTest {
         )
         server.enqueue(MockResponse().setBody(imageResponseBody()))
 
-        val response = provider.editImage("p", listOf(imagePart(pngBytes, "image/png")))
+        val response = images().editImage("p", listOf(imagePart(pngBytes, "image/png")))
 
         assertEquals(2, server.requestCount)
         val first = server.takeRequest().body.readUtf8()
@@ -159,7 +162,7 @@ class OpenAIEditImageTest {
     @Test
     fun `editImage rejects an empty image list instead of posting`() = runBlocking {
         val error = runCatching {
-            provider.editImage("p", emptyList())
+            images().editImage("p", emptyList())
         }.exceptionOrNull()
 
         assertTrue(
@@ -178,7 +181,7 @@ class OpenAIEditImageTest {
         )
 
         val error = runCatching {
-            provider.editImage("p", listOf(imagePart(pngBytes, "image/png")))
+            images().editImage("p", listOf(imagePart(pngBytes, "image/png")))
         }.exceptionOrNull()
 
         assertTrue("expected an error to propagate, got $error", error != null)
@@ -187,7 +190,7 @@ class OpenAIEditImageTest {
     @Test
     fun `editImage does not hit the generations endpoint`() = runBlocking {
         server.enqueue(MockResponse().setBody(imageResponseBody()))
-        provider.editImage("p", listOf(imagePart(pngBytes, "image/png")))
+        images().editImage("p", listOf(imagePart(pngBytes, "image/png")))
         val path = server.takeRequest().path ?: ""
         assertFalse("must not route to /images/generations", path.contains("generations"))
     }

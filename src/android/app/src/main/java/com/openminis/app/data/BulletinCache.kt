@@ -27,11 +27,18 @@ internal object BulletinCache {
             if (!file.isFile) return@runCatching null
             val root = JSONObject(file.readText())
             val announcements = readList(root.optJSONArray("announcements")) { o ->
+                fun opt(key: String): String? = o.optString(key).ifEmpty { null }
                 NovexAnnouncement(
                     versionName = o.optString("versionName"),
                     title = o.optString("title"),
                     markdown = o.optString("markdown"),
                     id = o.optString("id").ifEmpty { o.optString("versionName") },
+                    // [T-announcement-hero] 旧缓存无这些键 → null，回落简排版
+                    version = opt("version"),
+                    badge = opt("badge"),
+                    tagline = opt("tagline"),
+                    coverUrl = opt("coverUrl"),
+                    channel = opt("channel"),
                 ).takeIf { it.title.isNotEmpty() && it.markdown.isNotEmpty() }
             }
             val releaseNotes = readList(root.optJSONArray("releaseNotes")) { o ->
@@ -58,6 +65,13 @@ internal object BulletinCache {
                             .put("versionName", it.versionName)
                             .put("title", it.title)
                             .put("markdown", it.markdown)
+                            .apply { // [T-announcement-hero] 可选字段，null 不落键
+                                it.version?.let { v -> put("version", v) }
+                                it.badge?.let { v -> put("badge", v) }
+                                it.tagline?.let { v -> put("tagline", v) }
+                                it.coverUrl?.let { v -> put("coverUrl", v) }
+                                it.channel?.let { v -> put("channel", v) }
+                            }
                     }))
                     .put("releaseNotes", JSONArray(bulletin.releaseNotes.map {
                         JSONObject()

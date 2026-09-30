@@ -37,12 +37,12 @@ class NovexProviderSetupTest {
     }
 
     @Test fun fetchedCapacitySurvivesSetupSaveAndOverridesRemainIndependent() {
-        val previous = com.openminis.app.data.model.LLMModel("relay-alias","Alias","Relay",contextWindow=128000)
+        val previous = novex.android.data.model.LLMModel("relay-alias","Alias","Relay",contextWindow=128000)
         val fetched = previous.copy(contextWindow=1048576)
         val saved = novexConnectionModel(fetched,previous,"https://relay.example/v1")
         assertEquals(1048576,saved.contextWindow)
-        val entry = com.openminis.app.data.model.ModelEntry("relay",saved,
-            com.openminis.app.data.model.ModelOverrides(contextWindow=262144))
+        val entry = novex.android.data.model.ModelEntry("relay",saved,
+            novex.android.data.model.ModelOverrides(contextWindow=262144))
         assertEquals(262144,entry.model.contextWindowTokens)
     }
 }

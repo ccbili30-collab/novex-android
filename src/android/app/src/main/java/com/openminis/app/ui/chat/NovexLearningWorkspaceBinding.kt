@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.novex.domain.NovexConversationWorkspaceScope
-import com.openminis.app.novex.domain.NovexResourceRef
+import novex.android.data.chat.MessageRow
+import novex.core.NovexConversationWorkspaceScope
+import novex.core.NovexResourceRef
 import java.io.File
 import org.json.JSONArray
 
@@ -13,7 +13,7 @@ internal data class NovexLearningWorkspaceBinding(
 
 /** Bind generated files to the saved attachment message, never the root or whichever reply is selected later. */
 internal fun novexLearningWorkspaceBinding(collectionRef: NovexResourceRef, conversationId: String,
-    activeMessages: List<MessageEntity>, mediaRoot: File): NovexLearningWorkspaceBinding? {
+    activeMessages: List<MessageRow>, mediaRoot: File): NovexLearningWorkspaceBinding? {
     val owner = activeMessages.firstOrNull { message ->
         message.sessionId == conversationId && message.role == "user" && runCatching {
             val parts = JSONArray(message.partsJson)

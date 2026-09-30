@@ -9,7 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
-import com.openminis.app.novex.domain.*
+import novex.core.*
 import com.openminis.app.ui.settings.CatalogWorldDetailScreen
 import com.openminis.app.ui.theme.MinisTheme
 import java.io.File

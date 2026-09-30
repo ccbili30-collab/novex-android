@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import com.openminis.app.ui.novex.NovexColors
+import novex.android.ui.NovexColors
 
 /**
  * 侧边组件家族（2026-09-15 第三轮重排）：外形各异、手势同源——

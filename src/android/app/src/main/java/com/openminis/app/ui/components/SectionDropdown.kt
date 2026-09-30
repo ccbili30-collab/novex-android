@@ -4,7 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
-import com.openminis.app.ui.novex.*
+import novex.android.ui.*
 
 /** All settings dropdowns share the searchable, selected-state Novex picker. */
 @Composable

@@ -8,8 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
-import com.openminis.app.novex.domain.*
+import novex.android.data.model.*
+import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.*
@@ -136,8 +136,8 @@ class NovexJourneyPipelineTest {
         val savedEntry = app.providerRepository.entriesFor(providerId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "贯通验收", memoryEnabled = true)
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", savedEntry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", savedEntry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("", novexConfigurationJson =
                 NovexConversationConfigurationCodec.encode(NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.FREE))))
             created
         }
@@ -170,7 +170,7 @@ class NovexJourneyPipelineTest {
             assertTrue(raw.contains("雾中邮局插图"))
             assertTrue("图片像素不得进入模型请求", requests.none { it.toString().contains("data:image") })
             assertTrue(raw.contains("memory.applied")); assertTrue(raw.contains("memory.ready")); assertTrue(raw.contains(memory))
-            val saved = runBlocking { app.chatRepository.getSession(session.id) }!!
+            val saved = runBlocking { app.chatRepository.sessionById(session.id) }!!
             val config = NovexConversationConfigurationCodec.decode(saved.novexConfigurationJson, session.id)
             assertEquals(game.id, config.activeInteractiveFiction!!.projectId)
             assertEquals(NovexPersonaPresets.gameHost, config.answerIdentity)
@@ -237,7 +237,7 @@ class NovexJourneyPipelineTest {
             ui.onNodeWithContentDescription("Send").performTouchInput { click() }
             ui.waitUntil(60_000) { ui.onAllNodesWithText("本局已结束，恢复贯通邮差身份。").fetchSemanticsNodes().isNotEmpty() }
             ui.waitUntil(15_000) { ui.onAllNodesWithContentDescription("Stop").fetchSemanticsNodes().isEmpty() }
-            val ended = runBlocking { app.chatRepository.getSession(session.id) }!!
+            val ended = runBlocking { app.chatRepository.sessionById(session.id) }!!
             val endedConfig = NovexConversationConfigurationCodec.decode(ended.novexConfigurationJson, session.id)
             assertNull(endedConfig.activeInteractiveFiction)
             assertEquals(AnswerIdentity.CharacterVersion(role.original.id), endedConfig.answerIdentity)
@@ -253,7 +253,7 @@ class NovexJourneyPipelineTest {
             ui.runOnIdle { visible = false }
             runBlocking {
                 ChatViewModelStore.stopAndJoin(session.id); ChatViewModelStore.finishDeletion(session.id, false)
-                app.chatRepository.deleteSession(session.id)
+                app.chatRepository.dropSession(session.id)
                 app.novexWorkspace.apply(NovexCommand.DeleteCharacter(role.character.id))
                 app.novexWorkspace.apply(NovexCommand.DeleteInteractiveFiction(game.id))
                 app.novexWorkspace.apply(NovexCommand.DeleteWorld(world.id))

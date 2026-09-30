@@ -7,9 +7,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.openminis.app.ui.novex.Scaffold
+import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import com.openminis.app.ui.novex.TopAppBar
+import novex.android.ui.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
-import com.openminis.app.data.model.SystemVoiceEntries
+import novex.android.data.model.SystemVoiceEntries
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.components.PickerModalityFilter
 import com.openminis.app.ui.components.modelEntryPickerItems
@@ -45,14 +45,9 @@ fun AddModelsToGroupScreen(
     }
 
     val existingIds = group.memberEntryIds.toSet()
-    // [T-android-provider-voice] Voice-scoped picker: when the target group is
-    // bound as the Voice Input/Output group, scope the shared picker by
-    // modality (ASR = audio-in, TTS = audio-out). Modality filtering + System
-    // virtual entry injection live inside modelEntryPickerItems (mirrors iOS
-    // UnifiedModelPicker effectivePreferModality / candidateEntries).
+    // [P3.3 裁军] 语音 ASR/TTS 模态过滤分支随语音全家退役删除；仅保留
+    // Vision Group 的图像模态过滤。
     val modalityFilter = when (groupId) {
-        config.voiceInputGroupId -> PickerModalityFilter.AUDIO_INPUT
-        config.voiceOutputGroupId -> PickerModalityFilter.AUDIO_OUTPUT
         // [T-android-vision-group] Vision Group picker: only image-capable models.
         config.visionGroupId -> PickerModalityFilter.IMAGE_INPUT
         else -> null
@@ -63,7 +58,7 @@ fun AddModelsToGroupScreen(
 
     val searchQuery = remember { mutableStateOf("") }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
-    var quickTestEntry by remember { mutableStateOf<com.openminis.app.data.model.ModelEntry?>(null) }
+    var quickTestEntry by remember { mutableStateOf<novex.android.data.model.ModelEntry?>(null) }
     val collapsedInstanceIds = remember(config) {
         // T185: default-collapsed mirrors pre-refactor behaviour. The
         // shared picker auto-expands when search is non-empty so hits
@@ -83,7 +78,7 @@ fun AddModelsToGroupScreen(
                 title = { Text(stringResource(R.string.model_group_detail_add_models), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
+                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
                     }
                 },
                 actions = {
