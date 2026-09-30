@@ -114,8 +114,9 @@ fun CheckUpdateSection() {
     val downloadState by com.openminis.app.data.NovexUpdateDownload.state.collectAsState()
     val downloadProgress = (downloadState as? com.openminis.app.data.NovexUpdateDownload.State.Downloading)?.progress
     var installError by remember { mutableStateOf<String?>(null) }
-    val downloadError = installError
-        ?: (downloadState as? com.openminis.app.data.NovexUpdateDownload.State.Failed)?.message
+    // Failed 态文案（含签名不一致）优先于通用安装失败提示。
+    val downloadError = (downloadState as? com.openminis.app.data.NovexUpdateDownload.State.Failed)?.message
+        ?: installError
     var awaitingInstallPerm by remember { mutableStateOf(false) }
 
     // Resume the install flow on every ON_RESUME. There are two cases:
@@ -424,9 +425,12 @@ internal fun NovexUpdateHost(hub: NovexUpdateHub) {
             },
             downloadState = downloadState,
             onInstallAction = {
-                // 未授权时引导去开权限；返回后 ON_RESUME 观察器会自动拉起安装器。
-                if (!com.openminis.app.data.NovexUpdateDownload.install(context)) {
+                // 未授权才引导去开权限（返回后 ON_RESUME 观察器自动拉起安装器）；
+                // 签名不一致等其它失败由 NovexUpdateDownload 落 Failed 态文案呈现。
+                if (!UpdateChecker.canInstall(context)) {
                     UpdateChecker.openInstallPermissionSettings(context)
+                } else {
+                    com.openminis.app.data.NovexUpdateDownload.install(context)
                 }
             },
         )

@@ -64,6 +64,14 @@ object NovexUpdateDownload {
     fun install(context: Context): Boolean {
         val file = (_state.value as? State.Downloaded)?.file ?: return false
         if (!UpdateChecker.canInstall(context)) return false
+        if (!UpdateChecker.apkSignerMatches(context, file)) {
+            // 签名冲突在系统安装器里只有一句通用报错；提前拦截给出可执行提示。
+            PendingUpdateStore.clearPending(context)
+            _state.value = State.Failed(
+                "安装包与当前版本签名不一致，无法直接升级。请卸载当前版本后，从发布页重新下载安装。",
+            )
+            return false
+        }
         if (!UpdateChecker.installApk(context, file)) return false
         NovexUpdateMonitor.clearAvailable()
         _state.value = State.Idle

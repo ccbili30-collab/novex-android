@@ -715,6 +715,12 @@ object UpdateChecker {
                 outFile.delete()
                 return@withContext DownloadResult.Error("安装包不属于当前更新渠道，未安装。请重新检查更新。")
             }
+            if (!apkSignerMatches(context, outFile)) {
+                outFile.delete()
+                return@withContext DownloadResult.Error(
+                    "安装包与当前版本签名不一致，无法直接升级。请卸载当前版本后重新下载安装。",
+                )
+            }
             AppLogger.info(TAG, "Downloaded ${outFile.length()} bytes to ${outFile.absolutePath}")
             // Persist so a subsequent Activity recreate (e.g. after the user
             // returns from "install unknown apps" settings) can resume the
@@ -795,8 +801,8 @@ object UpdateChecker {
             return null
         }
         val file = PendingUpdateStore.verify(pending)
-        if (file == null || !matchesInstalledTrack(context, file)) {
-            AppLogger.info(TAG, "pending APK failed integrity or channel; clearing")
+        if (file == null || !matchesInstalledTrack(context, file) || !apkSignerMatches(context, file)) {
+            AppLogger.info(TAG, "pending APK failed integrity, channel, or signer check; clearing")
             PendingUpdateStore.clearPending(context)
             return null
         }
@@ -804,7 +810,7 @@ object UpdateChecker {
     }
 
     fun installApk(context: Context, apk: File): Boolean {
-        if (!matchesInstalledTrack(context, apk)) {
+        if (!matchesInstalledTrack(context, apk) || !apkSignerMatches(context, apk)) {
             PendingUpdateStore.clearPending(context)
             return false
         }
@@ -838,6 +844,43 @@ object UpdateChecker {
         info.packageName == context.packageName &&
             info.applicationInfo?.metaData?.getString("com.noven.player.UPDATE_CHANNEL") == currentChannel.wireName
     }.getOrDefault(false)
+
+    /**
+     * Whether [apk]'s signing certificate matches the installed app's. The
+     * system installer hard-rejects updates signed by a different key with
+     * only a generic "signature mismatch" toast — verify here so callers can
+     * show an actionable "uninstall the current build first" message instead.
+     */
+    internal fun apkSignerMatches(context: Context, apk: File): Boolean = runCatching {
+        val installed = installedSignerCerts(context)
+        val incoming = archiveSignerCerts(context, apk)
+        installed.isNotEmpty() && installed.size == incoming.size &&
+            installed.zip(incoming).all { (a, b) -> a.contentEquals(b) }
+    }.getOrDefault(false)
+
+    @Suppress("DEPRECATION")
+    private fun installedSignerCerts(context: Context): List<ByteArray> {
+        val pm = context.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+                .signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
+        } else {
+            pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+                .signatures?.map { it.toByteArray() }.orEmpty()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun archiveSignerCerts(context: Context, apk: File): List<ByteArray> {
+        val pm = context.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pm.getPackageArchiveInfo(apk.absolutePath, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES)
+                ?.signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
+        } else {
+            pm.getPackageArchiveInfo(apk.absolutePath, android.content.pm.PackageManager.GET_SIGNATURES)
+                ?.signatures?.map { it.toByteArray() }.orEmpty()
+        }
+    }
 
     /** Semantic-version comparison with a legacy fallback for old tags. */
     private fun compareVersions(a: String, b: String): Int = UpdateReleasePolicy.compareVersions(a, b)
