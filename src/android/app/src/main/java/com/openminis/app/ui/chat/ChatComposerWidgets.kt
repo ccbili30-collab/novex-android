@@ -16,6 +16,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -374,7 +376,7 @@ internal fun Modifier.novexClickable(
     )
 }
 
-/** 竖向交叠的三张卡：前卡完整描边，后两张只露出上边沿（指令卡入口图形）。 */
+/** 扇形张开的三张卡（指令卡入口图形）：左右两张各向两侧张开，中卡压顶。 */
 @Composable
 internal fun NovexCardStackGlyph(
     modifier: Modifier = Modifier,
@@ -382,42 +384,66 @@ internal fun NovexCardStackGlyph(
     fillColor: Color = ChatColors.inputBg,
 ) {
     androidx.compose.foundation.Canvas(modifier.size(20.dp)) {
-        val sw = 1.7.dp.toPx()
+        val sw = 1.6.dp.toPx()
         val w = size.width
         val h = size.height
-        val cw = w * 0.74f
-        val ch = h * 0.60f
-        val cx = (w - cw) / 2f
-        val top = h - ch - h * 0.04f
-        val rad = androidx.compose.ui.geometry.CornerRadius(2.6.dp.toPx())
+        val cw = w * 0.52f
+        val ch = h * 0.66f
+        val rad = androidx.compose.ui.geometry.CornerRadius(2.2.dp.toPx())
         val stroke = androidx.compose.ui.graphics.drawscope.Stroke(sw)
-        drawRoundRect(
-            color = tint.copy(alpha = 0.30f),
-            topLeft = androidx.compose.ui.geometry.Offset(cx, top - h * 0.22f),
-            size = androidx.compose.ui.geometry.Size(cw, ch),
-            cornerRadius = rad,
-            style = stroke,
-        )
-        drawRoundRect(
-            color = tint.copy(alpha = 0.55f),
-            topLeft = androidx.compose.ui.geometry.Offset(cx, top - h * 0.11f),
-            size = androidx.compose.ui.geometry.Size(cw, ch),
-            cornerRadius = rad,
-            style = stroke,
-        )
-        // 前卡先填底色遮住后卡的下缘线条，再描边。
+        val pivot = androidx.compose.ui.geometry.Offset(w / 2f, h * 0.90f)
+        val cardTop = pivot.y - ch
+        // 左右两张后卡：绕底部中点向外张开，填底色防线条互透。
+        for ((deg, alpha) in listOf(-16f to 0.45f, 16f to 0.45f)) {
+            withTransform({
+                rotate(degrees = deg, pivot = pivot)
+            }) {
+                drawRoundRect(
+                    color = fillColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop),
+                    size = androidx.compose.ui.geometry.Size(cw, ch),
+                    cornerRadius = rad,
+                )
+                drawRoundRect(
+                    color = tint.copy(alpha = alpha),
+                    topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop),
+                    size = androidx.compose.ui.geometry.Size(cw, ch),
+                    cornerRadius = rad,
+                    style = stroke,
+                )
+            }
+        }
+        // 中卡压顶：实底 + 全色描边。
         drawRoundRect(
             color = fillColor,
-            topLeft = androidx.compose.ui.geometry.Offset(cx, top),
+            topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop + h * 0.02f),
             size = androidx.compose.ui.geometry.Size(cw, ch),
             cornerRadius = rad,
         )
         drawRoundRect(
             color = tint,
-            topLeft = androidx.compose.ui.geometry.Offset(cx, top),
+            topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop + h * 0.02f),
             size = androidx.compose.ui.geometry.Size(cw, ch),
             cornerRadius = rad,
             style = stroke,
+        )
+    }
+}
+
+/** 小卡片标（卡行行首）：一张竖立圆角卡片的剪影。 */
+@Composable
+internal fun NovexMiniCardGlyph(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.Canvas(modifier.size(20.dp)) {
+        val cw = size.width * 0.62f
+        val ch = size.height * 0.80f
+        drawRoundRect(
+            color = color,
+            topLeft = androidx.compose.ui.geometry.Offset((size.width - cw) / 2f, (size.height - ch) / 2f),
+            size = androidx.compose.ui.geometry.Size(cw, ch),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.4.dp.toPx()),
         )
     }
 }

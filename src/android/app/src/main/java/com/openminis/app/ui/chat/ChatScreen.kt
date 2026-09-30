@@ -3327,20 +3327,21 @@ fun ChatScreen(
                                 key = { i -> "novexctl:$i" },
                             ) { i ->
                                 val control = novexControls[i]
-                                // [A2c-cards] 银卡=矩形卡片本体，不再嵌图标片。
+                                // [A2c-cards] 银卡行=普通行 + 行首银色小卡片标，
+                                // 不再嵌功能图标。
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 3.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(ChatColors.secondaryBg)
                                         .novexClickable {
                                             viewModel.setInputText(viewModel.dismissSlashMenu(inputText))
                                             viewModel.runNovexControl(control)
                                         }
-                                        .padding(horizontal = 13.dp, vertical = 9.dp),
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    NovexMiniCardGlyph(color = ChatColors.secondaryText.copy(alpha = 0.65f))
+                                    Spacer(modifier = Modifier.width(11.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = control.label,
@@ -3425,14 +3426,7 @@ fun ChatScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 3.dp)
                                         .clip(RoundedCornerShape(9.dp))
-                                        .background(
-                                            // 金卡=矩形卡片本体：低透明度金色铺底，
-                                            // 激活态换薄荷。
-                                            if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint.copy(alpha = 0.14f)
-                                            else Color(0xFF9A7B2D).copy(alpha = 0.10f),
-                                        )
                                         .let {
                                             if (!isThinking) {
                                                 it.novexClickable {
@@ -3464,9 +3458,14 @@ fun ChatScreen(
                                                 }
                                             } else it
                                         }
-                                        .padding(horizontal = 13.dp, vertical = 9.dp),
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    // 行首小卡片标：金组金色、思考激活态薄荷。
+                                    NovexMiniCardGlyph(
+                                        color = if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint else Color(0xFFC9A24B),
+                                    )
+                                    Spacer(modifier = Modifier.width(11.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = cardName,
