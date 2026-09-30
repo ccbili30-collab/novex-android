@@ -76,7 +76,7 @@ internal class TaskDoneNotifier(
 
     // ── 组装三层 ─────────────────────────────────────────────────────
 
-    private fun compose(sessionId: String, failed: Boolean): Copy {
+    private suspend fun compose(sessionId: String, failed: Boolean): Copy {
         val stored = chatRepository.sessionById(sessionId)?.title?.takeIf { it.isNotBlank() }
         val headline = when {
             failed -> "❌ ${stored ?: context.getString(R.string.notif_task_completed_default_title)}"
