@@ -1,24 +1,37 @@
 package com.openminis.app.data.repository
 
-import android.database.sqlite.SQLiteBlobTooBigException
-import com.openminis.app.data.ConversationBranchGraph
 import novex.android.data.chat.ChatDao
-import novex.android.data.chat.SessionRow
 import novex.android.data.chat.CompactMarkerRow
-import novex.android.data.chat.SessionFolderRow
-import novex.android.data.chat.MessageRow
-import novex.android.data.chat.ContextUsageRow
-import novex.core.ContextUsageRecord
-import novex.core.NovexContextUsageCodec
-import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 
+import novex.android.repo.MessagePreviews
+import novex.android.repo.TranscriptPager
+import novex.android.data.chat.ContextUsageRow
+import novex.android.data.chat.MessageRow
+import novex.android.data.chat.SessionFolderRow
+import novex.android.data.chat.SessionRow
+import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * 会话仓库门面 —— sessions / messages / folders 三张表之上的业务层。
+ *
+ * P3.5a 重写后的职责划分：
+ *  - 分页读取与 CursorWindow 兜底在 [TranscriptPager]；
+ *  - parts_json 的文本投影在 [MessagePreviews]；
+ *  - offload 用的三条大查询在 [ChatArchiveQueries]（扩展函数）；
+ *  - SQL 与事务全部留在 novex.android.data.chat 的 DAO。
+ *
+ * 门面本身只做三件事：把调用方的意图编排成 DAO 调用、维护分支图
+ * （ConversationBranchGraph）与持久化路径锚点的一致性、保证写入前的
+ * 防御性约束（超长截断、级联删除）。
+ */
 class ChatRepository(internal val dao: ChatDao) {
 
+    /** 一场会话的完整视图：全量行、活跃路径行、分支图。 */
     data class ActiveConversation(
         val allMessages: List<MessageRow>,
         val activeMessages: List<MessageRow>,
-        val graph: ConversationBranchGraph,
+        val graph: com.openminis.app.data.ConversationBranchGraph,
     )
 
     data class DeletedConversationBranch(
@@ -26,16 +39,17 @@ class ChatRepository(internal val dao: ChatDao) {
         val deletedMessages: List<MessageRow>,
     )
 
+    private val pager = TranscriptPager(dao)
+
+    // ── 会话行 ─────────────────────────────────────────────────────────
+
     fun observeSessionIndex(): Flow<List<SessionRow>> = dao.observeSessionIndex()
 
     suspend fun createSession(
         modelId: String,
         title: String? = null,
-        // [T-memory-global-toggle-settings-ui-android] honor the global
-        // memory default at row-insert time. Caller (ChatViewModel) reads
-        // MemoryGlobalPrefs.isGlobalEnabled and passes the value through
-        // here; existing call sites that omit it keep the prior
-        // memoryEnabled=1 behavior (legacy default).
+        // 建行时落全局记忆默认值（调用方读 MemoryGlobalPrefs 传入）；省略
+        // 的旧调用点保持 memoryEnabled=1 的历史默认。
         memoryEnabled: Boolean = true,
         characterId: String? = null,
         characterSnapshotJson: String? = null,
@@ -59,13 +73,13 @@ class ChatRepository(internal val dao: ChatDao) {
         runtimeDiceEnabled: Int = 0,
         runtimeLedgerEnabled: Int = 0,
     ): SessionRow {
-        val now = System.currentTimeMillis()
-        val session = SessionRow(
+        val stamp = System.currentTimeMillis()
+        val row = SessionRow(
             id = UUID.randomUUID().toString(),
             title = title,
             modelId = modelId,
-            createdAt = now,
-            updatedAt = now,
+            createdAt = stamp,
+            updatedAt = stamp,
             memoryEnabled = if (memoryEnabled) 1 else 0,
             characterId = characterId,
             characterSnapshotJson = characterSnapshotJson,
@@ -89,29 +103,27 @@ class ChatRepository(internal val dao: ChatDao) {
             runtimeLedgerEnabled = runtimeLedgerEnabled,
             sideOfSession = sideOfSession,
         )
-        dao.upsertSession(session)
-        return session
+        dao.upsertSession(row)
+        return row
     }
 
-    /** Per-parent cap for side conversations (user decision 2026-09-14). */
+    /** 每条主线的侧边对话上限（用户裁决 2026-09-14）。 */
     val MAX_SIDE_CONVERSATIONS = 10
 
     /**
-     * [T-side-naming] 新侧边对话命名「侧边 N」（2026-09-16 用户决策：不再拼
-     * 主对话标题）。N 取现有侧边编号的最大值 +1——新旧两种命名（「侧边 N」/
-     * 「主对话标题·侧N」）都参与计数，删除中间一条后新建也不会重号。
+     * 开一条侧边对话：继承主线全部呈现设定，标题取「侧边 N」（N = 现有
+     * 编号最大值 + 1，新旧命名都计数，删除中间条目后不重号）。记忆默认关
+     * 闭 —— 主线记忆由分裂点快照提供，再写全局库是重复污染；用户可自行打开。
      */
     suspend fun createSideSession(parentId: String): SessionRow {
         val parent = requireNotNull(dao.sessionById(parentId)) { "主对话不存在" }
-        val existingSides = dao.sideSessionsOf(parentId)
-        require(existingSides.size < MAX_SIDE_CONVERSATIONS) {
+        val sides = dao.sideSessionsOf(parentId)
+        require(sides.size < MAX_SIDE_CONVERSATIONS) {
             "侧边对话最多 ${MAX_SIDE_CONVERSATIONS} 条，请先删除旧的"
         }
-        val side = createSession(
-            title = nextSideConversationTitle(existingSides.map { it.title ?: "" }),
+        return createSession(
+            title = nextSideConversationTitle(sides.map { it.title.orEmpty() }),
             modelId = parent.modelId,
-            // [决策 9] 侧边默认关记忆：主线记忆由分裂点快照提供（另批实现），
-            // 再写全局记忆库是重复且污染；用户可自行打开。
             memoryEnabled = false,
             characterId = parent.characterId,
             characterSnapshotJson = parent.characterSnapshotJson,
@@ -135,78 +147,17 @@ class ChatRepository(internal val dao: ChatDao) {
             novexConfigurationJson = parent.novexConfigurationJson,
             sideOfSession = parentId,
         )
-        return side
     }
 
     suspend fun sideSessionsOf(parentId: String): List<SessionRow> = dao.sideSessionsOf(parentId)
 
     suspend fun sessionById(id: String): SessionRow? = dao.sessionById(id)
 
-    suspend fun saveComposerDraft(id: String, text: String) = dao.saveComposerDraft(id, text.takeIf { it.isNotEmpty() })
+    suspend fun saveComposerDraft(id: String, text: String) =
+        dao.saveComposerDraft(id, text.takeIf { it.isNotEmpty() })
 
-    /** All persisted token_usage JSON strings for a session (one per LLM call). */
+    /** 会话全部 token_usage JSON 串（每次 LLM 调用一条）。 */
     suspend fun sessionTokenUsages(sessionId: String): List<String> = dao.tokenUsageJsonFor(sessionId)
-
-    suspend fun recordNovexContextUsage(sessionId: String, record: ContextUsageRecord) {
-        dao.recordContextUsage(
-            ContextUsageRow(
-                id = record.id,
-                sessionId = sessionId,
-                requestMessageId = record.requestMessageId,
-                responseMessageId = record.responseMessageId,
-                branchId = record.branchId,
-                payloadJson = NovexContextUsageCodec.encode(record),
-                createdAt = record.createdAt,
-            ),
-        )
-    }
-
-    suspend fun novexContextUsage(sessionId: String): List<ContextUsageRecord> =
-        dao.contextUsageFor(sessionId).mapNotNull { row ->
-            runCatching { NovexContextUsageCodec.decode(row.payloadJson) }.getOrNull()
-        }
-
-    /**
-     * [T-android-session-paused-badge-hardkill] Session ids whose agent loop was
-     * left interrupted, derived purely from the persisted message tail — so the
-     * PAUSED badge survives a hard process death (where the lifecycle-callback
-     * push never runs). Lightweight: one query for the last message per session,
-     * then the SAME interrupted-tail predicate as ChatViewModel.loadSession's
-     * detection (kept in sync intentionally). Mirrors iOS
-     * ChatStore.interruptedSessionIds.
-     */
-    suspend fun interruptedSessionIds(): Set<String> {
-        val tails = runCatching { dao.sessionTails() }.getOrElse { emptyList() }
-        val result = HashSet<String>()
-        for (row in tails) {
-            if (isInterruptedTail(row.role, row.partsJson)) result.add(row.sessionId)
-        }
-        return result
-    }
-
-    /**
-     * [T-android-session-paused-badge-hardkill] The interrupted-tail predicate
-     * over a raw `parts_json` string, matching ChatViewModel.loadSession's
-     * AgentContentPart-based logic:
-     *   - role USER + ALL parts are tool_result (tools ran, next model call never
-     *     fired), OR
-     *   - role ASSISTANT + any tool_use part (model asked for tools that never ran)
-     * Part type discriminator is the JSON "type" field — the @SerialName values
-     * from [novex.android.data.model.ContentPart]: "toolUse" / "toolResult"
-     * / "text" (camelCase, NOT snake_case).
-     */
-    private fun isInterruptedTail(role: String, partsJson: String): Boolean {
-        val arr = runCatching { org.json.JSONArray(partsJson) }.getOrNull() ?: return false
-        val types = ArrayList<String>(arr.length())
-        for (i in 0 until arr.length()) {
-            arr.optJSONObject(i)?.let { types.add(it.optString("type")) }
-        }
-        val singleText = arr.takeIf { it.length() == 1 }
-            ?.optJSONObject(0)
-            ?.takeIf { it.optString("type") == "text" }
-            ?.optString("value")
-        return com.openminis.app.ui.chat.isInterruptedAgentTail(role, types, singleText)
-    }
 
     suspend fun renameSession(id: String, title: String) {
         dao.renameSession(id, title, System.currentTimeMillis())
@@ -228,6 +179,7 @@ class ChatRepository(internal val dao: ChatDao) {
         sessionId: String,
         settings: com.openminis.app.data.ConversationSettingsSnapshot,
     ) {
+        // 归一化后落库：空串 → null，开关 → 0/1，保证读回语义稳定。
         val value = com.openminis.app.data.normalizeConversationSettings(settings)
         dao.writeConversationSettings(
             sessionId = sessionId,
@@ -251,31 +203,42 @@ class ChatRepository(internal val dao: ChatDao) {
         dao.rebindSessionModel(sessionId, binding, modelId)
     }
 
-    /** [T-side-snapshot] 按消息 ID 只读拉取（分裂点快照回放用，认 ID 不认活跃路径）。 */
-    suspend fun findMessageById(messageId: String) = dao.messageById(messageId)
-
-    suspend fun markAssistantTextFormal(messageId: String) {
-        val row = dao.messageById(messageId) ?: return
-        require(row.role == "assistant")
-        val parts = org.json.JSONArray(row.partsJson)
-        for (index in 0 until parts.length()) {
-            val part = parts.getJSONObject(index)
-            if (part.optString("type") == "text") part.put("execution", false)
-        }
-        dao.overwriteAssistantBody(messageId, parts.toString(), row.tokenUsage, row.reasoningContent)
-    }
-
+    /**
+     * 删除会话（级联其侧边对话 —— 侧边从属主线，留着只会变成列表里永远
+     * 看不到的孤儿）。这是 UI 各入口共用的唯一删除路径。
+     */
     suspend fun dropSession(id: String) {
-        // Cascade: deleting a main line takes its side conversations with it —
-        // they are subordinate (side_of_session) and would otherwise become
-        // unreachable orphans, invisible in the session list forever.
         dao.sideSessionsOf(id).forEach { side -> dao.removeConversation(side.id) }
         dao.removeConversation(id)
     }
 
-    // ─── Session groups ("folders") ────────────────────────────────────────
-    // [T-android-session-grouping] Ported from iOS ChatStore's Folders section.
-    // Code says Folder, UI says Group — see SessionFolderRow for why.
+    /**
+     * 中断会话 id 集：只看各会话消息尾部的形状（user 尾全 tool_result /
+     * assistant 尾含未执行 tool_use），让 PAUSED 徽标挺过硬杀进程 ——
+     * 生命周期回调里的上报在硬杀时根本没跑。与 ChatViewModel.loadSession
+     * 的判据刻意保持同一份。
+     */
+    suspend fun interruptedSessionIds(): Set<String> {
+        val tails = runCatching { dao.sessionTails() }.getOrElse { emptyList() }
+        val interrupted = HashSet<String>()
+        for (tail in tails) {
+            if (interruptedTail(tail.role, tail.partsJson)) interrupted.add(tail.sessionId)
+        }
+        return interrupted
+    }
+
+    private fun interruptedTail(role: String, partsJson: String): Boolean {
+        val array = runCatching { org.json.JSONArray(partsJson) }.getOrNull() ?: return false
+        val types = ArrayList<String>(array.length())
+        for (i in 0 until array.length()) {
+            array.optJSONObject(i)?.let { types.add(it.optString("type")) }
+        }
+        val onlyText = array.takeIf { it.length() == 1 }?.optJSONObject(0)
+            ?.takeIf { it.optString("type") == "text" }?.optString("value")
+        return com.openminis.app.ui.chat.isInterruptedAgentTail(role, types, onlyText)
+    }
+
+    // ── 分组（UI 叫「分组」，行叫 Folder）──────────────────────────────
 
     fun observeFolders(): Flow<List<SessionFolderRow>> = dao.observeFolders()
 
@@ -283,37 +246,27 @@ class ChatRepository(internal val dao: ChatDao) {
 
     suspend fun getFolder(id: String): SessionFolderRow? = dao.folderById(id)
 
-    /**
-     * Create a group. The description is trimmed and capped at
-     * [SessionFolderRow.DESCRIPTION_MAX_CHARS]; blank collapses to null so "no
-     * description" is one value rather than two.
-     */
     suspend fun createFolder(
         name: String,
         description: String? = null,
         origin: String = SessionFolderRow.MANUAL_ORIGIN,
     ): SessionFolderRow {
-        val now = System.currentTimeMillis()
+        val stamp = System.currentTimeMillis()
         val folder = SessionFolderRow(
             id = UUID.randomUUID().toString(),
             name = name.trim(),
             origin = origin,
             description = description?.trim()?.take(SessionFolderRow.DESCRIPTION_MAX_CHARS)?.ifBlank { null },
-            createdAt = now,
-            updatedAt = now,
+            createdAt = stamp,
+            updatedAt = stamp,
         )
         dao.upsertFolder(folder)
         return folder
     }
 
     /**
-     * Rename / re-describe. The UUID key is untouched, so members never move —
-     * that is the whole reason the group is keyed by UUID and not by name.
-     *
-     * @param description null LEAVES the stored value alone; an empty string
-     *   clears it. Callers that always pass the field through (e.g. a rename
-     *   dialog) must therefore seed the field from the current value, or they
-     *   will wipe descriptions they never meant to touch.
+     * 改名 / 改描述。UUID 主键不动，成员永不迁移。description 参数：
+     * null = 保留现值，空串 = 清除 —— 直传字段的调用方必须先播种现值。
      */
     suspend fun renameFolder(id: String, name: String, description: String? = null) {
         val trimmed = name.trim()
@@ -326,25 +279,18 @@ class ChatRepository(internal val dao: ChatDao) {
         )
     }
 
-    /** @return the new pinned state. Bumps `updated_at` so the edit is stamped. */
+    /** 翻转置顶；返回翻转后的状态。同时盖 updated_at 让改动留痕。 */
     suspend fun toggleFolderPin(id: String): Boolean {
         val current = dao.folderById(id) ?: return false
-        val nowPinned = current.pinnedAt == null
-        val now = System.currentTimeMillis()
-        dao.setFolderPinStamp(id, if (nowPinned) now else null, now)
-        return nowPinned
+        val pinNow = current.pinnedAt == null
+        dao.setFolderPinStamp(id, if (pinNow) System.currentTimeMillis() else null, System.currentTimeMillis())
+        return pinNow
     }
 
     /**
-     * Dissolve a group: drop the group row and return its members to ungrouped.
-     * **No session is deleted** — this is the ONLY delete operation on a group,
-     * and it can never cost the user a conversation.
-     *
-     * Members are read BEFORE the clear because the ids are the return value
-     * (callers use them to refresh, and a future sync layer would need them to
-     * push each freed session).
-     *
-     * @return ids of the sessions that became ungrouped.
+     * 解散分组：成员全部回到未分组，**不删任何会话** —— 这是分组唯一的
+     * 删除性操作，永远不可能让用户丢对话。成员 id 在清空前先读出来，供
+     * 调用方刷新（也是未来同步层要推送的对象）。
      */
     suspend fun dissolveFolder(id: String): List<String> {
         val memberIds = dao.sessionIdsFiledUnder(id)
@@ -355,32 +301,20 @@ class ChatRepository(internal val dao: ChatDao) {
 
     suspend fun sessionIdsFiledUnder(folderId: String): List<String> = dao.sessionIdsFiledUnder(folderId)
 
-    /**
-     * Move sessions into a group, or out of one when [folderId] is null.
-     *
-     * Writes only `folder_id`, never `updated_at` — filing is organizational
-     * and must not re-sort the session list.
-     */
+    /** 归档是组织行为，只写 folder_id、不盖 updated_at（不能因此重排会话列表）。 */
     suspend fun setFolderForSessions(folderId: String?, sessionIds: List<String>) {
         if (sessionIds.isEmpty()) return
-        for (sid in sessionIds) dao.setSessionFolder(sid, folderId)
+        for (sessionId in sessionIds) dao.setSessionFolder(sessionId, folderId)
     }
 
     /**
-     * File a session only if it is still ungrouped. The condition is part of the
-     * UPDATE, so a hand-filed session can never be overridden by an automatic
-     * write racing it.
-     *
-     * @return true if this call actually filed the session.
+     * 仅当仍处于未分组状态时归入。条件写进 UPDATE 本身，自动归档永远
+     * 不可能赢过与它并发的手工归档。返回本次是否真的归了档。
      */
     suspend fun setFolderIfUnfiled(folderId: String, sessionId: String): Boolean =
         dao.claimUnfiledSession(sessionId, folderId) > 0
 
-    /**
-     * Name → group, case- and whitespace-insensitive. Duplicate-tolerant by
-     * construction (names are not unique); returns the most recently updated
-     * match, which is what [listFolders]' ordering already puts first.
-     */
+    /** 名字 → 分组（大小写与空白不敏感）。重名容忍：取最近更新的那个。 */
     suspend fun findFolderByName(name: String): SessionFolderRow? {
         val needle = name.trim().lowercase()
         if (needle.isEmpty()) return null
@@ -390,89 +324,38 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun searchSessions(query: String): List<SessionRow> =
         dao.searchSessions("%$query%")
 
+    // ── 消息读取与分支 ─────────────────────────────────────────────────
+
     fun observeHistory(sessionId: String): Flow<List<MessageRow>> =
         dao.observeHistory(sessionId)
 
-    /**
-     * Load all messages for a session in bounded pages instead of a
-     * single SELECT * batch. The legacy `dao.loadMessages` path issued
-     * one query whose Cursor result, once materialised, easily exceeded
-     * the per-CursorWindow 2 MB ceiling on a session containing even one
-     * large tool_result blob (Issue #17) — Android then aborted with
-     * SQLiteBlobTooBigException and the chat loader hung the UI thread.
-     *
-     * This paginated loader keeps each underlying query small enough that
-     * the CursorWindow can hold a normal-shaped page. If a single page
-     * still contains an individual >2MB row we fall back to fetching
-     * that range row-by-row and substitute a proxy MessageRow for
-     * any single row that genuinely can't be materialised — the
-     * transcript stays continuous instead of crashing the load.
-     *
-     * Existing oversized rows are not migrated; new oversized inserts
-     * are prevented by the cap in [appendMessage].
-     */
-    suspend fun historyFor(sessionId: String): List<MessageRow> {
-        // T-android-crash-safe-mode-v2: defensive guard. ChatViewModel.loadSession
-        // is already gated upstream, but loadMessages has other call sites
-        // (compaction, fork, regenerate-title, debug menu) that could fire
-        // from a foreground retry or a Flow collector before the safe-mode
-        // dialog is dismissed. Returning an empty list mirrors the "no rows
-        // for this session" branch and is harmless for every caller.
-        if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
-            android.util.Log.w(
-                "ChatRepository",
-                "loadMessages: safe-mode active, skipping (sessionId=$sessionId)",
-            )
-            return emptyList()
-        }
-        val total = dao.messageCountIn(sessionId)
-        if (total == 0) return emptyList()
-        val out = ArrayList<MessageRow>(total)
-        var offset = 0
-        while (offset < total) {
-            val limit = LOAD_PAGE_SIZE
-            val page = try {
-                dao.messagePage(sessionId, offset, limit)
-            } catch (e: SQLiteBlobTooBigException) {
-                // Fall back to single-row pages so we can isolate the
-                // offending blob(s) and serve the rest of the slice.
-                loadPageRowByRow(sessionId, offset, limit)
-            } catch (e: IllegalStateException) {
-                // Some Room/SQLite combinations wrap the CursorWindow
-                // overflow in IllegalStateException("Couldn't read row N,
-                // col N from CursorWindow"); treat the same way.
-                if (e.message?.contains("CursorWindow", ignoreCase = true) == true) {
-                    loadPageRowByRow(sessionId, offset, limit)
-                } else {
-                    throw e
-                }
-            }
-            if (page.isEmpty()) break
-            out.addAll(page)
-            offset += limit
-        }
-        return out
+    suspend fun historyFor(sessionId: String): List<MessageRow> = pager.loadAll(sessionId)
+
+    suspend fun messageCount(sessionId: String): Int = dao.messageCountIn(sessionId)
+
+    /** UI、模型上下文、导出共用的那条「活跃路径」视图。 */
+    suspend fun loadActiveConversation(sessionId: String): ActiveConversation {
+        val rows = pager.loadAll(sessionId)
+        return conversationOver(sessionId, rows)
     }
 
-    /** Resolve the one persisted path shared by UI, model context and preview. */
-    suspend fun loadActiveConversation(sessionId: String): ActiveConversation {
-        val all = historyFor(sessionId)
-        val state = dao.branchAnchorsOf(sessionId)
-        val graph = ConversationBranchGraph.open(
-            nodes = all.map { row ->
-                ConversationBranchGraph.Node(
+    private suspend fun conversationOver(sessionId: String, rows: List<MessageRow>): ActiveConversation {
+        val anchors = dao.branchAnchorsOf(sessionId)
+        val graph = com.openminis.app.data.ConversationBranchGraph.open(
+            nodes = rows.map { row ->
+                com.openminis.app.data.ConversationBranchGraph.Node(
                     id = row.id,
                     parentId = row.parentMessageId,
                     activeChildId = row.activeChildId,
                     order = row.sortOrder,
                 )
             },
-            activeRootId = state?.activeRootMessageId ?: all.firstOrNull()?.id,
-            activeLeafId = state?.activeLeafMessageId ?: all.lastOrNull()?.id,
+            activeRootId = anchors?.activeRootMessageId ?: rows.firstOrNull()?.id,
+            activeLeafId = anchors?.activeLeafMessageId ?: rows.lastOrNull()?.id,
         )
-        val byId = all.associateBy(MessageRow::id)
+        val byId = rows.associateBy(MessageRow::id)
         return ActiveConversation(
-            allMessages = all,
+            allMessages = rows,
             activeMessages = graph.activePathIds.mapNotNull(byId::get),
             graph = graph,
         )
@@ -481,33 +364,31 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun loadActiveMessages(sessionId: String): List<MessageRow> =
         loadActiveConversation(sessionId).activeMessages
 
-    /** Latest summary whose persisted boundary belongs to the selected path. */
+    /** 落在当前所选路径上的最新摘要边界（更旧的 marker 只服务旧路径）。 */
     suspend fun latestActiveCompactMarker(
         sessionId: String,
         activeMessages: List<MessageRow>,
     ): CompactMarkerRow? {
         val activeIds = activeMessages.mapTo(hashSetOf(), MessageRow::id)
         return dao.markersFor(sessionId).asReversed().firstOrNull { marker ->
-            val anchorId = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
+            val anchor = marker.lastCompactedMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.firstKeptMessageId?.takeIf(String::isNotEmpty)
                 ?: marker.boundaryMessageId?.takeIf(String::isNotEmpty)
-            (anchorId == null || anchorId in activeIds) && (marker.version < 3 || marker.firstKeptMessageId in activeIds)
+            (anchor == null || anchor in activeIds) && (marker.version < 3 || marker.firstKeptMessageId in activeIds)
         }
     }
 
     suspend fun forkReplyFrom(sessionId: String, messageId: String): ActiveConversation =
-        mutateConversationBranch(sessionId) { it.forkReplyFrom(messageId) }
+        mutateBranch(sessionId) { it.forkReplyFrom(messageId) }
 
     suspend fun forkEditedMessageFrom(sessionId: String, messageId: String): ActiveConversation =
-        mutateConversationBranch(sessionId) { it.forkEditedMessageFrom(messageId) }
+        mutateBranch(sessionId) { it.forkEditedMessageFrom(messageId) }
 
     suspend fun switchMessageSibling(
         sessionId: String,
         messageId: String,
         delta: Int,
-    ): ActiveConversation = mutateConversationBranch(sessionId) {
-        it.switchSibling(messageId, delta)
-    }
+    ): ActiveConversation = mutateBranch(sessionId) { it.switchSibling(messageId, delta) }
 
     suspend fun deleteMessageBranch(
         sessionId: String,
@@ -515,78 +396,62 @@ class ChatRepository(internal val dao: ChatDao) {
     ): DeletedConversationBranch {
         val before = loadActiveConversation(sessionId)
         val plan = before.graph.deleteBranchFrom(messageId)
-        val deleted = before.allMessages.filter { it.id in plan.deletedMessageIds }
+        val removed = before.allMessages.filter { it.id in plan.deletedMessageIds }
         return DeletedConversationBranch(
-            conversation = applyConversationBranchMutation(sessionId, before, plan),
-            deletedMessages = deleted,
+            conversation = commitBranchPlan(sessionId, before, plan),
+            deletedMessages = removed,
         )
     }
 
-    private suspend fun mutateConversationBranch(
+    private suspend fun mutateBranch(
         sessionId: String,
-        mutation: (ConversationBranchGraph) -> ConversationBranchGraph.Mutation,
+        plan: (com.openminis.app.data.ConversationBranchGraph) -> com.openminis.app.data.ConversationBranchGraph.Mutation,
     ): ActiveConversation {
         val before = loadActiveConversation(sessionId)
-        val plan = mutation(before.graph)
-        return applyConversationBranchMutation(sessionId, before, plan)
+        return commitBranchPlan(sessionId, before, plan(before.graph))
     }
 
-    private suspend fun applyConversationBranchMutation(
+    /** 把图算法产出的路径变更一次性落库，再回读新的活跃视图。 */
+    private suspend fun commitBranchPlan(
         sessionId: String,
         before: ActiveConversation,
-        plan: ConversationBranchGraph.Mutation,
+        plan: com.openminis.app.data.ConversationBranchGraph.Mutation,
     ): ActiveConversation {
         val byId = before.allMessages.associateBy(MessageRow::id)
         val activeRows = plan.activePathIds.mapNotNull(byId::get)
-        val preview = activeRows.lastOrNull()?.let { extractTextPreview(it.partsJson) }
         dao.applyBranchMutation(
             sessionId = sessionId,
             rootId = plan.activeRootId,
             leafId = plan.activeLeafId,
             childUpdates = plan.activeChildUpdates,
             deletedMessageIds = plan.deletedMessageIds,
-            preview = preview,
+            preview = activeRows.lastOrNull()?.let { MessagePreviews.previewOf(it.partsJson) },
             updatedAt = System.currentTimeMillis(),
         )
         return loadActiveConversation(sessionId)
     }
 
-    private suspend fun loadPageRowByRow(
-        sessionId: String,
-        baseOffset: Int,
-        limit: Int,
-    ): List<MessageRow> {
-        val result = ArrayList<MessageRow>(limit)
-        for (i in 0 until limit) {
-            val row = try {
-                dao.messagePage(sessionId, baseOffset + i, 1).firstOrNull()
-            } catch (e: SQLiteBlobTooBigException) {
-                null
-            } catch (e: IllegalStateException) {
-                if (e.message?.contains("CursorWindow", ignoreCase = true) == true) null else throw e
-            } ?: continue
-            result.add(row)
-        }
-        return result
-    }
-
-    /** [T-error-persist-android] Set/clear the error sticker on a row by id. */
-    suspend fun setMessageSticker(messageId: String, errorInfo: String?) =
-        dao.setMessageSticker(messageId, errorInfo)
+    /** 按消息 ID 只读拉取（分裂点快照回放：认 ID 不认活跃路径）。 */
+    suspend fun findMessageById(messageId: String) = dao.messageById(messageId)
 
     /**
-     * Set/clear the error sticker on the selected path's last assistant row.
-     * A later-created sibling may have a larger sort order, so the legacy
-     * session-wide "last assistant" query is not branch safe.
+     * 原始行分页 —— 导出流式读长会话用（区别于 [loadMessagePage] 的投影
+     * 裁剪，这里保留完整 parts_json 供序列化）。
      */
-    suspend fun updateLastActiveAssistantError(sessionId: String, errorInfo: String?) {
-        val messages = loadActiveConversation(sessionId).activeMessages
-        val assistant = messages.indexOfLast { it.role.equals("assistant", ignoreCase = true) }
-        val user = messages.indexOfLast { it.role.equals("user", ignoreCase = true) }
-        // A new user turn without a persisted reply must not mark the previous reply.
-        if (assistant > user) dao.setMessageSticker(messages[assistant].id, errorInfo)
-    }
+    suspend fun loadMessagePageRaw(
+        sessionId: String,
+        offset: Int,
+        limit: Int,
+    ): List<MessageRow> = dao.messagePage(sessionId, offset, limit)
 
+    // ── 消息写入 ───────────────────────────────────────────────────────
+
+    /**
+     * 追加一条消息。parts_json 超 [MAX_MESSAGE_PARTS_JSON_LENGTH] 时截断并
+     * 包成单文本部件（Issue #17：超长 tool_result 落库后读回必然炸
+     * CursorWindow）。助手回合走 checkpointRunningTurn —— 首次落行、此后
+     * 原位重写，回合在分支图上的槽位保持不变。
+     */
     suspend fun appendMessage(
         sessionId: String,
         role: String,
@@ -595,571 +460,142 @@ class ChatRepository(internal val dao: ChatDao) {
         reasoningContent: String? = null,
         messageId: String = UUID.randomUUID().toString(),
     ): MessageRow {
-        val now = System.currentTimeMillis()
-        // Cap the body so a runaway tool_result (e.g. a 13 MB browser_use
-        // dump — Issue #17) cannot land an oversize blob into a Room row
-        // that later fails CursorWindow's 2 MB ceiling on read. We keep
-        // the row in the same parts_json shape (text part) so downstream
-        // parsers — UI rendering and JSON-array consumers in DAO/search
-        // — never break on the truncated payload.
+        val stamp = System.currentTimeMillis()
         val capped = if (partsJson.length > MAX_MESSAGE_PARTS_JSON_LENGTH) {
             buildTruncatedPartsJson(partsJson)
         } else {
             partsJson
         }
-        val message = MessageRow(
+        val row = MessageRow(
             id = messageId,
             sessionId = sessionId,
             role = role,
             partsJson = capped,
-            createdAt = now,
+            createdAt = stamp,
             tokenUsage = tokenUsage,
-            // Assigned inside appendMessageOnActivePath's database transaction.
-            sortOrder = -1,
+            sortOrder = -1, // 由 appendOnActivePath 的事务赋予真实序号。
             reasoningContent = reasoningContent,
         )
-        val preview = extractTextPreview(capped)
-        return if (role == "assistant") dao.checkpointRunningTurn(message, preview, now)
-        else dao.appendOnActivePath(message, preview, now)
+        val preview = MessagePreviews.previewOf(capped)
+        return if (role == "assistant") {
+            dao.checkpointRunningTurn(row, preview, stamp)
+        } else {
+            dao.appendOnActivePath(row, preview, stamp)
+        }
+    }
+
+    /** [T-error-persist-android] 按行 id 设置/清除错误贴纸。 */
+    suspend fun setMessageSticker(messageId: String, errorInfo: String?) =
+        dao.setMessageSticker(messageId, errorInfo)
+
+    /**
+     * 在所选路径的最后一条助手行上设置/清除错误贴纸。选路径内的最后一条
+     * —— 会话级「最后一条助手消息」不是分支安全的（更晚创建的兄弟行
+     * sort_order 更大）。新用户回合若尚无已存回复，不许给上一条回复贴错。
+     */
+    suspend fun updateLastActiveAssistantError(sessionId: String, errorInfo: String?) {
+        val path = loadActiveConversation(sessionId).activeMessages
+        val lastAssistant = path.indexOfLast { it.role.equals("assistant", ignoreCase = true) }
+        val lastUser = path.indexOfLast { it.role.equals("user", ignoreCase = true) }
+        if (lastAssistant > lastUser) dao.setMessageSticker(path[lastAssistant].id, errorInfo)
     }
 
     /**
-     * [T-android-session-last-message-live-tool-call] Update ONLY the session's
-     * `last_message` preview (and `updated_at`) from an in-progress assistant
-     * turn's parts_json — WITHOUT inserting a message row. The agent loop
-     * persists the authoritative assistant row only at turn end (after tools
-     * execute); during a long tool call the session list would otherwise show a
-     * stale preview (or "No messages yet" for a turn with no prior text). This
-     * pushes the live tool-call summary / partial text into the list the moment
-     * the model emits it, mirroring how iOS overlays the live VM's last message.
-     *
-     * Uses the same [extractTextPreview] as [appendMessage], so a text-only turn
-     * shows its text and a tool-only turn shows the tool summary. No-op when the
-     * payload yields no preview (avoids overwriting a good preview with null).
+     * 流式回合中途刷新会话列表预览（只写 last_message，不落消息行）：
+     * 长工具调用期间列表不该停留在陈旧预览或「暂无消息」。提取不到预览
+     * 时不动 —— 不能用好端端的现值换一个 null。
      */
     suspend fun updateSessionPreview(sessionId: String, partsJson: String) {
-        val preview = extractTextPreview(partsJson) ?: return
+        val preview = MessagePreviews.previewOf(partsJson) ?: return
         dao.storePreview(sessionId, preview, System.currentTimeMillis())
     }
 
-    /** Recompute the session-list preview after an inclusive history rewind. */
+    /** 历史回退（含边界）之后按剩余消息重算列表预览。 */
     suspend fun refreshSessionPreviewFromHistory(
         sessionId: String,
         remainingMessages: List<MessageRow>? = null,
     ) {
         val remaining = remainingMessages ?: loadActiveMessages(sessionId)
-        val preview = remaining.lastOrNull()?.let { extractTextPreview(it.partsJson) }
+        val preview = remaining.lastOrNull()?.let { MessagePreviews.previewOf(it.partsJson) }
         dao.storePreview(sessionId, preview, System.currentTimeMillis())
     }
 
-    private fun extractTextPreview(partsJson: String): String? {
-        try {
-            val array = org.json.JSONArray(partsJson)
-            var hasMedia = false
-            // T-android-session-last-message-tool-call: also track the most
-            // recent tool_use so a mid-tool-call assistant turn (no text yet)
-            // renders as a short tool summary instead of falling through to
-            // "No messages yet" in the session list.
-            var lastToolUse: org.json.JSONObject? = null
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val type = obj.optString("type")
-                if (type == "text") {
-                    val text = obj.optString("value", "")
-                    if (text.isNotBlank()) {
-                        return cleanPreview(text)
-                    }
-                } else if (type == "mediaRef") {
-                    hasMedia = true
-                } else if (type == "toolUse") {
-                    val v = obj.optJSONObject("value")
-                    if (v != null) lastToolUse = v
-                }
-            }
-            if (hasMedia) return "[Image]"
-            if (lastToolUse != null) return summarizeToolUse(lastToolUse)
-        } catch (_: Exception) {
-            if (partsJson.isNotBlank()) return cleanPreview(partsJson)
-        }
-        return null
-    }
-
     /**
-     * Build a short preview string for a `toolUse` value block. Used by the
-     * session list when an assistant turn is mid-tool-call and has no text
-     * part yet. Strategy mirrors iOS ChatStore.summarizeToolUse (T-ios-
-     * session-last-message-tool-call):
-     *   1. Prefer model-supplied `tool_title` (carried in the on-disk shape
-     *      as `value.description`, or inside the embedded `input` JSON).
-     *   2. Else pick the most meaningful arg per known tool family.
-     *   3. Else fall back to `🔧 <toolName>`.
-     * Output capped at 100 chars to match cleanPreview's text ceiling.
+     * 把助手行改判为「已正式化」：全部文本部件的 execution 标记清掉。
+     * 保持 token_usage / reasoning 原样回写。
      */
-    private fun summarizeToolUse(value: org.json.JSONObject): String {
-        val toolName = value.optString("name", "")
-        // `description` is where ChatViewModel persists the captured
-        // tool_title (see writeAssistantParts / writeAssistantPartsForLive
-        // in ChatViewModel.kt — both pass block.toolTitle into "description").
-        val description = value.optString("description", "").trim()
-
-        // `input` is stored as an escaped JSON STRING, not a nested object
-        // (see ChatViewModel.kt:6491 / :6539). Parse defensively.
-        val input: org.json.JSONObject = try {
-            val raw = value.opt("input")
-            when (raw) {
-                is org.json.JSONObject -> raw
-                is String -> if (raw.isBlank()) org.json.JSONObject() else org.json.JSONObject(raw)
-                else -> org.json.JSONObject()
-            }
-        } catch (_: Exception) {
-            org.json.JSONObject()
+    suspend fun markAssistantTextFormal(messageId: String) {
+        val row = dao.messageById(messageId) ?: return
+        require(row.role == "assistant")
+        val parts = org.json.JSONArray(row.partsJson)
+        for (i in 0 until parts.length()) {
+            val part = parts.getJSONObject(i)
+            if (part.optString("type") == "text") part.put("execution", false)
         }
-
-        fun str(key: String): String? {
-            val v = input.optString(key, "").trim()
-            return if (v.isEmpty()) null else v
-        }
-        fun cap(s: String, n: Int = 100): String =
-            if (s.length > n) s.substring(0, n) + "…" else s
-
-        // 1. tool_title — checked both on the outer `description` field and
-        //    inside `input` (the model writes it into args; we mirror what
-        //    iOS does and accept either location).
-        val title = str("tool_title") ?: description.takeIf { it.isNotEmpty() }
-        if (title != null) return cap(cleanPreview(title))
-
-        // 2. per-tool key argument
-        when (toolName) {
-            "shell_execute" -> str("command")?.let { return cap(cleanPreview("$ $it")) }
-            "file_read" -> str("path")?.let { return cap(cleanPreview("Reading $it")) }
-            "file_write" -> str("path")?.let { return cap(cleanPreview("Writing $it")) }
-            "file_edit" -> str("path")?.let { return cap(cleanPreview("Editing $it")) }
-            "browser_use" -> {
-                val action = str("action") ?: "browse"
-                val url = str("url")
-                return if (url != null) cap(cleanPreview("$action $url"))
-                else cap(cleanPreview("browser_use $action"))
-            }
-            "memory_write" -> str("content")?.let { return cap(cleanPreview("memory_write: $it")) }
-            "memory_get" -> {
-                val arr = input.optJSONArray("keywords")
-                if (arr != null && arr.length() > 0) {
-                    val joined = buildString {
-                        for (i in 0 until arr.length()) {
-                            if (i > 0) append(", ")
-                            append(arr.optString(i))
-                        }
-                    }
-                    if (joined.isNotBlank()) return cap(cleanPreview("memory_get: $joined"))
-                }
-                str("keywords")?.let { return cap(cleanPreview("memory_get: $it")) }
-            }
-        }
-
-        // 3. final fallback
-        return cap("🔧 ${toolName.ifBlank { "tool" }}")
+        dao.overwriteAssistantBody(messageId, parts.toString(), row.tokenUsage, row.reasoningContent)
     }
 
-    private fun cleanPreview(raw: String): String {
-        return stripSystemReminders(raw)
-            .replace(Regex("[\r\n]+"), " ")      // newlines → space
-            .replace(Regex("#{1,6}\\s"), "")      // headings: ## Title → Title
-            .replace(Regex("\\*{1,3}|_{1,3}"), "")// bold/italic markers
-            .replace(Regex("~~"), "")              // strikethrough
-            .replace(Regex("`{1,3}"), "")          // inline/fenced code markers
-            .replace(Regex("^\\s*[-*+]\\s", RegexOption.MULTILINE), "") // list bullets
-            .replace(Regex("^\\s*\\d+\\.\\s", RegexOption.MULTILINE), "") // ordered list
-            .replace(Regex("^>\\s?", RegexOption.MULTILINE), "")       // blockquote
-            .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1") // [text](url) → text
-            .replace(Regex("!\\[([^]]*)]\\([^)]+\\)"), "$1") // ![alt](url) → alt
-            .replace(Regex("\\s{2,}"), " ")        // collapse whitespace
-            .trim()
-            .take(100)
-    }
+    // ── Novex 上下文用量账本 ────────────────────────────────────────────
 
-    // ───────────────── T188: minis-sessions-cli backend ─────────────────
-    //
-    // Three high-level queries surfaced to SessionsOffloadHandler. The DAO
-    // side handles raw SQL + result projection; we add the JSON parsing,
-    // text extraction, and snippet trimming. Mirrors iOS
-    // `ChatStore.swift` L774-1023 line-by-line so the offload tool's
-    // output shape is identical across platforms.
-
-    /**
-     * Backs `minis-sessions-cli list`. Returns sessions ordered by
-     * last_active DESC, optionally filtered by id list, keyword AND, and
-     * a date range on `updated_at` (so the user's "show me sessions
-     * touched in March 2026" works on the timestamp the session-list UI
-     * already exposes).
-     *
-     * Keyword AND semantics: each keyword has to land *somewhere* — in
-     * the title or in any message's parts_json. Two keywords mean both
-     * must match (possibly in different messages). This matches iOS,
-     * which intentionally avoids requiring keywords to co-occur in one
-     * row so a multi-turn session about "python" + "flask" still hits.
-     */
-    suspend fun querySessionsMeta(
-        sessionIds: List<String>?,
-        keywords: List<String>?,
-        limit: Int,
-        startMs: Long?,
-        endMs: Long?,
-    ): List<SessionMeta> {
-        val conditions = mutableListOf<String>()
-        val args = mutableListOf<Any>()
-
-        if (!sessionIds.isNullOrEmpty()) {
-            conditions += "s.id IN (${sessionIds.joinToString(",") { "?" }})"
-            args.addAll(sessionIds)
-        }
-        if (startMs != null) {
-            conditions += "s.updated_at >= ?"
-            args += startMs
-        }
-        if (endMs != null) {
-            conditions += "s.updated_at <= ?"
-            args += endMs
-        }
-        if (!keywords.isNullOrEmpty()) {
-            for (kw in keywords) {
-                val pat = "%$kw%"
-                conditions +=
-                    "(s.title LIKE ? OR EXISTS (SELECT 1 FROM messages m " +
-                    "WHERE m.session_id = s.id AND m.parts_json LIKE ?))"
-                args += pat
-                args += pat
-            }
-        }
-        val where = if (conditions.isEmpty()) "" else "WHERE " + conditions.joinToString(" AND ")
-        val sql = """
-            SELECT s.id, s.title,
-                   (SELECT m2.parts_json FROM messages m2
-                    WHERE m2.session_id = s.id AND m2.role = 'user'
-                    ORDER BY m2.sort_order ASC LIMIT 1) AS first_user_msg,
-                   s.source, s.created_at, s.updated_at,
-                   (SELECT COUNT(*) FROM messages m3 WHERE m3.session_id = s.id) AS msg_count
-            FROM sessions s
-            $where
-            ORDER BY s.updated_at DESC
-            LIMIT ?
-        """.trimIndent()
-        args += limit
-
-        val rows = dao.runSessionMetaQuery(
-            androidx.sqlite.db.SimpleSQLiteQuery(sql, args.toTypedArray()),
+    suspend fun recordNovexContextUsage(sessionId: String, record: novex.core.ContextUsageRecord) {
+        dao.recordContextUsage(
+            ContextUsageRow(
+                id = record.id,
+                sessionId = sessionId,
+                requestMessageId = record.requestMessageId,
+                responseMessageId = record.responseMessageId,
+                branchId = record.branchId,
+                payloadJson = novex.core.NovexContextUsageCodec.encode(record),
+                createdAt = record.createdAt,
+            ),
         )
-        return rows.map { r ->
-            val preview = r.firstUserMsg?.let { extractTextForOffload(it) }
-                ?.takeIf { it.isNotBlank() }
-                ?.take(60)
-            SessionMeta(
-                id = r.id,
-                title = r.title,
-                preview = preview,
-                source = r.source,
-                startedAt = r.createdAt,
-                lastActive = r.updatedAt,
-                messageCount = r.msgCount,
-            )
-        }
     }
 
-    /**
-     * Backs `minis-sessions-cli search`. Over-fetches `limit * 3` rows
-     * because parts_json LIKE matches can hit tool-call JSON metadata
-     * (e.g. a tool name that happens to contain the keyword) rather than
-     * actual user-visible text. We parse each row's parts_json on the
-     * Kotlin side, drop rows whose extracted text is blank or whose
-     * keyword didn't survive the parse, and trim to [limit] on the way
-     * out. Mirrors iOS ChatStore.searchMessages.
-     */
-    suspend fun searchMessages(
-        sessionIds: List<String>?,
-        keywords: List<String>,
-        limit: Int,
-        startMs: Long?,
-        endMs: Long?,
-    ): List<MessageSearchMatch> {
-        if (keywords.isEmpty()) return emptyList()
-        val conditions = mutableListOf<String>()
-        val args = mutableListOf<Any>()
-
-        for (kw in keywords) {
-            conditions += "m.parts_json LIKE ?"
-            args += "%$kw%"
+    suspend fun novexContextUsage(sessionId: String): List<novex.core.ContextUsageRecord> =
+        dao.contextUsageFor(sessionId).mapNotNull { row ->
+            runCatching { novex.core.NovexContextUsageCodec.decode(row.payloadJson) }.getOrNull()
         }
-        if (!sessionIds.isNullOrEmpty()) {
-            conditions += "m.session_id IN (${sessionIds.joinToString(",") { "?" }})"
-            args.addAll(sessionIds)
-        }
-        if (startMs != null) {
-            conditions += "m.created_at >= ?"
-            args += startMs
-        }
-        if (endMs != null) {
-            conditions += "m.created_at <= ?"
-            args += endMs
-        }
-        val where = conditions.joinToString(" AND ")
-        val sql = """
-            SELECT m.session_id, m.id, m.role, m.created_at, m.parts_json
-            FROM messages m
-            WHERE $where
-            ORDER BY m.created_at DESC
-            LIMIT ?
-        """.trimIndent()
-        args += (limit * 3)
-
-        val rows = dao.runMessageSearch(
-            androidx.sqlite.db.SimpleSQLiteQuery(sql, args.toTypedArray()),
-        )
-        val out = mutableListOf<MessageSearchMatch>()
-        for (r in rows) {
-            val text = extractTextForOffload(r.partsJson)
-            if (text.isBlank()) continue
-            val snip = keywordSnippet(text, keywords, SNIPPET_MAX)
-            if (snip.isBlank()) continue
-            out += MessageSearchMatch(r.sessionId, r.id, r.role, r.createdAt, snip)
-            if (out.size >= limit) break
-        }
-        return out
-    }
-
-    /**
-     * Backs `minis-sessions-cli messages --id ... --offset --limit`.
-     * Skips messages whose extracted text is blank (system-only reminder
-     * content, all-tool-use turns) so the agent sees a contiguous
-     * user-visible transcript.
-     */
-    suspend fun loadMessagePage(
-        sessionId: String,
-        offset: Int,
-        limit: Int,
-        // [T-android-sessions-cli-full] Per-message text cap. Default stays the
-        // documented 600; `minis-sessions-cli messages --full` passes
-        // MESSAGE_TEXT_MAX_FULL (50000) so exports aren't silently gutted.
-        maxChars: Int = MESSAGE_TEXT_MAX,
-        // [T-android-sessions-cli-messages-daterange] GH#200. Inclusive,
-        // independently optional created_at bounds; null = unbounded on that
-        // side, so existing callers keep the previous behaviour untouched.
-        startMs: Long? = null,
-        endMs: Long? = null,
-    ): List<MessagePageItem> {
-        val rows = if (startMs == null && endMs == null) {
-            dao.messagePage(sessionId, offset, limit)
-        } else {
-            dao.messagePageBetween(sessionId, offset, limit, startMs, endMs)
-        }
-        return rows.mapNotNull { e ->
-            val text = extractTextForOffload(e.partsJson)
-            if (text.isBlank()) return@mapNotNull null
-            MessagePageItem(
-                e.id, e.role, e.createdAt, text.take(maxChars),
-                // Mark messages that exceeded the cap so the caller can emit
-                // "truncated": true (mirrors iOS SessionsOffloadBridge).
-                truncated = text.length > maxChars,
-            )
-        }
-    }
-
-    suspend fun messageCount(sessionId: String): Int = dao.messageCountIn(sessionId)
-
-    /**
-     * [T-android-sessions-cli-messages-daterange] Count under the same optional
-     * range [loadMessagePage] filters by, so `total` and the returned slice
-     * always describe the same set.
-     */
-    suspend fun messageCountInRange(sessionId: String, startMs: Long?, endMs: Long?): Int =
-        if (startMs == null && endMs == null) {
-            dao.messageCountIn(sessionId)
-        } else {
-            dao.messageCountBetween(sessionId, startMs, endMs)
-        }
-
-    /**
-     * Paginated raw [MessageRow] page — used by [com.openminis.app.share.ChatExporter]
-     * to stream-export long sessions without loading every message into
-     * memory. Unlike [loadMessagePage] this does not strip / project the
-     * row; the exporter needs the full `parts_json` payload to serialize.
-     */
-    suspend fun loadMessagePageRaw(
-        sessionId: String,
-        offset: Int,
-        limit: Int,
-    ): List<MessageRow> =
-        dao.messagePage(sessionId, offset, limit)
-
-    /**
-     * Walk parts_json and concatenate every `{type:"text", value:...}`
-     * block (newline-joined) after running [stripSystemReminders] on
-     * each. Distinct from [extractTextPreview] / [cleanPreview] above —
-     * those collapse markdown for a 100-char single-line preview, while
-     * this preserves the full text the offload caller wants to inspect.
-     */
-    private fun extractTextForOffload(partsJson: String): String {
-        return try {
-            val arr = org.json.JSONArray(partsJson)
-            val texts = mutableListOf<String>()
-            var hasMedia = false
-            val toolUses = mutableListOf<org.json.JSONObject>()
-            val toolResults = mutableListOf<org.json.JSONObject>()
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                when (o.optString("type")) {
-                    "text" -> {
-                        val v = o.optString("value", "")
-                        if (v.isNotBlank()) texts.add(stripSystemReminders(v))
-                    }
-                    "mediaRef" -> hasMedia = true
-                    "toolUse" -> o.optJSONObject("value")?.let { toolUses.add(it) }
-                    "toolResult" -> o.optJSONObject("value")?.let { toolResults.add(it) }
-                }
-            }
-            if (texts.isNotEmpty()) return texts.joinToString("\n")
-            if (hasMedia) return "[Image]"
-            if (toolUses.isNotEmpty()) {
-                return toolUses.joinToString(", ") { tu ->
-                    val title = tu.optString("name", "tool")
-                    val inp = tu.optString("input", "")
-                    val toolTitle = try {
-                        org.json.JSONObject(inp).optString("tool_title", "")
-                    } catch (_: Exception) { "" }
-                    if (toolTitle.isNotBlank()) toolTitle.take(100) else title
-                }
-            }
-            if (toolResults.isNotEmpty()) {
-                return toolResults.joinToString("\n") { tr ->
-                    val output = tr.optString("output", "").take(200)
-                    "[Tool result: $output]"
-                }
-            }
-            ""
-        } catch (_: Exception) {
-            stripSystemReminders(partsJson)
-        }
-    }
-
-    /**
-     * Center a snippet of [maxLength] chars on the earliest keyword
-     * match (case-insensitive). Tail/head ellipses indicate truncation
-     * boundaries. If no keyword survives the parts_json → text reduction
-     * (rare but possible — a SQL LIKE hit on tool-use JSON that the text
-     * extractor strips), we return the leading [maxLength] chars so the
-     * offload caller still sees *something*.
-     */
-    private fun keywordSnippet(text: String, keywords: List<String>, maxLength: Int): String {
-        if (text.isEmpty()) return ""
-        val lower = text.lowercase()
-        var earliest = text.length
-        for (kw in keywords) {
-            val pos = lower.indexOf(kw.lowercase())
-            if (pos in 0 until earliest) earliest = pos
-        }
-        if (earliest == text.length) return text.take(maxLength)
-        val half = maxLength / 2
-        val start = (earliest - half).coerceAtLeast(0)
-        val end = (start + maxLength).coerceAtMost(text.length)
-        var s = text.substring(start, end)
-        if (start > 0) s = "…$s"
-        if (end < text.length) s = "$s…"
-        return s
-    }
 
     companion object {
-        // <system-reminder>...</system-reminder> blocks are runtime nudges
-        // injected into user-role messages by the harness (e.g. task-tracker
-        // reminders). They never represent what the user actually typed, so
-        // they must not show up in the session-list "last message" preview.
-        // DOTALL flag covers multi-line reminder bodies; reluctant
-        // quantifier so back-to-back reminders don't merge into one match.
-        private val SYSTEM_REMINDER_RE =
-            Regex("""<system-reminder>.*?</system-reminder>""", RegexOption.DOT_MATCHES_ALL)
-
+        /**
+         * harness 注入的运行时提醒（<system-reminder>…）不代表用户输入，
+         * 预览与投影必须剥掉。经 [MessagePreviews] 实现并在此透出
+         * （调用方以 ChatRepository.stripSystemReminders 的形式引用）。
+         */
         internal fun stripSystemReminders(raw: String): String =
-            SYSTEM_REMINDER_RE.replace(raw, "").trim()
+            MessagePreviews.stripSystemReminders(raw)
 
-        // T188: snippet/length caps mirror iOS SessionsOffload.m. 600 chars
-        // is a balance between giving the agent enough context to
-        // disambiguate similar messages and not blowing past the agent's
-        // context budget on a long search result.
-        internal const val SNIPPET_MAX = 600
-        internal const val MESSAGE_TEXT_MAX = 600
-        // [T-android-sessions-cli-full] Per-message cap when the caller passes
-        // `--full` — matches iOS SessionsOffloadBridge's 50_000 and the CLI
-        // help's documented upper bound. A single message beyond this is still
-        // truncated and flagged with "truncated": true.
-        internal const val MESSAGE_TEXT_MAX_FULL = 50_000
-
-        // Issue #17 — page size for the chat loader. 200 rows per query
-        // keeps a normal-shaped CursorWindow well under 2 MB while
-        // still amortising query overhead for long sessions.
-        private const val LOAD_PAGE_SIZE = 200
-
-        // Issue #17 — hard cap on a single message's parts_json. 500_000
-        // chars ≈ 500 KB ASCII (worst case ~2 MB UTF-8 for 4-byte runs;
-        // still small enough that any single resulting row fits inside
-        // a single CursorWindow). New oversize payloads (browser_use
-        // dumps, paste-bomb tool_results) are truncated at insert time
-        // and replaced with a single text part carrying a marker, so
-        // they remain JSON-parseable downstream.
+        /** 单条消息 parts_json 的硬上限（Issue #17 的写入侧闸门）。 */
         internal const val MAX_MESSAGE_PARTS_JSON_LENGTH = 500_000
 
+        /** offload 摘要与单条消息文本上限（对齐 iOS SessionsOffload）。 */
+        internal const val SNIPPET_MAX = 600
+        internal const val MESSAGE_TEXT_MAX = 600
+
+        /** `--full` 模式的单条消息上限；超限仍截断并标 truncated。 */
+        internal const val MESSAGE_TEXT_MAX_FULL = 50_000
+
+        /** 截断并包成单文本部件：下游所有 JSONArray 消费者都能继续解析。 */
         internal fun buildTruncatedPartsJson(original: String): String {
-            val keep = original.take(MAX_MESSAGE_PARTS_JSON_LENGTH)
-            val marker = "\n\n[Content truncated at " +
-                "${MAX_MESSAGE_PARTS_JSON_LENGTH / 1000} KB — original length " +
-                "${original.length} chars]"
-            val combined = keep + marker
-            // Wrap in a single text part so JSONArray parsers (preview
-            // extractor, search, exporter) see a well-formed payload.
-            val textObj = org.json.JSONObject()
+            val head = original.take(MAX_MESSAGE_PARTS_JSON_LENGTH)
+            val marker = "\n\n[Content truncated at ${MAX_MESSAGE_PARTS_JSON_LENGTH / 1000} KB" +
+                " — original length ${original.length} chars]"
+            val textPart = org.json.JSONObject()
                 .put("type", "text")
-                .put("value", combined)
-            return org.json.JSONArray().put(textObj).toString()
+                .put("value", head + marker)
+            return org.json.JSONArray().put(textPart).toString()
         }
     }
 }
 
 /**
- * [T-side-naming] 从侧边对话标题提取编号：兼容新命名「侧边 N」与旧命名
- * 「主对话标题·侧N」；无编号返回 null。
+ * 侧边对话标题 → 编号。兼容现命名「侧边 N」与旧命名「主对话标题·侧N」；
+ * 无编号返回 null。
  */
 internal fun sideConversationNumber(title: String): Int? =
     Regex("·侧(\\d+)\\s*$").find(title)?.groupValues?.get(1)?.toIntOrNull()
         ?: Regex("侧边\\s*(\\d+)").find(title)?.groupValues?.get(1)?.toIntOrNull()
 
-/** [T-side-naming] 下一个侧边标题 = 现有最大编号 +1，避免删除后重号。 */
+/** 下一个侧边标题 = 现有最大编号 +1；删除中间条目后新建不会重号。 */
 internal fun nextSideConversationTitle(existingTitles: List<String>): String =
     "侧边 ${(existingTitles.mapNotNull(::sideConversationNumber).maxOrNull() ?: 0) + 1}"
-
-/** T188: shape of a session row surfaced to `minis-sessions-cli list`. */
-data class SessionMeta(
-    val id: String,
-    val title: String?,
-    val preview: String?,
-    val source: String?,
-    val startedAt: Long,    // ms — sessions.created_at
-    val lastActive: Long,   // ms — sessions.updated_at
-    val messageCount: Int,
-)
-
-/** T188: a single matching message returned by `minis-sessions-cli search`. */
-data class MessageSearchMatch(
-    val sessionId: String,
-    val messageId: String,
-    val role: String,
-    val createdAt: Long,
-    val snippet: String,
-)
-
-/** T188: a single message in the paginated transcript returned by
- *  `minis-sessions-cli messages`. */
-data class MessagePageItem(
-    val messageId: String,
-    val role: String,
-    val createdAt: Long,
-    val text: String,
-    // [T-android-sessions-cli-full] True when the stored text exceeded the
-    // requested cap and [text] is a prefix. Surfaced as "truncated": true.
-    val truncated: Boolean = false,
-)
