@@ -2,6 +2,7 @@ package novex.android.data.provider
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RawQuery
 import androidx.room.Transaction
@@ -11,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteQuery
 /*
  * The provider store is written whole-snapshot style: the repository loads
  * every table, edits the in-memory config, and writes the complete set
- * back atomically. Truncation goes through one shared statement executor,
- * and inserts need no conflict clause because the transaction empties the
- * target table first. Thinking rules are the one exception — per-instance
+ * back atomically. Truncation goes through one shared statement executor;
+ * inserts declare REPLACE so a corrupted mirror with duplicate keys writes
+ * last-wins instead of aborting the swap. Thinking rules are the one
+ * exception — per-instance
  * user data owned by the rules screen, replaced one instance at a time.
  */
 
