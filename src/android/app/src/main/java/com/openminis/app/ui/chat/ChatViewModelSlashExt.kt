@@ -125,42 +125,12 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             else -> cmd
         }
     }
-    val sid = activeSessionId
-    val skillRows: List<SlashCommand> = skillRepository?.skills?.value
-        ?.filter { skillRepository.isEnabledForSession(it.id, sid) }
-        ?.sortedBy { it.name.lowercase() }
-        ?.map { skill ->
-            val trimmed = skill.description.trim()
-            val sub = if (trimmed.isNotEmpty()) trimmed else "Skill · v${skill.version}"
-            SlashCommand(
-                id = "skill:${skill.id}",
-                icon = com.openminis.app.ui.novex.NovexIcons.Extension,
-                title = skill.name,
-                subtitle = sub,
-                isSkill = true,
-            )
-        } ?: emptyList()
-    // [T-mcp-integration-android] MCP servers appear in the / picker too,
-    // tagged [mcp] with a wrench icon to distinguish them from skills (⚡).
-    // All servers enabled for this session are shown (not just the Top-20
-    // disclosed in the system prompt). Tapping fills the composer with the
-    // server name; discovery/call happens model-side via minis-mcp-cli.
-    val mcpRows: List<SlashCommand> = mcpRepository?.servers?.value
-        ?.filter { mcpRepository.isEnabledForSession(it.id, sid) }
-        ?.sortedBy { it.id.lowercase() }
-        ?.map { server ->
-            val note = server.note?.trim().orEmpty()
-            val sub = if (note.isNotEmpty()) "[mcp] $note" else "[mcp] ${server.transportSummary}"
-            SlashCommand(
-                id = "mcp:${server.id}",
-                icon = com.openminis.app.ui.novex.NovexIcons.Build,
-                title = server.id,
-                subtitle = sub,
-                isMcp = true,
-            )
-        } ?: emptyList()
-    val all = base + skillRows + mcpRows
-    return if (filter.isEmpty()) all else all.filter { it.title.lowercase().contains(filter) }
+    // [A2c-cards] 指令卡托盘只列系统内建金卡。已安装 Skill 与 MCP
+    // 服务器不再出行为可点行——它们本来就是按 description 由模型
+    // 主动触发的后台能力（skillPromptFragment 注入系统提示词），
+    // 摆出来只会把 "/<name>" 语法和英文标识漏给用户；手动开关
+    // 仍走设置/会话技能页。
+    return if (filter.isEmpty()) base else base.filter { it.title.lowercase().contains(filter) }
 }
 
 /**

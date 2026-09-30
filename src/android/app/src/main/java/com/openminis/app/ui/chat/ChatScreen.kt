@@ -3369,20 +3369,7 @@ fun ChatScreen(
                                     )
                                 }
                             }
-                            itemsIndexed(filteredSlashCommands, key = { _, c -> "cmd:${c.id}" }) { index, cmd ->
-                                // Section divider between builtins and
-                                // installed Skills (mirrors iOS divider
-                                // at the first skill row). Drawn as the
-                                // top of the skill row, not between every
-                                // row — keeps the menu visually grouped
-                                // without splitting every command.
-                                if (cmd.isSkill && index > 0 && !filteredSlashCommands[index - 1].isSkill) {
-                                    HorizontalDivider(
-                                        thickness = 0.5.dp,
-                                        color = ChatColors.toolBorder,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    )
-                                }
+                            itemsIndexed(filteredSlashCommands, key = { _, c -> "cmd:${c.id}" }) { _, cmd ->
                                 val isThinking = cmd.id == "thinking"
                                 val isThinkingActive = isThinking && thinkingLevelState.isEnabled && thinkingSupported
                                 // [A2c-cards] 金卡行：激活态走品牌薄荷（动作/选
@@ -3433,22 +3420,6 @@ fun ChatScreen(
                                                     // LIVE input so an action command keeps the
                                                     // user's body text instead of wiping it.
                                                     viewModel.setInputText(viewModel.executeSlashCommand(cmd, inputText))
-                                                    // For Skill rows, "/<name> "
-                                                    // is a typing aid — the user
-                                                    // still needs to type
-                                                    // arguments. Bring the IME
-                                                    // back up + grab focus so
-                                                    // they can keep typing
-                                                    // without an extra tap on
-                                                    // the composer.
-                                                    if (cmd.isSkill) {
-                                                        try {
-                                                            inputFocusRequester.requestFocus()
-                                                        } catch (_: IllegalStateException) {
-                                                            // FocusRequester not attached yet.
-                                                        }
-                                                        keyboardController?.show()
-                                                    }
                                                 }
                                             } else if (thinkingSupported) {
                                                 it.novexClickable {
