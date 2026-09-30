@@ -510,6 +510,8 @@
     <string name="filepreview_loading_pdf">正在加载 PDF…</string>
     <string name="filepreview_loading_archive">正在读取压缩包…</string>
     <string name="filepreview_open_externally">使用外部应用打开</string>
+    <!-- [P3.3 裁军] 音视频外跳回退按钮（InlineMediaPlayer 退役） -->
+    <string name="filepreview_open_with_other_apps">用其他应用打开</string>
     <string name="filepreview_office_subtitle">Office 文档需要使用外部应用预览。</string>
     <string name="filepreview_pdf_render_failed">无法渲染 PDF：%1$s</string>
     <string name="filepreview_pdf_empty">空文档</string>

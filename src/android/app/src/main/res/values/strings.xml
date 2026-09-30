@@ -336,6 +336,8 @@
     <string name="filepreview_loading_pdf">Loading PDF…</string>
     <string name="filepreview_loading_archive">Reading archive…</string>
     <string name="filepreview_open_externally">Open externally</string>
+    <!-- [P3.3 裁军] 音视频外跳回退按钮（InlineMediaPlayer 退役）：媒体场景措辞，与通用 open_externally 分键 -->
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Office documents preview in an external viewer.</string>
     <string name="filepreview_pdf_render_failed">Couldn\'t render PDF: %1$s</string>
     <string name="filepreview_pdf_empty">Empty document</string>

@@ -27,6 +27,9 @@ import com.openminis.app.startup.NovexStartupMetrics
 import com.openminis.app.ui.MinisImageFetcher
 import kotlinx.coroutines.launch
 
+/** [P3.4 净眼] 一次性旧 alarm 清扫的完成标志键（minis_maintenance_prefs）。 */
+private const val KEY_RETIRED_ALARM_SWEEP_DONE = "retired_alarm_sweep_done_v1"
+
 class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProvider {
     override fun prepareCardImport(store:novex.storage.CardStore,input:java.io.InputStream,name:String,kind:novex.content.CardKind):novex.storage.CardDraft =
         com.openminis.app.cards.LegacyArchiveImport(store,cacheDir.toPath().resolve("legacy-card-incoming")).prepare(input,name,kind)
@@ -291,12 +294,100 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     fun startPostHomeMaintenance() {
         startupScope.launch {
             ensurePostHomeMaintenance()
+            sweepRetiredAlarmsOnce()
             if (cardDirectoryMigrationStarted.compareAndSet(false, true)) {
                 runCatching { creativeArtifactRepository.migrateCardImages() + novexWorkspace.migrateCardDirectories() }
                     .onSuccess { count -> if (count > 0) Log.w("NovexCardDirectories", "$count card directories need retry") }
                     .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w("NovexCardDirectories", "Card directory migration will retry next launch") }
             }
         }
+    }
+
+    /**
+     * [P3.3 裁军→P3.4 净眼] 一次性清扫已删 receiver 的存量 alarm。
+     *
+     * 定时任务（scheduled/，P3.3 退役）与上游助理闹钟（offload/
+     * AlarmReceiver，P2.5/R2 退役）的 receiver 类已删，但老用户设备上
+     * AlarmManager 里的 PendingIntent 还挂着——receiver 不存在后广播静默
+     * 丢弃，纯留垃圾。两家调度器都把精确重建 PendingIntent 所需的键
+     * （taskId / requestCode）落在各自的 SharedPreferences JSON 里，照原
+     * 形重建（FLAG_NO_CREATE 不新建）逐个 cancel，再清掉存档。
+     *
+     * 幂等：SharedPreferences 一次性标志位，跑过即跳过；标志与存档清除
+     * 在同一次成功路径里落盘。任何异常吞掉（下轮重试），绝不影响维护链。
+     */
+    private fun sweepRetiredAlarmsOnce() {
+        runCatching {
+            val flagPrefs = getSharedPreferences("minis_maintenance_prefs", Context.MODE_PRIVATE)
+            if (flagPrefs.getBoolean(KEY_RETIRED_ALARM_SWEEP_DONE, false)) return@runCatching
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+            var cancelled = 0
+            // ① 定时任务（P3.3 删 scheduled/）：requestCode = taskId.hashCode()
+            // 正数化，action=FIRE（filterEquals 含 action，缺了匹配不上）。
+            val taskIds = mutableListOf<String>()
+            getSharedPreferences("minis_scheduled_tasks_prefs", Context.MODE_PRIVATE)
+                .getString("tasks_json", null)?.let { raw ->
+                    runCatching {
+                        val arr = org.json.JSONArray(raw)
+                        for (i in 0 until arr.length()) {
+                            arr.optJSONObject(i)?.optString("id")?.takeIf { it.isNotEmpty() }
+                                ?.let(taskIds::add)
+                        }
+                    }
+                }
+            for (id in taskIds) {
+                val intent = Intent().setClassName(this, "com.openminis.app.scheduled.ScheduledTaskAlarmReceiver")
+                    .setAction("com.openminis.app.scheduled.FIRE")
+                val pi = android.app.PendingIntent.getBroadcast(
+                    this, id.hashCode() and 0x7FFFFFFF, intent,
+                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
+                if (pi != null) {
+                    alarmManager.cancel(pi)
+                    pi.cancel()
+                    cancelled++
+                }
+            }
+            // ② 上游助理闹钟/计时器（R2 删 offload/）：requestCode 原样存档。
+            val offloadAlarms = mutableListOf<Int>()
+            getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
+                .getString("alarms_json", null)?.let { raw ->
+                    runCatching {
+                        val arr = org.json.JSONArray(raw)
+                        for (i in 0 until arr.length()) {
+                            arr.optJSONObject(i)?.optInt("requestCode", 0)?.takeIf { it != 0 }
+                                ?.let(offloadAlarms::add)
+                        }
+                    }
+                }
+            for (requestCode in offloadAlarms) {
+                val intent = Intent().setClassName(this, "com.openminis.app.offload.AlarmReceiver")
+                val pi = android.app.PendingIntent.getBroadcast(
+                    this, requestCode, intent,
+                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
+                if (pi != null) {
+                    alarmManager.cancel(pi)
+                    pi.cancel()
+                    cancelled++
+                }
+            }
+
+            // 清存档 + 落一次性标志（同一次提交，崩溃也不留半程状态）。
+            getSharedPreferences("minis_scheduled_tasks_prefs", Context.MODE_PRIVATE)
+                .edit().remove("tasks_json").apply()
+            getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
+                .edit().remove("alarms_json").apply()
+            flagPrefs.edit().putBoolean(KEY_RETIRED_ALARM_SWEEP_DONE, true).apply()
+            if (cancelled > 0 || taskIds.isNotEmpty() || offloadAlarms.isNotEmpty()) {
+                AppLogger.info(
+                    "MinisApp",
+                    "retired alarm sweep: cancelled=$cancelled " +
+                        "(scheduled=${taskIds.size} ids, offload=${offloadAlarms.size} ids)",
+                )
+            }
+        }.onFailure { Log.w("MinisApp", "retired alarm sweep failed (will retry next launch): ${it.message}") }
     }
 
     private fun ensurePostHomeMaintenance() = synchronized(postHomeLock) {

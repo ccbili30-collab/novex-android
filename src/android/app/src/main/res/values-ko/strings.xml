@@ -410,6 +410,7 @@
     <string name="filepreview_loading_pdf">PDF 로딩 중…</string>
     <string name="filepreview_loading_archive">아카이브 읽는 중…</string>
     <string name="filepreview_open_externally">외부 앱으로 열기</string>
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Office 문서는 외부 뷰어에서 미리 봅니다.</string>
     <string name="filepreview_pdf_render_failed">PDF를 렌더링할 수 없습니다: %1$s</string>
     <string name="filepreview_pdf_empty">빈 문서</string>

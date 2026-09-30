@@ -49,8 +49,6 @@ object ChatLinkResolver {
         //    with multiple sessions the resolver otherwise points at
         //    whichever session booted its shell most recently.
         val hostFile = resolveSandboxFile(trimmed, scheme, sessionId, context)
-        android.util.Log.w("ChatLinkDiag",
-            "resolve url=${trimmed.take(200)} sid=$sessionId hostFile=${hostFile?.absolutePath} exists=${hostFile?.exists()}")
         if (hostFile != null && hostFile.exists() && !hostFile.isDirectory) {
             FileItem.from(hostFile)?.let { return ChatLinkAction.SandboxFile(it) }
         }
