@@ -178,6 +178,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.PlatformTextStyle
@@ -1795,9 +1796,21 @@ fun ChatScreen(
                 enter = fadeIn(tween(220)),
                 exit = fadeOut(tween(220)),
             ) {
-            TopAppBar(
-                title = {
-                    // iOS-style centered layout: "Minis" + group row + provider·model row
+            // [feat/ui-rikkahub] 非对称三段式顶栏：标题列拿到返回键与动作簇之间
+            // 的全部剩余宽度并在其中居中——NovexTopBarSurface 的 2×宽侧对称预留
+            // 在模型 pill 进 actions 后会把标题挤成零宽，整列渲染但不可见。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ChatColors.background)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .height(chatTopBarExpandedHeightDp(LocalDensity.current.fontScale).dp),
+            ) {
+            CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides ChatColors.primaryText) {
+            androidx.compose.ui.layout.Layout(
+                modifier = Modifier.fillMaxSize(),
+                content = {
+                    // content[0]：标题 + 挂卡/状态徽标列，居中于剩余区间
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center,
@@ -1828,7 +1841,7 @@ fun ChatScreen(
                                 // behind. Horizontal 32dp keeps the fallback
                                 // pulse highlight comfortably padded around
                                 // the longest title.
-                                .padding(horizontal = 32.dp, vertical = 2.dp),
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
                         ) {
                             // Nav title: current session title when one
                             // exists and the toggle is on, else fall back to
@@ -1934,13 +1947,14 @@ fun ChatScreen(
                             }
                         }
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = returnFromConversation) {
-                        Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
+                    // content[1]：返回键
+                    Box {
+                        IconButton(onClick = returnFromConversation) {
+                            Icon(com.openminis.app.ui.novex.NovexIcons.ArrowBack, contentDescription = "Back")
+                        }
                     }
-                },
-                actions = {
+                    // content[2]：动作簇（模型 pill / DeepSeek 时钟 / ⋯；侧边页为导出+删除）
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                     if (sideParentId != null) {
                         // 侧边页顶栏：删除（决策 16）+ 导出（2026-09-16 用户反馈侧边
                         // 无法导出诊断包——图片问题取证时就卡在这）。导出复用主线
@@ -2066,21 +2080,32 @@ fun ChatScreen(
                         )
                     }
                     }
+                    }
                 },
-                windowInsets = WindowInsets.statusBars,
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    // [feat/ui-rikkahub] 2026-09-27 不再半透明：滚动时内容从栏下
-                    // 经过即刻被遮住，不产生幽灵重影（顶部安全区已由列表让出）。
-                    containerColor = ChatColors.background,
-                    scrolledContainerColor = ChatColors.background,
-                ),
-                // Three title rows need a real font-scale-aware height budget.
-                // The former fixed 68 dp clipped the provider/model baseline
-                // on real devices, most visibly for long OpenCode names.
-                expandedHeight = chatTopBarExpandedHeightDp(
-                    LocalDensity.current.fontScale,
-                ).dp,
-            )
+            ) { measurables, constraints ->
+                // 标题可用宽 = 屏宽 − 返回键 − 动作簇（非对称，不再 2×宽侧预留）；
+                // 标题在剩余区间内居中，既不压交互区也不会被宽动作簇挤没。
+                val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                val leading = measurables[1].measure(loose)
+                val trailing = measurables[2].measure(
+                    loose.copy(maxWidth = (constraints.maxWidth - leading.width).coerceAtLeast(0)),
+                )
+                val heading = measurables[0].measure(
+                    loose.copy(maxWidth = (constraints.maxWidth - leading.width - trailing.width).coerceAtLeast(0)),
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    leading.placeRelative(0, (constraints.maxHeight - leading.height) / 2)
+                    trailing.placeRelative(constraints.maxWidth - trailing.width, (constraints.maxHeight - trailing.height) / 2)
+                    val spanStart = leading.width
+                    val spanWidth = constraints.maxWidth - leading.width - trailing.width
+                    heading.placeRelative(
+                        spanStart + ((spanWidth - heading.width) / 2).coerceAtLeast(0),
+                        (constraints.maxHeight - heading.height) / 2,
+                    )
+                }
+            }
+            }
+            }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -4700,7 +4725,7 @@ fun ChatScreen(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .background(
-                                        if (handoffRunning) ChatColors.sendButtonDisabled else ChatColors.sendButton,
+                                        if (handoffRunning) ChatColors.sendButtonDisabled else com.openminis.app.ui.noven.NovenColors.Mint,
                                         CircleShape,
                                     )
                                     .clip(CircleShape)
@@ -4710,7 +4735,7 @@ fun ChatScreen(
                                 Icon(
                                     com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
                                     contentDescription = "回传主对话",
-                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
+                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else com.openminis.app.ui.noven.NovenColors.OnMint,
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
@@ -4756,8 +4781,10 @@ fun ChatScreen(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
+                                    // [feat/ui-rikkahub] 发送是输入栏唯一主
+                                    // 动作——激活态用品牌薄荷绿，停用仍灰。
                                     .background(
-                                        if (canActivate) ChatColors.sendButton
+                                        if (canActivate) com.openminis.app.ui.noven.NovenColors.Mint
                                         else ChatColors.sendButtonDisabled,
                                         CircleShape,
                                     )
@@ -4780,7 +4807,7 @@ fun ChatScreen(
                                 Icon(
                                     com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
                                     contentDescription = "Send",
-                                    tint = if (canActivate) ChatColors.background
+                                    tint = if (canActivate) com.openminis.app.ui.noven.NovenColors.OnMint
                                     else ChatColors.primaryText.copy(alpha = 0.5f),
                                     modifier = Modifier.size(20.dp),
                                 )
