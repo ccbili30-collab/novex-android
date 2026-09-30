@@ -3308,11 +3308,18 @@ fun ChatScreen(
                                 .background(ChatColors.inputBg, RoundedCornerShape(10.dp))
                                 .border(0.5.dp, ChatColors.toolBorder, RoundedCornerShape(10.dp)),
                         ) {
+                            // [A2c-cards] 高度随卡数：行高 ~52dp，上限封顶
+                            // SLASH_PICKER_FIXED_HEIGHT，超出内部滚动。
+                            // 不再固定 4 行高撑满。
+                            val trayRows = (novexControls.size + filteredSlashCommands.size)
+                                .coerceAtLeast(1)
+                            val trayHeight = (trayRows * 52 + 14).dp
+                                .coerceAtMost(SLASH_PICKER_FIXED_HEIGHT)
                             androidx.compose.foundation.lazy.LazyColumn(
                                 state = slashListState,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(SLASH_PICKER_FIXED_HEIGHT)
+                                    .height(trayHeight)
                                     .verticalScrollbar(slashListState),
                             ) {
                             // [A2c-cards] 卡盘两组：银卡在上——文游快捷动作
@@ -4376,8 +4383,12 @@ fun ChatScreen(
                             },
                         ) {
                             // 竖向交叠的三卡图形，不是横向 layers 符号。
+                            // 托盘展开时图形符号本身变薄荷——打开态提示在
+                            // glyph 上，不加底色。
                             NovexCardStackGlyph(
                                 fillColor = ChatColors.inputBg,
+                                tint = if (showSlashMenu) com.openminis.app.ui.noven.NovenColors.Mint
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.semantics { contentDescription = "指令卡" },
                             )
                         }
