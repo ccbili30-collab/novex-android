@@ -316,18 +316,25 @@ internal fun UserMessageBubble(
                     // [feat/ui-rikkahub] User voice = brand mint, soft fill:
                     // the bubble is the user's action/voice in the transcript,
                     // which is exactly where the redesign spends its accent.
+                    // Normal = soft mint fill with dark/surface text for readability;
+                    // long-press selected = solid mint with on-mint white text.
+                    val isSelected = showMenu
                     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
                     val mint = com.openminis.app.ui.noven.NovenColors.Mint
-                    val userBubbleColor = mint.copy(alpha = if (isDarkTheme) 0.22f else 0.14f)
-                    val userTextColor = if (isDarkTheme) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else com.openminis.app.ui.noven.NovenColors.OnMint
+                    val bubbleBg = when {
+                        isQueued -> Color.Transparent
+                        isSelected -> mint
+                        else -> mint.copy(alpha = if (isDarkTheme) 0.22f else 0.14f)
+                    }
+                    val textColor = when {
+                        isQueued -> secondaryTextColor
+                        isSelected -> com.openminis.app.ui.noven.NovenColors.OnMint
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        val textColor = if (isQueued) secondaryTextColor else userTextColor
-                        val bubbleBg = if (isQueued) Color.Transparent else userBubbleColor
                         // [feat/ui-rikkahub] 18dp → 16dp: mainstream chat bubble formula.
                         val shape = RoundedCornerShape(16.dp)
                         val dashedStroke = if (isQueued) {

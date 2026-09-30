@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,7 +76,7 @@ private fun NovenBottomBarItem(
             if (badged) Box(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = (-4).dp)
+                    .offset(x = 4.dp, y = 8.dp)
                     .size(6.dp)
                     .clip(CircleShape)
                     .background(NovenColors.Badge),
