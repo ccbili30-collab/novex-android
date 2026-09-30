@@ -42,41 +42,16 @@ import novex.android.data.model.hasImageInput
 import novex.android.data.model.normalizeModalities
 
 /**
- * [T-android-provider-voice] First-class modality scoping for the shared
- * picker — Android port of iOS ModelPickerConfig.explicitPreferModality.
- * iOS expresses preference as a ModelModality bitset with a superset match;
- * in practice the only prefs used are the two voice directions, so Android
- * models them directly:
- *
- *  - [AUDIO_INPUT]  — ASR scenario: only audio-consuming entries qualify,
- *    and the System Recognition (Online/Offline) virtual entries lead.
- *  - [AUDIO_OUTPUT] — TTS scenario: only audio-producing entries qualify,
- *    and the System Voice (Auto) virtual entry leads.
- *
- * When a filter is active the picker also injects the matching System
- * virtual entries as their own leading "System" section (iOS
- * candidateEntries appends systemASROnline/Offline / systemTTS). Callers in
- * a voice scenario should keep provider sections expanded (iOS d4e3798f
- * seedCollapse: multi-voice vendors would fold all-but-one voice).
+ * [T-android-vision-group] Vision scenario: only image-consuming entries
+ * qualify. No System virtual entry — there is no on-device vision engine.
+ * [P3.3 裁军] 原 AUDIO_INPUT/AUDIO_OUTPUT（语音 ASR/TTS 模态过滤 + System
+ * 虚拟条目注入）随语音全家退役删除。
  */
 enum class PickerModalityFilter {
-    AUDIO_INPUT,
-    AUDIO_OUTPUT,
-    // [T-android-vision-group] Vision scenario: only image-consuming entries
-    // qualify. No System virtual entry — there is no on-device vision engine.
     IMAGE_INPUT;
 
     fun matches(model: LLMModel): Boolean = when (this) {
-        AUDIO_INPUT -> model.hasAudioInput
-        AUDIO_OUTPUT -> model.hasAudioOutput
         IMAGE_INPUT -> model.hasImageInput
-    }
-
-    /** System virtual entries that serve this direction, in display order. */
-    fun systemEntries(): List<ModelEntry> = when (this) {
-        AUDIO_INPUT -> listOf(SystemVoiceEntries.asrOnline, SystemVoiceEntries.asrOffline)
-        AUDIO_OUTPUT -> listOf(SystemVoiceEntries.tts)
-        IMAGE_INPUT -> emptyList()
     }
 }
 
@@ -134,15 +109,9 @@ fun LazyListScope.modelEntryPickerItems(
             entry.model.displayName.lowercase().contains(q) ||
             entry.model.id.lowercase().contains(q)
 
-    // System section leads when a modality filter is active (iOS: the System
-    // synthetic instance is first in entriesByInstance).
-    val systemPair: Pair<ProviderInstance, List<ModelEntry>>? = modalityFilter
-        ?.systemEntries()
-        ?.filter { it.id !in excludeIds && matchesSearch(it) }
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { SystemVoiceEntries.syntheticInstance(systemProviderLabel) to it }
-
-    val instanceWithEntries = listOfNotNull(systemPair) + instances
+    // [P3.3 裁军] System 虚拟条目注入区（ASR/TTS System section）随语音
+    // 模态过滤退役删除；IMAGE_INPUT 过滤无 System 条目。
+    val instanceWithEntries = instances
         .filter { it.isEnabled && !SystemVoiceEntries.isSystemEntryId(it.id) }
         .mapNotNull { instance ->
             val entries = availableEntries.filter { entry ->

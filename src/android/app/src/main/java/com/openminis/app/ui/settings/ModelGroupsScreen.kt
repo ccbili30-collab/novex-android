@@ -375,22 +375,8 @@ fun ModelGroupsScreen(
                             selectedId = config.defaultSubGroupId,
                             onSelect = { providerRepository.defaultSubGroupId = it },
                         )
-                        // [T-android-provider-voice] Voice group bindings —
-                        // mirrors iOS voiceInputGroupId / voiceOutputGroupId.
-                        SectionDivider()
-                        GroupDropdown(
-                            label = stringResource(R.string.model_groups_voice_input),
-                            groups = groups,
-                            selectedId = config.voiceInputGroupId,
-                            onSelect = { providerRepository.voiceInputGroupId = it },
-                        )
-                        SectionDivider()
-                        GroupDropdown(
-                            label = stringResource(R.string.model_groups_voice_output),
-                            groups = groups,
-                            selectedId = config.voiceOutputGroupId,
-                            onSelect = { providerRepository.voiceOutputGroupId = it },
-                        )
+                        // [P3.3 裁军] 语音输入/输出分组绑定两行（voiceInput/
+                        // OutputGroupId 下拉）随语音全家退役删除。
                         // [T-android-vision-group / GH#182] Vision Group — the
                         // group whose vision-capable members read images for a
                         // main model that cannot natively see them.

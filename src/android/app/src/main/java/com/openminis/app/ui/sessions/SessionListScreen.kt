@@ -342,8 +342,7 @@ fun SessionListScreen(
     onWorldClick: (String) -> Unit = {},
     onAddProviderClick: () -> Unit = {},
     onSelectModelsClick: () -> Unit = {},
-    // [T-android-scheduled-tasks-design] Entry to the scheduled-tasks list.
-    onScheduledTasksClick: () -> Unit = {},
+    // [P3.3 裁军] onScheduledTasksClick（定时任务入口参数）随定时任务退役摘除。
     showBottomActions: Boolean = true,
     onRootNavigationVisibilityChange: (Boolean) -> Unit = {},
 ) {
@@ -457,9 +456,8 @@ fun SessionListScreen(
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var editSession by remember { mutableStateOf<SessionRow?>(null) }
-    var showBrowserSheet by remember { mutableStateOf(false) }
-    var showBrowserSettings by remember { mutableStateOf(false) }
-    val browserTabPool = remember { com.openminis.app.browser.BrowserTabPool(context) }
+    // [P3.3 裁军] 会话列表的浏览器 Sheet/设置 Sheet 与 BrowserTabPool 实例
+    // （本就已无入口的挂死状态）随内置浏览器退役删除。
 
     // [T-android-session-grouping] Groups are pulled out FIRST; only the
     // leftovers go through date bucketing. Assembly order below is
@@ -578,16 +576,7 @@ fun SessionListScreen(
         }
     }
 
-    // [T-android-scheduled-tasks-full] Live count of scheduled tasks for the
-    // toolbar clock-icon badge. Observes the SharedPreferences-backed store so
-    // the badge updates when tasks are added / removed without a manual refresh.
-    // [T-android-scheduled-badge-enabled-only] Count only enabled tasks so the
-    // badge reflects what's actually active — disabled tasks don't contribute,
-    // and with none enabled the count is 0 (badge hidden by the >0 gate below).
-    val scheduledTaskCount by remember {
-        com.openminis.app.scheduled.ScheduledTaskStore(context).observe()
-            .map { list -> list.count { it.enabled } }
-    }.collectAsState(initial = 0)
+    // [P3.3 裁军] scheduledTaskCount（定时任务角标计数）随定时任务退役删除。
 
     Scaffold(
         topBar = {
@@ -1287,21 +1276,7 @@ fun SessionListScreen(
         )
     }
 
-    // Browser sheet
-    if (showBrowserSheet) {
-        com.openminis.app.ui.browser.BrowserSheet(
-            tabPool = browserTabPool,
-            onDismiss = { showBrowserSheet = false },
-        )
-    }
-
-    // Browser Settings sheet
-    if (showBrowserSettings) {
-        com.openminis.app.ui.browser.BrowserSettingsSheet(
-            tabPool = browserTabPool,
-            onDismiss = { showBrowserSettings = false },
-        )
-    }
+    // [P3.3 裁军] 浏览器/浏览器设置 Sheet 渲染块同批删除。
 }
 
 // ─── Dual FAB Row (matching iOS fabRow) ─────────────────────────────────────

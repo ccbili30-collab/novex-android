@@ -184,7 +184,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
@@ -201,7 +200,6 @@ import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
 
@@ -318,63 +316,7 @@ internal fun InputCircleButton(
     }
 }
 
-/**
- * Mic button with a two-state appearance — mirrors iOS `MicButton`.
- *
- * Idle: outlined mic, neutral bg.
- * Recording: filled mic, red-tinted bg, optional 2-letter locale badge
- * overlayed on the top-right (e.g. "EN", "ZH").
- */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-internal fun MicButton(
-    isRecording: Boolean,
-    localeBadge: String?,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
-    // [T-android-voice-panel] While the inline voice panel is active the same
-    // slot switches back to text input — keyboard glyph (mirrors iOS "T").
-    isVoiceActive: Boolean = false,
-) {
-    val bg = if (isRecording) Color.Red.copy(alpha = 0.15f)
-             else ChatColors.inputIconBg
-    val tint = if (isRecording) Color.Red
-               else MaterialTheme.colorScheme.onSurfaceVariant
-    val borderColor = if (isRecording) Color.Transparent else ChatColors.inputIconBorder
-    Box(
-        modifier = Modifier
-            .size(38.dp)
-            .background(bg, CircleShape)
-            .border(0.5.dp, borderColor, CircleShape)
-            .clip(CircleShape)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            if (isVoiceActive) novex.android.ui.NovexIcons.Keyboard else novex.android.ui.NovexIcons.Mic,
-            contentDescription = if (isVoiceActive) "Switch to keyboard"
-            else if (isRecording) "Stop recording" else "Voice input",
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
-        if (!localeBadge.isNullOrEmpty()) {
-            Text(
-                text = localeBadge,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Red,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 2.dp, end = 2.dp)
-                    .background(Color.White, CircleShape)
-                    .padding(horizontal = 3.dp, vertical = 1.dp),
-            )
-        }
-    }
-}
+// [P3.3 裁军] MicButton（语音/键盘切换按钮）随语音输入退役删除。
 
 // ─── Tool Preview Thumbnail (iOS: ToolPreviewThumbnail — tool-specific preview) ──
 
@@ -614,14 +556,13 @@ private fun ToolPreviewThumbnail(
             }
 
             "browser_use" -> {
-                // Prefer live WebView snapshot while the tool is running; fall back to
-                // any saved imageFilePath, then globe icon.
+                // [P3.3 裁军] live WebView 快照（rememberBrowserLiveSnapshot）
+                // 随内置浏览器退役；仅渲染历史块持久化的截图，然后 globe 图标。
                 // T285: decode the saved screenshot off the main thread —
                 // BitmapFactory.decodeFile inside `remember {}` was running
                 // synchronously on the composition thread, blocking the
                 // chat-tap → preview navigation transition for ~150-350ms
                 // on multi-MB browser screenshots.
-                val liveBitmap = rememberBrowserLiveSnapshot(block)
                 val savedBitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
                     initialValue = null,
                     block.imageFilePath,
@@ -636,7 +577,7 @@ private fun ToolPreviewThumbnail(
                         try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null }
                     }
                 }
-                val bitmap = liveBitmap ?: savedBitmap
+                val bitmap = savedBitmap
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),

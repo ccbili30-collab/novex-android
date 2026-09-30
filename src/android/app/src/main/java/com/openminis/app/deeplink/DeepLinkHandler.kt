@@ -8,7 +8,6 @@ import com.openminis.app.ui.navigation.Routes
  *
  * Supported routes (matching iOS):
  *   minis://share                              → open share flow
- *   minis://views/alarm                        → open alarm list
  *   minis://session/<id>                        → open specific session
  *   minis://settings                            → Settings home
  *   minis://settings/providers                  → Provider list
@@ -25,15 +24,19 @@ import com.openminis.app.ui.navigation.Routes
  *   minis://settings/appearance                 → Appearance
  *   minis://settings/background                 → Background settings
  *   minis://settings/about                      → About
- *   minis://settings/permissions                → Permissions
  *
  * Unknown settings paths fall back to Settings home rather than
  * Unknown — matches iOS's "best-effort land somewhere reasonable"
  * behavior so an LLM-generated link can never strand the user.
  *
  * Retired routes (open_terminal, settings/{mounts,mirrors,rootfs,
- * environments}) also land on Settings home — the sandbox they fronted
- * was removed in upstream-exit R2/R3.
+ * environments,permissions}) also land on Settings home — the sandbox
+ * they fronted was removed in upstream-exit R2/R3, the permissions
+ * screens in P3.3.
+ *
+ * [P3.3 裁军] views/alarm（闹钟列表）、action/voice_chat（语音快捷）、
+ * session/<id>/<resource-path>（HTML 预览固定捷径）解析随对应功能退役
+ * 删除，全部落入 Unknown / Settings home。
  *
  * Resource-class URIs (`minis://workspace/...`, `minis://skills/...`,
  * etc.) are intentionally NOT handled here — they resolve to on-disk
@@ -43,23 +46,20 @@ import com.openminis.app.ui.navigation.Routes
  */
 sealed class DeepLinkAction {
     data object OpenShare : DeepLinkAction()
-    data object OpenAlarmList : DeepLinkAction()
-    data object OpenPermissionSettings : DeepLinkAction()
     data class OpenSession(val sessionId: String) : DeepLinkAction()
 
     /**
      * App-icon long-press quick actions (mirrors iOS QuickActionRouter).
      *
      *  - [NewChat] — plain new draft chat
-     *  - [NewVoiceChat] — new chat + auto-trigger voice input mic on first compose
      *  - [NewCameraChat] — new chat + auto-launch camera attachment on first compose
      *
      * Encoded as `minis://action/<name>` so the static shortcuts XML can
      * point to them via plain Intent.data without any custom extras —
      * matches the existing minis:// deep-link conventions.
+     * [P3.3 裁军] NewVoiceChat 随语音全家退役删除。
      */
     data object NewChat : DeepLinkAction()
-    data object NewVoiceChat : DeepLinkAction()
     data object NewCameraChat : DeepLinkAction()
 
     /**
@@ -72,21 +72,8 @@ sealed class DeepLinkAction {
      */
     data class OpenSettingsScreen(val route: String) : DeepLinkAction()
 
-    /**
-     * Launch the in-chat HTML preview, fullscreen, for a pinned home-screen
-     * shortcut.
-     *
-     * Encoded as `minis://session/<sessionId>/<resource-path>` —
-     * [sessionId] selects which chat to land in; [resourcePath] is the
-     * resource path under `/var/minis/` (e.g. `/browser/snake.html`).
-     * [title] is the cached page title at pin time, used as the fallback
-     * while WebView re-reports its own.
-     */
-    data class OpenHtmlPreview(
-        val sessionId: String,
-        val resourcePath: String,
-        val title: String,
-    ) : DeepLinkAction()
+    // [P3.3 裁军] OpenHtmlPreview（minis://session/<id>/<path> 固定捷径）
+    // 随内置浏览器退役删除。
 
     data object Unknown : DeepLinkAction()
 }
@@ -99,23 +86,19 @@ object DeepLinkHandler {
 
         return when (host) {
             "share" -> DeepLinkAction.OpenShare
-            "views" -> when (path) {
-                "/alarm" -> DeepLinkAction.OpenAlarmList
-                else -> DeepLinkAction.Unknown
-            }
             // Quick-actions surface (app-icon long-press). Path drives which
             // pending action ChatScreen consumes on first compose. Mirrors iOS
             // QuickActionRouter.swift action ids 1:1.
+            // [P3.3 裁军] voice_chat 与 views/alarm 解析随语音/闹钟退役删除。
             "action" -> when (path.removePrefix("/")) {
                 "new_chat" -> DeepLinkAction.NewChat
-                "voice_chat" -> DeepLinkAction.NewVoiceChat
                 "camera_chat" -> DeepLinkAction.NewCameraChat
                 else -> DeepLinkAction.Unknown
             }
             "settings" -> parseSettingsPath(uri)
             "session" -> {
-                // minis://session/<sessionId>                → OpenSession
-                // minis://session/<sessionId>/<resource-path> → OpenHtmlPreview
+                // minis://session/<sessionId> → OpenSession；多余的路径段
+                // （原 HTML 预览固定捷径）按 Unknown 处理。
                 val segments = path.removePrefix("/")
                     .split('/')
                     .filter { it.isNotEmpty() }
@@ -123,11 +106,7 @@ object DeepLinkHandler {
                 when {
                     sid.isNullOrBlank() -> DeepLinkAction.Unknown
                     segments.size == 1 -> DeepLinkAction.OpenSession(sid)
-                    else -> {
-                        val resourcePath = "/" + segments.drop(1).joinToString("/")
-                        val title = uri.getQueryParameter("title").orEmpty()
-                        DeepLinkAction.OpenHtmlPreview(sid, resourcePath, title)
-                    }
+                    else -> DeepLinkAction.Unknown
                 }
             }
             else -> DeepLinkAction.Unknown
@@ -136,13 +115,11 @@ object DeepLinkHandler {
 
     /**
      * T183: walk a `minis://settings/<path>` URI to the right NavHost
-     * route. `permissions` keeps [DeepLinkAction.OpenPermissionSettings]
-     * so existing dispatch logic stays unchanged.
-     *
-     * Everything else funnels through [DeepLinkAction.OpenSettingsScreen]
+     * route. Everything funnels through [DeepLinkAction.OpenSettingsScreen]
      * carrying a route string from [Routes]. Unknown paths land on
      * Settings home rather than [DeepLinkAction.Unknown] so an LLM-
      * generated link can never strand the user; iOS does the same.
+     * [P3.3 裁军] permissions 路径随权限屏退役，落入 Settings home。
      */
     private fun parseSettingsPath(uri: Uri): DeepLinkAction {
         val path = uri.path?.trimStart('/').orEmpty()
@@ -167,17 +144,17 @@ object DeepLinkHandler {
                 DeepLinkAction.OpenSettingsScreen(Routes.SHARED_FOLDERS)
             "logs" -> {
                 // Optional ?tab=… selects the segmented control on the
-                // Logs screen. Currently recognized: "logs" (default),
-                // "config-audit". Pushed onto DeepLinkCoordinator so the
-                // screen can read it on appear and clear. Mirrors iOS
+                // Logs screen. Currently recognized: "logs" (default).
+                // Pushed onto DeepLinkCoordinator so the screen can read
+                // it on appear and clear. Mirrors iOS
                 // DeepLinkRouter.handleSettings logs handling.
+                // [P3.3 裁军] config-audit 页签随 minis-config 体系退役。
                 DeepLinkCoordinator.setPendingLogsTab(uri.getQueryParameter("tab"))
                 DeepLinkAction.OpenSettingsScreen(Routes.LOGS)
             }
             "appearance" -> DeepLinkAction.OpenSettingsScreen(Routes.APPEARANCE)
             "background" -> DeepLinkAction.OpenSettingsScreen(Routes.BACKGROUND)
             "about" -> DeepLinkAction.OpenSettingsScreen(Routes.ABOUT)
-            "permissions" -> DeepLinkAction.OpenPermissionSettings
             // Unknown path — land on Settings home rather than failing,
             // so the user can find what they wanted by browsing.
             else -> DeepLinkAction.OpenSettingsScreen(Routes.SETTINGS)

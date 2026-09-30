@@ -47,7 +47,7 @@ import novex.runtime.*
     val model: com.openminis.app.ui.chat.ChatViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         viewModelStoreOwner = com.openminis.app.ui.chat.ChatViewModelStore.ownerFor(chat),
         factory = com.openminis.app.ui.chat.ChatViewModel.factory(chat, app.chatRepository, app.providerRepository,
-            appContext = app, memoryRepository = app.memoryRepository, skillRepository = app.skillRepository, mcpRepository = app.mcpRepository))
+            appContext = app, memoryRepository = app.memoryRepository, skillRepository = app.skillRepository))
     val ready by model.conversationSettingsReady.collectAsState()
     val cards = remember { IntegratedCards(context) }
     val saver = remember { Saver<CardBinding?, String>(save = { it?.encode() ?: "null" }, restore = { if (it == "null") null else CardBinding.decode(it) }) }

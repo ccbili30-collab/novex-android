@@ -2,35 +2,22 @@ package com.openminis.app.ui.components
 
 import android.content.Context
 import android.content.Intent
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import java.io.File
 
 /**
- * A composition-wide callback for opening a URL inside the app's WebView sheet.
+ * [P3.3 裁军] 内置浏览器全家（browser/ + ui/browser/ + ui/preview/ +
+ * UrlPreviewSheet + InAppBrowserHost/LocalInAppBrowserLauncher）按用户裁决
+ * 整体退役。消息里的链接点击一律改走系统浏览器/系统处理器：
  *
- * - For http/https links, callers should invoke this to trigger [UrlPreviewSheet]
- *   and keep the user in-app (iOS-style preview).
- * - For other schemes (mailto:, tel:, geo:, minis://, etc.) fall back to
- *   [openExternalUrl] which dispatches a normal system Intent.
- *
- * The root [InAppBrowserHost] provides this and renders the sheet when invoked.
- * If a screen reads the ambient outside a host (e.g. during tests), the default
- * implementation falls back to the external Intent so nothing silently no-ops.
- */
-val LocalInAppBrowserLauncher = compositionLocalOf<(String) -> Unit> {
-    // Fallback: if no host is installed above, bail to an external intent so
-    // links at least open somewhere. Hosts must override this.
-    { _ -> }
-}
-
-/**
- * Fire a system ACTION_VIEW intent for schemes we don't preview in-app
- * (mailto, tel, geo, sms, etc.) or when we explicitly want the external handler.
+ *  - [openExternalUrl] — http(s)/mailto/tel/geo 等 URL 的 ACTION_VIEW 外跳
+ *    （原先 UrlPreviewSheet 的内部预览路径与 BrowserExternalSchemeHandler
+ *    的外部 scheme 路由都收口到这里）。
+ *  - [openMediaFileExternally] — 会话内媒体文件（视频/音频链接、附件预览
+ *    的外部打开入口）经 FileProvider 交给系统播放器（替代被裁的
+ *    ui/media/InlineMediaPlayer 内嵌播放器）。
  */
 fun openExternalUrl(context: Context, url: String) {
     runCatching {
@@ -41,43 +28,37 @@ fun openExternalUrl(context: Context, url: String) {
     }
 }
 
+/** Guess a mime type for [file] from its extension; video/audio fallbacks. */
+fun mediaMimeTypeFor(file: File): String {
+    val ext = file.extension.lowercase()
+    val fromMap = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+    return when {
+        fromMap != null -> fromMap
+        ext in setOf("mp4", "mov", "mkv", "webm", "avi", "m4v") -> "video/*"
+        ext in setOf("mp3", "wav", "aac", "flac", "ogg", "m4a", "opus") -> "audio/*"
+        else -> "application/octet-stream"
+    }
+}
+
 /**
- * Host composable: provides [LocalInAppBrowserLauncher] and renders
- * [UrlPreviewSheet] when a URL is requested. Place this once near the top of
- * the app (around the NavHost) so any screen can open links in-app.
- *
- * Only http/https URLs are routed through the in-app sheet. Anything else
- * is delegated to a normal system Intent so mailto:/tel:/maps:/minis:// keep
- * working.
+ * Hand a local media file to the system player via ACTION_VIEW + FileProvider.
+ * The provider's declared roots cover per-session files (minis-sessions/) and
+ * global storage; anything outside them falls back to a file:// URI, and an
+ * unresolvable intent is swallowed (same contract as the retired player's
+ * share path — never crash the chat over a missing player).
  */
-@Composable
-fun InAppBrowserHost(
-    context: Context,
-    content: @Composable () -> Unit,
-) {
-    var previewUrl by remember { mutableStateOf<String?>(null) }
-
-    val launcher = remember(context) {
-        { url: String ->
-            val lower = url.trim().lowercase()
-            if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                previewUrl = url
-            } else {
-                openExternalUrl(context, url)
-            }
+fun openMediaFileExternally(context: Context, file: File) {
+    val uri = try {
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+    } catch (_: Throwable) {
+        file.toUri()
+    }
+    runCatching {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mediaMimeTypeFor(file))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-    }
-
-    androidx.compose.runtime.CompositionLocalProvider(
-        LocalInAppBrowserLauncher provides launcher,
-    ) {
-        content()
-    }
-
-    previewUrl?.let { url ->
-        UrlPreviewSheet(
-            url = url,
-            onDismiss = { previewUrl = null },
-        )
+        context.startActivity(intent)
     }
 }

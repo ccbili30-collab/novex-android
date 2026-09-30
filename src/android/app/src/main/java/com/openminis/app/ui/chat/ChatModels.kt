@@ -16,7 +16,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserTabPool
 import novex.android.data.chat.MessageRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compress
@@ -53,7 +52,6 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -243,14 +241,7 @@ data class SlashCommand(
      * built-in rows construct unchanged.
      */
     val isSkill: Boolean = false,
-    /**
-     * [T-mcp-integration-android] True when this row was synthesized from a
-     * configured MCP server (vs. a built-in command or a skill). Distinct from
-     * [isSkill] so the picker can tag MCP rows with [mcp] + a wrench icon and
-     * skills with ⚡. Tapping fills the composer with the server name; the
-     * actual discovery/call happens model-side via minis-mcp-cli.
-     */
-    val isMcp: Boolean = false,
+    // [P3.3 裁军] isMcp 标志随 MCP 集成面退役删除。
 )
 
 data class AssistantBlock(

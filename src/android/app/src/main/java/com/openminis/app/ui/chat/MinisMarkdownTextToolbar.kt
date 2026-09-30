@@ -67,14 +67,7 @@ internal class MinisMarkdownTextToolbar(
      */
     private val onAddToInput: ((String) -> Unit)? = null,
     private val onShare: ((String) -> Unit)? = null,
-    /**
-     * [T-android-selection-readaloud] Invoked when the user taps **Read Aloud**.
-     * Receives the currently-selected substring (same clipboard round-trip as
-     * [addSelectionToInput]); the host speaks it through ReadAloudPlayer. Null
-     * disables the action. The callback owns the player's lifecycle — this
-     * toolbar deliberately does not create one it could never dispose.
-     */
-    private val onReadAloud: ((String) -> Unit)? = null,
+    // [P3.3 裁军] onReadAloud（选区朗读）随语音全家退役删除。
     /**
      * [T-android-markdown-table-copy-actions] The MinisTextKit selection
      * controller. This toolbar is the one Compose's SelectionContainer shows
@@ -130,16 +123,7 @@ internal class MinisMarkdownTextToolbar(
         withSelection(sink)
     }
 
-    /**
-     * [T-android-selection-readaloud] Speak just the selected substring (not the
-     * whole message) through the host-supplied reader.
-     */
-    internal fun readAloudSelection() {
-        val sink = onReadAloud ?: return
-        withSelection(sink)
-    }
-
-    internal val canReadAloud: Boolean get() = onReadAloud != null
+    // [P3.3 裁军] readAloudSelection/canReadAloud 随选区朗读退役删除。
 
     /**
      * Resolve the current selection and hand it to [sink].
@@ -285,20 +269,7 @@ internal fun MinisMarkdownTextToolbarHost(toolbar: MinisMarkdownTextToolbar) {
                         toolbar.hide()
                     }
                 }
-                // [T-android-selection-readaloud] Speak just the selected
-                // substring through Minis TTS (provider voice with the system
-                // engine as fallback), mirroring iOS's "Read Aloud / Read
-                // Selection" selection-menu action. Available for any
-                // selection, like Add to Chat Input.
-                if (toolbar.canReadAloud) {
-                    ToolbarDivider()
-                    ToolbarButton(
-                        label = stringResource(R.string.selection_read_aloud),
-                    ) {
-                        toolbar.readAloudSelection()
-                        toolbar.hide()
-                    }
-                }
+                // [P3.3 裁军] 「朗读」按钮随选区朗读（TTS）退役删除。
                 // Markdown / Rich Text only appear when the selection sits
                 // inside a single known message — otherwise it's ambiguous
                 // which message's source to copy.

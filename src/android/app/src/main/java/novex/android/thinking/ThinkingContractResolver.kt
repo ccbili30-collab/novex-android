@@ -27,6 +27,9 @@ data class ThinkingResolveContext(
     val isDashScope: Boolean,
     /** 端点是 xAI 自家 API（api.x.ai）而非转发 grok 系机型的中转。 */
     val isXAI: Boolean = false,
+    /** [P3.3 裁军→内置] 端点是内置「前尘 API」中转预设（proxy.qianc.ltd）：
+     * gemini 系思考参数完全省略的内置席由该标志命中。 */
+    val isQianchenRelay: Boolean = false,
     /** 端点成文的关闭档位；null = 关闭即省略字段（允许清单决策归调用方）。 */
     val offEffort: String?,
 )
@@ -70,26 +73,10 @@ data class ThinkingResolveTrace(
  */
 object ThinkingContractResolver {
 
-    // ------------------------------------------------------------------
-    // 自定义规则登记（进程级；Room 异步加载，请求装配同步读）
-    // ------------------------------------------------------------------
-
-    private val customByInstance = java.util.concurrent.ConcurrentHashMap<String, List<ThinkingContract>>()
-
-    /** 整表替换（仓库加载配置后推一次）。 */
-    fun setAllCustomRules(byInstance: Map<String, List<ThinkingContract>>) {
-        customByInstance.clear()
-        customByInstance.putAll(byInstance)
-    }
-
-    /** 单实例替换（增/改/删/排序后推）；空表即移除。 */
-    fun setCustomRules(instanceId: String, rules: List<ThinkingContract>) {
-        if (rules.isEmpty()) customByInstance -= instanceId else customByInstance[instanceId] = rules
-    }
-
-    /** 某实例的自定义规则（存储序）；未登记给空表，绝不给错形态。 */
-    fun customRulesFor(instanceId: String?): List<ThinkingContract> =
-        instanceId?.let { customByInstance[it] }.orEmpty()
+    // [P3.3 裁军] 自定义规则登记层（customByInstance + setAllCustomRules/
+    // setCustomRules/customRulesFor，进程级 CUSTOM 缓存）随 minis-config 体系
+    // 随葬删除：resolver 只跑内置座次表；Room 表 provider_thinking_rules
+    // 本体保留（schema 冻结），写路径与 UI 全摘。
 
     // ------------------------------------------------------------------
     // 内置座次表：表序即优先序，禁止按字母序整理
@@ -107,6 +94,10 @@ object ThinkingContractResolver {
      */
     private val SEATS: List<(VendorProfile) -> ThinkingContract?> = listOf(
         { p -> if (p.mistral) contract("mistral-official", ThinkingWireFormat.OmitEverything, echo = silentEcho) else null },
+        // [P3.3 裁军] 前尘 API 中转预设的内置席：该中转会把我方思考参数错译
+        // 成 Claude thinking 触发 400，gemini 系一律完全省略（原预设的
+        // CUSTOM 规则收编为内置，行为逐字节一致）。
+        { p -> if (p.qianchenRelay) patternSeat("gemini-*", "qianchen-relay-gemini", null, ThinkingWireFormat.OmitEverything) else null },
         { p -> if (p.openRouter) contract("openrouter", ThinkingWireFormat.ReasoningEffortNested(offValue = null)) else null },
         { p -> patternSeat("o*", "openai-native", p.offEffort) },
         { p -> patternSeat("gpt-5*", "openai-native", p.offEffort) },
@@ -131,7 +122,8 @@ object ThinkingContractResolver {
     fun apply(body: JSONObject, ctx: ThinkingResolveContext): ThinkingResolveTrace {
         val preexisting = body.keys().asSequence().toSet()
 
-        val winner = (customRulesFor(ctx.instanceId) + builtInRules(ctx))
+        // [P3.3 裁军] 原 CUSTOM 席位在此优先于内置表；现仅内置座次表参选。
+        val winner = builtInRules(ctx)
             .firstOrNull { it.scope.matches(ctx.modelId) }
             ?: return ThinkingResolveTrace(
                 matchedRuleLabel = "none",
@@ -431,6 +423,7 @@ object ThinkingContractResolver {
 
     private data class VendorProfile(
         val mistral: Boolean,
+        val qianchenRelay: Boolean,
         val openRouter: Boolean,
         val dashScope: Boolean,
         val unifiedGateway: Boolean,
@@ -439,6 +432,7 @@ object ThinkingContractResolver {
 
     private fun vendorProfile(ctx: ThinkingResolveContext) = VendorProfile(
         mistral = ctx.isMistral,
+        qianchenRelay = ctx.isQianchenRelay,
         openRouter = ctx.isOpenRouter,
         dashScope = ctx.isDashScope,
         unifiedGateway = ctx.usesUnifiedReasoningEffort,

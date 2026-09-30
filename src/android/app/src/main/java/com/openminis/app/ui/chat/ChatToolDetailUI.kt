@@ -185,7 +185,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.openminis.app.offload.OffloadPermissionManager
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
@@ -202,7 +201,6 @@ import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.ui.browser.BrowserSheet
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.LocalAppCodeFontFamily
 import com.openminis.app.ui.theme.LocalAppSemanticPalette
@@ -214,7 +212,7 @@ internal fun ToolDetailSheet(
     toolBlocks: List<AssistantBlock>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    onOpenBrowserForUrl: (String) -> Unit = {},
+    onOpenUrl: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var currentIdx by remember { mutableStateOf(initialIndex.coerceIn(0, toolBlocks.lastIndex.coerceAtLeast(0))) }
@@ -343,7 +341,7 @@ internal fun ToolDetailSheet(
                                     "ChatScreen",
                                     "browser_use action → open in session pool: ${browserActionUrl.take(160)}",
                                 )
-                                onOpenBrowserForUrl(browserActionUrl)
+                                onOpenUrl(browserActionUrl)
                             } else if (block.content.isNotEmpty()) {
                                 clipboardManager.setText(AnnotatedString(block.content))
                                 copyDone = true
@@ -757,10 +755,9 @@ internal fun ToolDetailSheet(
                                     }
                                 } else null
                             } ?: ""
-                        // Preview priority (matches iOS): live WebView snapshot while the
-                        // tool is running → current block's saved imageFilePath → most
-                        // recent preceding browser_use block's screenshot.
-                        val liveBitmap = rememberBrowserLiveSnapshot(block)
+                        // [P3.3 裁军] live WebView 快照随内置浏览器退役；
+                        // 仅渲染 current block 的持久化截图 → 最近前序
+                        // browser_use 块的截图。
                         // T285: decode off main thread. Pre-T285 this was a
                         // synchronous BitmapFactory.decodeFile inside `remember{}`
                         // — for a multi-MB browser screenshot it ran a ~150-350ms
@@ -793,7 +790,7 @@ internal fun ToolDetailSheet(
                                 }
                             }
                         }
-                        val screenshotBitmap = liveBitmap ?: savedBitmap
+                        val screenshotBitmap = savedBitmap
 
                         Column(
                             modifier = Modifier

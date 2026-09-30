@@ -10,10 +10,10 @@ Novex bundles, links, or depends on the following third-party components. Versio
 
 > **GPL=0 declaration（Android 分发物，2026-09-29）**：随着沙箱退役
 > （upstream-exit P2.5/R2），Android 分发物**不含任何 GPL 组件**——
-> KaTeX（MIT）、jieba/cppjieba（MIT）、Shizuku（MIT），其余均为
-> Apache-2.0。历史上的 GPL/传染风险实体（iSH、proot、talloc、Alpine
-> rootfs 内的 apk-tools）全部只存在于 iOS 时代或沙箱时代的构建产物中，
-> 现已出清（见下表 Removed / historical）。
+> KaTeX（MIT）、jieba/cppjieba（MIT），其余均为 Apache-2.0（Shizuku
+> 为 MIT，已于 P3.3 裁军轮出清依赖）。历史上的 GPL/传染风险实体
+> （iSH、proot、talloc、Alpine rootfs 内的 apk-tools）全部只存在于
+> iOS 时代或沙箱时代的构建产物中，现已出清（见下表 Removed / historical）。
 
 ## Native C/C++ components
 
@@ -62,8 +62,12 @@ Transitive packages (pinned in `Package.resolved`), all **Apache-2.0**, maintain
 | multiplatform-markdown-renderer (+ m3) — mikepenz | 0.33.0 | **Apache-2.0** |
 | Reorderable (sh.calvin.reorderable) | 2.4.0 | **Apache-2.0** |
 | ACRA (acra-core) | 5.12.0 | **Apache-2.0** |
-| Shizuku API + provider (dev.rikka.shizuku) | 13.1.5 | **MIT** |
 | poi-on-android shaded Apache POI bundle | 5.2.5-4 | **Apache-2.0** |
+
+Removed / historical: **Shizuku API + provider (dev.rikka.shizuku 13.1.5, MIT)
+— 依赖随 P3.3 裁军轮（2026-09-30，Shizuku/特权后端 offload/ 体系整体退役）
+出清**；androidx.webkit（PWA 资产加载器）同轮出清，androidx.browser 保留
+（provider OAuth 的 Custom Tabs 仍在用）。
 
 Test-only dependencies: JUnit 4.13.2 (**EPL-1.0**), MockWebServer 4.12.0 (**Apache-2.0**), kotlinx-coroutines-test 1.9.0 (**Apache-2.0**), org.json 20231013 (**Public Domain / JSON License**).
 

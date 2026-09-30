@@ -83,14 +83,12 @@ fun SettingsScreen(
     onStorageClick: () -> Unit = {},
     onSkillsClick: () -> Unit = {},
     onMemoryClick: () -> Unit = {},
-    // [T-mcp-integration-android] MCP Integrations page, listed directly below
-    // Memory. Default no-op for callers that haven't wired the route yet.
-    onMcpClick: () -> Unit = {},
+    // [P3.3 裁军] onMcpClick（MCP 集成页入口参数）随 MCP 集成面退役摘除。
     // [T-soul-md] Soul settings page lives between Skills and Memory in the
     // Agent Runtime section; default no-op for callers that haven't wired
     // the route yet.
     onSoulClick: () -> Unit = {},
-    onPermissionsClick: () -> Unit = {},
+    // [P3.3 裁军] onPermissionsClick（权限页入口参数）随 offload 权限屏退役摘除。
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
     onLogsClick: () -> Unit = {},

@@ -75,8 +75,8 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.ui.components.rememberIosBounceOverscrollEffect
 import com.openminis.app.ui.markdown.MarkdownText
 import com.openminis.app.ui.chat.StreamingMarkdownText
-import com.openminis.app.ui.media.InlineAudioPlayer
-import com.openminis.app.ui.media.InlineVideoPlayer
+import com.openminis.app.ui.components.mediaMimeTypeFor
+import com.openminis.app.ui.components.openMediaFileExternally
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -478,40 +478,44 @@ private fun HtmlPreview(item: FileItem) {
 
 // ==================== Audio Preview ====================
 
+// [P3.3 裁军] 音频内嵌播放器（InlineAudioPlayer）退役；改为信息卡 +
+// 「用其他应用打开」经 FileProvider 外跳系统播放器。
 @Composable
 private fun AudioPreview(item: FileItem) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Top,
-    ) {
-        InlineAudioPlayer(filePath = item.file.absolutePath)
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = item.formattedSize,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    ExternalOpenMediaFallback(item = item)
 }
 
 // ==================== Video Preview ====================
 
+// [P3.3 裁军] 视频内嵌播放器（InlineVideoPlayer）退役；同音频走外跳。
 @Composable
 private fun VideoPreview(item: FileItem) {
+    ExternalOpenMediaFallback(item = item)
+}
+
+@Composable
+private fun ExternalOpenMediaFallback(item: FileItem) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        InlineVideoPlayer(filePath = item.file.absolutePath)
-        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = item.formattedSize,
+            text = item.name,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "${item.formattedSize} · ${mediaMimeTypeFor(item.file)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        androidx.compose.material3.Button(onClick = { openMediaFileExternally(context, item.file) }) {
+            androidx.compose.material3.Text("用其他应用打开")
+        }
     }
 }
 

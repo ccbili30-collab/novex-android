@@ -60,7 +60,7 @@ fun ProviderListScreen(
     onBack: () -> Unit,
     onAddProvider: () -> Unit,
     onProviderClick: (String) -> Unit,
-    onVoiceServiceClick: (String) -> Unit = {},
+    // [P3.3 裁军] onVoiceServiceClick（语音服务影子页跳转）随语音全家退役摘除。
 ) {
     val config by providerRepository.config.collectAsState()
     val scope = rememberCoroutineScope()
@@ -248,38 +248,8 @@ fun ProviderListScreen(
             }
         }
 
-        // [T-android-provider-voice] Voice Services: runtime shadow mirror of
-        // every enabled instance that owns audio-modality models (mirrors iOS
-        // ProviderInstancesView's Voice Services section). Rows are read-only
-        // views onto the underlying instance — no stored entity.
-        val shadows = remember(config) { providerRepository.shadowVoiceSources() }
-        if (shadows.isNotEmpty()) {
-            SettingsSection(
-                header = stringResource(R.string.voice_services_section),
-                footer = if (providerRepository.hasFoldedShadowDuplicates()) {
-                    stringResource(R.string.voice_services_duplicate_hint)
-                } else {
-                    null
-                },
-            ) {
-                shadows.forEachIndexed { index, shadow ->
-                    ShadowVoiceRow(
-                        shadow = shadow,
-                        onClick = { onVoiceServiceClick(shadow.instanceId) },
-                    )
-                    if (index < shadows.size - 1) {
-                        val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 38.dp, end = 14.dp)
-                                .height(0.5.dp)
-                                .background(divider),
-                        )
-                    }
-                }
-            }
-        }
+        // [P3.3 裁军] Voice Services 影子区（shadowVoiceSources + ShadowVoiceRow）
+        // 随语音全家退役删除。
         Spacer(Modifier.height(80.dp))
     }
 
@@ -431,57 +401,5 @@ private fun maskKey(key: String): String {
     return key.take(6) + "..." + key.takeLast(4)
 }
 
-/** One shadow Voice Service row: name + ASR/TTS model counts. */
-@Composable
-private fun ShadowVoiceRow(
-    shadow: ProviderRepository.ShadowVoiceSource,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = novex.android.ui.NovexIcons.GraphicEq,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = shadow.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            val parts = buildList {
-                if (shadow.inputModels.isNotEmpty()) {
-                    add(stringResource(R.string.voice_services_stt_count, shadow.inputModels.size))
-                }
-                if (shadow.outputModels.isNotEmpty()) {
-                    add(stringResource(R.string.voice_services_tts_count, shadow.outputModels.size))
-                }
-            }
-            if (parts.isNotEmpty()) {
-                Text(
-                    text = parts.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Icon(
-            imageVector = novex.android.ui.NovexIcons.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
+// [P3.3 裁军] ShadowVoiceRow 随 Voice Services 影子区退役删除。
+

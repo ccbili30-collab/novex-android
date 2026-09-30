@@ -28,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.openminis.app.offload.OffloadPermissionManager
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import androidx.navigation.NavHostController
@@ -72,20 +71,8 @@ class MainActivity : ComponentActivity() {
      */
     private var restoredChatSessionId: String? = null
 
-    /**
-     * Bridges [OffloadPermissionManager.requestAndroidPermission] to the system
-     * runtime-permission dialog. Background offload handlers suspend while
-     * this launcher's callback resolves the request.
-     */
-    private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
-
-    /**
-     * Used by the "go to settings" gate to open e.g. the app-details or
-     * Notification Access settings page. We don't rely on the result —
-     * [OffloadPermissionManager.requestSettingsGate] polls until the
-     * permission actually changes (or times out).
-     */
-    private lateinit var settingsLauncher: ActivityResultLauncher<Intent>
+    // [P3.3 裁军] permissionLauncher/settingsLauncher（OffloadPermissionManager
+    // 的系统权限桥）随 offload/ 整包退役删除。
 
     /**
      * State shuttled between the "Save to..." path of the safe-mode
@@ -294,83 +281,8 @@ class MainActivity : ComponentActivity() {
                 com.openminis.app.crash.CrashFrequencyDetector.shouldForceHomeOnLaunch(this)
             }
 
-        permissionLauncher = registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) { results ->
-            val allGranted = results.isNotEmpty() && results.values.all { it }
-            OffloadPermissionManager.respondToAndroidPermission(allGranted)
-        }
-        settingsLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { /* polled by OffloadPermissionManager.requestSettingsGate */ }
-
-        // Bridge: system permission dialog (first ask / can-ask-again).
-        // If the permission has already been permanently denied (dialog
-        // would no-op), report DENIED so the handler can fall back to the
-        // in-app settings gate.
-        lifecycleScope.launch {
-            OffloadPermissionManager.pendingAndroidPermission
-                .filterNotNull()
-                .collect { req ->
-                    val permanentlyDenied = req.permissions.any { permission ->
-                        ContextCompat.checkSelfPermission(this@MainActivity, permission) !=
-                            android.content.pm.PackageManager.PERMISSION_GRANTED &&
-                            !ActivityCompat.shouldShowRequestPermissionRationale(
-                                this@MainActivity, permission
-                            ) &&
-                            OffloadPermissionManager.hasAskedForPermission(this@MainActivity, permission)
-                    }
-                    if (permanentlyDenied) {
-                        OffloadPermissionManager.respondToAndroidPermission(
-                            OffloadPermissionManager.AndroidPermissionResult.DENIED
-                        )
-                    } else {
-                        for (p in req.permissions) {
-                            OffloadPermissionManager.markPermissionAsked(this@MainActivity, p)
-                        }
-                        permissionLauncher.launch(req.permissions.toTypedArray())
-                    }
-                }
-        }
-
-        // Bridge: in-app "open settings" dialog. Used for already-denied
-        // runtime permissions AND for special-access capabilities like
-        // Notification Access.
-        lifecycleScope.launch {
-            OffloadPermissionManager.pendingSettingsGate
-                .filterNotNull()
-                .collect { gate ->
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle(gate.title)
-                        .setMessage(gate.message)
-                        .setCancelable(false)
-                        .setPositiveButton(gate.positiveLabel) { d, _ ->
-                            d.dismiss()
-                            val intent = Intent(gate.settingsAction).apply {
-                                if (gate.requiresPackageUri) {
-                                    data = Uri.fromParts("package", packageName, null)
-                                }
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            try {
-                                settingsLauncher.launch(intent)
-                            } catch (_: Throwable) {
-                                // Some OEMs don't expose every settings panel.
-                                // Fall through — the polling loop will time out.
-                            }
-                            OffloadPermissionManager.respondToSettingsGate(
-                                OffloadPermissionManager.SettingsGateDecision.OPEN
-                            )
-                        }
-                        .setNegativeButton(gate.negativeLabel) { d, _ ->
-                            d.dismiss()
-                            OffloadPermissionManager.respondToSettingsGate(
-                                OffloadPermissionManager.SettingsGateDecision.CANCEL
-                            )
-                        }
-                        .show()
-                }
-        }
+        // [P3.3 裁军] 系统权限桥两段（pendingAndroidPermission /
+        // pendingSettingsGate 收集器）随 OffloadPermissionManager 退役删除。
 
         // Apply saved language before composing UI
         applySavedLanguage()
@@ -411,10 +323,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Register for debug screenshot capture (debug builds only)
-        if (BuildConfig.DEBUG) {
-            com.openminis.app.debug.DebugRPCHandler.currentActivity = java.lang.ref.WeakReference(this)
-        }
+        // [P3.3 裁军] 调试面板（debug/ 整包）退役：DebugRPCHandler 截图
+        // 注册随之删除。
 
         // Non-null and fully initialized — proven by the guard above.
         val app = requireNotNull(application as? MinisApp)
@@ -492,21 +402,14 @@ class MainActivity : ComponentActivity() {
                     providerRepository = app.providerRepository,
                     envVarRepository = app.envVarRepository,
                     skillRepository = app.skillRepository,
-                    mcpRepository = app.mcpRepository,
                     memoryRepository = app.memoryRepository,
                     navController = navController,
                     initialDeepLink = launchDeepLink,
                     initialRoute = novexStartRoute,
                 )
 
-                // T-config: root-level minis-config confirm dialog.
-                // Bound to ConfigConfirmationGate.pending — the gate
-                // fires whenever a CLI write is awaiting user OK. The
-                // dialog is rendered on top of any active screen, so
-                // it works regardless of where the user is when the
-                // agent triggers a change. Mirrors iOS MinisApp.swift
-                // root-level `.sheet(item: gate.pending)`.
-                com.openminis.app.ui.settings.ConfigConfirmDialogHost()
+                // [P3.3 裁军] minis-config 根级确认弹窗
+                // （ConfigConfirmDialogHost）随 config/ 体系退役删除。
             }
         }
     }
@@ -676,49 +579,23 @@ class MainActivity : ComponentActivity() {
             is DeepLinkAction.OpenSettingsScreen -> {
                 nav.navigate(action.route)
             }
-            is DeepLinkAction.OpenPermissionSettings -> {
-                nav.navigate(Routes.PERMISSIONS)
-            }
-            is DeepLinkAction.OpenHtmlPreview -> {
-                DeepLinkCoordinator.setPendingHtmlPreview(
-                    action.sessionId,
-                    action.resourcePath,
-                    action.title,
-                )
-                nav.navigate(Routes.chat(action.sessionId))
-            }
-            // App-icon quick actions (mirrors iOS QuickActionRouter). All
-            // three open a fresh draft chat; voice/camera additionally seed
+            // [P3.3 裁军] OpenPermissionSettings（权限屏路由）、OpenHtmlPreview
+            // （HTML 预览捷径）、OpenAlarmList（系统闹钟列表跳转）随对应功能
+            // 退役删除；minis://views/alarm 等旧深链现在落入 Unknown。
+            // App-icon quick actions (mirrors iOS QuickActionRouter):
+            // new_chat / camera_chat open a fresh draft chat; camera seeds
             // DeepLinkCoordinator.pendingChatAction so ChatScreen auto-fires
-            // the corresponding UI on first compose.
+            // the camera on first compose. voice_chat 快捷方式随语音退役。
             is DeepLinkAction.NewChat,
-            is DeepLinkAction.NewVoiceChat,
             is DeepLinkAction.NewCameraChat -> {
-                when (action) {
-                    is DeepLinkAction.NewVoiceChat -> DeepLinkCoordinator
-                        .setPendingChatAction(DeepLinkCoordinator.ChatAction.START_VOICE)
-                    is DeepLinkAction.NewCameraChat -> DeepLinkCoordinator
+                if (action is DeepLinkAction.NewCameraChat) {
+                    DeepLinkCoordinator
                         .setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CAMERA)
-                    else -> {}
                 }
                 val newRoute = Routes.chat("__new__${java.util.UUID.randomUUID()}")
                 nav.navigate(newRoute) {
                     popUpTo(Routes.SESSION_LIST) { inclusive = false }
                     launchSingleTop = true
-                }
-            }
-            is DeepLinkAction.OpenAlarmList -> {
-                // T297: minis://views/alarm now opens the system Clock app
-                // directly via AlarmClock.ACTION_SHOW_ALARMS — the in-app
-                // AlarmListScreen was a one-button passthrough that did the
-                // exact same thing. The android-alarm tool envelope still
-                // emits this view_url so existing chat cards keep working.
-                val showAlarms = Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                try {
-                    startActivity(showAlarms)
-                } catch (_: android.content.ActivityNotFoundException) {
-                    AppLogger.warning("DeepLink", "OpenAlarmList: no Clock app handles SHOW_ALARMS")
                 }
             }
             else -> {}
