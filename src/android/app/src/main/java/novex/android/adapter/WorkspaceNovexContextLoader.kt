@@ -61,7 +61,11 @@ class WorkspaceNovexContextLoader(
             is AnswerIdentity.CharacterVersion -> Unit
         }
         workspace.conversationDrafts(configuration.conversationId)?.let { drafts ->
-            if (drafts.cards.isNotEmpty() || drafts.pendingWrites.isNotEmpty()) candidates += NovexContextCandidate(
+            // 空卡目录在没有任何实际成果时不注入：整列"创作目标"会被模型当成待办，
+            // 开场就反复提议建卡。空卡承接由创建工具自动完成，不依赖目录中的编号。
+            val hasRealWork = drafts.pendingWrites.isNotEmpty() || drafts.completedWrites.isNotEmpty() ||
+                drafts.cards.any { !it.isPrivate }
+            if (hasRealWork) candidates += NovexContextCandidate(
                 sourceId = "conversation-drafts:${configuration.conversationId}",
                 label = "本对话 · 创作目标目录",
                 content = buildString {

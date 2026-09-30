@@ -123,6 +123,30 @@ class WorkspaceNovexContextLoaderTest {
         assertTrue(result.any { it.sourceId == "quotes" && it.kind == ContextSourceKind.ANSWER_IDENTITY })
     }
 
+    @Test
+    fun emptyPrivateDraftsAreNotAdvertisedAsCreationTargets() = kotlinx.coroutines.test.runTest {
+        val empty = NovexConversationDraftSnapshot(
+            conversationId = "chat",
+            cards = listOf(
+                NovexConversationDraftCard(NovexContentAddress.world("w1"), "root-w1"),
+                NovexConversationDraftCard(NovexContentAddress.characterVersion("c1"), "root-c1"),
+                NovexConversationDraftCard(NovexContentAddress.interactiveFiction("g1"), "root-g1"),
+            ),
+        )
+        val filled = empty.copy(cards = empty.cards.mapIndexed { i, card ->
+            if (i == 0) card.copy(isPrivate = false) else card
+        })
+        val configuration = NovexConversationConfigurationSnapshot("chat")
+        assertFalse(
+            WorkspaceNovexContextLoader(FakeWorkspace(drafts = empty)).load(configuration)
+                .any { it.label.contains("创作目标目录") },
+        )
+        assertTrue(
+            WorkspaceNovexContextLoader(FakeWorkspace(drafts = filled)).load(configuration)
+                .any { it.label.contains("创作目标目录") && it.content.contains("w1") },
+        )
+    }
+
     private fun world(id: String, name: String) = NovexWorldSnapshot(
         world = WorldEntity(id, name, "世界概述", "[]", null, 1, 1),
         versions = emptyList(),
@@ -138,8 +162,11 @@ class WorkspaceNovexContextLoaderTest {
         private val worlds: Map<String, NovexWorldSnapshot> = emptyMap(),
         private val characters: List<NovexCharacterCard> = emptyList(),
         private val modules: Map<ModuleOwner, List<ContentModuleEntity>> = emptyMap(),
+        private val drafts: NovexConversationDraftSnapshot? = null,
     ) : NovexWorkspace {
         val requestedWorldIds = mutableListOf<String>()
+        override suspend fun conversationDrafts(conversationId: String) =
+            drafts?.takeIf { it.conversationId == conversationId }
         override suspend fun worlds() = worlds.values.map { snapshot ->
             NovexWorldCard(snapshot.world, null, snapshot.versions.size, snapshot.modules.size)
         }
