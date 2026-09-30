@@ -29,7 +29,6 @@ data class ThinkingResolveContext(
     val isXAI: Boolean = false,
     /** [P3.3 裁军→内置] 端点是内置「前尘 API」中转预设（proxy.qianc.ltd）：
      * gemini 系思考参数完全省略的内置席由该标志命中。 */
-    val isQianchenRelay: Boolean = false,
     /** 端点成文的关闭档位；null = 关闭即省略字段（允许清单决策归调用方）。 */
     val offEffort: String?,
 )
@@ -97,7 +96,6 @@ object ThinkingContractResolver {
         // [P3.3 裁军] 前尘 API 中转预设的内置席：该中转会把我方思考参数错译
         // 成 Claude thinking 触发 400，gemini 系一律完全省略（原预设的
         // CUSTOM 规则收编为内置，行为逐字节一致）。
-        { p -> if (p.qianchenRelay) patternSeat("gemini-*", "qianchen-relay-gemini", null, ThinkingWireFormat.OmitEverything) else null },
         { p -> if (p.openRouter) contract("openrouter", ThinkingWireFormat.ReasoningEffortNested(offValue = null)) else null },
         { p -> patternSeat("o*", "openai-native", p.offEffort) },
         { p -> patternSeat("gpt-5*", "openai-native", p.offEffort) },
@@ -423,7 +421,6 @@ object ThinkingContractResolver {
 
     private data class VendorProfile(
         val mistral: Boolean,
-        val qianchenRelay: Boolean,
         val openRouter: Boolean,
         val dashScope: Boolean,
         val unifiedGateway: Boolean,
@@ -432,7 +429,6 @@ object ThinkingContractResolver {
 
     private fun vendorProfile(ctx: ThinkingResolveContext) = VendorProfile(
         mistral = ctx.isMistral,
-        qianchenRelay = ctx.isQianchenRelay,
         openRouter = ctx.isOpenRouter,
         dashScope = ctx.isDashScope,
         unifiedGateway = ctx.usesUnifiedReasoningEffort,

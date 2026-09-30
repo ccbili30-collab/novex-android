@@ -587,7 +587,7 @@ fun NovexProviderSetupScreen(
                     error = "保存模型连接失败：${failure.message ?: failure.javaClass.simpleName}"
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text("保存并启用（${selectedModels.size}）") }
-            // [T-qianchen-preset] 取钥链接按实例自适应：内置预设带 keyHelpUrl
+            // 取钥链接按实例自适应：带 keyHelpUrl 的实例显示取钥入口（通用机制）
             // （前尘 API → proxy.qianc.ltd）；其余按接口方向给默认指引。
             val helpUrl = existing?.keyHelpUrl ?: direction.defaultKeyHelpUrl
             val helpLabel = existing?.keyHelpUrl?.let { "前往 ${existing.label} 官网获取密钥" }

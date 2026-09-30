@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config
 
 /**
  * P3.1e 工厂选择点：原上游 openai 包的九类实例（①Codex-OAuth ②官方直连
- * ③useResponsesAPI ④Azure ⑤前尘回退 ⑥局域网明文 ⑦OpenRouter ⑧xAI ⑨Kimi）
+ * ③useResponsesAPI ④Azure ⑤回退 ⑥局域网明文 ⑦OpenRouter ⑧xAI ⑨Kimi）
  * 全部构造 NovexTransportProvider——上游包已整体删除，工厂不再有任何回退实现。
  * LAN 明文政策与 P3.1c 一致：适配器请求前置预检给确定性报错（见
  * NovexTransportProviderTest 的预检用例），工厂仍照常构造适配器。
@@ -96,7 +96,7 @@ class NovexTransportFactorySelectionTest {
     }
 
     @Test
-    fun `⑤前尘回退实例换管且构造时仍走 chat 线`() {
+    fun `⑤回退实例换管且构造时仍走 chat 线`() {
         val provider = novex(instance(autoResponsesFallback = true))
         assertEquals(WireProtocol.CHAT_COMPLETIONS, provider.lineProtocol())
     }
