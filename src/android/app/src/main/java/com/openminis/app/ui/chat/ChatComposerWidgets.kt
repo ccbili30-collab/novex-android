@@ -394,7 +394,8 @@ internal fun NovexCardStackGlyph(
         val pivot = androidx.compose.ui.geometry.Offset(w / 2f, h * 0.90f)
         val cardTop = pivot.y - ch
         // 左右两张后卡：绕底部中点向外张开，填底色防线条互透。
-        for ((deg, alpha) in listOf(-16f to 0.45f, 16f to 0.45f)) {
+        // 后两张卡各向两侧倾斜，中卡正立压顶——扇形交叠。
+        for ((deg, alpha) in listOf(-18f to 0.45f, 18f to 0.45f)) {
             withTransform({
                 rotate(degrees = deg, pivot = pivot)
             }) {
@@ -430,7 +431,7 @@ internal fun NovexCardStackGlyph(
     }
 }
 
-/** 小卡片标（卡行行首）：一张竖立圆角卡片的剪影。 */
+/** 小卡片标（卡行行首）：一张中空描边的竖立矩形框，描边即卡片。 */
 @Composable
 internal fun NovexMiniCardGlyph(
     color: Color,
@@ -444,6 +445,7 @@ internal fun NovexMiniCardGlyph(
             topLeft = androidx.compose.ui.geometry.Offset((size.width - cw) / 2f, (size.height - ch) / 2f),
             size = androidx.compose.ui.geometry.Size(cw, ch),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.4.dp.toPx()),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx()),
         )
     }
 }
