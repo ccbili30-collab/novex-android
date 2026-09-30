@@ -104,10 +104,13 @@ class ProviderRepository(private val context: Context) {
         private const val MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000L
 
         /**
-         * [T-qianchen-preset] 内置「前尘 API」中转预设的固定实例 id。固定 id 让
+         * （历史）前尘内置预设固定实例 id。预设已退役，常量随删——
          * 种子幂等（升级不重复建）；用户删除后靠 prefs 标记不再复活。
          */
-        internal const val QIANCHEN_INSTANCE_ID = "builtin-qianchen-relay"
+        // [前尘删除 2026-09-30] 内置「前尘 API」预设整体退役（用户裁决）——
+        // 常量/种子/思考席位/主机嗅探一并删除；已种到用户库里的实例行保留为
+        // 普通自定义实例（key_help_url 与 auto_responses_fallback 是通用机制
+        // 与冻结列，保留）。
 
         /** Per-instance `lastFetchAt` pref key. */
         private fun lastFetchKey(instanceId: String) = "modelsLastFetchAt_$instanceId"
@@ -231,16 +234,8 @@ class ProviderRepository(private val context: Context) {
             // callers (refreshAllModelsIfNeeded) would otherwise suspend forever.
             if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
             // [P3.3 裁军] 语音厂商模板种子对账（ensureVoiceTemplateModels）随
-            // 语音全家退役删除。
-            // [T-qianchen-preset] Seed the built-in 前尘 API relay preset once per
-            // install (用户 2026-09-16 决策：预填协议地址、不内置密钥、密钥链接
-            // 指向官网、gemini 模型省略思考参数规避中转的错误参数翻译、chat 失败
-            // 自动改走 /v1/responses)。prefs 标记保证用户删除后不会复活。
-            try {
-                seedQianchenPreset()
-            } catch (e: Exception) {
-                android.util.Log.w("ProviderRepo", "[Preset] seedQianchenPreset failed: ${e.message}")
-            }
+            // 语音全家退役删除；[前尘删除 2026-09-30] 内置前尘 API 预设种子
+            // 亦整体退役（用户裁决：产品不携带任何中转商特例）。
         }
     }
 
@@ -695,40 +690,6 @@ class ProviderRepository(private val context: Context) {
         invalidateModelCache(instance.id)
     }
 
-    /**
-     * [T-qianchen-preset] 种子内置「前尘 API」预设（每安装一次）。实例带固定 id、
-     * OpenAI 兼容协议、地址预填（自动追加 /v1：实测 chat 必须走 /v1/chat/completions，
-     * responses 同 host 的 /v1/responses 亦通）；不内置密钥；密钥链接指向官网；
-     * gemini-* 思考参数完全省略的行为由内置座次表承接（见 resolver 的
-     * qianchen-relay-gemini 席）；chat 失败自动改走 responses（见
-     * 适配器 NovexTransportProvider 的 responsesFallback）。
-     */
-    private fun seedQianchenPreset() {
-        val prefs = context.getSharedPreferences("novex_provider_presets", Context.MODE_PRIVATE)
-        // 先落标记再写入，避免 addInstance → ensureConfigLoaded 重入时二次种子。
-        if (prefs.getBoolean("qianchen-seeded", false)) return
-        prefs.edit().putBoolean("qianchen-seeded", true).apply()
-        ensureConfigLoaded()
-        if (_config.value.instances.any { it.id == QIANCHEN_INSTANCE_ID }) return
-        addInstance(
-            ProviderInstance(
-                id = QIANCHEN_INSTANCE_ID,
-                label = "前尘 API",
-                providerType = ProviderType.openAI,
-                credentialType = ProviderCredential.apiKey,
-                customBaseURL = "https://proxy.qianc.ltd",
-                appendV1Suffix = true,
-                keyHelpUrl = "https://proxy.qianc.ltd",
-                autoResponsesFallback = true,
-            ),
-        )
-        // [P3.3 裁军] 原预设在此写一条 CUSTOM 思考规则（gemini-* 不发思考
-        // 参数，规避中转把根级 reasoning_effort 错译成 Claude thinking 参数
-        // 触发 400）。CUSTOM 规则机器随 minis-config 体系随葬后，该行为收进
-        // 内置座次表（ThinkingContractResolver.SEATS 的 qianchen-relay-gemini
-        // 席，按 base URL 嗅探命中），resolver 只跑内置。
-        android.util.Log.i("ProviderRepo", "[Preset] seeded 前尘 API relay instance")
-    }
 
     // [P3.3 裁军] ensureVoiceTemplateModels（语音模板对账）随语音全家退役删除。
 

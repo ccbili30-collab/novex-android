@@ -690,7 +690,7 @@ class NovexTransportProviderTest {
     }
 
     // ---------------------------------------------------------------------
-    // P3.1e：Responses 线 / Azure / 动态 OAuth / 前尘回退 / codex 生图
+    // P3.1e：Responses 线 / Azure / 动态 OAuth / 回退 / codex 生图
     // ---------------------------------------------------------------------
 
     private fun responsesProvider(
@@ -872,7 +872,7 @@ class NovexTransportProviderTest {
     }
 
     @Test
-    fun `前尘回退-chat 首块前失败自动改走 responses 且进程粘性`() = runBlocking {
+    fun `回退-chat 首块前失败自动改走 responses 且进程粘性`() = runBlocking {
         // 第一个调用对 chat 请求失败；第二个对 responses 请求成功——断言重试换线。
         val seenRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
         var chatFailedOnce = false
@@ -894,7 +894,7 @@ class NovexTransportProviderTest {
         }
         val provider = NovexTransportProvider(
             apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
-            basePath = "https://qianchen.example.com/v1",
+            basePath = "https://relay.example.com/v1",
             instanceId = "sticky-test-instance",
             allowResponsesFallback = true,
             callOpener = { call },
@@ -920,7 +920,7 @@ class NovexTransportProviderTest {
         }
         val provider2 = NovexTransportProvider(
             apiKey = "k", model = LLMModel("m", "M", "OpenAI"),
-            basePath = "https://qianchen.example.com/v1",
+            basePath = "https://relay.example.com/v1",
             instanceId = "sticky-test-instance",
             allowResponsesFallback = true,
             callOpener = { call2 },
@@ -958,7 +958,7 @@ class NovexTransportProviderTest {
     }
 
     @Test
-    fun `前尘回退-responses 重试也失败则粘性不落-新回合仍从 chat 起步`() = runBlocking {
+    fun `回退-responses 重试也失败则粘性不落-新回合仍从 chat 起步`() = runBlocking {
         // 负向粘性：粘性等重试真的产出首块再落。重试也失败（连首块都没有）时
         // 本实例不得锁死在 responses 上——下一回合仍从 chat 试起。
         val seenRequests = java.util.concurrent.ConcurrentLinkedQueue<novex.model.CompletionStreamRequest>()
