@@ -46,27 +46,37 @@ internal fun NovexContextMeter(
     val known = ready && capacityKnown
     val geometry = contextMeterGeometry(usedTokens, maximumTokens ?: 1, windowTokens ?: 1)
     val ink = ChatColors.primaryText // black in light mode, readable inverted ink in dark mode
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp).semantics {
-        contentDescription = if (known) "${if (estimated) "预计" else "实际"}上下文占用 ${geometry.percent}%，已用 $usedTokens 词元，启用 $windowTokens，模型上限 $maximumTokens；点击切换百分比和用量"
+    // [A2c-meter] 收成 20dp 纯环：三层语义保留——细底环=模型上限、灰弧=
+    // 已启用额度、墨弧=已用；点按切「环 / 百分比」两种显示。环本身虽小，
+    // 「为什么上下文这么短」全靠启用弧和墨弧的长度差传达，不能砍。
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp).semantics {
+        contentDescription = if (known) "${if (estimated) "预计" else "实际"}上下文占用 ${geometry.percent}%，已用 $usedTokens 词元，启用 $windowTokens，模型上限 $maximumTokens；点击切换百分比显示"
             else "本轮用量尚未确定，点击切换显示"
     }) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp)) {
-            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                val inset = 2.dp.toPx()
-                val origin = androidx.compose.ui.geometry.Offset(inset, inset)
-                val area = androidx.compose.ui.geometry.Size(size.width - 2 * inset, size.height - 2 * inset)
-                drawArc(Color.Gray.copy(alpha = 0.35f), -90f, 360f, false, origin, area,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
-                if (capacityKnown) {
-                    drawArc(Color.Gray, -90f, geometry.enabled * 360f, false, origin, area,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                    if (known) drawArc(ink, -90f, geometry.used * 360f, false, origin, area,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        if (mode % 2 == 1 && known) {
+            Text(
+                text = (if (estimated) "≈" else "") + "${geometry.percent}%",
+                color = ChatColors.secondaryText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+        } else {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp)) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val inset = 0.5.dp.toPx()
+                    val origin = androidx.compose.ui.geometry.Offset(inset, inset)
+                    val area = androidx.compose.ui.geometry.Size(size.width - 2 * inset, size.height - 2 * inset)
+                    drawArc(Color.Gray.copy(alpha = 0.35f), -90f, 360f, false, origin, area,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                    if (capacityKnown) {
+                        drawArc(Color.Gray, -90f, geometry.enabled * 360f, false, origin, area,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                        if (known) drawArc(ink, -90f, geometry.used * 360f, false, origin, area,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                    }
                 }
             }
-            Text(if (!known) "—" else (if (estimated) "≈" else "") +
-                if (mode % 2 == 0) "${geometry.percent}%" else compactContextTokens(usedTokens),
-                color = ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }

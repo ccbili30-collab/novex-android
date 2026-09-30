@@ -208,6 +208,19 @@ internal fun ChatViewModel.updateSlashMenuState(text: String) {
 }
 
 /**
+ * [A2c-cards] 叠卡按钮开卡盘：直接弹窗，不往输入框注入 "/"——卡盘对用户是
+ * 「指令卡托盘」而非斜杠过滤框；键入 "/" 的过滤路径不受影响
+ * （updateSlashMenuState 仍在每次输入时驱动同一弹窗）。dismissSlashMenu
+ * 在 savedInputBeforeSlash=null 且文本非 "/" 开头时会原样返回输入，安全。
+ */
+internal fun ChatViewModel.openInstructionCards() {
+    savedInputBeforeSlash = null
+    _slashFilter.value = ""
+    _slashMenuSelectedIndex.value = -1
+    _showSlashMenu.value = true
+}
+
+/**
  * "/" button tapped. If composer is empty, set input to "/"; otherwise save
  * and show the menu directly without clobbering existing input.
  * Returns the (possibly updated) input text.

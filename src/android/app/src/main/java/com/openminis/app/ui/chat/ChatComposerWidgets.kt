@@ -300,6 +300,28 @@ internal fun AttachmentChip(
 
 // ─── Input Circle Button (iOS: 34×34 circle, secondary bg + border) ─────────
 
+/**
+ * [A2c-glyphs] 输入栏第二行裸符号钮：无圆底无边框，图标是符号本身；
+ * 40dp 触控区保可达性。视觉对齐工具列（+、叠卡、额度环、⤢、🎙）。
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun ComposerGlyphButton(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
 @Composable
 internal fun InputCircleButton(
     onClick: () -> Unit,

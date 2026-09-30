@@ -177,6 +177,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.platform.LocalDensity
@@ -803,7 +804,7 @@ fun ChatScreen(
     // backing state without needing fragile scope wiring.
     var showMoveSheet by remember { mutableStateOf(false) }
     var pendingShareText by remember { mutableStateOf<String?>(null) }
-    var showNovexControls by remember { mutableStateOf(false) }
+    var showComposerExpanded by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
     var showConversationRecords by remember { mutableStateOf(false) }
     var pendingDeleteFromMessageId by remember { mutableStateOf<String?>(null) }
@@ -2009,7 +2010,7 @@ fun ChatScreen(
                             showChatMenu = true
                         }) {
                             Icon(
-                                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_more_vertical),
+                                imageVector = com.openminis.app.ui.novex.NovexIcons.MoreHoriz,
                                 contentDescription = "更多操作",
                             )
                         }
@@ -2933,13 +2934,29 @@ fun ChatScreen(
                             }
                         }
                     } else {
-                        Text(
-                            text = "想聊些什么，或一起创作？",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
+                        // [A2c-empty] 空态两行：问候 + 语境行（绑卡会话点出所在
+                        // 世界，无卡会话只留问候）。不放 logo 标记。
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.align(Alignment.Center).padding(horizontal = 36.dp),
-                        )
+                        ) {
+                            Text(
+                                text = "想聊些什么，或一起创作？",
+                                color = ChatColors.primaryText.copy(alpha = 0.85f),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                            )
+                            if (sessionTitle.isNotBlank() && sessionTitle != "New Chat") {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "与「$sessionTitle」的世界一同落笔",
+                                    color = ChatColors.secondaryText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
                     }
                 }
                 // SelectionDragTracker bridges gesture-published dragIntent
@@ -3229,7 +3246,7 @@ fun ChatScreen(
                     viewModel.thinkingLevel.collectAsState().value,
                 ) { viewModel.filteredSlashCommands() }
 
-                if (showSlashMenu && filteredSlashCommands.isNotEmpty()) {
+                if (showSlashMenu && (filteredSlashCommands.isNotEmpty() || novexControls.isNotEmpty())) {
                     val thinkingLevelState by viewModel.thinkingLevel.collectAsState()
                     val thinkingSupported = viewModel.currentModelSupportsReasoning
                     val memoryOnState by viewModel.memoryEnabled.collectAsState()
@@ -3298,7 +3315,65 @@ fun ChatScreen(
                                     .height(SLASH_PICKER_FIXED_HEIGHT)
                                     .verticalScrollbar(slashListState),
                             ) {
-                            itemsIndexed(filteredSlashCommands, key = { _, c -> c.id }) { index, cmd ->
+                            // [A2c-cards] 卡盘两组：银卡在上——文游快捷动作
+                            // （原 ^ 按钮收编，命名由卡片/AI 自己提供）；
+                            // 发丝分割后金卡——原斜杠指令以「指令卡」呈现，
+                            // 不再暴露 "/" 语法。圆角矩阵行，不拟物。
+                            items(
+                                count = novexControls.size,
+                                key = { i -> "novexctl:$i" },
+                            ) { i ->
+                                val control = novexControls[i]
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.setInputText(viewModel.dismissSlashMenu(inputText))
+                                            viewModel.runNovexControl(control)
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(ChatColors.secondaryBg, RoundedCornerShape(7.dp)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            painter = androidx.compose.ui.res.painterResource(
+                                                if (control.behavior == ConversationControlBehavior.VIEW) {
+                                                    R.drawable.ic_phosphor_eye
+                                                } else {
+                                                    R.drawable.ic_phosphor_caret_right
+                                                },
+                                            ),
+                                            contentDescription = null,
+                                            tint = ChatColors.secondaryText,
+                                            modifier = Modifier.size(15.dp),
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = control.label,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = ChatColors.primaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            if (novexControls.isNotEmpty() && filteredSlashCommands.isNotEmpty()) {
+                                item(key = "__card_group_divider__") {
+                                    HorizontalDivider(
+                                        thickness = 0.5.dp,
+                                        color = ChatColors.toolBorder,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                            itemsIndexed(filteredSlashCommands, key = { _, c -> "cmd:${c.id}" }) { index, cmd ->
                                 // Section divider between builtins and
                                 // installed Skills (mirrors iOS divider
                                 // at the first skill row). Drawn as the
@@ -3314,13 +3389,27 @@ fun ChatScreen(
                                 }
                                 val isThinking = cmd.id == "thinking"
                                 val isThinkingActive = isThinking && thinkingLevelState.isEnabled && thinkingSupported
-                                val titleColor = if (isThinkingActive) ChatColors.sendButton else ChatColors.primaryText
+                                // [A2c-cards] 金卡行：激活态走品牌薄荷（动作/选
+                                // 中语义），不再用 sendButton 黑白色块。
+                                val titleColor = if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint else ChatColors.primaryText
                                 val subtitleColor = if (isThinking && !thinkingSupported) {
                                     ChatColors.secondaryText
                                 } else if (isThinkingActive) {
-                                    ChatColors.sendButton.copy(alpha = 0.7f)
+                                    com.openminis.app.ui.noven.NovenColors.Mint.copy(alpha = 0.7f)
                                 } else ChatColors.secondaryText
-                                val iconTint = if (isThinkingActive) ChatColors.sendButton else ChatColors.primaryText
+                                val iconTint = if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint else Color(0xFF9A7B2D)
+                                // 内建指令给中文卡名；技能/MCP 沿用其自带命名。
+                                val cardName = when (cmd.id) {
+                                    "clear" -> "清空卡"
+                                    "compact" -> "压缩卡"
+                                    "memory" -> "记忆卡"
+                                    "thinking" -> "思考卡"
+                                    "sync" -> "同步卡"
+                                    "save" -> "存档卡"
+                                    "saves" -> "存档列表卡"
+                                    "load" -> "读档卡"
+                                    else -> cmd.title
+                                }
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -3361,16 +3450,27 @@ fun ChatScreen(
                                         .padding(horizontal = 14.dp, vertical = 7.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(
-                                        imageVector = cmd.icon,
-                                        contentDescription = null,
-                                        tint = iconTint,
-                                        modifier = Modifier.size(18.dp),
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(
+                                                if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint.copy(alpha = 0.16f)
+                                                else Color(0xFF9A7B2D).copy(alpha = 0.16f),
+                                                RoundedCornerShape(7.dp),
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = cmd.icon,
+                                            contentDescription = null,
+                                            tint = iconTint,
+                                            modifier = Modifier.size(15.dp),
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "/${cmd.title.lowercase()}",
+                                            text = cardName,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = titleColor,
@@ -3395,7 +3495,7 @@ fun ChatScreen(
                                         Icon(
                                             imageVector = if (memoryOnState) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Block,
                                             contentDescription = null,
-                                            tint = if (memoryOnState) ChatColors.sendButton else ChatColors.secondaryText,
+                                            tint = if (memoryOnState) com.openminis.app.ui.noven.NovenColors.Mint else ChatColors.secondaryText,
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
@@ -4303,16 +4403,16 @@ fun ChatScreen(
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Left: + button (iOS: 34×34 circle, secondary bg)
+                        // Left: + 附件入口（裸符号，不再套灰圆底）
                         Box {
-                            InputCircleButton(
+                            ComposerGlyphButton(
                                 onClick = { showAttachMenu = true },
                             ) {
                                 Icon(
                                     com.openminis.app.ui.novex.NovexIcons.Add,
                                     contentDescription = "Attach",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(21.dp),
                                 )
                             }
                             MinisMenu(
@@ -4363,35 +4463,22 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Left: "/" slash command button (iOS: italic /, bold)
-                        InputCircleButton(onClick = {
+                        // [A2c-cards] 叠卡入口：打开「指令卡」托盘——银卡（文游
+                        // 快捷动作，原 ^ 按钮收编）在上、金卡（原斜杠指令）在下；
+                        // 不往输入框注入 "/"，键入 "/" 的过滤路径不受影响。
+                        ComposerGlyphButton(onClick = {
                             if (viewModel.showSlashMenu.value) {
                                 viewModel.setInputText(viewModel.dismissSlashMenu(inputText))
                             } else {
-                                viewModel.setInputText(viewModel.showSlashMenuOverInput(inputText))
+                                viewModel.openInstructionCards()
                             }
                         }) {
-                            Text(
-                                "/",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontStyle = FontStyle.Italic,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.Layers,
+                                contentDescription = "指令卡",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
                             )
-                        }
-
-                        if (novexControls.isNotEmpty()) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            InputCircleButton(onClick = { showNovexControls = true }) {
-                                Icon(
-                                    painter = androidx.compose.ui.res.painterResource(
-                                        R.drawable.ic_phosphor_chart_bar,
-                                    ),
-                                    contentDescription = "文游快捷操作",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
                         }
                         // T187: Exit Edit Mode pill, only while editingMessageId
                         // is non-null. Tap clears the edit flag + composer text
@@ -4780,20 +4867,9 @@ fun ChatScreen(
                         // RECOVERABLE states, explained inside the panel with a
                         // link to the relevant settings rather than by silently
                         // removing the control.
-                        if (false && com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
-                            MicButton(
-                                isRecording = !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
-                                    (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
-                                        sttState == com.openminis.app.speech.RecognitionState.STARTING),
-                                localeBadge = null,
-                                onClick = { triggerVoiceInput() },
-                                onLongClick = { showLangSheet = true },
-                                isVoiceActive = com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive,
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
+                        // [A2c-meter] 额度环收成 20dp 纯三环（上限底环/启用
+                        // 弧/已用墨弧），点按切换百分比——信息量配不上大圆钮，
+                        // 但三层额度语义必须保留（否则用户不知道为何上下文短）。
                         if (showContextMeter) {
                             NovexContextMeter(
                                 usedTokens = lastTurnContextTokens,
@@ -4804,6 +4880,38 @@ fun ChatScreen(
                                 mode = contextMeterMode,
                                 onClick = { contextMeterMode = (contextMeterMode + 1) % 2 },
                             )
+                        }
+
+                        // [A2c-expand] 全屏编写入口——长文输入是创作产品的常态，
+                        // 价值高于常驻的额度环。
+                        ComposerGlyphButton(onClick = { showComposerExpanded = true }) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.Fullscreen,
+                                contentDescription = "展开输入",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+
+                        if (com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
+                            val micRecording = !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
+                                (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
+                                    sttState == com.openminis.app.speech.RecognitionState.STARTING)
+                            ComposerGlyphButton(
+                                onClick = { triggerVoiceInput() },
+                                onLongClick = { showLangSheet = true },
+                            ) {
+                                Icon(
+                                    if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive) {
+                                        com.openminis.app.ui.novex.NovexIcons.Keyboard
+                                    } else {
+                                        com.openminis.app.ui.novex.NovexIcons.Mic
+                                    },
+                                    contentDescription = if (micRecording) "Stop recording" else "Voice input",
+                                    tint = if (micRecording) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -4854,25 +4962,95 @@ fun ChatScreen(
                 )
             }
 
-            if (showNovexControls) {
-                NovexSelectionSheet(
-                    title = "文游快捷操作",
-                    onDismissRequest = { showNovexControls = false },
-                    actions = novexControls.map { control ->
-                        NovexSelectionAction(
-                            label = control.label + if (
-                                control.behavior == ConversationControlBehavior.VIEW
-                            ) " · 查看" else " · 动作",
-                            icon = if (control.behavior == ConversationControlBehavior.VIEW) {
-                                R.drawable.ic_phosphor_eye
-                            } else {
-                                R.drawable.ic_phosphor_caret_right
-                            },
-                            onClick = { viewModel.runNovexControl(control) },
-                        )
-                    },
-                )
+
+            // [A2c-expand] 全屏编写：modal 编辑器与输入框共用 inputText 状态，
+            // 关闭即落回草稿，不丢内容。
+            if (showComposerExpanded) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { showComposerExpanded = false },
+                    properties = androidx.compose.ui.window.DialogProperties(
+                        usePlatformDefaultWidth = false,
+                    ),
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = ChatColors.background,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
+                                .imePadding(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(onClick = { showComposerExpanded = false }) {
+                                    Icon(
+                                        com.openminis.app.ui.novex.NovexIcons.Close,
+                                        contentDescription = "关闭",
+                                        tint = ChatColors.primaryText,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "编写",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = ChatColors.primaryText,
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                com.openminis.app.ui.novex.TextButton(
+                                    onClick = { showComposerExpanded = false },
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = com.openminis.app.ui.noven.NovenColors.Mint,
+                                    ),
+                                ) {
+                                    Text("完成", fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            val expandedFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = inputText,
+                                onValueChange = { viewModel.setInputText(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                                    .focusRequester(expandedFocus),
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = ChatColors.primaryText,
+                                    fontSize = 16.sp,
+                                    lineHeight = 26.sp,
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                                    com.openminis.app.ui.noven.NovenColors.Mint,
+                                ),
+                            ) { innerTextField ->
+                                Box {
+                                    if (inputText.isEmpty()) {
+                                        Text(
+                                            text = "把想法写长一点…",
+                                            color = ChatColors.secondaryText,
+                                            fontSize = 16.sp,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                            LaunchedEffect(Unit) {
+                                expandedFocus.requestFocus()
+                                keyboardController?.show()
+                            }
+                        }
+                    }
+                }
             }
+
             novexControlView?.let { view ->
                 NovexNoticeDialog(
                     title = view.title,
