@@ -5,8 +5,12 @@
     <string name="settings">Настройки</string>
     <string name="add_provider">Добавить провайдера</string>
     <string name="appearance">Внешний вид</string>
+
+    
     <string name="delete">Удалить</string>
     <string name="cancel">Отмена</string>
+
+
     <string name="session_memory_title">Память в сессии</string>
     <string name="memory_section_auto_injected">Автодобавление</string>
     <string name="memory_section_auto_injected_footer">Загружается в системный промпт в начале каждого хода агента.</string>
@@ -45,6 +49,11 @@
     <string name="check_update_install_launch_failed">Не удалось запустить установщик. Проверьте разрешение «установка неизвестных приложений» или откройте скачанный APK вручную.</string>
     <string name="check_update_install_hint">Совет: если установка не даёт отклика, подпись может не совпадать — сначала удалите предыдущую версию, затем скачайте снова.</string>
     <string name="check_update_open_install_settings">Открыть настройки</string>
+
+
+
+
+
     <string name="mention_scanning">Сканирование файлов…</string>
     <string name="mention_no_match">Нет совпадающих файлов</string>
     <string name="resume_banner_title">Прервано — нажмите «Продолжить», чтобы возобновить</string>
@@ -52,7 +61,10 @@
     <string name="search_chats_placeholder">Поиск по чатам…</string>
     <string name="search_no_results">Нет результатов по запросу \"%1$s\"</string>
     <string name="stop_tool">Остановить инструмент</string>
+
+    
     <string name="bg_section_header">Фон и уведомления</string>
+    
     <string name="bg_service_channel_name">Статус агента</string>
     <string name="bg_service_channel_description">Показывает статус активных сессий агента.</string>
     <string name="bg_overlay_nudge_channel_name">Разрешение фонового наложения</string>
@@ -84,11 +96,13 @@
     <string name="rom_autostart_section_footer">Некоторые оболочки Android (%1$s) требуют дополнительного разрешения на автозапуск помимо стандартных системных настроек. Без него Novex может быть закрыт через несколько минут после ухода в фон.</string>
     <string name="rom_autostart_row_title">Открыть настройки автозапуска</string>
     <string name="rom_autostart_row_subtitle">Включите Novex на %1$s</string>
+    
     <string name="settings_title">Настройки</string>
     <string name="settings_section_llm_providers">Провайдеры LLM</string>
     <string name="settings_section_llm_providers_footer">Настройте, какие модели использует агент, управляйте ключами API и OAuth для каждого провайдера и создавайте группы моделей для резервирования или балансировки нагрузки.</string>
     <string name="settings_manage_providers">Управление провайдерами</string>
     <string name="settings_manage_providers_subtitle">Ключи API и вход через OAuth</string>
+    
     <string name="settings_token_usage">Расход токенов</string>
     <string name="settings_token_usage_subtitle">Отслеживание использования API по провайдерам</string>
     <string name="settings_section_appearance">Внешний вид</string>
@@ -126,10 +140,14 @@
     <string name="soul_save_error_title">Не удалось сохранить</string>
     <string name="settings_env_vars">Переменные окружения</string>
     <string name="settings_env_vars_subtitle">Переменные, добавляемые в Песочницу</string>
+
+
+    
     <string name="settings_section_about">О приложении</string>
     <string name="settings_about_minis">О Novex</string>
     <string name="settings_about_subtitle">Версия и информация о проекте</string>
     <string name="settings_privacy_policy">Политика конфиденциальности</string>
+
     <string name="about_title">О приложении</string>
     <string name="about_minis_tagline">Novex — ваш полностью локальный и приватный Агент прямо на устройстве.</string>
     <string name="about_links">Ссылки</string>
@@ -143,6 +161,9 @@
     <string name="time_hours_ago">%1$d ч назад</string>
     <string name="time_yesterday">Вчера</string>
     <string name="time_today">Сегодня</string>
+
+
+    
     <string name="session_skills_title">Навыки в Сессии</string>
     <string name="session_skills_header_installed">УСТАНОВЛЕНО</string>
     <string name="session_skills_enable_all">Включить все</string>
@@ -152,6 +173,7 @@
     <string name="session_skills_empty_subtitle">Импортируйте Навыки из Настройки → Навыки.</string>
     <string name="skills_search_placeholder">Поиск Навыков</string>
     <string name="skills_search_no_match">Нет Навыков по запросу \"%1$s\".</string>
+
     <string name="standard_sheet_close">Закрыть</string>
     <string name="token_usage_sheet_title">Использование Токенов в Сессии</string>
     <string name="token_usage_section_context">Контекст</string>
@@ -175,11 +197,23 @@
     <string name="common_no">Нет</string>
     <string name="memory_file_empty">Пусто</string>
     <string name="common_skip">Пропустить</string>
+
+
+
+
     <string name="onboarding_select_models_title">Выбрать Модели</string>
     <string name="onboarding_select_models_subtitle">Выберите до 3 Моделей для группы по умолчанию.</string>
     <string name="onboarding_filter_models">Фильтр Моделей</string>
     <string name="onboarding_done_count">Готово (%1$d/3)</string>
     <string name="onboarding_loading_models">Загрузка Моделей…</string>
+
+
+
+
+
+
+
+    
     <string name="filebrowser_title">Файлы</string>
     <string name="filebrowser_empty_folder">Пустая папка</string>
     <string name="filebrowser_delete_title">Удалить \"%1$s\"?</string>
@@ -211,9 +245,12 @@
     <string name="filepreview_pdf_empty">Пустой документ</string>
     <string name="filepreview_image_decode_error">Не удалось декодировать изображение</string>
     <string name="filepreview_image_load_error">Не удалось загрузить изображение</string>
+
+    
     <string name="filepreview_page_n">Страница %1$d</string>
     <string name="sessionlist_section_pinned">Закреплённые</string>
     <string name="sessionlist_section_today">Сегодня</string>
+
     <string name="sessionlist_section_earlier">Ранее</string>
     <string name="sessionlist_select_title">Выбор сессий</string>
     <string name="sessionlist_n_selected">Выбрано: %1$d</string>
@@ -224,11 +261,18 @@
     <string name="sessionlist_shell">Оболочка</string>
     <string name="sessionlist_shell_terminal">Терминал оболочки</string>
     <string name="sessionlist_rootfs_management">Управление Rootfs</string>
+    
     <string name="sessionlist_pin">Закрепить</string>
     <string name="sessionlist_unpin">Открепить</string>
     <string name="sessionlist_export">Экспорт</string>
     <string name="sessionlist_export_json">JSON</string>
     <string name="sessionlist_export_plain">Обычный текст</string>
+
+
+
+
+
+
     <string name="export_progress_failed">Ошибка экспорта</string>
     <string name="sessionlist_edit_title_category">Изменить название и категорию</string>
     <string name="sessionlist_regenerate_title">Создать название заново</string>
@@ -239,8 +283,31 @@
     <string name="sessionlist_delete_one_title">Удалить разговор?</string>
     <string name="sessionlist_delete_n_title">Удалить разговоров: %1$d?</string>
     <string name="sessionlist_delete_message">Это действие нельзя отменить.</string>
+
+
+
+
+
+
     <string name="chat_typing_indicator">%1$s думает</string>
+
+
     <string name="chat_error_stream_dropped_partial">Соединение прервано — этот ответ может быть неполным. Нажмите «Повторить», чтобы продолжить.</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="terminal_title">Оболочка Novex</string>
     <string name="terminal_clear">Очистить</string>
     <string name="terminal_show_keyboard">Показать</string>
@@ -257,6 +324,9 @@
     <string name="appearance_theme_system">Системная</string>
     <string name="appearance_theme_light">Светлая</string>
     <string name="appearance_theme_dark">Тёмная</string>
+
+
+    
     <string name="appearance_section_return_key">Клавиша Enter</string>
     <string name="appearance_return_key_footer">Выберите, вставляет ли клавиша Enter в поле ввода чата перенос строки или отправляет сообщение. Аппаратное Shift+Enter всегда вставляет перенос строки.</string>
     <string name="appearance_return_key_newline">Перенос строки</string>
@@ -340,6 +410,46 @@
     <string name="memory_delete_confirm_title">Удалить %1$s?</string>
     <string name="memory_delete_confirm_text">Это безвозвратно удалит этот журнал памяти.</string>
     <string name="memory_editor_placeholder">Введите содержимое…</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="skill_title">Навыки</string>
     <string name="skill_add">Добавить навык</string>
     <string name="skill_section_installed">Установлено</string>
@@ -373,6 +483,8 @@
     <string name="skill_detail_updated">Обновлено</string>
     <string name="skill_detail_delete">Удалить навык</string>
     <string name="skill_detail_edit_name_title">Изменить имя</string>
+
+    
     <string name="skill_file_save">Сохранить</string>
     <string name="skill_file_edit">Изменить</string>
     <string name="skill_detail_status_reading">Чтение файла…</string>
@@ -403,6 +515,7 @@
     <string name="storage_clearing_status">Очистка…</string>
     <string name="storage_clear_session_button">Очистить файлы сессии</string>
     <string name="storage_clear_confirm_title">Очистить файлы сессии?</string>
+    
     <string name="usage_title">Использование</string>
     <string name="usage_section_total">Всего использовано</string>
     <string name="usage_label_total_input">Всего входных (вкл. кэш)</string>
@@ -412,6 +525,7 @@
     <string name="usage_label_cache_hit_rate">Частота попаданий в кэш</string>
     <string name="usage_detail_input">Входные</string>
     <string name="usage_detail_output">Выходные</string>
+
     <string name="usage_detail_daily_avg">Среднее за день</string>
     <string name="usage_detail_session_avg">Среднее за сессию</string>
     <string name="usage_detail_sessions">Сессии</string>
@@ -470,9 +584,31 @@
     <string name="share_open_app_failed">Содержимое сохранено. Не удалось открыть Novex автоматически — откройте приложение, чтобы продолжить.</string>
     <string name="provider_list_api_key">Ключ API</string>
     <string name="provider_list_disabled">Отключено</string>
+
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">Добавить свою модель</string>
+
+
+
+    
     <string name="common_remove">Удалить</string>
+
+
+    
     <string name="add_provider_identity">Идентификация</string>
+
+
+
+
+
+
+
+
     <string name="add_custom_model_model_id">ID модели</string>
     <string name="add_custom_model_display_name_optional">Отображаемое имя (необязательно)</string>
     <string name="model_entry_model_detail">Сведения о модели</string>
@@ -533,6 +669,7 @@
     <string name="model_group_detail_limit_context_window">Ограничить контекстное окно</string>
     <string name="model_group_detail_max_context">Макс. контекст</string>
     <string name="model_group_detail_unlimited">Без ограничений</string>
+    
     <string name="model_groups_model_groups">Группы моделей</string>
     <string name="model_groups_new_group">Новая группа</string>
     <string name="model_groups_no_model_groups">Нет групп моделей</string>
@@ -544,9 +681,14 @@
     <string name="add_models_to_group_search_models">Поиск моделей</string>
     <string name="add_models_to_group_clear">Очистить</string>
     <string name="agent_loop_models_groups">Группы</string>
+
+
     <string name="add_custom_model_id_footer">ID модели — это идентификатор API, отправляемый в %1$s. Отображаемое имя — более понятная метка в выборе; по умолчанию равно ID модели, если оставлено пустым.</string>
     <string name="add_custom_model_eg_id_placeholder">например, gpt-4o-custom</string>
+
     <string name="add_models_to_group_add_count">Добавить (%1$d)</string>
+
+    
     <string name="agent_loop_models_model_count_singular">1 модель</string>
     <string name="agent_loop_models_model_count_plural">Моделей: %1$d</string>
     <string name="model_group_detail_models_header_count">МОДЕЛИ (%1$d)</string>
@@ -565,6 +707,8 @@
     <string name="notif_task_completed_channel_description">Уведомляет, когда сессия агента завершается, пока приложение в фоне.</string>
     <string name="notif_task_completed_default_title">Задача завершена</string>
     <string name="notif_task_completed_body">Нажмите, чтобы открыть чат и прочитать ответ.</string>
+
+
     <string name="notif_task_failed_body">Задача завершилась с ошибкой. Нажмите, чтобы открыть чат.</string>
     <string name="selection_add_to_chat_input">Добавить в поле ввода чата</string>
     <string name="selection_copy">Копировать</string>
@@ -594,6 +738,8 @@
     <string name="chat_menu_new_chat">Новый чат</string>
     <string name="chat_new_chat_stop_dialog_body">В этом чате выполняется задача. Новый чат остановит её.</string>
     <string name="chat_new_chat_stop_dialog_confirm">Остановить и создать чат</string>
+
+    
     <string name="chat_menu_enhanced_cache">Расширенный кэш</string>
     <string name="enhanced_cache_dialog_body">Расширенный кэш продлевает кэш промптов Anthropic с 5 минут до 1 часа, сохраняя контекст в длинных сессиях. Это может привести к дополнительной плате за запись в кэш. Включить?</string>
     <string name="enhanced_cache_dialog_confirm">Включить</string>
@@ -609,6 +755,8 @@
     <string name="add_models_to_group_no_match">Подходящие модели не найдены.</string>
     <string name="chat_longpress_edit">Изменить</string>
     <string name="chat_edit_exit_button">Выйти из режима редактирования</string>
+
+    
     <string name="shared_folders_title">Общие папки</string>
     <string name="shared_folders_info_banner">Эти каталоги видны внутри Linux-песочницы. Навыки и Память поддерживаются инструментами ИИ-агента — не редактируйте вручную.</string>
     <string name="shared_folder_name_shared">Общее</string>
@@ -616,8 +764,22 @@
     <string name="shared_folder_name_memory">Память</string>
     <string name="shared_folder_detail_title">Сведения о папке</string>
     <string name="shared_folder_browse_files">Просмотр файлов</string>
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">Чт/Зап</string>
     <string name="mount_badge_readonly">Только чтение</string>
+
+
+
+
     <string name="slash_compact_subtitle">Сжать историю беседы в сводку</string>
     <string name="slash_memory_writes_on">Запись включена — нажмите для переключения</string>
     <string name="slash_memory_writes_off">Запись выключена — нажмите для переключения</string>
@@ -655,6 +817,20 @@
     <string name="model_picker_non_text_warning_body">%1$s выводит %2$s и обычно не может выполнять задачу Агента. Выберите для сессии модель с текстовым выводом или добавьте эту модель в цикл Агента как инструмент, чтобы агент мог вызывать её по запросу для генерации %3$s.</string>
     <string name="model_picker_non_text_warning_use_anyway">Всё равно использовать</string>
     <string name="model_picker_non_text_warning_choose_other">Выбрать другую модель</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="a11y_service_label">Спец. возможности Novex</string>
     <string name="a11y_service_description">Позволяет Novex читать структуру экранного UI, выполнять нажатия и жесты и получать системные события от имени ИИ-агентов, вызывающих android-a11y-cli.</string>
     <string name="a11y_service_summary">Бэкенд автоматизации UI-слоя для Novex</string>
@@ -668,6 +844,18 @@
     <string name="sessionlist_welcome_step3_title">Начать разговор</string>
     <string name="sessionlist_welcome_step3_subtitle">Нажмите, чтобы начать</string>
     <string name="sessionlist_welcome_step_done">Готово</string>
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="import_zip_extract_failed">Не удалось извлечь архив</string>
     <string name="import_zip_no_supported">В архиве нет файлов для импорта</string>
     <string name="import_zip_summary">Импортировано %1$d из %2$d файлов</string>
@@ -684,6 +872,7 @@
     <string name="update_error_network_unreachable">Не удалось подключиться к серверу обновлений. Проверьте сеть и повторите попытку.</string>
     <string name="update_error_forbidden_with_link">Не удалось получить доступ к серверу обновлений — возможно, он заблокирован вашей сетью. Откройте GitHub Releases для ручной загрузки.</string>
     <string name="update_error_open_releases">Открыть GitHub Releases</string>
+
     <string name="crash_freq_dialog_dismiss">Не сейчас</string>
     <string name="crash_safe_mode_restart_needed">Для завершения восстановления необходимо перезапустить Novex. Пожалуйста, нажмите на значок приложения ещё раз.</string>
     <string name="crash_freq_email_subject">Отчёт о сбое Novex %1$s</string>
@@ -702,9 +891,37 @@
     <string name="crash_freq_save_success">Журналы сохранены в %1$s</string>
     <string name="shortcut_new_chat_short">Новый чат</string>
     <string name="shortcut_new_chat_long">Новый чат</string>
+    
     <string name="shortcut_camera_chat_short">Чат с камерой</string>
     <string name="shortcut_camera_chat_long">Чат с камерой</string>
     <string name="ok">ОК</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="image_action_copy">Копировать</string>
     <string name="image_action_share">Поделиться</string>
     <string name="image_action_save">Сохранить</string>
@@ -721,12 +938,59 @@
     <string name="file_share_failed_toast">Не удалось поделиться: %1$s</string>
     <string name="file_print_failed_toast">Не удалось напечатать: %1$s</string>
     <!-- [T-mcp-i18n-android] MCP Integrations UI -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="error_empty_response_generic">Модель вернула пустой ответ. Попробуйте ещё раз или смените модель.</string>
     <string name="error_empty_response_context_large">Модель вернула пустой ответ. Контекст беседы может быть слишком большим — попробуйте сжать его или начать новую сессию.</string>
     <string name="error_empty_response_after_tool">Модель не вернула ответ после результата инструмента, даже после напоминания. Возможно, она перегружена — попробуйте ещё раз или смените модель.</string>
     <string name="thinking_truncated_hint">Показаны последние %1$dK из %2$dK символов</string>
     <string name="thinking_view_full">Показать полное содержимое</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
+
+
+
+
+
+
     <string name="voice_provider_system">Система</string>
+
+
+
+
+
+
+
+    
 </resources>

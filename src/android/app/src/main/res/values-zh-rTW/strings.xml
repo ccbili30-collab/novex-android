@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
     <!-- T172 — chat sheets i18n -->
     <string name="move_to_sheet_title">移動到…</string>
     <string name="move_to_sheet_empty">沒有其他可用的會話。</string>
@@ -10,7 +9,9 @@
     <string name="time_hours_ago">%1$d 小時前</string>
     <string name="time_yesterday">昨天</string>
     <string name="time_today">今天</string>
+
     <!-- T338: 三按鈕均為會話級,不再升級到全域 BYPASS -->
+
     <string name="session_skills_title">會話中的技能</string>
     <string name="session_skills_header_installed">已安裝</string>
     <string name="session_skills_enable_all">全部啓用</string>
@@ -18,6 +19,7 @@
     <string name="session_skills_footer">僅為此會話切換技能。預設值來自「設定 → 技能」。</string>
     <string name="session_skills_empty_title">未安裝任何技能</string>
     <string name="session_skills_empty_subtitle">從「設定 → 技能」匯入技能。</string>
+
     <string name="standard_sheet_close">關閉</string>
     <string name="token_usage_sheet_title">會話 Token 用量</string>
     <string name="token_usage_section_context">上下文</string>
@@ -40,15 +42,25 @@
     <string name="common_yes">是</string>
     <string name="common_no">否</string>
     <string name="memory_file_empty">空</string>
-
     <!-- T172 — components / onboarding / preview i18n -->
     <string name="common_back">返回</string>
     <string name="common_skip">跳過</string>
+
+
+
+
     <string name="onboarding_select_models_title">選擇模型</string>
     <string name="onboarding_select_models_subtitle">為預設模型組選擇最多 3 個模型。</string>
     <string name="onboarding_filter_models">篩選模型</string>
     <string name="onboarding_done_count">完成 (%1$d/3)</string>
     <string name="onboarding_loading_models">正在載入模型…</string>
+
+
+
+
+
+
+
 
     <!-- T172 — sandbox / sessions / browser / terminal i18n -->
     <string name="filebrowser_title">檔案</string>
@@ -76,9 +88,12 @@
     <string name="filepreview_pdf_empty">空文件</string>
     <string name="filepreview_image_decode_error">無法解碼圖片</string>
     <string name="filepreview_image_load_error">圖片載入失敗</string>
+
+    
     <string name="filepreview_page_n">第 %1$d 頁</string>
     <string name="sessionlist_section_pinned">置頂</string>
     <string name="sessionlist_section_today">今天</string>
+
     <string name="sessionlist_section_earlier">更早</string>
     <string name="sessionlist_select_title">選擇會話</string>
     <string name="sessionlist_n_selected">已選 %1$d 項</string>
@@ -89,6 +104,7 @@
     <string name="sessionlist_shell">Shell</string>
     <string name="sessionlist_shell_terminal">Shell 終端</string>
     <string name="sessionlist_rootfs_management">Rootfs 管理</string>
+    
     <string name="sessionlist_pin">置頂</string>
     <string name="sessionlist_unpin">取消置頂</string>
     <string name="sessionlist_row_actions">更多操作</string>
@@ -96,6 +112,12 @@
     <string name="sessionlist_export_json">JSON</string>
     <string name="sessionlist_export_plain">純文字</string>
     <!-- T-export-optimize (b443b54d) — 分批/打包匯出進度 + 預覽 -->
+
+
+
+
+
+
     <string name="export_progress_failed">匯出失敗</string>
     <string name="sessionlist_edit_title_category">編輯標題與分類</string>
     <string name="sessionlist_regenerate_title">重新生成標題</string>
@@ -106,13 +128,49 @@
     <string name="sessionlist_delete_one_title">刪除此對話？</string>
     <string name="sessionlist_delete_n_title">刪除 %1$d 個對話？</string>
     <string name="sessionlist_delete_message">此操作無法復原。</string>
+
+
+
+
+
+
     <string name="chat_typing_indicator">%1$s 正在思考</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="chat_error_stream_dropped_partial">連線中斷，此回覆可能不完整。點擊重試以繼續。</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="terminal_title">Novex Shell</string>
     <string name="terminal_clear">清屏</string>
     <string name="terminal_show_keyboard">顯示</string>
     <string name="terminal_hide_keyboard">隱藏</string>
-
     <!-- T172-A providers / models / settings i18n -->
     <string name="provider_list_providers">AI 服務商</string>
     <string name="provider_list_add_provider">添加 AI 服務商</string>
@@ -129,12 +187,33 @@
     <string name="share_open_app_failed">內容已儲存。無法自動開啟 Novex，請手動開啟應用程式繼續。</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">已停用</string>
+    
     <string name="common_save">保存</string>
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">添加自定義模型</string>
+
+
+    
     <string name="common_cancel">取消</string>
     <string name="common_edit">編輯</string>
+
     <string name="common_remove">移除</string>
+
+
+    
     <string name="add_provider_identity">標識</string>
+
+
+
+
+
+
+
     <string name="add_custom_model_model_id">模型 ID</string>
     <string name="add_custom_model_display_name_optional">顯示名稱（選填）</string>
     <string name="model_entry_model_detail">模型詳情</string>
@@ -174,6 +253,7 @@
     <string name="quicktest_testing">測試中…</string>
     <string name="quicktest_kind_text">文字</string>
     <string name="quicktest_kind_image">圖像生成</string>
+    
     <string name="quicktest_empty_reply">（空回覆）</string>
     <string name="quicktest_image_unsupported">該模型的供應商不支援透過快速測試進行圖像生成。</string>
     <string name="quicktest_no_image">未返回任何圖像。</string>
@@ -209,11 +289,20 @@
     <string name="model_groups_vision">視覺輸入</string>
     <string name="add_models_to_group_search_models">搜索模型</string>
     <string name="add_models_to_group_clear">清除</string>
+        <string name="agent_loop_models_groups">分組</string>
+
+
 
     <!-- T172-A parameterized strings -->
     <string name="add_custom_model_id_footer">Model ID 是傳送到 %1$s 的 API 識別符。顯示名稱是模型選擇器裡更友善的標籤;留空時回落到 Model ID。</string>
     <string name="add_custom_model_eg_id_placeholder">例如 gpt-4o-custom</string>
+
+
+
+    
     <string name="add_models_to_group_add_count">新增 (%1$d)</string>
+
+    
     <string name="agent_loop_models_model_count_singular">1 個模型</string>
     <string name="agent_loop_models_model_count_plural">%1$d 個模型</string>
     <string name="model_group_detail_models_header_count">模型 (%1$d)</string>
@@ -221,7 +310,6 @@
     <string name="model_group_detail_remove_this_model_fallback">此模型</string>
     <string name="model_group_detail_delete_named_group_confirm">確定要刪除 \"%1$s\" 嗎?此操作無法復原。</string>
     <string name="provider_list_models_count">%1$d 個模型</string>
-
     <!-- T182 agent loop section i18n -->
     <string name="agent_loop_section_title">智慧型代理循環可用模型</string>
     <string name="agent_loop_section_footer">這裡列出的模型和群組可以在終端機透過 minis-model-use 呼叫。只有這些對智慧型代理可見。</string>
@@ -235,12 +323,14 @@
     <string name="agent_loop_section_empty_group_subtitle">（空群組）</string>
     <string name="agent_loop_section_remove">從智慧型代理循環中移除</string>
     <string name="agent_loop_section_group_badge">群組</string>
-
     <!-- T184-chatmenu-i18n — ChatScreen overflow ⋮ menu -->
     <string name="chat_menu_new_chat">新建對話</string>
     <string name="chat_new_chat_stop_dialog_body">目前對話有任務正在執行，新建對話將停止它。</string>
     <string name="chat_new_chat_stop_dialog_confirm">停止並新建</string>
+
+    
     <string name="chat_menu_enhanced_cache">增強快取</string>
+    
     <string name="context_near_capacity_title">上下文接近上限</string>
     <string name="context_near_capacity_message">對話上下文即將佔滿。傳送前可先壓縮歷史以釋放空間。啟用自動壓縮後，之後將自動完成此操作。</string>
     <string name="context_compact_and_send">壓縮並傳送</string>
@@ -248,23 +338,21 @@
     <string name="context_send_anyway">直接傳送</string>
     <string name="enhanced_cache_dialog_body">增強快取會將 Anthropic 提示快取從 5 分鐘延長至 1 小時，在長對話中保持上下文，可能產生額外的快取寫入費用。是否開啟？</string>
     <string name="enhanced_cache_dialog_confirm">開啟</string>
-
     <!-- T184-chatmenu-i18n — longpress + attach -->
     <string name="chat_longpress_copy">複製</string>
     <string name="chat_longpress_retry">重試</string>
     <string name="chat_attach_take_photo">拍照</string>
     <string name="chat_attach_choose_photos_videos">選擇照片和視頻</string>
     <string name="chat_attach_add_file">添加文件</string>
-
     <!-- T185 unified picker UI strings -->
     <string name="add_models_to_group_all_in_group">所有模型都已在這個群組裡。</string>
     <string name="add_models_to_group_no_match">沒有符合的模型。</string>
-
     <!-- T187 — user-bubble long-press Edit + Exit Edit + Clear Chat dialog -->
     <string name="chat_longpress_edit">編輯</string>
     <string name="chat_edit_exit_button">退出編輯</string>
 
     <!-- T235 — 共享資料夾（固定: 共享 / 技能 / 記憶） -->
+    
     <string name="shared_folders_title">共享資料夾</string>
     <string name="shared_folders_info_banner">這些目錄在 Linux 沙箱內可見，技能與記憶由 AI 代理工具自動維護，請勿手動修改。</string>
     <string name="shared_folder_name_shared">共享</string>
@@ -272,10 +360,23 @@
     <string name="shared_folder_name_memory">記憶</string>
     <string name="shared_folder_detail_title">資料夾詳情</string>
     <string name="shared_folder_browse_files">瀏覽檔案</string>
-
     <!-- T219-2 — 掛載外部資料夾 -->
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">讀寫</string>
     <string name="mount_badge_readonly">唯讀</string>
+
+
+
+
 
     <!-- T241: 斜線指令面板 + 選擇模型 sheet -->
     <string name="slash_compact_subtitle">壓縮對話歷史為摘要</string>
@@ -308,12 +409,23 @@
     <plurals name="model_picker_models_count">
         <item quantity="other">%d 個模型</item>
     </plurals>
-
     <string name="env_var_privacy_header">隱私</string>
     <string name="env_var_privacy_toggle">隱私模式</string>
     <string name="env_var_privacy_footer">開啟後，shell-execute 輸出中偵測到的環境變數值會在送達模型前被打碼（例如 `sk-1********ajhks`）。少於 8 個字元的值會被全部替換為 `*`。聊天中使用者可見的輸出維持不變。</string>
-
     <!-- T288 — 日誌 / 設定變更 -->
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">歡迎使用 Novex</string>
@@ -331,10 +443,12 @@
     <string name="sessionlist_welcome_step3_title">開始對話</string>
     <string name="sessionlist_welcome_step3_subtitle">點擊開始</string>
     <string name="sessionlist_welcome_step_done">已完成</string>
-
     <!-- T336 follow-up: ASK_ONCE 在進程生命週期內只問一次,改文案避免誤導 -->
 
     <!-- T336: dedicated SectionCard per integration CLI. -->
+
+
+    
     <!-- T-selection-add-to-input — 長按選擇選單「加到輸入框」動作 -->
     <string name="selection_add_to_chat_input">加入到輸入框</string>
     <!-- T-minis-textkit 選擇選單按鈕 -->
@@ -350,7 +464,6 @@
     <string name="markdown_table_copied_toast">已複製表格</string>
     <string name="markdown_table_image_copied_toast">已複製表格圖片</string>
     <string name="markdown_table_image_copy_failed_toast">複製表格圖片失敗</string>
-
     <!-- T-imgsize: composer-side image-budget Snackbar messages -->
     <string name="image_budget_compressed">傳送前已壓縮 %1$d 張圖片</string>
     <string name="image_budget_total_exceeded">圖片總大小超過 25MB，已捨棄後續圖片</string>
@@ -363,6 +476,7 @@
     <string name="update_error_forbidden_with_link">存取更新伺服器失敗，可能受網路限制。可前往 GitHub Releases 手動下載最新版本。</string>
     <string name="update_error_open_releases">開啟 GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
+
     <string name="crash_freq_dialog_dismiss">暫不分享</string>
     <string name="crash_safe_mode_restart_needed">Novex 需要重新啟動以完成復原，請重新點擊應用程式圖示。</string>
     <string name="crash_freq_email_subject">Novex 崩潰報告 %1$s</string>
@@ -385,6 +499,38 @@
     <string name="filebrowser_copy_abs_path">複製絕對路徑</string>
     <string name="filebrowser_copy_abs_path_toast">路徑已複製</string>
     <!-- [T-mcp-i18n-android] MCP Integrations UI -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="error_empty_response_generic">模型回傳了空回應。請重試或切換模型。</string>
     <string name="error_empty_response_context_large">模型回傳了空回應。對話上下文可能過大 —— 請嘗試壓縮上下文或開啟新工作階段。</string>
     <string name="error_empty_response_after_tool">在工具結果之後，即使經過提醒，模型仍未回傳任何回應。它可能已過載 —— 請重試或切換模型。</string>
@@ -394,8 +540,24 @@
     <string name="settings_dynamic_island_footer">在 Android 16 狀態膠囊上顯示即時的助手狀態。開啟後將取代懸浮視窗，避免同時出現兩個狀態指示。</string>
     <string name="settings_dynamic_island_unsupported">目前系統版本尚不支援即時更新（需 Android 16 以上並已開啟該功能）。</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
+
+
+
+
+
+
     <string name="voice_provider_system">系統</string>
+
+
+
+
+
+
+
+
+    
     <string name="group_move_to">移入分組</string>
     <string name="group_change">更換分組</string>
     <string name="group_picker_title_move">移入分組</string>

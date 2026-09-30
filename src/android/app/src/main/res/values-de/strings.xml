@@ -5,8 +5,12 @@
     <string name="settings">Einstellungen</string>
     <string name="add_provider">KI-Anbieter hinzufügen</string>
     <string name="appearance">Erscheinungsbild</string>
+
+    
     <string name="delete">Löschen</string>
     <string name="cancel">Abbrechen</string>
+
+
     <string name="session_memory_title">Erinnerungen in der Sitzung</string>
     <string name="memory_section_auto_injected">Automatisch eingefügt</string>
     <string name="memory_section_auto_injected_footer">Wird zu Beginn jedes Agent-Schritts in den Systemprompt geladen.</string>
@@ -44,6 +48,11 @@
     <string name="check_update_install_launch_failed">Installer konnte nicht gestartet werden. Prüfe die Berechtigung \"Apps aus unbekannten Quellen installieren\" oder öffne das heruntergeladene APK manuell.</string>
     <string name="check_update_install_hint">Tipp: Wenn die Installation keinerlei Rückmeldung gibt, stimmt möglicherweise die Signatur nicht — deinstalliere zuerst die vorherige Version und lade dann erneut herunter.</string>
     <string name="check_update_open_install_settings">Einstellungen öffnen</string>
+
+
+
+
+
     <string name="mention_scanning">Dateien werden durchsucht…</string>
     <string name="mention_no_match">Keine passenden Dateien</string>
     <string name="resume_banner_title">Unterbrochen — tippen Sie auf „Fortfahren“</string>
@@ -51,7 +60,10 @@
     <string name="search_chats_placeholder">Unterhaltungen suchen…</string>
     <string name="search_no_results">Keine Treffer für \"%1$s\"</string>
     <string name="stop_tool">Tool stoppen</string>
+
+    
     <string name="bg_section_header">Hintergrund &amp; Benachrichtigungen</string>
+    
     <string name="bg_service_channel_name">Agent-Status</string>
     <string name="bg_service_channel_description">Zeigt den Status laufender Agent-Sitzungen an.</string>
     <string name="bg_service_notification_title">Novex Agent aktiv</string>
@@ -78,6 +90,7 @@
     <string name="settings_section_llm_providers_footer">Konfiguriere die vom Agent genutzten Modelle, verwalte API-Keys und OAuth pro Anbieter und erstelle Modellgruppen für Fallback oder Lastverteilung.</string>
     <string name="settings_manage_providers">Anbieter verwalten</string>
     <string name="settings_manage_providers_subtitle">API-Keys und OAuth-Anmeldung</string>
+    
     <string name="settings_token_usage">Token-Verbrauch</string>
     <string name="settings_token_usage_subtitle">API-Nutzung anbieterübergreifend verfolgen</string>
     <string name="settings_section_appearance">Darstellung</string>
@@ -89,16 +102,19 @@
     <string name="settings_memory_subtitle">Sitzungsübergreifend persistentes Wissen</string>
     <string name="settings_env_vars">Umgebungsvariablen</string>
     <string name="settings_env_vars_subtitle">In die Sandbox eingespeiste Variablen</string>
+
+
+    
     <string name="settings_section_about">Über</string>
     <string name="settings_about_minis">Über Novex</string>
     <string name="settings_about_subtitle">Version und Projekt-Info</string>
     <string name="settings_privacy_policy">Datenschutzrichtlinie</string>
+
     <string name="about_title">Über</string>
     <string name="about_minis_tagline">Novex ist dein vollständig lokaler, vollständig privater On-Device-Agent.</string>
     <string name="about_links">Links</string>
     <string name="about_github_repository">GitHub-Repository</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
-
     <!-- T172 — chat sheets i18n -->
     <string name="move_to_sheet_title">Verschieben nach…</string>
     <string name="move_to_sheet_empty">Keine anderen Sitzungen verfügbar.</string>
@@ -108,7 +124,9 @@
     <string name="time_hours_ago">Vor %1$d Std.</string>
     <string name="time_yesterday">Gestern</string>
     <string name="time_today">Heute</string>
+
     <!-- T338: session-scoped tri-action labels. TODO translate (de) -->
+
     <string name="session_skills_title">Fähigkeiten in der Sitzung</string>
     <string name="session_skills_header_installed">INSTALLIERT</string>
     <string name="session_skills_enable_all">Alle aktivieren</string>
@@ -116,6 +134,7 @@
     <string name="session_skills_footer">Schaltet Fähigkeiten nur für diese Sitzung um. Die Standardwerte stammen aus Einstellungen → Fähigkeiten.</string>
     <string name="session_skills_empty_title">Keine Fähigkeiten installiert</string>
     <string name="session_skills_empty_subtitle">Fähigkeiten aus Einstellungen → Fähigkeiten importieren.</string>
+
     <string name="standard_sheet_close">Schließen</string>
     <string name="token_usage_sheet_title">Sitzung Token-Verbrauch</string>
     <string name="token_usage_section_context">Kontext</string>
@@ -138,7 +157,6 @@
     <string name="common_yes">Ja</string>
     <string name="common_no">Nein</string>
     <string name="memory_file_empty">Leer</string>
-
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
          Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
@@ -154,6 +172,9 @@
     <string name="appearance_theme_system">System</string>
     <string name="appearance_theme_light">Hell</string>
     <string name="appearance_theme_dark">Dunkel</string>
+
+
+    
     <string name="appearance_section_return_key">Eingabetaste</string>
     <string name="appearance_return_key_footer">Wählen Sie, ob die Eingabetaste im Chat-Eingabefeld einen Zeilenumbruch einfügt oder die Nachricht sendet. Hardware-Umschalt+Eingabe fügt immer einen Zeilenumbruch ein.</string>
     <string name="appearance_return_key_newline">Zeilenumbruch</string>
@@ -218,9 +239,21 @@
     <string name="memory_delete_confirm_title">%1$s löschen?</string>
     <string name="memory_delete_confirm_text">Dieses Memory-Log wird dauerhaft entfernt.</string>
     <string name="memory_editor_placeholder">Inhalt eingeben…</string>
+
+
+    
     <!-- T336 follow-up: ASK_ONCE granted for the whole app launch -->
+    
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (de) -->
+
+
+
+
+
+
+
+    
     <string name="skill_title">Fähigkeiten</string>
     <string name="skill_add">Skill hinzufügen</string>
     <string name="skill_section_installed">Installiert</string>
@@ -254,6 +287,8 @@
     <string name="skill_detail_updated">Aktualisiert</string>
     <string name="skill_detail_delete">Skill löschen</string>
     <string name="skill_detail_edit_name_title">Name bearbeiten</string>
+
+    
     <string name="skill_file_save">Sichern</string>
     <string name="skill_file_edit">Bearbeiten</string>
     <string name="skill_detail_status_reading">Datei wird gelesen…</string>
@@ -284,6 +319,7 @@
     <string name="storage_clearing_status">Wird gelöscht…</string>
     <string name="storage_clear_session_button">Sitzungsdateien löschen</string>
     <string name="storage_clear_confirm_title">Sitzungsdateien löschen?</string>
+    
     <string name="usage_title">Verbrauch</string>
     <string name="usage_section_total">Gesamtverbrauch</string>
     <string name="usage_label_total_input">Gesamteingabe (inkl. Cache)</string>
@@ -293,6 +329,7 @@
     <string name="usage_label_cache_hit_rate">Cache-Trefferquote</string>
     <string name="usage_detail_input">Eingabe</string>
     <string name="usage_detail_output">Ausgabe</string>
+
     <string name="usage_detail_daily_avg">Tagesdurchschnitt</string>
     <string name="usage_detail_session_avg">Durchschnitt pro Sitzung</string>
     <string name="usage_detail_sessions">Sitzungen</string>
@@ -336,15 +373,21 @@
     <string name="rootfs_reset_backup_confirm_title">Zurücksetzen mit Sicherung?</string>
     <string name="rootfs_reset_backup_confirm_message">Ihr /root-Verzeichnis wird gesichert, dann wird das Rootfs zurückgesetzt. Sie können die Sicherung später wiederherstellen.</string>
     <string name="rootfs_reset_backup_confirm_button">Zurücksetzen &amp; Sichern</string>
-
     <!-- T172 — components / onboarding / preview i18n -->
     <string name="common_back">Zurück</string>
     <string name="common_skip">Überspringen</string>
+
+
+
+
     <string name="onboarding_select_models_title">Modelle auswählen</string>
     <string name="onboarding_select_models_subtitle">Wählen Sie bis zu 3 Modelle für Ihre Standardgruppe.</string>
     <string name="onboarding_filter_models">Modelle filtern</string>
     <string name="onboarding_done_count">Fertig (%1$d/3)</string>
     <string name="onboarding_loading_models">Modelle werden geladen…</string>
+
+
+
 
     <!-- T172 — sandbox / sessions / browser / terminal i18n -->
     <string name="filebrowser_title">Dateien</string>
@@ -372,9 +415,12 @@
     <string name="filepreview_pdf_empty">Leeres Dokument</string>
     <string name="filepreview_image_decode_error">Bild konnte nicht dekodiert werden</string>
     <string name="filepreview_image_load_error">Bild konnte nicht geladen werden</string>
+
+    
     <string name="filepreview_page_n">Seite %1$d</string>
     <string name="sessionlist_section_pinned">Angeheftet</string>
     <string name="sessionlist_section_today">Heute</string>
+
     <string name="sessionlist_section_earlier">Früher</string>
     <string name="sessionlist_select_title">Sitzungen auswählen</string>
     <string name="sessionlist_n_selected">%1$d ausgewählt</string>
@@ -385,6 +431,7 @@
     <string name="sessionlist_shell">Shell</string>
     <string name="sessionlist_shell_terminal">Shell-Terminal</string>
     <string name="sessionlist_rootfs_management">Rootfs-Verwaltung</string>
+    
     <string name="sessionlist_pin">Anheften</string>
     <string name="sessionlist_unpin">Lösen</string>
     <string name="sessionlist_export">Exportieren</string>
@@ -399,13 +446,35 @@
     <string name="sessionlist_delete_one_title">Konversation löschen?</string>
     <string name="sessionlist_delete_n_title">%1$d Konversationen löschen?</string>
     <string name="sessionlist_delete_message">Diese Aktion kann nicht rückgängig gemacht werden.</string>
+
+
+
+
+
+
     <string name="chat_typing_indicator">%1$s denkt nach</string>
+
+
     <string name="chat_error_stream_dropped_partial">Die Verbindung wurde unterbrochen — diese Antwort ist möglicherweise unvollständig. Zum Fortfahren erneut versuchen.</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="terminal_title">Novex-Shell</string>
     <string name="terminal_clear">Löschen</string>
     <string name="terminal_show_keyboard">Anzeigen</string>
     <string name="terminal_hide_keyboard">Ausblenden</string>
-
     <!-- T172-A providers / models / settings i18n -->
     <string name="provider_list_providers">KI-Anbieter</string>
     <string name="provider_list_add_provider">KI-Anbieter hinzufügen</string>
@@ -422,9 +491,30 @@
     <string name="share_open_app_failed">Inhalt gespeichert. Novex konnte nicht automatisch geöffnet werden – bitte öffne die App, um fortzufahren.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">Deaktiviert</string>
+
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">Benutzerdefiniertes Modell hinzufügen</string>
+
+
+
+    
     <string name="common_remove">Entfernen</string>
+
+
+    
     <string name="add_provider_identity">Identität</string>
+
+
+
+
+
+
+
     <string name="add_custom_model_model_id">Modell-ID</string>
     <string name="add_custom_model_display_name_optional">Anzeigename (optional)</string>
     <string name="model_entry_model_detail">Modelldetails</string>
@@ -484,11 +574,17 @@
     <string name="model_groups_none">Keine</string>
     <string name="add_models_to_group_search_models">Modelle suchen</string>
     <string name="add_models_to_group_clear">Löschen</string>
+        <string name="agent_loop_models_groups">Gruppen</string>
+
+
 
     <!-- T172-A parameterized strings -->
     <string name="add_custom_model_id_footer">Die Model ID ist der API-Bezeichner, der an %1$s gesendet wird. Der Anzeigename ist das benutzerfreundlichere Label in der Auswahl; bei leerer Angabe wird auf die Model ID zurückgegriffen.</string>
     <string name="add_custom_model_eg_id_placeholder">z. B. gpt-4o-custom</string>
+
     <string name="add_models_to_group_add_count">Hinzufügen (%1$d)</string>
+
+    
     <string name="agent_loop_models_model_count_singular">1 Modell</string>
     <string name="agent_loop_models_model_count_plural">%1$d Modelle</string>
     <string name="model_group_detail_models_header_count">MODELLE (%1$d)</string>
@@ -496,7 +592,6 @@
     <string name="model_group_detail_remove_this_model_fallback">dieses Modell</string>
     <string name="model_group_detail_delete_named_group_confirm">Möchtest du \"%1$s\" wirklich löschen? Dies kann nicht rückgängig gemacht werden.</string>
     <string name="provider_list_models_count">%1$d Modelle</string>
-
     <!-- T180-bg-notif — Task Notifications toggle + completion notification
          channel + N-tasks-running display strings. Mirrors iOS
          EnhancedBackgroundSettingsView + BackgroundKeepAliveManager. -->
@@ -510,8 +605,9 @@
     <string name="notif_task_completed_channel_description">Benachrichtigt, wenn eine Agent-Sitzung abgeschlossen ist, während die App im Hintergrund läuft.</string>
     <string name="notif_task_completed_default_title">Aufgabe abgeschlossen</string>
     <string name="notif_task_completed_body">Tippen, um den Chat zu öffnen und die Antwort zu lesen.</string>
-    <string name="notif_task_failed_body">Aufgabe mit Fehler beendet. Tippen, um den Chat zu öffnen.</string>
 
+
+    <string name="notif_task_failed_body">Aufgabe mit Fehler beendet. Tippen, um den Chat zu öffnen.</string>
     <!-- T182 agent loop section i18n -->
     <string name="agent_loop_section_title">In der Agent-Loop verfügbare Modelle</string>
     <string name="agent_loop_section_footer">Die hier aufgeführten Modelle und Gruppen können aus dem Terminal mit minis-model-use aufgerufen werden. Nur diese sind für den Agenten sichtbar.</string>
@@ -525,31 +621,30 @@
     <string name="agent_loop_section_empty_group_subtitle">(leere Gruppe)</string>
     <string name="agent_loop_section_remove">Aus Agent-Loop entfernen</string>
     <string name="agent_loop_section_group_badge">Gruppe</string>
-
     <!-- T184-chatmenu-i18n — ChatScreen overflow ⋮ menu -->
     <string name="chat_menu_new_chat">Neuer Chat</string>
     <string name="chat_new_chat_stop_dialog_body">In diesem Chat läuft gerade eine Aufgabe. Ein neuer Chat wird sie stoppen.</string>
     <string name="chat_new_chat_stop_dialog_confirm">Stoppen &amp; neuer Chat</string>
+
+    
     <string name="chat_menu_enhanced_cache">Erweiterter Cache</string>
     <string name="enhanced_cache_dialog_body">Der erweiterte Cache verlängert den Prompt-Cache von Anthropic von 5 Minuten auf 1 Stunde und hält den Kontext bei langen Sitzungen bereit. Dies kann zusätzliche Cache-Schreibkosten verursachen. Aktivieren?</string>
     <string name="enhanced_cache_dialog_confirm">Aktivieren</string>
-
     <!-- T184-chatmenu-i18n — longpress + attach -->
     <string name="chat_longpress_copy">Kopieren</string>
     <string name="chat_longpress_retry">Erneut versuchen</string>
     <string name="chat_attach_take_photo">Foto aufnehmen</string>
     <string name="chat_attach_choose_photos_videos">Fotos und Videos auswählen</string>
     <string name="chat_attach_add_file">Datei hinzufügen</string>
-
     <!-- T185 unified picker UI strings -->
     <string name="add_models_to_group_all_in_group">Alle Modelle sind bereits in dieser Gruppe enthalten.</string>
     <string name="add_models_to_group_no_match">Keine passenden Modelle gefunden.</string>
-
     <!-- T187 — user-bubble long-press Edit + Exit Edit + Clear Chat dialog -->
     <string name="chat_longpress_edit">Bearbeiten</string>
     <string name="chat_edit_exit_button">Bearbeitung beenden</string>
 
     <!-- T235 — Geteilte Ordner (fest: Shared / Skills / Memory) -->
+    
     <string name="shared_folders_title">Geteilte Ordner</string>
     <string name="shared_folders_info_banner">Diese Verzeichnisse sind innerhalb der Linux-Sandbox sichtbar. Skills und Memory werden von KI-Agenten-Werkzeugen gepflegt — bitte nicht manuell bearbeiten.</string>
     <string name="shared_folder_name_shared">Shared</string>
@@ -557,10 +652,23 @@
     <string name="shared_folder_name_memory">Memory</string>
     <string name="shared_folder_detail_title">Ordnerdetails</string>
     <string name="shared_folder_browse_files">Dateien durchsuchen</string>
-
     <!-- T219-2 — Externe Ordner einbinden -->
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">L/S</string>
     <string name="mount_badge_readonly">Schreibgeschützt</string>
+
+
+
+
 
     <!-- T241: Slash-Befehlsleiste + Modellauswahl-Sheet -->
     <string name="slash_compact_subtitle">Verlauf in Zusammenfassung komprimieren</string>
@@ -590,8 +698,20 @@
         <item quantity="one">%d Modell</item>
         <item quantity="other">%d Modelle</item>
     </plurals>
-
     <!-- T288 — Protokolle / Konfigurationsänderungen -->
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     <!-- Welcome / onboarding (T332) -->
     <!-- TODO translate -->
@@ -621,6 +741,7 @@
     <string name="update_error_forbidden_with_link">Update-Server nicht erreichbar, möglicherweise durch das Netzwerk blockiert. GitHub Releases zum manuellen Download öffnen.</string>
     <string name="update_error_open_releases">GitHub Releases öffnen</string>
     <!-- T-android-crash-freq-share -->
+
     <string name="crash_freq_dialog_dismiss">Nicht jetzt</string>
     <string name="crash_safe_mode_restart_needed">Novex muss neu gestartet werden, um die Wiederherstellung abzuschließen. Bitte tippe erneut auf das App-Symbol.</string>
     <string name="crash_freq_email_subject">Novex-Absturzbericht %1$s</string>
@@ -647,12 +768,60 @@
     <string name="filebrowser_copy_abs_path">Absoluten Pfad kopieren</string>
     <string name="filebrowser_copy_abs_path_toast">Pfad kopiert</string>
     <!-- [T-mcp-i18n-android] MCP Integrations UI -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="error_empty_response_generic">Das Modell hat eine leere Antwort zurückgegeben. Bitte erneut versuchen oder das Modell wechseln.</string>
     <string name="error_empty_response_context_large">Das Modell hat eine leere Antwort zurückgegeben. Der Gesprächskontext ist möglicherweise zu groß — komprimieren Sie ihn oder starten Sie eine neue Sitzung.</string>
     <string name="error_empty_response_after_tool">Das Modell hat nach einem Tool-Ergebnis keine Antwort zurückgegeben, auch nach einer Erinnerung. Es ist möglicherweise überlastet — bitte erneut versuchen oder das Modell wechseln.</string>
     <string name="thinking_truncated_hint">Letzte %1$dK von %2$dK Zeichen werden angezeigt</string>
     <string name="thinking_view_full">Vollständigen Inhalt anzeigen</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
+
+
+
+
+
+
     <string name="voice_provider_system">System</string>
+
+
+
+
+
+
+
+
+    
 </resources>

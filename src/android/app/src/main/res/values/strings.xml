@@ -5,8 +5,12 @@
     <string name="settings">Settings</string>
     <string name="add_provider">Add Provider</string>
     <string name="appearance">Appearance</string>
+
+    
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
+
+
 
     <!-- Session Memory Sheet -->
     <string name="session_memory_title">Memories in Session</string>
@@ -27,7 +31,6 @@
     <string name="memory_revoke_result_io_error">Error writing file: %1$s</string>
     <string name="memory_save_toast">Saved</string>
     <string name="memory_global_footer">Persistent instructions and preferences visible to the agent in every session. The agent cannot modify this file.</string>
-
     <!-- Check Update -->
     <string name="check_update_section_header">App Update</string>
     <string name="update_source_gitee">Gitee</string>
@@ -47,6 +50,7 @@
     <string name="check_update_available_title_preview">Preview Update Available</string>
     <string name="check_update_available_title_preview_baseline">Preview Synced to Stable Baseline</string>
     <string name="check_update_available_subtitle">%1$s → %2$s</string>
+    
     <string name="check_update_preview_notice">This build is for feature testing and may contain unfinished work. Preview data is isolated from the stable app.</string>
     <string name="check_update_preview_baseline_notice">These preview features have reached a stable baseline. This package keeps the separate preview app and its isolated data.</string>
     <string name="check_update_changelog_header">What\'s New</string>
@@ -58,28 +62,30 @@
     <string name="check_update_install_launch_failed">Failed to launch installer. Check \"install unknown apps\" permission or open the downloaded APK manually.</string>
     <string name="check_update_install_hint">Tip: If installation gives no feedback, the signature may not match — uninstall the previous version first, then download again.</string>
     <string name="check_update_open_install_settings">Open Settings</string>
-
     <!-- Permissions (Settings → Permissions) -->
+
+
+
+
+
 
     <!-- T4: @ file-mention picker -->
     <string name="mention_scanning">Scanning files…</string>
     <string name="mention_no_match">No matching files</string>
-
     <!-- T13: Resume banner (shown at the bottom of the message list when an interrupted agent loop can be resumed) -->
     <string name="resume_banner_title">Interrupted — tap Resume to continue</string>
     <string name="resume_action">Resume</string>
-
     <!-- T46: Session-list search bar -->
     <string name="search_chats_placeholder">搜索对话…</string>
     <string name="search_no_results">未找到“%1$s”的相关对话</string>
-
     <!-- T14: Per-tool stop button (rendered on RUNNING/STREAMING tool cards) -->
     <string name="stop_tool">Stop tool</string>
-
     <!-- T67: Voice permission settings-gate dialog (shown when RECORD_AUDIO is permanently denied) -->
+
 
     <!-- T50: Background & notifications -->
     <string name="bg_section_header">Background &amp; notifications</string>
+    
     <string name="bg_service_channel_name">Agent Status</string>
     <string name="bg_service_channel_description">Shows status of running agent sessions.</string>
     <!-- T-bg-overlay phase 2 fix — permission nudge for the SAW grant -->
@@ -117,7 +123,6 @@
     <string name="rom_autostart_section_footer">Some Android skins (%1$s) require an extra autostart permission on top of the standard system settings. Without it, Novex can be killed within minutes of going to background.</string>
     <string name="rom_autostart_row_title">Open autostart settings</string>
     <string name="rom_autostart_row_subtitle">Enable Novex on %1$s</string>
-
     <!-- T68: Browser settings — UA list "Not set" placeholder for empty Custom UA -->
     <!-- T135 — Settings + About i18n keys -->
     <string name="settings_title">Settings</string>
@@ -125,6 +130,7 @@
     <string name="settings_section_llm_providers_footer">Configure which models the agent uses, manage API keys &amp; OAuth for each provider, and create model groups for fallback or load balancing.</string>
     <string name="settings_manage_providers">Manage Providers</string>
     <string name="settings_manage_providers_subtitle">API keys and OAuth sign-in</string>
+    
     <string name="settings_token_usage">Token Usage</string>
     <string name="settings_token_usage_subtitle">Track API usage across providers</string>
     <string name="settings_section_appearance">Appearance</string>
@@ -135,14 +141,58 @@
     <string name="settings_memory">Memory</string>
     <string name="settings_memory_subtitle">Persistent knowledge across sessions</string>
     <!-- [T-mcp-integration-android] MCP Integrations settings entry + management screen -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <!-- [T-mcp-startup-timeout] Optional STDIO startup/handshake timeout (seconds) -->
+    
     <!-- [T-android-provider-voice] Voice Services (shadow voice providers) -->
+
+
+
+
+
+
+
+
+
+
+
+
     <!-- [T-android-vision-group / GH#182] Vision Input slot label: the group whose vision-capable members read images for a main model that cannot natively see them. -->
     <string name="model_groups_vision">Vision Input</string>
     <!-- [T-mcp-env-var-picker-android] Insert a reference to an App env var as $$VAR -->
     <!-- [T-mcp-env-var-delete-confirm-android] Clear-all env vars affordance + confirm -->
+
+
+    
     <!-- [T-android-mcp-oauth] Static OAuth section -->
+
+
+
+
+
+
+
+    
     <!-- [T-mcp-server-export-android] Export the current server config as mcpServers JSON -->
+
+
+
+
+
+    
     <!-- T-soul-md — SOUL.md personality / identity settings -->
     <string name="settings_soul">Global Preset</string>
     <string name="settings_soul_subtitle">Default system prompt for every conversation</string>
@@ -170,16 +220,19 @@
     <string name="soul_restore_confirm_title">Restore default SOUL.md?</string>
     <string name="soul_restore_confirm_body">Your current changes will be overwritten with the default personality file. The original is provided as a starting point and can be re-edited at any time.</string>
     <string name="soul_save_error_title">Couldn\'t save</string>
+
+
+    
     <string name="settings_section_about">About</string>
     <string name="settings_about_minis">About Novex</string>
     <string name="settings_about_subtitle">Version and project info</string>
     <string name="settings_privacy_policy">Privacy Policy</string>
+
     <string name="about_title">About</string>
     <string name="about_minis_tagline">Novex is Your Fully Local, Fully Private On-Device Agent.</string>
     <string name="about_links">Links</string>
     <string name="about_github_repository">GitHub Repository</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
-
     <!-- T172 — chat sheets i18n (MoveToSessionSheet / OffloadPermissionDialog /
          SessionSkillsSheet / SpeechLanguagePickerSheet / StandardChatSheet /
          TokenUsageSheet / SessionMemorySheet) -->
@@ -191,9 +244,11 @@
     <string name="time_hours_ago">%1$d hr ago</string>
     <string name="time_yesterday">Yesterday</string>
     <string name="time_today">Today</string>
+
     <!-- T338: session-scoped tri-action labels for the ASK_ONCE dialog.
          None of these persist a PermissionLevel — the user goes to
          Settings → Permissions to make a permanent change. -->
+
     <string name="session_skills_title">Skills in Session</string>
     <string name="session_skills_header_installed">INSTALLED</string>
     <string name="session_skills_enable_all">Enable All</string>
@@ -202,8 +257,11 @@
     <string name="session_skills_empty_title">No skills installed</string>
     <string name="session_skills_empty_subtitle">Import skills from Settings → Skills.</string>
     <!-- [T-mcp-integration-android] MCPs in Session sheet -->
+
+    
     <string name="skills_search_placeholder">Search skills</string>
     <string name="skills_search_no_match">No skills match \"%1$s\".</string>
+
     <string name="standard_sheet_close">Close</string>
     <string name="token_usage_sheet_title">Session Token Usage</string>
     <string name="token_usage_section_context">Context</string>
@@ -226,14 +284,24 @@
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
     <string name="memory_file_empty">Empty</string>
-
     <!-- T172 — components / onboarding / preview i18n -->
     <string name="common_skip">Skip</string>
+
+
+
+
     <string name="onboarding_select_models_title">Select Models</string>
     <string name="onboarding_select_models_subtitle">Choose up to 3 models for your default group.</string>
     <string name="onboarding_filter_models">Filter models</string>
     <string name="onboarding_done_count">Done (%1$d/3)</string>
     <string name="onboarding_loading_models">Loading models…</string>
+
+
+
+
+
+
+
 
     <!-- T-browser-use-per-tab-serial-android: returned to the model when a
          browser_use call can't acquire the per-tab serial lock within the wait
@@ -273,16 +341,18 @@
     <string name="filepreview_pdf_empty">Empty document</string>
     <string name="filepreview_image_decode_error">Unable to decode image</string>
     <string name="filepreview_image_load_error">Failed to load image</string>
+
+    
     <string name="filepreview_page_n">Page %1$d</string>
     <string name="sessionlist_section_pinned">Pinned</string>
     <string name="sessionlist_section_today">Today</string>
+
     <string name="sessionlist_section_earlier">Earlier</string>
     <string name="sessionlist_select_title">Select Sessions</string>
     <string name="sessionlist_n_selected">%1$d Selected</string>
     <string name="sessionlist_select_all">Select All</string>
     <string name="sessionlist_deselect_all">Deselect All</string>
     <string name="sessionlist_select_action">Select</string>
-
     <!-- [T-android-session-grouping] Session groups. Keys mirror the iOS
          wording so the two platforms read identically. -->
     <string name="group_move_to">Move to Group</string>
@@ -317,6 +387,7 @@
     <string name="group_collapse">Collapse group</string>
     <string name="group_expand">Expand group</string>
     <string name="sessionlist_settings">Settings</string>
+    
     <string name="sessionlist_pin">Pin</string>
     <string name="sessionlist_unpin">Unpin</string>
     <string name="sessionlist_row_actions">More actions</string>
@@ -324,6 +395,12 @@
     <string name="sessionlist_export_json">JSON</string>
     <string name="sessionlist_export_plain">Plain Text</string>
     <!-- T-export-optimize (b443b54d) — batched/zipped export progress + preview -->
+
+
+
+
+
+
     <string name="export_progress_failed">Export failed</string>
     <string name="sessionlist_edit_title_category">Edit Title &amp; Category</string>
     <string name="sessionlist_regenerate_title">Regenerate Title</string>
@@ -334,10 +411,31 @@
     <string name="sessionlist_delete_one_title">Delete conversation?</string>
     <string name="sessionlist_delete_n_title">Delete %1$d conversations?</string>
     <string name="sessionlist_delete_message">This cannot be undone.</string>
+
+
+
+
+
+
     <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "Nova"). -->
     <string name="chat_typing_indicator">%1$s is thinking</string>
     <string name="chat_error_stream_dropped_partial">The connection dropped — this reply may be incomplete. Tap Retry to continue.</string>
     <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "Nova"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
          Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
@@ -349,7 +447,25 @@
     <string name="common_save">Save</string>
     <string name="common_edit">Edit</string>
     <!-- [T-android-thinking-rules-phase2] Provider-detail Thinking Rules section -->
+
+
+
+
+
+
+
+
+
+    
     <!-- Wire-format picker: titles + one-line explanations (protocol field names left in English on purpose) -->
+
+
+
+
+
+
+
+    
     <string name="common_share">Share</string>
     <string name="appearance_title">Appearance</string>
     <string name="appearance_section_theme">Theme</string>
@@ -394,6 +510,9 @@
     <string name="theme_colors_picker_title">Choose %1$s</string>
     <string name="theme_colors_picker_hex">Hex color (#RRGGBB)</string>
     <string name="theme_colors_picker_invalid">Enter a six-digit color such as #528AD2.</string>
+
+
+    
     <string name="appearance_section_return_key">Return Key</string>
     <string name="appearance_return_key_footer">Choose whether the Return key in the chat input inserts a newline or sends the message. Hardware Shift+Return always inserts a newline.</string>
     <string name="appearance_return_key_newline">Newline</string>
@@ -465,16 +584,58 @@
     <string name="memory_delete_confirm_title">Delete %1$s?</string>
     <string name="memory_delete_confirm_text">This will permanently remove this memory log.</string>
     <string name="memory_editor_placeholder">Enter content…</string>
+
+
+    
     <!-- T336 follow-up: ASK_ONCE actually grants for the whole app process
          lifetime (until next cold start), not for each individual call.
          Label rewritten to match the real behavior. -->
+    
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <!-- T336: dedicated SectionCard per integration CLI. Each surfaces
          the CLI title + description, the agent tri-state policy, and
          the system-layer authorization status with an inline action
          row when system Settings need attention. -->
 
+
+
+
+
+
+
+
     <!-- T322: Shizuku permission walkthrough -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     <!-- [T-android-privileged-backend] Privileged backend (Shizuku / AXManager) -->
 
@@ -511,6 +672,8 @@
     <string name="skill_detail_updated">Updated</string>
     <string name="skill_detail_delete">Delete Skill</string>
     <string name="skill_detail_edit_name_title">Edit Name</string>
+
+    
     <string name="skill_file_save">Save</string>
     <string name="skill_file_edit">Edit</string>
     <string name="skill_detail_status_reading">Reading file…</string>
@@ -540,6 +703,7 @@
     <string name="storage_clearing_status">Clearing…</string>
     <string name="storage_clear_session_button">Clear Session Files</string>
     <string name="storage_clear_confirm_title">Clear Session Files?</string>
+    
     <string name="usage_title">Usage</string>
     <string name="usage_section_total">Total Usage</string>
     <string name="usage_label_total_input">Total Input (incl. Cache)</string>
@@ -549,11 +713,11 @@
     <string name="usage_label_cache_hit_rate">Cache Hit Rate</string>
     <string name="usage_detail_input">Input</string>
     <string name="usage_detail_output">Output</string>
+
     <string name="usage_detail_daily_avg">Daily Avg</string>
     <string name="usage_detail_session_avg">Per-Session Avg</string>
     <string name="usage_detail_sessions">Sessions</string>
     <string name="usage_detail_active_days">Active Days</string>
-
     <!-- T172-A providers / models / settings i18n -->
     <string name="provider_list_providers">Providers</string>
     <string name="provider_list_add_provider">Add Provider</string>
@@ -571,11 +735,35 @@
     <string name="share_open_app_failed">Content saved. Couldn\'t open Novex automatically — please open the app to continue.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">Disabled</string>
+
+
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">Add Custom Model</string>
+
+
+
+
+    
     <string name="common_remove">Remove</string>
+
+
+    
     <string name="add_provider_identity">Identity</string>
+
+
+
+
+
+
     <!-- T-android-codex-oauth-dns: shown when token-exchange POST to the
          OAuth provider fails with DNS / timeout. -->
+
+    
     <string name="add_custom_model_model_id">Model ID</string>
     <string name="add_custom_model_display_name_optional">Display Name (optional)</string>
     <string name="model_entry_model_detail">Model Detail</string>
@@ -616,6 +804,7 @@
     <string name="quicktest_testing">Testing…</string>
     <string name="quicktest_kind_text">Text</string>
     <string name="quicktest_kind_image">Image generation</string>
+    
     <string name="quicktest_empty_reply">(empty reply)</string>
     <string name="quicktest_image_unsupported">This model\'s provider doesn\'t support image generation via Quick Test.</string>
     <string name="quicktest_no_image">No image was returned.</string>
@@ -651,6 +840,7 @@
     <string name="model_group_detail_limit_context_window">Limit Context Window</string>
     <string name="model_group_detail_max_context">Max Context</string>
     <string name="model_group_detail_unlimited">Unlimited</string>
+    
     <string name="model_groups_model_groups">Model Groups</string>
     <string name="model_groups_new_group">New Group</string>
     <string name="model_groups_no_model_groups">No model groups</string>
@@ -683,11 +873,20 @@
     <string name="model_groups_binding_image_generation">image generation</string>
     <string name="add_models_to_group_search_models">Search models</string>
     <string name="add_models_to_group_clear">Clear</string>
+        <string name="agent_loop_models_groups">Groups</string>
+
+
 
     <!-- T172-A parameterized strings -->
     <string name="add_custom_model_id_footer">Model ID is the API identifier sent to %1$s. Display Name is the friendlier label shown in the picker; defaults to Model ID when left blank.</string>
     <string name="add_custom_model_eg_id_placeholder">e.g. gpt-4o-custom</string>
+
+
+
+    
     <string name="add_models_to_group_add_count">Add (%1$d)</string>
+
+    
     <string name="agent_loop_models_model_count_singular">1 model</string>
     <string name="agent_loop_models_model_count_plural">%1$d models</string>
     <string name="model_group_detail_models_header_count">MODELS (%1$d)</string>
@@ -699,7 +898,6 @@
     <string name="model_group_detail_remove_this_model_fallback">this model</string>
     <string name="model_group_detail_delete_named_group_confirm">Delete “%1$s”? Models and providers inside the group will be kept; any default, voice, vision, agent-loop, or image-generation binding that uses this group will be cleared. This cannot be undone.</string>
     <string name="provider_list_models_count">%1$d models</string>
-
     <!-- T180-bg-notif — Task Notifications toggle + completion notification
          channel + N-tasks-running display strings. Mirrors iOS
          EnhancedBackgroundSettingsView + BackgroundKeepAliveManager. -->
@@ -713,8 +911,9 @@
     <string name="notif_task_completed_channel_description">Notifies when an agent session finishes while the app is backgrounded.</string>
     <string name="notif_task_completed_default_title">Task completed</string>
     <string name="notif_task_completed_body">Tap to open the chat and read the response.</string>
-    <string name="notif_task_failed_body">Task ended with an error. Tap to open the chat.</string>
 
+
+    <string name="notif_task_failed_body">Task ended with an error. Tap to open the chat.</string>
     <!-- T-selection-add-to-input — long-press text selection menu action -->
     <string name="selection_add_to_chat_input">Add to Chat Input</string>
     <!-- T-minis-textkit selection menu actions (Copy / Copy Markdown / Copy Rich Text) -->
@@ -731,7 +930,6 @@
     <string name="markdown_table_copied_toast">Table copied</string>
     <string name="markdown_table_image_copied_toast">Table image copied</string>
     <string name="markdown_table_image_copy_failed_toast">Failed to copy table image</string>
-
     <!-- T-bg-overlay phase 2 — floating tool-status overlay toggle. -->
     <string name="settings_bg_overlay">Background Task Overlay</string>
     <string name="settings_bg_overlay_footer">Show a small floating capsule with the current tool while Novex is in the background. Requires permission to display over other apps. Tap the capsule to bring Novex to the foreground; drag to move it.</string>
@@ -740,7 +938,6 @@
     <string name="settings_dynamic_island">Dynamic Island (Live Updates)</string>
     <string name="settings_dynamic_island_footer">Show live agent status on the Android 16 status chip. When on, this replaces the floating overlay so you don\'t see two status indicators at once.</string>
     <string name="settings_dynamic_island_unsupported">Your current system version doesn\'t support Live Updates yet (requires Android 16+ with the feature enabled).</string>
-
     <!-- T182 agent loop section i18n -->
     <string name="agent_loop_section_title">Available Models in Agent Loop</string>
     <string name="agent_loop_section_footer">Models and groups listed here can be invoked from the terminal via minis-model-use. Only these are visible to the agent.</string>
@@ -754,12 +951,14 @@
     <string name="agent_loop_section_empty_group_subtitle">(empty group)</string>
     <string name="agent_loop_section_remove">Remove from agent loop</string>
     <string name="agent_loop_section_group_badge">Group</string>
-
     <!-- T184-chatmenu-i18n — ChatScreen overflow ⋮ menu, longpress, attach -->
     <string name="chat_menu_new_chat">New Chat</string>
     <string name="chat_new_chat_stop_dialog_body">A task is running in this chat. Starting a new chat will stop it.</string>
     <string name="chat_new_chat_stop_dialog_confirm">Stop &amp; New Chat</string>
+
+    
     <string name="chat_menu_enhanced_cache">Enhanced Cache</string>
+    
     <string name="context_near_capacity_title">Context Near Capacity</string>
     <string name="context_near_capacity_message">Conversation context is nearly full. Compact the history to free up space before sending. Enabling auto-compact will do this automatically from now on.</string>
     <string name="context_compact_and_send">Compact &amp; Send</string>
@@ -775,11 +974,9 @@
     <string name="chat_attach_take_photo">Take Photo</string>
     <string name="chat_attach_choose_photos_videos">Choose Photos &amp; Videos</string>
     <string name="chat_attach_add_file">Add File</string>
-
     <!-- T185 unified picker UI strings -->
     <string name="add_models_to_group_all_in_group">All models are already in this group.</string>
     <string name="add_models_to_group_no_match">No matching models found.</string>
-
     <!-- T187 — user-bubble long-press Edit + Exit Edit Mode + Clear Chat dialog -->
     <string name="chat_longpress_edit">Edit</string>
     <string name="chat_longpress_delete_from_here">Delete from here</string>
@@ -789,6 +986,7 @@
     <string name="chat_delete_from_here_confirm">Delete</string>
 
     <!-- T235 — Shared Folders (fixed: Shared / Skills / Memory) -->
+    
     <string name="shared_folders_title">Shared Folders</string>
     <string name="shared_folders_info_banner">These directories are visible inside the Linux sandbox. Skills and Memory are maintained by AI agent tools — do not edit manually.</string>
     <string name="shared_folder_name_shared">Shared</string>
@@ -796,10 +994,23 @@
     <string name="shared_folder_name_memory">Memory</string>
     <string name="shared_folder_detail_title">Folder Details</string>
     <string name="shared_folder_browse_files">Browse Files</string>
-
     <!-- T219-2 — Mount External Folders settings UI -->
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">R/W</string>
     <string name="mount_badge_readonly">Read-only</string>
+
+
+
+
 
     <!-- T241: slash command panel + Choose Model sheet -->
     <string name="slash_compact_subtitle">Compress conversation history into summary</string>
@@ -844,16 +1055,45 @@
     <string name="model_picker_modality_image">image</string>
     <string name="model_picker_modality_audio">audio</string>
     <string name="model_picker_modality_video">video</string>
-
     <!-- [T-android-voice-panel] Inline voice input panel (mirrors iOS InlineVoiceInputView) -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="model_picker_non_text_warning_title">This model may not work as an Agent</string>
     <string name="model_picker_non_text_warning_body">%1$s outputs %2$s and usually can\'t drive an Agent task. Pick a text-output model for the session, or add this model to an Agent loop as a tool so the agent can call it on demand to generate %3$s.</string>
     <string name="model_picker_non_text_warning_use_anyway">Use anyway</string>
     <string name="model_picker_non_text_warning_choose_other">Choose another model</string>
-
     <!-- T288 — Logs / Config Changes screen i18n. -->
 
+
+
+
+
+
+
+
+
+
+
+
+
+
     <!-- T323: System Permissions screen + AccessibilityService -->
+
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">Welcome to Novex</string>
@@ -880,15 +1120,26 @@
         <item>Choose a card to use in conversation settings.</item>
     </string-array>
     <string name="novex_create_menu">Create interactive fiction</string>
+    
     <string name="move_to_new_play_session">New play conversation</string>
     <string name="move_to_new_play_session_hint">Carry this content into a new story</string>
-
     <!-- T-pwa-1: WebApp shortcut foundation (renamed from PWA) -->
+
+
+
+
+
+
+
+    
     <!-- T-pwa-preview-polish: floating toolbar -->
+
+
+
+    
     <string name="import_zip_extract_failed">Failed to extract archive</string>
     <string name="import_zip_no_supported">No importable files in archive</string>
     <string name="import_zip_summary">Imported %1$d of %2$d files</string>
-
     <!-- T-imgsize: composer-side image-budget Snackbar messages -->
     <string name="image_budget_compressed">Compressed %1$d image(s) before send</string>
     <string name="image_budget_total_exceeded">Total image size exceeds 25MB; later images dropped</string>
@@ -896,7 +1147,6 @@
     <string name="image_budget_request_elided">Older %1$d image(s) elided from request to fit 25MB budget</string>
     <string name="composer_swipe_release_to_send">Release to send</string>
     <string name="composer_swipe_release_to_queue">Release to queue</string>
-
     <!-- T-android-gc-storm-issue17: render-side safe mode for large messages -->
     <string name="chat_message_large_collapsed_title">Large content (%1$s)</string>
     <string name="chat_message_large_expand">Tap to expand</string>
@@ -910,6 +1160,7 @@
     <string name="update_error_forbidden_with_link">Couldn\'t access the update server, possibly blocked by your network. Open GitHub Releases to download manually.</string>
     <string name="update_error_open_releases">Open GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
+
     <string name="crash_freq_dialog_dismiss">Not now</string>
     <string name="crash_safe_mode_restart_needed">Novex needs to restart to finish recovering. Please tap the app icon again.</string>
     <string name="crash_freq_email_subject">Novex Crash Report %1$s</string>
@@ -926,19 +1177,45 @@
     <string name="crash_freq_zip_failed">Failed to package logs: %1$s</string>
     <string name="crash_freq_save_failed">Failed to save logs: %1$s</string>
     <string name="crash_freq_save_success">Saved logs to %1$s</string>
-
     <!-- T-android-app-icon-shortcuts: app-icon long-press quick actions
          (mirrors iOS QuickActionRouter strings). shortLabel is shown in
          the launcher popup; longLabel is read by TalkBack. -->
     <string name="shortcut_new_chat_short">New Chat</string>
     <string name="shortcut_new_chat_long">New Chat</string>
+    
     <string name="shortcut_camera_chat_short">Chat with Camera</string>
     <string name="shortcut_camera_chat_long">Chat with Camera</string>
-
     <!-- [T-android-scheduled-tasks-design] Scheduled tasks UI -->
     <string name="ok">OK</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
     <!-- [T-android-scheduled-tasks-full] target mode + pickers + date window -->
+
+
+
+
+
+
+
+
+
+
+    
     <!-- [T-android-scheduled-tasks-run-records] long-press menu + run records -->
+
+
+    
     <string name="image_action_copy">Copy</string>
     <string name="image_action_share">Share</string>
     <string name="image_action_save">Save</string>
@@ -964,8 +1241,21 @@
     <string name="thinking_truncated_hint">Showing last %1$dK of %2$dK characters</string>
     <string name="thinking_view_full">View full content</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
+
+
+
+
+
+
     <string name="voice_provider_system">System</string>
+
+
+
+
+
+    
     <string name="provider_no_key_required">No key required</string>
     <string name="generated_image_unavailable">The generated image file is unavailable</string>
     <string name="chat_error_present_choices_missing">The model did not return structured choice buttons after one retry. Existing text was kept; this turn has stopped to prevent a loop.</string>

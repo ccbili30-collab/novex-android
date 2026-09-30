@@ -513,8 +513,8 @@ private fun ExternalOpenMediaFallback(item: FileItem) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(16.dp))
-        androidx.compose.material3.Button(onClick = { openMediaFileExternally(context, item.file) }) {
-            androidx.compose.material3.Text("用其他应用打开")
+        novex.android.ui.Button(onClick = { openMediaFileExternally(context, item.file) }) {
+            Text("用其他应用打开")
         }
     }
 }

@@ -5,8 +5,12 @@
     <string name="settings">設定</string>
     <string name="add_provider">AIプロバイダーを追加</string>
     <string name="appearance">外観</string>
+
+    
     <string name="delete">削除</string>
     <string name="cancel">キャンセル</string>
+
+
     <string name="session_memory_title">セッション内のメモリ</string>
     <string name="memory_section_auto_injected">自動注入</string>
     <string name="memory_section_auto_injected_footer">各エージェントターン開始時にシステムプロンプトへ読み込まれます。</string>
@@ -44,6 +48,11 @@
     <string name="check_update_install_launch_failed">インストーラーの起動に失敗しました。\"提供元不明のアプリ\"の許可を確認するか、ダウンロードした APK を手動で開いてください。</string>
     <string name="check_update_install_hint">ヒント：インストール時に何も反応がない場合、署名が一致しない可能性があります。まず以前のバージョンをアンインストールしてから再度ダウンロードしてください。</string>
     <string name="check_update_open_install_settings">設定を開く</string>
+
+
+
+
+
     <string name="mention_scanning">ファイルをスキャン中…</string>
     <string name="mention_no_match">一致するファイルはありません</string>
     <string name="resume_banner_title">中断されました — 「再開」をタップして続行</string>
@@ -51,7 +60,10 @@
     <string name="search_chats_placeholder">会話を検索…</string>
     <string name="search_no_results">\"%1$s\" の結果はありません</string>
     <string name="stop_tool">ツールを停止</string>
+
+    
     <string name="bg_section_header">バックグラウンドと通知</string>
+    
     <string name="bg_service_channel_name">エージェントの状態</string>
     <string name="bg_service_channel_description">実行中のエージェントセッションの状態を表示します。</string>
     <string name="bg_service_notification_title">Novex Agent 実行中</string>
@@ -78,6 +90,7 @@
     <string name="settings_section_llm_providers_footer">エージェントが使うモデルを設定し、各プロバイダーの API キーと OAuth を管理し、フォールバックや負荷分散のためのモデルグループを作成します。</string>
     <string name="settings_manage_providers">プロバイダーを管理</string>
     <string name="settings_manage_providers_subtitle">API キーと OAuth サインイン</string>
+    
     <string name="settings_token_usage">トークン使用量</string>
     <string name="settings_token_usage_subtitle">プロバイダー横断で API 使用状況を追跡</string>
     <string name="settings_section_appearance">外観</string>
@@ -89,16 +102,19 @@
     <string name="settings_memory_subtitle">セッションをまたいで保持される永続的な知識</string>
     <string name="settings_env_vars">環境変数</string>
     <string name="settings_env_vars_subtitle">サンドボックスに注入される変数</string>
+
+
+    
     <string name="settings_section_about">情報</string>
     <string name="settings_about_minis">Novex について</string>
     <string name="settings_about_subtitle">バージョンとプロジェクト情報</string>
     <string name="settings_privacy_policy">プライバシーポリシー</string>
+
     <string name="about_title">情報</string>
     <string name="about_minis_tagline">Novex は完全にローカルで完全にプライベートなオンデバイスエージェントです。</string>
     <string name="about_links">リンク</string>
     <string name="about_github_repository">GitHub リポジトリ</string>
     <string name="about_version_format">バージョン %1$s (%2$s)</string>
-
     <!-- T172 — chat sheets i18n -->
     <string name="move_to_sheet_title">移動先…</string>
     <string name="move_to_sheet_empty">他に利用可能なセッションはありません。</string>
@@ -108,7 +124,9 @@
     <string name="time_hours_ago">%1$d 時間前</string>
     <string name="time_yesterday">昨日</string>
     <string name="time_today">今日</string>
+
     <!-- T338: session-scoped tri-action labels. TODO translate (ja) -->
+
     <string name="session_skills_title">セッション内のスキル</string>
     <string name="session_skills_header_installed">インストール済み</string>
     <string name="session_skills_enable_all">すべて有効</string>
@@ -116,6 +134,7 @@
     <string name="session_skills_footer">このセッションのみスキルを切り替えます。デフォルトは「設定 → スキル」から取得します。</string>
     <string name="session_skills_empty_title">スキルがインストールされていません</string>
     <string name="session_skills_empty_subtitle">「設定 → スキル」からスキルをインポートしてください。</string>
+
     <string name="standard_sheet_close">閉じる</string>
     <string name="token_usage_sheet_title">セッショントークン使用量</string>
     <string name="token_usage_section_context">コンテキスト</string>
@@ -138,7 +157,6 @@
     <string name="common_yes">はい</string>
     <string name="common_no">いいえ</string>
     <string name="memory_file_empty">空</string>
-
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
          Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
@@ -154,6 +172,9 @@
     <string name="appearance_theme_system">システム</string>
     <string name="appearance_theme_light">ライト</string>
     <string name="appearance_theme_dark">ダーク</string>
+
+
+    
     <string name="appearance_section_return_key">改行キー</string>
     <string name="appearance_return_key_footer">チャット入力欄の改行キーで改行を挿入するか、メッセージを送信するかを選択します。ハードウェアの Shift+Return は常に改行を挿入します。</string>
     <string name="appearance_return_key_newline">改行</string>
@@ -218,9 +239,21 @@
     <string name="memory_delete_confirm_title">%1$s を削除しますか？</string>
     <string name="memory_delete_confirm_text">このメモリログを完全に削除します。</string>
     <string name="memory_editor_placeholder">内容を入力…</string>
+
+
+    
     <!-- T336 follow-up: ASK_ONCE granted for the whole app launch -->
+    
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (ja) -->
+
+
+
+
+
+
+
+    
     <string name="skill_title">スキル</string>
     <string name="skill_add">Skill を追加</string>
     <string name="skill_section_installed">インストール済み</string>
@@ -254,6 +287,8 @@
     <string name="skill_detail_updated">更新済み</string>
     <string name="skill_detail_delete">Skill を削除</string>
     <string name="skill_detail_edit_name_title">名前を編集</string>
+
+    
     <string name="skill_file_save">保存</string>
     <string name="skill_file_edit">編集</string>
     <string name="skill_detail_status_reading">ファイル読み込み中…</string>
@@ -284,6 +319,7 @@
     <string name="storage_clearing_status">削除中…</string>
     <string name="storage_clear_session_button">セッションファイルを削除</string>
     <string name="storage_clear_confirm_title">セッションファイルを削除しますか？</string>
+    
     <string name="usage_title">使用量</string>
     <string name="usage_section_total">合計使用量</string>
     <string name="usage_label_total_input">合計入力（キャッシュ含む）</string>
@@ -293,6 +329,7 @@
     <string name="usage_label_cache_hit_rate">キャッシュヒット率</string>
     <string name="usage_detail_input">入力</string>
     <string name="usage_detail_output">出力</string>
+
     <string name="usage_detail_daily_avg">日平均</string>
     <string name="usage_detail_session_avg">セッション平均</string>
     <string name="usage_detail_sessions">セッション</string>
@@ -336,15 +373,21 @@
     <string name="rootfs_reset_backup_confirm_title">バックアップしてリセットしますか？</string>
     <string name="rootfs_reset_backup_confirm_message">/root ディレクトリをバックアップしてからrootfsをリセットします。後でバックアップを復元できます。</string>
     <string name="rootfs_reset_backup_confirm_button">リセット＆バックアップ</string>
-
     <!-- T172 — components / onboarding / preview i18n -->
     <string name="common_back">戻る</string>
     <string name="common_skip">スキップ</string>
+
+
+
+
     <string name="onboarding_select_models_title">モデルを選択</string>
     <string name="onboarding_select_models_subtitle">デフォルトグループに最大 3 つのモデルを選択してください。</string>
     <string name="onboarding_filter_models">モデルを絞り込み</string>
     <string name="onboarding_done_count">完了 (%1$d/3)</string>
     <string name="onboarding_loading_models">モデルを読み込んでいます…</string>
+
+
+
 
     <!-- T172 — sandbox / sessions / browser / terminal i18n -->
     <string name="filebrowser_title">ファイル</string>
@@ -372,9 +415,12 @@
     <string name="filepreview_pdf_empty">空のドキュメント</string>
     <string name="filepreview_image_decode_error">画像をデコードできません</string>
     <string name="filepreview_image_load_error">画像の読み込みに失敗</string>
+
+    
     <string name="filepreview_page_n">%1$d ページ目</string>
     <string name="sessionlist_section_pinned">ピン留め</string>
     <string name="sessionlist_section_today">今日</string>
+
     <string name="sessionlist_section_earlier">それ以前</string>
     <string name="sessionlist_select_title">セッションを選択</string>
     <string name="sessionlist_n_selected">%1$d 件選択</string>
@@ -385,6 +431,7 @@
     <string name="sessionlist_shell">シェル</string>
     <string name="sessionlist_shell_terminal">シェルターミナル</string>
     <string name="sessionlist_rootfs_management">Rootfs 管理</string>
+    
     <string name="sessionlist_pin">ピン留め</string>
     <string name="sessionlist_unpin">ピンを外す</string>
     <string name="sessionlist_export">エクスポート</string>
@@ -399,13 +446,35 @@
     <string name="sessionlist_delete_one_title">この会話を削除しますか？</string>
     <string name="sessionlist_delete_n_title">%1$d 件の会話を削除しますか？</string>
     <string name="sessionlist_delete_message">この操作は元に戻せません。</string>
+
+
+
+
+
+
     <string name="chat_typing_indicator">%1$s が考えています</string>
+
+
     <string name="chat_error_stream_dropped_partial">接続が切断されました。この返信は不完全な可能性があります。再試行してください。</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="terminal_title">Novex シェル</string>
     <string name="terminal_clear">クリア</string>
     <string name="terminal_show_keyboard">表示</string>
     <string name="terminal_hide_keyboard">非表示</string>
-
     <!-- T172-A providers / models / settings i18n -->
     <string name="provider_list_providers">AIプロバイダー</string>
     <string name="provider_list_add_provider">AIプロバイダーを追加</string>
@@ -422,9 +491,30 @@
     <string name="share_open_app_failed">コンテンツを保存しました。Novex を自動で開けませんでした。アプリを開いて続行してください。</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">無効</string>
+
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">カスタムモデルを追加</string>
+
+
+
+    
     <string name="common_remove">削除</string>
+
+
+    
     <string name="add_provider_identity">識別情報</string>
+
+
+
+
+
+
+
     <string name="add_custom_model_model_id">モデルID</string>
     <string name="add_custom_model_display_name_optional">表示名（省略可）</string>
     <string name="model_entry_model_detail">モデルの詳細</string>
@@ -484,11 +574,17 @@
     <string name="model_groups_none">なし</string>
     <string name="add_models_to_group_search_models">モデルを検索</string>
     <string name="add_models_to_group_clear">クリア</string>
+        <string name="agent_loop_models_groups">グループ</string>
+
+
 
     <!-- T172-A parameterized strings -->
     <string name="add_custom_model_id_footer">Model ID は %1$s に送信される API 識別子です。表示名はモデルピッカーで使われる分かりやすいラベルで、空欄時は Model ID にフォールバックします。</string>
     <string name="add_custom_model_eg_id_placeholder">例: gpt-4o-custom</string>
+
     <string name="add_models_to_group_add_count">追加 (%1$d)</string>
+
+    
     <string name="agent_loop_models_model_count_singular">1 モデル</string>
     <string name="agent_loop_models_model_count_plural">%1$d モデル</string>
     <string name="model_group_detail_models_header_count">モデル (%1$d)</string>
@@ -496,7 +592,6 @@
     <string name="model_group_detail_remove_this_model_fallback">このモデル</string>
     <string name="model_group_detail_delete_named_group_confirm">\"%1$s\" を削除してもよろしいですか?この操作は元に戻せません。</string>
     <string name="provider_list_models_count">%1$d モデル</string>
-
     <!-- T180-bg-notif — Task Notifications toggle + completion notification
          channel + N-tasks-running display strings. Mirrors iOS
          EnhancedBackgroundSettingsView + BackgroundKeepAliveManager. -->
@@ -510,8 +605,9 @@
     <string name="notif_task_completed_channel_description">アプリがバックグラウンドにあるときエージェントセッションの完了を通知します。</string>
     <string name="notif_task_completed_default_title">タスクが完了しました</string>
     <string name="notif_task_completed_body">タップしてチャットを開き、返信を表示します。</string>
-    <string name="notif_task_failed_body">タスクがエラーで終了しました。タップしてチャットを開きます。</string>
 
+
+    <string name="notif_task_failed_body">タスクがエラーで終了しました。タップしてチャットを開きます。</string>
     <!-- T182 agent loop section i18n -->
     <string name="agent_loop_section_title">エージェントループで使えるモデル</string>
     <string name="agent_loop_section_footer">ここに表示されているモデルとグループはターミナルから minis-model-use で呼び出せます。エージェントが認識するのはこれらだけです。</string>
@@ -525,31 +621,30 @@
     <string name="agent_loop_section_empty_group_subtitle">(空のグループ)</string>
     <string name="agent_loop_section_remove">エージェントループから削除</string>
     <string name="agent_loop_section_group_badge">グループ</string>
-
     <!-- T184-chatmenu-i18n — ChatScreen overflow ⋮ menu -->
     <string name="chat_menu_new_chat">新しいチャット</string>
     <string name="chat_new_chat_stop_dialog_body">このチャットではタスクが実行中です。新しいチャットを開始すると停止します。</string>
     <string name="chat_new_chat_stop_dialog_confirm">停止して新規チャット</string>
+
+    
     <string name="chat_menu_enhanced_cache">拡張キャッシュ</string>
     <string name="enhanced_cache_dialog_body">拡張キャッシュは Anthropic のプロンプトキャッシュを 5 分から 1 時間に延長し、長いセッションでコンテキストを保持します。追加のキャッシュ書き込み料金が発生する場合があります。有効にしますか？</string>
     <string name="enhanced_cache_dialog_confirm">有効にする</string>
-
     <!-- T184-chatmenu-i18n — longpress + attach -->
     <string name="chat_longpress_copy">コピー</string>
     <string name="chat_longpress_retry">再試行</string>
     <string name="chat_attach_take_photo">写真を撮る</string>
     <string name="chat_attach_choose_photos_videos">写真と動画を選択</string>
     <string name="chat_attach_add_file">ファイルを追加</string>
-
     <!-- T185 unified picker UI strings -->
     <string name="add_models_to_group_all_in_group">すべてのモデルはこのグループに含まれています。</string>
     <string name="add_models_to_group_no_match">一致するモデルが見つかりません。</string>
-
     <!-- T187 — user-bubble long-press Edit + Exit Edit + Clear Chat dialog -->
     <string name="chat_longpress_edit">編集</string>
     <string name="chat_edit_exit_button">編集モードを終了</string>
 
     <!-- T235 — 共有フォルダ（固定: 共有 / スキル / メモリ） -->
+    
     <string name="shared_folders_title">共有フォルダ</string>
     <string name="shared_folders_info_banner">これらのディレクトリは Linux サンドボックス内から参照できます。Skills と Memory は AI エージェントのツールが管理します — 手動で編集しないでください。</string>
     <string name="shared_folder_name_shared">共有</string>
@@ -557,10 +652,23 @@
     <string name="shared_folder_name_memory">メモリ</string>
     <string name="shared_folder_detail_title">フォルダの詳細</string>
     <string name="shared_folder_browse_files">ファイルを閲覧</string>
-
     <!-- T219-2 — 外部フォルダのマウント -->
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">読み書き</string>
     <string name="mount_badge_readonly">読み取り専用</string>
+
+
+
+
 
     <!-- T241: スラッシュコマンドパネル + モデル選択シート -->
     <string name="slash_compact_subtitle">会話履歴を要約に圧縮</string>
@@ -590,12 +698,24 @@
     <plurals name="model_picker_models_count">
         <item quantity="other">%d 個のモデル</item>
     </plurals>
-
     <!-- T288 — ログ / 設定変更 -->
+
+
+    
     <string name="overlay_completion_completed">完了</string>
     <string name="overlay_completion_failed">失敗</string>
     <string name="overlay_completion_cancelled">キャンセル</string>
     <string name="overlay_completion_timeout">タイムアウト</string>
+
+
+
+
+
+
+
+
+
+
     <string name="model_picker_modality_image">画像</string>
     <string name="model_picker_modality_audio">音声</string>
     <string name="model_picker_modality_video">動画</string>
@@ -603,7 +723,6 @@
     <string name="model_picker_non_text_warning_body">%1$s は %2$s を出力するため、通常 Agent タスクを駆動できません。セッションにはテキスト出力モデルを選択するか、このモデルを Agent ループ内のツールとして追加し、必要に応じて %3$s を生成させてください。</string>
     <string name="model_picker_non_text_warning_use_anyway">そのまま使用</string>
     <string name="model_picker_non_text_warning_choose_other">他のモデルを選択</string>
-
     <!-- Welcome / onboarding (T332) -->
     <!-- TODO translate -->
     <string name="sessionlist_welcome_title">Novex へようこそ</string>
@@ -632,6 +751,7 @@
     <string name="update_error_forbidden_with_link">アップデートサーバーにアクセスできません。ネットワーク制限の可能性があります。GitHub Releases から手動でダウンロードできます。</string>
     <string name="update_error_open_releases">GitHub Releases を開く</string>
     <!-- T-android-crash-freq-share -->
+
     <string name="crash_freq_dialog_dismiss">後で</string>
     <string name="crash_safe_mode_restart_needed">復旧を完了するには Novex の再起動が必要です。アプリアイコンをもう一度タップしてください。</string>
     <string name="crash_freq_email_subject">Novex クラッシュレポート %1$s</string>
@@ -654,12 +774,60 @@
     <string name="filebrowser_copy_abs_path">絶対パスをコピー</string>
     <string name="filebrowser_copy_abs_path_toast">パスをコピーしました</string>
     <!-- [T-mcp-i18n-android] MCP Integrations UI -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="error_empty_response_generic">モデルが空の応答を返しました。もう一度試すか、モデルを切り替えてください。</string>
     <string name="error_empty_response_context_large">モデルが空の応答を返しました。会話のコンテキストが大きすぎる可能性があります — 圧縮するか、新しいセッションを開始してください。</string>
     <string name="error_empty_response_after_tool">ツールの結果の後、リマインダーを送っても、モデルは応答を返しませんでした。過負荷の可能性があります — もう一度試すか、モデルを切り替えてください。</string>
     <string name="thinking_truncated_hint">%2$dK 文字のうち末尾 %1$dK 文字を表示中</string>
     <string name="thinking_view_full">全文を表示</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
+
+
+
+
+
+
     <string name="voice_provider_system">システム</string>
+
+
+
+
+
+
+
+
+    
 </resources>
