@@ -300,9 +300,131 @@ internal fun AttachmentChip(
 
 // ─── Input Circle Button (iOS: 34×34 circle, secondary bg + border) ─────────
 
+// ─── Novex 点击光效（自有 indication，替代默认灰涟漪）─────────────────────────
+// 按下点向外扩散一圈薄荷光辉并消退——比灰色圆涟漪轻，也脱离 Material 语言。
+
+private val NovexGlowColor = Color(0xFF2FBF8F)
+
+private class NovexGlowNode(
+    private val interactionSource: androidx.compose.foundation.interaction.InteractionSource,
+) : Modifier.Node(), androidx.compose.ui.node.DrawModifierNode {
+    private val progress = androidx.compose.animation.core.Animatable(0f)
+    private var origin = androidx.compose.ui.geometry.Offset.Unspecified
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            interactionSource.interactions.collect { interaction ->
+                if (interaction is androidx.compose.foundation.interaction.PressInteraction.Press) {
+                    origin = interaction.pressPosition
+                    progress.snapTo(0f)
+                    launch {
+                        progress.animateTo(
+                            1f,
+                            tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.draw() {
+        drawContent()
+        val p = progress.value
+        if (p > 0f && p < 1f && origin != androidx.compose.ui.geometry.Offset.Unspecified) {
+            val r = size.maxDimension * p
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    0f to NovexGlowColor.copy(alpha = 0.20f * (1f - p)),
+                    1f to NovexGlowColor.copy(alpha = 0f),
+                    center = origin,
+                    radius = r.coerceAtLeast(1f),
+                ),
+                radius = r,
+                center = origin,
+            )
+        }
+    }
+}
+
+private object NovexGlowIndicationFactory : androidx.compose.foundation.IndicationNodeFactory {
+    override fun create(
+        interactionSource: androidx.compose.foundation.interaction.InteractionSource,
+    ) = NovexGlowNode(interactionSource)
+    override fun hashCode() = 31
+    override fun equals(other: Any?) = other is NovexGlowIndicationFactory
+}
+
+/**
+ * 带 Novex 薄荷点击光效的 clickable/combinedClickable。
+ * clip 要在它之前调用，光效才会被裁进形状内。
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.novexClickable(
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    return combinedClickable(
+        interactionSource = interactionSource,
+        indication = NovexGlowIndicationFactory,
+        onClick = onClick,
+        onLongClick = onLongClick,
+    )
+}
+
+/** 竖向交叠的三张卡：前卡完整描边，后两张只露出上边沿（指令卡入口图形）。 */
+@Composable
+internal fun NovexCardStackGlyph(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    fillColor: Color = ChatColors.inputBg,
+) {
+    androidx.compose.foundation.Canvas(modifier.size(20.dp)) {
+        val sw = 1.7.dp.toPx()
+        val w = size.width
+        val h = size.height
+        val cw = w * 0.74f
+        val ch = h * 0.60f
+        val cx = (w - cw) / 2f
+        val top = h - ch - h * 0.04f
+        val rad = androidx.compose.ui.geometry.CornerRadius(2.6.dp.toPx())
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(sw)
+        drawRoundRect(
+            color = tint.copy(alpha = 0.30f),
+            topLeft = androidx.compose.ui.geometry.Offset(cx, top - h * 0.22f),
+            size = androidx.compose.ui.geometry.Size(cw, ch),
+            cornerRadius = rad,
+            style = stroke,
+        )
+        drawRoundRect(
+            color = tint.copy(alpha = 0.55f),
+            topLeft = androidx.compose.ui.geometry.Offset(cx, top - h * 0.11f),
+            size = androidx.compose.ui.geometry.Size(cw, ch),
+            cornerRadius = rad,
+            style = stroke,
+        )
+        // 前卡先填底色遮住后卡的下缘线条，再描边。
+        drawRoundRect(
+            color = fillColor,
+            topLeft = androidx.compose.ui.geometry.Offset(cx, top),
+            size = androidx.compose.ui.geometry.Size(cw, ch),
+            cornerRadius = rad,
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = androidx.compose.ui.geometry.Offset(cx, top),
+            size = androidx.compose.ui.geometry.Size(cw, ch),
+            cornerRadius = rad,
+            style = stroke,
+        )
+    }
+}
+
 /**
  * [A2c-glyphs] 输入栏第二行裸符号钮：无圆底无边框，图标是符号本身；
- * 40dp 触控区保可达性。视觉对齐工具列（+、叠卡、额度环、⤢、🎙）。
+ * 40dp 触控区保可达性，按下走 NovexGlow 自有光效而非灰涟漪。
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -311,11 +433,17 @@ internal fun ComposerGlyphButton(
     onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = NovexGlowIndicationFactory,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         content()
