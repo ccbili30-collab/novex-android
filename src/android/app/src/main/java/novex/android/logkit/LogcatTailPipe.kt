@@ -20,7 +20,7 @@ import java.io.InputStreamReader
 internal class LogcatTailPipe(private val onLine: (String) -> Unit) {
 
     private var child: java.lang.Process? = null
-    private var readerThread: Thread? = null
+    private var pump: Thread? = null
 
     @Volatile
     private var halting = false
@@ -30,34 +30,15 @@ internal class LogcatTailPipe(private val onLine: (String) -> Unit) {
         if (child != null) return
         halting = false
         try {
-            val pid = android.os.Process.myPid().toString()
-            val proc = ProcessBuilder(
-                "logcat", "-v", "time", "-T", "1", "--pid=$pid",
-                "View:S", "ViewRootImpl:S", "BLASTBufferQueue_Java:S", "*:V",
-            ).redirectErrorStream(true).start()
+            val proc = ProcessBuilder(commandLine())
+                .redirectErrorStream(true)
+                .start()
             child = proc
-            val reader = BufferedReader(InputStreamReader(proc.inputStream, Charsets.UTF_8))
-            readerThread = Thread({
-                try {
-                    while (true) {
-                        val line = reader.readLine() ?: break
-                        if (halting) break
-                        if (line.startsWith("---------")) continue // 头部横幅
-                        try { onLine(line) } catch (_: Throwable) {}
-                    }
-                } catch (_: Throwable) {
-                    // halt() 关流或子进程退出，正常收场。
-                } finally {
-                    try { reader.close() } catch (_: Throwable) {}
-                }
-            }, "LogcatTailPipe").apply {
-                isDaemon = true
-                start()
-            }
+            pump = threadReading(proc).also { it.start() }
         } catch (e: Exception) {
             Log.w("LogcatTailPipe", "logcat spawn failed: ${e.message}")
             child = null
-            readerThread = null
+            pump = null
         }
     }
 
@@ -66,6 +47,37 @@ internal class LogcatTailPipe(private val onLine: (String) -> Unit) {
         halting = true
         try { child?.destroy() } catch (_: Throwable) {}
         child = null
-        readerThread = null
+        pump = null
+    }
+
+    private fun commandLine(): List<String> = buildList {
+        add("logcat")
+        add("-v"); add("time")   // MM-DD HH:MM:SS.mmm L/Tag(pid): msg
+        add("-T"); add("1")      // 从最新一行起，跳过积压
+        add("--pid=${android.os.Process.myPid()}") // 只读自家，防泄他应用日志
+        addAll(listOf("View:S", "ViewRootImpl:S", "BLASTBufferQueue_Java:S")) // 高频静噪
+        add("*:V")               // 通配兜底：其余标签照常
+    }
+
+    private fun threadReading(proc: java.lang.Process): Thread = Thread(
+        {
+            proc.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                pumpLines(reader)
+            }
+        },
+        "LogcatTailPipe",
+    ).apply { isDaemon = true }
+
+    /** 读到流尾或 halt 置位为止；头部的 --------- 横幅跳过；回调抛错不影响后续行。 */
+    private fun pumpLines(reader: BufferedReader) {
+        try {
+            while (!halting) {
+                val line = reader.readLine() ?: break
+                if (line.startsWith("---------")) continue
+                runCatching { onLine(line) }
+            }
+        } catch (_: Throwable) {
+            // halt() 关流或子进程退出，正常收场。
+        }
     }
 }

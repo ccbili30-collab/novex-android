@@ -21,21 +21,22 @@ object LiveUpdatesProbe {
 
     private const val TAG = "LiveUpdatesProbe"
 
-    /** 设备此刻能否发布可提升（灵动岛形态）的通知。低版本直接短路为 false。 */
+    /** 设备此刻能否发布可提升（灵动岛形态）的通知。低版本直接短路。 */
     fun capable(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return false
-        return try {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            manager?.canPostPromotedNotifications() == true
-        } catch (t: Throwable) {
-            // 个别半成品的 Baklava 构建可能在这个调用上抛异常；一律按
-            // "不具备"处理，退回悬浮胶囊 + 普通通知的老路。
+        val manager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            context.getSystemService(NotificationManager::class.java)
+        } else {
+            null // 36 之前系统里根本没有这套 API/设置面
+        } ?: return false
+        // 个别半成品的 Baklava 构建可能在这个调用上抛异常；一律按
+        // "不具备"处理，退回悬浮胶囊 + 普通通知的老路。
+        return runCatching { manager.canPostPromotedNotifications() }.getOrElse { t ->
             Log.w(TAG, "canPostPromotedNotifications() threw: ${t.message}")
             false
         }
     }
 
-    /** 灵动岛是否应当作为当前状态面板：能力具备且用户开关为开。 */
+    /** 灵动岛是否应当作为当前状态面板：用户开关为开，且能力现查通过。 */
     fun engaged(context: Context, userToggleOn: Boolean): Boolean =
         userToggleOn && capable(context)
 }
