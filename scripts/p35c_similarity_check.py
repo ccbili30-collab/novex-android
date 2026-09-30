@@ -25,6 +25,8 @@ APP = "src/android/app/src/main/java"
 
 # 新实现文件 → 上游基线里的对应旧路径（可多对一/一对多）
 PAIRS = {
+    # 公共新件：对照被合并/拆分的基线源（净眼复核补收）
+    "novex/android/authkit/RefreshGate.kt": "com/openminis/app/auth/GeminiOAuthManager.kt",  # 对照被合并的刷新拷贝之一
     # auth → authkit
     "novex/android/authkit/OAuthWire.kt": "com/openminis/app/auth/OAuthManager.kt",
     "novex/android/authkit/PkceMaterial.kt": "com/openminis/app/auth/OAuthManager.kt",
