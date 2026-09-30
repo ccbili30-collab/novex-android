@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.Flow
  * P3.5a 重写后的职责划分：
  *  - 分页读取与 CursorWindow 兜底在 [TranscriptPager]；
  *  - parts_json 的文本投影在 [MessagePreviews]；
- *  - offload 用的三条大查询在 [ChatArchiveQueries]（扩展函数）；
+ *  - offload 时代的大查询已随裁军决议删除（P3.5a 净眼复核，零调用孤儿）；
  *  - SQL 与事务全部留在 novex.android.data.chat 的 DAO。
  *
  * 门面本身只做三件事：把调用方的意图编排成 DAO 调用、维护分支图
@@ -573,7 +573,6 @@ class ChatRepository(internal val dao: ChatDao) {
         internal const val MESSAGE_TEXT_MAX = 600
 
         /** `--full` 模式的单条消息上限；超限仍截断并标 truncated。 */
-        internal const val MESSAGE_TEXT_MAX_FULL = 50_000
 
         /** 截断并包成单文本部件：下游所有 JSONArray 消费者都能继续解析。 */
         internal fun buildTruncatedPartsJson(original: String): String {

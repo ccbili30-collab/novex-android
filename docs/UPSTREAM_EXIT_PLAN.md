@@ -547,7 +547,7 @@ ui/ 文件的非 import 行**（避免与大改分支冲突），她不碰本线
 + SkillStorage（skills.db 注册表 + 磁盘目录）+ SkillTransfer（zip/GitHub
 定位/同步客户端）+ BundledSkillSeed（种植器+冻结载荷）；会话侧
 MessagePreviews（parts_json 三种文本投影）+ TranscriptPager（CursorWindow
-分页兜底）+ ChatArchiveQueries（offload 三查）；供应商侧 ProviderConfigStore
+分页兜底）+ ChatArchiveQueries（offload 四条大查询（已删））；供应商侧 ProviderConfigStore
 （双写/对账/锁/状态流内核）+ ProviderModelRefresh + ProviderImageSources +
 ProviderTransfer（导出导入+模态位域）+ ProviderOpenCodeSunset。
 
