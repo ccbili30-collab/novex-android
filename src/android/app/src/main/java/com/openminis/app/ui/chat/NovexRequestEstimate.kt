@@ -1,9 +1,9 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.BPETokenizer
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMMessage
 
 /** Shared local estimate for retention, material allocation and the final send guard.
  * Tool schemas are counted in their request representation, never data-class debug text.

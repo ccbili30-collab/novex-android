@@ -3,7 +3,7 @@ package com.openminis.app.speech.correction
 import android.content.Context
 import android.util.Log
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
-import com.openminis.app.data.db.ChatDao
+import novex.android.data.chat.ChatDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,7 +63,7 @@ class TypedVocabularyBuilder(
                 else database.metaValue(KEY_CURSOR)?.toLongOrNull() ?: 0L
 
                 val messages = runCatching {
-                    dao.loadUserMessagesSince(cursorMs, MAX_MESSAGES_PER_BUILD)
+                    dao.userMessagesSince(cursorMs, MAX_MESSAGES_PER_BUILD)
                 }.getOrElse {
                     Log.e(TAG, "failed to load messages", it)
                     return@withContext

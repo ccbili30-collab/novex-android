@@ -93,7 +93,7 @@ class StreamingFlatItemsTest {
                     content = "",
                     isStreaming = true,
                     isAwaitingModelResponse = true,
-                    thinkingLevel = com.openminis.app.data.model.ThinkingLevel.LOW,
+                    thinkingLevel = novex.android.data.model.ThinkingLevel.LOW,
                 ),
             ),
         )
@@ -104,7 +104,7 @@ class StreamingFlatItemsTest {
                     role = "assistant",
                     content = "",
                     isStreaming = true,
-                    thinkingLevel = com.openminis.app.data.model.ThinkingLevel.LOW,
+                    thinkingLevel = novex.android.data.model.ThinkingLevel.LOW,
                     toolBlocks = listOf(
                         AssistantBlock(
                             id = "thinking-1",

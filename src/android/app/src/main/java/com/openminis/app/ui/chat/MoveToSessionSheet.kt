@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Context
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,13 +70,13 @@ fun MoveToSessionSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    var sessions by remember { mutableStateOf<List<ChatSessionEntity>>(emptyList()) }
-    var currentSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var sessions by remember { mutableStateOf<List<SessionRow>>(emptyList()) }
+    var currentSession by remember { mutableStateOf<SessionRow?>(null) }
 
     LaunchedEffect(Unit) {
         val loaded = withContext(Dispatchers.IO) {
-            chatRepository.getSession(currentSessionId) to
-                chatRepository.dao.listSessions().filter { it.id != currentSessionId }
+            chatRepository.sessionById(currentSessionId) to
+                chatRepository.dao.primarySessions().filter { it.id != currentSessionId }
         }
         currentSession = loaded.first
         sessions = loaded.second
@@ -184,7 +184,7 @@ fun MoveToSessionSheet(
  */
 @Composable
 private fun MoveToPickerRow(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current

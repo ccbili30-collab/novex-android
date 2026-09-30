@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentContentPart
+import novex.android.data.model.AgentContentPart
 
 internal const val PRESENT_CHOICES_TOOL = "present_choices"
 

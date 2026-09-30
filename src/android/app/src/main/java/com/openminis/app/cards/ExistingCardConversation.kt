@@ -18,7 +18,7 @@ import novex.runtime.ManagementTarget
 /** 使用既有对话设置保存器；不直接改数据库，不创建卡片副本。 */
 @Composable internal fun ExistingCardConversation(app:MinisApp,source:SourceSelection,manage:Boolean,
     onDismiss:()->Unit,onOpen:(String)->Unit) {
-    val sessions by app.chatRepository.observeSessions().collectAsState(initial=emptyList())
+    val sessions by app.chatRepository.observeSessionIndex().collectAsState(initial=emptyList())
     var chosen by remember {mutableStateOf<String?>(null)}
     var query by remember {mutableStateOf("")}
     var usage by remember {mutableStateOf(if(manage)"管理" else "背景")}

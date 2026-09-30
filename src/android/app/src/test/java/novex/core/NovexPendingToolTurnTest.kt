@@ -1,6 +1,6 @@
 package novex.core
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.tools.ToolExecutionResult
 import java.io.File
 import kotlinx.coroutines.*
@@ -14,7 +14,7 @@ import org.junit.rules.TemporaryFolder
 class NovexPendingToolTurnTest {
     @get:Rule val files = TemporaryFolder()
     private fun row(id: String, role: String, vararg parts: JSONObject) =
-        MessageEntity(id, "chat", role, JSONArray(parts.toList()).toString(), 1, sortOrder = -1)
+        MessageRow(id, "chat", role, JSONArray(parts.toList()).toString(), 1, sortOrder = -1)
     private fun text(value: String) = JSONObject().put("type", "text").put("value", value)
     private fun call(id: String) = JSONObject().put("type", "toolUse").put("value", JSONObject()
         .put("toolUseId", id).put("name", "novex_write_card").put("input", "{\"name\":\"作品\"}"))

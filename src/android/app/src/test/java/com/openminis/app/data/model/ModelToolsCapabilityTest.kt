@@ -1,5 +1,6 @@
 package com.openminis.app.data.model
 
+import novex.android.data.model.*
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

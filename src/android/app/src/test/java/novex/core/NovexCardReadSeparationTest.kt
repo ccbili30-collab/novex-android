@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -21,7 +21,7 @@ import java.io.File
 class NovexCardReadSeparationTest {
     @get:Rule val files = TemporaryFolder()
     private fun checkRead(block: suspend (NovexWorkspace, NovexWorkspace, String) -> Unit) = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).build()
         try {
             val real = NovexTestWorkspaceFactory.create(db, File(files.root, "media"))
             val world = real.apply(NovexCommand.CreateWorld("Fixture", "Overview")).requireWorld()

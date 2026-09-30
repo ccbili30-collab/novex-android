@@ -1,9 +1,19 @@
 package novex.core
 
+import novex.android.data.MIGRATION_30_31
+import novex.android.data.MIGRATION_31_32
+import novex.android.data.MIGRATION_32_33
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -22,7 +32,7 @@ import org.robolectric.annotation.Config
 class NovexCardRevisionPersistenceTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun `world and game edits preserve content order and references across reopen without duplicating unchanged saves`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "history.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -63,8 +73,8 @@ class NovexCardRevisionPersistenceTest {
         } finally { db.close() }
     }
     @Test fun `migration does not invent old revisions and failed edit rolls baseline back`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-            File(files.root, "migration.db").absolutePath).addMigrations(AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
+            File(files.root, "migration.db").absolutePath).addMigrations(MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
         var db = open()
         try {
             var workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))

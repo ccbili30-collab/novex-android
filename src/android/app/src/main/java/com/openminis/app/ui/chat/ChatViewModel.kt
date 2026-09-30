@@ -13,7 +13,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
 import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
 import com.openminis.app.data.ContextPolicy
@@ -22,17 +22,17 @@ import com.openminis.app.data.attachments.containsAgentAttachmentMetadata
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
-import com.openminis.app.data.db.CompactMarkerEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.LLMUsage
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ThinkingLevel
-import com.openminis.app.data.model.hasImageInput
+import novex.android.data.chat.CompactMarkerRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.LLMUsage
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ThinkingLevel
+import novex.android.data.model.hasImageInput
 import com.openminis.app.R
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
@@ -691,7 +691,7 @@ class ChatViewModel(
         if (_isStreaming.value) return true
         try {
             val id = requireNotNull(_activeEntryId.value) { "请先选择模型" }
-            val (entry, instance) = com.openminis.app.data.model.ChatModelSelection.resolve(providerRepository.config.value, id)
+            val (entry, instance) = novex.android.data.model.ChatModelSelection.resolve(providerRepository.config.value, id)
             val key = requireNotNull(providerRepository.usableApiKey(instance)) { "模型连接缺少凭据" }
             bindChatEntry(entry, instance, key)
             return true
@@ -1497,7 +1497,7 @@ class ChatViewModel(
                     content = material.packageText,
                     // [净眼 N-2] 与 DB 投影行齐平（text part 两侧同在），
                     // 影子装配 structural 不产 [] vs [T] 强信号噪音。
-                    contentParts = listOf(com.openminis.app.data.model.AgentContentPart.Text(material.packageText)),
+                    contentParts = listOf(novex.android.data.model.AgentContentPart.Text(material.packageText)),
                     dbMessageId = entity.id,
                 ))
             }
@@ -1688,8 +1688,8 @@ class ChatViewModel(
 
     /** Remove writes owned only by physically deleted branch rows. */
     private fun revokeMemoryWritesInDeletedRows(
-        deletedMessages: List<com.openminis.app.data.db.MessageEntity>,
-        remainingMessages: List<com.openminis.app.data.db.MessageEntity>,
+        deletedMessages: List<novex.android.data.chat.MessageRow>,
+        remainingMessages: List<novex.android.data.chat.MessageRow>,
     ) {
         val repository = activeMemoryRepository() ?: return
         val deletedContents = com.openminis.app.data.ConversationBranchMemory
@@ -1774,7 +1774,7 @@ class ChatViewModel(
             val entry = entryId?.let { id -> config.modelEntries.find { it.id == id } }
             val instance = entry?.let { e -> config.instances.find { it.id == e.providerInstanceId } }
             instance != null &&
-                instance.providerType == com.openminis.app.data.model.ProviderType.anthropic &&
+                instance.providerType == novex.android.data.model.ProviderType.anthropic &&
                 instance.customBaseURL.isNullOrBlank()
         }.stateIn(
             viewModelScope,
@@ -1858,8 +1858,8 @@ class ChatViewModel(
             val entry = entryId?.let { id -> config.modelEntries.find { it.id == id } }
             val instance = entry?.let { e -> config.instances.find { it.id == e.providerInstanceId } }
             val isCodexOAuth = instance != null &&
-                instance.providerType == com.openminis.app.data.model.ProviderType.openAI &&
-                instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth &&
+                instance.providerType == novex.android.data.model.ProviderType.openAI &&
+                instance.credentialType == novex.android.data.model.ProviderCredential.oauth &&
                 instance.customBaseURL.isNullOrBlank()
             entry != null && instance != null &&
                 entry.model.id.contains("gpt", ignoreCase = true) &&
@@ -2260,7 +2260,7 @@ class ChatViewModel(
             // the persisted id instead of silently updating zero rows under
             // the draft key.
             val sid = ensureSession()
-            chatRepository.dao.updateMemoryEnabled(sid, if (newValue) 1 else 0)
+            chatRepository.dao.setMemoryFlag(sid, if (newValue) 1 else 0)
         }
         appendSystemInfo(
             text = "Memory writes ${if (newValue) "enabled" else "disabled"}. Reads are unaffected.",
@@ -2318,7 +2318,7 @@ class ChatViewModel(
     private fun persistThinkingOverride(level: ThinkingLevel) {
         viewModelScope.launch {
             val sid = ensureSession()
-            chatRepository.dao.updateThinkingOverride(sid, level.name)
+            chatRepository.dao.setThinkingChoice(sid, level.name)
         }
     }
 
@@ -2377,7 +2377,7 @@ class ChatViewModel(
      *   2. Call the **current provider's non-streaming `sendMessage`** with a
      *      hardcoded summarization system prompt that emphasises preserving
      *      paths/commands/IDs/decisions/errors/open tasks.
-     *   3. Persist a `CompactMarkerEntity` via the DAO; publish via
+     *   3. Persist a `CompactMarkerRow` via the DAO; publish via
      *      [_compactSummary] so [effectiveAgentHistory] starts injecting it.
      *   4. agentHistory itself is NOT truncated — the audit trail stays.
      *
@@ -2611,7 +2611,7 @@ class ChatViewModel(
                         messageId = lastCompactedDbId,
                     ),
                 )
-                val marker = CompactMarkerEntity(
+                val marker = CompactMarkerRow(
                     id = java.util.UUID.randomUUID().toString(),
                     sessionId = sid,
                     summary = summary,
@@ -2628,7 +2628,7 @@ class ChatViewModel(
                 require(activeSessionId == sid && currentModel?.id == compactionModelId && effectiveContextWindowTokens() == compactionWindow && historyScopeKey() == compactionScopeKey && agentHistory.toList() == history) {
                     "对话已变化，本次摘要未采用。"
                 }
-                chatRepository.dao.insertCompactMarker(marker)
+                chatRepository.dao.addMarker(marker)
                 AppLogger.info(
                     TAG,
                     "[Compact] persisted Novex distillation ${distillationEntry.workspaceRef.value}",
@@ -2756,7 +2756,7 @@ class ChatViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             AppLogger.info(TAG, "[Compact] ━━━ REVERT ━━━ session=${sid.take(8)} markerId=${current.id.take(8)} v=${current.version}")
-            val removed = runCatching { chatRepository.dao.deleteCompactMarker(current.id) }.getOrNull() ?: 0
+            val removed = runCatching { chatRepository.dao.dropMarker(current.id) }.getOrNull() ?: 0
             if (removed <= 0) {
                 Log.w(TAG, "[Compact] revert: deleteCompactMarker returned 0 rows for id=${current.id.take(8)}")
                 withContext(Dispatchers.Main) {
@@ -3000,7 +3000,7 @@ class ChatViewModel(
      */
     private suspend fun resolveSideSnapshotMainline(): List<LLMMessage>? {
         if (agentHistory.isEmpty()) return null
-        val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+        val sideOf = runCatching { chatRepository.sessionById(activeSessionId)?.sideOfSession }.getOrNull()
             ?: return null
         val snapshot = SideSnapshotStore.read(context, activeSessionId) ?: return null
         if (snapshot.parentSessionId != sideOf || snapshot.messageIds.isEmpty()) return null
@@ -3324,7 +3324,7 @@ class ChatViewModel(
      * resolve boundaries the same way iOS `cachedLatestMarker` does. Refreshed
      * on every compactAll write and on session reload. */
     @Volatile
-    private var _cachedLatestMarker: com.openminis.app.data.db.CompactMarkerEntity? = null
+    private var _cachedLatestMarker: novex.android.data.chat.CompactMarkerRow? = null
 
     /**
      * Result of a bounded walk-back. `priorIdx` is the agentHistory index
@@ -3616,7 +3616,7 @@ class ChatViewModel(
      * `exhausted` boundaries and still allow the send. That gives the user
      * a signal to invoke `/compact` explicitly without blocking their turn.
      */
-    private fun compactionStartIndex(history: List<LLMMessage>, marker: CompactMarkerEntity?): Int {
+    private fun compactionStartIndex(history: List<LLMMessage>, marker: CompactMarkerRow?): Int {
         if (marker == null) return 0
         if (marker.version >= 3) return history.indexOfFirst { it.dbMessageId == marker.firstKeptMessageId }.coerceAtLeast(0)
         val anchor = marker.lastCompactedMessageId?.let { id -> history.indexOfLast { it.dbMessageId == id } }
@@ -4215,7 +4215,7 @@ class ChatViewModel(
                     novex.android.adapter.NovexLegacyContext(profile.characterVersionId, profile.character, profile.world),
                     app.novexSnapshotMediaStore).adopt(configuration)
             },
-            write = { sid, saved -> chatRepository.updateConversationSettings(sid, saved) },
+            write = { sid, saved -> chatRepository.writeConversationSettings(sid, saved) },
             install = { saved -> withContext(Dispatchers.Main) { installSavedNovexSettings(saved) } },
         )
     }
@@ -4399,7 +4399,7 @@ class ChatViewModel(
         _immersiveProfile.value = _immersiveProfile.value.copy(backgroundPath = effective)
         val sid = realSessionId
         if (sid.isNotEmpty()) {
-            viewModelScope.launch { chatRepository.updateChatBackground(sid, path) }
+            viewModelScope.launch { chatRepository.setChatWallpaper(sid, path) }
         }
     }
 
@@ -4547,7 +4547,7 @@ class ChatViewModel(
                     // ProviderRepository's async load.
                     val sid = realSessionId.takeIf { it.isNotEmpty() }
                     if (sid != null) {
-                        val session = runCatching { chatRepository.getSession(sid) }.getOrNull()
+                        val session = runCatching { chatRepository.sessionById(sid) }.getOrNull()
                         if (session?.modelBinding != null && restoreFromBinding(session.modelBinding)) {
                             return@collect
                         }
@@ -4586,13 +4586,13 @@ class ChatViewModel(
     val currentSessionId: String
         get() = activeSessionId
 
-    /** T-chat-title-pill-edit: load the persisted [ChatSessionEntity] for the
+    /** T-chat-title-pill-edit: load the persisted [SessionRow] for the
      *  current session so the shared edit-title sheet (reused from the session
      *  list) can be opened from the in-chat title pill. Returns null for
      *  drafts that haven't been persisted yet. */
-    suspend fun loadSessionEntity(): com.openminis.app.data.db.ChatSessionEntity? {
+    suspend fun loadSessionEntity(): novex.android.data.chat.SessionRow? {
         val sid = realSessionId.ifEmpty { return null }
-        return runCatching { chatRepository.getSession(sid) }.getOrNull()
+        return runCatching { chatRepository.sessionById(sid) }.getOrNull()
     }
 
     /** T-chat-title-pill-edit: update title + category from the in-chat
@@ -4602,7 +4602,7 @@ class ChatViewModel(
     fun updateTitleAndCategory(title: String, category: String?) {
         val sid = realSessionId.ifEmpty { return }
         viewModelScope.launch {
-            chatRepository.updateSessionTitleAndCategory(sid, title, category)
+            chatRepository.renameSessionWithCategory(sid, title, category)
             _sessionTitle.value = title.ifBlank { "New Chat" }
             _sessionCategory.value = category
         }
@@ -4686,7 +4686,7 @@ class ChatViewModel(
             else -> null
         }
         if (binding != null) {
-            chatRepository.updateSessionBinding(realSessionId, binding, modelId)
+            chatRepository.rebindSessionModel(realSessionId, binding, modelId)
         }
         realSessionId
     }
@@ -4828,7 +4828,7 @@ class ChatViewModel(
                 _sessionCategory.value = null
                 val draftPersona = com.openminis.app.data.character.CharacterCardStore.persona(context, initialPersonaId)
                 if (initialCharacterVersionId != null && initialWorldId != null) {
-                    val database = com.openminis.app.data.db.AppDatabase.getInstance(context)
+                    val database = novex.android.data.NovexMainDatabase.getInstance(context)
                     val snapshot = com.openminis.app.data.character.CharacterConversationSnapshotFactory(
                         catalog = com.openminis.app.data.character.CharacterCatalogRepository(
                             database.characterCatalogDao(),
@@ -4842,7 +4842,7 @@ class ChatViewModel(
                     ).create(initialWorldId, initialCharacterVersionId, draftPersona)
                     _immersiveProfile.value = snapshot.profile
                 } else if (initialWorldId != null) {
-                    val database = com.openminis.app.data.db.AppDatabase.getInstance(context)
+                    val database = novex.android.data.NovexMainDatabase.getInstance(context)
                     val catalogProfile = runCatching {
                         com.openminis.app.data.character.CharacterConversationSnapshotFactory(
                             catalog = com.openminis.app.data.character.CharacterCatalogRepository(
@@ -4950,7 +4950,7 @@ class ChatViewModel(
             }
 
             // Existing session: load from DB
-            val session = chatRepository.getSession(sessionId) ?: return@launch
+            val session = chatRepository.sessionById(sessionId) ?: return@launch
             if (!inputEditedBeforeLoad && _inputText.value.isEmpty()) _inputText.value = session.composerDraft.orEmpty()
             _sessionTitle.value = session.title ?: "New Chat"
             _sessionCategory.value = session.category
@@ -5064,7 +5064,7 @@ class ChatViewModel(
             // (#466/#470) — we only move work, not gating.
             val tHangDiagBeforeLoad = System.currentTimeMillis()
             data class LoadedSessionData(
-                val messages: List<com.openminis.app.data.db.MessageEntity>,
+                val messages: List<novex.android.data.chat.MessageRow>,
                 val ordered: List<ChatMessage>,
                 val llmHistory: List<LLMMessage>,
                 val excludedMemoryWrites: Map<String, Int>,
@@ -5369,8 +5369,8 @@ class ChatViewModel(
      */
     private suspend fun applyCompactMarkerGraying(
         messages: List<ChatMessage>,
-        marker: com.openminis.app.data.db.CompactMarkerEntity,
-        rawMessages: List<com.openminis.app.data.db.MessageEntity>,
+        marker: novex.android.data.chat.CompactMarkerRow,
+        rawMessages: List<novex.android.data.chat.MessageRow>,
         historyDbIds: Set<String>,
     ): List<ChatMessage> {
         if (marker.version >= 3 && (marker.firstKeptMessageId !in historyDbIds || marker.lastCompactedMessageId !in historyDbIds)) {
@@ -5394,7 +5394,7 @@ class ChatViewModel(
         // Used when even createdAt fallback fails — better to show no
         // divider than to incorrectly gray live messages.
         var insertIdx = -1
-        var healedMarker: com.openminis.app.data.db.CompactMarkerEntity? = null
+        var healedMarker: novex.android.data.chat.CompactMarkerRow? = null
 
         // Helper: locate the UI message whose sourceDbIds (or id) contains
         // the given dbId. Matches iOS uiIndexForAnchorRaw, which scans by
@@ -5477,7 +5477,7 @@ class ChatViewModel(
         // up the v2 fast path. Failure here is non-fatal — UI still
         // renders against the in-memory healed pointer.
         if (healedMarker != null) {
-            runCatching { chatRepository.dao.updateCompactMarker(healedMarker) }
+            runCatching { chatRepository.dao.rewriteMarker(healedMarker) }
                 .onFailure { Log.w(TAG, "updateCompactMarker (self-heal) failed: ${it.message}") }
             // Refresh in-memory cache so effectiveAgentHistory and the
             // next compact pass see the upgraded marker. The caller
@@ -5539,10 +5539,10 @@ class ChatViewModel(
      * Mirrors iOS AIChatViewModel+Compaction.swift:125.
      */
     private fun anchorByCreatedAt(
-        rawMessages: List<com.openminis.app.data.db.MessageEntity>,
+        rawMessages: List<novex.android.data.chat.MessageRow>,
         markerCreatedAt: Long,
         historyDbIds: Set<String>,
-    ): com.openminis.app.data.db.MessageEntity? {
+    ): novex.android.data.chat.MessageRow? {
         return rawMessages.lastOrNull { raw ->
             raw.createdAt < markerCreatedAt &&
                 (historyDbIds.isEmpty() || raw.id in historyDbIds)
@@ -5559,14 +5559,14 @@ class ChatViewModel(
      * Mirrors iOS AIChatViewModel+Compaction.swift:150.
      */
     private fun rewriteMarkerForHeal(
-        original: com.openminis.app.data.db.CompactMarkerEntity,
-        newAnchor: com.openminis.app.data.db.MessageEntity,
-        lastRaw: com.openminis.app.data.db.MessageEntity?,
-    ): com.openminis.app.data.db.CompactMarkerEntity {
+        original: novex.android.data.chat.CompactMarkerRow,
+        newAnchor: novex.android.data.chat.MessageRow,
+        lastRaw: novex.android.data.chat.MessageRow?,
+    ): novex.android.data.chat.CompactMarkerRow {
         // Legacy sort-order fallback writes a past-end sentinel so any
         // hypothetical v1 reader sees "everything compacted, nothing
         // kept" (graceful degradation, no overlap with live tail).
-        // Android's MessageEntity doesn't carry a sortOrder column —
+        // Android's MessageRow doesn't carry a sortOrder column —
         // use Int.MAX_VALUE like the original compactAll write path.
         return original.copy(
             firstKeptSortOrder = Int.MAX_VALUE,
@@ -5578,8 +5578,8 @@ class ChatViewModel(
         )
     }
 
-    private fun bindChatEntry(entry: com.openminis.app.data.model.ModelEntry,
-        instance: com.openminis.app.data.model.ProviderInstance, apiKey: String) {
+    private fun bindChatEntry(entry: novex.android.data.model.ModelEntry,
+        instance: novex.android.data.model.ProviderInstance, apiKey: String) {
         // [T-opencode-sunset]（净眼 P2）迁移生效后 sunset 实例在此失败，
         // 到不了 403 映射——绑定层直接给人话，旧会话用户看到的不是
         // "配置不一致"而是明确的停服提示。
@@ -5590,7 +5590,7 @@ class ChatViewModel(
                 "模型连接已关闭或配置不一致"
             }
         }
-        require(com.openminis.app.data.model.ChatModelSelection.eligible(entry)) { "请选择聊天模型，生图模型不能用于此对话" }
+        require(novex.android.data.model.ChatModelSelection.eligible(entry)) { "请选择聊天模型，生图模型不能用于此对话" }
         val resolved = ProviderFactory.create(instance, apiKey, entry.model, context)
         check(resolved.model == entry.model) { "模型连接与所选配置不一致" }
         currentProvider = resolved
@@ -5600,8 +5600,8 @@ class ChatViewModel(
         _providerName.value = instance.label.ifEmpty { resolved.model.provider }
     }
 
-    private fun tryBindChatEntry(entry: com.openminis.app.data.model.ModelEntry,
-        instance: com.openminis.app.data.model.ProviderInstance, apiKey: String): Boolean = try {
+    private fun tryBindChatEntry(entry: novex.android.data.model.ModelEntry,
+        instance: novex.android.data.model.ProviderInstance, apiKey: String): Boolean = try {
         bindChatEntry(entry, instance, apiKey)
         true
     } catch (failure: Exception) {
@@ -5664,7 +5664,7 @@ class ChatViewModel(
         // this entry inside the group last time"). Honor it only if the
         // entry is still enabled; otherwise fall back to the first enabled
         // member so the session can still proceed on a now-degraded group.
-        val enabledMembers = com.openminis.app.data.model.ChatModelSelection.members(providerRepository.config.value, group)
+        val enabledMembers = novex.android.data.model.ChatModelSelection.members(providerRepository.config.value, group)
         if (enabledMembers.isEmpty()) return false
         val targetEntry = if (preferredEntryId != null) {
             enabledMembers.firstOrNull { it.id == preferredEntryId } ?: enabledMembers.first()
@@ -5702,7 +5702,7 @@ class ChatViewModel(
             return
         }
         val entry = providerRepository.config.value.modelEntries.find { it.id == entryId }
-        if (entry == null || !com.openminis.app.data.model.ChatModelSelection.eligible(entry)) {
+        if (entry == null || !novex.android.data.model.ChatModelSelection.eligible(entry)) {
             _error.value = "请选择聊天模型，生图模型不能用于此对话"
             return
         }
@@ -5738,7 +5738,7 @@ class ChatViewModel(
         _thinkingLevel.value = level
         viewModelScope.launch {
             val sid = ensureSession()
-            chatRepository.dao.updateThinkingOverride(sid, level.name)
+            chatRepository.dao.setThinkingChoice(sid, level.name)
         }
     }
 
@@ -5783,7 +5783,7 @@ class ChatViewModel(
         val instance = providerRepository.instance(entry.providerInstanceId) ?: return
         val apiKey = providerRepository.usableApiKey(instance) ?: return
 
-        if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) {
+        if (!novex.android.data.model.ChatModelSelection.eligible(entry)) {
             _error.value = "请选择聊天模型，生图模型不能用于此对话"
             return
         }
@@ -5805,12 +5805,12 @@ class ChatViewModel(
         val sid = realSessionId.takeIf { it.isNotEmpty() } ?: return
         val modelId = currentModel?.id ?: return
         viewModelScope.launch {
-            chatRepository.updateSessionBinding(sid, bindingJson, modelId)
+            chatRepository.rebindSessionModel(sid, bindingJson, modelId)
         }
     }
 
     private fun findModelEntry(modelId: String) =
-        providerRepository.allVisibleEntries().filter { it.model.id == modelId && com.openminis.app.data.model.ChatModelSelection.eligible(it) }.singleOrNull()
+        providerRepository.allVisibleEntries().filter { it.model.id == modelId && novex.android.data.model.ChatModelSelection.eligible(it) }.singleOrNull()
 
     /**
      * Build the ordered list of fallback providers for the current group,
@@ -5877,7 +5877,7 @@ class ChatViewModel(
             val idx = if (currentIdx >= 0) (currentIdx + offset) % members.size else offset
             val entryId = members[idx]
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
-            if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) continue
+            if (!novex.android.data.model.ChatModelSelection.eligible(entry)) continue
             // Tool-disabled models are a strict pure-chat boundary. Crossing it
             // during fallback could reintroduce tool traffic into a clean turn.
             if (!hasSameToolMode(primaryProvider.model, entry.model)) continue
@@ -5907,8 +5907,8 @@ class ChatViewModel(
         val result = mutableListOf<String>()
         for (entryId in group.memberEntryIds) {
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
-            if (!entry.model.isTextOutput || com.openminis.app.data.model.ChatModelSelection.imageOutput(entry.model) ||
-                com.openminis.app.data.model.ChatModelSelection.imageOutput(entry.baseModel)) continue
+            if (!entry.model.isTextOutput || novex.android.data.model.ChatModelSelection.imageOutput(entry.model) ||
+                novex.android.data.model.ChatModelSelection.imageOutput(entry.baseModel)) continue
             val instance = config.instances.find { it.id == entry.providerInstanceId } ?: continue
             val label = instance.label.ifEmpty { entry.model.provider }
             val reason = when {
@@ -5935,7 +5935,7 @@ class ChatViewModel(
             val nextIdx = (currentIdx + i) % group.memberEntryIds.size
             val entryId = group.memberEntryIds[nextIdx]
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
-            if (!com.openminis.app.data.model.ChatModelSelection.eligible(entry)) continue
+            if (!novex.android.data.model.ChatModelSelection.eligible(entry)) continue
             if (currentModel?.let { !hasSameToolMode(it, entry.model) } == true) continue
             val instance = providerRepository.instance(entry.providerInstanceId) ?: continue
             // [T-disabled-provider-via-group-android] Skip disabled
@@ -6016,8 +6016,8 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 dbWriteSerial.withLock {
-                    chatRepository.dao.deleteMessages(sid)
-                    chatRepository.dao.deleteCompactMarkers(sid)
+                    chatRepository.dao.dropAllMessages(sid)
+                    chatRepository.dao.dropMarkersFor(sid)
                 }
                 withContext(Dispatchers.Main) {
                     synchronized(historyWriteLock) {
@@ -6196,8 +6196,8 @@ class ChatViewModel(
 
                 // Locate the DB assistant row holding the target tool_use, and
                 // the parts-array index of that tool_use within it.
-                val dbMessages = chatRepository.loadMessages(sid)
-                var cutRow: MessageEntity? = null
+                val dbMessages = chatRepository.historyFor(sid)
+                var cutRow: MessageRow? = null
                 var cutPartIdx = -1
                 outer@ for (entity in dbMessages) {
                     if (entity.role != "assistant") continue
@@ -6492,14 +6492,14 @@ class ChatViewModel(
             appendSystemInfo(text = "正在清空对话，请稍候再使用 /sync。", iconKind = "compact")
             return
         }
-        val session = chatRepository.getSession(activeSessionId) ?: return
+        val session = chatRepository.sessionById(activeSessionId) ?: return
         val sideOf = session.sideOfSession
         val targetId: String
         val fromSide: Boolean
         if (sideOf != null) {
             targetId = sideOf; fromSide = true
         } else {
-            val sides = chatRepository.listSideSessions(activeSessionId)
+            val sides = chatRepository.sideSessionsOf(activeSessionId)
             when {
                 sides.isEmpty() -> {
                     appendSystemInfo("没有沟通对象：主线用 /sync 前请先开侧边对话；在侧边对话里用 /sync 是把摘要发给主线。", "sync"); return
@@ -6580,7 +6580,7 @@ class ChatViewModel(
         data class ActiveProjection(
             val ordered: List<ChatMessage>,
             val llmHistory: List<LLMMessage>,
-            val marker: com.openminis.app.data.db.CompactMarkerEntity?,
+            val marker: novex.android.data.chat.CompactMarkerRow?,
             val activeIds: Set<String>,
             val activePathIds: List<String>,
             val excludedMemoryWrites: Map<String, Int>,
@@ -6706,7 +6706,7 @@ class ChatViewModel(
                 val activeFallbackStrategy = run {
                     val groupId = _selectedGroupId.value
                     groupId?.let { providerRepository.config.value.modelGroups.find { g -> g.id == it }?.fallbackStrategy }
-                        ?: com.openminis.app.data.model.FallbackStrategy.default
+                        ?: novex.android.data.model.FallbackStrategy.default
                 }
                 val fallbackProviders = buildFallbackProviders(launchedProvider)
                 try {
@@ -7087,7 +7087,7 @@ class ChatViewModel(
         provider: LLMProvider,
         systemPrompt: String?,
         fallbackProviders: List<FallbackCandidate>,
-        fallbackStrategy: com.openminis.app.data.model.FallbackStrategy,
+        fallbackStrategy: novex.android.data.model.FallbackStrategy,
     ) {
         while (_promptQueue.value.isNotEmpty()) {
             val queued = _promptQueue.value
@@ -7513,7 +7513,7 @@ class ChatViewModel(
                     val activeFallbackStrategy = run {
                         val groupId = _selectedGroupId.value
                         groupId?.let { providerRepository.config.value.modelGroups.find { g -> g.id == it }?.fallbackStrategy }
-                            ?: com.openminis.app.data.model.FallbackStrategy.default
+                            ?: novex.android.data.model.FallbackStrategy.default
                     }
 
                     // Build full fallback provider list upfront (mirrors iOS triedEntries approach)
@@ -7662,7 +7662,7 @@ class ChatViewModel(
                 viewModelScope.launch(Dispatchers.IO) {
                     try {
                         if (sourceId != null) {
-                            chatRepository.updateMessageErrorInfo(sourceId, safeError)
+                            chatRepository.setMessageSticker(sourceId, safeError)
                         } else {
                             chatRepository.updateLastActiveAssistantError(sid, safeError)
                         }
@@ -7710,7 +7710,7 @@ class ChatViewModel(
             viewModelScope.launch(Dispatchers.IO) {
                 try {
                     if (dbIds.isNotEmpty()) {
-                        dbIds.forEach { chatRepository.updateMessageErrorInfo(it, null) }
+                        dbIds.forEach { chatRepository.setMessageSticker(it, null) }
                     } else {
                         chatRepository.updateLastActiveAssistantError(sid, null)
                     }
@@ -7902,7 +7902,7 @@ class ChatViewModel(
                     val activeFallbackStrategy = run {
                         val groupId = _selectedGroupId.value
                         groupId?.let { providerRepository.config.value.modelGroups.find { g -> g.id == it }?.fallbackStrategy }
-                            ?: com.openminis.app.data.model.FallbackStrategy.default
+                            ?: novex.android.data.model.FallbackStrategy.default
                     }
                     val fallbackProviders = buildFallbackProviders(provider)
                     try {
@@ -8384,7 +8384,7 @@ class ChatViewModel(
         provider: LLMProvider,
         systemPrompt: String?,
         fallbackProviders: List<FallbackCandidate> = emptyList(),
-        fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
+        fallbackStrategy: novex.android.data.model.FallbackStrategy = novex.android.data.model.FallbackStrategy.default,
         recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
         val audit = com.openminis.app.diagnostics.ModelRequestAudit(
@@ -8404,7 +8404,7 @@ class ChatViewModel(
                 require(currentProvider === provider && currentModel == provider.model) {
                     "模型显示与当前连接不一致，请重新选择模型"
                 }
-                require(provider.model.isTextOutput && !com.openminis.app.data.model.ChatModelSelection.imageOutput(provider.model)) {
+                require(provider.model.isTextOutput && !novex.android.data.model.ChatModelSelection.imageOutput(provider.model)) {
                     "所选模型用于图片输出，请选择聊天模型"
                 }
                 integratedCards.editingSession {
@@ -8435,7 +8435,7 @@ class ChatViewModel(
         provider: LLMProvider,
         systemPrompt: String?,
         fallbackProviders: List<FallbackCandidate> = emptyList(),
-        fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
+        fallbackStrategy: novex.android.data.model.FallbackStrategy = novex.android.data.model.FallbackStrategy.default,
         recoveryOrigin: AgentRunRecoveryOrigin = AgentRunRecoveryOrigin.FRESH,
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
@@ -8534,7 +8534,7 @@ class ChatViewModel(
         val streamRecovery = novex.core.NovexModelStreamRecovery(
             FallbackCandidate(provider, _activeEntryId.value.orEmpty()), fallbackProviders, fallbackStrategy,
             label = { it.provider.model.displayName }, rejected = { failure ->
-                if (failure is LLMError.ProviderError) com.openminis.app.data.model.ProviderFailure.rejectedInputTokens(failure.detail)?.let { used ->
+                if (failure is LLMError.ProviderError) novex.android.data.model.ProviderFailure.rejectedInputTokens(failure.detail)?.let { used ->
                     _contextEstimated.value = false
                     _lastTurnContextTokens.value = used
                     _contextUsageReady.value = true
@@ -8925,7 +8925,7 @@ class ChatViewModel(
                                         retentionProject = ::budgetedRequestHistory,
                                     ),
                                 ).assembled
-                                val sideOf = runCatching { chatRepository.getSession(activeSessionId)?.sideOfSession }.getOrNull()
+                                val sideOf = runCatching { chatRepository.sessionById(activeSessionId)?.sideOfSession }.getOrNull()
                                 // 影子只比主线：侧边有快照前拼的合法差异（A3）。
                                 if (sideOf == null) shadowDbAssembled = dbAssembled
                                 dbAssembled.size
@@ -10744,7 +10744,7 @@ class ChatViewModel(
                 writeBranchId = replyBranchId,
             )
             val configuration = currentNovexConfiguration()
-            val sourceRows = chatRepository.loadMessages(scope.conversationId)
+            val sourceRows = chatRepository.historyFor(scope.conversationId)
             require(sourceRows.any { it.id == replyBranchId }) { "当前回复尚未保存，未创建存档，请稍后重试" }
             val sourcePath = (scope.visibleBranchIds + replyBranchId).distinct()
             val checkpoint = novex.core.NovexPlaythroughCheckpointFactory.create(
@@ -12069,7 +12069,7 @@ class ChatViewModel(
     }
 
     private fun buildMediaRefPartJson(
-        ref: com.openminis.app.data.model.MediaRef,
+        ref: novex.android.data.model.MediaRef,
         linuxPath: String? = null,
     ): String {
         val value = JSONObject()
@@ -12127,7 +12127,7 @@ class ChatViewModel(
     // [T-android-auto-grouping-injection] Bounds on the group list folded into
     // the title-generation prompt. 30 groups × ~140 chars keeps the segment
     // well under a KB even in the worst case; the description cap matches
-    // FolderEntity.DESC_MAX_CHARS, which is enforced at creation time but not
+    // SessionFolderRow.DESCRIPTION_MAX_CHARS, which is enforced at creation time but not
     // on rows written by older builds or by the AI-Suggest path.
     private val GROUP_CONTEXT_MAX = 30
     private val GROUP_NAME_MAX = 40
@@ -12233,7 +12233,7 @@ class ChatViewModel(
                     // rendering rather than filing the chat into a coin-flip
                     // winner. Same reason the apply side refuses ambiguous
                     // matches.
-                    val rendered = chatRepository.listFolders()
+                    val rendered = chatRepository.allFolders()
                         .map { f -> f to promptSafe(f.name, GROUP_NAME_MAX) }
                         .filter { (_, n) -> n.isNotEmpty() }
                     val ambiguous = rendered
@@ -12328,7 +12328,7 @@ class ChatViewModel(
                 val (title, category, folderName) = parseTitleResponse(response.text)
                 if (title.isNotEmpty()) {
                     val sid = realSessionId.ifEmpty { sessionId }
-                    chatRepository.updateSessionTitleAndCategory(sid, title, category)
+                    chatRepository.renameSessionWithCategory(sid, title, category)
                     withContext(Dispatchers.Main) {
                         _sessionTitle.value = title
                         _sessionCategory.value = category
@@ -12363,7 +12363,7 @@ class ChatViewModel(
                             // arbitrary one is a silent wrong-group move the
                             // user gets no signal about. Leaving it ungrouped is
                             // the recoverable outcome.
-                            ?: chatRepository.listFolders().filter {
+                            ?: chatRepository.allFolders().filter {
                                 promptSafe(it.name, GROUP_NAME_MAX)
                                     .equals(folderName.trim(), ignoreCase = true)
                             }.singleOrNull()
@@ -12465,7 +12465,7 @@ class ChatViewModel(
      */
     private suspend fun applyFallbackTitleFromFirstMessage(reason: String) {
         val sidForCheck = realSessionId.ifEmpty { sessionId }
-        val existing = chatRepository.getSession(sidForCheck)?.title?.trim()
+        val existing = chatRepository.sessionById(sidForCheck)?.title?.trim()
         if (!existing.isNullOrEmpty() && existing != "New Chat") {
             AppLogger.info(
                 "TitleGen",
@@ -12486,7 +12486,7 @@ class ChatViewModel(
             return
         }
         val fallbackTitle = if (cleaned.length > 30) cleaned.take(30).trimEnd() + "…" else cleaned
-        chatRepository.updateSessionTitle(sidForCheck, fallbackTitle)
+        chatRepository.renameSession(sidForCheck, fallbackTitle)
         withContext(Dispatchers.Main) {
             _sessionTitle.value = fallbackTitle
         }
@@ -12525,7 +12525,7 @@ class ChatViewModel(
         // and proceed with the stale token so the request's own 401 flows into
         // the existing error/fallback handling. runBlocking is safe here — this
         // is only reached from the suspend agent loop on a background thread.
-        if (instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth) {
+        if (instance.credentialType == novex.android.data.model.ProviderCredential.oauth) {
             try {
                 val manager = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                 val freshToken = kotlinx.coroutines.runBlocking { manager?.validAccessToken() }
@@ -12729,7 +12729,7 @@ class ChatViewModel(
                     val activeFallbackStrategy = run {
                         val groupId = _selectedGroupId.value
                         groupId?.let { providerRepository.config.value.modelGroups.find { g -> g.id == it }?.fallbackStrategy }
-                            ?: com.openminis.app.data.model.FallbackStrategy.default
+                            ?: novex.android.data.model.FallbackStrategy.default
                     }
                     val fallbackProviders = buildFallbackProviders(provider)
 
@@ -13071,7 +13071,7 @@ class ChatViewModel(
                         val groupId = _selectedGroupId.value
                         groupId?.let {
                             providerRepository.config.value.modelGroups.find { g -> g.id == it }?.fallbackStrategy
-                        } ?: com.openminis.app.data.model.FallbackStrategy.default
+                        } ?: novex.android.data.model.FallbackStrategy.default
                     }
                     val fallbackProviders = buildFallbackProviders(provider)
                     try {
@@ -13199,7 +13199,7 @@ class ChatViewModel(
                         if (app.creativeArtifactRepository.list(com.openminis.app.data.creative.CreativeArtifactQuery(
                                 conversationId = sid, includeTrashed = true)).isNotEmpty()) return@finalize
                         if (hasFiles || conversationVisible || _isStreaming.value) return@finalize
-                        chatRepository.deleteSession(sid)
+                        chatRepository.dropSession(sid)
                         ChatViewModelStore.release(sid)
                     }
                 }
@@ -13237,7 +13237,7 @@ class ChatViewModel(
     }
 
     /**
-     * Convert a flat list of MessageEntity into ChatMessages, merging toolResult
+     * Convert a flat list of MessageRow into ChatMessages, merging toolResult
      * data from user-role messages back into their corresponding AssistantBlocks.
      * This mirrors iOS's toChatMessage() which reads both toolUse and toolResult parts.
      */
@@ -13263,7 +13263,7 @@ class ChatViewModel(
      * Attachment metadata is stripped for display by the shared attachment
      * envelope helper. Persisted rows and model history keep the original receipt.
      */
-    private fun List<MessageEntity>.toChatMessages(
+    private fun List<MessageRow>.toChatMessages(
         branchGraph: com.openminis.app.data.ConversationBranchGraph? = null,
         contextUsageByRequest: Map<String, ContextUsageRecord> = emptyMap(),
     ): List<ChatMessage> {
@@ -13998,7 +13998,7 @@ class ChatViewModel(
         return NovexResourceRef("novex://$kind/$digest")
     }
 
-    private fun MessageEntity.toLLMMessage(): LLMMessage {
+    private fun MessageRow.toLLMMessage(): LLMMessage {
         // [T-stage1-activation] 持久化 system 行（开局资料包）投影为对话流
         // 位置的 user 上下文块——"像用户直接发的一样"，在历史里、AI 记得
         // 自己开局读过。内存态 system 行不落库，不受此分支影响。

@@ -9,7 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import java.util.UUID
@@ -37,15 +37,15 @@ class NovexConversationControlsInteractionTest {
         val entry = app.providerRepository.entriesFor(provider).single()
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "对话容量检查", memoryEnabled = false)
-            app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("",
+            app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("",
                 novexConfigurationJson = NovexConversationConfigurationCodec.encode(
                     NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.APPROVAL,
                         playerIdentity = ConversationPlayerIdentity("kept-player", "原玩家", "已有身份不能被快速设置覆盖")))))
             created
         }
         var visible by mutableStateOf(true)
-        fun stored() = runBlocking { app.chatRepository.getSession(session.id)!! }.let {
+        fun stored() = runBlocking { app.chatRepository.sessionById(session.id)!! }.let {
             NovexConversationConfigurationCodec.decode(it.novexConfigurationJson, it.id)
         }
         try {
@@ -86,7 +86,7 @@ class NovexConversationControlsInteractionTest {
             assertEquals(1_000_000, stored().contextLimitTokens)
         } finally {
             ui.runOnIdle { visible = false }
-            runBlocking { ChatViewModelStore.stopAndJoin(session.id); ChatViewModelStore.finishDeletion(session.id, false); app.chatRepository.deleteSession(session.id) }
+            runBlocking { ChatViewModelStore.stopAndJoin(session.id); ChatViewModelStore.finishDeletion(session.id, false); app.chatRepository.dropSession(session.id) }
             app.providerRepository.removeInstance(provider)
         }
     }

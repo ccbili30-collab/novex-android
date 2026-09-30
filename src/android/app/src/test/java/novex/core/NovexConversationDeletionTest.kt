@@ -3,7 +3,9 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.creative.*
-import com.openminis.app.data.db.*
+import novex.android.data.NovexMainDatabase
+import novex.android.data.chat.MessageRow
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
@@ -23,13 +25,13 @@ class NovexConversationDeletionTest {
     @get:Rule val folder = TemporaryFolder()
 
     @Test fun `deletion waits for task shutdown and retains saved cards sibling files and original provenance`() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val chats = ChatRepository(db.chatDao())
-            db.chatDao().insertSession(ChatSessionEntity("chat", modelId = "test", createdAt = 1, updatedAt = 1))
-            db.chatDao().insertSession(ChatSessionEntity("other", modelId = "test", createdAt = 1, updatedAt = 1))
-            db.chatDao().appendMessageOnActivePath(MessageEntity("user", "chat", "user", "原话", 1, sortOrder = -1), "原话", 1)
+            db.chatDao().upsertSession(SessionRow("chat", modelId = "test", createdAt = 1, updatedAt = 1))
+            db.chatDao().upsertSession(SessionRow("other", modelId = "test", createdAt = 1, updatedAt = 1))
+            db.chatDao().appendOnActivePath(MessageRow("user", "chat", "user", "原话", 1, sortOrder = -1), "原话", 1)
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "media"))
             val drafts = workspace.apply(NovexCommand.EnsureConversationDrafts("chat")).requireConversationDrafts()
             val world = drafts.subjects.single { it.kind == NovexContentKind.WORLD }
@@ -52,13 +54,13 @@ class NovexConversationDeletionTest {
                 stopRuntime = { stopped.complete(Unit); finish.await() })
             val work = async { deletion.delete("chat") }
             stopped.await()
-            assertNotNull(db.chatDao().getSession("chat"))
+            assertNotNull(db.chatDao().sessionById("chat"))
             assertEquals(NovexOperationStatus.WAITING, journal.read(waiting.id)!!.status)
             finish.complete(Unit)
             work.await()
-            assertNull(db.chatDao().getSession("chat"))
-            assertTrue(db.chatDao().loadMessages("chat").isEmpty())
-            assertNotNull(db.chatDao().getSession("other"))
+            assertNull(db.chatDao().sessionById("chat"))
+            assertTrue(db.chatDao().historyFor("chat").isEmpty())
+            assertNotNull(db.chatDao().sessionById("other"))
             assertEquals("已经保存", workspace.world(world.id)!!.world.overview)
             assertNull(workspace.interactiveFiction(game.id))
             assertEquals(listOf(world.id), workspace.worlds().map { it.world.id })
@@ -74,10 +76,10 @@ class NovexConversationDeletionTest {
     }
 
     @Test fun `failed preservation leaves conversation and messages recoverable`() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
-            db.chatDao().insertSession(ChatSessionEntity("chat", modelId = "test", createdAt = 1, updatedAt = 1))
+            db.chatDao().upsertSession(SessionRow("chat", modelId = "test", createdAt = 1, updatedAt = 1))
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "media"))
             val files = FileNovexConversationWorkspaceStore(File(folder.root, "workspace"))
             val artifacts = CreativeArtifactRepository(db, CreativeArtifactFileStore(File(folder.root, "artifacts")))
@@ -85,7 +87,7 @@ class NovexConversationDeletionTest {
                 WorkspaceCreativeArtifactBridge(files, artifacts), NovexToolExecution(NovexOperationJournal(File(folder.root, "ops"))),
                 stopRuntime = { error("任务停止失败") })
             assertThrows(IllegalStateException::class.java) { runBlocking { deletion.delete("chat") } }
-            assertNotNull(db.chatDao().getSession("chat"))
+            assertNotNull(db.chatDao().sessionById("chat"))
         } finally { db.close() }
     }
 }

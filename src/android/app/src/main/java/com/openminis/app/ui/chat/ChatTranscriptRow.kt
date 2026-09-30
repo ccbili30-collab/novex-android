@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.ui.sandbox.FileItem
 import com.openminis.app.ui.theme.ChatColors
 

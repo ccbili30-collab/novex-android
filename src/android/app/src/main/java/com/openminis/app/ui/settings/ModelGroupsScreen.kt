@@ -58,8 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.RoutingStrategy
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.RoutingStrategy
 import com.openminis.app.data.ModelGroupBinding
 import com.openminis.app.data.ModelGroupMove
 import com.openminis.app.data.modelGroupRemovalImpact
@@ -599,7 +599,7 @@ private fun GroupDropdown(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LazyListScope.agentLoopModelsSectionItems(
     providerRepository: ProviderRepository,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
     reorderState: ReorderableLazyListState,
     onAddModelsTap: () -> Unit,
     onAddGroupsTap: () -> Unit,
@@ -919,7 +919,7 @@ private val GROUP_MODALITY_PRIORITY: List<GroupModalityMarker> = listOf(
  */
 private fun groupTopModalities(
     group: ModelGroup,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
 ): List<GroupModalityMarker> {
     val inputs = mutableSetOf<String>()
     val outputs = mutableSetOf<String>()
@@ -966,7 +966,7 @@ private fun GroupModalityIcon(marker: GroupModalityMarker) {
 @Composable
 private fun GroupRow(
     group: ModelGroup,
-    config: com.openminis.app.data.model.ProviderConfig,
+    config: novex.android.data.model.ProviderConfig,
     onClick: () -> Unit,
     isManaging: Boolean,
     canMoveUp: Boolean,

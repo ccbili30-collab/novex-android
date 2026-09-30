@@ -1,5 +1,8 @@
 package com.openminis.app.data.db
 
+import novex.android.data.*
+import novex.android.data.cards.*
+import novex.android.data.chat.*
 import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,11 +18,11 @@ import java.util.UUID
 /** Disk-backed, isolated Android storage: the JVM SQLite implementation has no CursorWindow. */
 @RunWith(AndroidJUnit4::class)
 class NovexLargeCardStorageTest {
-    private fun withDatabase(block: suspend (AppDatabase, () -> AppDatabase) -> Unit) = runBlocking {
+    private fun withDatabase(block: suspend (NovexMainDatabase, () -> NovexMainDatabase) -> Unit) = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "large-card-${UUID.randomUUID()}.db"
-        val opened = mutableListOf<AppDatabase>()
-        fun open() = Room.databaseBuilder(context, AppDatabase::class.java, name).build().also { opened += it }
+        val opened = mutableListOf<NovexMainDatabase>()
+        fun open() = Room.databaseBuilder(context, NovexMainDatabase::class.java, name).build().also { opened += it }
         try { block(open(), ::open) } finally {
             opened.forEach { it.close() }
             context.deleteDatabase(name)
@@ -100,21 +103,21 @@ class NovexLargeCardStorageTest {
         val game = InteractiveFictionProjectEntity("g", "Game", text, InteractiveFictionLaunchMode.FREE_SANDBOX,
             text, 1, 1, sourceDocumentJson = text)
         db.interactiveFictionDao().insert(game)
-        val worldRevision = NovexWorldRevisionEntity("w", 1, 1, text)
-        val gameRevision = NovexGameRevisionEntity("g", 1, 1, text)
-        val roleRevision = NovexCharacterRevisionEntity("v", 1, 1, text)
-        db.novexCardRevisionDao().insertWorld(worldRevision)
-        db.novexCardRevisionDao().insertGame(gameRevision)
-        db.novexCharacterRevisionDao().insert(roleRevision)
+        val worldRevision = WorldRevisionRow("w", 1, 1, text)
+        val gameRevision = GameRevisionRow("g", 1, 1, text)
+        val roleRevision = RoleRevisionRow("v", 1, 1, text)
+        db.cardRevisionDao().appendWorldRevision(worldRevision)
+        db.cardRevisionDao().appendGameRevision(gameRevision)
+        db.roleRevisionDao().appendRevision(roleRevision)
         db.close()
         val reopened = reopen()
         assertEquals(game, reopened.interactiveFictionDao().project("g"))
         assertEquals(listOf(game), reopened.interactiveFictionDao().list())
-        assertEquals(worldRevision, reopened.novexCardRevisionDao().latestWorld("w"))
-        assertEquals(listOf(worldRevision), reopened.novexCardRevisionDao().worlds("w"))
-        assertEquals(gameRevision, reopened.novexCardRevisionDao().latestGame("g"))
-        assertEquals(listOf(gameRevision), reopened.novexCardRevisionDao().games("g"))
-        assertEquals(roleRevision, reopened.novexCharacterRevisionDao().latest("v"))
-        assertEquals(listOf(roleRevision), reopened.novexCharacterRevisionDao().list("v"))
+        assertEquals(worldRevision, reopened.cardRevisionDao().newestWorldRevision("w"))
+        assertEquals(listOf(worldRevision), reopened.cardRevisionDao().worldRevisions("w"))
+        assertEquals(gameRevision, reopened.cardRevisionDao().newestGameRevision("g"))
+        assertEquals(listOf(gameRevision), reopened.cardRevisionDao().gameRevisions("g"))
+        assertEquals(roleRevision, reopened.roleRevisionDao().newestRevision("v"))
+        assertEquals(listOf(roleRevision), reopened.roleRevisionDao().revisions("v"))
     }
 }

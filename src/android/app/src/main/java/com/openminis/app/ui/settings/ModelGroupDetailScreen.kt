@@ -49,9 +49,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
-import com.openminis.app.data.model.FallbackStrategy
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.FallbackStrategy
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.provider.effectiveMaxThinkingLevel
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
@@ -272,7 +272,7 @@ fun ModelGroupDetailScreen(
                     // default Voice Input/Output members render normally instead
                     // of as stale rows (mirrors iOS system virtual entries).
                     val entry = config.modelEntries.find { it.id == entryId }
-                        ?: com.openminis.app.data.model.SystemVoiceEntries.resolve(entryId)
+                        ?: novex.android.data.model.SystemVoiceEntries.resolve(entryId)
 
                     if (entry == null) {
                         // Stale member: UUID no longer resolves to any ModelEntry

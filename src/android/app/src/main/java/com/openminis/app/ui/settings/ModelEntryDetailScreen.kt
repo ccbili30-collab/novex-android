@@ -20,8 +20,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.normalizeModalityName
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.normalizeModalityName
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.components.RowLabel
 import com.openminis.app.ui.components.SectionTextField

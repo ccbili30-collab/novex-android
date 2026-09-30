@@ -299,7 +299,7 @@ class VoiceClientParityTest {
     @Test
     fun `whisper 与 gpt-4o transcribe 变体留在 REST 转写端点`() {
         val provider = OpenRouterVoiceClient("or", "https://openrouter.ai/api", "k")
-        fun model(id: String) = com.openminis.app.data.model.LLMModel(id = id, displayName = id, provider = "OpenRouter")
+        fun model(id: String) = novex.android.data.model.LLMModel(id = id, displayName = id, provider = "OpenRouter")
         assertFalse(provider.usesChatBasedAsr(model("openai/whisper-1")))
         assertFalse(provider.usesChatBasedAsr(model("openai/gpt-4o-transcribe")))
         assertFalse(provider.usesChatBasedAsr(model("openai/gpt-4o-mini-transcribe")))
@@ -309,7 +309,7 @@ class VoiceClientParityTest {
     @Test
     fun `deepgram 按厂商限定匹配-amazon nova 不被误路由`() {
         val provider = OpenRouterVoiceClient("or", "https://openrouter.ai/api", "k")
-        fun model(id: String) = com.openminis.app.data.model.LLMModel(id = id, displayName = id, provider = "OpenRouter")
+        fun model(id: String) = novex.android.data.model.LLMModel(id = id, displayName = id, provider = "OpenRouter")
         assertTrue(provider.usesChatBasedAsr(model("amazon/nova-2-lite-v1")))
         assertTrue(provider.usesChatBasedAsr(model("google/gemini-3.6-flash")))
         assertTrue(provider.usesChatBasedAsr(model("openai/gpt-audio-mini")))
@@ -487,10 +487,10 @@ class VoiceClientParityTest {
 
     @Test
     fun `工厂按 base URL 分派厂商且讯飞复合凭据不足时不可用`() {
-        fun inst(base: String?, type: com.openminis.app.data.model.ProviderType = com.openminis.app.data.model.ProviderType.openAI) =
-            com.openminis.app.data.model.ProviderInstance(
+        fun inst(base: String?, type: novex.android.data.model.ProviderType = novex.android.data.model.ProviderType.openAI) =
+            novex.android.data.model.ProviderInstance(
                 id = "i", label = "L", providerType = type,
-                credentialType = com.openminis.app.data.model.ProviderCredential.apiKey,
+                credentialType = novex.android.data.model.ProviderCredential.apiKey,
                 customBaseURL = base,
             )
 
@@ -498,15 +498,15 @@ class VoiceClientParityTest {
         assertTrue(VoiceClientFactory.make(inst("https://api.minimax.io"), "k") is MiniMaxVoiceClient)
         assertTrue(
             VoiceClientFactory.make(
-                inst("https://api.minimax.io", com.openminis.app.data.model.ProviderType.anthropic),
+                inst("https://api.minimax.io", novex.android.data.model.ProviderType.anthropic),
                 "k",
             ) is MiniMaxVoiceClient,
         )
         assertTrue(VoiceClientFactory.make(inst(null), "k") is VoiceClient)
         assertTrue(VoiceClientFactory.make(inst("https://api.elevenlabs.io"), "k") is ElevenLabsVoiceClient)
-        assertTrue(VoiceClientFactory.make(inst(null, com.openminis.app.data.model.ProviderType.gemini), "k") is GeminiVoiceClient)
-        assertNull(VoiceClientFactory.make(inst(null, com.openminis.app.data.model.ProviderType.kimiCode), "k"))
-        assertNull(VoiceClientFactory.make(inst(null, com.openminis.app.data.model.ProviderType.anthropic), "k"))
+        assertTrue(VoiceClientFactory.make(inst(null, novex.android.data.model.ProviderType.gemini), "k") is GeminiVoiceClient)
+        assertNull(VoiceClientFactory.make(inst(null, novex.android.data.model.ProviderType.kimiCode), "k"))
+        assertNull(VoiceClientFactory.make(inst(null, novex.android.data.model.ProviderType.anthropic), "k"))
 
         // 讯飞需要 "appId;apiKey;apiSecret" 复合凭据；不足三段时不可用。
         assertNull(VoiceClientFactory.make(inst("https://iat-api.xfyun.cn"), "only-one"))

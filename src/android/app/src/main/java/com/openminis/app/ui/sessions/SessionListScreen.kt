@@ -129,12 +129,12 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.FolderEntity
+import novex.android.data.chat.SessionRow
+import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.data.character.CharacterCard
 import com.openminis.app.data.character.StoryWorld
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.data.model.hasUsableNovexModel
+import novex.android.data.model.hasUsableNovexModel
 import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.theme.minisFabColor
 import com.openminis.app.data.repository.ChatRepository
@@ -198,14 +198,14 @@ private fun datePeriod(timestamp: Long): DatePeriod = when (sessionHomeRecency(t
  *
  * Holds session IDS, not session objects — the list differ re-evaluates this on
  * every emission, so the value must stay cheap to compare. (iOS learned the
- * same lesson as `SidebarGroup`; a `List<ChatSessionEntity>` here deep-compares
+ * same lesson as `SidebarGroup`; a `List<SessionRow>` here deep-compares
  * long message strings on every tick.)
  *
  * `ids` is EMPTY while collapsed, but [totalCount] keeps the real number so the
  * card can still say "5 chats".
  */
 data class FolderGroupBlock(
-    val folder: FolderEntity,
+    val folder: SessionFolderRow,
     val ids: List<String>,
     val totalCount: Int,
     val isCollapsed: Boolean,
@@ -236,15 +236,15 @@ data class FolderGroupBlock(
  *    moves out reads as data loss.
  */
 private fun partitionByFolder(
-    sessions: List<ChatSessionEntity>,
-    folders: List<FolderEntity>,
+    sessions: List<SessionRow>,
+    folders: List<SessionFolderRow>,
     collapsedIds: Set<String>,
-): Pair<List<FolderGroupBlock>, List<ChatSessionEntity>> {
+): Pair<List<FolderGroupBlock>, List<SessionRow>> {
     if (folders.isEmpty()) return emptyList<FolderGroupBlock>() to sessions
 
     val byId = folders.associateBy { it.id }
-    val members = LinkedHashMap<String, MutableList<ChatSessionEntity>>()
-    val ungrouped = mutableListOf<ChatSessionEntity>()
+    val members = LinkedHashMap<String, MutableList<SessionRow>>()
+    val ungrouped = mutableListOf<SessionRow>()
 
     for (s in sessions) {
         val fid = s.folderId
@@ -284,11 +284,11 @@ private fun partitionByFolder(
     return pinnedFirst to ungrouped
 }
 
-private fun groupSessionsByDate(sessions: List<ChatSessionEntity>): List<Pair<DatePeriod, List<ChatSessionEntity>>> {
+private fun groupSessionsByDate(sessions: List<SessionRow>): List<Pair<DatePeriod, List<SessionRow>>> {
     val pinned = sessions.filter { it.pinnedAt != null }.sortedByDescending { it.pinnedAt }
     val unpinned = sessions.filter { it.pinnedAt == null }
     val grouped = unpinned.groupBy { datePeriod(it.updatedAt) }
-    val result = mutableListOf<Pair<DatePeriod, List<ChatSessionEntity>>>()
+    val result = mutableListOf<Pair<DatePeriod, List<SessionRow>>>()
     if (pinned.isNotEmpty()) {
         result.add(DatePeriod.PINNED to pinned)
     }
@@ -449,14 +449,14 @@ fun SessionListScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteTargetId by remember { mutableStateOf<String?>(null) }
     // [T-android-session-grouping] Group management dialogs.
-    var folderToRename by remember { mutableStateOf<FolderEntity?>(null) }
-    var folderToDissolve by remember { mutableStateOf<FolderEntity?>(null) }
+    var folderToRename by remember { mutableStateOf<SessionFolderRow?>(null) }
+    var folderToDissolve by remember { mutableStateOf<SessionFolderRow?>(null) }
     // iOS "Delete Group & N Sessions" — pair carries the member count so the
     // confirmation can restate the consequence.
-    var folderToDelete by remember { mutableStateOf<Pair<FolderEntity, Int>?>(null) }
+    var folderToDelete by remember { mutableStateOf<Pair<SessionFolderRow, Int>?>(null) }
     var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    var editSession by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var editSession by remember { mutableStateOf<SessionRow?>(null) }
     var showBrowserSheet by remember { mutableStateOf(false) }
     var showBrowserSettings by remember { mutableStateOf(false) }
     val browserTabPool = remember { com.openminis.app.browser.BrowserTabPool(context) }
@@ -803,7 +803,7 @@ fun SessionListScreen(
                         val existingFolderIds = folders.mapTo(HashSet()) { it.id }
 
                         fun androidx.compose.foundation.lazy.LazyListScope.renderSessionRows(
-                            rows: List<ChatSessionEntity>,
+                            rows: List<SessionRow>,
                             // [T-android-folder-card-ios-parity] Folder members
                             // render as MIDDLE/BOTTOM segments of the group's
                             // welded container (iOS FolderMemberRowBackground);
@@ -1137,7 +1137,7 @@ fun SessionListScreen(
             confirmText = stringResource(R.string.delete),
             isDestructive = true,
             onConfirm = {
-                deleteTargetId?.let { viewModel.deleteSession(it) }
+                deleteTargetId?.let { viewModel.dropSession(it) }
                 showDeleteDialog = false
                 deleteTargetId = null
             },
@@ -1216,7 +1216,7 @@ fun SessionListScreen(
                     DialogTextFieldFrame {
                         SectionTextField(
                             value = desc,
-                            onValueChange = { desc = it.take(FolderEntity.DESC_MAX_CHARS) },
+                            onValueChange = { desc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
                             placeholder = stringResource(R.string.group_desc_hint),
                         )
                     }
@@ -1318,7 +1318,7 @@ private fun DualFabRow(
     hasSessions: Boolean,
     onNewChat: () -> Unit,
     onNewChatWithGroup: (String) -> Unit,
-    modelGroups: List<com.openminis.app.data.model.ModelGroup>,
+    modelGroups: List<novex.android.data.model.ModelGroup>,
     onSearchToggle: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearchDismiss: () -> Unit,
@@ -1770,7 +1770,7 @@ private fun WorldOverviewSection(
     }
 }
 
-private fun ChatSessionEntity.worldAndCharacterLabel(worldNames: Map<String, String>): String {
+private fun SessionRow.worldAndCharacterLabel(worldNames: Map<String, String>): String {
     val worldName = worldId?.let(worldNames::get)?.takeIf { it.isNotBlank() }
         ?: runCatching {
             StoryWorld.fromJson(org.json.JSONObject(worldSnapshotJson.orEmpty())).name
@@ -1821,7 +1821,7 @@ private fun SectionHeader(title: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionItemContent(
-    session: ChatSessionEntity,
+    session: SessionRow,
     isSelecting: Boolean,
     selectedIds: Set<String>,
     onSessionClick: (String) -> Unit,
@@ -1831,8 +1831,8 @@ private fun SessionItemContent(
     // which only flips set membership while ALREADY selecting).
     onEnterSelect: (String) -> Unit,
     onPinToggle: (String) -> Unit,
-    onEditRequest: (ChatSessionEntity) -> Unit,
-    onExportRequest: (ChatSessionEntity, String) -> Unit,
+    onEditRequest: (SessionRow) -> Unit,
+    onExportRequest: (SessionRow, String) -> Unit,
     onRegenerateTitle: (String) -> Unit,
     onDuplicate: (String) -> Unit,
     onDeleteRequest: (String) -> Unit,
@@ -2563,7 +2563,7 @@ private fun FolderCard(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRow(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onClick: () -> Unit,
     onLongClick: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
@@ -3104,7 +3104,7 @@ private val allCategories = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SessionEditSheet(
-    session: ChatSessionEntity,
+    session: SessionRow,
     onDismiss: () -> Unit,
     onSave: (title: String, category: String?) -> Unit,
     // [T-android-sessionedit-regenerate-button] Regenerate-Title support,
@@ -3113,7 +3113,7 @@ internal fun SessionEditSheet(
     // drives the button's loading/disabled state; `onRegenerate` reuses the
     // existing SessionListViewModel.regenerateTitle logic. Defaults make the
     // button a no-op when a caller doesn't wire them up.
-    liveSession: ChatSessionEntity = session,
+    liveSession: SessionRow = session,
     isRegenerating: Boolean = false,
     onRegenerate: () -> Unit = {},
 ) {
@@ -3257,7 +3257,7 @@ internal fun SessionEditSheet(
 /**
  * Long-chat export (T-export-optimize b443b54d, iOS sister c9d1087d).
  *
- * Pre-fix: this loaded every [MessageEntity] for the session at once,
+ * Pre-fix: this loaded every [MessageRow] for the session at once,
  * built the whole JSON / TXT payload in memory, and shoved it into
  * [Intent.EXTRA_TEXT]. Hundreds of messages caused jank, "ghost" frames
  * and OOM crashes — see linked feedback.
@@ -3271,7 +3271,7 @@ internal fun SessionEditSheet(
  */
 private fun exportSession(
     context: Context,
-    session: ChatSessionEntity,
+    session: SessionRow,
     chatRepository: ChatRepository,
     scope: kotlinx.coroutines.CoroutineScope,
     format: String,

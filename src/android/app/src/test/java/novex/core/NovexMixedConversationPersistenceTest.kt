@@ -9,7 +9,7 @@ import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.*
 import java.io.File
@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 class NovexMixedConversationPersistenceTest {
     @get:Rule val files = TemporaryFolder()
     @Test(timeout = 60_000) fun `acting managing and checkpoint continuation stay separate through reopen and game end`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "mixed.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         try {
@@ -74,13 +74,13 @@ class NovexMixedConversationPersistenceTest {
             val scope = NovexConversationWorkspaceScope(session.id, path, "answer")
             val store = FileNovexConversationWorkspaceStore(File(files.root, "workspaces"))
             val checkpoint = NovexPlaythroughCheckpointFactory.create("checkpoint", configuration, path, "answer", "原始依据",
-                "错误摘要：从未借围巾，而且已经喝水。", "{}", 10, NovexCheckpointSourceCapture.capture(session.id, path, repository.loadMessages(session.id)))
+                "错误摘要：从未借围巾，而且已经喝水。", "{}", 10, NovexCheckpointSourceCapture.capture(session.id, path, repository.historyFor(session.id)))
             NovexPlaythroughCheckpointWriter(store).save(scope, checkpoint, NovexWorkspaceProvenance(session.id, "answer", "event", "save"))
             workspace.apply(NovexCommand.FinalizeConversationDrafts(session.id))
-            repository.updateConversationSettings(session.id, com.openminis.app.data.ConversationSettingsSnapshot(
+            repository.writeConversationSettings(session.id, com.openminis.app.data.ConversationSettingsSnapshot(
                 conversationPrompt = "", novexConfigurationJson = NovexConversationConfigurationCodec.encode(configuration)))
             database.close(); database = open(); workspace = NovexWorkspaceFactory.create(database, File(files.root, "media")); repository = ChatRepository(database.chatDao())
-            val reopened = NovexConversationConfigurationCodec.decode(database.chatDao().getSession(session.id)!!.novexConfigurationJson, session.id)
+            val reopened = NovexConversationConfigurationCodec.decode(database.chatDao().sessionById(session.id)!!.novexConfigurationJson, session.id)
             assertEquals(playthrough, reopened.effectivePlaythroughId)
             assertEquals(configuration.playthroughStates, reopened.playthroughStates)
             val continuation = NovexCheckpointContinuation(FileNovexConversationWorkspaceStore(File(files.root, "workspaces"))).prepare(reopened, scope)!!

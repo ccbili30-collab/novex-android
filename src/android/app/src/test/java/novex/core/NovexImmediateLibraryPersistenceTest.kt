@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -29,7 +29,7 @@ class NovexImmediateLibraryPersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test fun `visible library receives committed changes without navigation`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -52,7 +52,7 @@ class NovexImmediateLibraryPersistenceTest {
     }
 
     @Test fun `first deferred access recovers old hidden content without cleaning empty targets`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val media = File(files.root, "media")
@@ -62,7 +62,7 @@ class NovexImmediateLibraryPersistenceTest {
             workspace.apply(NovexCommand.AddModule(ModuleOwner.characterVersion(role.id), ContentModuleType.CUSTOM,
                 "人物设定", """{"text":"保留原文"}"""))
             // Reproduce an older install: content exists, ownership still marks all cards private.
-            database.novexConversationDraftDao().save(com.openminis.app.data.db.NovexConversationDraftEntity(
+            database.conversationDraftDao().put(novex.android.data.chat.ConversationDraftRow(
                 "old-chat", NovexConversationDraftCodec.encode(original)))
             val restored = NovexWorkspaceFactory.createDeferred(database, media)
             assertEquals(role.id, restored.characters().single().character.original.id)
@@ -77,7 +77,7 @@ class NovexImmediateLibraryPersistenceTest {
     @Test fun `saving content makes its original card visible without leaving chat and survives reopen`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "library.db").absolutePath
-        fun open() = Room.databaseBuilder(context, AppDatabase::class.java, path).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path).allowMainThreadQueries().build()
         var database = open()
         val media = File(files.root, "media")
         try {
@@ -102,7 +102,7 @@ class NovexImmediateLibraryPersistenceTest {
     }
 
     @Test fun `module only writing enters library and outer rollback restores hidden empty placeholder`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))

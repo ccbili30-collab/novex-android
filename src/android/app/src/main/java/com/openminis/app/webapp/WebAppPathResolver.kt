@@ -1,15 +1,15 @@
 package com.openminis.app.webapp
 
 import android.content.Context
-import com.openminis.app.data.db.WebAppShortcutEntity
+import novex.android.data.WebShortcutRow
 import com.openminis.app.data.repository.WebAppShortcutRepository
 import java.io.File
 import novex.android.ContentPaths
 
 /**
  * T-pwa-1 (renamed Pwa → WebApp): resolve the stored
- * ([WebAppShortcutEntity.pathScope], [WebAppShortcutEntity.scopeContext],
- * [WebAppShortcutEntity.htmlPath]) triple back to a host File. Returns
+ * ([WebShortcutRow.pathScope], [WebShortcutRow.scopeContext],
+ * [WebShortcutRow.htmlPath]) triple back to a host File. Returns
  * null if the file no longer exists — caller should surface a "source
  * missing" UI instead of crashing.
  *
@@ -22,7 +22,7 @@ import novex.android.ContentPaths
  */
 object WebAppPathResolver {
 
-    fun resolve(context: Context, shortcut: WebAppShortcutEntity): File? {
+    fun resolve(context: Context, shortcut: WebShortcutRow): File? {
         val file = when (shortcut.pathScope) {
             WebAppShortcutRepository.SCOPE_SESSION_ATTACHMENT -> resolveSession(context, shortcut)
             WebAppShortcutRepository.SCOPE_SHARED -> ContentPaths.resolveHostPath(shortcut.htmlPath)
@@ -70,7 +70,7 @@ object WebAppPathResolver {
         return null
     }
 
-    private fun resolveSession(context: Context, shortcut: WebAppShortcutEntity): File? {
+    private fun resolveSession(context: Context, shortcut: WebShortcutRow): File? {
         val sessionId = shortcut.scopeContext ?: return null
         // Absolute /var/minis/<perSession>/... — go through ContentPaths which
         // knows how to map per-session subdirs to <filesDir>/minis-sessions/<id>/<sub>.

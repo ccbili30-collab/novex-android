@@ -25,7 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
 import novex.core.PlaythroughState
 import novex.android.ui.NovexColors
@@ -87,7 +87,7 @@ internal fun NovexSideConversations(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var sides by remember(railSessionId) { mutableStateOf(listOf<ChatSessionEntity>()) }
+    var sides by remember(railSessionId) { mutableStateOf(listOf<SessionRow>()) }
     var sidesLoaded by remember(railSessionId) { mutableStateOf(false) }
     var order by remember(railSessionId) { mutableStateOf<List<String>>(emptyList()) }
     val savedHandleFraction = remember(railSessionId) {
@@ -105,7 +105,7 @@ internal fun NovexSideConversations(
     var dragY by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(railSessionId) {
-        sides = runCatching { chatRepository.listSideSessions(railSessionId) }.getOrDefault(emptyList())
+        sides = runCatching { chatRepository.sideSessionsOf(railSessionId) }.getOrDefault(emptyList())
         val stored = NovexEdgePrefs.readOrder(context, EDGE_PREFS_SIDES, "order:$railSessionId").orEmpty()
         // Stored order first, then any sides never ordered (new ones appended at
         // the bottom = 往下排), deleted ids dropped silently.

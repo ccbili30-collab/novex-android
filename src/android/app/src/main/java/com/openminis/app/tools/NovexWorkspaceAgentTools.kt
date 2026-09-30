@@ -1,6 +1,6 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolDefinition
 import novex.core.NovexConversationWorkspaceScope
 import novex.core.NovexConversationWorkspaceStore
 import novex.core.NovexConversationWorkspaceToolRouter

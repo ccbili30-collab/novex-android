@@ -2,16 +2,16 @@ package com.openminis.app.debug
 
 import android.content.Context
 import com.openminis.app.MinisApp
-import com.openminis.app.data.model.FallbackStrategy
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
+import novex.android.data.model.FallbackStrategy
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
 import com.openminis.app.data.repository.ProviderRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
 import com.openminis.app.data.attachments.NovexDocumentSnapshotExtractor
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
 import novex.core.InMemoryNovexDocumentSnapshotCache
 import novex.android.transport.NovexTransportProvider
 import java.io.File

@@ -1,11 +1,11 @@
 package novex.android.transport
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -309,13 +309,13 @@ class NovexTransportNativeProtocolTest {
         assertEquals(11, chunks.size)
         assertEquals(LLMStreamChunk.Started, chunks[0])
         // 用量块先于文本（message_start 用量先到）。
-        assertEquals(LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(25, 1, latestContextTokens = 25)), chunks[1])
+        assertEquals(LLMStreamChunk.Usage(novex.android.data.model.LLMUsage(25, 1, latestContextTokens = 25)), chunks[1])
         assertEquals(LLMStreamChunk.ThinkingDelta("想"), chunks[2])
         assertEquals(LLMStreamChunk.Text("答"), chunks[3])
         assertEquals(LLMStreamChunk.ToolUseStart("toolu_1", "get_weather"), chunks[4])
         assertEquals(LLMStreamChunk.ToolInputDelta("toolu_1", "{\"city\":"), chunks[5])
         assertEquals(LLMStreamChunk.ToolInputDelta("toolu_1", "{\"city\":\"上海\"}"), chunks[6])
-        assertEquals(LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(0, 9, latestContextTokens = 0)), chunks[7])
+        assertEquals(LLMStreamChunk.Usage(novex.android.data.model.LLMUsage(0, 9, latestContextTokens = 0)), chunks[7])
         assertEquals(LLMStreamChunk.ReasoningContent("想"), chunks[8])
         assertEquals(LLMStreamChunk.Finished("tool_use"), chunks[9])
         val complete = chunks[10] as LLMStreamChunk.ToolCallComplete
@@ -538,7 +538,7 @@ class NovexTransportNativeProtocolTest {
             assertEquals(64, body.getInt("max_tokens"))
             assertEquals(listOf<LLMStreamChunk>(
                 LLMStreamChunk.Started, LLMStreamChunk.Text("好"),
-                LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(0, 2)),
+                LLMStreamChunk.Usage(novex.android.data.model.LLMUsage(0, 2)),
                 LLMStreamChunk.Finished("end_turn")), chunks)
         }
     }
@@ -562,7 +562,7 @@ class NovexTransportNativeProtocolTest {
             assertEquals("/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", recorded.path)
             assertEquals(listOf<LLMStreamChunk>(
                 LLMStreamChunk.Started, LLMStreamChunk.Text("答"),
-                LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(4, 1, latestContextTokens = 4)),
+                LLMStreamChunk.Usage(novex.android.data.model.LLMUsage(4, 1, latestContextTokens = 4)),
                 LLMStreamChunk.Finished("end_turn")), chunks)
         }
     }

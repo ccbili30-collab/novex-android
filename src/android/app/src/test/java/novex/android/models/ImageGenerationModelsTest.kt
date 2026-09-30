@@ -1,6 +1,6 @@
 package novex.android.models
 
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.ProviderType
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer

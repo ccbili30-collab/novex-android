@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
 import com.openminis.app.provider.ImageDegradationLearning
 import novex.android.transport.NovexTransportProvider
 import novex.model.WireProtocol

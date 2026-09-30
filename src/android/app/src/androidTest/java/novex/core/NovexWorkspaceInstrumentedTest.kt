@@ -19,7 +19,7 @@ import com.openminis.app.data.character.CharacterVersionKind
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleReferenceTarget
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
 import com.openminis.app.data.interactivefiction.InteractiveFictionLaunchMode
@@ -39,14 +39,14 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NovexWorkspaceInstrumentedTest {
-    private lateinit var database: AppDatabase
+    private lateinit var database: NovexMainDatabase
     private lateinit var mediaRoot: File
     private lateinit var workspace: NovexWorkspace
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         mediaRoot = File(context.cacheDir, "novex-workspace-${System.nanoTime()}").apply { mkdirs() }

@@ -3,7 +3,7 @@ package com.openminis.app.debug
 import android.content.Context
 import androidx.lifecycle.ViewModelProvider
 import com.openminis.app.MinisApp
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.ui.chat.ChatViewModel
 import com.openminis.app.ui.chat.ChatViewModelStore
 import com.openminis.app.ui.chat.InputAttachment
@@ -82,7 +82,7 @@ internal object HeadlessChatRunner {
                 ?: "unknown"
             val s = app.chatRepository.createSession(modelId = resolvedModel, title = null)
             // Mark source so the UI session list shows it came from RPC.
-            app.chatRepository.dao.updateSource(s.id, "debug")
+            app.chatRepository.dao.setSessionSource(s.id, "debug")
             s.id
         }
 
@@ -129,7 +129,7 @@ internal object HeadlessChatRunner {
             // early-returned with no LLM request — RPC-driven sessions produced
             // a lone user message and no assistant turn.
             val binding = """{"type":"entry","entryId":"${entry.id}"}"""
-            app.chatRepository.updateSessionBinding(sessionId, binding, entry.baseModel.id)
+            app.chatRepository.rebindSessionModel(sessionId, binding, entry.baseModel.id)
             return@withContext entry.model.displayName
         }
         // modelGroupId (explicit) or the default primary group (implicit fallback)
@@ -140,7 +140,7 @@ internal object HeadlessChatRunner {
         val resolvedModelId = firstMember?.baseModel?.id ?: ""
         // Same JSON-object shape the VM expects for a group binding.
         val groupBinding = """{"type":"group","groupId":"${group.id}"}"""
-        app.chatRepository.updateSessionBinding(sessionId, groupBinding, resolvedModelId)
+        app.chatRepository.rebindSessionModel(sessionId, groupBinding, resolvedModelId)
         return@withContext group.name
     }
 
@@ -236,7 +236,7 @@ internal object HeadlessChatRunner {
         // Best-effort: read the last assistant text from the DB so we don't
         // depend on the in-memory UI list (which may not have flushed yet).
         val app = app(context)
-        val msgs = app.chatRepository.dao.loadMessages(sessionId)
+        val msgs = app.chatRepository.dao.historyFor(sessionId)
         val lastAssistant = msgs.lastOrNull { it.role == "assistant" }
         val responseText = lastAssistant?.let { extractText(it.partsJson) }
         PromptResult(
@@ -256,12 +256,12 @@ internal object HeadlessChatRunner {
         val app = app(context)
         val vm = viewModel(context, sessionId)
         val targetMsgId = messageId ?: run {
-            val msgs = app.chatRepository.dao.loadMessages(sessionId)
+            val msgs = app.chatRepository.dao.historyFor(sessionId)
             msgs.lastOrNull { it.role == "user" }?.id
                 ?: throw RPCException(-32602, "Session has no user messages")
         }
         // Validate it points at a user message.
-        val all = app.chatRepository.dao.loadMessages(sessionId)
+        val all = app.chatRepository.dao.historyFor(sessionId)
         val target = all.firstOrNull { it.id == targetMsgId }
             ?: throw RPCException(-32602, "Message not found in session")
         if (target.role != "user") throw RPCException(-32602, "Target is not a user message")
@@ -299,7 +299,7 @@ internal object HeadlessChatRunner {
             }
             true
         } ?: false
-        val msgs = app.chatRepository.dao.loadMessages(sessionId)
+        val msgs = app.chatRepository.dao.historyFor(sessionId)
         val lastAssistant = msgs.lastOrNull { it.role == "assistant" }
         val responseText = lastAssistant?.let { extractText(it.partsJson) }
         PromptResult(
@@ -342,7 +342,7 @@ internal object HeadlessChatRunner {
                 retriedMessageId = assistantMessageId,
             )
         }
-        val before = app.chatRepository.dao.loadMessages(sessionId).size
+        val before = app.chatRepository.dao.historyFor(sessionId).size
         // The in-memory assistant bubble id is a volatile `assistant_<ts>`
         // runtime id, not the DB row id a harness reads from chat.messages.list.
         // Resolve the live bubble that owns this tool block; fall back to the
@@ -372,7 +372,7 @@ internal object HeadlessChatRunner {
             if (vm.isStreaming.value) vm.isStreaming.first { !it }
             true
         } ?: false
-        val msgs = app.chatRepository.dao.loadMessages(sessionId)
+        val msgs = app.chatRepository.dao.historyFor(sessionId)
         val lastAssistant = msgs.lastOrNull { it.role == "assistant" }
         PromptResult(
             status = if (finished) "Completed" else "Timeout",

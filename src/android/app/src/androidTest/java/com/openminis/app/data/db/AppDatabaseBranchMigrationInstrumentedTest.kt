@@ -1,5 +1,10 @@
 package com.openminis.app.data.db
 
+import novex.android.data.*
+import novex.android.data.cards.*
+import novex.android.data.chat.*
+import novex.android.data.MIGRATION_14_15
+
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -62,7 +67,7 @@ class AppDatabaseBranchMigrationInstrumentedTest {
         db.execSQL("INSERT INTO messages VALUES ('u2', 's1', 2, 102)")
         db.execSQL("INSERT INTO messages VALUES ('a2', 's1', 3, 103)")
 
-        AppDatabase.MIGRATION_14_15.migrate(db)
+        MIGRATION_14_15.migrate(db)
 
         db.query(
             "SELECT id, parent_message_id, active_child_id FROM messages " +

@@ -10,7 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.character.ModuleOwner
 import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
@@ -91,9 +91,9 @@ class NovexChatPipelineInteractionTest {
         val entry = app.providerRepository.entriesFor(instanceId).single { it.model.id == model.id }
         val session = runBlocking {
             val created = app.chatRepository.createSession(model.id, title = "完整聊天路径验收", memoryEnabled = false)
-            app.chatRepository.updateSessionBinding(created.id,
+            app.chatRepository.rebindSessionModel(created.id,
                 JSONObject().put("type", "entry").put("entryId", entry.id).toString(), model.id)
-            app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("",
+            app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("",
                 novexConfigurationJson = NovexConversationConfigurationCodec.encode(
                     NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.READ_ONLY))))
             created
@@ -255,7 +255,7 @@ class NovexChatPipelineInteractionTest {
             ui.onNodeWithText("删除对话").performTouchInput { click() }
             ui.onNode(hasText("删除对话") and hasClickAction()).performTouchInput { click() }
             ui.waitUntil(30_000) { ui.onAllNodesWithText("已返回对话列表").fetchSemanticsNodes().isNotEmpty() }
-            assertNull(runBlocking { app.chatRepository.getSession(session.id) })
+            assertNull(runBlocking { app.chatRepository.sessionById(session.id) })
             if (mode != NovexExecutionMode.READ_ONLY) assertEquals(1,
                 runBlocking { app.novexWorkspace.interactiveFictions().count { it.project.name == title } })
         } finally {

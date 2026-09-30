@@ -30,7 +30,7 @@ class NovexConversationDeletion(
             workspace.apply(NovexCommand.ReleaseConversationDraftWrite(conversationId, it.id))
         }
         workspace.apply(NovexCommand.FinalizeConversationDrafts(conversationId, emptySet()))
-        chats.deleteSession(conversationId)
+        chats.dropSession(conversationId)
         deleted = true
         clearStatus(conversationId)
         } finally {

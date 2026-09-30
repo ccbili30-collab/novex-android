@@ -1,16 +1,16 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.db.toProviderConfig
-import com.openminis.app.data.db.toSnapshot
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.provider.toConfig
+import novex.android.data.provider.toRows
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -146,7 +146,7 @@ class ImageGenerationPolicyTest {
         )
         val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-        val restored = config.toSnapshot(json).toProviderConfig(json)
+        val restored = config.toRows(json).toConfig(json)
 
         assertEquals(listOf(group.id), restored.imageGenerationGroupIds)
         assertEquals(listOf(firstProvider.id), restored.imageGenerationProviderInstanceIds)
@@ -166,7 +166,7 @@ class ImageGenerationPolicyTest {
         )
         val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-        val restored = config.toSnapshot(json).toProviderConfig(json).modelEntries.single()
+        val restored = config.toRows(json).toConfig(json).modelEntries.single()
 
         assertEquals(ImageEndpointMode.chatCompletions, restored.overrides.imageEndpointMode)
         assertEquals(ImageEndpointMode.chatCompletions, restored.overrides.imageEndpointResolved)

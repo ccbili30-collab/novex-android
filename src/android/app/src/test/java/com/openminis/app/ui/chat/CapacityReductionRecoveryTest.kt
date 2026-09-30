@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
 import com.openminis.app.data.BPETokenizer
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -71,13 +71,13 @@ class CapacityReductionRecoveryTest {
             // only AFTER estimating the base prompt, never as retained history.
             val prompt=trace.getString("formalPrompt").substringBefore("<novex-answer-identity>").trimEnd()
             fun strings(a:org.json.JSONArray?)=(0 until (a?.length()?:0)).map {a!!.getString(it)}
-            fun param(v:JSONObject):com.openminis.app.data.model.AgentToolParam=com.openminis.app.data.model.AgentToolParam(
+            fun param(v:JSONObject):novex.android.data.model.AgentToolParam=novex.android.data.model.AgentToolParam(
                 v.getString("type"),v.optString("description"),v.optJSONArray("enum")?.let(::strings),
                 v.optJSONObject("items")?.let(::param),v.optJSONObject("properties")?.let {o->o.keys().asSequence().associateWith {param(o.getJSONObject(it))}},strings(v.optJSONArray("required")))
             val definitions=runtime.getJSONArray("toolDefinitions")
             val tools=(0 until definitions.length()).map {
                 val f=definitions.getJSONObject(it).getJSONObject("function");val schema=f.getJSONObject("parameters");val props=schema.getJSONObject("properties")
-                com.openminis.app.data.model.AgentToolDefinition(f.getString("name"),f.getString("description"),props.keys().asSequence().associateWith {param(props.getJSONObject(it))},strings(schema.optJSONArray("required")))
+                novex.android.data.model.AgentToolDefinition(f.getString("name"),f.getString("description"),props.keys().asSequence().associateWith {param(props.getJSONObject(it))},strings(schema.optJSONArray("required")))
             }
             val history=zip.getInputStream(zip.getEntry("database/messages.jsonl")).reader().readLines().filter(String::isNotBlank).map {line->
                 val row=JSONObject(line);val parts=org.json.JSONArray(row.getString("parts_json"))

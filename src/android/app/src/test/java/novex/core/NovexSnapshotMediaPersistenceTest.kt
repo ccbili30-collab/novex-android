@@ -7,7 +7,7 @@ import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.*
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -27,7 +27,7 @@ class NovexSnapshotMediaPersistenceTest {
 
     @Test
     fun `visible pictures follow current use and presentation resolves the retained avatar`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "originals"))
@@ -55,7 +55,7 @@ class NovexSnapshotMediaPersistenceTest {
 
     @Test
     fun `game retains its pictures and reuses already adopted background pictures`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "originals"))
@@ -83,7 +83,7 @@ class NovexSnapshotMediaPersistenceTest {
 
     @Test
     fun `background retains permitted media with configuration without copying companion images`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "originals"))

@@ -1,8 +1,8 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

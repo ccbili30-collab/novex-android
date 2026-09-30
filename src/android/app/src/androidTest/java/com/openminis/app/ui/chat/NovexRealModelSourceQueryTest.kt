@@ -8,7 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import novex.core.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
@@ -52,9 +52,9 @@ class NovexRealModelSourceQueryTest {
                 val id = question.getString("id")
                 val session = runBlocking {
                     val created = app.chatRepository.createSession(model.id, title = "原题来源查询 $id")
-                    app.chatRepository.updateSessionBinding(created.id, JSONObject().put("type", "entry")
+                    app.chatRepository.rebindSessionModel(created.id, JSONObject().put("type", "entry")
                         .put("entryId", entry.id).toString(), model.id)
-                    app.chatRepository.updateConversationSettings(created.id, ConversationSettingsSnapshot("",
+                    app.chatRepository.writeConversationSettings(created.id, ConversationSettingsSnapshot("",
                         novexConfigurationJson = NovexConversationConfigurationCodec.encode(
                             NovexConversationConfigurationSnapshot(created.id, executionMode = NovexExecutionMode.FREE))))
                     created

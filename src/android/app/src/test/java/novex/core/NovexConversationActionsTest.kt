@@ -4,7 +4,7 @@ import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.ConversationSettingsSnapshot
 import novex.android.adapter.*
@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 class NovexConversationActionsTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun startingWithUserDescriptionSavesOneRunAndRestoresTheActualPreviousIdentity() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "direct-player-media"))
             val game = workspace.apply(NovexCommand.SaveInteractiveFictionPage(null, "入镇", "测试", playerIdentity = "旧居民")).requireInteractiveFiction()
@@ -61,7 +61,7 @@ class NovexConversationActionsTest {
     }
 
     @Test fun creationDoesNotActivateButExplicitActionsPersistAndRepeatedStartKeepsTheRun() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(files.root, "journey.db").absolutePath).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(files.root, "journey.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
@@ -83,9 +83,9 @@ class NovexConversationActionsTest {
             assertEquals(role.answerIdentity, active.preGameAnswerIdentity)
             assertEquals(active, actions.startGame(active, JSONObject().put("project_id", game.id)))
             val encoded = NovexConversationConfigurationCodec.encode(active)
-            ChatRepository(db.chatDao()).updateConversationSettings(session.id, ConversationSettingsSnapshot(conversationPrompt = "", novexConfigurationJson = encoded))
+            ChatRepository(db.chatDao()).writeConversationSettings(session.id, ConversationSettingsSnapshot(conversationPrompt = "", novexConfigurationJson = encoded))
             db.close(); db = open()
-            val saved = db.chatDao().getSession(session.id)!!
+            val saved = db.chatDao().sessionById(session.id)!!
             val reopened = NovexConversationConfigurationCodec.decode(saved.novexConfigurationJson, session.id)
             assertEquals(active.effectivePlaythroughId, reopened.effectivePlaythroughId)
             assertEquals(active.answerIdentity, reopened.answerIdentity)
@@ -95,7 +95,7 @@ class NovexConversationActionsTest {
         } finally { db.close() }
     }
     @Test fun freePlayerIdentityPersistsWithoutChangingSpeakerAndExplicitlySurvivesGamePreset() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "player.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -125,10 +125,10 @@ class NovexConversationActionsTest {
             assertEquals(configured.playerIdentity, active.playerIdentity)
             assertEquals(configured.playerIdentity, active.activeInteractiveFiction!!.playerIdentity)
             assertEquals(active, actions.startGame(active, JSONObject().put("project_id", game.id)))
-            ChatRepository(db.chatDao()).updateConversationSettings(session.id, ConversationSettingsSnapshot(
+            ChatRepository(db.chatDao()).writeConversationSettings(session.id, ConversationSettingsSnapshot(
                 conversationPrompt = "", novexConfigurationJson = NovexConversationConfigurationCodec.encode(active)))
             db.close(); db = open()
-            val reopened = NovexConversationConfigurationCodec.decode(db.chatDao().getSession(session.id)!!.novexConfigurationJson, session.id)
+            val reopened = NovexConversationConfigurationCodec.decode(db.chatDao().sessionById(session.id)!!.novexConfigurationJson, session.id)
             assertEquals(description, reopened.playerIdentity!!.description)
             assertEquals(active.effectivePlaythroughId, reopened.effectivePlaythroughId)
             val ended = NovexConversationConfiguration.open(reopened)

@@ -8,7 +8,7 @@ import com.openminis.app.data.character.MediaAssetRepository
 import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.interactivefiction.InteractiveFictionProjectEntity
 import com.openminis.app.data.interactivefiction.InteractiveFictionRepository
 import novex.core.DefaultNovexWorkspace
@@ -25,9 +25,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 object NovexWorkspaceFactory {
-    fun create(database: AppDatabase, mediaRoot: File): NovexWorkspace = createWithDirectoryStore(database, mediaRoot)
+    fun create(database: NovexMainDatabase, mediaRoot: File): NovexWorkspace = createWithDirectoryStore(database, mediaRoot)
 
-    internal fun createWithDirectoryStore(database: AppDatabase, mediaRoot: File, directoryStore: NovexCardDirectoryStore = NovexCardDirectoryStore(File(mediaRoot.canonicalFile.parentFile, "novex-cards"))): NovexWorkspace {
+    internal fun createWithDirectoryStore(database: NovexMainDatabase, mediaRoot: File, directoryStore: NovexCardDirectoryStore = NovexCardDirectoryStore(File(mediaRoot.canonicalFile.parentFile, "novex-cards"))): NovexWorkspace {
         val catalog = CharacterCatalogRepository(database.characterCatalogDao())
         val content = ContentModuleRepository(database.contentModuleDao())
         val interactiveFiction = InteractiveFictionRepository(database.interactiveFictionDao())
@@ -39,12 +39,12 @@ object NovexWorkspaceFactory {
         }
         return DefaultNovexWorkspace(
             catalog = RoomCatalogAdapter(catalog),
-            cardDirectories = RoomCardDirectories(database.novexCardDirectoryDao(), directoryStore),
-            cardReferences = RoomCardReferenceAdapter(database.novexCardReferenceDao()),
-            versionRelations = RoomCharacterVersionRelationAdapter(database.novexCharacterVersionRelationDao()),
-            characterRevisions = RoomCharacterRevisionAdapter(database.novexCharacterRevisionDao()),
-            cardRevisions = RoomCardRevisionAdapter(database.novexCardRevisionDao()),
-            drafts = RoomDraftOwnershipAdapter(database.novexConversationDraftDao(), database.chatDao()),
+            cardDirectories = RoomCardDirectories(database.cardDirectoryDao(), directoryStore),
+            cardReferences = RoomCardReferenceAdapter(database.cardLinkDao()),
+            versionRelations = RoomCharacterVersionRelationAdapter(database.roleVersionLinkDao()),
+            characterRevisions = RoomCharacterRevisionAdapter(database.roleRevisionDao()),
+            cardRevisions = RoomCardRevisionAdapter(database.cardRevisionDao()),
+            drafts = RoomDraftOwnershipAdapter(database.conversationDraftDao(), database.chatDao()),
             interactiveFiction = RoomInteractiveFictionAdapter(interactiveFiction),
             content = RoomContentAdapter(content),
             media = ManagedMediaAdapter(
@@ -82,7 +82,7 @@ object NovexWorkspaceFactory {
      * first suspend call and performed on an I/O dispatcher. Instrumented
      * repository tests keep using [create] when they need an eager workspace.
      */
-    fun createDeferred(database: AppDatabase, mediaRoot: File): NovexWorkspace =
+    fun createDeferred(database: NovexMainDatabase, mediaRoot: File): NovexWorkspace =
         DeferredNovexWorkspace {
             create(database, mediaRoot).also { (it as DefaultNovexWorkspace).recoverSavedCards() }
         }
@@ -307,8 +307,8 @@ private class ManagedMediaAdapter(
 }
 
 internal class RoomDraftOwnershipAdapter(
-    private val dao: com.openminis.app.data.db.NovexConversationDraftDao,
-    private val chatDao: com.openminis.app.data.db.ChatDao,
+    private val dao: novex.android.data.chat.ConversationDraftDao,
+    private val chatDao: novex.android.data.chat.ChatDao,
 ) : novex.core.NovexDraftOwnershipPort {
     override suspend fun referencedSubjects(): Set<novex.core.NovexContentAddress> {
         val candidates = list().flatMap { it.cards }.filter { it.isPrivate }
@@ -328,7 +328,7 @@ internal class RoomDraftOwnershipAdapter(
                 is org.json.JSONArray -> (0 until value.length()).forEach { scan(value.opt(it)) }
             }
         }
-        chatDao.listSessions().forEach { session ->
+        chatDao.primarySessions().forEach { session ->
             protectId(session.worldId)
             protectId(session.characterVersionId)
             protectId(session.characterId)
@@ -339,12 +339,12 @@ internal class RoomDraftOwnershipAdapter(
         }
         return result
     }
-    override suspend fun load(conversationId: String) = dao.get(conversationId)?.let {
+    override suspend fun load(conversationId: String) = dao.find(conversationId)?.let {
         novex.core.NovexConversationDraftCodec.decode(it.contentJson)
     }
-    override suspend fun list() = dao.list().map { novex.core.NovexConversationDraftCodec.decode(it.contentJson) }
+    override suspend fun list() = dao.all().map { novex.core.NovexConversationDraftCodec.decode(it.contentJson) }
     override suspend fun save(snapshot: novex.core.NovexConversationDraftSnapshot) {
-        dao.save(com.openminis.app.data.db.NovexConversationDraftEntity(snapshot.conversationId,
+        dao.put(novex.android.data.chat.ConversationDraftRow(snapshot.conversationId,
             novex.core.NovexConversationDraftCodec.encode(snapshot)))
     }
 }

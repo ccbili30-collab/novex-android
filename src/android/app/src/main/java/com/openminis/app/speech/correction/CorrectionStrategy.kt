@@ -2,9 +2,9 @@ package com.openminis.app.speech.correction
 
 import android.content.Context
 import android.util.Log
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
 

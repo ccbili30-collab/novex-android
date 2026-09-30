@@ -1,6 +1,6 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolDefinition
 import org.json.JSONObject
 
 /**

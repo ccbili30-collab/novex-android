@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import novex.android.adapter.WorkspaceNovexContextLoader
 import java.io.File
@@ -50,7 +50,7 @@ class NovexTavernExchangePersistenceTest {
 
     @Test
     fun `native public modules export while companion identity stays local and source reads require management scope`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
             val role = workspace.apply(NovexCommand.CreateCharacter("伏生", """{"name":"伏生","summary":"人物简介"}""")).requireCharacter()
@@ -88,7 +88,7 @@ class NovexTavernExchangePersistenceTest {
 
     @Test
     fun `native character exchange retains source triggers unknown fields and scoped edits across restart`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "exchange.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         val raw = """{"spec":"chara_card_v2","spec_version":"2.0","root_future":{"a":1},"data":{"name":"伏生","description":"公开生平","personality":"角色表达方式","system_prompt":"只在扮演时采用","creator":"原作者","character_version":"作者修订七","creator_notes":"作者说明不能成为角色指令","extensions":{"future":{"enabled":true}},"character_book":{"extensions":{"vendor":"保持"},"entries":[{"id":7,"keys":["帝议"],"secondary_keys":["记言"],"selective":true,"content":"条件触发正文","enabled":true,"insertion_order":3,"extensions":{"depth":4}},{"id":9,"content":"停用条目","enabled":false}]}}}"""

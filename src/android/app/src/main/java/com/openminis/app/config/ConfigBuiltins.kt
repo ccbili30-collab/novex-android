@@ -18,7 +18,7 @@ import com.openminis.app.config.fields.ReadOnlyField
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.ui.chat.ChatViewModelStore
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
@@ -128,7 +128,7 @@ internal object ConfigBuiltins {
                     val sid = ChatViewModelStore.activeSessionId
                     if (sid == null) ConfigValue.Null
                     else {
-                        val session = runBlocking { chatRepo.dao.getSession(sid) }
+                        val session = runBlocking { chatRepo.dao.sessionById(sid) }
                         val raw = session?.thinkingOverride
                         val token = if (raw == null) "off" else thinkingLevelToToken(
                             runCatching { ThinkingLevel.valueOf(raw) }.getOrDefault(ThinkingLevel.OFF)
@@ -143,7 +143,7 @@ internal object ConfigBuiltins {
                         ?: throw ConfigError.InvalidValue("Unknown thinking level: $token")
                     val sid = ChatViewModelStore.activeSessionId
                         ?: throw ConfigError.InvalidValue("No active session — open a chat first")
-                    runBlocking { chatRepo.dao.updateThinkingOverride(sid, level.name) }
+                    runBlocking { chatRepo.dao.setThinkingChoice(sid, level.name) }
                 },
             )
         )
@@ -159,7 +159,7 @@ internal object ConfigBuiltins {
                     val sid = ChatViewModelStore.activeSessionId
                     if (sid == null) ConfigValue.Str("")
                     else {
-                        val session = runBlocking { chatRepo.dao.getSession(sid) }
+                        val session = runBlocking { chatRepo.dao.sessionById(sid) }
                         ConfigValue.Str(formatBinding(session?.modelBinding))
                     }
                 },
@@ -170,7 +170,7 @@ internal object ConfigBuiltins {
                         ?: throw ConfigError.InvalidValue("No active session — open a chat first")
                     if (s.isEmpty()) {
                         // Clear the binding — fall back to default group/entry on next load.
-                        runBlocking { chatRepo.dao.updateSessionBinding(sid, "", "") }
+                        runBlocking { chatRepo.dao.rebindSessionModel(sid, "", "") }
                         return@ClosureField
                     }
                     val cfg = providerRepo.config.value
@@ -202,7 +202,7 @@ internal object ConfigBuiltins {
                         )
                     }
                     runBlocking {
-                        chatRepo.dao.updateSessionBinding(sid, bindingJson, modelId)
+                        chatRepo.dao.rebindSessionModel(sid, bindingJson, modelId)
                     }
                 },
             )
@@ -595,7 +595,7 @@ internal object ConfigBuiltins {
                 valueSchema = ConfigSchema.Json,
                 reader = {
                     val cfg = providerRepo.config.value
-                    val providersById = HashMap<String, com.openminis.app.data.model.ProviderInstance>(cfg.instances.size)
+                    val providersById = HashMap<String, novex.android.data.model.ProviderInstance>(cfg.instances.size)
                     for (inst in cfg.instances) providersById[inst.id] = inst
                     ConfigValue.Arr(
                         cfg.modelEntries.map { entry ->
@@ -677,10 +677,10 @@ internal object ConfigBuiltins {
                 reader = {
                     val cfg = providerRepo.config.value
                     val entriesById =
-                        HashMap<String, com.openminis.app.data.model.ModelEntry>(cfg.modelEntries.size)
+                        HashMap<String, novex.android.data.model.ModelEntry>(cfg.modelEntries.size)
                     for (e in cfg.modelEntries) entriesById[e.id] = e
                     val providersById =
-                        HashMap<String, com.openminis.app.data.model.ProviderInstance>(cfg.instances.size)
+                        HashMap<String, novex.android.data.model.ProviderInstance>(cfg.instances.size)
                     for (inst in cfg.instances) providersById[inst.id] = inst
                     ConfigValue.Arr(
                         cfg.modelGroups.map { g ->

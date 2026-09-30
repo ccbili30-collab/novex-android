@@ -4,37 +4,37 @@ package com.openminis.app.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
-import com.openminis.app.data.db.ProviderConfigDao
-import com.openminis.app.data.db.ProviderConfigMetaKeys
-import com.openminis.app.data.db.ProviderConfigSnapshot
-import com.openminis.app.data.db.ProviderThinkingContractEntity
+import novex.android.data.provider.ProviderStoreDao
+import novex.android.data.provider.ProviderMetaKeys
+import novex.android.data.provider.ProviderRowsSnapshot
+import novex.android.data.provider.ThinkingRuleRow
 import novex.android.thinking.ThinkingContract
 import novex.android.thinking.ThinkingContractCoding
 import novex.android.thinking.ThinkingContractResolver
-import com.openminis.app.data.db.ProviderDatabase
-import com.openminis.app.data.db.compositeEntryKey
-import com.openminis.app.data.db.toProviderConfig
-import com.openminis.app.data.db.toSnapshot
+import novex.android.data.NovexProviderDatabase
+import novex.android.data.provider.entryCompositeId
+import novex.android.data.provider.toConfig
+import novex.android.data.provider.toRows
 import com.openminis.app.data.normalizeModelGroupOrder
 import com.openminis.app.data.removeModelGroupAndBindings
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.SystemVoiceIds
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.SystemVoiceIds
 import novex.android.voice.VoiceVendorTemplate
-import com.openminis.app.data.model.hasAudioInput
-import com.openminis.app.data.model.hasAudioOutput
-import com.openminis.app.data.model.hasImageInput
-import com.openminis.app.data.model.hasVoiceModality
-import com.openminis.app.data.model.isVoiceTemplateSeedShape
-import com.openminis.app.data.model.withInferredVoiceModality
+import novex.android.data.model.hasAudioInput
+import novex.android.data.model.hasAudioOutput
+import novex.android.data.model.hasImageInput
+import novex.android.data.model.hasVoiceModality
+import novex.android.data.model.isVoiceTemplateSeedShape
+import novex.android.data.model.withInferredVoiceModality
 import com.openminis.app.provider.ModelReleaseIndex
 import com.openminis.app.provider.ModelsDevApi
 import com.openminis.app.provider.ModelsCatalogApi
@@ -95,8 +95,8 @@ class ProviderRepository(private val context: Context) {
     // Opening provider.db is not a first-frame dependency. The initial config
     // loader already runs on Dispatchers.IO, so defer Room construction until
     // that loader first touches the DAO instead of blocking Application.onCreate.
-    private val providerDao: ProviderConfigDao by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ProviderDatabase.getInstance(context).providerConfigDao()
+    private val providerDao: ProviderStoreDao by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        NovexProviderDatabase.getInstance(context).providerStoreDao()
     }
 
     companion object {
@@ -283,7 +283,7 @@ class ProviderRepository(private val context: Context) {
     private val configLock = Any()
 
     private fun loadConfig(): ProviderConfig =
-        com.openminis.app.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() })
+        novex.android.data.model.NovexDeepSeekModelMetadata.repairCatalog(runBlocking { loadConfigSuspending() })
 
     /**
      * [T-android-provider-room-store] DB-first load with three-way
@@ -330,16 +330,16 @@ class ProviderRepository(private val context: Context) {
 
         val (dbConfig, dbHashStored) = if (instanceCount > 0) {
             try {
-                val snapshot = ProviderConfigSnapshot(
-                    instances = providerDao.loadInstances(),
-                    entries = providerDao.loadEntries(),
-                    groups = providerDao.loadGroups(),
-                    loopIds = providerDao.loadAgentLoopIds(),
-                    meta = providerDao.loadMeta(),
+                val snapshot = ProviderRowsSnapshot(
+                    instanceRows = providerDao.instanceRows(),
+                    modelRows = providerDao.modelRows(),
+                    groupRows = providerDao.groupRows(),
+                    loopRows = providerDao.agentLoopRows(),
+                    metaRows = providerDao.metaRows(),
                 )
-                val cfg = snapshot.toProviderConfig(json)
-                val storedHash = snapshot.meta.firstOrNull {
-                    it.key == ProviderConfigMetaKeys.JSON_SYNC_HASH
+                val cfg = snapshot.toConfig(json)
+                val storedHash = snapshot.metaRows.firstOrNull {
+                    it.key == ProviderMetaKeys.JSON_SYNC_HASH
                 }?.value
                 cfg to storedHash
             } catch (e: Exception) {
@@ -392,7 +392,7 @@ class ProviderRepository(private val context: Context) {
                 if (legacyLastUsed != null && !legacyLastUsed.contains('/')) {
                     val rewritten = parsed.modelEntries
                         .firstOrNull { it.uuid == legacyLastUsed }
-                        ?.let { compositeEntryKey(it.providerInstanceId, it.baseModel.id) }
+                        ?.let { entryCompositeId(it.providerInstanceId, it.baseModel.id) }
                     if (rewritten != null) {
                         prefs.edit().putString(KEY_LAST_USED_ENTRY, rewritten).apply()
                         android.util.Log.i(
@@ -479,13 +479,13 @@ class ProviderRepository(private val context: Context) {
         // older builds will read, not a hash-of-itself).
         val mirrorStr = json.encodeToString(ProviderConfig.serializer(), config)
         val mirrorHash = hashJsonMirror(mirrorStr)
-        val snapshot = config.toSnapshot(json, jsonSyncHash = mirrorHash)
-        providerDao.replaceAll(
-            instances = snapshot.instances,
-            entries = snapshot.entries,
-            groups = snapshot.groups,
-            loopIds = snapshot.loopIds,
-            meta = snapshot.meta,
+        val snapshot = config.toRows(json, jsonSyncHash = mirrorHash)
+        providerDao.overwriteConfigTables(
+            instances = snapshot.instanceRows,
+            models = snapshot.modelRows,
+            groups = snapshot.groupRows,
+            loopTargets = snapshot.loopRows,
+            meta = snapshot.metaRows,
         )
         // commit() not apply(): the json_sync_hash we just stored to DB is
         // a hash of THIS mirror string. If apply() queues the disk write
@@ -516,7 +516,7 @@ class ProviderRepository(private val context: Context) {
         }
         // Return canonicalized form so the caller's _config.value reflects
         // entry uuids in composite-key shape from this write forward.
-        return snapshot.toProviderConfig(json)
+        return snapshot.toConfig(json)
     }
 
     /**
@@ -916,7 +916,7 @@ class ProviderRepository(private val context: Context) {
         // [T-android-thinking-rules-phase2] The instance is gone — drop its custom
         // rules from Room and the resolver cache (they can never fire again).
         runCatching {
-            runBlocking { providerDao.deleteThinkingContractsForInstance(instanceId) }
+            runBlocking { providerDao.dropRulesFor(instanceId) }
             ThinkingContractResolver.setCustomRules(instanceId, emptyList())
         }
     }
@@ -1016,7 +1016,7 @@ class ProviderRepository(private val context: Context) {
      */
     fun lastUsedVisibleEntry(): ModelEntry? {
         val id = lastUsedEntryId ?: return null
-        return allVisibleEntries().firstOrNull { it.id == id && com.openminis.app.data.model.ChatModelSelection.eligible(it) }
+        return allVisibleEntries().firstOrNull { it.id == id && novex.android.data.model.ChatModelSelection.eligible(it) }
     }
 
     /**
@@ -1039,7 +1039,7 @@ class ProviderRepository(private val context: Context) {
             .sortedByDescending { it.createdAt }
         for (instance in enabledProviders) {
             val textEntry = config.modelEntries
-                .filter { it.providerInstanceId == instance.id && com.openminis.app.data.model.ChatModelSelection.eligible(it) }
+                .filter { it.providerInstanceId == instance.id && novex.android.data.model.ChatModelSelection.eligible(it) }
                 .lastOrNull()
             if (textEntry != null) return textEntry
         }
@@ -1136,7 +1136,7 @@ class ProviderRepository(private val context: Context) {
             val prior = existingByModelId[model.id]
             // Dedicated ASR/TTS id/name patterns fill the exact voice shape when
             // the API returned no modality info; the template's shape wins last.
-            var resolved = com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
+            var resolved = novex.android.data.model.NovexDeepSeekModelMetadata.official(
                 model.withInferredVoiceModality(), config.instances.firstOrNull { it.id == instanceId }?.effectiveBaseURL,
             )
             templateVoiceModelById[model.id]?.let { tplModel ->
@@ -1860,13 +1860,13 @@ class ProviderRepository(private val context: Context) {
 
     /** Load one instance's custom rules from Room, in stored order. */
     fun thinkingContracts(instanceId: String): List<ThinkingContract> = runBlocking {
-        runCatching { providerDao.loadThinkingContracts(instanceId).map { ThinkingContractCoding.toRule(it) } }
+        runCatching { providerDao.ruleRowsFor(instanceId).map { ThinkingContractCoding.toRule(it) } }
             .getOrDefault(emptyList())
     }
 
     /** The persisted ids for one instance's custom rules, parallel to [thinkingRules]. */
     fun thinkingContractIds(instanceId: String): List<String> = runBlocking {
-        runCatching { providerDao.loadThinkingContracts(instanceId).map { it.id } }.getOrDefault(emptyList())
+        runCatching { providerDao.ruleRowsFor(instanceId).map { it.id } }.getOrDefault(emptyList())
     }
 
     /** First model id served by [instanceId], for the resolution-trace sample. Null if none. */
@@ -1878,7 +1878,7 @@ class ProviderRepository(private val context: Context) {
     /** Warm the resolver cache with every instance's custom rules (called on config load). */
     fun loadAllThinkingContractsIntoCache() {
         runCatching {
-            val rows = runBlocking { providerDao.loadAllThinkingContracts() }
+            val rows = runBlocking { providerDao.allRuleRows() }
             val byInstance = rows.groupBy { it.providerInstanceId }
                 .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingContractCoding.toRule(it) } }
             ThinkingContractResolver.setAllCustomRules(byInstance)
@@ -1896,7 +1896,7 @@ class ProviderRepository(private val context: Context) {
      * Returns the rule id.
      */
     fun saveThinkingContract(instanceId: String, rule: ThinkingContract, id: String? = null): String = runBlocking {
-        val existing = providerDao.loadThinkingContracts(instanceId).toMutableList()
+        val existing = providerDao.ruleRowsFor(instanceId).toMutableList()
         val ruleId = id ?: java.util.UUID.randomUUID().toString()
         val idx = existing.indexOfFirst { it.id == ruleId }
         if (idx >= 0) {
@@ -1907,31 +1907,31 @@ class ProviderRepository(private val context: Context) {
             existing.add(0, ThinkingContractCoding.toEntity(rule, ruleId, instanceId, 0))
         }
         val renumbered = existing.mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingContracts(instanceId, renumbered)
+        providerDao.reorderRules(instanceId, renumbered)
         republishThinkingCache(instanceId)
         ruleId
     }
 
     /** Delete a custom rule by id. Hard delete — Android provider config is local-only,
      *  so there is no sync channel that could resurrect it (no tombstone needed). */
-    fun deleteThinkingContract(instanceId: String, id: String) = runBlocking {
-        providerDao.deleteThinkingContract(id)
+    fun dropRule(instanceId: String, id: String) = runBlocking {
+        providerDao.dropRule(id)
         // Renumber survivors so sort_order stays dense.
-        val survivors = providerDao.loadThinkingContracts(instanceId)
+        val survivors = providerDao.ruleRowsFor(instanceId)
             .sortedBy { it.sortOrder }
             .mapIndexed { i, e -> e.copy(sortOrder = i) }
-        providerDao.replaceThinkingContracts(instanceId, survivors)
+        providerDao.reorderRules(instanceId, survivors)
         republishThinkingCache(instanceId)
     }
 
     /** Reorder an instance's custom rules to match [orderedIds] (a permutation). */
     fun reorderThinkingContracts(instanceId: String, orderedIds: List<String>) = runBlocking {
-        val byId = providerDao.loadThinkingContracts(instanceId).associateBy { it.id }
+        val byId = providerDao.ruleRowsFor(instanceId).associateBy { it.id }
         val reordered = orderedIds.mapNotNull { byId[it] }
             .mapIndexed { i, e -> e.copy(sortOrder = i) }
         // Keep any id the caller omitted (defensive against a partial list) appended.
         val omitted = byId.values.filter { it.id !in orderedIds }.map { it }
-        providerDao.replaceThinkingContracts(instanceId, reordered + omitted)
+        providerDao.reorderRules(instanceId, reordered + omitted)
         republishThinkingCache(instanceId)
     }
 
@@ -1951,7 +1951,7 @@ class ProviderRepository(private val context: Context) {
             modelId = "",
             supportsReasoning = null,
             declaredEffortValues = null,
-            level = com.openminis.app.data.model.ThinkingLevel.OFF,
+            level = novex.android.data.model.ThinkingLevel.OFF,
             maxTokens = 0,
             isOpenRouter = base.contains("openrouter.ai"),
             usesUnifiedReasoningEffort = base.contains("volces") || base.contains("ark.") || base.contains("venice.ai"),
@@ -2393,7 +2393,7 @@ class ProviderRepository(private val context: Context) {
         var apiKey = loadApiKey(instance.id)
 
         // For OAuth providers, try to refresh the token before using it (mirrors iOS validAccessToken)
-        if (instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth && apiKey != null) {
+        if (instance.credentialType == novex.android.data.model.ProviderCredential.oauth && apiKey != null) {
             try {
                 val manager = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                 val freshToken = manager?.validAccessToken()
@@ -2433,7 +2433,7 @@ class ProviderRepository(private val context: Context) {
                 when (instance.providerType) {
                     ProviderType.anthropic -> ModelsCatalogApi.fetchAnthropicModels(
                         apiKey, baseURL,
-                        isOAuth = instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth,
+                        isOAuth = instance.credentialType == novex.android.data.model.ProviderCredential.oauth,
                         // [T-provider-custom-user-agent] models-list UA override.
                         customUserAgent = instance.customUserAgent,
                     )

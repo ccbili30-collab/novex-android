@@ -11,7 +11,7 @@ import android.content.SharedPreferences
  *     Toggled from Settings → Memory. Pref key
  *     `memory.global.enabled`, default `false` in Novex so unrelated worlds
  *     cannot leak into one another.
- *   - **Per-session** (`ChatSessionEntity.memory_enabled`): override
+ *   - **Per-session** (`SessionRow.memory_enabled`): override
  *     for a specific chat, toggled via `/memory` or
  *     `SessionMemorySheet`. Once a session has a row, that row's
  *     value wins; changing the global never retroactively touches

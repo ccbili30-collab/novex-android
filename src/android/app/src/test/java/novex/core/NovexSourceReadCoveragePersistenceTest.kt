@@ -2,7 +2,7 @@ package novex.core
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -22,7 +22,7 @@ class NovexSourceReadCoveragePersistenceTest {
 
     @Test
     fun `read ranges survive restart without replacing initial sources or borrowing a sibling branch`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "coverage.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         try {

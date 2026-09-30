@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import novex.android.adapter.RoomCardReferenceAdapter
 import java.io.File
@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
 class NovexCardCopyPersistenceTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun `detached copy retains owned modules and internal references while reuse is explicit`() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
             val world = workspace.apply(NovexCommand.CreateWorld("外部世界")).requireWorld()
@@ -48,7 +48,7 @@ class NovexCardCopyPersistenceTest {
         } finally { db.close() }
     }
     @Test fun `cyclic dependency copy survives source removal and reopening without binding a missing namesake`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "copy.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -63,7 +63,7 @@ class NovexCardCopyPersistenceTest {
             workspace.apply(NovexCommand.PutCardReference(NovexCardReference("w-c", w, NovexReferenceTarget(c), NovexReferencePurpose.BACKGROUND)))
             workspace.apply(NovexCommand.PutCardReference(NovexCardReference("c-g", c, NovexReferenceTarget(g), NovexReferencePurpose.RULES)))
             workspace.apply(NovexCommand.PutCardReference(NovexCardReference("g-w", g, NovexReferenceTarget(w), NovexReferencePurpose.BACKGROUND)))
-            RoomCardReferenceAdapter(db.novexCardReferenceDao()).save(NovexCardReference("missing", g,
+            RoomCardReferenceAdapter(db.cardLinkDao()).save(NovexCardReference("missing", g,
                 NovexReferenceTarget(NovexContentAddress.world("foreign-missing")), NovexReferencePurpose.BACKGROUND, targetLabel = "失落世界"))
             workspace.apply(NovexCommand.AttachImage(ModuleOwner.world(world.id), MediaAssetSlot.WORLD_COVER, byteArrayOf(1, 2, 3), "image/png"))
             val plan = workspace.prepareCardCopy(NovexCardCopyKey(NovexCardKind.WORLD, world.id), NovexCardCopyPolicy.DEPENDENCIES)
@@ -86,7 +86,7 @@ class NovexCardCopyPersistenceTest {
         } finally { db.close() }
     }
     @Test fun `changed source rejects preview before creating any copy`() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
             val world = workspace.apply(NovexCommand.CreateWorld("世界", "旧正文")).requireWorld()

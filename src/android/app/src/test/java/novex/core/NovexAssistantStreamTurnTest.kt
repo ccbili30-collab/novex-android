@@ -1,7 +1,7 @@
 package novex.core
 
-import com.openminis.app.data.model.LLMStreamChunk as Chunk
-import com.openminis.app.data.model.LLMUsage
+import novex.android.data.model.LLMStreamChunk as Chunk
+import novex.android.data.model.LLMUsage
 import com.openminis.app.ui.chat.*
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject

@@ -1,12 +1,12 @@
 package com.openminis.app.data.repository
 
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

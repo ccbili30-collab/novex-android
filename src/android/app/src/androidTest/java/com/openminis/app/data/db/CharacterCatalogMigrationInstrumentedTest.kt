@@ -1,5 +1,19 @@
 package com.openminis.app.data.db
 
+import novex.android.data.*
+import novex.android.data.cards.*
+import novex.android.data.chat.*
+import novex.android.data.MIGRATION_15_16
+import novex.android.data.MIGRATION_16_17
+import novex.android.data.MIGRATION_17_18
+import novex.android.data.MIGRATION_18_19
+import novex.android.data.MIGRATION_19_20
+import novex.android.data.MIGRATION_20_21
+import novex.android.data.MIGRATION_21_22
+import novex.android.data.MIGRATION_22_23
+import novex.android.data.MIGRATION_23_24
+import novex.android.data.MIGRATION_24_25
+
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -46,7 +60,7 @@ class CharacterCatalogMigrationInstrumentedTest {
     @Test
     fun migration16CreatesCharacterVersionAndWorldMembershipTablesWithoutLegacyRows() {
         val db = helper.writableDatabase
-        AppDatabase.MIGRATION_15_16.migrate(db)
+        MIGRATION_15_16.migrate(db)
 
         val tables = db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -84,8 +98,8 @@ class CharacterCatalogMigrationInstrumentedTest {
             """.trimIndent(),
         )
         db.execSQL("INSERT INTO sessions VALUES ('s1', 'legacy-card', '{\"id\":\"world-1\"}')")
-        AppDatabase.MIGRATION_15_16.migrate(db)
-        AppDatabase.MIGRATION_16_17.migrate(db)
+        MIGRATION_15_16.migrate(db)
+        MIGRATION_16_17.migrate(db)
 
         val columns = db.query("PRAGMA table_info(sessions)").use { cursor ->
             buildSet {
@@ -113,9 +127,9 @@ class CharacterCatalogMigrationInstrumentedTest {
         db.execSQL(
             "CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY, character_id TEXT, world_snapshot_json TEXT)",
         )
-        AppDatabase.MIGRATION_15_16.migrate(db)
-        AppDatabase.MIGRATION_16_17.migrate(db)
-        AppDatabase.MIGRATION_17_18.migrate(db)
+        MIGRATION_15_16.migrate(db)
+        MIGRATION_16_17.migrate(db)
+        MIGRATION_17_18.migrate(db)
 
         val tables = db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -131,7 +145,7 @@ class CharacterCatalogMigrationInstrumentedTest {
     @Test
     fun migration19CreatesManagedAssetsAndProtectedReferences() {
         val db = helper.writableDatabase
-        AppDatabase.MIGRATION_18_19.migrate(db)
+        MIGRATION_18_19.migrate(db)
         val tables = db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' " +
                 "AND name IN ('media_assets', 'media_asset_references') ORDER BY name",
@@ -159,7 +173,7 @@ class CharacterCatalogMigrationInstrumentedTest {
                 "legacy_snapshot_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
         )
         db.execSQL("INSERT INTO worlds VALUES ('w1', '雾港', '概述', NULL, 1, 2)")
-        AppDatabase.MIGRATION_19_20.migrate(db)
+        MIGRATION_19_20.migrate(db)
         db.query("SELECT tags_json FROM worlds WHERE id = 'w1'").use { cursor ->
             cursor.moveToFirst()
             assertEquals("[]", cursor.getString(0))
@@ -178,7 +192,7 @@ class CharacterCatalogMigrationInstrumentedTest {
         db.execSQL("INSERT INTO character_versions VALUES ('later', 'c1', 'VARIANT', 30)")
         db.execSQL("INSERT INTO character_versions VALUES ('earlier', 'c1', 'VARIANT', 20)")
 
-        AppDatabase.MIGRATION_20_21.migrate(db)
+        MIGRATION_20_21.migrate(db)
 
         db.query("SELECT id, position FROM character_versions ORDER BY position").use { cursor ->
             val rows = buildList {
@@ -196,7 +210,7 @@ class CharacterCatalogMigrationInstrumentedTest {
         )
         db.execSQL("INSERT INTO worlds VALUES ('w1', '云岚书院')")
 
-        AppDatabase.MIGRATION_21_22.migrate(db)
+        MIGRATION_21_22.migrate(db)
 
         db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'interactive_fiction_projects'",
@@ -213,7 +227,7 @@ class CharacterCatalogMigrationInstrumentedTest {
         db.execSQL("CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY)")
         db.execSQL("INSERT INTO sessions VALUES ('chat-1')")
 
-        AppDatabase.MIGRATION_22_23.migrate(db)
+        MIGRATION_22_23.migrate(db)
 
         val columns = db.query("PRAGMA table_info(sessions)").use { cursor ->
             buildSet {
@@ -234,7 +248,7 @@ class CharacterCatalogMigrationInstrumentedTest {
         db.execSQL("CREATE TABLE sessions (id TEXT NOT NULL PRIMARY KEY)")
         db.execSQL("INSERT INTO sessions VALUES ('chat-1')")
 
-        AppDatabase.MIGRATION_23_24.migrate(db)
+        MIGRATION_23_24.migrate(db)
 
         db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -253,7 +267,7 @@ class CharacterCatalogMigrationInstrumentedTest {
     @Test
     fun migration25AddsVersionedCreativeLibraryWithoutConversationCascade() {
         val db = helper.writableDatabase
-        AppDatabase.MIGRATION_24_25.migrate(db)
+        MIGRATION_24_25.migrate(db)
 
         val tables = db.query(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN " +

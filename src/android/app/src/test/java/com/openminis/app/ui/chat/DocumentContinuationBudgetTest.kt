@@ -3,7 +3,7 @@ package com.openminis.app.ui.chat
 import android.app.Application
 import com.openminis.app.cards.*
 import com.openminis.app.data.BPETokenizer
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import novex.core.*
 import novex.android.transport.NovexTransportProvider
 import kotlinx.coroutines.flow.toList

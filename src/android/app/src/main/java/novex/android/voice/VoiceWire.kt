@@ -1,6 +1,6 @@
 package novex.android.voice
 
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMModel
 import org.json.JSONObject
 
 /**

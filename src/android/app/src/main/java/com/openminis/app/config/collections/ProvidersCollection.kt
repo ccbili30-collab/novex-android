@@ -9,9 +9,9 @@ import com.openminis.app.config.ConfigValue
 import com.openminis.app.config.fields.ClosureField
 import com.openminis.app.config.fields.HiddenField
 import com.openminis.app.config.fields.ReadOnlyField
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import com.openminis.app.data.repository.EnvVarRepository
 import com.openminis.app.data.repository.ProviderRepository
 

@@ -2,7 +2,7 @@ package novex.core
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -22,7 +22,7 @@ class NovexSideConversationForkTest {
 
     @Test fun sideOpensBlankSharesSettingsStaysHiddenWithCapAndCascade() = runBlocking {
         val path = File(files.root, "side.db").absolutePath
-        val db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
+        val db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(db.chatDao())
@@ -41,12 +41,12 @@ class NovexSideConversationForkTest {
             // Blank fork (decision 13): no main-line history in UI or model context.
             assertEquals(0, repository.loadActiveMessages(side.id).size)
             // Configuration snapshot is shared verbatim.
-            assertEquals("主线提示词", repository.getSession(side.id)!!.conversationPrompt)
-            assertEquals("每轮给出选项", repository.getSession(side.id)!!.perTurnPrompt)
-            assertEquals(parent.worldId, repository.getSession(side.id)!!.worldId)
+            assertEquals("主线提示词", repository.sessionById(side.id)!!.conversationPrompt)
+            assertEquals("每轮给出选项", repository.sessionById(side.id)!!.perTurnPrompt)
+            assertEquals(parent.worldId, repository.sessionById(side.id)!!.worldId)
             // Hidden from the session list, visible as a side session.
-            assertTrue(db.chatDao().listSessions().none { it.id == side.id })
-            assertEquals(listOf(side.id), repository.listSideSessions(parent.id).map { it.id })
+            assertTrue(db.chatDao().primarySessions().none { it.id == side.id })
+            assertEquals(listOf(side.id), repository.sideSessionsOf(parent.id).map { it.id })
             // Histories never sync in either direction.
             repository.appendMessage(parent.id, "user", """[{"type":"text","value":"主线新轮"}]""")
             repository.appendMessage(side.id, "user", """[{"type":"text","value":"侧边讨论"}]""")
@@ -54,20 +54,20 @@ class NovexSideConversationForkTest {
             assertEquals(1, repository.loadActiveMessages(side.id).size)
             // Cap: 10 side conversations per parent.
             repeat(9) { repository.createSideSession(parent.id) }
-            assertEquals(10, repository.listSideSessions(parent.id).size)
+            assertEquals(10, repository.sideSessionsOf(parent.id).size)
             val failure = runCatching { repository.createSideSession(parent.id) }.exceptionOrNull()
             assertNotNull(failure)
             // Deleting a side session removes it without touching the parent.
-            repository.deleteSession(side.id)
-            assertEquals(9, repository.listSideSessions(parent.id).size)
-            assertNotNull(repository.getSession(parent.id))
+            repository.dropSession(side.id)
+            assertEquals(9, repository.sideSessionsOf(parent.id).size)
+            assertNotNull(repository.sessionById(parent.id))
             // Deleting the parent cascades its side conversations (no orphans:
             // side rows are gone, not just hidden from the list).
-            val survivorId = repository.listSideSessions(parent.id).first().id
-            repository.deleteSession(parent.id)
-            assertNull(repository.getSession(parent.id))
-            assertNull(repository.getSession(survivorId))
-            assertEquals(0, db.chatDao().listSideSessions(parent.id).size)
+            val survivorId = repository.sideSessionsOf(parent.id).first().id
+            repository.dropSession(parent.id)
+            assertNull(repository.sessionById(parent.id))
+            assertNull(repository.sessionById(survivorId))
+            assertEquals(0, db.chatDao().sideSessionsOf(parent.id).size)
         } finally { db.close() }
     }
 }

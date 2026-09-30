@@ -4,7 +4,7 @@ import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import novex.android.adapter.*
@@ -47,7 +47,7 @@ class NovexWorldbookRuntimeTest {
     }
 
     @Test fun conditionsSurviveSnapshotsAndUnmatchedBodiesCannotLeakThroughReadOrSearch() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
             val world = workspace.apply(NovexCommand.CreateWorld("怪谈", "普通世界简介")).requireWorld()
@@ -84,7 +84,7 @@ class NovexWorldbookRuntimeTest {
         assertTrue(runCatching { NovexContextSourceVersions.merge(listOf(a, b)) }.isFailure)
     }
     @Test fun nativePackagePreservesFormalConditionsAndExplicitRemoval() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "exchange-media"))
             val world = workspace.apply(NovexCommand.CreateWorld("条件交换", "")).requireWorld()

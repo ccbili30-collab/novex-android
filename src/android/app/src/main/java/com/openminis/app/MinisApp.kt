@@ -9,7 +9,7 @@ import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.openminis.app.browser.BrowserTabPool
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
@@ -116,7 +116,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
      */
     fun subsystemsReady(): Boolean = subsystemsInitialized
 
-    lateinit var database: AppDatabase
+    lateinit var database: NovexMainDatabase
         private set
     lateinit var novexWorkspace: novex.core.NovexWorkspace
         private set
@@ -285,7 +285,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     }
 
     private fun initializeMinimumSubsystems() {
-        database = AppDatabase.getInstance(this)
+        database = NovexMainDatabase.getInstance(this)
         novexWorkspace = novex.android.adapter.NovexWorkspaceFactory.createDeferred(
             database,
             java.io.File(filesDir, "novex-media"),
@@ -346,7 +346,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         skillRepository = SkillRepository(this)
         mcpRepository = MCPRepository(this)
         memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
-        webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
+        webAppShortcutRepository = WebAppShortcutRepository(database.webShortcutDao())
 
         // Only dependencies used by the first Activity frame stay on the
         // launch path. Model refresh is initialized after

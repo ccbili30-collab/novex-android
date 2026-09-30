@@ -24,9 +24,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.hasAudioInput
-import com.openminis.app.data.model.hasAudioOutput
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.hasAudioInput
+import novex.android.data.model.hasAudioOutput
 import com.openminis.app.data.repository.ProviderRepository
 
 /**

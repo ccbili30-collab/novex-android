@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -24,7 +24,7 @@ import java.io.File
 class NovexCardEditingContinuityTest {
     @get:Rule val folder = TemporaryFolder()
     private suspend fun fixture(work: suspend (NovexWorkspace, NovexManagementService, NovexCardFileService) -> Unit) {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexTestWorkspaceFactory.create(db, File(folder.root, "media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("chat"))

@@ -1,5 +1,20 @@
 package novex.core
 
+import novex.android.data.MIGRATION_25_26
+import novex.android.data.MIGRATION_26_27
+import novex.android.data.MIGRATION_27_28
+import novex.android.data.MIGRATION_28_29
+import novex.android.data.MIGRATION_29_30
+import novex.android.data.MIGRATION_30_31
+import novex.android.data.MIGRATION_31_32
+import novex.android.data.MIGRATION_32_33
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
@@ -7,7 +22,7 @@ import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -33,7 +48,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `two pending creations reserve different empty targets`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -54,7 +69,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `another explicit creation gets another private card and preserves the first work`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -81,7 +96,7 @@ class NovexConversationDraftPersistenceTest {
     fun `workspace output is recovered into the creative library with provenance after restart`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "workspace-artifact.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path).allowMainThreadQueries().build()
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path).allowMainThreadQueries().build()
         var database = openDatabase()
         val workspaceFiles = File(files.root, "workspace")
         val scope = NovexConversationWorkspaceScope("chat", emptyList(), "reply")
@@ -108,7 +123,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `outer conversation rollback keeps an image restored by the database`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -131,7 +146,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `conversation transaction and simultaneous draft bootstrap complete without blocking each other`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -162,7 +177,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `reopening replenishes cleaned slots without replacing a retained work`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -181,7 +196,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `explicitly addressed empty role remains readable as a creation target without becoming a mounted card`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -203,7 +218,7 @@ class NovexConversationDraftPersistenceTest {
     fun `pending native write survives restart and protects its exact empty target until applied`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "pending.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path).allowMainThreadQueries().build()
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path).allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
         fun service(workspace: NovexWorkspace) = NovexManagementService(workspace,
@@ -231,7 +246,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `explicit native creation fills the private game with modules without another confirmation`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -263,8 +278,8 @@ class NovexConversationDraftPersistenceTest {
     fun `migration preserves shared cards and failed trio creation rolls back every new row`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "migration.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
+            .addMigrations(MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
         try {
@@ -297,7 +312,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `incoming module character and saved conversation references protect otherwise empty drafts`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -310,7 +325,7 @@ class NovexConversationDraftPersistenceTest {
             workspace.apply(NovexCommand.AddModuleReference(module.id, com.openminis.app.data.character.ModuleReferenceTarget.world(world.id), 0))
             workspace.apply(NovexCommand.LinkCharacterVersion(shared.id, character.id, 0))
             val config = NovexConversationConfigurationSnapshot("other", managedSubjects = listOf(ManagedSubject(game, ManagedAccess.READ_ONLY)))
-            database.chatDao().insertSession(com.openminis.app.data.db.ChatSessionEntity(
+            database.chatDao().upsertSession(novex.android.data.chat.SessionRow(
                 "other", modelId = "test", createdAt = 1, updatedAt = 1,
                 novexConfigurationJson = NovexConversationConfigurationCodec.encode(config),
             ))
@@ -326,7 +341,7 @@ class NovexConversationDraftPersistenceTest {
     fun `writes survive restart before exit and exit only deletes unused unprotected private cards`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "publication.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path).allowMainThreadQueries().build()
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path).allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
         try {
@@ -358,7 +373,7 @@ class NovexConversationDraftPersistenceTest {
 
     @Test
     fun `relationship pickers include saved works while empty placeholders remain hidden`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -382,7 +397,7 @@ class NovexConversationDraftPersistenceTest {
     fun `new conversation privately owns three durable cards without polluting the shared library`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "drafts.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")

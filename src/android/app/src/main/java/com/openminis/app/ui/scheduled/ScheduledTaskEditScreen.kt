@@ -112,7 +112,7 @@ fun ScheduledTaskEditScreen(
     var targetSessionTitle by remember { mutableStateOf<String?>(null) }
     var targetMessageId by remember { mutableStateOf<String?>(null) }
     var targetMessagePreview by remember { mutableStateOf<String?>(null) }
-    // Three-way model selection mirroring ChatSessionEntity.modelBinding:
+    // Three-way model selection mirroring SessionRow.modelBinding:
     //   - modelBinding == null  → "use app default" (resolved at run time)
     //   - {"type":"entry","entryId":"…"} → pinned to that entry
     //   - {"type":"group","groupId":"…"} → bound to that group (load-balance / fallback)
@@ -168,7 +168,7 @@ fun ScheduledTaskEditScreen(
             }
         }
         targetSessionId?.let { sid ->
-            targetSessionTitle = vm.listSessions().firstOrNull { it.id == sid }?.title
+            targetSessionTitle = vm.primarySessions().firstOrNull { it.id == sid }?.title
         }
         loaded = true
     }
@@ -572,15 +572,15 @@ private fun EditFormBody(
         // [T-android-scheduled-task-model-binding] Reuse the chat-screen's
         // ModelPickerSheet so groups and individual entries are both
         // selectable; the editor only needs the JSON shape that
-        // ChatSessionEntity.modelBinding uses, so we synthesize it from the
+        // SessionRow.modelBinding uses, so we synthesize it from the
         // picker's three callback shapes (group / group+entry / standalone
         // entry). The picker doesn't surface a "default model" option — we
         // model that as null binding via the row's onClear action above.
         val cfg by providerRepo.config.collectAsState()
-        val entryById: (String) -> com.openminis.app.data.model.ModelEntry? = { id ->
+        val entryById: (String) -> novex.android.data.model.ModelEntry? = { id ->
             cfg.modelEntries.firstOrNull { it.id == id }
         }
-        val groupById: (String) -> com.openminis.app.data.model.ModelGroup? = { id ->
+        val groupById: (String) -> novex.android.data.model.ModelGroup? = { id ->
             cfg.modelGroups.firstOrNull { it.id == id }
         }
         // Pre-highlight the user's prior pick when re-opening the sheet:
@@ -689,7 +689,7 @@ private fun SessionPickerDialog(
     onPick: (id: String, title: String) -> Unit,
 ) {
     var sessions by remember { mutableStateOf<List<ScheduledTasksViewModel.SessionOption>?>(null) }
-    LaunchedEffect(Unit) { sessions = vm.listSessions() }
+    LaunchedEffect(Unit) { sessions = vm.primarySessions() }
     AlertDialog(
             contentScrollsItself = true,
         onDismissRequest = onDismiss,

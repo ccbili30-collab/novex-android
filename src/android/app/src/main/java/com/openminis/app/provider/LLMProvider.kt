@@ -1,12 +1,12 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMResponse
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMResponse
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.ThinkingLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 

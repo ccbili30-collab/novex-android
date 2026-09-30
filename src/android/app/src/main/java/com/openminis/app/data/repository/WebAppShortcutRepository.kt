@@ -1,16 +1,16 @@
 package com.openminis.app.data.repository
 
-import com.openminis.app.data.db.WebAppShortcutDao
-import com.openminis.app.data.db.WebAppShortcutEntity
+import novex.android.data.WebShortcutDao
+import novex.android.data.WebShortcutRow
 import java.util.UUID
 
 /**
  * T-pwa-1 (renamed Pwa → WebApp): thin wrapper around
- * [WebAppShortcutDao]. Constructed once in [com.openminis.app.MinisApp]
+ * [WebShortcutDao]. Constructed once in [com.openminis.app.MinisApp]
  * and shared across UI surfaces (chat attachment chip in T-pwa-2, file
  * browser row in T-pwa-3).
  */
-class WebAppShortcutRepository(private val dao: WebAppShortcutDao) {
+class WebAppShortcutRepository(private val dao: WebShortcutDao) {
 
     suspend fun create(
         htmlPath: String,
@@ -20,8 +20,8 @@ class WebAppShortcutRepository(private val dao: WebAppShortcutDao) {
         iconRef: String,
         iconCachePath: String?,
         sourceSessionId: String?,
-    ): WebAppShortcutEntity {
-        val entity = WebAppShortcutEntity(
+    ): WebShortcutRow {
+        val entity = WebShortcutRow(
             id = UUID.randomUUID().toString(),
             htmlPath = htmlPath,
             pathScope = pathScope,
@@ -32,17 +32,17 @@ class WebAppShortcutRepository(private val dao: WebAppShortcutDao) {
             createdAt = System.currentTimeMillis(),
             sourceSessionId = sourceSessionId,
         )
-        dao.insert(entity)
+        dao.put(entity)
         return entity
     }
 
-    suspend fun get(id: String): WebAppShortcutEntity? = dao.getById(id)
+    suspend fun get(id: String): WebShortcutRow? = dao.byId(id)
 
-    suspend fun list(): List<WebAppShortcutEntity> = dao.getAll()
+    suspend fun list(): List<WebShortcutRow> = dao.all()
 
-    suspend fun delete(id: String) = dao.deleteById(id)
+    suspend fun delete(id: String) = dao.removeById(id)
 
-    suspend fun update(entity: WebAppShortcutEntity) = dao.update(entity)
+    suspend fun update(entity: WebShortcutRow) = dao.update(entity)
 
     companion object {
         const val SCOPE_SESSION_ATTACHMENT = "session_attachment"

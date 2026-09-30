@@ -2,7 +2,7 @@ package com.openminis.app.debug
 
 import android.content.Context
 import com.openminis.app.MinisApp
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.service.SessionActivityTracker
@@ -32,7 +32,7 @@ internal object ChatDebugMethods {
         val includeEmpty = params.optBoolean("includeEmpty", false)
         val repo = chat(context)
 
-        val all = repo.dao.listSessions()
+        val all = repo.dao.primarySessions()
         val arr = JSONArray()
         var emitted = 0
         val provRepo = provider(context)
@@ -41,7 +41,7 @@ internal object ChatDebugMethods {
             if (emitted >= limit) break
             // Cheap "is empty" probe — load the most recent message preview to
             // gate the includeEmpty filter without joining all messages.
-            val lastParts = repo.dao.lastMessageParts(session.id)
+            val lastParts = repo.dao.activeLeafBody(session.id)
             if (!includeEmpty && lastParts == null) continue
 
             val modelDisplay = resolveModelDisplay(provRepo, session.modelId)
@@ -72,10 +72,10 @@ internal object ChatDebugMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val repo = chat(context)
-        val session = repo.dao.getSession(sessionId)
+        val session = repo.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         val provRepo = provider(context)
-        val msgs = repo.dao.loadMessages(sessionId)
+        val msgs = repo.dao.historyFor(sessionId)
         return JSONObject().apply {
             put("id", session.id)
             put("title", session.title ?: JSONObject.NULL)
@@ -108,8 +108,8 @@ internal object ChatDebugMethods {
         val includeReasoning = params.optBoolean("includeReasoning", false)
 
         val repo = chat(context)
-        repo.dao.getSession(sessionId) ?: throw RPCException(-32602, "Session not found")
-        val all = repo.dao.loadMessages(sessionId)
+        repo.dao.sessionById(sessionId) ?: throw RPCException(-32602, "Session not found")
+        val all = repo.dao.historyFor(sessionId)
         val filtered = if (rolesFilter == null) all else all.filter { it.role in rolesFilter }
         val sliced = filtered.drop(offset).take(limit)
 
@@ -123,7 +123,7 @@ internal object ChatDebugMethods {
         }
     }
 
-    private fun messageToJson(m: MessageEntity, includeTools: Boolean, includeReasoning: Boolean): JSONObject {
+    private fun messageToJson(m: MessageRow, includeTools: Boolean, includeReasoning: Boolean): JSONObject {
         val obj = JSONObject().apply {
             put("id", m.id)
             put("role", m.role)
@@ -169,8 +169,8 @@ internal object ChatDebugMethods {
         }
         val perTurn = params.optBoolean("perTurn", false)
         val repo = chat(context)
-        repo.dao.getSession(sessionId) ?: throw RPCException(-32602, "Session not found")
-        val msgs = repo.dao.loadMessages(sessionId)
+        repo.dao.sessionById(sessionId) ?: throw RPCException(-32602, "Session not found")
+        val msgs = repo.dao.historyFor(sessionId)
 
         var totalIn = 0L
         var totalOut = 0L

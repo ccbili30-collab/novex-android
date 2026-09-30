@@ -191,7 +191,7 @@ object ScheduledAgentRunner {
             is ScheduledTargetMode.AppendToSession -> {
                 // Follow-up: the target session must still exist. If the user
                 // deleted it, abort rather than silently spawning a new chat.
-                if (app.chatRepository.getSession(mode.sessionId) == null) {
+                if (app.chatRepository.sessionById(mode.sessionId) == null) {
                     AppLogger.warning(TAG, "task ${task.id}: follow-up session ${mode.sessionId} gone — abort")
                     null
                 } else {
@@ -199,7 +199,7 @@ object ScheduledAgentRunner {
                 }
             }
             is ScheduledTargetMode.RerunMessage -> {
-                if (app.chatRepository.getSession(mode.sessionId) == null) {
+                if (app.chatRepository.sessionById(mode.sessionId) == null) {
                     AppLogger.warning(TAG, "task ${task.id}: re-run session ${mode.sessionId} gone — abort")
                     null
                 } else {
@@ -254,7 +254,7 @@ object ScheduledAgentRunner {
                     title = title,
                     memoryEnabled = memoryOn,
                 )
-                app.chatRepository.dao.updateSource(session.id, "scheduled")
+                app.chatRepository.dao.setSessionSource(session.id, "scheduled")
 
                 // Write a model_binding when the task carried one OR when we
                 // fell back to defaultPrimaryGroupId. Pinned modelId (no
@@ -263,7 +263,7 @@ object ScheduledAgentRunner {
                 val bindingToWrite: String? = explicitBinding
                     ?: defaultGroupId?.let { """{"type":"group","groupId":"$it"}""" }
                 if (bindingToWrite != null) {
-                    app.chatRepository.updateSessionBinding(session.id, bindingToWrite, seedModelId)
+                    app.chatRepository.rebindSessionModel(session.id, bindingToWrite, seedModelId)
                 }
                 session.id
             }

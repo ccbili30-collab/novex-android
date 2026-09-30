@@ -2,10 +2,10 @@ package com.openminis.app.provider
 
 import android.content.Context
 import com.openminis.app.auth.OpenAIOAuthManager
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import novex.model.WireProtocol
 
 object ProviderFactory {
@@ -96,7 +96,7 @@ object ProviderFactory {
                         protocol = WireProtocol.RESPONSES,
                         oauthTokenProvider = {
                             oauthManager.validAccessToken()
-                                ?: throw com.openminis.app.data.model.LLMError.InvalidApiKey()
+                                ?: throw novex.android.data.model.LLMError.InvalidApiKey()
                         },
                         isCodexOAuth = true,
                         codexAccountId = oauthManager.accountId,
@@ -159,7 +159,7 @@ object ProviderFactory {
                         protocol = WireProtocol.CHAT_COMPLETIONS,
                         oauthTokenProvider = {
                             oauthManager.validAccessToken()
-                                ?: throw com.openminis.app.data.model.LLMError.InvalidApiKey()
+                                ?: throw novex.android.data.model.LLMError.InvalidApiKey()
                         },
                     )
                 } else {
@@ -193,7 +193,7 @@ object ProviderFactory {
                         protocol = WireProtocol.CHAT_COMPLETIONS,
                         oauthTokenProvider = {
                             oauthManager.validAccessToken()
-                                ?: throw com.openminis.app.data.model.LLMError.InvalidApiKey()
+                                ?: throw novex.android.data.model.LLMError.InvalidApiKey()
                         },
                     )
                 } else {

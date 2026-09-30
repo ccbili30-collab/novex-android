@@ -1,9 +1,9 @@
 package novex.android.transport
 
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
 import novex.model.WireProtocol
@@ -89,8 +89,8 @@ class NovexTransportFactorySelectionTest {
         )
         // Azure 用 api-key 头，非 Bearer。
         val request = provider.buildStreamRequest(
-            listOf(com.openminis.app.data.model.LLMMessage(com.openminis.app.data.model.LLMMessage.Role.USER, "hi")),
-            null, 128, emptyList(), emptyList(), com.openminis.app.data.model.ThinkingLevel.OFF,
+            listOf(novex.android.data.model.LLMMessage(novex.android.data.model.LLMMessage.Role.USER, "hi")),
+            null, 128, emptyList(), emptyList(), novex.android.data.model.ThinkingLevel.OFF,
         )
         assertEquals("api-key", provider.wireEndpoint(request).tokenHeader)
     }

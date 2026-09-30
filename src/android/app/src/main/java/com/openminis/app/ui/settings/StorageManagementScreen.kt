@@ -41,8 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.db.ChatDao
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.ChatDao
+import novex.android.data.chat.SessionRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,7 +86,7 @@ fun StorageManagementScreen(
                 cardRevisionSize = revisions
                 cardContentSize = (directorySize(cardDir) - revisions).coerceAtLeast(0L)
 
-                val allSessions = chatDao.listSessions()
+                val allSessions = chatDao.primarySessions()
                 val sessionsDir = File(context.filesDir, "minis-sessions")
                 val mediaDir = File(context.filesDir, "media")
 
@@ -180,7 +180,7 @@ fun SessionStorageDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var session by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var session by remember { mutableStateOf<SessionRow?>(null) }
     var minisSize by remember { mutableLongStateOf(0L) }
     var mediaSize by remember { mutableLongStateOf(0L) }
     var isClearing by remember { mutableStateOf(false) }
@@ -192,7 +192,7 @@ fun SessionStorageDetailScreen(
     fun reload() {
         scope.launch {
             withContext(Dispatchers.IO) {
-                session = chatDao.getSession(sessionId)
+                session = chatDao.sessionById(sessionId)
                 minisSize = directorySize(File(sessionsDir, sessionId))
                 val mediaSizes = mediaSizesBySession(mediaDir, setOf(sessionId))
                 mediaSize = mediaSizes[sessionId] ?: 0L

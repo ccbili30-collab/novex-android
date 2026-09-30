@@ -7,7 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.MinisApp
 import com.openminis.app.R
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.ui.theme.MinisTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*

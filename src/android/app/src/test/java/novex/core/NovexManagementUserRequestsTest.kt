@@ -1,6 +1,6 @@
 package novex.core
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import novex.android.adapter.NovexManagementUserRequests
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,7 +69,7 @@ class NovexManagementUserRequestsTest {
 
     private fun text(value: String): JSONObject = JSONObject().put("type", "text").put("value", value)
 
-    private fun row(id: String, part: JSONObject, role: String = "user") = MessageEntity(
+    private fun row(id: String, part: JSONObject, role: String = "user") = MessageRow(
         id = id, sessionId = "chat-1", role = role, partsJson = JSONArray().put(part).toString(),
         createdAt = id.toLong(), sortOrder = id.toInt(),
     )

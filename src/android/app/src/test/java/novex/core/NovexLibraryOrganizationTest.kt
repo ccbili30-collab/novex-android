@@ -1,10 +1,20 @@
 package novex.core
 
+import novex.android.data.MIGRATION_29_30
+import novex.android.data.MIGRATION_31_32
+import novex.android.data.MIGRATION_32_33
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.openminis.app.data.creative.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.flow.first
@@ -24,7 +34,7 @@ internal fun restoreVersion31LibraryTable(db: SupportSQLiteDatabase) {
     db.execSQL("CREATE TEMP TABLE library_members_backup AS SELECT * FROM novex_work_group_members")
     db.execSQL("DROP TABLE novex_work_group_members")
     db.execSQL("DROP TABLE novex_work_groups")
-    AppDatabase.MIGRATION_29_30.migrate(db)
+    MIGRATION_29_30.migrate(db)
     db.execSQL("INSERT INTO novex_work_groups SELECT * FROM library_groups_backup")
     db.execSQL("INSERT INTO novex_work_group_members SELECT * FROM library_members_backup")
     db.execSQL("DROP TABLE library_groups_backup")
@@ -35,8 +45,8 @@ internal fun restoreVersion31LibraryTable(db: SupportSQLiteDatabase) {
 @Config(application = Application::class, sdk = [28])
 class NovexLibraryOrganizationTest {
     @get:Rule val files = TemporaryFolder()
-    private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
-        File(files.root, "library.db").absolutePath).addMigrations(AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+    private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
+        File(files.root, "library.db").absolutePath).addMigrations(MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
 
     @Test fun `folders files and shared cards persist and removal preserves originals`() = runBlocking<Unit> {
         var db = open()

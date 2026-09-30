@@ -1,7 +1,7 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 
 const val MAX_CONVERSATION_PROMPT_CHARS = 48_000
 const val MAX_IMAGE_STYLE_PROMPT_CHARS = 8_000

@@ -14,7 +14,7 @@ import com.openminis.app.data.character.NovexCardTransferParser
 import com.openminis.app.data.character.toPlainText
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import novex.android.adapter.WorkspaceNovexContextLoader
 import java.io.File
@@ -38,7 +38,7 @@ class NovexManagedCardPersistenceTest {
 
     @Test
     fun `native character copies remap version and module links on repeated exchange`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -81,7 +81,7 @@ class NovexManagedCardPersistenceTest {
     fun `interrupted confirmed creation leaves no partial cards after database reopen`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "rollback.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
@@ -121,7 +121,7 @@ class NovexManagedCardPersistenceTest {
 
     @Test
     fun `native copy retains map item images and unknown content after original deletion`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -175,7 +175,7 @@ class NovexManagedCardPersistenceTest {
     fun `created game restores long rules identity and usable preset controls after native exchange`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "game.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
@@ -228,7 +228,7 @@ class NovexManagedCardPersistenceTest {
     fun `created character preserves full profile and modules through native exchange and reopen`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "character.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, path)
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")
@@ -283,7 +283,7 @@ class NovexManagedCardPersistenceTest {
     fun `confirmed world is complete in pages context export and a reopened database`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val databasePath = File(files.root, "cards.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(context, AppDatabase::class.java, databasePath)
+        fun openDatabase() = Room.databaseBuilder(context, NovexMainDatabase::class.java, databasePath)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val mediaRoot = File(files.root, "media")

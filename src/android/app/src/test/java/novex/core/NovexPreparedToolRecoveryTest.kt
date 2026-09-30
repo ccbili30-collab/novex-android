@@ -1,6 +1,6 @@
 package novex.core
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.provider.ToolJsonRepair
 import com.openminis.app.tools.NovexCardFileTools
 import com.openminis.app.tools.ToolExecutionResult
@@ -40,7 +40,7 @@ class NovexPreparedToolRecoveryTest {
         val stored = JSONArray(encoded).getJSONObject(0).getJSONObject("value")
         assertEquals(original, stored.getString("input"))
         assertEquals(effective.toString(), stored.getString("executionInput"))
-        val pending = NovexPendingToolTurn.find(listOf(MessageEntity("reply", "chat", "assistant", encoded, 1, sortOrder = -1)))!!
+        val pending = NovexPendingToolTurn.find(listOf(MessageRow("reply", "chat", "assistant", encoded, 1, sortOrder = -1)))!!
         val operation = NovexToolOperation("chat", "reply", "call", name, effective.toString(), "保存")
         val directory = java.io.File(files.root, "journal")
         NovexOperationJournal(directory).save(NovexOperationRecord(operation, NovexOperationStatus.WAITING))
@@ -67,7 +67,7 @@ class NovexPreparedToolRecoveryTest {
         val raw = JSONObject().put("module_id", "module-one").put("position", 0).toString()
         val block = AssistantBlock("call", "tool_use", toolName = NovexCardFileTools.MOVE_MODULE, toolArgs = raw)
         val encoded = encodeAssistantTurnParts(buildTurnParts(listOf(block), 0, mapOf(block.id to raw)), mapOf(block.id to block))
-        val pending = NovexPendingToolTurn.find(listOf(MessageEntity("reply", "chat", "assistant", encoded, 1, sortOrder = -1)))!!
+        val pending = NovexPendingToolTurn.find(listOf(MessageRow("reply", "chat", "assistant", encoded, 1, sortOrder = -1)))!!
         assertEquals(raw, pending.calls.single().arguments)
     }
 }

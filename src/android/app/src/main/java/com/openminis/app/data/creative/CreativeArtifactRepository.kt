@@ -1,7 +1,7 @@
 package com.openminis.app.data.creative
 
 import androidx.room.withTransaction
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.core.CreativeArtifact
 import novex.core.CreativeArtifactAttachment
 import novex.core.CreativeArtifactKind
@@ -36,7 +36,7 @@ data class CreativeArtifactRecord(
 
 /** Product-facing creative library. It owns metadata transactions and content-addressed files. */
 class CreativeArtifactRepository(
-    private val database: AppDatabase,
+    private val database: NovexMainDatabase,
     private val files: CreativeArtifactFileStore,
     private val cardWorkspace: novex.core.NovexWorkspace? = null,
 ) : NovexManagementArtifactPort, NovexCreativeArtifactReader {

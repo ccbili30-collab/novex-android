@@ -1,9 +1,17 @@
 package novex.core
 
+import novex.android.data.MIGRATION_32_33
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.character.*
 import novex.android.adapter.*
 import kotlinx.coroutines.runBlocking
@@ -26,8 +34,8 @@ class NovexCardDirectoryJourneyTest {
     @Test fun version32DatabaseMigratesWithoutChangingCardAndRepeatedBackfillIsStable() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "migration.db").absolutePath
-        fun open() = Room.databaseBuilder(context, AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path)
+            .addMigrations(MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
         var db = open()
         try {
             val store = NovexCardDirectoryStore(File(files.root, "cards"), syncDirectory = {})
@@ -37,7 +45,7 @@ class NovexCardDirectoryJourneyTest {
             db.openHelper.writableDatabase.execSQL("DROP TABLE novex_card_directories")
             db.openHelper.writableDatabase.version = 32
             db.close(); db = open()
-            assertTrue(db.novexCardDirectoryDao().list().isEmpty())
+            assertTrue(db.cardDirectoryDao().allOwners().isEmpty())
             workspace = NovexWorkspaceFactory.createWithDirectoryStore(db, File(files.root, "media"), store)
             assertEquals(before, workspace.world(world.id)!!.world)
             assertEquals(0, workspace.migrateCardDirectories())
@@ -50,7 +58,7 @@ class NovexCardDirectoryJourneyTest {
     }
 
     @Test fun realCommandsCreateOwnedFoldersUpdateModulesAndKeepCopiesIndependent() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val store = NovexCardDirectoryStore(File(files.root, "cards"), syncDirectory = {})
             val workspace = NovexWorkspaceFactory.createWithDirectoryStore(db, File(files.root, "media"), store)

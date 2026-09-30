@@ -1,14 +1,14 @@
 package novex.android.adapter
 
 import androidx.room.InvalidationTracker
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
 
 /** Observe committed catalog data, including writes made while the library is already visible. */
-fun observeNovexLibraryChanges(database: AppDatabase): Flow<Unit> = callbackFlow {
+fun observeNovexLibraryChanges(database: NovexMainDatabase): Flow<Unit> = callbackFlow {
     val observer = object : InvalidationTracker.Observer(
         "worlds", "characters", "character_versions", "world_character_versions",
         "interactive_fiction_projects", "content_modules", "media_assets", "media_asset_references",
