@@ -81,7 +81,7 @@ abstract class NovexProviderDatabase : RoomDatabase() {
             }
         }
 
-        /** Qianchen preset columns: key-acquisition link and responses-API auto-fallback. */
+        /** 通用列（历史名 Qianchen preset columns；列名冻结）：取钥链接与 chat→responses 自动回退开关。 */
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE provider_instances ADD COLUMN key_help_url TEXT")

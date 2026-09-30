@@ -810,7 +810,6 @@ class NovexTransportProvider(
                 isMistral = isMistralHost,
                 isDashScope = isDashScopeHost,
                 isXAI = isXAIHost,
-                isQianchenRelay = isQianchenRelayHost,
                 offEffort = explicitOffEffort,
             ),
         )
@@ -862,7 +861,6 @@ class NovexTransportProvider(
     private val isDashScopeHost: Boolean get() = loweredBase.contains("dashscope")
     private val isXAIHost: Boolean get() = loweredBase.contains("api.x.ai") || loweredBase.contains("//x.ai")
     /** [P3.3 裁军→内置] 前尘 API 中转预设（gemini 系省略思考参数的内置席）。 */
-    private val isQianchenRelayHost: Boolean get() = loweredBase.contains("proxy.qianc.ltd")
     private val usesUnifiedReasoningEffort: Boolean
         get() = isAzureLine || loweredBase.contains("volces") || loweredBase.contains("ark.") ||
             loweredBase.contains("api.venice.ai")
@@ -927,7 +925,7 @@ class NovexTransportProvider(
     }
 
     /**
-     * [T-qianchen-preset] chat → responses 自动回退（仅 [allowResponsesFallback] 的
+     * chat → responses 自动回退（通用机制，实例级 [allowResponsesFallback] 开关；
      * 实例，当前只有内置前尘预设）。chat 首个数据块前失败（HTTP 4xx/5xx 或网络
      * 异常）时，同一实例自动改走 /v1/responses 重试一次；进程内粘性——重试真的
      * 产出首块后，本实例（含工厂重建的同 id provider 对象）后续请求直接走
@@ -1309,7 +1307,7 @@ class NovexTransportProvider(
 }
 
 /**
- * [T-qianchen-preset] responses 回退的进程级粘性：key = 供应商实例 id。chat 失败
+ * responses 回退的进程级粘性：key = 供应商实例 id。chat 失败
  * 并成功切到 responses 的实例，本进程内后续请求（含工厂重建的新 provider 对象）
  * 直接走 responses，省一次必败的 chat 往返。重启后自然复位，重新探测。
  */
