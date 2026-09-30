@@ -680,6 +680,106 @@ LiveSessionHub 13.5、OverlayPaintViews 12.4、CrashBurstGuard 11.5、
 RunLog 18.5、SessionBadges 32.6、OverlayCapsule 30.1、CrashShareFlow
 37.6）。
 
+#### P3.5c · auth+SoulStore+ModelsDevApi+横切小件真重写 — [x]（本刀，我线实质重写收官）
+
+auth/ 十件、agent/SoulStore、provider/ModelsDevApi 三主件 + 横切残件
+（deeplink/network/i18n/power/util/share）按同款「真重写」纪律重做；
+**不碰 provider 核心接口层（LLMProvider/ProviderFactory 绞杀缝，等 UI
+线落地后收尾）与 crash 三件（P3.5b 已记档）**，ui 文件零非 import 改动。
+
+| 件 | 重写前 | 重写后（旧路径） | 相似度 |
+|---|---|---|---|
+| auth/OAuthManager.kt | 401 行 / 98.3% | 15 行 typealias 门面 | **0.7%** |
+| auth/XAIOAuthManager.kt | 576 行 / 100% | 15 行 typealias 门面 | **0.6%** |
+| auth/KimiDeviceFlow.kt | 136 行 / 100%（未动桶） | 113 行就地真重写（纯逻辑，成员名被旧测试钉形） | **38.0%** |
+| auth/OpenAIOAuthManager.kt | 323 行 / 100%（未动桶） | 16 行 typealias 门面 | **0.8%** |
+| auth/ClaudeOAuthManager.kt | 376 行 / 100%（未动桶） | 13 行 typealias 门面 | **0.9%** |
+| auth/GeminiOAuthManager.kt | 291 行 / 100%（未动桶） | 14 行 typealias 门面 | **0.9%** |
+| auth/KimiOAuthManager.kt | 308 行 / 100%（未动桶） | 13 行 typealias 门面 | **0.9%** |
+| auth/OAuthRedirectActivity.kt | 59 行 / 100%（未动桶） | 20 行 Manifest 壳 | **36.0%** |
+| agent/SoulStore.kt | 585 行 / 87.5% | 38 行门面 + 钉形 verdict | **5.7%** |
+| provider/ModelsDevApi.kt | 566 行 / 91.7% | 16 行 typealias 门面 | **0.5%** |
+| deeplink/DeepLinkHandler.kt | 163 行 / 76.8% | 31 行门面 + 钉形 sealed | **15.1%** |
+| deeplink/DeepLinkCoordinator.kt | 84 行 / 57.1% | 37 行门面 + 钉形嵌套 | **9.2%** |
+| network/NetworkMonitor.kt | 152 行 / 89.1% | 14 行 typealias 门面 | **1.6%** |
+| i18n/LocaleWrap.kt | 76 行 / 100%（未动桶） | 13 行 typealias 门面 | **4.9%** |
+| power/PowerOptimizationManager.kt | 193 行 / 100%（未动桶） | 48 行门面 + 钉形枚举 | **22.9%** |
+| util/EncryptedPrefsFactory.kt | 87 行 / 100%（未动桶） | 14 行 typealias 门面 | **4.0%** |
+| share/ChatExporter.kt | 297 行 / 94.7% | 13 行 typealias 门面 | **0.8%** |
+| share/PendingShare.kt | 49 行 / 100%（未动桶） | 19 行钉形 DTO 壳（编解码移 sharekit） | **24.4%** |
+| share/ShareCoordinator.kt | 143 行 / 100%（未动桶） | 13 行 typealias 门面 | **2.4%** |
+| share/SharedShareStore.kt | 117 行 / 100%（未动桶） | 13 行 typealias 门面 | **3.3%** |
+| share/ShareHandoffPolicy.kt | 93 行 / 100%（未动桶） | 24 行门面 + 钉形枚举 | **32.6%** |
+| share/ShareReceiverActivity.kt | 397 行 / 100%（未动桶） | 169 行 Manifest 壳（对话框/导入抽 sharekit） | **32.8%** |
+
+**新包**（按职责拆八个，32 件）：`novex.android.authkit` 12 件——
+OAuthWire（共享 OkHttp + form/JSON POST + 日志脱敏）、PkceMaterial
+（b64url 64/96 字节与 hex 三形态 + state/nonce）、CredentialVault
+（oauth_prefs 键系：令牌包/辅助串/手工 bearer，expires_in→expire_at
+折算与 iOS camelCase 导入归一）、LoopbackReceiver（回环回调服务：端口
+梯队/CORS 预检/成功页/消费式中止钩）、LoopbackRedirectRelay（系统重定
+向投递回本机接收器）、VendorLoginFlow 基类（授权 URL/交换/刷新时序/
+导出导入）+ Claude/Codex/Gemini/Xai/Kimi 五流 + OpenRouterKeyFlow
+（换长期 key）+ RefreshGate（Claude/Gemini/Kimi 三家刷新单飞与合并
+抽公共，消灭三份拷贝）；`novex.android.soul` 2 件——SoulDocument
+（身份模型 + frontmatter 编解码 + 历史名迁移）+ SoulRepository（IO/
+播种迁移/身份缓存/语言分轴长度规则）；`novex.android.models` 并入
+ModelsDevCatalog（三级缓存 48h TTL/字段映射/富化择优）；`novex.android
+.navlink` 2 件（LinkParser + PendingLinkFx）；`novex.android.netwatch`
+LinkMonitor；`novex.android.localekit` LocaleOverride；`novex.android
+.powerguard` OemPowerGates；`novex.android.vault` SelfHealingPrefs；
+`novex.android.sharekit` 7 件——ShareWire（编解码）/ShareInbox（盘上
+收件箱）/ShareBuffer（内存缓冲）/ChatZipExporter（分页流式 zip）/
+ShareHandoffLadder（移交阶梯）/InboundShareIntake（三进法提货落盘）/
+ProviderImportGate（供应商 JSON 双选导入）。
+
+**门面纪律（沿 P3.5a/b 先例 + 一条新记档）**：纯类门面用 typealias；
+**嵌套类型无法经 typealias 转发**（P3.5a 已踩过的 Kotlin 限制），钉形
+嵌套类型正典留旧路径、实现侧反向引用——DeepLinkAction 密封族、
+DeepLinkCoordinator.ChatAction/PendingChatInput、PowerOptimization
+Manager.Vendor、SoulBodyLimitCheck、PendingShare.Item.Kind、
+ShareHandoffPolicy.Outcome；Manifest 组件名冻结的 OAuthRedirectActivity
+与 ShareReceiverActivity 缩为真壳。
+
+**冻结面（逐字/逐语义保留）**：六家 OAuth 的全部端点 URL、client_id、
+scope、PKCE 形态（Claude 96 字节 b64url、xAI/Gemini hex、OpenRouter
+standard-base64→URL-safe）、回调端口（54545/1455/8085/3000-3002/56121）
+与 redirect_uri 拼法（xAI 127.0.0.1）、授权参数（codex 三指纹/nonce/
+plan=generic/referrer=minis/access_type=offline/prompt=consent）、
+token 交换体形（Claude JSON 带 state、xAI 回显 challenge 对、Kimi
+仅 client_id 无 scope）、prefs 名键（oauth_prefs / oauth_tokens_<id> /
+oauth_<key>_<id> / manual_bearer_token）、刷新时序（基类 4h 窗、Claude/
+Gemini/Kimi 5min 窗、手工 bearer 最高优先、不轮换端保旧 refresh_token、
+xAI 403 保令牌、Kimi 先比对再删除、并发单飞合并）、OIDC 发现与 *.x.ai
+域校验、models.dev URL/48h TTL/models-dev-cache/api.json/字段映射/
+富化择优、深链 URI 表与别名与未知回落、分享 wire 形态（{items,timestamp}/
+inlineText/attachment）、share_prefs/pending_share/share_extension、
+300s 合并窗与 50 条上限、INLINE_TEXT_LIMIT 1000、intent extra
+shared_content、移交阶梯 NEW_TASK|CLEAR_TOP→NEW_TASK、zip 布局与命名、
+OEM 自启组件清单、自愈 prefs 三级阶梯与 _plain_fallback 后缀、SOUL.md
+路径与 frontmatter 形态与缺省正文与迁移账本。
+
+**测试**：既有 OAuthLogRedactionTest/KimiDeviceFlowTest/NovaAssistant
+IdentityTest/ShareHandoffPolicyTest/NovexTransportFactorySelectionTest
+（含 androidTest SessionDeepLinkInstrumentedTest 编译面）零改动通过；
+新增 4 件 25 例——OAuthExpiryLogicTest（expire_at 折算/手工 bearer
+跳刷新/临期刷新取新/过期清凭据/iOS 导入归一含参考纪元换算/畸形包忽略
+7 例）、SoulRoundTripTest（播种幂等/往返三键与 emoji 淘汰/迁移只跑
+一次/出厂正文映射/缓存跟随 7 例）、ModelsDevCatalogBehaviorTest（
+打包资产兜底与内存命中/±v1 与尾斜杠归一/embedding 剔除/上下文窗富化/
+肯定式 no-effort 不被洗掉 4 例）、LinkParserTest（scheme 与 host 表/
+session 单段/设置别名与未知回落/logs 页签一次消费/预填定向投递/快捷
+动作一次消费 9 例—— Robolectric）；全量单测 1,444 条 0 失败。
+
+**相似度例外与死代码记档**（冻结面，非缺陷）：① 新实现侧另以
+scripts/p35c_similarity_check.py（口径同 upstream_audit，配对「新实现 ↔
+上游基线旧件」）自查，32 件全部 <40%，最差 LoopbackRedirectRelay
+39.4；② 审计死代码候选新增 authkit/OpenRouterKeyFlow 与其两个旧名
+别名（OpenRouterOAuthManager/OAuthCallbackServer）——上游原件即零调用
+点（历史保活仅靠 ClaudeOAuthManager 注释提及），按公开 API 冻结保留
+别名与实现，未删；③ SystemPromptBuilder（agent 包提示装配）全仓零
+外部引用（NovexSystemPrompt 已接管），随本刀裁撤不门面化。
+
 #### 给她的移交清单（UI 血统清洗标准）
 
 纪律与口径和本线完全同款，三条铁律 + 一张验收表：
@@ -772,3 +872,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-30 | 本 PR（P3.4） | 审计工具第四维：混合件与上游基线同路径文件的文本相似度（剥注释+空白归一+大小写折叠、行级 SequenceMatcher autojunk 关；基线 blob 单进程 cat-file --batch 流式取件逐块即弃；--json 新增 mixed_similarity 键，既有键不动）；3 件人工核对（100%/3.1%/46% 全部与 git diff 吻合）；净眼 PR#70 六建议顺手清（qianchen-relay 内置席 resolver 级测试、FilePreviewScreen 外跳按钮文案走 R.string 八语言包、browser_use 外跳措辞与日志改口、THIRD_PARTY AndroidX 汇总行去 webkit、ChatLinkDiag 逐链接 Log.w 清除、MinisApp 一次性清扫已删 receiver 的旧定时 alarm）；docs 补「P3.4 混合件余量量化」小节与战线重排 | 改动桶 118f/74,890 相似度三档：≥80% 86f/41,497（55.4%）、40-80% 27f/32,905（43.9%）、<40% 5f/488（0.7%）；全仓上游血统存量 = 41,497 + 未动桶 11,827 = **53,324 行（146 件）**，比名义合计少 38.5%；ui.sessions/ui.sandbox/auth 三块「名义混合实则纯上游」升为整刀候选，deeplink/navigation/app根/theme 全落半血档移出绞杀名单 |
 | 2026-09-30 | 本 PR（P3.5a） | 战线重划（UI 移交 feat/ui-rikkahub，本线专打非 UI 底层）；data/repository 三件真重写：实现层拆入新包 novex.android.repo 12 件（技能 4 + 会话 3 + 供应商 5），公共 API 门面钉旧路径（ui 嵌套类型/全限定引用不可经 typealias 或继承桥透传，调用方零改动、与 UI 战线零冲突）；冻结面逐字保留（skills.db DDL 与升级、目录与虚拟挂载布局、SKILL.md 格式与解析容忍度、提示协议文本、导出 zip/TTL、GitHub 重试纪律、prefs 名与键集、导出导入 JSON 键集与模态位域、DAO 面零改动、API 签名含参数名）；既有测试零断言改动全过 + 新增 repository 层 16 例 + 全量单测 1,369 条通过 | 旧路径三件相似度 95%→25.7%、69%→18.9%、70%→10.8%（全部 <40% 达标）；新包 12 件对上游原件 <16%；血统：上游未动 60f/11,827 不变，上游改动 118f/74,890→118f/71,618（-3,272 行），Novex 新增 402f/56,627→413f/59,146；改动桶三档 85f/39,732、25f/29,330、8f/2,556（<40% 档 +3 件即本轮三件）；P3.5 小节落款含给 UI 战线的移交清单 |
 | 2026-09-30 | 本 PR（P3.5b） | service 三件+crash+小件真重写：主刀 AgentForegroundService（96.4%→7.4，Manifest 壳+委托）/ToolOverlayController（99.7%→整体迁移删件）/SessionActivityTracker（99.4%→3.3，占据状态中枢 syncService 单点边沿裁决）/CrashFrequencyDetector（未动桶→4.4，风暴检测与分享流程拆 BurstGuard+ShareFlow）；小件血统甄别全为上游：BackgroundTaskNotifier（99.1→11.5）/AppLogger+LogcatTailer（未动桶→7.5/迁移删件）/DynamicIslandSupport（→32.3）/SessionBadgeStore（→15.9）/SessionConcurrencyManager（47.9→14.0）；新包 novex.android.runtime 9 件 + crashguard 2 件 + logkit 2 件（对上游原件 12 件 <40%，TaskDoneNotifier 43.4 为冻结面记档；旧路径 ToolOutcome 枚举钉原位 100% 记档）；未动三件：CrashFileReporter（ACRA SPI）、NativeCrashHandler（JNI 符号绑类名）、ProcessExitEvidence（Novex 自有）；冻结面逐字保留（渠道 id/通知 id/Manifest 组件/广播 action/prefs 名键/悬浮窗类型与 FLAG 与几何/崩溃窗语义/zip 与收件箱/logcat 命令行/日志文件名与行格式/深链）；既有测试零改动 + 新增 5 件 33 例 | 血统：上游未动 59f/11,664 → 53f/9,960，上游改动 119f/71,325 → 123f/68,947，Novex 新增 421f/61,681 → 434f/65,011；改动桶三档 84f/36,610 → 81f/33,962（≥80%）、27f/32,160 → 26f/32,066、8f/2,555 → 16f/2,919（<40% 档 +8 件即本轮重写件） |
+| 2026-09-30 | 本 PR（P3.5c） | auth 十件+SoulStore+ModelsDevApi+横切残件（deeplink/network/i18n/power/util/share）真重写：实现拆入 novex.android.authkit 12 件（OAuthWire/PkceMaterial/CredentialVault/LoopbackReceiver/LoopbackRedirectRelay/VendorLoginFlow+Claude/Codex/Gemini/Xai/Kimi/OpenRouter 六流/RefreshGate 刷新单飞抽公共）+ soul 2 件 + models 并入 ModelsDevCatalog + navlink/netwatch/localekit/powerguard/vault/sharekit 17 件；旧路径 typealias 门面 + 钉形嵌套类型正典留位（DeepLinkAction/ChatAction/Vendor/SoulBodyLimitCheck/PendingShare.Item.Kind/Outcome——typealias 转发不了嵌套类）+ 两 Manifest 壳；冻结面逐字（六家端点/client_id/scope/PKCE 形态/端口/prefs 名键/刷新时序含 403 保令牌与先比对再删除/models.dev TTL 与缓存文件/深链 URI 表/分享 wire 与 300s 窗/OEM 组件清单/自愈阶梯/SOUL.md 全套）；SystemPromptBuilder 零引用裁撤；既有测试零改动 + 新增 4 件 25 例（OAuth 过期与刷新/Soul 回路/models.dev 缓存与富化/深链解析）；全量 1,444 条 0 失败；新增 scripts/p35c_similarity_check.py 自查脚本（新实现↔基线配对，32 件全 <40%、最差 39.4） | 血统：上游未动 53f/9,960 → 38f/7,143，上游改动 123f/68,947 → 136f/66,615，Novex 新增 434f/65,011 → 463f/69,307；改动桶三档 81f/33,962 → 74f/31,197（≥80%）、26f/32,066 → 24f/31,818、16f/2,919 → 38f/3,600（<40% 档 +22 件即本轮重写件）；死代码候选 +3 记档（OpenRouter 流上游即零调用点，API 冻结保留） |
