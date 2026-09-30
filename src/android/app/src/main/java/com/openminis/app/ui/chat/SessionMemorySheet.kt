@@ -452,7 +452,7 @@ private fun buildAutoInjectedItems(context: Context, memoryRepository: MemoryRep
 
     // SOUL.md — persona / identity. Lives in the same memory dir as
     // GLOBAL.md and is auto-injected into the system prompt by
-    // SystemPromptBuilder.identitySection(). Surfaced here so the user
+    // （旧装配器已裁撤）identity 段。Surfaced here so the user
     // can see + edit the same file the model sees, mirroring GLOBAL.md.
     val soulContent = memoryRepository.readFile("SOUL.md")
     if (soulContent.isNotBlank()) {
