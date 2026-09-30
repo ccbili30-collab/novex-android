@@ -59,26 +59,27 @@ interface ProviderStoreDao {
     @RawQuery
     suspend fun runStatement(sql: SupportSQLiteQuery): Int
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeInstanceRows(rows: List<ProviderRow>)
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeModelRows(rows: List<ProviderModelRow>)
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeGroupRows(rows: List<ProviderGroupRow>)
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeAgentLoopRows(rows: List<AgentLoopTargetRow>)
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun writeMetaRows(rows: List<ProviderMetaRow>)
 
     /**
-     * Swaps the five config tables in one transaction. Children are
-     * truncated before parents even though the foreign key would cascade
-     * anyway — the explicit order keeps the write pattern identical on
-     * schema variants (test fixtures) that ship without the cascade.
+     * 单事务换写五张配置表。写入统一 REPLACE：镜像导入若出现重复主键
+     * （如手工编辑过的损坏配置），按「后者胜」落库而不是让整个事务中止
+     * ——与被替换实现的容错口径一致（净眼复审核对项）。先截断子表再截断
+     * 父表：即便外键本会级联，显式顺序让无级联的 schema 变体（测试夹具）
+     * 行为一致。
      */
     @Transaction
     suspend fun overwriteConfigTables(

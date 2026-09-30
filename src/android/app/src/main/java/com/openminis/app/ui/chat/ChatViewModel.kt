@@ -13250,7 +13250,7 @@ class ChatViewModel(
      * Only applied at the UI-render transform — agentHistory + DB rows keep
      * the raw text so the LLM continues to see the reminder on subsequent
      * turns (matches iOS, where system-reminder text is appended to
-     * agentHistory/AgentMessage parts but never to the chat-list ChatMessage).
+     * agentHistory/（已退役的旧线格式） parts but never to the chat-list ChatMessage).
      */
     private val systemReminderRegex =
         Regex("\\s*<system-reminder>.*?</system-reminder>\\s*", RegexOption.DOT_MATCHES_ALL)
