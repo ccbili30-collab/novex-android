@@ -1810,9 +1810,9 @@ fun ChatScreen(
             androidx.compose.ui.layout.Layout(
                 modifier = Modifier.fillMaxSize(),
                 content = {
-                    // content[0]：标题 + 挂卡/状态徽标列，居中于剩余区间
+                    // content[0]：标题 + 模型/状态徽标列，包裹内容宽度，
+                    // 放置时以屏幕中线为轴实现绝对居中（见 measurePolicy）。
                     Box(
-                        modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center,
                     ) {
                         val noFontPad = androidx.compose.ui.text.TextStyle(
@@ -1884,12 +1884,9 @@ fun ChatScreen(
                                     }
                                     .padding(horizontal = 4.dp, vertical = 2.dp),
                             )
-                            // [A2a] Bound-card chips + status badges under the
-                            // title — the card/model context of this
-                            // conversation at a glance. Chips navigate to the
-                            // card detail page via onOpenCreatedCard; the model
-                            // group pill lives in the actions row.
-                            val cardChips = rememberConversationCardChips(viewModel, sessionId)
+                            // [A2a-rev] 副标题归还给模型：居中显示模型分组
+                            // pill（点按出模型选择），健康点保留绿/橙语义色；
+                            // ⚡/思考等级徽标排在其后。挂卡不占副标题。
                             val thinkingLevelBadgeState by viewModel.thinkingLevel.collectAsState()
                             val fastBadgeEligible by viewModel.showFastModeToggle.collectAsState()
                             val fastBadgeOn by viewModel.fastModeEnabled.collectAsState()
@@ -1902,27 +1899,52 @@ fun ChatScreen(
                                     thinkingLevelBadgeState.isEnabled ||
                                         viewModel.currentModelSupportsReasoning
                                 )
-                            if (cardChips.isNotEmpty() || hasFastBadge || hasThinkingBadge) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier
+                                    .padding(top = 3.dp)
+                                    .horizontalScroll(rememberScrollState()),
+                            ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier
-                                        .padding(top = 3.dp)
-                                        .horizontalScroll(rememberScrollState()),
+                                        .clip(RoundedCornerShape(50))
+                                        .background(ChatColors.secondaryBg)
+                                        .clickable { showModelPicker = true }
+                                        .padding(horizontal = 9.dp, vertical = 5.dp),
                                 ) {
-                                    cardChips.forEach { chip ->
-                                        ConversationBoundCardChip(
-                                            chip = chip,
-                                            onOpen = {
-                                                val kind = chip.kind
-                                                val id = chip.id
-                                                if (kind != null && id != null) {
-                                                    onOpenCreatedCard(kind, id)
-                                                }
-                                            },
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .background(
+                                                if (modelName.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF9500),
+                                                CircleShape,
+                                            ),
+                                    )
+                                    val groupNameDisplay = selectedGroupName.ifEmpty {
+                                        val defaultGroupId = providerRepository.defaultPrimaryGroupId
+                                        availableGroups.firstOrNull { it.id == defaultGroupId }?.name
+                                            ?: stringResource(R.string.model_picker_default_badge)
                                     }
-                                    if (hasFastBadge) {
+                                    Text(
+                                        text = groupNameDisplay,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = ChatColors.secondaryText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 96.dp),
+                                    )
+                                    Icon(
+                                        com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = ChatColors.tertiaryText,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                }
+                                if (hasFastBadge) {
                                         Box(
                                             contentAlignment = Alignment.Center,
                                             modifier = Modifier
@@ -1946,7 +1968,6 @@ fun ChatScreen(
                                 }
                             }
                         }
-                    }
                     // content[1]：返回键
                     Box {
                         IconButton(onClick = returnFromConversation) {
@@ -1973,46 +1994,8 @@ fun ChatScreen(
                             )
                         }
                     } else {
-                    // [A2a] Model group pill — the old subtitle row's tap target
-                    // moved here. Dot keeps its green/orange health signal.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(ChatColors.secondaryBg)
-                            .clickable { showModelPicker = true }
-                            .padding(horizontal = 9.dp, vertical = 5.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .background(
-                                    if (modelName.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF9500),
-                                    CircleShape,
-                                ),
-                        )
-                        val groupNameDisplay = selectedGroupName.ifEmpty {
-                            val defaultGroupId = providerRepository.defaultPrimaryGroupId
-                            availableGroups.firstOrNull { it.id == defaultGroupId }?.name
-                                ?: stringResource(R.string.model_picker_default_badge)
-                        }
-                        Text(
-                            text = groupNameDisplay,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = ChatColors.secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 88.dp),
-                        )
-                        Icon(
-                            com.openminis.app.ui.novex.NovexIcons.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = ChatColors.tertiaryText,
-                            modifier = Modifier.size(13.dp),
-                        )
-                    }
+                    // [A2a-rev] 模型 pill 已回到副标题（标题正下方居中）；
+                    // actions 只剩语义化时钟与 ⋯。
                     NovexDeepSeekClock()
                     // iOS: "..." circle button → dropdown menu
                     Box {
@@ -2096,10 +2079,10 @@ fun ChatScreen(
                 layout(constraints.maxWidth, constraints.maxHeight) {
                     leading.placeRelative(0, (constraints.maxHeight - leading.height) / 2)
                     trailing.placeRelative(constraints.maxWidth - trailing.width, (constraints.maxHeight - trailing.height) / 2)
-                    val spanStart = leading.width
-                    val spanWidth = constraints.maxWidth - leading.width - trailing.width
+                    // [A2a-rev] 标题绝对居中：以屏幕中线为轴（用户指定的原
+                    // 逻辑），仅测量上限用剩余区间宽防止溢出压到两侧按钮。
                     heading.placeRelative(
-                        spanStart + ((spanWidth - heading.width) / 2).coerceAtLeast(0),
+                        ((constraints.maxWidth - heading.width) / 2).coerceAtLeast(0),
                         (constraints.maxHeight - heading.height) / 2,
                     )
                 }
@@ -4062,7 +4045,13 @@ fun ChatScreen(
                             }
                         }
                     } else
-                    // Text field (iOS: placeholder "Message Minis", no border)
+                    // [feat/ui-rikkahub] 胶囊单行：文本区 + 内嵌发送/回传钮；
+                    // +、/、文游、麦克风、上下文计排第二行按钮区。
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
+                    ) {
+                    Box(Modifier.weight(1f)) {
                     run {
                         // [T-android-enter-to-send-broken] Live read of the
                         // "Return key sends" preference. Bound here (not
@@ -4202,6 +4191,107 @@ fun ChatScreen(
                             onSend = { performEnterSend() },
                         )
                     }
+                    }
+
+                    // 胶囊右端内嵌动作：侧边页回传钮 + 发送/停止钮（自按钮行上移）。
+                    // 侧边页回传（决策 16/17；状态机 2026-09-15 下沉 ViewModel）：
+                    // 符号入口——让侧边模型产出增量交接简报并并入主线；
+                    // 全程反馈见输入栏上方的回传状态条。
+                    val handoffRunning = sideHandoffState is ChatViewModel.SideHandoffState.Running
+                    if (sideParentId != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(
+                                    if (handoffRunning) ChatColors.sendButtonDisabled else com.openminis.app.ui.noven.NovenColors.Mint,
+                                    CircleShape,
+                                )
+                                .clip(CircleShape)
+                                .clickable(enabled = !handoffRunning && !isStreaming) { startHandoff() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
+                                contentDescription = "回传主对话",
+                                tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else com.openminis.app.ui.noven.NovenColors.OnMint,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
+                    //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
+                    //     which dispatches to enqueuePrompt since _isStreaming is true).
+                    //     Visual feedback for the queued prompt comes from the dashed
+                    //     bubble that ChatViewModel.enqueuePrompt appends to the message
+                    //     list — no extra button badge needed (matches iOS).
+                    //   • streaming + !hasText → STOP (cancel current run).
+                    //   • !streaming           → SEND (full color when hasText, dimmed
+                    //     when empty; same as before).
+                    // T180: an attachments-only send (no caption) is a
+                    // valid message — mirrors iOS where !attachments.isEmpty
+                    // satisfies the composer's send guard. Without this an
+                    // image-only "look at this" send is impossible.
+                    val hasText = inputText.isNotBlank()
+                    val hasContent = hasText || attachments.isNotEmpty()
+                    val showStop = isStreaming && !hasContent
+                    if (showStop) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(Color(0xFFFF3B30), CircleShape)
+                                .clip(CircleShape)
+                                .clickable { viewModel.cancelStream() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.Stop,
+                                contentDescription = "Stop",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    } else {
+                        // Streaming with content → Send-into-queue; Idle with content → Send.
+                        // Idle without text or attachments → disabled.
+                        val canActivate = hasContent
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                // [feat/ui-rikkahub] 发送是输入栏唯一主
+                                // 动作——激活态用品牌薄荷绿，停用仍灰。
+                                .background(
+                                    if (canActivate) com.openminis.app.ui.noven.NovenColors.Mint
+                                    else ChatColors.sendButtonDisabled,
+                                    CircleShape,
+                                )
+                                .clip(CircleShape)
+                                // [T-longpress-stop] 2026-09-16 用户批④：生成中
+                                // 长按发送键=立即打断（不用去够停止键）；平时行为不变。
+                                .combinedClickable(
+                                    enabled = canActivate || isStreaming,
+                                    onLongClick = {
+                                        if (isStreaming) {
+                                            viewModel.cancelStream()
+                                        }
+                                    },
+                                    // T-drag-send-queue: 点击走共享 send-or-enqueue
+                                    // 处理器（斜杠短路、快照文本、清输入，发送中入队）。
+                                    onClick = { performSendOrEnqueue(inputText) },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                com.openminis.app.ui.novex.NovexIcons.Send,
+                                contentDescription = "Send",
+                                tint = if (canActivate) com.openminis.app.ui.noven.NovenColors.OnMint
+                                else ChatColors.primaryText.copy(alpha = 0.5f),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    } // end capsule row (text field + embedded actions)
 
                     // Button row below text field (iOS layout: + / ... mic send)
                     Row(
@@ -4714,104 +4804,6 @@ fun ChatScreen(
                                 mode = contextMeterMode,
                                 onClick = { contextMeterMode = (contextMeterMode + 1) % 2 },
                             )
-                        }
-
-                        // 侧边页回传（决策 16/17；状态机 2026-09-15 下沉 ViewModel）：
-                        // 符号入口——让侧边模型产出增量交接简报并并入主线；
-                        // 全程反馈见输入栏上方的回传状态条。
-                        val handoffRunning = sideHandoffState is ChatViewModel.SideHandoffState.Running
-                        if (sideParentId != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        if (handoffRunning) ChatColors.sendButtonDisabled else com.openminis.app.ui.noven.NovenColors.Mint,
-                                        CircleShape,
-                                    )
-                                    .clip(CircleShape)
-                                    .clickable(enabled = !handoffRunning && !isStreaming) { startHandoff() },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.KeyboardReturn,
-                                    contentDescription = "回传主对话",
-                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else com.openminis.app.ui.noven.NovenColors.OnMint,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-
-                        // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
-                        //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
-                        //     which dispatches to enqueuePrompt since _isStreaming is true).
-                        //     Visual feedback for the queued prompt comes from the dashed
-                        //     bubble that ChatViewModel.enqueuePrompt appends to the message
-                        //     list — no extra button badge needed (matches iOS).
-                        //   • streaming + !hasText → STOP (cancel current run).
-                        //   • !streaming           → SEND (full color when hasText, dimmed
-                        //     when empty; same as before).
-                        // T180: an attachments-only send (no caption) is a
-                        // valid message — mirrors iOS where !attachments.isEmpty
-                        // satisfies the composer's send guard. Without this an
-                        // image-only "look at this" send is impossible.
-                        val hasText = inputText.isNotBlank()
-                        val hasContent = hasText || attachments.isNotEmpty()
-                        val showStop = isStreaming && !hasContent
-                        if (showStop) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(Color(0xFFFF3B30), CircleShape)
-                                    .clip(CircleShape)
-                                    .clickable { viewModel.cancelStream() },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.Stop,
-                                    contentDescription = "Stop",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                        } else {
-                            // Streaming with content → Send-into-queue; Idle with content → Send.
-                            // Idle without text or attachments → disabled.
-                            val canActivate = hasContent
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    // [feat/ui-rikkahub] 发送是输入栏唯一主
-                                    // 动作——激活态用品牌薄荷绿，停用仍灰。
-                                    .background(
-                                        if (canActivate) com.openminis.app.ui.noven.NovenColors.Mint
-                                        else ChatColors.sendButtonDisabled,
-                                        CircleShape,
-                                    )
-                                    .clip(CircleShape)
-                                    // [T-longpress-stop] 2026-09-16 用户批④：生成中
-                                    // 长按发送键=立即打断（不用去够停止键）；平时行为不变。
-                                    .combinedClickable(
-                                        enabled = canActivate || isStreaming,
-                                        onLongClick = {
-                                            if (isStreaming) {
-                                                viewModel.cancelStream()
-                                            }
-                                        },
-                                        // T-drag-send-queue: 点击走共享 send-or-enqueue
-                                        // 处理器（斜杠短路、快照文本、清输入，发送中入队）。
-                                        onClick = { performSendOrEnqueue(inputText) },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    com.openminis.app.ui.novex.NovexIcons.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (canActivate) com.openminis.app.ui.noven.NovenColors.OnMint
-                                    else ChatColors.primaryText.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
                         }
                     }
                 }
@@ -5352,199 +5344,6 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
 }
 
 // ─── [A2a] Bound-card chips in the chat top bar ──────────────────────────────
-
-/** One chip under the chat title: "卡片名 · 用途"（背景/扮演/管理/文游）.
- * [kind]/[id] follow the `onOpenCreatedCard` vocabulary; a null kind renders
- * the chip non-clickable (e.g. a persona preset that owns no card page). */
-private data class ConversationCardChip(
-    val label: String,
-    val tag: String,
-    val kind: String? = null,
-    val id: String? = null,
-)
-
-/** Resolves every card bound to this conversation — the integrated
- * `cardBindingJson` (primary / backgrounds / managed) plus the legacy novex
- * configuration (answer identity, background settings, managed subjects,
- * active interactive fiction) — into title-bar chips. Names resolve off the
- * main thread; deleted or unreadable subjects are dropped silently (their rows
- * remain editable in 对话设置). */
-@Composable
-private fun rememberConversationCardChips(
-    viewModel: ChatViewModel,
-    sessionId: String,
-): List<ConversationCardChip> {
-    val configurationJson by viewModel.novexConfigurationJson.collectAsState()
-    val context = LocalContext.current
-    val workspace = remember(context) {
-        (context.applicationContext as? com.openminis.app.MinisApp)?.novexWorkspace
-    }
-    val chips by produceState<List<ConversationCardChip>>(
-        emptyList(), configurationJson, workspace,
-    ) {
-        value = withContext(Dispatchers.IO) {
-            val snapshot = runCatching {
-                com.openminis.app.novex.domain.NovexConversationConfigurationCodec.decode(
-                    configurationJson, sessionId,
-                )
-            }.getOrNull() ?: return@withContext emptyList()
-
-            suspend fun legacyName(
-                address: com.openminis.app.novex.domain.NovexContentAddress,
-            ): String? = when (address.kind) {
-                com.openminis.app.novex.domain.NovexContentKind.WORLD ->
-                    runCatching { workspace?.world(address.id)?.world?.name }.getOrNull()
-                com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION ->
-                    runCatching { workspace?.characterForVersion(address.id)?.character?.character?.name }.getOrNull()
-                com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION ->
-                    runCatching { workspace?.interactiveFiction(address.id)?.project?.name }.getOrNull()
-                com.openminis.app.novex.domain.NovexContentKind.CREATIVE_ARTIFACT -> null
-            }
-            fun legacyKind(
-                address: com.openminis.app.novex.domain.NovexContentAddress,
-            ): String? = when (address.kind) {
-                com.openminis.app.novex.domain.NovexContentKind.WORLD -> "world"
-                com.openminis.app.novex.domain.NovexContentKind.CHARACTER_VERSION -> "character_version"
-                com.openminis.app.novex.domain.NovexContentKind.INTERACTIVE_FICTION -> "game"
-                com.openminis.app.novex.domain.NovexContentKind.CREATIVE_ARTIFACT -> null
-            }
-
-            val out = mutableListOf<ConversationCardChip>()
-            val binding = com.openminis.app.cards.CardBinding.decode(snapshot.cardBindingJson)
-            if (binding != null) {
-                val store = novex.storage.CardStore(
-                    context.filesDir.toPath().resolve("rewrite-content"),
-                )
-                fun resolve(
-                    rootId: String,
-                    targetId: String,
-                ): Pair<novex.content.ContentDocument, String>? {
-                    val doc = runCatching {
-                        novex.content.ContentTargets.find(
-                            requireNotNull(store.open(rootId)).content, targetId,
-                        )
-                    }.getOrNull() ?: return null
-                    val navId = org.json.JSONObject()
-                        .put("root", rootId)
-                        .put("target", targetId)
-                        .toString()
-                    return doc to navId
-                }
-                binding.primary?.let { sel ->
-                    resolve(sel.rootId, sel.targetId)?.let { (doc, navId) ->
-                        out += ConversationCardChip(
-                            label = doc.name.ifBlank { "卡片" },
-                            tag = if (doc.kind == novex.content.CardKind.CHARACTER) "扮演" else "背景",
-                            kind = "integrated",
-                            id = navId,
-                        )
-                    }
-                }
-                binding.backgrounds.forEach { sel ->
-                    resolve(sel.rootId, sel.targetId)?.let { (doc, navId) ->
-                        out += ConversationCardChip(
-                            label = doc.name.ifBlank { "卡片" },
-                            tag = "背景",
-                            kind = "integrated",
-                            id = navId,
-                        )
-                    }
-                }
-                binding.managed.forEach { target ->
-                    resolve(target.rootId, target.targetId)?.let { (doc, navId) ->
-                        out += ConversationCardChip(
-                            label = doc.name.ifBlank { "卡片" },
-                            tag = "管理",
-                            kind = "integrated",
-                            id = navId,
-                        )
-                    }
-                }
-            }
-            snapshot.activeInteractiveFiction?.let { game ->
-                out += ConversationCardChip(game.title, "文游", "game", game.projectId)
-            }
-            when (val identity = snapshot.answerIdentity) {
-                is com.openminis.app.novex.domain.AnswerIdentity.CharacterVersion -> {
-                    val name = runCatching {
-                        workspace?.characterForVersion(identity.versionId)
-                            ?.character?.character?.name
-                    }.getOrNull()
-                    if (!name.isNullOrBlank()) {
-                        out += ConversationCardChip(
-                            name, "扮演", "character_version", identity.versionId,
-                        )
-                    }
-                }
-                is com.openminis.app.novex.domain.AnswerIdentity.PersonaPreset ->
-                    out += ConversationCardChip(identity.label, "身份")
-                else -> {}
-            }
-            snapshot.backgroundSettings.forEach { setting ->
-                legacyName(setting.subject)?.let { name ->
-                    out += ConversationCardChip(
-                        name, "背景", legacyKind(setting.subject), setting.subject.id,
-                    )
-                }
-            }
-            snapshot.managedSubjects.forEach { subject ->
-                legacyName(subject.subject)?.let { name ->
-                    out += ConversationCardChip(
-                        name, "管理", legacyKind(subject.subject), subject.subject.id,
-                    )
-                }
-            }
-            val distinct = out.distinctBy { listOf(it.kind, it.id, it.tag, it.label) }
-            if (distinct.size > 4) {
-                distinct.take(4) + ConversationCardChip("共 ${distinct.size} 项", "")
-            } else {
-                distinct
-            }
-        }
-    }
-    return chips
-}
-
-@Composable
-private fun ConversationBoundCardChip(
-    chip: ConversationCardChip,
-    onOpen: () -> Unit,
-) {
-    val mint = com.openminis.app.ui.noven.NovenColors.Mint
-    val icon = when (chip.tag) {
-        "背景" -> com.openminis.app.ui.novex.NovexIcons.Book
-        "扮演", "身份" -> com.openminis.app.ui.novex.NovexIcons.Person
-        "管理" -> com.openminis.app.ui.novex.NovexIcons.EditNote
-        "文游" -> com.openminis.app.ui.novex.NovexIcons.PlayCircleFilled
-        else -> com.openminis.app.ui.novex.NovexIcons.Book
-    }
-    val text = if (chip.tag.isEmpty()) chip.label else "${chip.label} · ${chip.tag}"
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .border(1.dp, mint.copy(alpha = 0.65f), RoundedCornerShape(50))
-            .clickable(enabled = chip.kind != null && chip.id != null, onClick = onOpen)
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = mint,
-            modifier = Modifier.size(10.dp),
-        )
-        Text(
-            text = text,
-            fontSize = 10.sp,
-            lineHeight = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = com.openminis.app.ui.noven.NovenColors.OnMint,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 // [T-android-split-chat] UserMessageBubble / UserAttachmentList /
 // FileAttachmentTile / fileIconFor / ImageGalleryDialog moved verbatim to
