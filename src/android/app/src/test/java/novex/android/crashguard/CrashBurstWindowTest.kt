@@ -110,7 +110,7 @@ class CrashBurstWindowTest {
 
     @Test fun safeModeClearedEdgeFiresListenersExactlyOnce() {
         var fired = 0
-        val unsubscribe = CrashBurstGuard.registerSafeModeClearedListener { fired++ }
+        val unsubscribe = CrashBurstGuard.registerSafeModeCleared { fired++ }
         plantCrashLog("crash-p.log", 4)
         plantCrashLog("crash-q.log", 2)
         CrashBurstGuard.scanAtLaunch(app)

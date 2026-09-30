@@ -51,7 +51,10 @@ class KeepAliveStatusLineTest {
             app.getString(R.string.bg_service_stop_action),
             notification.actions?.firstOrNull()?.title,
         )
-        assertTrue("工具在跑必须是不定进度", notification.extras.getBoolean(android.app.Notification.EXTRA_PROGRESS_INDEFINITE))
+        assertTrue(
+            "工具在跑必须是不定进度",
+            notification.extras.getBoolean("android.progressIndeterminate"),
+        )
     }
 
     @Test fun idleBetweenToolsKeepsGenericTitle() {
@@ -66,7 +69,7 @@ class KeepAliveStatusLineTest {
         assertEquals(
             "工具不在跑不得画进度",
             false,
-            notification.extras.getBoolean(android.app.Notification.EXTRA_PROGRESS_INDEFINITE),
+            notification.extras.getBoolean("android.progressIndeterminate"),
         )
     }
 
@@ -90,6 +93,9 @@ class KeepAliveStatusLineTest {
             app.getString(R.string.app_name),
             bootstrap.extras.getCharSequence(android.app.Notification.EXTRA_TITLE),
         )
-        assertTrue(bootstrap.extras.getBoolean(android.app.Notification.EXTRA_ONGOING))
+        assertTrue(
+            "占位通知必须是 ongoing",
+            (bootstrap.flags and android.app.Notification.FLAG_ONGOING_EVENT) != 0,
+        )
     }
 }
