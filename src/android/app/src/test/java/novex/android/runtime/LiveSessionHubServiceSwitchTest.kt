@@ -142,6 +142,7 @@ class LiveSessionHubServiceSwitchTest {
     @Test fun completionCallbackFiresOnlyForGenuinelyActiveSessions() {
         val endings = mutableListOf<Pair<String, Boolean>>()
         LiveSessionHub.setCompletionListener { id, failed -> endings += id to failed }
+        LiveSessionHub.markStreaming("e1")
         LiveSessionHub.flagStreamFailure("e1")
         LiveSessionHub.markStreamEnded("e1")
         LiveSessionHub.markStreamEnded("never-started")
