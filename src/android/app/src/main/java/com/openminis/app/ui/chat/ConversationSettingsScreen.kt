@@ -108,7 +108,7 @@ fun ConversationSettingsScreen(
     providerRepository: ProviderRepository,
     memoryRepository: MemoryRepository? = null,
     skillRepository: SkillRepository? = null,
-    mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+    // [P3.3 裁军] mcpRepository 参数随 MCP 集成面退役删除。
     onBack: () -> Unit,
     onCardSettings: (String) -> Unit = {},
 ) {
@@ -132,7 +132,6 @@ fun ConversationSettingsScreen(
             appContext = context.applicationContext,
             memoryRepository = memoryRepository,
             skillRepository = skillRepository,
-            mcpRepository = mcpRepository,
         ),
     )
     val ready by viewModel.conversationSettingsReady.collectAsState()

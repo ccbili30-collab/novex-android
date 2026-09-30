@@ -3,20 +3,14 @@
     <string name="app_name">Novex</string>
     <string name="new_chat">새 채팅</string>
     <string name="settings">설정</string>
-    <string name="providers">AI 공급자</string>
     <string name="add_provider">AI 공급자 추가</string>
     <string name="appearance">외관</string>
-    <string name="no_sessions">아직 대화가 없습니다</string>
-    <string name="no_providers">시작하려면 제공자를 추가하세요</string>
-    <string name="send">전송</string>
-    <string name="type_message">메시지를 입력하세요…</string>
+
+    
     <string name="delete">삭제</string>
     <string name="cancel">취소</string>
-    <string name="save">저장</string>
-    <string name="api_key">API Key</string>
-    <string name="label">라벨</string>
-    <string name="enabled">활성화됨</string>
-    <string name="select_model">모델 선택</string>
+
+
     <string name="session_memory_title">세션의 메모리</string>
     <string name="memory_section_auto_injected">자동 주입</string>
     <string name="memory_section_auto_injected_footer">각 에이전트 턴 시작 시 시스템 프롬프트에 로드됩니다.</string>
@@ -24,7 +18,6 @@
     <string name="memory_section_tool_activity_footer">이 세션 중 에이전트가 수행한 메모리 읽기 및 쓰기.</string>
     <string name="memory_section_written_content">기록된 내용</string>
     <string name="memory_section_tool_result">도구 결과</string>
-    <string name="memory_section_keywords">키워드</string>
     <string name="memory_action_edit">편집</string>
     <string name="memory_action_save">저장</string>
     <string name="memory_action_revoke">철회</string>
@@ -35,10 +28,8 @@
     <string name="memory_revoke_result_not_found">최근 로그에서 항목을 찾을 수 없습니다.</string>
     <string name="memory_revoke_result_io_error">파일 쓰기 오류: %1$s</string>
     <string name="memory_save_toast">저장됨</string>
-    <string name="memory_save_error">저장 실패: %1$s</string>
     <string name="memory_global_footer">모든 세션에서 에이전트에게 표시되는 영구 지침 및 환경 설정입니다. 에이전트는 이 파일을 수정할 수 없습니다.</string>
     <string name="check_update_section_header">앱 업데이트</string>
-    <string name="update_source_row_title">업데이트 소스</string>
     <string name="update_source_gitee">Gitee</string>
     <string name="update_source_github">GitHub</string>
     <string name="check_update_current_version">현재 버전: %1$s</string>
@@ -57,17 +48,11 @@
     <string name="check_update_install_launch_failed">설치 프로그램을 시작하지 못했습니다. \"알 수 없는 앱 설치\" 권한을 확인하거나 다운로드한 APK를 직접 여세요.</string>
     <string name="check_update_install_hint">팁: 설치 화면이 전혀 나타나지 않으면 서명이 일치하지 않을 수 있습니다. 이전 버전을 먼저 제거한 후 다시 다운로드하세요.</string>
     <string name="check_update_open_install_settings">설정 열기</string>
-    <string name="permissions_title">권한</string>
-    <string name="permissions_reset_all">모두 재설정</string>
-    <string name="permissions_reset_dialog_title">모든 권한을 재설정하시겠습니까?</string>
-    <string name="permissions_reset_dialog_message">모든 권한을 기본값(항상 허용)으로 되돌립니다. 도구별 재정의는 모두 지워집니다.</string>
-    <string name="permissions_reset_confirm">초기화</string>
-    <string name="permissions_level_always_allow">항상 허용</string>
-    <string name="permissions_level_ask_once">한 번 묻기</string>
-    <string name="permissions_level_not_allowed">허용 안 함</string>
-    <string name="permissions_category_privacy">개인정보</string>
-    <string name="permissions_category_media">미디어</string>
-    <string name="permissions_category_system">시스템</string>
+
+
+
+
+
     <string name="mention_scanning">파일 스캔 중…</string>
     <string name="mention_no_match">일치하는 파일 없음</string>
     <string name="resume_banner_title">중단됨 — 재개를 눌러 계속하세요</string>
@@ -75,13 +60,10 @@
     <string name="search_chats_placeholder">대화 검색…</string>
     <string name="search_no_results">\"%1$s\"에 대한 결과가 없습니다</string>
     <string name="stop_tool">도구 중지</string>
-    <string name="mic_permission_title">마이크 권한이 필요합니다</string>
-    <string name="mic_permission_message">음성 입력은 마이크 권한이 필요합니다. 설정 열기를 눌러 Novex에 권한을 부여하세요.</string>
-    <string name="mic_permission_open_settings">설정 열기</string>
-    <string name="mic_permission_cancel">취소</string>
+
+    
     <string name="bg_section_header">백그라운드 및 알림</string>
-    <string name="bg_section_subtitle">배터리 최적화 및 OEM 자동 시작</string>
-    <string name="bg_section_footer">오래 실행되는 에이전트 작업은 화면이 꺼진 동안 CPU를 깨운 상태로 유지하기 위한 권한이 필요합니다. 이 설정이 없으면 시스템은 몇 분 후 백그라운드 추론을 중지할 수 있습니다.</string>
+    
     <string name="bg_service_channel_name">에이전트 상태</string>
     <string name="bg_service_channel_description">실행 중인 에이전트 세션의 상태를 표시합니다.</string>
     <string name="bg_service_notification_title">Novex 에이전트 실행 중</string>
@@ -102,16 +84,13 @@
     <string name="rom_autostart_section_footer">일부 Android 스킨(%1$s)은 표준 시스템 설정 외에 자동 시작 권한이 추가로 필요합니다. 이것이 없으면 Novex는 백그라운드 진입 후 몇 분 안에 종료될 수 있습니다.</string>
     <string name="rom_autostart_row_title">자동 시작 설정 열기</string>
     <string name="rom_autostart_row_subtitle">%1$s에서 Novex 사용</string>
-    <string name="browser_settings_ua_not_set">설정되지 않음</string>
     <!-- T135 — Settings + About i18n keys -->
-    <string name="settings_back">뒤로</string>
     <string name="settings_title">설정</string>
     <string name="settings_section_llm_providers">LLM 제공자</string>
     <string name="settings_section_llm_providers_footer">에이전트가 사용할 모델을 구성하고 각 제공자의 API 키와 OAuth를 관리하며 폴백 또는 로드 밸런싱용 모델 그룹을 만듭니다.</string>
     <string name="settings_manage_providers">제공자 관리</string>
     <string name="settings_manage_providers_subtitle">API 키와 OAuth 로그인</string>
-    <string name="settings_model_groups">모델 그룹</string>
-    <string name="settings_model_groups_subtitle">폴백 및 로드 밸런싱</string>
+    
     <string name="settings_token_usage">토큰 사용량</string>
     <string name="settings_token_usage_subtitle">여러 제공자의 API 사용 현황 추적</string>
     <string name="settings_section_appearance">외관</string>
@@ -123,25 +102,19 @@
     <string name="settings_memory_subtitle">세션 간에 유지되는 영구적 지식</string>
     <string name="settings_env_vars">환경 변수</string>
     <string name="settings_env_vars_subtitle">샌드박스에 주입되는 변수</string>
-    <string name="settings_section_storage">저장 공간</string>
-    <string name="settings_storage_subtitle">Alpine Linux rootfs를 관리하고 파일을 탐색</string>
-    <string name="settings_section_permissions">권한</string>
-    <string name="settings_permissions_subtitle">프라이버시 관련 기능에 대한 에이전트의 접근을 제어</string>
-    <string name="settings_section_logs">로그</string>
-    <string name="settings_logs_subtitle">앱 로그 보기 및 내보내기</string>
+
+
+    
     <string name="settings_section_about">정보</string>
     <string name="settings_about_minis">Novex 정보</string>
     <string name="settings_about_subtitle">버전 및 프로젝트 정보</string>
     <string name="settings_privacy_policy">개인정보 처리방침</string>
-    <string name="settings_feedback">피드백</string>
-    <string name="settings_submit_github_issues">GitHub Issue 제출</string>
-    <string name="settings_feedback_email">피드백 (이메일)</string>
+
     <string name="about_title">정보</string>
     <string name="about_minis_tagline">Novex는 완전히 로컬에서 동작하며 완전히 프라이빗한 온디바이스 에이전트입니다.</string>
     <string name="about_links">링크</string>
     <string name="about_github_repository">GitHub 저장소</string>
     <string name="about_version_format">버전 %1$s (%2$s)</string>
-
     <!-- T172 — chat sheets i18n -->
     <string name="move_to_sheet_title">이동…</string>
     <string name="move_to_sheet_empty">다른 세션이 없습니다.</string>
@@ -151,13 +124,9 @@
     <string name="time_hours_ago">%1$d시간 전</string>
     <string name="time_yesterday">어제</string>
     <string name="time_today">오늘</string>
-    <string name="offload_perm_dialog_title">권한 요청</string>
-    <string name="offload_perm_dialog_intro">AI 에이전트가 사용하려고 합니다:</string>
-    <string name="offload_perm_dialog_tool_label">도구: %1$s</string>
+
     <!-- T338: session-scoped tri-action labels. TODO translate (ko) -->
-    <string name="offload_perm_allow_session">이 세션에서 허용</string>
-    <string name="offload_perm_allow_once">한 번만 허용</string>
-    <string name="offload_perm_deny_session">이 세션에서 거부</string>
+
     <string name="session_skills_title">세션의 스킬</string>
     <string name="session_skills_header_installed">설치됨</string>
     <string name="session_skills_enable_all">모두 활성화</string>
@@ -165,13 +134,10 @@
     <string name="session_skills_footer">이 세션에 대해서만 스킬을 토글합니다. 기본값은 설정 → 스킬에서 가져옵니다.</string>
     <string name="session_skills_empty_title">설치된 스킬이 없습니다</string>
     <string name="session_skills_empty_subtitle">설정 → 스킬에서 스킬을 가져옵니다.</string>
-    <string name="speech_lang_picker_title">음성 언어</string>
-    <string name="speech_lang_picker_empty">활성 인식기에서 사용 가능한 언어가 없습니다.</string>
-    <string name="speech_lang_picker_selected">선택됨</string>
+
     <string name="standard_sheet_close">닫기</string>
     <string name="token_usage_sheet_title">세션 토큰 사용량</string>
     <string name="token_usage_section_context">컨텍스트</string>
-    <string name="token_usage_context_used">사용된 컨텍스트</string>
     <string name="token_usage_context_window">컨텍스트 윈도우</string>
     <string name="token_usage_max_output">최대 출력</string>
     <string name="token_usage_section_thinking">사고</string>
@@ -191,7 +157,6 @@
     <string name="common_yes">예</string>
     <string name="common_no">아니요</string>
     <string name="memory_file_empty">비어 있음</string>
-
     <!-- T172 — settings detail screen i18n keys (Appearance, EnvVars, Logs,
          Memory, Permissions, Skills, NovexSkillsBrowser, Storage, Usage,
          MirrorSettings, RootfsManagement). Background uses pre-existing
@@ -201,19 +166,15 @@
     <string name="common_save">저장</string>
     <string name="common_edit">편집</string>
     <string name="common_share">공유</string>
-    <string name="common_copy">복사</string>
     <string name="appearance_title">외관</string>
     <string name="appearance_section_theme">테마</string>
     <string name="appearance_theme_footer">이 앱의 시스템 외관을 변경합니다.</string>
     <string name="appearance_theme_system">시스템</string>
     <string name="appearance_theme_light">라이트</string>
     <string name="appearance_theme_dark">다크</string>
-    <string name="appearance_section_launch">세션 시작</string>
-    <string name="appearance_launch_footer">앱 시작 시 표시할 내용을 선택합니다. \"자동\"은 마지막 세션이 15분 이상 지난 경우 새 채팅을 엽니다.</string>
-    <string name="appearance_launch_auto">자동</string>
-    <string name="appearance_launch_last">마지막 세션</string>
-    <string name="appearance_launch_new">새 채팅</string>
-    <string name="appearance_launch_home">홈</string>
+
+
+    
     <string name="appearance_section_return_key">Return 키</string>
     <string name="appearance_return_key_footer">채팅 입력란의 Return 키가 줄바꿈을 삽입할지 메시지를 보낼지 선택합니다. 하드웨어 Shift+Return 은 항상 줄바꿈을 삽입합니다.</string>
     <string name="appearance_return_key_newline">줄바꿈</string>
@@ -255,7 +216,6 @@
     <string name="env_var_error_invalid_key">문자로 시작하며 문자/숫자/밑줄만 사용 가능</string>
     <string name="env_var_error_duplicate">같은 이름의 변수가 이미 있습니다</string>
     <string name="log_title">로그</string>
-    <string name="log_share_all">전체 공유</string>
     <string name="log_section_logging">로깅</string>
     <string name="log_section_logging_footer">활성화하면 모든 콘솔 출력이 앱의 비공개 저장소에 일일 로그 파일로 캡처됩니다.</string>
     <string name="log_enable_switch">로깅 활성화</string>
@@ -268,11 +228,9 @@
     <string name="log_delete_confirm_title">모든 로그를 삭제하시겠습니까?</string>
     <string name="log_delete_confirm_text">%1$s 의 로그 파일이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</string>
     <string name="log_delete_confirm">모두 삭제</string>
-    <string name="log_truncated_marker">…（잘림, 총 %1$s）</string>
     <string name="log_not_found">로그 파일을 찾을 수 없습니다.</string>
     <string name="log_error_reading">로그 읽기 오류: %1$s</string>
     <string name="log_share_chooser">로그 공유</string>
-    <string name="log_share_all_chooser">로그 공유</string>
     <string name="memory_title">메모리</string>
     <string name="memory_empty_title">메모리 파일 없음</string>
     <string name="memory_empty_description">메모리 파일은 세션 간 지식을 유지합니다. GLOBAL.md 를 편집해 에이전트에 보이는 지침을 추가하세요.</string>
@@ -281,34 +239,21 @@
     <string name="memory_delete_confirm_title">%1$s 을(를) 삭제하시겠습니까?</string>
     <string name="memory_delete_confirm_text">이 메모리 로그가 영구적으로 제거됩니다.</string>
     <string name="memory_editor_placeholder">내용 입력…</string>
-    <string name="perm_title">권한</string>
-    <string name="perm_reset_all">모두 재설정</string>
-    <string name="perm_reset_confirm_title">모든 권한을 재설정하시겠습니까?</string>
-    <string name="perm_reset_confirm_text">모든 권한 설정이 재설정됩니다. 계속하시겠습니까?</string>
-    <string name="perm_reset_confirm">초기화</string>
-    <string name="perm_level_bypass">건너뛰기</string>
+
+
+    
     <!-- T336 follow-up: ASK_ONCE granted for the whole app launch -->
-    <string name="perm_level_ask_once">실행마다 묻기</string>
-    <string name="perm_level_not_allowed">허용 안 함</string>
+    
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
-    <string name="perm_section_config_tool">설정 도구</string>
     <!-- T336: dedicated SectionCard per integration CLI. TODO translate (ko) -->
-    <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_shizuku_section_footer">android-shizuku-cli는 무선 ADB 또는 root로 시작된 Shizuku 서비스를 통해 에이전트에게 권한 있는 Android API(패키지 설치, settings put, 강제 중지 등)를 부여합니다. 아래 두 행을 모두 설정하세요.</string>
-    <string name="perm_shizuku_cli_description">Shizuku 서비스를 통한 권한 있는 Android API</string>
-    <string name="perm_system_authorization">시스템 인가</string>
-    <string name="perm_agent_policy">에이전트 권한</string>
-    <string name="perm_allow_minis_config">minis-config 허용</string>
-    <string name="perm_minis_config_desc">비활성화하면 에이전트는 minis-config로 설정을 읽거나 수정할 수 없습니다. 로그 → 설정 변경에서 변경 이력은 계속 확인할 수 있습니다. 에이전트는 permission_denied 오류를 받고 딥 링크로 안내합니다.</string>
-    <string name="perm_section_privacy">개인정보</string>
-    <string name="perm_section_media">미디어</string>
-    <string name="perm_section_system">시스템</string>
-    <string name="perm_tool_calendar">캘린더</string>
-    <string name="perm_tool_location">위치</string>
-    <string name="perm_tool_clipboard">클립보드</string>
-    <string name="perm_tool_contacts">연락처</string>
-    <string name="perm_tool_photos">사진</string>
+
+
+
+
+
+
+
+    
     <string name="skill_title">스킬</string>
     <string name="skill_add">Skill 추가</string>
     <string name="skill_section_installed">설치됨</string>
@@ -316,17 +261,13 @@
     <string name="skill_empty_title">설치된 Skill 없음</string>
     <string name="skill_empty_action">+ 를 눌러 SKILL.md, .zip, .skill 파일을 가져옵니다.</string>
     <string name="skill_import_modal_title">스킬 가져오기</string>
-    <string name="skill_delete_confirm_title">%1$s 을(를) 삭제하시겠습니까?</string>
     <string name="skill_delete_confirm_text">이 skill 과 파일이 영구적으로 제거됩니다.</string>
-    <string name="skill_import_sheet_title">스킬 가져오기</string>
     <string name="skill_import_tab_url">URL</string>
     <string name="skill_import_tab_paste">붙여넣기</string>
     <string name="skill_import_tab_file">파일</string>
     <string name="skill_import_url_instruction">SKILL.md 파일의 URL 을 입력하세요 (GitHub 링크 지원).</string>
-    <string name="skill_import_url_label">URL</string>
     <string name="skill_import_url_placeholder">github.com/user/repo/blob/main/SKILL.md</string>
     <string name="skill_import_paste_instruction">SKILL.md 파일 내용을 붙여넣으세요. \'name\' 필드가 포함된 YAML frontmatter 가 필요합니다.</string>
-    <string name="skill_import_paste_label">SKILL.md 내용</string>
     <string name="skill_import_file_instruction">기기에서 .md 또는 .skill 파일을 선택하세요.</string>
     <string name="skill_import_file_button">파일 선택</string>
     <string name="skill_import_error_no_url">URL 을 입력하세요</string>
@@ -346,10 +287,8 @@
     <string name="skill_detail_updated">업데이트됨</string>
     <string name="skill_detail_delete">Skill 삭제</string>
     <string name="skill_detail_edit_name_title">이름 편집</string>
-    <string name="skill_detail_section_description">설명</string>
-    <string name="skill_detail_section_files">파일</string>
-    <string name="skill_detail_section_meta">메타</string>
-    <string name="skill_detail_section_update">업데이트</string>
+
+    
     <string name="skill_file_save">저장</string>
     <string name="skill_file_edit">편집</string>
     <string name="skill_detail_status_reading">파일 읽는 중…</string>
@@ -359,7 +298,6 @@
     <string name="skill_detail_status_downloading">다운로드 중…</string>
     <string name="skill_detail_status_rescanning">다시 스캔 중…</string>
     <string name="skill_detail_error_missing">디스크의 SKILL.md 가 없거나 잘못됨</string>
-    <string name="skill_detail_source_url">URL</string>
     <string name="skill_detail_source_file">파일 가져오기</string>
     <string name="skill_detail_source_bundled">내장</string>
     <string name="skill_detail_source_session">세션 생성</string>
@@ -381,8 +319,7 @@
     <string name="storage_clearing_status">삭제 중…</string>
     <string name="storage_clear_session_button">세션 파일 삭제</string>
     <string name="storage_clear_confirm_title">세션 파일을 삭제하시겠습니까?</string>
-    <string name="storage_clear_confirm_text">%1$s 의 파일을 삭제합니다. 이 작업은 되돌릴 수 없습니다.</string>
-    <string name="storage_clear_confirm_button">%1$s 지우기</string>
+    
     <string name="usage_title">사용량</string>
     <string name="usage_section_total">총 사용량</string>
     <string name="usage_label_total_input">총 입력 (캐시 포함)</string>
@@ -392,9 +329,7 @@
     <string name="usage_label_cache_hit_rate">캐시 적중률</string>
     <string name="usage_detail_input">입력</string>
     <string name="usage_detail_output">출력</string>
-    <string name="usage_detail_cache_read">캐시 읽기</string>
-    <string name="usage_detail_cache_creation">캐시 생성</string>
-    <string name="usage_detail_cache_hit_rate">캐시 적중률</string>
+
     <string name="usage_detail_daily_avg">일 평균</string>
     <string name="usage_detail_session_avg">세션 평균</string>
     <string name="usage_detail_sessions">세션</string>
@@ -438,33 +373,21 @@
     <string name="rootfs_reset_backup_confirm_title">백업 후 초기화하시겠습니까?</string>
     <string name="rootfs_reset_backup_confirm_message">/root 디렉토리를 백업한 후 rootfs를 초기화합니다. 나중에 백업을 복원할 수 있습니다.</string>
     <string name="rootfs_reset_backup_confirm_button">초기화 및 백업</string>
-
     <!-- T172 — components / onboarding / preview i18n -->
     <string name="common_back">뒤로</string>
-    <string name="common_close">닫기</string>
     <string name="common_skip">건너뛰기</string>
-    <string name="common_next">다음</string>
-    <string name="onboarding_welcome_title">Novex에 오신 것을 환영합니다</string>
-    <string name="onboarding_welcome_subtitle">터미널, 브라우저, 네이티브 장치 액세스를 갖춘 AI 에이전트입니다.</string>
-    <string name="onboarding_get_started">시작하기</string>
-    <string name="onboarding_provider_title">제공자 추가</string>
-    <string name="onboarding_provider_subtitle">시작하려면 최소 한 제공자의 API 키를 입력하세요.</string>
-    <string name="onboarding_provider_api_key_label">%1$s API 키</string>
-    <string name="onboarding_save_api_key">API 키 저장</string>
-    <string name="onboarding_saved">저장됨</string>
+
+
+
+
     <string name="onboarding_select_models_title">모델 선택</string>
     <string name="onboarding_select_models_subtitle">기본 그룹에 최대 3개 모델을 선택하세요.</string>
-    <string name="onboarding_search_models">모델 검색</string>
     <string name="onboarding_filter_models">모델 필터링</string>
     <string name="onboarding_done_count">완료 (%1$d/3)</string>
     <string name="onboarding_loading_models">모델을 불러오는 중…</string>
-    <string name="webpreview_close">닫기</string>
-    <string name="webpreview_stop">로딩 중지</string>
-    <string name="webpreview_reload">새로 고침</string>
-    <string name="webpreview_share">공유</string>
-    <string name="webpreview_open_external">외부 브라우저에서 열기</string>
-    <string name="webpreview_open_in_browser">브라우저에서 열기</string>
-    <string name="webpreview_open_fullscreen">전체 화면으로 열기</string>
+
+
+
 
     <!-- T172 — sandbox / sessions / browser / terminal i18n -->
     <string name="filebrowser_title">파일</string>
@@ -472,7 +395,6 @@
     <string name="filebrowser_delete_title">“%1$s” 삭제하시겠습니까?</string>
     <string name="filebrowser_delete_message">이 작업은 되돌릴 수 없습니다.</string>
     <string name="filebrowser_error_title">오류</string>
-    <string name="filebrowser_sort_action">정렬</string>
     <string name="filebrowser_sort_ascending">오름차순</string>
     <string name="filebrowser_sort_descending">내림차순</string>
     <string name="filebrowser_sort_folders_first">폴더 우선</string>
@@ -493,16 +415,12 @@
     <string name="filepreview_pdf_empty">빈 문서</string>
     <string name="filepreview_image_decode_error">이미지를 디코딩할 수 없음</string>
     <string name="filepreview_image_load_error">이미지 로드 실패</string>
-    <string name="filepreview_file_read_error">파일 읽기 실패</string>
-    <string name="filepreview_csv_parse_error">CSV 파싱 실패</string>
-    <string name="filepreview_archive_read_error">아카이브 읽기 실패</string>
-    <string name="filepreview_pdf_render_error">PDF 렌더링 실패</string>
+
+    
     <string name="filepreview_page_n">%1$d페이지</string>
     <string name="sessionlist_section_pinned">고정됨</string>
     <string name="sessionlist_section_today">오늘</string>
-    <string name="sessionlist_section_yesterday">어제</string>
-    <string name="sessionlist_section_this_week">이번 주</string>
-    <string name="sessionlist_section_this_month">이번 달</string>
+
     <string name="sessionlist_section_earlier">이전</string>
     <string name="sessionlist_select_title">세션 선택</string>
     <string name="sessionlist_n_selected">%1$d개 선택됨</string>
@@ -513,8 +431,7 @@
     <string name="sessionlist_shell">셸</string>
     <string name="sessionlist_shell_terminal">셸 터미널</string>
     <string name="sessionlist_rootfs_management">Rootfs 관리</string>
-    <string name="sessionlist_open_browser">브라우저 열기</string>
-    <string name="sessionlist_browser_settings">브라우저 설정</string>
+    
     <string name="sessionlist_pin">고정</string>
     <string name="sessionlist_unpin">고정 해제</string>
     <string name="sessionlist_export">내보내기</string>
@@ -529,62 +446,35 @@
     <string name="sessionlist_delete_one_title">이 대화를 삭제하시겠습니까?</string>
     <string name="sessionlist_delete_n_title">%1$d개의 대화를 삭제하시겠습니까?</string>
     <string name="sessionlist_delete_message">이 작업은 되돌릴 수 없습니다.</string>
-    <string name="browser_title">브라우저</string>
-    <string name="browser_settings_title">브라우저 설정</string>
-    <string name="browser_new_tab">새 탭</string>
-    <string name="browser_history_action">기록</string>
-    <string name="browser_close_tab">탭 닫기</string>
-    <string name="browser_search_placeholder">검색 또는 URL 입력</string>
-    <string name="browser_no_tab_open">열린 탭이 없습니다</string>
-    <string name="browser_enter_url_hint">위에 URL을 입력하여 시작하세요</string>
-    <string name="browser_nav_back">뒤로</string>
-    <string name="browser_nav_forward">앞으로</string>
-    <string name="browser_stop">정지</string>
-    <string name="browser_reload">새로 고침</string>
-    <string name="browser_minis_browsing">Novex가 브라우징 중</string>
+
+
+
+
+
+
     <string name="chat_typing_indicator">%1$s가 생각하는 중</string>
-    <string name="read_aloud_unavailable">읽어주기 실패: 사용 가능한 음성 엔진이 없습니다. 음성 출력 설정을 확인하거나 시스템 음성 엔진을 설치하세요.</string>
-    <string name="voice_panel_no_engine_title">사용 가능한 음성 인식이 없습니다</string>
-    <string name="voice_panel_no_engine_body">음성 입력에는 인식 엔진이 필요합니다. 기기의 음성 서비스를 켜거나 Novex에서 전사 제공자를 설정하세요.</string>
-    <string name="voice_panel_no_engine_open_system">기기 설정</string>
-    <string name="voice_panel_no_engine_open_providers">Novex 제공자</string>
+
+
     <string name="chat_error_stream_dropped_partial">연결이 끊겼습니다. 이 답변은 불완전할 수 있습니다. 다시 시도해 주세요.</string>
-    <string name="chat_input_placeholder">%1$s에게 메시지 (@로 파일 참조)</string>
-    <string name="browser_takeover">제어 인계</string>
-    <string name="browser_settings_done">완료</string>
-    <string name="browser_settings_user_agent">사용자 에이전트</string>
-    <string name="browser_settings_ua_mobile_chrome">모바일 Chrome (Android)</string>
-    <string name="browser_settings_ua_desktop_chrome">데스크톱 Chrome (Linux)</string>
-    <string name="browser_settings_ua_custom">사용자 지정</string>
-    <string name="browser_settings_custom_ua_label">사용자 지정 User-Agent 문자열</string>
-    <string name="browser_settings_apply">적용</string>
-    <string name="browser_settings_idle_timeout">유휴 탭 타임아웃</string>
-    <string name="browser_settings_idle_timeout_desc">메모리 절약을 위해 미사용 탭은 이 시간 후 닫힙니다.</string>
-    <string name="browser_settings_minutes_label">분</string>
-    <string name="browser_settings_cookies_title">쿠키 및 웹사이트 데이터</string>
-    <string name="browser_settings_filter_by_domain">도메인으로 필터링</string>
-    <string name="browser_settings_no_domains_match">“%1$s”와 일치하는 도메인 없음</string>
-    <string name="browser_settings_cookies_stored">쿠키가 이 기기에 저장되었습니다</string>
-    <string name="browser_settings_no_cookies">저장된 쿠키 없음</string>
-    <string name="browser_settings_clear_cookies_for">%1$s 쿠키 지우기</string>
-    <string name="browser_settings_clear_all_cookies">모든 쿠키 및 데이터 지우기</string>
-    <string name="browser_settings_clear_all_dialog_title">모든 웹사이트 데이터를 지우시겠습니까?</string>
-    <string name="browser_settings_clear_all_dialog_message">모든 쿠키와 웹사이트 데이터가 삭제되며 모든 웹사이트에서 로그아웃됩니다.</string>
-    <string name="browser_settings_clear">지우기</string>
-    <string name="browser_history_title">기록</string>
-    <string name="browser_history_clear">지우기</string>
-    <string name="browser_history_done">완료</string>
-    <string name="browser_history_search">기록 검색</string>
-    <string name="browser_history_empty_title">브라우징 기록 없음</string>
-    <string name="browser_history_empty_subtitle">기록은 7일 동안 보관됩니다</string>
-    <string name="browser_history_results">결과</string>
-    <string name="browser_history_clear_dialog_title">브라우징 기록을 지우시겠습니까?</string>
-    <string name="browser_history_clear_dialog_message">모든 브라우징 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <string name="terminal_title">Novex 셸</string>
     <string name="terminal_clear">지우기</string>
     <string name="terminal_show_keyboard">표시</string>
     <string name="terminal_hide_keyboard">숨기기</string>
-
     <!-- T172-A providers / models / settings i18n -->
     <string name="provider_list_providers">AI 공급자</string>
     <string name="provider_list_add_provider">AI 공급자 추가</string>
@@ -601,53 +491,30 @@
     <string name="share_open_app_failed">콘텐츠가 저장되었습니다. Novex를 자동으로 열지 못했습니다. 앱을 열어 계속하세요.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">비활성화됨</string>
-    <string name="provider_detail_export">내보내기</string>
-    <string name="provider_detail_label">라벨</string>
-    <string name="provider_detail_manual_bearer_token">수동 Bearer Token</string>
-    <string name="provider_detail_use_a_static_bearer_token_instead_of_the">OAuth 로그인 플로 대신 정적 베어러 토큰을 사용합니다.</string>
-    <string name="provider_detail_custom_api_base">사용자 정의 API 주소</string>
-    <string name="provider_detail_auto_append_v1">/v1 자동 추가</string>
-    <string name="provider_detail_save_url_settings">URL 설정 저장</string>
-    <string name="provider_detail_api_format">API Format</string>
-    <string name="provider_detail_chat_completions">Chat Completions</string>
-    <string name="provider_detail_responses_api">Responses API</string>
-    <string name="provider_detail_azure_openai">Azure OpenAI</string>
-    <string name="provider_detail_azure_openai_footer">Azure OpenAI 인증(api-key 헤더)을 사용합니다. ?api-version=… 쿼리를 포함한 전체 Azure 엔드포인트를 위의 사용자 지정 API Base에 붙여넣으세요. 두 API 형식 모두 지원됩니다.</string>
-    <string name="provider_detail_status">상태</string>
-    <string name="provider_detail_enabled">활성화됨</string>
-    <string name="provider_detail_refresh_models">모델 새로 고침</string>
+
+
+
+
+
+
+
     <string name="provider_detail_add_custom_model">사용자 정의 모델 추가</string>
-    <string name="provider_detail_delete_provider">AI 공급자 삭제</string>
-    <string name="provider_detail_delete_model">Delete Model</string>
-    <string name="provider_detail_sign_out">로그아웃</string>
-    <string name="provider_detail_sign_in">로그인</string>
-    <string name="provider_detail_save_key">키 저장</string>
-    <string name="provider_detail_paste_bearer_token">베어러 토큰 붙여넣기</string>
-    <string name="provider_detail_save_token">토큰 저장</string>
-    <string name="common_change">변경</string>
+
+
+
+    
     <string name="common_remove">제거</string>
-    <string name="provider_detail_set_manual_bearer_token">수동 Bearer Token 설정</string>
-    <string name="add_provider_choose_provider">AI 공급자 선택</string>
-    <string name="add_provider_you_can_add_multiple_instances_of_the_sa">동일한 제공업체의 여러 인스턴스를 추가할 수 있습니다 (예: 업무용 및 개인 계정). OpenAI 와 Anthropic 은 호환되는 타사 엔드포인트와도 작동합니다 — 일치하는 프로토콜을 선택한 후 사용자 정의 API Base URL 을 설정하세요.</string>
-    <string name="add_provider_auth_method">인증 방식</string>
-    <string name="add_provider_choose_authentication">인증 방식 선택</string>
-    <string name="add_provider_pick_the_auth_method_that_matches_your_a">계정에 맞는 인증 방식을 선택하세요. OAuth 는 제공업체의 웹 플로를 통해 로그인하고, API Key 는 계정 대시보드의 키를 사용합니다.</string>
+
+
+    
     <string name="add_provider_identity">식별</string>
-    <string name="add_provider_the_label_is_shown_in_the_provider_list_">라벨은 제공업체 목록과 모델 선택기에 표시됩니다.</string>
-    <string name="add_provider_credential">자격 증명</string>
-    <string name="add_provider_your_key_is_stored_securely_in_encrypted">키는 암호화된 저장소에 안전하게 보관되며 기기를 벗어나지 않습니다.</string>
-    <string name="add_provider_endpoint">엔드포인트</string>
-    <string name="add_provider_custom_api_base_optional">사용자 정의 API 베이스 (선택 사항)</string>
-    <string name="add_provider_authentication">인증</string>
-    <string name="add_provider_sign_in_succeeded_the_token_is_stored_in">로그인에 성공했습니다. 토큰이 암호화된 저장소에 저장되었습니다. 저장을 눌러 제공업체를 추가하세요.</string>
-    <string name="add_provider_authenticated">인증됨</string>
-    <string name="add_provider_token">Token</string>
-    <string name="add_provider_save_provider">AI 공급자 저장</string>
-    <string name="add_provider_opens_the_provider_s_web_sign_in_flow_af">제공업체의 웹 로그인 플로를 엽니다. 로그인 후 토큰이 여기에 자동으로 채워집니다.</string>
-    <string name="add_provider_signing_in">로그인 중…</string>
-    <string name="add_provider_or_configure_manually">또는 수동으로 설정</string>
-    <string name="add_provider_for_third_party_coding_plans_e_g_minimax">For third-party Coding Plans (e.g. MiniMax, Kimi) or compatible proxy endpoints, enter the API base URL and bearer token manually.</string>
-    <string name="add_provider_bearer_token">Bearer Token</string>
+
+
+
+
+
+
+
     <string name="add_custom_model_model_id">모델 ID</string>
     <string name="add_custom_model_display_name_optional">표시 이름 (선택 사항)</string>
     <string name="model_entry_model_detail">모델 세부 정보</string>
@@ -707,24 +574,17 @@
     <string name="model_groups_none">없음</string>
     <string name="add_models_to_group_search_models">모델 검색</string>
     <string name="add_models_to_group_clear">지우기</string>
-    <string name="settings_agent_loop_models">에이전트 루프 모델</string>    <string name="agent_loop_models_groups">그룹</string>
-    <string name="agent_loop_models_picking_a_group_pins_every_model_in_it_a">그룹을 선택하면 그룹 내 모든 모델이 고정됩니다. 모델 추가나 제거는 모델 그룹에서 하세요.</string>
-    <string name="agent_loop_models_add_a_provider_and_refresh_its_model_lis">제공업체를 추가하고 모델 목록을 새로 고치면 이 선택기에 표시됩니다.</string>
-    <string name="agent_loop_models_no_models_or_groups_available_yet">아직 사용할 수 있는 모델이나 그룹이 없습니다.</string>
-    <string name="agent_loop_models_selected">선택됨</string>
-    <string name="agent_loop_models_not_selected">선택 안 됨</string>
+        <string name="agent_loop_models_groups">그룹</string>
+
+
 
     <!-- T172-A parameterized strings -->
     <string name="add_custom_model_id_footer">Model ID 는 %1$s 에 전송되는 API 식별자입니다. 표시 이름은 모델 선택기에서 사용되는 더 친숙한 라벨이며, 비워두면 Model ID 로 대체됩니다.</string>
     <string name="add_custom_model_eg_id_placeholder">예: gpt-4o-custom</string>
-    <string name="add_provider_built_in_models_count">내장 모델 %1$d 개</string>
-    <string name="add_provider_configure_provider">%1$s 구성</string>
-    <string name="add_provider_auto_append_v1_quoted">\"/v1\" 자동 추가</string>
+
     <string name="add_models_to_group_add_count">추가 (%1$d)</string>
-    <string name="provider_detail_https_api_example_placeholder">https://api.example.com</string>
-    <string name="provider_detail_models_count_header">모델 (%1$d)</string>
-    <string name="provider_detail_delete_provider_confirm">\"%1$s\" 을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
-    <string name="provider_detail_delete_model_confirm">\"%1$s\" 을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
+
+    
     <string name="agent_loop_models_model_count_singular">모델 1 개</string>
     <string name="agent_loop_models_model_count_plural">모델 %1$d 개</string>
     <string name="model_group_detail_models_header_count">모델 (%1$d)</string>
@@ -732,7 +592,6 @@
     <string name="model_group_detail_remove_this_model_fallback">이 모델</string>
     <string name="model_group_detail_delete_named_group_confirm">\"%1$s\" 을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
     <string name="provider_list_models_count">모델 %1$d 개</string>
-
     <!-- T180-bg-notif — Task Notifications toggle + completion notification
          channel + N-tasks-running display strings. Mirrors iOS
          EnhancedBackgroundSettingsView + BackgroundKeepAliveManager. -->
@@ -746,13 +605,9 @@
     <string name="notif_task_completed_channel_description">앱이 백그라운드에 있을 때 에이전트 세션 완료를 알립니다.</string>
     <string name="notif_task_completed_default_title">작업이 완료되었습니다</string>
     <string name="notif_task_completed_body">탭하여 채팅을 열고 응답을 확인하세요.</string>
-    <string name="notif_config_confirm_channel_name">구성 승인</string>
-    <string name="notif_config_confirm_channel_description">앱이 백그라운드에 있는 동안 구성 변경이 승인을 기다릴 때 알립니다.</string>
-    <string name="notif_config_confirm_title">⚙️ 구성 변경이 승인을 기다리는 중</string>
-    <string name="notif_config_confirm_body_single">검토가 필요한 변경이 있습니다 —— Novex를 열어 승인 또는 거부하세요.</string>
-    <string name="notif_config_confirm_body_multi">검토가 필요한 변경이 %d건 있습니다 —— Novex를 열어 승인 또는 거부하세요.</string>
-    <string name="notif_task_failed_body">작업이 오류로 종료되었습니다. 탭하여 채팅을 엽니다.</string>
 
+
+    <string name="notif_task_failed_body">작업이 오류로 종료되었습니다. 탭하여 채팅을 엽니다.</string>
     <!-- T182 agent loop section i18n -->
     <string name="agent_loop_section_title">에이전트 루프에서 사용 가능한 모델</string>
     <string name="agent_loop_section_footer">여기 나열된 모델과 그룹은 터미널에서 minis-model-use 로 호출할 수 있습니다. 에이전트는 이것들만 볼 수 있습니다.</string>
@@ -766,40 +621,30 @@
     <string name="agent_loop_section_empty_group_subtitle">(빈 그룹)</string>
     <string name="agent_loop_section_remove">에이전트 루프에서 제거</string>
     <string name="agent_loop_section_group_badge">그룹</string>
-
     <!-- T184-chatmenu-i18n — ChatScreen overflow ⋮ menu -->
     <string name="chat_menu_new_chat">새 채팅</string>
     <string name="chat_new_chat_stop_dialog_body">이 채팅에서 작업이 실행 중입니다. 새 채팅을 시작하면 중지됩니다.</string>
     <string name="chat_new_chat_stop_dialog_confirm">중지 후 새 채팅</string>
-    <string name="chat_menu_clear_chat">채팅 지우기</string>
-    <string name="chat_menu_open_terminal">터미널 열기</string>
-    <string name="chat_menu_open_browser">브라우저 열기</string>
-    <string name="chat_menu_browse_chat_files">채팅 파일 탐색</string>
+
+    
     <string name="chat_menu_enhanced_cache">향상된 캐시</string>
-    <string name="chat_menu_fast_mode">고속 모드 활성화</string>
     <string name="enhanced_cache_dialog_body">향상된 캐시는 Anthropic 프롬프트 캐시를 5분에서 1시간으로 연장하여 긴 세션에서 컨텍스트를 유지합니다. 추가 캐시 쓰기 요금이 발생할 수 있습니다. 사용하시겠습니까?</string>
     <string name="enhanced_cache_dialog_confirm">사용</string>
-
     <!-- T184-chatmenu-i18n — longpress + attach -->
     <string name="chat_longpress_copy">복사</string>
     <string name="chat_longpress_retry">재시도</string>
     <string name="chat_attach_take_photo">사진 촬영</string>
     <string name="chat_attach_choose_photos_videos">사진 및 동영상 선택</string>
     <string name="chat_attach_add_file">파일 추가</string>
-
     <!-- T185 unified picker UI strings -->
     <string name="add_models_to_group_all_in_group">모든 모델이 이미 이 그룹에 포함되어 있습니다.</string>
     <string name="add_models_to_group_no_match">일치하는 모델이 없습니다.</string>
-
     <!-- T187 — user-bubble long-press Edit + Exit Edit + Clear Chat dialog -->
     <string name="chat_longpress_edit">편집</string>
     <string name="chat_edit_exit_button">편집 모드 종료</string>
-    <string name="chat_clear_dialog_body">이 세션의 모든 메시지를 삭제하시겠습니까? 작업 공간 파일, 첨부 파일 및 오프로드는 유지됩니다.</string>
-    <string name="chat_clear_dialog_confirm">지우기</string>
 
     <!-- T235 — 공유 폴더 (고정: 공유 / 스킬 / 메모리) -->
-    <string name="settings_shared_folders">공유 폴더</string>
-    <string name="settings_shared_folders_subtitle">/var/minis 의 공유, 스킬, 메모리 둘러보기</string>
+    
     <string name="shared_folders_title">공유 폴더</string>
     <string name="shared_folders_info_banner">이 디렉터리는 Linux 샌드박스 안에서 사용됩니다. Skills와 Memory는 AI 에이전트 도구가 관리하므로 수동으로 수정하지 마세요.</string>
     <string name="shared_folder_name_shared">공유</string>
@@ -807,40 +652,23 @@
     <string name="shared_folder_name_memory">메모리</string>
     <string name="shared_folder_detail_title">폴더 세부정보</string>
     <string name="shared_folder_browse_files">파일 둘러보기</string>
-
     <!-- T219-2 — 외부 폴더 마운트 -->
-    <string name="settings_mount_external_folders">외부 폴더 마운트</string>
-    <string name="settings_mount_external_folders_subtitle">선택한 폴더를 /var/minis/mounts/ 에 바인드</string>
-    <string name="mount_folders_title">마운트된 폴더</string>
-    <string name="mount_folders_info_banner">선택한 폴더는 /var/minis/mounts/&lt;name&gt; 에 바인드 마운트됩니다. 한 번에 최대 10개까지 마운트할 수 있습니다.</string>
-    <string name="mount_picker_intro_title">마운트할 폴더 선택</string>
-    <string name="mount_picker_intro_message">Android는 내부 저장소 전체를 마운트할 수 없습니다. 문서나 다운로드처럼 그 안의 구체적인 폴더를 선택하세요.\n\n다음에 열리는 것은 시스템 파일 선택기입니다. 어떤 폴더에 \u201c이 폴더를 사용할 수 없습니다\u201d라고 표시되면 하위 폴더로 들어가거나 시스템 뒤로 제스처로 여기로 돌아오세요.</string>
-    <string name="mount_picker_intro_continue">선택하기</string>
-    <string name="mount_folders_empty_title">마운트된 폴더 없음</string>
-    <string name="mount_folders_empty_subtitle">+ 를 눌러 폴더를 선택하세요</string>
-    <string name="mount_folders_limit_reached">마운트 한도(10) 도달</string>
-    <string name="mount_add_dialog_title">마운트 추가</string>
-    <string name="mount_add_source_path">원본 경로</string>
-    <string name="mount_add_name_label">마운트 이름</string>
-    <string name="mount_add_name_hint">/var/minis/mounts/ 아래의 폴더 이름이 됩니다</string>
-    <string name="mount_add_allow_writes">쓰기 허용</string>
-    <string name="mount_add_allow_writes_desc">끄면 file_write/file_edit 도구가 쓰기를 거부하지만 셸은 여전히 우회할 수 있습니다.</string>
-    <string name="mount_add_confirm">추가</string>
-    <string name="mount_unmount_title">이 폴더를 마운트 해제할까요?</string>
-    <string name="mount_unmount_message">바인딩만 해제되며 원본 폴더는 삭제되지 않습니다.</string>
-    <string name="mount_unmount_confirm">마운트 해제</string>
+
+
+
+
+
+
+
+
+
+    
     <string name="mount_badge_rw">읽기/쓰기</string>
-    <string name="mount_badge_locked">잠김</string>
     <string name="mount_badge_readonly">읽기 전용</string>
-    <string name="mount_only_on_device_supported">기기 로컬 폴더만 지원됩니다(Google Drive 등 클라우드 제공자는 지원되지 않음).</string>
-    <string name="mount_all_files_access_required">"모든 파일 액세스" 권한 미허용</string>
-    <string name="mount_all_files_access_required_desc">허용되지 않으면 shell은 이 앱이 만든 파일만 볼 수 있습니다 — 다른 앱(예: Obsidian)이 쓴 파일은 숨겨집니다. 시스템 설정에서 권한을 허용하려면 탭하세요.</string>
-    <string name="mount_detail_title">마운트 편집</string>
-    <string name="mount_detail_browse_files">파일 탐색</string>
-    <string name="mount_detail_browse_files_toast">채팅 @ 언급에서 이 마운트에 접근하세요.</string>
-    <string name="mount_detail_name_invalid">마운트 이름은 비어 있거나 \'/\'를 포함하거나 \'.\'/ \'..\'일 수 없습니다</string>
-    <string name="mount_path_unavailable">경로 사용 불가</string>
-    <string name="mount_add_failed">마운트를 추가할 수 없습니다. 이름이 사용 중이거나 잘못되었을 수 있습니다.</string>
+
+
+
+
 
     <!-- T241: 슬래시 명령어 패널 + 모델 선택 시트 -->
     <string name="slash_compact_subtitle">대화 기록을 요약으로 압축</string>
@@ -856,7 +684,6 @@
     <string name="model_picker_title">모델 선택</string>
     <string name="model_picker_done">완료</string>
     <string name="model_picker_search_placeholder">모델 검색</string>
-    <string name="model_picker_search_clear">지우기</string>
     <string name="model_picker_groups_section">모델 그룹</string>
     <string name="model_picker_groups_footer">자동 폴백 또는 부하 분산을 위해 이 세션을 그룹에 연결합니다.</string>
     <string name="model_picker_default_badge">기본값</string>
@@ -870,35 +697,20 @@
     <plurals name="model_picker_models_count">
         <item quantity="other">%d개 모델</item>
     </plurals>
-
     <!-- T288 — 로그 / 설정 변경 -->
-    <string name="logs_tab_config_changes">설정 변경</string>
-    <string name="logs_config_used_count">%1$d / %2$d 사용됨</string>
-    <string name="logs_config_clear_all">모두 지우기</string>
-    <string name="logs_config_empty">설정 변경 기록이 아직 없습니다.</string>
-    <string name="logs_config_status_applied">적용됨</string>
-    <string name="logs_config_status_pending">대기 중</string>
-    <string name="logs_config_status_rejected">거부됨</string>
-    <string name="logs_config_status_timeout">시간 초과</string>
-    <string name="logs_config_status_reverted">되돌림</string>
-    <string name="logs_config_revert">되돌리기</string>
-    <string name="logs_config_revert_chip">↩ 되돌리기</string>
-    <string name="logs_config_reverted_label">↩ 되돌림</string>
-    <string name="logs_config_revert_dialog_title">이 변경을 되돌릴까요?</string>
-    <string name="logs_config_revert_success_title">되돌림</string>
-    <string name="logs_config_revert_success_body">설정이 복원되었습니다.</string>
-    <string name="logs_config_revert_failed_title">되돌리기 실패</string>
-    <string name="logs_config_revert_unknown_error">알 수 없는 오류</string>
-    <string name="logs_config_dialog_ok">확인</string>
-    <string name="logs_config_dialog_cancel">취소</string>
-    <string name="logs_config_source_agent">에이전트</string>
-    <string name="logs_config_source_user">사용자</string>
-    <string name="logs_config_source_agent_revert">에이전트 되돌림</string>
-    <string name="logs_config_source_user_revert">사용자 되돌림</string>
-    <string name="logs_config_time_just_now">방금</string>
-    <string name="logs_config_time_min_ago">%1$d분 전</string>
-    <string name="logs_config_time_hr_ago">%1$d시간 전</string>
-    <string name="logs_config_time_yesterday">어제</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     <!-- Welcome / onboarding (T332) -->
     <!-- TODO translate -->
@@ -911,11 +723,9 @@
     <string name="sessionlist_welcome_step2_locked">먼저 1단계를 완료하세요</string>
     <string name="sessionlist_welcome_step3_title">대화 시작</string>
     <string name="sessionlist_welcome_step3_subtitle">탭하여 시작</string>
-    <string name="sessionlist_welcome_step3_locked">먼저 2단계를 완료하세요</string>
     <string name="sessionlist_welcome_step_done">완료</string>
     <!-- T-selection-add-to-input — 길게 누르기 선택 메뉴 "입력란에 추가" -->
     <string name="selection_add_to_chat_input">입력란에 추가</string>
-    <string name="selection_read_aloud">읽어주기</string>
     <!-- T-minis-textkit 선택 메뉴 버튼 -->
     <string name="selection_copy">복사</string>
     <string name="selection_copy_markdown">Markdown 복사</string>
@@ -930,9 +740,7 @@
     <string name="update_error_forbidden_with_link">업데이트 서버에 접근할 수 없습니다. 네트워크 제한일 수 있습니다. GitHub Releases 에서 수동으로 다운로드할 수 있습니다.</string>
     <string name="update_error_open_releases">GitHub Releases 열기</string>
     <!-- T-android-crash-freq-share -->
-    <string name="crash_freq_dialog_title">여러 번의 충돌 감지</string>
-    <string name="crash_freq_dialog_message">Novex가 지난 1시간 동안 여러 번 충돌했습니다. 문제 해결을 위해 충돌 로그를 공유하시겠습니까?</string>
-    <string name="crash_freq_dialog_share">로그 공유</string>
+
     <string name="crash_freq_dialog_dismiss">나중에</string>
     <string name="crash_safe_mode_restart_needed">복구를 완료하려면 Novex를 다시 시작해야 합니다. 앱 아이콘을 다시 탭해 주세요.</string>
     <string name="crash_freq_email_subject">Novex 충돌 보고서 %1$s</string>
@@ -956,113 +764,63 @@
     <string name="file_share_chooser_title">파일 공유</string>
     <string name="file_share_failed_toast">공유 실패: %1$s</string>
     <string name="file_print_failed_toast">인쇄 실패: %1$s</string>
-    <string name="debug_trigger_crash_menu">크래시 트리거 (Debug)</string>
     <string name="filebrowser_copy_abs_path">절대 경로 복사</string>
     <string name="filebrowser_copy_abs_path_toast">경로가 복사됨</string>
     <!-- [T-mcp-i18n-android] MCP Integrations UI -->
-    <string name="settings_mcp">MCP 통합</string>
-    <string name="settings_mcp_subtitle">Model Context Protocol 서버 연결</string>
-    <string name="mcp_title">MCP 통합</string>
-    <string name="mcp_add">MCP 서버 추가</string>
-    <string name="mcp_edit">MCP 서버 편집</string>
-    <string name="mcp_section_servers">서버</string>
-    <string name="mcp_section_footer">MCP 서버를 사용하면 에이전트가 minis-mcp-cli를 통해 외부 도구를 호출할 수 있습니다. 구성은 /var/minis/mcp-servers/servers.json에 저장됩니다(Claude Desktop 호환).</string>
-    <string name="mcp_empty_title">MCP 서버 없음</string>
-    <string name="mcp_empty_action">+ 버튼으로 서버를 추가하세요.</string>
-    <string name="mcp_transport_http">HTTP</string>
-    <string name="mcp_transport_sse">SSE</string>
-    <string name="mcp_transport_stdio">STDIO</string>
-    <string name="mcp_tab_form">양식</string>
-    <string name="mcp_tab_import">JSON 가져오기</string>
-    <string name="mcp_form_name">이름</string>
-    <string name="mcp_form_name_placeholder">예: notion</string>
-    <string name="mcp_form_note">메모(에이전트에 표시)</string>
-    <string name="mcp_form_note_placeholder">이 서버의 용도</string>
-    <string name="mcp_form_url">서버 URL</string>
-    <string name="mcp_form_url_placeholder">https://mcp.example.com/mcp</string>
-    <string name="mcp_form_headers">헤더(한 줄에 하나, Key: Value)</string>
-    <string name="mcp_form_headers_placeholder">Authorization: Bearer $TOKEN</string>
-    <string name="mcp_form_command">명령</string>
-    <string name="mcp_form_command_placeholder">npx</string>
-    <string name="mcp_form_args">인수(공백으로 구분)</string>
-    <string name="mcp_form_args_placeholder">-y @modelcontextprotocol/server-github</string>
-    <string name="mcp_form_env">환경 변수(한 줄에 하나, KEY=VALUE)</string>
-    <string name="mcp_form_env_placeholder">GITHUB_TOKEN=$GITHUB_TOKEN</string>
-    <string name="mcp_form_env_insert_app_var">앱 변수 삽입</string>
-    <string name="mcp_form_env_clear">지우기</string>
-    <string name="mcp_form_env_clear_confirm_title">환경 변수를 지울까요?</string>
-    <string name="mcp_form_env_clear_confirm_message">이 서버의 모든 환경 변수를 제거합니다. 이 작업은 되돌릴 수 없습니다.</string>
-    <string name="mcp_env_picker_title">앱 환경 변수</string>
-    <string name="mcp_env_picker_empty">앱 환경 변수가 없습니다 — 설정 → 환경 변수에서 추가하세요.</string>
-    <string name="mcp_form_save">저장</string>
-    <string name="mcp_form_oauth_section">OAuth (선택)</string>
-    <string name="mcp_form_oauth_authorized">인증됨</string>
-    <string name="mcp_form_oauth_client_id">클라이언트 ID</string>
-    <string name="mcp_form_oauth_client_id_placeholder">OAuth 클라이언트 ID</string>
-    <string name="mcp_form_oauth_client_secret">클라이언트 시크릿</string>
-    <string name="mcp_form_oauth_client_secret_placeholder">선택 사항, 암호화 저장</string>
-    <string name="mcp_form_oauth_auth_endpoint">인증 엔드포인트</string>
-    <string name="mcp_form_oauth_auth_endpoint_placeholder">https://…/authorize</string>
-    <string name="mcp_form_oauth_token_endpoint">토큰 엔드포인트</string>
-    <string name="mcp_form_oauth_token_endpoint_placeholder">https://…/token</string>
-    <string name="mcp_form_oauth_scopes">범위</string>
-    <string name="mcp_form_oauth_scopes_placeholder">공백으로 구분, 예: openid email</string>
-    <string name="mcp_form_oauth_authorize">인증</string>
-    <string name="mcp_form_oauth_reauthorize">재인증</string>
-    <string name="mcp_form_oauth_sign_out">로그아웃</string>
-    <string name="mcp_form_oauth_incomplete">먼저 클라이언트 ID, 인증 및 토큰 엔드포인트를 입력하세요.</string>
-    <string name="mcp_form_error_no_name">서버 이름은 필수입니다.</string>
-    <string name="mcp_form_error_no_transport">URL(HTTP) 또는 명령(STDIO)을 입력하세요.</string>
-    <string name="mcp_import_instruction">Claude Desktop / Cursor의 mcpServers JSON 구성을 붙여넣으세요.</string>
-    <string name="mcp_import_placeholder">{"mcpServers": {"notion": {"url": "…"}}}</string>
-    <string name="mcp_import_found">서버 %1$d개를 찾았습니다</string>
-    <string name="mcp_import_none">붙여넣은 JSON에서 유효한 서버를 찾을 수 없습니다.</string>
-    <string name="mcp_import_submit">가져오기</string>
-    <string name="mcp_delete_title">%1$s을(를) 삭제할까요?</string>
-    <string name="mcp_delete_message">서버를 servers.json에서 제거합니다. 이 작업은 되돌릴 수 없습니다.</string>
-    <string name="session_mcps_title">세션의 MCP</string>
-    <string name="session_mcps_footer">이 세션에서만 MCP 서버를 켜고 끕니다. 기본값은 설정 → MCP 통합에서 가져옵니다.</string>
-    <string name="session_mcps_empty_title">MCP 서버 없음</string>
-    <string name="session_mcps_empty_subtitle">설정 → MCP 통합에서 서버를 추가하세요.</string>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     <string name="error_empty_response_generic">모델이 빈 응답을 반환했습니다. 다시 시도하거나 모델을 변경하세요.</string>
     <string name="error_empty_response_context_large">모델이 빈 응답을 반환했습니다. 대화 컨텍스트가 너무 클 수 있습니다 — 압축하거나 새 세션을 시작하세요.</string>
     <string name="error_empty_response_after_tool">도구 결과 이후 리마인더를 보냈는데도 모델이 응답을 반환하지 않았습니다. 과부하 상태일 수 있습니다 — 다시 시도하거나 모델을 변경하세요.</string>
     <string name="thinking_truncated_hint">%2$dK자 중 마지막 %1$dK자 표시 중</string>
     <string name="thinking_view_full">전체 내용 보기</string>
     <!-- Spoken substitutions for links during read-aloud (TTS) -->
-    <string name="voice_link_to_host">%1$s 링크</string>
-    <string name="voice_bare_link">링크</string>
+    
     <!-- [T-android-voice-correction] Consent + correction UI -->
-    <string name="voice_correction_consent_title">음성 교정을 개선할까요?</string>
-    <string name="voice_correction_consent_body">Novex는 사용자의 전사 수정(원문 → 교정)과 적용된 AI 교정을 기기 내 데이터베이스에 저장해 이후 음성 교정을 더 정확하게 만듭니다. 업로드되는 항목은 없습니다. 설정에서 언제든 변경하거나 삭제할 수 있습니다.</string>
-    <string name="voice_correction_consent_enable">사용</string>
-    <string name="voice_correction_consent_not_now">나중에</string>
-    <string name="voice_correction_button_a11y">AI로 전사 교정</string>
-    <string name="voice_correction_none_needed">교정할 내용이 없습니다</string>
-    <string name="voice_correction_failed">교정 실패, 원문을 유지했습니다</string>
-    <string name="voice_correction_section">음성 교정 학습</string>
-    <string name="voice_correction_toggle">음성 교정 데이터 수집</string>
-    <string name="voice_correction_footer">사용하면 음성 전사에 대한 수동 수정(원문 → 교정), 적용된 AI 교정, 자주 입력하는 용어가 기기 내 데이터베이스에 저장되어 이후 음성 교정이 더 정확해집니다. 업로드되는 항목은 없습니다. 기본값은 꺼짐이며 기존 데이터는 삭제할 때까지 유지됩니다.</string>
-    <string name="voice_correction_clear_title">수집된 음성 교정 데이터를 모두 삭제할까요?</string>
-    <string name="voice_correction_clear">모두 삭제</string>
-    <string name="voice_correction_cleared">음성 교정 데이터를 삭제했습니다</string>
+
+
+
+
+
+
     <string name="voice_provider_system">시스템</string>
-    <string name="add_provider_subtitle_kimi">Kimi Coding Plan — Kimi 계정으로 로그인</string>
-    <string name="kimi_login_title">Kimi Code로 로그인</string>
-    <string name="kimi_login_instructions">인증 페이지를 열고 이 코드를 입력하여 Novex를 승인하세요:</string>
-    <string name="kimi_login_copy_code">코드 복사</string>
-    <string name="kimi_login_open_verification">인증 페이지 열기</string>
-    <string name="kimi_login_waiting">승인 대기 중…</string>
-    <string name="browser_downloads_title">다운로드</string>
-    <string name="browser_downloads_clear">지우기</string>
-    <string name="browser_downloads_empty">다운로드 없음</string>
-    <string name="browser_downloads_cancel">다운로드 취소</string>
-    <string name="browser_downloads_failed">실패</string>
-    <string name="browser_downloads_open">열기</string>
-    <string name="shizuku_install_btn_sui">Sui 설치</string>
-    <string name="shizuku_install_btn_sui_subtitle">RikkaApps · 루팅된 기기 (Magisk/KernelSU) 용 · 앱 불필요, 재부팅 후에도 유지</string>
-    <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
-    <string name="shizuku_grant_footer_sui">Sui가 실행 중입니다. "Novex 승인"을 눌러 접근을 허용하세요 — 확인 대화상자는 Sui가 직접 표시합니다. 따로 열어야 할 관리자 앱은 없습니다.</string>
-    <string name="shizuku_install_footer">Shizuku (RikkaApps), AXManager (Axeron), Sui (RikkaApps) 중 하나를 설치하세요 — 세 가지 모두 동일한 프로토콜을 사용하며 서로 교체 가능합니다. Shizuku와 AXManager는 무선 ADB로 활성화하는 일반 앱입니다. Sui는 이미 루팅된 기기용으로, Magisk/KernelSU 모듈로 설치되며 앱이 필요 없고 재부팅 후에도 활성 상태를 유지합니다. KernelSU 또는 APatch에서는 Sui에 추가로 Zygisk 구현(Zygisk Next / ReZygisk / NeoZygisk)이 필요합니다 — 없으면 Sui가 로드되지 않습니다. 하나를 설치한 뒤 여기로 돌아오세요.</string>
-    <string name="shizuku_state_not_installed_subtitle">Shizuku, AXManager 또는 Sui 중 하나를 설치하세요.</string>
+
+
+
+
+
+
+
+
+    
 </resources>

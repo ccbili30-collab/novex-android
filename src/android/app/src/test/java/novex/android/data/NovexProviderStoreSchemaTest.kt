@@ -17,7 +17,6 @@ import novex.android.data.model.ProviderType
 import novex.android.data.model.RoutingStrategy
 import novex.android.data.model.ThinkingLevel
 import novex.android.data.provider.ProviderStoreDao
-import novex.android.data.provider.ThinkingRuleRow
 import novex.android.data.provider.toConfig
 import novex.android.data.provider.toRows
 import org.junit.After
@@ -161,27 +160,7 @@ class NovexProviderStoreSchemaTest {
         assertEquals("g1", reread.voiceOutputGroupId)
         assertEquals("hash-1", reread.let { dao.metaRows().first { row -> row.key == "json_sync_hash" }.value })
     }
-
-    @Test
-    fun thinkingRulesRoundTripInOrderAndReorderAtomically() = runBlocking {
-        val rules = listOf(
-            ThinkingRuleRow(id = "r2", providerInstanceId = "p", label = "兜底", scopeKind = "allModels", sortOrder = 1,
-                wireFormatJson = """{"kind":"off"}"""),
-            ThinkingRuleRow(id = "r1", providerInstanceId = "p", label = "主力", scopeKind = "modelPattern",
-                scopePattern = "glm-*", sortOrder = 0, reasoningEchoJson = """{"timing":"always"}"""),
-        )
-        dao.reorderRules("p", rules)
-
-        assertEquals(listOf("r1", "r2"), dao.ruleRowsFor("p").map { it.id })
-        assertEquals(listOf("modelPattern", "allModels"), dao.ruleRowsFor("p").map { it.scopeKind })
-        assertEquals("glm-*", dao.ruleRowsFor("p").first().scopePattern)
-
-        // Drag r2 to the front: the rule's own sort_order column decides the
-        // stored sequence after the atomic rewrite.
-        dao.reorderRules("p", listOf(rules[0].copy(sortOrder = 0), rules[1].copy(sortOrder = 1)))
-        assertEquals(listOf("r2", "r1"), dao.ruleRowsFor("p").map { it.id })
-
-        dao.dropRulesFor("p")
-        assertTrue(dao.allRuleRows().isEmpty())
-    }
+    // [P3.3 裁军] thinkingRulesRoundTripInOrderAndReorderAtomically（自定义
+    // 思考规则的写/读/重排 DAO 回路测试）随 CUSTOM 写路径退役删除；
+    // provider_thinking_rules 表与列由本文件的 schema 钉面继续保留。
 }

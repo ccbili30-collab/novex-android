@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserTabPool
 import novex.android.data.chat.MessageRow
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
@@ -115,7 +114,6 @@ import novex.core.NovexManagementService
 import novex.core.toToolJson
 import novex.core.toModelToolJson
 import com.openminis.app.ui.navigation.applyDraftManagedSubjects
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -166,7 +164,7 @@ class ChatViewModel(
     internal val context: Context,
     val memoryRepository: MemoryRepository? = null,
     val skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
-    val mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+    // [P3.3 裁军] mcpRepository 参数随 MCP 集成面退役（MCPRepository 已删）。
 ) : ViewModel() {
 
     companion object {
@@ -431,7 +429,6 @@ class ChatViewModel(
             appContext: Context,
             memoryRepository: MemoryRepository?,
             skillRepository: com.openminis.app.data.repository.SkillRepository?,
-            mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -442,7 +439,6 @@ class ChatViewModel(
                     context = appContext,
                     memoryRepository = memoryRepository,
                     skillRepository = skillRepository,
-                    mcpRepository = mcpRepository,
                 ) as T
             }
         }
@@ -1617,35 +1613,10 @@ class ChatViewModel(
     private var novexContextRevision = 0L
     private var excludedBranchMemoryWrites: Map<String, Int> = emptyMap()
 
-    /**
-     * Cached reference to the lazily-created [BrowserTabPool] so
-     * [ensureSession] can re-point it at the real session id after a rename.
-     * Read only through [browserTabPool]; the backing `by lazy` fills this in.
-     */
-    @Volatile
-    private var _browserTabPoolRef: BrowserTabPool? = null
-
-    /** Browser tab pool for browser_use tool. Lazily created on first access. */
-    val browserTabPool: BrowserTabPool by lazy {
-        BrowserTabPool(context).also {
-            it.setSession(activeSessionId)
-            // Surface download start/finish/failure as system-info notices in
-            // this chat. May fire from the pool's IO scope — hop to Main since
-            // appendSystemInfo does a read-modify-write on _messages.
-            it.onDownloadEvent = { text ->
-                viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                    appendSystemInfo(text, "info")
-                }
-            }
-            _browserTabPoolRef = it
-        }
-    }
-
-    internal val _showBrowserSheet = MutableStateFlow(false)
-    val showBrowserSheet: StateFlow<Boolean> = _showBrowserSheet.asStateFlow()
-
-    // [T-android-split-chat] toggleBrowserSheet / dismissBrowserSheet /
-    // openBrowserSheetForUrl moved to ChatViewModelUiStateExt.kt.
+    // [P3.3 裁军] BrowserTabPool（browser_use 工具伴奏池）与 showBrowserSheet
+    // 状态流随内置浏览器全家（browser/ + ui/browser/）退役删除；
+    // toggleBrowserSheet / dismissBrowserSheet / openBrowserSheetForUrl
+    // 同批移除（原在 ChatViewModelUiStateExt.kt）。
 
     internal val _showMemorySheet = MutableStateFlow(false)
     val showMemorySheet: StateFlow<Boolean> = _showMemorySheet.asStateFlow()
@@ -4669,12 +4640,8 @@ class ChatViewModel(
             // ed861471 (T-ios-session-skill-override-init-timing). Cheap
             // no-op when no rows match.
             skillRepository?.renameSessionOverrides(fromDraft = sessionId, toReal = session.id)
-            mcpRepository?.renameSessionOverrides(fromDraft = sessionId, toReal = session.id)
-            // Re-point the lazily-created BrowserTabPool if it was already
-            // instantiated against the draft key (e.g. user opened the browser
-            // sheet before sending a message). Without this, cookies and
-            // downloads keep flowing into the draft directory.
-            _browserTabPoolRef?.setSession(session.id)
+            // [P3.3 裁军] mcp_session_overrides 的草稿改名随 MCP 集成面退役
+            // （MCPRepository 已删）；BrowserTabPool 的重指合同上。
         }
         // Persist the current model binding so it survives re-entry
         val groupId = _selectedGroupId.value
@@ -4750,23 +4717,9 @@ class ChatViewModel(
             }
         }
         runCatching { draftBase.deleteRecursively() }
-
-        // Also rename the BrowserTabPool saved-state file (filesDir/browser_tabs/<sid>.json).
-        // Otherwise the pool will load empty state on the next re-entry and the
-        // user loses their open tabs even though the URLs never truly "went away".
-        val tabsDir = java.io.File(context.filesDir, "browser_tabs")
-        val draftTabs = java.io.File(tabsDir, "$fromDraft.json")
-        if (draftTabs.exists()) {
-            val realTabs = java.io.File(tabsDir, "$toReal.json")
-            runCatching {
-                if (!realTabs.exists()) {
-                    if (!draftTabs.renameTo(realTabs)) {
-                        draftTabs.copyTo(realTabs, overwrite = false)
-                        draftTabs.delete()
-                    }
-                }
-            }
-        }
+        // [P3.3 裁军] browser_tabs/<sid>.json 的改名迁移随 BrowserTabPool
+        // 退役删除；"browser" 子目录仍保留在迁移清单里，仅为搬运旧安装
+        // 的既有浏览器工件，不再有新写入方。
     }
 
     private fun copyRecursive(src: java.io.File, dst: java.io.File): Boolean = runCatching {
@@ -6000,15 +5953,8 @@ class ChatViewModel(
         // newly cleared chat doesn't briefly flash a stale tool's sheet
         // before the existence-guard catches up.
         _selectedToolDetailId.value = null
-        // Drop any browser tabs the agent spawned for this session, and
-        // delete the persisted tab snapshot so a future open starts clean.
-        // iOS calls BrowserTabPool.deletePersistedData(for:) +
-        // BrowserUseOffloadBridge.releasePool(forSession:); on Android the
-        // pool is per-VM (lazy), so releasing tabs here is sufficient.
-        _browserTabPoolRef?.releaseAllTabs()
-        runCatching {
-            java.io.File(context.filesDir, "browser_tabs/$sid.json").delete()
-        }
+        // [P3.3 裁军] 会话浏览器标签清理（BrowserTabPool.releaseAllTabs +
+        // browser_tabs/<sid>.json 删除）随内置浏览器退役删除。
         // Persist: drop messages + compact markers. Files (workspace,
         // attachments, offloads) intentionally retained.
         // [T-run-phase] D2/D3：isWiping 门 + dbWriteSerial 串行（P2-1/P2-2 关账）。
@@ -10304,9 +10250,10 @@ class ChatViewModel(
                 success = false,
             )
             "browser_use" -> com.openminis.app.tools.ToolExecutionResult(
-                // R2 沙箱退役：AI 自动浏览已下线；此处只兜历史回放或旧客户端
-                // 请求，让模型明确告知用户改用手动内置浏览器。
-                output = "browser_use is no longer available on this device. Tell the user this operation is unsupported and suggest using the built-in browser instead.",
+                // [P3.3 裁军] 内置浏览器全家退役：此处只兜历史回放或旧客户端
+                // 请求，让模型明确告知用户该操作不受支持（可自行在系统浏览
+                // 器打开相关链接）。
+                output = "browser_use is no longer available on this device. Tell the user this operation is unsupported.",
                 success = false,
             )
             "memory_write" -> executeMemoryWriteTool(argsJson)
@@ -11539,13 +11486,8 @@ class ChatViewModel(
         val imageGenerationSkill = if (
             toolsEnabled && providerRepository.resolvedImageGenerationEntries().isNotEmpty()
         ) GenerateImageTool.skillPrompt() else null
-        // [T-mcp-integration-android] Re-read servers.json (the CLI / file
-        // browser may have changed it out-of-band) then build the Top-20
-        // enabled-MCP disclosure, injected right after the skills fragment.
-        if (toolsEnabled) mcpRepository?.reloadFromDisk()
-        // R0 沙箱退役灰度（P2.5）：minis-mcp-cli 经沙箱 shell 执行，AI 侧已不可
-        // 达——灰度期不注入这条幽灵命令广告（服务器配置保留，R2 随沙箱裁决）。
-        val mcpFragment: String? = null
+        // [P3.3 裁军] MCP 提示词片段（mcpFragment，R0 沙箱退役后已恒 null）
+        // 随 MCP 集成面彻底退役，不再注入。
         // [T-memory-toggle-gates-injection-and-tools-android] Skip loading
         // GLOBAL.md + recent daily logs entirely when the user has turned
         // memory off for this session. Cheaper (no disk read) and — more
@@ -11589,10 +11531,6 @@ class ChatViewModel(
             if (imageGenerationSkill != null) {
                 append("\n\n")
                 append(imageGenerationSkill)
-            }
-            if (mcpFragment != null) {
-                append("\n\n")
-                append(mcpFragment)
             }
             if (globalMemoryFragment != null) {
                 append("\n\n")

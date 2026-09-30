@@ -100,6 +100,6 @@ class NovexComponentArchitectureTest {
         )
         val navigation = File("src/main/java/com/openminis/app/ui/navigation/AppNavigation.kt").readText()
         assertTrue(navigation.contains("onSelectModelsClick ="))
-        assertTrue(navigation.contains("onScheduledTasksClick ="))
+        // [P3.3 裁军] onScheduledTasksClick 断言随定时任务退役移除。
     }
 }

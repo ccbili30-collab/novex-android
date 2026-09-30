@@ -7,14 +7,18 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Holds pending deep-link side-effects that outlive a single navigation event.
  * Mirrors iOS DeepLinkCoordinator.
+ *
+ * [P3.3 裁军] pendingHtmlPreview（HTML 预览固定捷径）与 ChatAction.
+ * START_VOICE（voice_chat 快捷动作）随内置浏览器/语音全家退役删除。
  */
 object DeepLinkCoordinator {
 
     /**
-     * Optional `?tab=…` hint from `minis://settings/logs?tab=config-audit`.
-     * The Logs screen reads this on appear to land on the right
-     * segmented-control tab. Cleared by the screen after consumption.
-     * Mirrors iOS DeepLinkCoordinator.pendingLogsTab.
+     * Optional `?tab=…` from `minis://settings/logs?tab=…`. The Logs screen
+     * reads this on appear to land on the right segmented-control tab.
+     * Cleared by the screen after consumption. Mirrors iOS
+     * DeepLinkCoordinator.pendingLogsTab. ("config-audit" tab 已随
+     * minis-config 体系退役，仅剩默认日志页。)
      */
     private val _pendingLogsTab = MutableStateFlow<String?>(null)
     val pendingLogsTab: StateFlow<String?> = _pendingLogsTab.asStateFlow()
@@ -27,35 +31,15 @@ object DeepLinkCoordinator {
     }
 
     /**
-     * Pending pinned-shortcut HTML preview: filesystem path + cached title.
-     * MainActivity sets this on `minis://preview/html` deep link; ChatScreen
-     * reads it on first composition and routes into WebPreviewFullscreen.
-     */
-    data class HtmlPreview(val sessionId: String, val resourcePath: String, val title: String)
-
-    private val _pendingHtmlPreview = MutableStateFlow<HtmlPreview?>(null)
-    val pendingHtmlPreview: StateFlow<HtmlPreview?> = _pendingHtmlPreview.asStateFlow()
-
-    fun setPendingHtmlPreview(sessionId: String, resourcePath: String, title: String) {
-        _pendingHtmlPreview.value = HtmlPreview(sessionId, resourcePath, title)
-    }
-
-    fun consumePendingHtmlPreview(): HtmlPreview? {
-        val current = _pendingHtmlPreview.value
-        _pendingHtmlPreview.value = null
-        return current
-    }
-
-    /**
      * App-icon quick-action that a freshly-opened ChatScreen should auto-
      * trigger on first compose. Mirrors iOS `pendingChatAction` on
      * AIChatViewModel. Set by [com.openminis.app.MainActivity] /
      * [com.openminis.app.ui.navigation.AppNavigation] when the launch
-     * intent carries `minis://action/voice_chat` or
-     * `minis://action/camera_chat`; consumed exactly once by ChatScreen
-     * so re-entering the same chat later doesn't fire the action again.
+     * intent carries `minis://action/camera_chat`; consumed exactly once by
+     * ChatScreen so re-entering the same chat later doesn't fire the action
+     * again.
      */
-    enum class ChatAction { START_VOICE, OPEN_CAMERA, OPEN_CREATION_TOOL, ORGANIZE_IMPORTED_CARD }
+    enum class ChatAction { OPEN_CAMERA, OPEN_CREATION_TOOL, ORGANIZE_IMPORTED_CARD }
 
     private val _pendingChatAction = MutableStateFlow<ChatAction?>(null)
     val pendingChatAction: StateFlow<ChatAction?> = _pendingChatAction.asStateFlow()

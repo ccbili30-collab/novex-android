@@ -45,14 +45,9 @@ fun AddModelsToGroupScreen(
     }
 
     val existingIds = group.memberEntryIds.toSet()
-    // [T-android-provider-voice] Voice-scoped picker: when the target group is
-    // bound as the Voice Input/Output group, scope the shared picker by
-    // modality (ASR = audio-in, TTS = audio-out). Modality filtering + System
-    // virtual entry injection live inside modelEntryPickerItems (mirrors iOS
-    // UnifiedModelPicker effectivePreferModality / candidateEntries).
+    // [P3.3 裁军] 语音 ASR/TTS 模态过滤分支随语音全家退役删除；仅保留
+    // Vision Group 的图像模态过滤。
     val modalityFilter = when (groupId) {
-        config.voiceInputGroupId -> PickerModalityFilter.AUDIO_INPUT
-        config.voiceOutputGroupId -> PickerModalityFilter.AUDIO_OUTPUT
         // [T-android-vision-group] Vision Group picker: only image-capable models.
         config.visionGroupId -> PickerModalityFilter.IMAGE_INPUT
         else -> null

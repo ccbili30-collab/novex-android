@@ -57,7 +57,9 @@ object ContentPaths {
      */
     fun registerGlobalMounts(context: Context) {
         val globalBase = File(context.filesDir, "minis-global")
-        listOf("memory", "skills", "shared", "mcp-servers").forEach { subdir ->
+        // [P3.3 裁军] mcp-servers 桶随 MCP 集成面退役移出注册表（MCPRepository
+        // 已删，零消费方）；memory/skills/shared 三桶保留。
+        listOf("memory", "skills", "shared").forEach { subdir ->
             val hostDir = File(globalBase, subdir).also { it.mkdirs() }
             bindMounts["/var/minis/$subdir"] = hostDir.absolutePath
         }

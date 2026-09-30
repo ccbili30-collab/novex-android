@@ -642,12 +642,7 @@ data class SelectionToolbarActions(
     val onAddToInput: ((String) -> Unit)? = null,
     /** Share selected text into another Novex conversation. */
     val onShare: ((String) -> Unit)? = null,
-    /**
-     * [T-android-selection-readaloud] Speak the currently-selected plain text
-     * through Minis TTS. Null hides the button. Mirrors iOS's "Read Aloud /
-     * Read Selection" selection-menu action.
-     */
-    val onReadAloud: ((String) -> Unit)? = null,
+    // [P3.3 裁军] onReadAloud（选区朗读）随语音全家退役删除。
 )
 
 @Composable
@@ -809,7 +804,6 @@ fun MinisSelectionToolbarHost(
                 val labelAddToInput = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_add_to_chat_input)
                 val labelCopyMarkdown = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copy_markdown)
                 val labelCopyRichText = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copy_rich_text)
-                val labelReadAloud = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_read_aloud)
                 val toastCopiedAsMarkdown = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copied_as_markdown_toast)
                 val toastCopiedAsRichText = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copied_as_rich_text_toast)
                 // [T-android-markdown-table-copy-actions] Copy Table / Copy
@@ -860,16 +854,7 @@ fun MinisSelectionToolbarHost(
                             controller.clearSelection()
                         })
                     }
-                    // [T-android-selection-readaloud] Speak ONLY the selected
-                    // substring (not the message's markdown source) through
-                    // Minis TTS.
-                    if (actions?.onReadAloud != null) {
-                        add(SelectionAction(labelReadAloud) {
-                            val text = controller.selectedPlainText()
-                            if (text.isNotEmpty()) actions.onReadAloud.invoke(text)
-                            controller.clearSelection()
-                        })
-                    }
+                    // [P3.3 裁军] 「朗读」动作随选区朗读（TTS）退役删除。
                     // Copy Markdown / Copy Rich Text are ALWAYS offered when the
                     // selection contains rendered text. Earlier we gated them on
                     // resolveSelectionMarkdown() returning non-null, but that hid

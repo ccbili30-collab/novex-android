@@ -329,11 +329,10 @@ dependencies {
     // Chrome Custom Tabs (in-app browser for OAuth)
     implementation("androidx.browser:browser:1.8.0")
 
-    // T-pwa-1: WebViewAssetLoader serves pinned PWA HTML under
-    // https://appassets.androidplatform.net/ inside PwaActivity, so
-    // sibling CSS/JS resolve against the file's parent dir without
-    // granting WebView raw file:// access.
-    implementation("androidx.webkit:webkit:1.12.1")
+    // [P3.3 裁军] androidx.webkit（PWA 资产加载器）与 dev.rikka.shizuku
+    // （Shizuku/AXManager 特权后端 SDK）随 WebApp 与 offload/ 体系整体
+    // 退役摘除；androidx.browser 保留（provider OAuth 的 Custom Tabs
+    // 仍在用）。
 
     // Drag-to-reorder for LazyColumn
     implementation("sh.calvin.reorderable:reorderable:2.4.0")
@@ -344,25 +343,6 @@ dependencies {
     // T283: ACRA — local crash report capture. acra-core only (no http
     // sender, no network permission).
     implementation("ch.acra:acra-core:5.12.0")
-
-    // T322: Shizuku SDK — offloads privileged Android system APIs (PackageManager,
-    // PermissionManager, ActivityManager, AppOps, IInputManager, …) through a
-    // user-installed Shizuku app running as adb shell (uid=2000) or root. The CLI
-    // surface `android-shizuku-cli` is a NativeOffloadHandler that forwards argv into
-    // these hidden APIs via Shizuku's binder. `api` provides the manager binder
-    // proxy + permission flow, `provider` registers the in-process content
-    // provider that hosts the user-app side of the binder.
-    //
-    // [T-android-privileged-backend] AXManager (Axeron) needs NO extra
-    // dependency: its server is a drop-in Shizuku-protocol implementation that
-    // `sendBinder`s into the standard `<applicationId>.shizuku` ShizukuProvider
-    // (verified against the installed APK). AxeronBackend therefore rides the
-    // same `rikka.shizuku.Shizuku` client + provider declared above. The
-    // earlier Axeron-API SDK route was dropped — it duplicated the
-    // `moe.shizuku.*` classes (AGP checkDuplicateClasses failure) and pulled an
-    // incompatible androidx.core / minSdk for zero added capability.
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Testing — JVM unit tests
     testImplementation("junit:junit:4.13.2")

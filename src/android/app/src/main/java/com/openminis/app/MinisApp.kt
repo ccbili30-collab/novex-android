@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import com.openminis.app.browser.BrowserTabPool
 import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
@@ -16,13 +15,10 @@ import com.openminis.app.data.repository.EnvVarRepository
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.data.repository.WebAppShortcutRepository
-import com.openminis.app.data.repository.MCPRepository
 import com.openminis.app.data.repository.SkillRepository
 import com.openminis.app.notification.BackgroundTaskNotifier
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.network.NetworkMonitor
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.provider.ModelsDevApi
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.startup.NovexStartupCoordinator
@@ -161,11 +157,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         private set
     lateinit var skillRepository: SkillRepository
         private set
-    lateinit var mcpRepository: MCPRepository
-        private set
     lateinit var memoryRepository: MemoryRepository
-        private set
-    lateinit var webAppShortcutRepository: WebAppShortcutRepository
         private set
     lateinit var backgroundSettingsRepository: BackgroundSettingsRepository
         private set
@@ -207,14 +199,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         NetworkMonitor()
     }
 
-    /**
-     * Application-scoped BrowserTabPool for shell-invoked `minis-browser-use`.
-     * Separate from the per-ChatViewModel pool so browser state driven from
-     * within an ish shell doesn't collide with the agent's own tabs.
-     */
-    val sharedBrowserTabPool: BrowserTabPool by lazy {
-        BrowserTabPool(this).also { it.setSession("minis-browser-use") }
-    }
+    // [P3.3 裁军] Application-scoped BrowserTabPool（minis-browser-use 壳工具
+    // 伴奏池）随内置浏览器全家（browser/ + ui/browser/）整体退役删除。
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
@@ -344,9 +330,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // the comment there for why an exception at this point permanently
         // breaks the Application and produces the GH#147 crash loop.
         skillRepository = SkillRepository(this)
-        mcpRepository = MCPRepository(this)
         memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
-        webAppShortcutRepository = WebAppShortcutRepository(database.webShortcutDao())
 
         // Only dependencies used by the first Activity frame stay on the
         // launch path. Model refresh is initialized after
@@ -364,7 +348,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             backgroundTaskNotifier.notifyTaskCompleted(sessionId, isError)
         }
         registerForegroundTracking()
-        OffloadPermissionManager.init(this)
+        // [P3.3 裁军] OffloadPermissionManager.init（Shizuku/特权后门面）随
+        // offload/ 整包与 SystemPermissions/Offload/Shizuku 权限屏一并退役。
 
         initializeDeferredRuntime()
         subsystemsInitialized = true
@@ -444,7 +429,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
                 foregroundActivityCount = (foregroundActivityCount - 1).coerceAtLeast(0)
                 if (foregroundActivityCount == 0) {
                     _isAppForegroundFlow.value = false
-                    com.openminis.app.config.confirm.ConfigConfirmationGate.notifyPending()
+                    // [P3.3 裁军] ConfigConfirmationGate.notifyPending() 随
+                    // minis-config 体系退役删除。
                 }
             }
 
@@ -475,15 +461,9 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             }
         }
 
-        // T-config: minis-config CLI surface — registry / audit log /
-        // master-switch store. Initialized eagerly here so
-        // ConfigRegistry.get() is safe from any thread for the rest of
-        // the process. Mirrors iOS ConfigRegistry.shared.registerBuiltinsIfNeeded().
-        com.openminis.app.config.MinisConfigPermissionStore.init(this)
-        com.openminis.app.config.audit.ConfigAuditLog.init(this)
-        com.openminis.app.config.ConfigRegistry.init(
-            this, providerRepository, envVarRepository, chatRepository,
-        )
+        // [P3.3 裁军] minis-config 体系（ConfigRegistry/审计日志/确认门/
+        // 权限开关，config/ 整族 19f）随自定义配置面退役整体删除；iOS 侧
+        // 对应的 minis-config CLI 不再映射到 Android。
 
         // Initialize models.dev registry (loads from bundled asset, refreshes in background)
         ModelsDevApi.init(this)
@@ -496,14 +476,12 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // Start network monitoring — mirrors iOS NetworkMonitor.shared.start().
         networkMonitor.start(this)
 
-        // Register global /var/minis/{memory,skills,shared,mcp-servers} bind
-        // mounts up-front so direct file I/O tools (file_read, skills,
-        // markdown assets) resolve these paths without a sandbox.
+        // Register global /var/minis/{memory,skills,shared} bind mounts
+        // up-front so direct file I/O tools (file_read, skills, markdown
+        // assets) resolve these paths without a sandbox.
+        // [P3.3 裁军] mcp-servers 桶随 MCP 集成面退役（MCPRepository 已删，
+        // 该桶零消费方）；memory/skills/shared 三桶原样保留。
         novex.android.ContentPaths.registerGlobalMounts(this)
-
-        // T322: Shizuku — privileged Android control via Shizuku. The
-        // manager wires up the binder lifecycle listeners + StateFlow.
-        com.openminis.app.offload.ShizukuManager.init(this)
 
         // [T-android-session-paused-badge-hardkill] Reconcile PAUSED badges
         // against the DB's interrupted-session set. The lifecycle-callback push
@@ -521,24 +499,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             com.openminis.app.service.SessionBadgeStore.reconcileInterruptedSessions(interrupted - active)
         }
 
-        // [T-android-config-confirm-timeout] Wire the config-confirm background
-        // notifier into the (Context-free) gate, so a minis-config approval that
-        // is waiting while the app is backgrounded nudges the user before the
-        // 120s timeout. Mirrors iOS ConfigConfirmationGate.notifyIfBackgrounded.
-        val configConfirmNotifier = com.openminis.app.notification.ConfigConfirmNotifier(
-            context = this,
-            backgroundSettings = backgroundSettingsRepository,
-            isAppForeground = ::isAppForeground,
-        )
-        com.openminis.app.config.confirm.ConfigConfirmationGate.backgroundNotifier = {
-            configConfirmNotifier.notifyIfBackgrounded(it)
-        }
-        com.openminis.app.config.confirm.ConfigConfirmationGate.cancelNotification = {
-            configConfirmNotifier.cancel(it)
-        }
-
-        // Initialize speech-recognition adapter layer (system + provider engines).
-        com.openminis.app.speech.SpeechRecognitionManager.init(this)
+        // [P3.3 裁军] ConfigConfirmationGate 后台通知器（config-confirm 门）
+        // 与语音识别适配层（SpeechRecognitionManager.init）随各自体系退役。
 
         // Refresh model lists once per calendar day (mirrors iOS MinisApp.swift).
         // Runs per-instance in parallel; `autoRefreshModels` skips instances with custom models.
@@ -546,14 +508,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
         )
 
-        // Debug server: only start in debug builds (NEVER in release)
-        if (BuildConfig.DEBUG) {
-            try {
-                com.openminis.app.debug.DebugServer(this).start()
-            } catch (e: Exception) {
-                Log.w("MinisApp", "Failed to start debug server: ${e.message}")
-            }
-        }
+        // [P3.3 裁军] 调试面板（DebugServer，debug/ 整包 12f）按用户裁决退役；
+        // ACRA（crash/）与 AppLogger（logging/）不在裁刀范围内，全部保留。
 
         // T268: one-shot migration of pre-T266 internal alarms into the
         // system Clock app. Pre-T266 builds wrote alarms into Minis's own

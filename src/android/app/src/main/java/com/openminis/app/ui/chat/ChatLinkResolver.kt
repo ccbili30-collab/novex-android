@@ -55,12 +55,13 @@ object ChatLinkResolver {
             FileItem.from(hostFile)?.let { return ChatLinkAction.SandboxFile(it) }
         }
 
-        // T136: intent://, mailto:, tel:, geo:, market: etc. need a system
-        // dispatch — the in-app preview WebView's `loadUrl(...)` doesn't
-        // trip `shouldOverrideUrlLoading` for the initial URL, so without
-        // this hop those schemes hit the WebView and surface as
-        // ERR_UNKNOWN_URL_SCHEME.
-        if (com.openminis.app.ui.browser.BrowserExternalSchemeHandler.shouldHandleExternally(trimmed)) {
+        // [P3.3 裁军] 原 BrowserExternalSchemeHandler.shouldHandleExternally
+        // 的外跳 scheme 判定（intent/market/tel/mailto/geo/…）随内置浏览器
+        // 退役改为本地白名单：非 http(s) 的 scheme 一律走 ExternalApp 分支
+        // 由调用方 ACTION_VIEW 外跳，http(s) 保持 Web 分支（同样外跳系统
+        // 浏览器）。
+        val lowerScheme = scheme?.lowercase()
+        if (lowerScheme != null && lowerScheme != "http" && lowerScheme != "https") {
             return ChatLinkAction.ExternalApp(trimmed)
         }
 

@@ -29,7 +29,7 @@ import novex.runtime.ManagementTarget
     val model:ChatViewModel?=if(id!=null)androidx.lifecycle.viewmodel.compose.viewModel(
         viewModelStoreOwner=ChatViewModelStore.ownerFor(id),
         factory=ChatViewModel.factory(id,app.chatRepository,app.providerRepository,appContext=app,
-            memoryRepository=app.memoryRepository,skillRepository=app.skillRepository,mcpRepository=app.mcpRepository)) else null
+            memoryRepository=app.memoryRepository,skillRepository=app.skillRepository)) else null
     val ready=if(model!=null)model.conversationSettingsReady.collectAsState().value else false
     NovexContentDialog("用于已有对话",onDismiss={if(!saving)onDismiss()},confirmButton={
         TextButton(enabled=ready && !saving,onClick={scope.launch {

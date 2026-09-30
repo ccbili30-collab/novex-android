@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   T-android-app-icon-shortcuts: app-icon long-press quick actions.
-  Mirrors iOS Shared/QuickActionRouter.swift 1:1 (newChat / voiceChat / cameraChat).
+  Mirrors iOS Shared/QuickActionRouter.swift (newChat / cameraChat).
   Each shortcut launches NovexLaunchActivity via a minis://action/<name> deep-link
-  parsed by DeepLinkHandler → DeepLinkAction.{NewChat,NewVoiceChat,NewCameraChat}.
+  parsed by DeepLinkHandler → DeepLinkAction.{NewChat,NewCameraChat}.
+  [P3.3 裁军] voice_chat 快捷方式随语音全家退役删除。
 -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
@@ -17,19 +18,6 @@
             android:targetPackage="com.openminis.app"
             android:targetClass="com.openminis.app.NovexLaunchActivity"
             android:data="minis://action/new_chat" />
-        <categories android:name="android.shortcut.conversation" />
-    </shortcut>
-    <shortcut
-        android:shortcutId="voice_chat"
-        android:enabled="true"
-        android:icon="@mipmap/ic_shortcut_voice_chat"
-        android:shortcutShortLabel="@string/shortcut_voice_chat_short"
-        android:shortcutLongLabel="@string/shortcut_voice_chat_long">
-        <intent
-            android:action="android.intent.action.VIEW"
-            android:targetPackage="com.openminis.app"
-            android:targetClass="com.openminis.app.NovexLaunchActivity"
-            android:data="minis://action/voice_chat" />
         <categories android:name="android.shortcut.conversation" />
     </shortcut>
     <shortcut

@@ -16,7 +16,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
 import com.openminis.app.agent.ToolLoopDetector
-import com.openminis.app.browser.BrowserTabPool
 import novex.android.data.chat.MessageRow
 import com.openminis.app.data.BPETokenizer
 import com.openminis.app.data.ContextOffload
@@ -46,7 +45,6 @@ import com.openminis.app.tools.FileWriteTool
 import com.openminis.app.tools.MemoryTools
 import com.openminis.app.tools.ReadImageTool
 import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.service.SessionConcurrencyManager
 import kotlinx.coroutines.CancellationException
@@ -136,26 +134,9 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
                 isSkill = true,
             )
         } ?: emptyList()
-    // [T-mcp-integration-android] MCP servers appear in the / picker too,
-    // tagged [mcp] with a wrench icon to distinguish them from skills (⚡).
-    // All servers enabled for this session are shown (not just the Top-20
-    // disclosed in the system prompt). Tapping fills the composer with the
-    // server name; discovery/call happens model-side via minis-mcp-cli.
-    val mcpRows: List<SlashCommand> = mcpRepository?.servers?.value
-        ?.filter { mcpRepository.isEnabledForSession(it.id, sid) }
-        ?.sortedBy { it.id.lowercase() }
-        ?.map { server ->
-            val note = server.note?.trim().orEmpty()
-            val sub = if (note.isNotEmpty()) "[mcp] $note" else "[mcp] ${server.transportSummary}"
-            SlashCommand(
-                id = "mcp:${server.id}",
-                icon = novex.android.ui.NovexIcons.Build,
-                title = server.id,
-                subtitle = sub,
-                isMcp = true,
-            )
-        } ?: emptyList()
-    val all = base + skillRows + mcpRows
+    // [P3.3 裁军] MCP 服务器行（mcpRows）随 MCP 集成面退役删除；斜杠
+    // 菜单只剩基础命令与技能行。
+    val all = base + skillRows
     return if (filter.isEmpty()) all else all.filter { it.title.lowercase().contains(filter) }
 }
 

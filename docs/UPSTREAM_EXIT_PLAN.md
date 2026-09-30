@@ -417,6 +417,52 @@ P3.2b Room 数据层绞杀（PR 见进度日志，2026-09-28）——**删 data/
   仅改接不重写；data/character、data/creative、data/attachments 未动（随
   各自消费方战役处置）。
 
+P3.3 产品范围裁军轮（用户裁决 A+B+C 全砍单，2026-09-30）——**九大产品面
+按用户裁决整体退役，砍单逐项删净不留尸体，130 文件约 -4.0 万行**：
+
+- **用户裁决砍单清单**：①语音全家（ASR+TTS 两套）②内置浏览器全家
+  ③WebApp/PWA 捷径 ④Shizuku/特权后端 ⑤定时任务 ⑥调试面板 ⑦MCP 残件
+  ⑧聊天内嵌媒体播放器 ⑨minis-config 体系（自定义思考规则机器随葬）。
+- **砍单明细（文件数/行数）**：speech/ 26f 7,733 行（含 correction/ 14f）
+  + novex.android.voice/ 5f 1,509 行（12 厂商客户端）+ ui/chat/voice/ 3f
+  + ShadowVoiceDetailScreen/语音模板 UI/voice 设置项；browser/ 8f 3,901 行
+  + ui/browser/ 6f 2,012 行 + ui/preview/ 4f 1,367 行 + UrlPreviewSheet；
+  webapp/ 5f 1,293 行；offload/ 3f 910 行 + Offload/Shizuku 权限屏；
+  scheduled/ 5f 960 行 + ui/scheduled/ 4f 1,539 行；debug/ 12f 5,498 行；
+  mcp/ 4f 469 行 + MCPRepository/SessionMcpsSheet/MCPIntegrationsScreen；
+  ui/media/InlineMediaPlayer 1f 653 行；config/ 20f 4,785 行
+  + ConfigAudit/ConfigConfirm 两屏与 ConfigConfirmNotifier；
+  OffloadPermissionDialog/AudioWaveformView/LazyReadAloudPlayer/
+  SpeechLanguagePickerSheet/ComposerInputModePrefs/UnifiedModelPickerSheet/
+  ThinkingContractCoding 等伴生件合计再 -6,385 行；裁军孤儿（分词四件
+  SentenceSplitter/TextSegmenter/JiebaEngine/SystemSegmentEngine +
+  BringIntoViewOnFocus）随葬。
+- **保留红线（未动）**：内置思考金表（ThinkingWire/座次表/解析器——
+  CUSTOM 自定义席位删除后 resolver 只跑内置）、ACRA（crash/）、AppLogger
+  （logging/）、系统分享接收、附件/文档解析、生图、卡片全家桶、对话主界面、
+  设置页其余、后台保活、provider OAuth（Custom Tabs 保留）、markdown 渲染。
+- **链接外跳改写点**：消息链接点击（ChatScreen.urlClickHandler）与 markdown
+  链接（MarkdownText）一律 ACTION_VIEW 外跳系统浏览器/处理器（原
+  UrlPreviewSheet 内预览与 BrowserExternalSchemeHandler 收口进
+  openExternalUrl）；会话内 HTML 文件改走 FilePreviewScreen 自带 WebView；
+  视频/音频改经 FileProvider 外跳系统播放器（openMediaFileExternally，
+  替代被裁的 InlineMediaPlayer）。
+- **Manifest/依赖**：摘 RECORD_AUDIO、SCHEDULE_EXACT_ALARM、
+  RECEIVE_BOOT_COMPLETED、com.android.alarm.permission.SET_ALARM、
+  moe.shizuku.manager.permission.API_V23；queries 摘 RecognitionService/
+  SET_ALARM・SHOW_ALARMS・SET_TIMER/shizuku・axerman 包可见项；摘
+  WebAppActivity、ScheduledTaskAlarmReceiver、ShizukuProvider；build.gradle
+  出清 dev.rikka.shizuku（THIRD_PARTY 同步宣告）与 androidx.webkit。
+- **思考金表与库面**：前尘预设原写入的 CUSTOM 规则（gemini-* 省略思考
+  参数）收编为内置席 qianchen-relay-gemini（按 base URL 嗅探，行为逐字节
+  一致）；Room 表 provider_thinking_rules 保留（schema 冻结）但读写 DAO
+  与 UI 全摘；ProviderConfig 的 voiceInput/OutputGroupId 字段原样保留
+  （持久化格式）。deep-link：views/alarm、action/voice_chat、
+  session/<id>/<path>、settings/permissions 解析删除。
+- **验收**：砍单符号全仓 grep 仅墓碑注释命中；RECORD_AUDIO/SET_ALARM
+  零残留；孤儿串清理 695 键（values 全量 + 六个语言目录共 -3,903 条）；
+  审计死代码 0f（血统数字见进度日志行）。
+
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -475,3 +521,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-28 | 本 PR（P3.1e） | OpenAIProvider 终局退役：删上游 provider/openai/ 整包（2f 3,920 行）+ 旧测试 3 件；novex.model 新增 ResponsesWire（请求编码+SSE 事件族+codex 生图流）与 ModelEndpoint tokenHeader/permitQueryParams、ImagesClient 端点覆盖；适配器九类路由（Codex-OAuth/官方直连/useResponsesAPI/Azure/前尘回退/LAN 明文/OpenRouter/xAI/Kimi）+ 动态 OAuth bearer + 前尘回退进程粘性 + OpenRouter 附加头与 anthropic cache_control；imageDegradedModels 迁 app 侧 ImageDegradationLearning；P3.1d 净眼三建议采纳；存量行为测试 10 件换管续跑、模块+适配器+工厂新增 40+ 用例 | 血统：上游未动 186f/37,943 → 179f/36,228（openai 整包归零 + 墓碑注释改动使 4 个文件移入「上游改动」桶），上游改动 160f/100,153 → 163f/97,807；Novex 新增 382f/51,691 → 383f/52,065；model-transport 新增 ResponsesWire（+~470 行）零上游依赖不变 |
 | 2026-09-28 | 本 PR（P3.2） | provider 剩余小件绞杀：删上游 provider/voice（4f）+ provider/thinking（4f）+ provider/image/ImageModelCatalog（零血统件机械搬家为 novex.android.models.ImageGenerationModels）+ data/model/VoiceProviderTemplate（自有 VoiceVendorTemplates 重写，模板数据逐字节一致）+ LargeAllocProbe/JsonExt 死码（123 行）；自有 novex.android.voice 五件（VoiceWire 值类型/VoiceClient 引擎+OpenAI 方言/VoiceClients 十二厂商/VoiceClientFactory 标记路由表/VoiceVendorTemplates）与 novex.android.thinking 四件（ThinkingWire 词表+内聚编解码/ThinkingContract/ThinkingContractResolver 座次表+决策落笔分离/ThinkingContractCoding）；DB 实体/DAO/仓库/配置集合件随消费者更名（Room 表列名不变）；净眼 PR#66 七条全清（③④代码修复 + ①②⑦测试补钉 + ⑤⑥docs 记档）；净眼退回后九件真重写（结构/分解/控制流/注释/文案全部重做，协议事实逐字节保留；剥注释+归一化标识符的语句相似度从 96-99% 降至 10.8-35.8%、均值 23.3%，对照 P3.1c GeminiWire 同口径 ~7.5%），退回附带补钉：讯飞签名 URL/WS 收流确定性测试（注入假 socket 零网络）、MiniMax legacy b64 外壳兜底用例、①Codex 工厂手工 bearer 断言；假服务器 parity 测试钉 Doubao TTS/ASR 与 OpenAI TTS 等厂商；思考金表/回归/合并/xAI 四件测试原样通过| 血统：上游未动 179f/36,228 → 163f/30,167，上游改动 163f/97,807 → 168f/100,749（含 改名换路径的血统件落 Novex 新增桶（其中 ThinkingContractsCollection 经净眼三轮揪出为改名直译，已真重写）），Novex 新增 383f/52,065 → 394f/54,690；死代码 2f/123 行 → 0f；grep 'VoiceProvider|ImageModelCatalog|ThinkingRule' src/android/app/src 归零；model-transport 零 com.openminis 不变 |
 | 2026-09-28 | 本 PR（P3.2b） | Room 数据层绞杀：删 data/db（27f）+ data/model（18f）整包，自有 novex.android.data 三十件 = 库件 4（NovexMainDatabase+MainDatabaseMigrations 38 步迁移重排为 step 注册表/NovexProviderDatabase/WebShortcutStore）+ chat 6（DAO 按读写面拆并：SessionReads/SessionWrites/FolderReads/FolderWrites/MessageDao/MarkerDao+ChatDao 门面）+ cards 6（含冻结面集中文件 CardTables）+ provider 3（快照式读写 ProviderStoreDao+行声明+编解码）+ model 11；**schema 冻结证据：Room KSP 生成物 createAllTables DDL 逐句一致（createAllTables 59 条；89 含 DROP/INSERT 口径）、provider 库 9/9 一致，identityHash 主库 6397ab3a…/8567eaad… 副库 394a39eb…/4d415b94… 重写前后字节相同，老用户库无损**；DAO 查询全部等价改形（表别名/谓词重排/截断走共享 RawQuery 执行器），Robolectric 钉 sessions/messages/compact_markers/provider_instances/provider_thinking_rules 表列名与插入/分支切换/compact marker/provider 配置/思考规则读写十用例；全量单测 1,585 条通过；死码 AgentTypes 族（AgentStreamEvent/AgentMessage/sanitizeToolId，HEAD 上已零引用）删除；相似度：逻辑件 21 件全部 <40%（最大 26.4%、均值 7.4%；冻结面除外——迁移 DDL、Room 列声明、parts_json 编解码、LLM 线协议 DTO、provider JSON 镜像字段名） | 血统：上游未动 163f/30,167 → 128f/24,366，上游改动 168f/100,749 → 173f/102,448，Novex 新增 394f/54,690 → 409f/58,456；死代码 0f；grep 'com.openminis.app.data.db\|com.openminis.app.data.model' src 归零；data/repository 仅改接（import/符号），真重写留 P3.2c |
+| 2026-09-30 | 本 PR（P3.3 裁军） | 产品范围裁军（用户裁决 A+B+C 全砍）：语音全家（speech/ 26f 7,733 行 + novex.android.voice/ 5f 1,509 行 + ui/chat/voice + 影子语音屏与 voice 设置项）、内置浏览器全家（browser/ 8f 3,901 行 + ui/browser/ 6f 2,012 行 + ui/preview/ 4f 1,367 行 + UrlPreviewSheet，链接点击改 ACTION_VIEW 外跳、会话内 HTML 走 FilePreviewScreen WebView、音视频走 FileProvider 外跳）、WebApp（webapp/ 5f 1,293 行 + Manifest 摘 WebAppActivity/OPEN_WEBAPP）、Shizuku/特权后端（offload/ 3f 910 行 + Offload/Shizuku/SystemPermissions 权限屏 + dev.rikka.shizuku 依赖出清 + Manifest 摘 ShizukuProvider 与 API_V23）、定时任务（scheduled/ 5f + ui/scheduled/ 4f 共 2,499 行 + Manifest 摘 AlarmReceiver + SET_ALARM/SCHEDULE_EXACT_ALARM/RECEIVE_BOOT_COMPLETED）、调试面板（debug/ 12f 5,498 行；ACRA 与 AppLogger 保留）、MCP 残件（mcp/ 4f + MCPRepository + 三处 UI 面 + ContentPaths mcp-servers 桶）、内嵌媒体播放器（ui/media 653 行）、minis-config 体系（config/ 20f 4,785 行 + ConfigAudit/ConfigConfirm 屏；自定义思考规则机器随葬：CUSTOM 席位/读写 DAO/ThinkingContractsCollection 删除，前尘预设规则收编内置席 qianchen-relay-gemini，Room 表 provider_thinking_rules 保留 schema 冻结）；死参数/死路由/deep-link 动作清扫（SHADOW_VOICE/PERMISSIONS/SHIZUKU/SYSTEM_PERMISSIONS/SCHEDULED_TASKS/MCP 路由、OpenHtmlPreview/NewVoiceChat/OpenAlarmList/OpenPermissionSettings 动作、settings/sessions 死参数、voice_chat 桌面捷径）；孤儿串 695 键出清（七语言文件共 -3,903 条）；裁军孤儿（shared 分词四件 + BringIntoViewOnFocus）随葬 | 血统：上游未动 128f/24,366 → 60f/11,827，上游改动 173f/102,448 → 118f/74,802，Novex 新增 409f/58,456 → 402f/56,627（编辑过的原上游未动件移入改动桶）；随葬测试（config/debug/mcp/offload/speech/自定义思考规则回路 + shared 分词件）删除；死代码 0f；砍单符号 grep 仅墓碑注释命中；RECORD_AUDIO/SET_ALARM 零残留 |

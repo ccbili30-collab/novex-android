@@ -107,38 +107,7 @@ interface ProviderStoreDao {
         writeMetaRows(meta)
     }
 
-    // ---- thinking rules ------------------------------------------------------
-
-    @Query(
-        """
-        SELECT tr.* FROM provider_thinking_rules AS tr
-        WHERE tr.provider_instance_id = :instanceId
-        ORDER BY tr.sort_order ASC
-        """,
-    )
-    suspend fun ruleRowsFor(instanceId: String): List<ThinkingRuleRow>
-
-    @Query(
-        """
-        SELECT tr.* FROM provider_thinking_rules AS tr
-        ORDER BY tr.provider_instance_id ASC, tr.sort_order ASC
-        """,
-    )
-    suspend fun allRuleRows(): List<ThinkingRuleRow>
-
-    @Insert
-    suspend fun writeRuleRows(rows: List<ThinkingRuleRow>)
-
-    @Query("DELETE FROM provider_thinking_rules WHERE id = :ruleId")
-    suspend fun dropRule(ruleId: String): Int
-
-    @Query("DELETE FROM provider_thinking_rules WHERE provider_instance_id = :instanceId")
-    suspend fun dropRulesFor(instanceId: String)
-
-    /** Re-serializes one instance's rule list, keeping the given order. */
-    @Transaction
-    suspend fun reorderRules(instanceId: String, rows: List<ThinkingRuleRow>) {
-        dropRulesFor(instanceId)
-        writeRuleRows(rows)
-    }
+    // [P3.3 裁军] provider_thinking_rules 的读写 DAO（ruleRowsFor/allRuleRows/
+    // writeRuleRows/dropRule/dropRulesForInstance/reorderRules）随自定义思考
+    // 规则机器退役删除；表与实体保留（schema 冻结），历史数据原样在库。
 }

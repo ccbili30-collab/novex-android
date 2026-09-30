@@ -84,13 +84,9 @@ fun LogManagementScreen(
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     var loggingEnabled by remember { mutableStateOf(AppLogger.isEnabled(context)) }
 
-    // T-config: Logs / Config Changes segmented control. Default to
-    // "logs"; a `?tab=config-audit` deep-link query lands users straight
-    // on the audit list. Mirrors iOS LogManagementView.
-    val initialTab = remember {
-        com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingLogsTab() ?: "logs"
-    }
-    var tab by remember { mutableStateOf(initialTab) }
+    // [P3.3 裁军] Logs / Config Changes 分段控制随 minis-config 体系退役：
+    // 只剩日志页；?tab= 深链参数静默忽略（pendingLogsTab 仍消费以清空）。
+    remember { com.openminis.app.deeplink.DeepLinkCoordinator.consumePendingLogsTab() }
 
     val refreshTrigger = remember { mutableStateOf(0) }
     LaunchedEffect(refreshTrigger.value) {
@@ -125,31 +121,9 @@ fun LogManagementScreen(
         onBack = onBack,
         scrollable = false,
     ) {
-        // Segmented selector lives outside the scrolling content so the
-        // tabs stay visible as the body scrolls.
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            SegmentedButton(
-                selected = tab == "logs",
-                onClick = { tab = "logs" },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) { Text(stringResource(R.string.log_title)) }
-            SegmentedButton(
-                selected = tab == "config-audit",
-                onClick = { tab = "config-audit" },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) { Text(stringResource(R.string.logs_tab_config_changes)) }
-        }
-
-        if (tab == "config-audit") {
-            // Audit body. Owns its own scrolling.
-            ConfigAuditScreen(modifier = Modifier.fillMaxSize())
-        } else {
-            // Logs body — original layout. The LazyColumn picks up
-            // viewport height since the scaffold gave us a Column slot.
+        // Logs body — original layout. The LazyColumn picks up
+        // viewport height since the scaffold gave us a Column slot.
+        run {
             LogsBody(
                 context = context,
                 dailyLogs = dailyLogs,

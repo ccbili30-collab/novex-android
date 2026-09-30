@@ -2356,7 +2356,6 @@ private fun RenderMdVideo(block: MdBlock.Video) {
     val sessionId = LocalMarkdownSessionId.current
     val file = remember(block.url, sessionId) { resolveMdMediaFile(context, block.url, sessionId) }
     val filename = remember(block.url) { filenameFromMdUrl(block.url) }
-    var showPlayer by remember { mutableStateOf(false) }
 
     val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = file?.absolutePath) {
         val f = file ?: run { value = null; return@produceState }
@@ -2376,12 +2375,8 @@ private fun RenderMdVideo(block: MdBlock.Video) {
         }
     }
 
-    if (showPlayer && file != null) {
-        com.openminis.app.ui.media.MinisFullscreenVideoPlayer(
-            file = file,
-            onDismiss = { showPlayer = false },
-        )
-    }
+    // [P3.3 裁军] 全屏内嵌视频播放器（MinisFullscreenVideoPlayer）退役；
+    // 点击改经 FileProvider 外跳系统播放器。
 
     Column(
         modifier = Modifier
@@ -2391,8 +2386,8 @@ private fun RenderMdVideo(block: MdBlock.Video) {
             .background(colors.inlineCodeBg)
             .border(0.5.dp, colors.tableBorder, RoundedCornerShape(8.dp))
             .clickable(enabled = file != null) {
-                android.util.Log.d("MdStream", "open fullscreen video for ${file?.absolutePath}")
-                showPlayer = true
+                android.util.Log.d("MdStream", "open external video for ${file?.absolutePath}")
+                file?.let { com.openminis.app.ui.components.openMediaFileExternally(context, it) }
             },
     ) {
         Box(

@@ -507,24 +507,13 @@ private fun InlineContent(
         }
     }
 
-    // T136: route non-http(s) link taps (intent://, mailto:, tel:, …) through
-    // BrowserExternalSchemeHandler instead of Compose's default UriHandler,
-    // which fires a plain ACTION_VIEW and breaks for `intent://...#Intent;…`
-    // URIs. For http(s)/about/file the handler is a no-op and we fall back to
-    // a plain ACTION_VIEW to the system browser.
+    // [P3.3 裁军] 原 BrowserExternalSchemeHandler（内置浏览器的外跳 scheme
+    // 路由）退役；链接点击一律 ACTION_VIEW 外跳系统处理器。
     val context = LocalContext.current
     val linkListener = remember(context) {
         LinkInteractionListener { link ->
             val url = (link as? LinkAnnotation.Url)?.url ?: return@LinkInteractionListener
-            val handled = com.openminis.app.ui.browser.BrowserExternalSchemeHandler
-                .handle(context, url)
-            if (handled) return@LinkInteractionListener
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
+            com.openminis.app.ui.components.openExternalUrl(context, url)
         }
     }
 

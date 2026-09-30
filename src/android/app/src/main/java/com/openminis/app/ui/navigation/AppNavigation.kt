@@ -41,7 +41,6 @@ import com.openminis.app.ui.settings.AddAgentLoopModelsScreen
 import com.openminis.app.ui.settings.AddCustomModelScreen
 import com.openminis.app.ui.settings.BackgroundSettingsScreen
 import com.openminis.app.ui.settings.AddModelsToGroupScreen
-import com.openminis.app.ui.settings.ShadowVoiceDetailScreen
 import com.openminis.app.ui.settings.NovexProviderSetupScreen
 import com.openminis.app.ui.settings.ImageGenerationSettingsScreen
 import com.openminis.app.ui.settings.ImageGenerationSourceScreen
@@ -57,7 +56,6 @@ import com.openminis.app.ui.sandbox.FilePreviewScreen
 import com.openminis.app.ui.settings.AppearanceScreen
 import com.openminis.app.ui.settings.ThemeColorScreen
 import com.openminis.app.ui.settings.SettingsScreen
-import com.openminis.app.ui.settings.SystemPermissionsScreen
 import com.openminis.app.ui.settings.SessionStorageDetailScreen
 import com.openminis.app.ui.settings.SkillDetailScreen
 import com.openminis.app.ui.settings.StorageManagementScreen
@@ -74,8 +72,6 @@ import com.openminis.app.ui.settings.LogManagementScreen
 import com.openminis.app.ui.settings.MemoryFileEditScreen
 import com.openminis.app.ui.settings.MemoryManagementScreen
 import com.openminis.app.ui.settings.NovexFeedbackScreen
-import com.openminis.app.ui.settings.OffloadPermissionScreen
-import com.openminis.app.ui.settings.ShizukuPermissionScreen
 import com.openminis.app.ui.onboarding.OnboardingModelSelectionScreen
 
 // T342: Material 3 motion easing curves. Compose-Material3 (1.3.x) ships
@@ -97,8 +93,7 @@ object Routes {
     const val IMAGE_GENERATION_SOURCE = "image_generation_source/{sourceId}"
     fun imageGenerationSource(sourceId: String) = "image_generation_source/$sourceId"
     const val PROVIDER_DETAIL = "provider/{instanceId}"
-    /** [T-android-provider-voice] Read-only shadow Voice Service detail. */
-    const val SHADOW_VOICE_DETAIL = "voice_service/{instanceId}"
+    // [P3.3 裁军] SHADOW_VOICE_DETAIL（只读语音服务影子页路由）随语音全家退役。
     const val MODEL_GROUPS = "model_groups"
     const val MODEL_GROUP_DETAIL = "model_group/{groupId}"
     const val ADD_MODELS_TO_GROUP = "add_models_to_group/{groupId}"
@@ -132,8 +127,7 @@ object Routes {
     fun creativeLibrary(sessionId: String? = null): String =
         if (sessionId == null) "creative_library" else "creative_library?sessionId=${android.net.Uri.encode(sessionId)}"
     const val MEMORY = "memory"
-    /** [T-mcp-integration-android] MCP Integrations management screen. */
-    const val MCP = "mcp"
+    // [P3.3 裁军] MCP 路由随 MCP 集成面退役删除。
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
     const val STORY_WORLD = "characters/world/{worldId}"
@@ -148,15 +142,9 @@ object Routes {
     const val INTERACTIVE_FICTION_DETAIL = "interactive-fiction/card/{projectId}"
     const val INTERACTIVE_FICTION_EDIT = "interactive-fiction/edit?projectId={projectId}"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
-    const val PERMISSIONS = "permissions"
-    /**
-     * T322 / [T-android-privileged-backend]: Shizuku-protocol manager
-     * walkthrough — handles both Shizuku and AXManager (they share the same
-     * binder protocol + client SDK).
-     */
-    const val SHIZUKU = "shizuku"
-    /** T323: System Permissions (Accessibility service status, etc.). */
-    const val SYSTEM_PERMISSIONS = "system_permissions"
+    // [P3.3 裁军] PERMISSIONS / SHIZUKU / SYSTEM_PERMISSIONS 三条路由随
+    // offload（Shizuku/特权后端）与语音纠正区块（SystemPermissions 唯一
+    // 内容）退役删除。
     const val USAGE_STATS = "usage_stats"
     const val LOGS = "logs"
     const val LOG_DETAIL = "log_detail/{fileName}"
@@ -169,14 +157,8 @@ object Routes {
     const val SHARED_FOLDERS = "shared_folders"
     const val SHARED_FOLDERS_DETAIL = "shared_folders_detail/{folderId}"
     fun sharedFoldersDetail(folderId: String) = "shared_folders_detail/$folderId"
-    /** [T-android-scheduled-tasks-design] Scheduled tasks list + editor. */
-    const val SCHEDULED_TASKS = "scheduled_tasks"
-    const val SCHEDULED_TASK_EDIT = "scheduled_tasks/edit?taskId={taskId}"
-    fun scheduledTaskEdit(taskId: String? = null): String =
-        if (taskId == null) "scheduled_tasks/edit" else "scheduled_tasks/edit?taskId=$taskId"
-    // [T-android-scheduled-tasks-run-records] per-task execution log.
-    const val SCHEDULED_TASK_RUNS = "scheduled_tasks/runs/{taskId}"
-    fun scheduledTaskRuns(taskId: String): String = "scheduled_tasks/runs/$taskId"
+    // [P3.3 裁军] SCHEDULED_TASKS / SCHEDULED_TASK_EDIT / SCHEDULED_TASK_RUNS
+    // 三条路由随定时任务（scheduled/ + ui/scheduled/）退役删除。
 
     fun logDetail(fileName: String) = "log_detail/$fileName"
     fun sessionStorageDetail(sessionId: String) = "session_storage/$sessionId"
@@ -221,7 +203,6 @@ object Routes {
     fun conversationSettings(sessionId: String) =
         "conversation_settings/${android.net.Uri.encode(sessionId)}"
     fun providerDetail(instanceId: String) = "provider/$instanceId"
-    fun shadowVoiceDetail(instanceId: String) = "voice_service/$instanceId"
     fun modelGroupDetail(groupId: String) = "model_group/$groupId"
     fun addModelsToGroup(groupId: String) = "add_models_to_group/$groupId"
     // [T-android-model-entry-route-slash-crash] entryId is a composite key
@@ -249,7 +230,6 @@ fun AppNavigation(
     providerRepository: ProviderRepository,
     envVarRepository: EnvVarRepository? = null,
     skillRepository: SkillRepository? = null,
-    mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     memoryRepository: MemoryRepository? = null,
     navController: NavHostController = rememberNavController(),
     initialDeepLink: DeepLinkAction? = null,
@@ -302,19 +282,13 @@ fun AppNavigation(
             is DeepLinkAction.OpenSettingsScreen -> {
                 navController.safeNavigate(initialDeepLink.route)
             }
-            is DeepLinkAction.OpenPermissionSettings -> {
-                navController.safeNavigate(Routes.PERMISSIONS)
-            }
-            // OpenHtmlPreview is handled by setting startDestination
-            // (see below) so the NavHost mounts directly into the right
-            // chat — no safeNavigate dance, no sessions-list flash.
-            is DeepLinkAction.OpenHtmlPreview -> {}
-            // App-icon quick actions: all three open a fresh draft chat.
-            // Voice/camera additionally seed DeepLinkCoordinator.pendingChatAction
-            // (done up-front in startDestination block below so the seed
-            // lands before ChatScreen's first compose).
+            // [P3.3 裁军] OpenPermissionSettings / OpenHtmlPreview 动作随对应
+            // 功能退役（解析端已删，此分支自然死路）。
+            // App-icon quick actions: both open a fresh draft chat. Camera
+            // additionally seeds DeepLinkCoordinator.pendingChatAction (done
+            // up-front in startDestination block below so the seed lands
+            // before ChatScreen's first compose).
             is DeepLinkAction.NewChat,
-            is DeepLinkAction.NewVoiceChat,
             is DeepLinkAction.NewCameraChat -> {
                 // Navigation handled by startDestination = chat/<__new__…>
                 // when the launch intent carries one of these actions.
@@ -356,24 +330,13 @@ fun AppNavigation(
         }
     }
 
-    // Pinned-shortcut cold start: when launched via
-     // `minis://session/<id>/<resource-path>`, set the pending HTML
-     // preview synchronously and start NavHost directly at the matching
-     // chat so ChatScreen's LaunchedEffect consumes the pending state on
-     // first composition — no sessions-list flash, no launch-session
-     // preference detour.
-    val htmlShortcut = initialDeepLink as? DeepLinkAction.OpenHtmlPreview
+    // [P3.3 裁军] htmlShortcut（HTML 预览固定捷径冷启动）与 NewVoiceChat
+    // 分支随对应功能退役删除。
     // App-icon quick action cold start: mount NavHost directly at a fresh
     // draft chat, seeding the pending action so ChatScreen consumes it on
-    // its first LaunchedEffect tick. Mirrors the htmlShortcut path —
-    // avoids a sessions-list flash and a duplicate back-stack entry.
+    // its first LaunchedEffect tick — avoids a sessions-list flash and a
+    // duplicate back-stack entry.
     val quickActionStart: String? = when (initialDeepLink) {
-        is DeepLinkAction.NewVoiceChat -> {
-            DeepLinkCoordinator.setPendingChatAction(
-                DeepLinkCoordinator.ChatAction.START_VOICE,
-            )
-            Routes.chat("__new__${java.util.UUID.randomUUID()}")
-        }
         is DeepLinkAction.NewCameraChat -> {
             DeepLinkCoordinator.setPendingChatAction(
                 DeepLinkCoordinator.ChatAction.OPEN_CAMERA,
@@ -384,16 +347,6 @@ fun AppNavigation(
         else -> null
     }
     val startDestination = when {
-        htmlShortcut != null -> {
-            // Seed coordinator before NavHost composition so ChatScreen sees
-            // the pending state on its very first LaunchedEffect tick.
-            DeepLinkCoordinator.setPendingHtmlPreview(
-                htmlShortcut.sessionId,
-                htmlShortcut.resourcePath,
-                htmlShortcut.title,
-            )
-            Routes.chat(htmlShortcut.sessionId)
-        }
         quickActionStart != null -> quickActionStart
         initialRoute != null -> initialRoute
         else -> Routes.SESSION_LIST
@@ -497,9 +450,7 @@ fun AppNavigation(
                         onSelectModelsClick = {
                             navController.safeNavigate(Routes.ONBOARDING_MODELS)
                         },
-                        onScheduledTasksClick = {
-                            navController.safeNavigate(Routes.SCHEDULED_TASKS)
-                        },
+                        // [P3.3 裁军] onScheduledTasksClick 随定时任务退役摘除。
                         showBottomActions = false,
                         onRootNavigationVisibilityChange = onRootNavigationVisibilityChange,
                     )
@@ -541,7 +492,6 @@ fun AppNavigation(
                 providerRepository = providerRepository,
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
-                mcpRepository = mcpRepository,
                 onBack = {
                     handleNovexInitialRouteBack(
                         popBackStack = { navController.safePopBackStack() },
@@ -620,7 +570,6 @@ fun AppNavigation(
                 providerRepository = providerRepository,
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
-                mcpRepository = mcpRepository,
                 onCardSettings = {mode->navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}?mode=${android.net.Uri.encode(mode)}")},
                 onBack = { navController.safePopBackStack() },
             )
@@ -640,9 +589,7 @@ fun AppNavigation(
                 onStorageClick = { navController.safeNavigate(Routes.STORAGE) },
                 onSkillsClick = { navController.safeNavigate(Routes.SKILLS) },
                 onMemoryClick = { navController.safeNavigate(Routes.MEMORY) },
-                onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
-                onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },
                 onBackgroundClick = { navController.safeNavigate(Routes.BACKGROUND) },
@@ -918,21 +865,8 @@ fun AppNavigation(
                 onProviderClick = { instanceId ->
                     navController.safeNavigate(Routes.providerDetail(instanceId))
                 },
-                onVoiceServiceClick = { instanceId ->
-                    navController.safeNavigate(Routes.shadowVoiceDetail(instanceId))
-                },
-            )
-        }
-
-        composable(
-            route = Routes.SHADOW_VOICE_DETAIL,
-            arguments = listOf(navArgument("instanceId") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val instanceId = backStackEntry.arguments?.getString("instanceId") ?: return@composable
-            ShadowVoiceDetailScreen(
-                instanceId = instanceId,
-                providerRepository = providerRepository,
-                onBack = { navController.safePopBackStack() },
+                // [P3.3 裁军] onVoiceServiceClick + SHADOW_VOICE_DETAIL 目的地
+                // 随语音服务影子页退役删除。
             )
         }
 
@@ -980,9 +914,7 @@ fun AppNavigation(
                 onAddCustomModel = {
                     navController.safeNavigate(Routes.addCustomModel(instanceId))
                 },
-                onVoiceServiceClick = { id ->
-                    navController.safeNavigate(Routes.shadowVoiceDetail(id))
-                },
+                // [P3.3 裁军] onVoiceServiceClick 随语音服务影子页退役摘除。
             )
         }
 
@@ -1237,16 +1169,9 @@ fun AppNavigation(
             }
         }
 
-        // [T-mcp-integration-android] MCP Integrations management screen.
-        composable(Routes.MCP) {
-            if (mcpRepository != null) {
-                com.openminis.app.ui.settings.MCPIntegrationsScreen(
-                    mcpRepository = mcpRepository,
-                    onBack = { navController.safePopBackStack() },
-                    envVarRepository = envVarRepository,
-                )
-            }
-        }
+        // [P3.3 裁军] MCP Integrations 管理页路由随 MCP 集成面退役删除
+        // （MCPRepository 只服务已下架的 minis-mcp-cli 幽灵提示，无运行时
+        // 消费方）。
 
         // [T-soul-md] SOUL.md editor.
         composable(Routes.SOUL) {
@@ -1274,29 +1199,10 @@ fun AppNavigation(
             }
         }
 
-        composable(Routes.PERMISSIONS) {
-            OffloadPermissionScreen(
-                onBack = { navController.safePopBackStack() },
-                // [T-android-privileged-backend] Single Shizuku-protocol screen
-                // handles both Shizuku and AXManager managers; the old
-                // multi-backend screen was retired in favour of a single
-                // surface (the two managers share one binder slot, so a
-                // multi-backend abstraction was misleading).
-                onOpenPrivilegedBackend = { navController.safeNavigate(Routes.SHIZUKU) },
-            )
-        }
-
-        composable(Routes.SHIZUKU) {
-            ShizukuPermissionScreen(
-                onBack = { navController.safePopBackStack() },
-            )
-        }
-
-        composable(Routes.SYSTEM_PERMISSIONS) {
-            SystemPermissionsScreen(
-                onBack = { navController.safePopBackStack() },
-            )
-        }
+        // [P3.3 裁军] PERMISSIONS（OffloadPermissionScreen）/ SHIZUKU
+        // （ShizukuPermissionScreen）/ SYSTEM_PERMISSIONS
+        // （SystemPermissionsScreen）三个目的地随 offload 与语音纠正区块
+        // 退役删除。
 
         composable(Routes.USAGE_STATS) {
             UsageStatsScreen(
@@ -1356,53 +1262,7 @@ fun AppNavigation(
             )
         }
 
-        // [T-android-scheduled-tasks-design] Scheduled tasks list + editor.
-        composable(Routes.SCHEDULED_TASKS) {
-            com.openminis.app.ui.scheduled.ScheduledTasksScreen(
-                onBack = { navController.safePopBackStack() },
-                onEditTask = { taskId ->
-                    navController.safeNavigate(Routes.scheduledTaskEdit(taskId))
-                },
-                onViewRuns = { taskId ->
-                    navController.safeNavigate(Routes.scheduledTaskRuns(taskId))
-                },
-                onOpenSession = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-            )
-        }
-        // [T-android-scheduled-tasks-run-records] per-task run records.
-        composable(
-            route = Routes.SCHEDULED_TASK_RUNS,
-            arguments = listOf(navArgument("taskId") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val taskId = backStackEntry.arguments?.getString("taskId") ?: return@composable
-            com.openminis.app.ui.scheduled.ScheduledTaskRunsScreen(
-                taskId = taskId,
-                onBack = { navController.safePopBackStack() },
-                onOpenSession = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-            )
-        }
-        composable(
-            route = Routes.SCHEDULED_TASK_EDIT,
-            arguments = listOf(
-                navArgument("taskId") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            ),
-        ) { backStackEntry ->
-            val taskId = backStackEntry.arguments?.getString("taskId")
-            com.openminis.app.ui.scheduled.ScheduledTaskEditScreen(
-                taskId = taskId,
-                onBack = { navController.safePopBackStack() },
-                onOpenSession = { sessionId ->
-                    navController.safeNavigate(Routes.chat(sessionId))
-                },
-            )
-        }
+        // [P3.3 裁军] 定时任务三个目的地（列表/编辑/运行记录）随
+        // scheduled/ + ui/scheduled/ 退役删除。
     }
 }

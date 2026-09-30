@@ -810,6 +810,7 @@ class NovexTransportProvider(
                 isMistral = isMistralHost,
                 isDashScope = isDashScopeHost,
                 isXAI = isXAIHost,
+                isQianchenRelay = isQianchenRelayHost,
                 offEffort = explicitOffEffort,
             ),
         )
@@ -860,6 +861,8 @@ class NovexTransportProvider(
     private val isMistralHost: Boolean get() = loweredBase.contains("mistral.ai")
     private val isDashScopeHost: Boolean get() = loweredBase.contains("dashscope")
     private val isXAIHost: Boolean get() = loweredBase.contains("api.x.ai") || loweredBase.contains("//x.ai")
+    /** [P3.3 裁军→内置] 前尘 API 中转预设（gemini 系省略思考参数的内置席）。 */
+    private val isQianchenRelayHost: Boolean get() = loweredBase.contains("proxy.qianc.ltd")
     private val usesUnifiedReasoningEffort: Boolean
         get() = isAzureLine || loweredBase.contains("volces") || loweredBase.contains("ark.") ||
             loweredBase.contains("api.venice.ai")
