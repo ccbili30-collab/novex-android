@@ -3242,17 +3242,9 @@ fun ChatScreen(
                 // PopupProperties so its bottom edge sits just above this Column.
                 // Tap-outside dismisses via dismissOnClickOutside.
                 val showSlashMenu by viewModel.showSlashMenu.collectAsState()
-                val filteredSlashCommands = remember(
-                    showSlashMenu,
-                    viewModel.slashFilter.collectAsState().value,
-                    viewModel.memoryEnabled.collectAsState().value,
-                    viewModel.thinkingLevel.collectAsState().value,
-                ) { viewModel.filteredSlashCommands() }
-
-                if (showSlashMenu && (filteredSlashCommands.isNotEmpty() || novexControls.isNotEmpty())) {
-                    val thinkingLevelState by viewModel.thinkingLevel.collectAsState()
-                    val thinkingSupported = viewModel.currentModelSupportsReasoning
-                    val memoryOnState by viewModel.memoryEnabled.collectAsState()
+                // [A2c-cards] 卡盘只承载银卡——AI 自注册的本会话能力。
+                // 系统指令卡已全部移除（含存档组：将来由引擎按需注册）。
+                if (showSlashMenu) {
                     androidx.compose.ui.window.Popup(
                         popupPositionProvider = remember {
                             object : androidx.compose.ui.window.PopupPositionProvider {
@@ -3360,116 +3352,16 @@ fun ChatScreen(
                                     }
                                 }
                             }
-                            if (novexControls.isNotEmpty() && filteredSlashCommands.isNotEmpty()) {
-                                item(key = "__card_group_divider__") {
-                                    HorizontalDivider(
-                                        thickness = 0.5.dp,
-                                        color = ChatColors.toolBorder,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            // [A2c-cards] 金卡组已移除。无银卡时给一行
+                            // 空态说明，按钮不至于点了没反应。
+                            if (novexControls.isEmpty()) {
+                                item(key = "__card_empty__") {
+                                    Text(
+                                        text = "本会话暂无可用的指令卡",
+                                        fontSize = 12.sp,
+                                        color = ChatColors.secondaryText,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
                                     )
-                                }
-                            }
-                            itemsIndexed(filteredSlashCommands, key = { _, c -> "cmd:${c.id}" }) { _, cmd ->
-                                val isThinking = cmd.id == "thinking"
-                                val isThinkingActive = isThinking && thinkingLevelState.isEnabled && thinkingSupported
-                                // [A2c-cards] 金卡行：激活态走品牌薄荷（动作/选
-                                // 中语义），不再用 sendButton 黑白色块。
-                                val titleColor = if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint else ChatColors.primaryText
-                                val subtitleColor = if (isThinking && !thinkingSupported) {
-                                    ChatColors.secondaryText
-                                } else if (isThinkingActive) {
-                                    com.openminis.app.ui.noven.NovenColors.Mint.copy(alpha = 0.7f)
-                                } else ChatColors.secondaryText
-
-                                // 内建指令给中文卡名 + 中文说明，不再暴露 "/"
-                                // 语法和英文；技能/MCP 沿用其自带命名。
-                                val cardName = when (cmd.id) {
-                                    "clear" -> "清空卡"
-                                    "compact" -> "压缩卡"
-                                    "memory" -> "记忆卡"
-                                    "thinking" -> "思考卡"
-                                    "sync" -> "同步卡"
-                                    "save" -> "存档卡"
-                                    "saves" -> "存档列表卡"
-                                    "load" -> "读档卡"
-                                    else -> cmd.title
-                                }
-                                val cardDesc = when (cmd.id) {
-                                    "clear" -> "清空本会话的全部消息"
-                                    "compact" -> "把对话历史压缩成摘要"
-                                    "memory" -> if (memoryOnState) "记忆写入已开启 — 点击切换" else "记忆写入已关闭 — 点击切换"
-                                    "thinking" -> when {
-                                        !thinkingSupported -> "当前模型不支持思考"
-                                        thinkingLevelState.isEnabled -> "深度思考已开启 — 点击切换"
-                                        else -> "深度思考已关闭 — 点击开启"
-                                    }
-                                    "sync" -> "压缩记忆发给另一边（简报并入两边历史）"
-                                    "save" -> "把当前进度存为一个存档"
-                                    "saves" -> "查看本作品的全部存档"
-                                    "load" -> "读取存档回到当时的进度"
-                                    else -> cmd.subtitle
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .let {
-                                            if (!isThinking) {
-                                                it.novexClickable {
-                                                    // [T-android-slash-menu-clears-input] Pass the
-                                                    // LIVE input so an action command keeps the
-                                                    // user's body text instead of wiping it.
-                                                    viewModel.setInputText(viewModel.executeSlashCommand(cmd, inputText))
-                                                }
-                                            } else if (thinkingSupported) {
-                                                it.novexClickable {
-                                                    val newLevel = if (thinkingLevelState.isEnabled) ThinkingLevel.OFF else ThinkingLevel.MEDIUM
-                                                    viewModel.setThinkingLevel(newLevel)
-                                                }
-                                            } else it
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    // 行首中空金框小卡标；思考激活态换薄荷。
-                                    NovexMiniCardGlyph(
-                                        color = if (isThinkingActive) com.openminis.app.ui.noven.NovenColors.Mint else Color(0xFFC9A24B),
-                                    )
-                                    Spacer(modifier = Modifier.width(11.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = cardName,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = titleColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            text = cardDesc,
-                                            fontSize = 11.sp,
-                                            color = subtitleColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    if (cmd.id == "memory") {
-                                        Icon(
-                                            imageVector = if (memoryOnState) com.openminis.app.ui.novex.NovexIcons.CheckCircle else com.openminis.app.ui.novex.NovexIcons.Block,
-                                            contentDescription = null,
-                                            tint = if (memoryOnState) com.openminis.app.ui.noven.NovenColors.Mint else ChatColors.secondaryText,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                    if (isThinking && thinkingSupported) {
-                                        ThinkingLevelPicker(
-                                            current = thinkingLevelState,
-                                            // [T-android-thinking-level-arch] Only
-                                            // offer tiers the bound model supports.
-                                            availableLevels = viewModel.availableThinkingLevels,
-                                            onSelect = { level -> viewModel.setThinkingLevel(level) },
-                                        )
-                                    }
                                 }
                             }
                             }

@@ -72,66 +72,11 @@ import kotlinx.coroutines.yield
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-/** Filter available commands by current filter text, with dynamic
- *  localized subtitles. Subtitles read strings.xml via the injected
- *  Context so the panel respects system locale (T241).
- *
- *  [T-skill-slash a88ea8f9] After the built-in rows, append every
- *  enabled installed Skill as a `/<skill-name>` slash entry — tap
- *  fills the composer with `/<name>` and dismisses the menu (see
- *  [executeSlashCommand]). Disabled skills are hidden so toggling a
- *  skill off in Settings naturally removes it from the menu without
- *  uninstalling it.
- *
- *  [T-session-skill-toggle-override-global-android] Enablement is
- *  resolved per-session, not globally: [SkillRepository.isEnabledForSession]
- *  returns the session-scoped override when one exists and falls back to
- *  the global toggle otherwise. The previous code filtered on the raw
- *  global `isEnabled` flag, so a skill turned off globally but turned ON
- *  for this session never appeared in the `/` picker even though the
- *  prompt-injection path ([SkillRepository.skillPromptFragment]) already
- *  honored the override — the agent knew about the skill but the user
- *  couldn't surface it via slash. (DM 𝙓𝙄𝙉 304891.)
- */
-internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
-    val filter = _slashFilter.value.lowercase()
-    val base = availableSlashCommands.map { cmd ->
-        when (cmd.id) {
-            "compact" -> cmd.copy(
-                subtitle = context.getString(R.string.slash_compact_subtitle),
-            )
-            "sync" -> cmd.copy(
-                subtitle = "压缩记忆发给另一边（沟通简报并入两边历史）",
-            )
-            "memory" -> cmd.copy(
-                subtitle = context.getString(
-                    if (_memoryEnabled.value) R.string.slash_memory_writes_on
-                    else R.string.slash_memory_writes_off,
-                ),
-            )
-            "thinking" -> cmd.copy(
-                subtitle = if (!currentModelSupportsReasoning) {
-                    context.getString(R.string.slash_thinking_unsupported)
-                } else {
-                    context.getString(
-                        R.string.slash_thinking_subtitle,
-                        _thinkingLevel.value.localizedName(context),
-                    )
-                },
-            )
-            "clear" -> cmd.copy(
-                subtitle = context.getString(R.string.slash_clear_subtitle),
-            )
-            else -> cmd
-        }
-    }
-    // [A2c-cards] 指令卡托盘只列系统内建金卡。已安装 Skill 与 MCP
-    // 服务器不再出行为可点行——它们本来就是按 description 由模型
-    // 主动触发的后台能力（skillPromptFragment 注入系统提示词），
-    // 摆出来只会把 "/<name>" 语法和英文标识漏给用户；手动开关
-    // 仍走设置/会话技能页。
-    return if (filter.isEmpty()) base else base.filter { it.title.lowercase().contains(filter) }
-}
+// [A2c-cards] 指令卡托盘不再列任何系统指令：清空/压缩/记忆/思考/存档组/
+// 同步/skills/MCP 全部移除——卡盘只承载银卡（AI 自注册的本会话能力，
+// 存档等由引擎按会话态注册进 novexControls）。typed-"/" 的执行路径
+// 保留为零暴露的后备：tryExecuteInputAsSlashCommand 仍按
+// availableSlashCommands 派发，但没有 UI 再把它摆出来。
 
 /**
  * Update slash-menu state based on composer text. Call from the composer's
